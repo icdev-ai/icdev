@@ -7,6 +7,7 @@ must be promoted via the normal workflow.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -19,7 +20,7 @@ from typing import Any, Dict, Optional
 
 from tools.databridge.forge.static_validator import validate_connector_code
 
-logger = logging.getLogger("databridge.forge.import_handler")
+logger = get_logger("databridge.forge.import_handler")
 
 DB_PATH = Path(__file__).resolve().parents[3] / "data" / "icdev.db"
 

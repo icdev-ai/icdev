@@ -40,6 +40,7 @@ Usage
   python tools/strategos/osm_importer.py --file data.geojson --dry-run --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -54,7 +55,7 @@ if str(ROOT) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants (entity_subtype values must match any CHECK on sg_entities)

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """R6: Map Reflex — expanded capability matching (ICDEV™ + consulting + partners).
 
@@ -20,7 +22,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Keywords that indicate compliance-related requirements (GraphRAG compliance profile)
 _COMPLIANCE_KEYWORDS = frozenset(

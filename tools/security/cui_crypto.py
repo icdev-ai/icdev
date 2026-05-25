@@ -22,6 +22,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import base64
 import hashlib
@@ -30,7 +31,7 @@ import logging
 import os
 from typing import Any, Optional
 
-logger = logging.getLogger("icdev.cui.crypto")
+logger = get_logger("icdev.cui.crypto")
 
 # Fernet prefix so we can detect already-encrypted values
 _FERNET_PREFIX = b"gAAAA"

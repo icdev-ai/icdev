@@ -20,6 +20,7 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json as _json
 import logging
@@ -36,7 +37,7 @@ from tools.il5.ingestion import (
 )
 from tools.il5.sla_handler import IL5PipelineTimer
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_FEED_URL = "http://localhost:5050/api/il5/feed"

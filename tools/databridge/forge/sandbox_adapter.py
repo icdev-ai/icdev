@@ -22,6 +22,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import enum
@@ -41,7 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("databridge.forge.sandbox_adapter")
+logger = get_logger("databridge.forge.sandbox_adapter")
 
 _CONFIG_PATH = Path(__file__).resolve().parents[3] / "args" / "databridge_config.yaml"
 

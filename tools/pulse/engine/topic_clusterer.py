@@ -5,6 +5,7 @@ using TF-IDF-like keyword extraction (stdlib only) and keyword overlap scoring.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -18,7 +19,7 @@ from uuid import uuid4
 from tools.pulse.config import SEARCH_SOURCES
 from tools.pulse.db import get_row, insert_row, query_rows, update_row
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Stopwords — common English words that carry no topical signal

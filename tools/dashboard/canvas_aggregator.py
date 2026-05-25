@@ -23,6 +23,7 @@ Canvas map (7 canvases):
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -33,7 +34,7 @@ from typing import Any
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("icdev.dashboard.canvas_aggregator")
+logger = get_logger("icdev.dashboard.canvas_aggregator")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BASE_DIR / "data"

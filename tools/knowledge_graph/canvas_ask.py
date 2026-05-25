@@ -7,12 +7,13 @@ Each canvas blueprint (NDC/SDC/PDC/BDC/DDC/ODC/IDC) registers a thin
 one place instead of duplicating 80 lines across 7 blueprints.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
 from typing import Any, Dict
 
-logger = logging.getLogger("icdev.canvas_ask")
+logger = get_logger("icdev.canvas_ask")
 
 
 def handle_ask_request(

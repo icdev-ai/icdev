@@ -7,6 +7,7 @@ back to the log so signal_scout can observe the drift on the next cycle.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import sys
@@ -20,7 +21,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _LOOKBACK_HOURS = 24
 

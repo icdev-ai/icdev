@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Quality Design Canvas — Cross-canvas agent hooks.
 
@@ -9,7 +11,7 @@ import logging
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _now():

@@ -15,6 +15,7 @@ CLI: python tools/builder/scaffolder.py --project-path PATH --name "my-app" --ty
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -301,7 +302,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def main() -> int:
@@ -850,7 +851,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -922,7 +923,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+        get_logger().setLevel(logging.DEBUG)
 
     if not args.command:
         parser.print_help()
@@ -1021,7 +1022,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PipelineStep:

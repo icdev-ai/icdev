@@ -14,6 +14,7 @@ Public API:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import threading
@@ -21,7 +22,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Per-design circuit breaker registry

@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Canvas Projects API — cross-canvas project management.
 
@@ -8,7 +10,7 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 canvas_projects_api = Blueprint("canvas_projects_api", __name__)
 

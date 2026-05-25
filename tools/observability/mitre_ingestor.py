@@ -17,6 +17,7 @@ Public API:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -25,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger("icdev.mitre_ingestor")
+logger = get_logger("icdev.mitre_ingestor")
 
 _DEFAULT_CATALOG = Path(__file__).resolve().parents[2] / "context" / "mitre" / "enterprise.json"
 _STIX_URL = (

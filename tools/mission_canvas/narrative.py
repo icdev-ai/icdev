@@ -6,11 +6,12 @@ mission-ready plain-English summaries from structured data.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from typing import Optional
 
-logger = logging.getLogger("icdev.mission_canvas.narrative")
+logger = get_logger("icdev.mission_canvas.narrative")
 
 
 def generate_narrative(

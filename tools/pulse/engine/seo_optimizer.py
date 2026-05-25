@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 """ICDEV™ Pulse SEO optimization engine.
 
 Optimizes blog posts for search engines: title/meta tuning, keyword
@@ -12,7 +14,7 @@ from typing import Any
 
 from tools.pulse import config
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants

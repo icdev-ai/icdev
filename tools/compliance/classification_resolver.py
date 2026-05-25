@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 """Classification Resolver — single-source API for classification-aware behavior.
 
 All ICDEV™ tools that need to know the project's classification level should call
@@ -30,7 +32,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 PROFILES_PATH = BASE_DIR / "args" / "classification_profiles.yaml"

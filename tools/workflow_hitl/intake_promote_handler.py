@@ -10,6 +10,7 @@ Only acts on instances that were created by the chat intake hook
 All other instances are silently skipped.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import sys
@@ -22,7 +23,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger("icdev.workflow_hitl.intake_promote_handler")
+logger = get_logger("icdev.workflow_hitl.intake_promote_handler")
 
 
 def _now() -> str:

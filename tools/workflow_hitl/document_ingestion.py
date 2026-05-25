@@ -5,6 +5,7 @@ Accepts PDF, DOCX, HTML, and Markdown files. Extracts text with section structur
 chunks via the RAG chunker, embeds, and stores in rag_chunks with source_type='wf_doc'.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
@@ -16,7 +17,7 @@ from pathlib import Path
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _STORAGE_DIR = Path("data/wf_ingested_files")
 

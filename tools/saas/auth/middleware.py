@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 """ICDEV™ SaaS — Authentication & Authorization Middleware.
 CUI // SP-CTI
 
@@ -30,7 +32,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("saas.auth.middleware")
+logger = get_logger("saas.auth.middleware")
 
 # Public endpoints that do not require authentication
 PUBLIC_ENDPOINTS = {

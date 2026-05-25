@@ -37,6 +37,7 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import threading
@@ -49,7 +50,7 @@ from tools.il5.ingestion import SLA_SECONDS
 _CLASSIFICATION = "CUI"
 _IMPACT_LEVEL = "IL5"
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 F = TypeVar("F", bound=Callable[..., Any])
 

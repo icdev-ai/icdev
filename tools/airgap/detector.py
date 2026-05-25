@@ -21,6 +21,7 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
@@ -31,7 +32,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
-logger = logging.getLogger("icdev.airgap.detector")
+logger = get_logger("icdev.airgap.detector")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Unified OSCAL catalog adapter — reads both NIST OSCAL and ICDEV™ formats.
 
@@ -30,7 +32,7 @@ import re
 import sys
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

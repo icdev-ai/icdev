@@ -8,6 +8,7 @@ Routes:
   POST /ai-augmentation/api/iqe-query IQE natural-language query
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import importlib
 import json
@@ -20,7 +21,7 @@ import re
 from tools.ai_augmentation.db.init_db import get_connection, init_db
 from tools.ai_augmentation.engine import run_scan
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 aac_bp = Blueprint(
     "aac",

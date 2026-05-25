@@ -22,6 +22,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -39,7 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.knowledge_graph.graph_rag")
+logger = get_logger("icdev.knowledge_graph.graph_rag")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

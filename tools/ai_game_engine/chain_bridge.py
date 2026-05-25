@@ -7,6 +7,7 @@ Use CoT for step-by-step strategy generation.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from typing import Any, Dict, List, Optional
@@ -15,7 +16,7 @@ from tools.llm.chain_orchestrator import ChainOrchestrator, ChainResult
 from tools.llm.provider import LLMRequest
 from tools.llm.router import LLMRouter
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class GameDayChainBridge:

@@ -6,13 +6,14 @@ inference cost projections. Fully deterministic — no LLM calls.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
 
 from tools.agentic_ai_canvas.constants import AADC_MODEL_COSTS
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _DEFAULT_RUNS_PER_MONTH = 1000
 

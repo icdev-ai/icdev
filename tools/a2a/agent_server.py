@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """A2A Agent Server — HTTP-based agent server implementing the A2A protocol.
 
@@ -36,7 +38,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("a2a.server")
+logger = get_logger("a2a.server")
 
 
 class A2AAgentServer:

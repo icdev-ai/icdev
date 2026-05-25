@@ -11,6 +11,7 @@ Config (args/fathomdesk_config.yaml)::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -18,7 +19,7 @@ import logging
 from tools.fathomdesk.llm_factory import get_llm
 from tools.llm.provider import LLMRequest
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SYSTEM = (
     "You are an institutional execution trader. Given an investment plan and supporting "

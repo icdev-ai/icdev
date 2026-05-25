@@ -27,6 +27,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -59,7 +60,7 @@ from tools.pulse.db import (  # noqa: E402
     update_row,
 )
 
-logger = logging.getLogger("pulse.sam_bridge")
+logger = get_logger("pulse.sam_bridge")
 
 # ── Domain keywords (reused from govcon/knowledge_ingestion.py) ───────
 _DOMAIN_KEYWORDS: dict[str, list[str]] = {

@@ -51,6 +51,7 @@ Configuration (env vars or args/datahub_config.yaml)
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -69,7 +70,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 # ── Logging ───────────────────────────────────────────────────────────────────
-logger = logging.getLogger("icdev.ddc.datahub")
+logger = get_logger("icdev.ddc.datahub")
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _CONFIG_PATH = _ROOT / "args" / "datahub_config.yaml"
@@ -744,7 +745,7 @@ def _cli() -> None:
     args = parser.parse_args()
 
     if args.verbose:
-        logging.getLogger("icdev.ddc.datahub").setLevel(logging.DEBUG)
+        get_logger("icdev.ddc.datahub").setLevel(logging.DEBUG)
 
     syncer = DDCDataHubSync(dry_run=args.dry_run)
 

@@ -12,12 +12,13 @@ Public functions:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.migration_canvas.vendor_migration_paths")
+logger = get_logger("icdev.migration_canvas.vendor_migration_paths")
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 _PATHS_YAML = _ICDEV_ROOT / "args" / "vendor_migration_paths.yaml"

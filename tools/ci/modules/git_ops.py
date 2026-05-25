@@ -12,6 +12,7 @@ Implements the contract documented in
 clean-room rewrite).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import subprocess
@@ -21,7 +22,7 @@ from typing import Any, List, Optional, Sequence, Tuple
 
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
 
-_module_logger = logging.getLogger(__name__)
+_module_logger = get_logger(__name__)
 
 
 # ────────────────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ Usage in app.py:
         app.register_blueprint(bp)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -19,7 +20,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, render_template, request
 
-logger = logging.getLogger("icdev.supply_chain")
+logger = get_logger("icdev.supply_chain")
 
 _TMPL_DIR = Path(__file__).resolve().parents[2] / "tools" / "dashboard" / "templates"
 

@@ -10,6 +10,7 @@ COOLDOWN_HOURS = 24 prevents double-firing within a calendar day.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -24,7 +25,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 REFLEX_NAME = "cyber_feed_refresh"
 COOLDOWN_HOURS = 24

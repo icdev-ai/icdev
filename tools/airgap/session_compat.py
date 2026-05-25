@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Session compatibility for non-Claude-Code environments.
 
@@ -23,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.airgap.session_compat")
+logger = get_logger("icdev.airgap.session_compat")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

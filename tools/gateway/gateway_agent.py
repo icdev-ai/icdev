@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Remote Command Gateway Agent — Flask app on port 8458.
 
@@ -46,7 +48,7 @@ from tools.gateway.adapters.telegram import TelegramAdapter  # noqa: E402
 from tools.gateway.adapters.slack import SlackAdapter  # noqa: E402
 from tools.gateway.adapters.mattermost import MattermostAdapter  # noqa: E402
 
-logger = logging.getLogger("icdev.gateway.agent")
+logger = get_logger("icdev.gateway.agent")
 
 # ---------------------------------------------------------------------------
 # Configuration

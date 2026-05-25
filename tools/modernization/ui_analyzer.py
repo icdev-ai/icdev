@@ -37,6 +37,7 @@ Compliance:     NIST 800-53 Rev 5 / RMF
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -57,7 +58,7 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-logger = logging.getLogger("icdev.modernization.ui_analyzer")
+logger = get_logger("icdev.modernization.ui_analyzer")
 
 # Supported image file extensions
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"}

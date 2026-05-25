@@ -6,6 +6,7 @@ Ollama /api/chat (never /api/generate) with a structured JSON response request.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -15,7 +16,7 @@ from typing import Any
 from .constants import OLLAMA_BASE_URL, DEFAULT_AGENT_MODEL
 from .db import log_llmops_event
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 try:
     import requests as _requests

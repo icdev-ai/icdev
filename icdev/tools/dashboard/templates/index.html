@@ -52,6 +52,14 @@
                 onchange="setNotifyChannel(this.value)"
                 title="Notification channel for task events (done / failed / in-progress)">
         </select>
+        <label style="font-size:12px; color:var(--text-dim); white-space:nowrap;">Executor:</label>
+        <select id="kanban-executor-chain" onchange="setExecutorChain(this.value)" title="Global executor fallback chain (affects scheduler dispatch)"
+                style="font-size:12px; padding:4px 8px; background:var(--bg-code,#0d1b30); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; cursor:pointer;">
+            <option value="claude_cli,gitlab,ollama_local">&#129302; Claude CLI &#8594; GitLab &#8594; Ollama</option>
+            <option value="gitlab,ollama_local">&#129418; GitLab &#8594; Ollama (air-gap)</option>
+            <option value="github_actions,ollama_local">&#9881;&#65039; GitHub Actions &#8594; Ollama (air-gap)</option>
+            <option value="ollama_local">&#129433; Ollama Local only</option>
+        </select>
         <button class="btn" id="refresh-btn" onclick="refreshDashboard()" title="Refresh now" style="padding:6px 12px; font-size:13px;">&#x21bb; Refresh</button>
         <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
     </div>
@@ -777,6 +785,30 @@ window.setNotifyChannel = function(channelId) {
     }).catch(function() {});
 };
 
+window.setExecutorChain = function(value) {
+    fetch('/api/kanban/settings/executor-chain', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({chain: value.split(',')}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            alert('Executor chain update failed: ' + data.error);
+        } else {
+            var el = document.getElementById('auto-refresh-countdown');
+            if (el) {
+                var old = el.textContent;
+                el.textContent = 'Executor updated ✓';
+                setTimeout(function() { el.textContent = old; }, 2000);
+            }
+        }
+    })
+    .catch(function(err) {
+        console.error('setExecutorChain failed:', err);
+    });
+};
+
 // ── Auto-refresh: 5-minute interval with countdown ──────────────────
 var AUTO_REFRESH_SECONDS = 60; // completion poller handles real-time; this is the safety net
 var _refreshCountdown = AUTO_REFRESH_SECONDS;
@@ -792,6 +824,11 @@ function refreshDashboard() {
     if (window.refreshAutonomyStatus) window.refreshAutonomyStatus();
     // Refresh charts (re-trigger the chart loader in the scripts block)
     if (window._loadCharts) window._loadCharts();
+    // Refresh monitor tiles
+    if (window.renderSandboxTile) window.renderSandboxTile();
+    if (window.renderOracleTile) window.renderOracleTile();
+    if (window.renderMcpTile) window.renderMcpTile();
+    if (window.renderCacheTile) window.renderCacheTile();
     // Visual feedback on button
     var btn = document.getElementById('refresh-btn');
     if (btn) {
@@ -826,6 +863,20 @@ function _startAutoRefresh() {
 document.addEventListener('DOMContentLoaded', function() {
     refreshKanbanTasks();
     loadNotifyChannel();
+    fetch('/api/kanban/settings/executor-chain')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var sel = document.getElementById('kanban-executor-chain');
+            if (!sel || !data.chain) return;
+            var chainStr = data.chain.join(',');
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value === chainStr) {
+                    sel.selectedIndex = i;
+                    break;
+                }
+            }
+        })
+        .catch(function() {});
     if (window.refreshProjectsInFlight) window.refreshProjectsInFlight();
     if (window.refreshAutonomyStatus)   window.refreshAutonomyStatus();
     _startAutoRefresh();
@@ -951,6 +1002,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.addEventListener('DOMContentLoaded', renderSandboxTile);
+    window.renderSandboxTile = renderSandboxTile;
 })();
 
 // Oracle Insights tile renderer
@@ -1004,6 +1056,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.addEventListener('DOMContentLoaded', renderOracleTile);
+    window.renderOracleTile = renderOracleTile;
 })();
 
 // MCP Monitor tile renderer
@@ -1049,6 +1102,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.addEventListener('DOMContentLoaded', renderMcpTile);
+    window.renderMcpTile = renderMcpTile;
 })();
 
 // Cache Savings tile renderer
@@ -1080,6 +1134,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.addEventListener('DOMContentLoaded', renderCacheTile);
+    window.renderCacheTile = renderCacheTile;
 })();
 </script>
 

@@ -29,6 +29,7 @@ CLI:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import base64
@@ -43,7 +44,7 @@ from typing import Dict, Optional
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("icdev.encryption_at_rest")
+logger = get_logger("icdev.encryption_at_rest")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

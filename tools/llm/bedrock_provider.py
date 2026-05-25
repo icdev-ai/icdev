@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """AWS Bedrock LLM Provider.
 
@@ -21,7 +23,7 @@ from tools.llm.provider import (
     tools_to_anthropic,
 )
 
-logger = logging.getLogger("icdev.llm.bedrock")
+logger = get_logger("icdev.llm.bedrock")
 
 try:
     import boto3

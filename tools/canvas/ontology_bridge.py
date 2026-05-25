@@ -16,11 +16,12 @@ multiple places.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from typing import Callable
 
-logger = logging.getLogger("icdev.canvas.ontology_bridge")
+logger = get_logger("icdev.canvas.ontology_bridge")
 
 # ── Base namespace ─────────────────────────────────────────────────────────────
 _ONTO_BASE = "https://icdev.dev/ontology"

@@ -9,6 +9,7 @@ Inserts only — never UPDATE or DELETE (NIST AU).
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -23,7 +24,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _TABLE = "cross_agency_transfers"
 

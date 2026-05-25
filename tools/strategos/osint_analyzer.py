@@ -19,6 +19,7 @@ Usage:
   python -m tools.strategos.osint_analyzer --scene scene.json --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -33,7 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Severity constants

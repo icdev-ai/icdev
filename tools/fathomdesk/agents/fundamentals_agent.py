@@ -2,6 +2,7 @@
 """FundamentalsAgent — valuation-based analyst lens."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -10,7 +11,7 @@ from tools.fathomdesk.agents.base_analyst import BaseAnalystAgent
 from tools.fathomdesk.data_gateway import FathomDeskDataGateway
 from tools.llm.provider import LLMRequest
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SYSTEM = (
     "You are a senior fundamental equity analyst. "

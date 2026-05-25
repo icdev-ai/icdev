@@ -11,6 +11,7 @@ re-raised so the scheduler's existing error handler still fires.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -19,7 +20,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _extract_artifact_count(result: Any) -> int:

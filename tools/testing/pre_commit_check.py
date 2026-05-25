@@ -81,7 +81,12 @@ def _run_route_smoke(changed_files: list[str]) -> bool:
     the dashboard is not running.
     """
     print("[pre-commit] Running route smoke test...")
-    changed_arg = ",".join(changed_files)
+    # Only pass dashboard-relevant files to avoid Windows cmd-line length limit
+    dashboard_files = [
+        f for f in changed_files
+        if any(pat in f.replace("\\", "/") for pat in DASHBOARD_PATTERNS)
+    ]
+    changed_arg = ",".join(dashboard_files)
 
     # Pre-check: ask route_smoke which routes it would test so we can skip
     # early when no routes are affected (e.g. only tool/test files changed).

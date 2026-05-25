@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Nutanix Prism REST adapter — pull live VM inventory.
 
@@ -16,7 +18,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-logger = logging.getLogger("icdev.migration_canvas.adapters.nutanix")
+logger = get_logger("icdev.migration_canvas.adapters.nutanix")
 
 _TIMEOUT = 15
 _PAGE_SIZE = 250

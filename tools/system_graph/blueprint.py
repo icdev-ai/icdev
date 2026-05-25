@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """System Graph blueprint — routes for the unified Sigma.js graph dashboard page."""
 
@@ -10,7 +12,7 @@ from flask import Blueprint, jsonify, render_template, request
 from .constants import NODE_TYPES, EDGE_TYPES
 from .graph_builder import build_graph, build_search_fallback, get_node_detail
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 bp = Blueprint("system_graph", __name__)
 

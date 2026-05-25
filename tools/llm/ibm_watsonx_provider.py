@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """IBM watsonx.ai LLM Provider (D238).
 
@@ -20,7 +22,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse  # noqa: E402
 
-logger = logging.getLogger("icdev.llm.ibm_watsonx")
+logger = get_logger("icdev.llm.ibm_watsonx")
 
 # Graceful SDK import (D73)
 try:

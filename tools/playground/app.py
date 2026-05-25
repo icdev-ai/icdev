@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Playground — Read-only demo application.
 
@@ -19,7 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.playground")
+logger = get_logger("icdev.playground")
 
 PLAYGROUND_DIR = Path(__file__).resolve().parent
 TEMPLATE_DIR = PLAYGROUND_DIR / "templates"

@@ -2,6 +2,7 @@
 """TTX Engine — scenario YAML loader and validator."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from pathlib import Path
@@ -9,7 +10,7 @@ from typing import Any
 
 import yaml
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _SCENARIOS_DIR = Path(__file__).resolve().parent.parent.parent / "scenarios"
 

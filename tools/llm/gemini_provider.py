@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Google Gemini LLM Provider.
 
@@ -20,7 +22,7 @@ from tools.llm.provider import (
     LLMResponse,
 )
 
-logger = logging.getLogger("icdev.llm.gemini")
+logger = get_logger("icdev.llm.gemini")
 
 try:
     import google.generativeai as genai

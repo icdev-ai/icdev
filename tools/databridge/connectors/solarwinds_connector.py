@@ -14,6 +14,7 @@ to a raw SWQL string.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import base64
 import json
@@ -33,7 +34,7 @@ from tools.databridge.connector import (
     SchemaField,
 )
 
-logger = logging.getLogger("databridge.solarwinds")
+logger = get_logger("databridge.solarwinds")
 
 REQUEST_TIMEOUT = 30
 USER_AGENT = "ICDEV-DataBridge/1.0"

@@ -16,6 +16,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -23,7 +24,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-logger = logging.getLogger("govcon.telco_rfp")
+logger = get_logger("govcon.telco_rfp")
 
 # ── E-Rate Form 470 Service Categories ───────────────────────────────────────
 

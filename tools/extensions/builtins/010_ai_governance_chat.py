@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """AI governance chat extension handler (D325, D327).
 
@@ -18,7 +20,7 @@ import sqlite3
 from tools.db.storage import get_connection
 from pathlib import Path
 
-logger = logging.getLogger("icdev.extensions.ai_governance_chat")
+logger = get_logger("icdev.extensions.ai_governance_chat")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

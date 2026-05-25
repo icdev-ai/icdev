@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 """XACML-style ABAC Engine for ICDEV™.
 
 Components:
@@ -32,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-logger = logging.getLogger("security.abac")
+logger = get_logger("security.abac")
 
 # ---------------------------------------------------------------------------
 # Config loader

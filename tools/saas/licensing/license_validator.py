@@ -8,6 +8,7 @@ No network access required — fully air-gap safe.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import base64
@@ -23,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("saas.licensing")
+logger = get_logger("saas.licensing")
 
 # Default public key path for license verification
 DEFAULT_PUBLIC_KEY_PATH = BASE_DIR / "args" / "license_public_key.pem"

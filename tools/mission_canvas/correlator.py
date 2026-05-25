@@ -6,11 +6,12 @@ to surface real-time correlation, monitoring, and alerting.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from typing import Optional
 
-logger = logging.getLogger("icdev.mission_canvas.correlator")
+logger = get_logger("icdev.mission_canvas.correlator")
 
 
 def correlate_events(

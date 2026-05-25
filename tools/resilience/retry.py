@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Resilience — Reusable Retry Utility.
 
@@ -22,7 +24,7 @@ import random
 import time
 from typing import Callable, Optional, Sequence, Type
 
-logger = logging.getLogger("icdev.resilience.retry")
+logger = get_logger("icdev.resilience.retry")
 
 
 def backoff_delay(

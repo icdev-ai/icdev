@@ -153,7 +153,7 @@ TASKS = [
         "description": (
             "Add check_log_standard_compliance() to tools/workflow/coherence_checker.py.\n\n"
             "Logic:\n"
-            "  - Grep tools/ Python files for 'logging.getLogger('\n"
+            "  - Grep tools/ Python files for 'get_logger('\n"
             "  - Exclude tools/logging/ itself and tests/ directories\n"
             "  - Return CoherenceCheck with status='fail' if any violations found\n\n"
             "Register in CHECK_REGISTRY as 'log_standard'.\n"
@@ -167,8 +167,8 @@ TASKS = [
         "depends_on": "LOG-09",
         "description": (
             "Unit tests for check_log_standard_compliance:\n"
-            "  - Pass when no raw logging.getLogger() calls\n"
-            "  - Fail when tools/ module uses logging.getLogger()\n"
+            "  - Pass when no raw get_logger() calls\n"
+            "  - Fail when tools/ module uses get_logger()\n"
             "  - Exclude tools/logging/ package from violations\n"
             "  - check_id == 'log_standard'\n"
             "  - Registered in CHECK_REGISTRY\n"

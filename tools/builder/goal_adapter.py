@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -34,7 +36,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-logger = logging.getLogger("icdev.goal_adapter")
+logger = get_logger("icdev.goal_adapter")
 
 # ============================================================
 # GOAL FILE MAP — maps goal keys to filenames

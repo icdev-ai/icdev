@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """VMware vSphere REST adapter — pull live VM inventory.
 
@@ -20,7 +22,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-logger = logging.getLogger("icdev.migration_canvas.adapters.vmware")
+logger = get_logger("icdev.migration_canvas.adapters.vmware")
 
 _TIMEOUT = 15
 

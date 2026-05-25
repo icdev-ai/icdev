@@ -26,6 +26,7 @@ CLI:
         --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -36,7 +37,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.war_council_generator")
+logger = get_logger("icdev.strategos.war_council_generator")
 
 _CLASSIFICATION = "CUI // SP-CTI"
 

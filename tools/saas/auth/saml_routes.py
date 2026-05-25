@@ -12,6 +12,7 @@ All routes are tenant-aware via the ``X-Tenant-ID`` header or query param.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -34,7 +35,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("saas.auth.saml_routes")
+logger = get_logger("saas.auth.saml_routes")
 
 # ---------------------------------------------------------------------------
 # Blueprint

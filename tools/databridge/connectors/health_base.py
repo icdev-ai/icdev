@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """HealthBaseConnector — base class for HL7v2, FHIR REST, and CDA XML (D-CF-HEALTH-1).
 
@@ -22,7 +24,7 @@ from tools.databridge.connector import (
     SchemaField,
 )
 
-logger = logging.getLogger("databridge.connectors.health_base")
+logger = get_logger("databridge.connectors.health_base")
 
 try:
     import requests

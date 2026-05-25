@@ -49,6 +49,7 @@ Genesis daemon
     gap detection so fresh Oracle cards are triaged in the same cycle).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -60,7 +61,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-LOG = logging.getLogger("oracle_triage")
+LOG = get_logger("oracle_triage")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:

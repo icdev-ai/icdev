@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Database PII Scanner — scan proposal tables for unprotected sensitive fields.
 
@@ -31,7 +33,7 @@ sys.path.insert(0, str(BASE_DIR))
 from tools.db.storage import get_connection  # noqa: E402
 from tools.redaction.detector import RedactionDetector  # noqa: E402
 
-logger = logging.getLogger("icdev.redaction.db_scanner")
+logger = get_logger("icdev.redaction.db_scanner")
 
 # Tables known to contain sensitive proposal data
 GOVCON_TABLES = [

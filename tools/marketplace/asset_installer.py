@@ -13,6 +13,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import io
@@ -23,7 +24,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-logger = logging.getLogger("marketplace.asset_installer")
+logger = get_logger("marketplace.asset_installer")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 INSTALL_ROOT = BASE_DIR / "tools"

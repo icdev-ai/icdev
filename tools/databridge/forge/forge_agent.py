@@ -11,6 +11,7 @@ Entry point for all forge operations. Coordinates:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -29,7 +30,7 @@ from tools.databridge.forge.sandbox_manager import run_sandbox
 from tools.databridge.forge.spec_parser import ForgeApiManifest, parse_spec
 from tools.databridge.forge.static_validator import validate_connector_code
 
-logger = logging.getLogger("databridge.forge.agent")
+logger = get_logger("databridge.forge.agent")
 
 DB_PATH = Path(__file__).resolve().parents[3] / "data" / "icdev.db"
 

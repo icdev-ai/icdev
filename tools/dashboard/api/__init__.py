@@ -11,6 +11,7 @@ Usage in app.py::create_app():
     register_api_blueprints(app)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from typing import TYPE_CHECKING
@@ -18,7 +19,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from flask import Flask
 
-logger = logging.getLogger("icdev.dashboard.api")
+logger = get_logger("icdev.dashboard.api")
 
 # ---------------------------------------------------------------------------
 # Lazy imports — each blueprint is imported inside the function so that a

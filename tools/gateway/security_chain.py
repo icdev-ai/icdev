@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """8-Gate Security Chain for the Remote Command Gateway.
 
@@ -37,7 +39,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.gateway.event_envelope import CommandEnvelope  # noqa: E402
 
-logger = logging.getLogger("icdev.gateway.security_chain")
+logger = get_logger("icdev.gateway.security_chain")
 
 # Graceful imports — each gate degrades gracefully if its dependency is missing
 try:

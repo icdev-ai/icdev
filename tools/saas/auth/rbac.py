@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 """ICDEV™ SaaS — Role-Based Access Control (RBAC).
 CUI // SP-CTI
 """
@@ -6,7 +8,7 @@ CUI // SP-CTI
 import logging
 from typing import Optional
 
-logger = logging.getLogger("saas.auth.rbac")
+logger = get_logger("saas.auth.rbac")
 
 
 # Permission matrix: {category: {role: permission_level}}

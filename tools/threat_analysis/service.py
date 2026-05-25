@@ -12,13 +12,14 @@ considered unbounded (valid but unclassified).
 NIST 800-53: SI-4 (System Monitoring), RA-5 (Vulnerability Monitoring).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.threat_analysis.service")
+logger = get_logger("icdev.threat_analysis.service")
 
 
 # Scope specificity — higher index = more specific

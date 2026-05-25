@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Generate project directory structure based on project type.
 
@@ -1061,7 +1063,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class Pipeline:

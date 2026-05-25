@@ -7,6 +7,7 @@ and persists them to voc_documents + voc_job_statements via get_connection().
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -18,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _ROOT = Path(__file__).resolve().parents[2]
 _CONFIG_PATH = _ROOT / "args" / "voc_config.yaml"

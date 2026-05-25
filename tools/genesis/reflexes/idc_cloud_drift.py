@@ -8,12 +8,13 @@ and live resources that have no corresponding design node.
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
 from typing import Any, Dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 6
 

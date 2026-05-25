@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 """Child App Generator - generates mini-ICDEV™ clone applications from blueprints.
 
 This is the core engine for ICDEV™ Phase 19 agentic app generation. Every child
@@ -36,7 +38,7 @@ try:
 except ImportError:
     DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-logger = logging.getLogger("icdev.child_app_generator")
+logger = get_logger("icdev.child_app_generator")
 
 
 # Sister module imports (graceful fallback)
@@ -881,7 +883,7 @@ def _generate_mcp_stubs(mcp_dir: Path, agents: list, app_name: str, blueprint: d
             f"import sys\n"
             f"import logging\n"
             f"\n"
-            f'logger = logging.getLogger("{app_name}.mcp.{server_name}")\n'
+            f'logger = get_logger("{app_name}.mcp.{server_name}")\n'
             f"\n"
             f"\n"
             f"def handle_request(request: dict) -> dict:\n"
@@ -2077,7 +2079,7 @@ from urllib.request import Request, urlopen
 PARENT_URL = os.environ.get("ICDEV_PARENT_CALLBACK_URL", "{default_url}")
 AUTH_METHOD = "{auth_method}"
 
-logger = logging.getLogger("{app_name}.a2a_callback")
+logger = get_logger("{app_name}.a2a_callback")
 
 
 def call_parent(method: str, params: dict = None, timeout: int = 30) -> dict:

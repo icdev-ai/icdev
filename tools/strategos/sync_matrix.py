@@ -8,6 +8,7 @@ Cells: free-text tasks/effects synchronized at that time block for that WFA.
 Doctrinal basis: FM 3-0, JP 5-0 — Operations Order Annex C (Synchronization Matrix).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -15,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.sync_matrix")
+logger = get_logger("icdev.strategos.sync_matrix")
 
 DEFAULT_ROW_LABELS = [
     "Maneuver",

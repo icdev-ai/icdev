@@ -1,0 +1,1 @@
+{"ts": "2026-05-25T03:57:18.112227+00:00", "level": "INFO", "component": "__main__", "message": "Another kanban scheduler is alive (pid=1144). Exiting to avoid duplicate dispatch.", "trace_id": null, "session_id": null, "extra": {}}

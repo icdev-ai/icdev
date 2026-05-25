@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -40,7 +42,7 @@ if str(BASE_DIR) not in sys.path:
 
 from flask import Blueprint, Response, g, jsonify, request  # noqa: E402
 
-logger = logging.getLogger("saas.mcp_sse")
+logger = get_logger("saas.mcp_sse")
 
 # ---------------------------------------------------------------------------
 # Blueprint

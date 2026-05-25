@@ -31,6 +31,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import importlib.util
 import logging
@@ -41,7 +42,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-logger = logging.getLogger("icdev.extensions")
+logger = get_logger("icdev.extensions")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

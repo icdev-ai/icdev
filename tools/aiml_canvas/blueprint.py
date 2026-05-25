@@ -39,6 +39,7 @@ Routes:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -46,7 +47,7 @@ import os
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 try:
     from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision

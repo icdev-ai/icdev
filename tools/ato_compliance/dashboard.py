@@ -8,11 +8,12 @@ NIST 800-53 Controls: SA-11 (Developer Security Testing),
                       RA-5 (Vulnerability Monitoring and Scanning)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from typing import Any
 
-logger = logging.getLogger("icdev.ato_compliance.dashboard")
+logger = get_logger("icdev.ato_compliance.dashboard")
 
 # RMF step order per NIST SP 800-37 Rev 2
 RMF_STAGES = [

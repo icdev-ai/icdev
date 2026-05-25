@@ -11,12 +11,13 @@ Usage:
     picture = get_commander_picture()
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.commander_dashboard")
+logger = get_logger("icdev.strategos.commander_dashboard")
 
 
 def _now_utc() -> str:

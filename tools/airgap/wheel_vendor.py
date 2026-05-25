@@ -20,6 +20,7 @@ Usage::
     python tools/airgap/wheel_vendor.py --list
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -32,7 +33,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.airgap.wheel_vendor")
+logger = get_logger("icdev.airgap.wheel_vendor")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 WHEELS_DIR = BASE_DIR / "vendor" / "wheels"

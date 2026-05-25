@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Flask Blueprint for multi-stream parallel chat API (Phase 44 — D257-D260).
 
@@ -524,7 +526,7 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
     import uuid
     from datetime import datetime, timezone
     from tools.db.storage import get_connection as _gc
-    _log = logging.getLogger("icdev.chat")
+    _log = get_logger("icdev.chat")
     seeded = []
     canvas_seeds = use_case.get("canvas_seeds") or []
     if not canvas_seeds:

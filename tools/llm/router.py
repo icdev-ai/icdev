@@ -7,6 +7,7 @@ and caches results.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import copy
 import json
@@ -32,7 +33,7 @@ except ImportError:
     LLMResponseCache = None
     canonical_key = None
 
-logger = logging.getLogger("icdev.llm.router")
+logger = get_logger("icdev.llm.router")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
@@ -200,6 +201,7 @@ class LLMRouter:
                 len(self._config.get("models", {})),
                 len(self._config.get("routing", {})),
             )
+            self._register_discovered_models()
         except Exception as exc:
             logger.error("Failed to load LLM config: %s", exc)
             self._config = {}
@@ -2143,3 +2145,272 @@ class LLMRouter:
             if mid:
                 result[mid] = cfg.get("pricing", {})
         return result
+
+    # -------------------------------------------------------------------
+    # Task-category capability catalog (task_categories: in llm_config.yaml)
+    # -------------------------------------------------------------------
+
+    def get_models_for_category(self, category: str) -> List[str]:
+        """Return ordered list of logical model names for a task category.
+
+        Reads task_categories.<category>.preferred from llm_config.yaml and
+        filters to models that exist in the models: registry (including any
+        auto-discovered ones). Returns [] if category is unknown.
+
+        Args:
+            category: One of 'coding', 'reasoning', 'writing', 'vision',
+                      'summarization', 'long_context', 'structured_output', 'agentic'.
+        """
+        cats = self._config.get("task_categories", {})
+        preferred = cats.get(category, {}).get("preferred", [])
+        known = set(self._config.get("models", {}).keys())
+        return [m for m in preferred if m in known]
+
+    # -------------------------------------------------------------------
+    # CoT/CoD role routing — public, chain-aware, with fallback + RL
+    # -------------------------------------------------------------------
+
+    def invoke_for_role(
+        self,
+        role_key: str,
+        function: str,
+        request: "LLMRequest",
+    ) -> "LLMResponse":
+        """Invoke an LLM for a CoT/CoD role via the full fallback chain.
+
+        Unlike _invoke_model_direct(), this method:
+        - Checks availability cache per model before attempting
+        - Applies RL reranking to the chain
+        - Walks the entire fallback chain before giving up
+        - Records outcomes for RL learning
+        - Logs telemetry under the originating function name
+        - Raises LLMUnavailableError (not returns None) on total failure
+
+        Args:
+            role_key: Routing chain key from llm_config.yaml routing: section,
+                      e.g. 'cot_reasoner', 'cot_critic', 'cod_judge'.
+            function: ICDEV™ function name, used for telemetry grouping.
+            request:  LLMRequest to invoke.
+        """
+        chain = self._get_chain_for_function(role_key)
+        if not chain:
+            raise LLMUnavailableError(
+                f"No routing chain defined for role '{role_key}'. "
+                f"Add '{role_key}:' under routing: in llm_config.yaml.",
+                function=role_key,
+                chain=[],
+            )
+
+        try:
+            chain = self._get_rl_router().rank_models(role_key, chain)
+        except Exception:
+            pass  # RL ranking is best-effort
+
+        last_error: Optional[Exception] = None
+
+        for model_name in chain:
+            model_cfg = self._get_model_config(model_name)
+            if not model_cfg:
+                continue
+            if not self._check_model_available(model_name):
+                continue
+            provider_name = model_cfg.get("provider", "")
+            provider = self._get_provider(provider_name)
+            if provider is None:
+                continue
+            model_id = model_cfg.get("model_id", "")
+            try:
+                _start = time.time()
+                response = provider.invoke(request, model_id, model_cfg)
+                _latency = int((time.time() - _start) * 1000)
+                try:
+                    self._get_rl_router().record_outcome(role_key, model_name, success=True, latency_ms=_latency)
+                except Exception:
+                    pass
+                try:
+                    self._log_telemetry(function, request, response, model_id, provider_name, _latency)
+                except Exception:
+                    pass
+                return response
+            except Exception as exc:
+                logger.warning(
+                    "invoke_for_role: %s via %s/%s failed for %s: %s — trying next",
+                    role_key, provider_name, model_id, function, exc,
+                )
+                self._availability_cache[model_name] = False
+                try:
+                    self._get_rl_router().record_outcome(role_key, model_name, success=False)
+                except Exception:
+                    pass
+                last_error = exc
+                continue
+
+        raise LLMUnavailableError(
+            f"All models in role chain '{role_key}' failed for function '{function}'. "
+            f"Last error: {last_error}",
+            function=function,
+            chain=chain,
+        )
+
+    def get_diverse_models(self, role_key: str, count: int) -> List[str]:
+        """Return up to `count` distinct available models, maximizing provider diversity.
+
+        Used by ChainOrchestrator to assign one unique model per CoD debater slot
+        so debates involve genuinely different model perspectives.
+
+        First pass: picks models from distinct provider families (ollama, anthropic,
+        openai, google, etc.). Second pass: fills remaining slots with any remaining
+        available model not already selected. Falls back gracefully when fewer models
+        are available than requested.
+
+        Args:
+            role_key: Routing chain key (e.g. 'cod_debater_pool').
+            count:    Number of distinct models to return (one per debater slot).
+
+        Returns:
+            List of logical model names, len <= count. Empty if chain is undefined.
+        """
+        chain = self._get_chain_for_function(role_key)
+        if not chain:
+            return []
+        try:
+            chain = self._get_rl_router().rank_models(role_key, chain)
+        except Exception:
+            pass
+
+        selected: List[str] = []
+        used_providers: set = set()
+
+        # First pass: one model per provider family
+        for model_name in chain:
+            if len(selected) >= count:
+                break
+            model_cfg = self._get_model_config(model_name)
+            if not model_cfg:
+                continue
+            if not self._check_model_available(model_name):
+                continue
+            provider = model_cfg.get("provider", "unknown")
+            if provider not in used_providers:
+                selected.append(model_name)
+                used_providers.add(provider)
+
+        # Second pass: fill remaining slots with any available model not yet chosen
+        if len(selected) < count:
+            for model_name in chain:
+                if len(selected) >= count:
+                    break
+                if model_name not in selected:
+                    model_cfg = self._get_model_config(model_name)
+                    if model_cfg and self._check_model_available(model_name):
+                        selected.append(model_name)
+
+        return selected
+
+    # -------------------------------------------------------------------
+    # Ollama model auto-discovery (startup + periodic refresh)
+    # -------------------------------------------------------------------
+
+    def discover_ollama_models(self, force_refresh: bool = False) -> List[str]:
+        """Query Ollama /api/tags and return model names not in models: registry.
+
+        Probes each provider in settings.ollama_discovery.probe_providers.
+        Results are cached for refresh_interval_seconds. Returns raw Ollama
+        model names (e.g. 'phi4-mini:latest') so the caller can register them.
+
+        This is read-only — it does NOT modify llm_config.yaml.
+
+        Args:
+            force_refresh: If True, bypass the process-level cache.
+
+        Returns:
+            List of raw model names found in Ollama but absent from models: registry.
+        """
+        disc_cfg = self._config.get("settings", {}).get("ollama_discovery", {})
+        if not disc_cfg.get("enabled", True):
+            return []
+
+        now = time.time()
+        refresh_interval = float(disc_cfg.get("refresh_interval_seconds", 3600))
+        cached = getattr(self, "_ollama_discovery_cache", None)
+        cached_time = getattr(self, "_ollama_discovery_cache_time", 0.0)
+        if not force_refresh and cached is not None and (now - cached_time) < refresh_interval:
+            return cached
+
+        known_base_names: set = {
+            cfg.get("model_id", "").lower().split(":")[0]
+            for cfg in self._config.get("models", {}).values()
+            if cfg.get("provider", "").startswith("ollama") or cfg.get("provider", "") == "ollama"
+        }
+
+        probe_providers = disc_cfg.get("probe_providers", ["ollama"])
+        new_models: List[str] = []
+
+        for pname in probe_providers:
+            pcfg = self._config.get("providers", {}).get(pname, {})
+            raw_url = pcfg.get("base_url", "http://localhost:11434")
+            base_url = _expand_env(raw_url).rstrip("/")
+            try:
+                import urllib.request as _urllib_req
+                import json as _json
+                req = _urllib_req.Request(f"{base_url}/api/tags", method="GET")
+                api_key_env = pcfg.get("api_key_env", "")
+                if api_key_env:
+                    ak = os.getenv(api_key_env, "")
+                    if ak:
+                        req.add_header("Authorization", f"Bearer {ak}")
+                with _urllib_req.urlopen(req, timeout=5) as resp:
+                    data = _json.loads(resp.read())
+                for model in data.get("models", []):
+                    raw_name = model.get("name", "").lower().strip()
+                    base_name = raw_name.split(":")[0]
+                    if base_name not in known_base_names and raw_name not in new_models:
+                        new_models.append(raw_name)
+            except Exception as exc:
+                logger.debug("Ollama discovery probe failed for %s at %s: %s", pname, base_url, exc)
+
+        setattr(self, "_ollama_discovery_cache", new_models)
+        setattr(self, "_ollama_discovery_cache_time", now)
+
+        if new_models:
+            logger.info("Ollama discovery: %d new model(s) found: %s", len(new_models), new_models)
+        return new_models
+
+    def _register_discovered_models(self) -> None:
+        """Register newly discovered Ollama models in the in-memory config.
+
+        Called once at the end of _load_config(). Queries /api/tags, finds
+        models not in the models: registry, and adds synthetic entries with
+        default capabilities. In-memory only — does not write llm_config.yaml.
+        """
+        disc_cfg = self._config.get("settings", {}).get("ollama_discovery", {})
+        if not disc_cfg.get("enabled", True):
+            return
+
+        default_caps = disc_cfg.get("default_capabilities", ["summarization", "writing"])
+        try:
+            new_names = self.discover_ollama_models(force_refresh=True)
+        except Exception as exc:
+            logger.debug("Ollama model registration skipped: %s", exc)
+            return
+
+        for raw_name in new_names:
+            # Derive a safe logical name from the raw model name
+            logical = raw_name.replace(":", "-").replace("/", "-").replace(".", "-")
+            if logical in self._config.get("models", {}):
+                continue
+            self._config.setdefault("models", {})[logical] = {
+                "provider": "ollama",
+                "model_id": raw_name,
+                "max_output_tokens": 4096,
+                "supports_thinking": False,
+                "supports_tools": False,
+                "supports_structured_output": False,
+                "_auto_discovered": True,
+                "_default_capabilities": default_caps,
+                "pricing": {"input_per_1k": 0.0, "output_per_1k": 0.0},
+            }
+            logger.info(
+                "Auto-registered Ollama model: %s → logical '%s' (caps: %s)",
+                raw_name, logical, default_caps,
+            )

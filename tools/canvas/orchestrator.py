@@ -7,6 +7,7 @@ canvas linking/unlinking, compliance aggregation, and readiness scoring.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -18,7 +19,7 @@ from typing import Any
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("icdev.canvas.orchestrator")
+logger = get_logger("icdev.canvas.orchestrator")
 
 # ---------------------------------------------------------------------------
 # Constants

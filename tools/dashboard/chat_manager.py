@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Multi-stream parallel chat manager (Phase 44 — D257-D260, D265-D267).
 
@@ -39,7 +41,7 @@ from typing import Dict, List, Optional
 
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
-logger = logging.getLogger("icdev.chat_manager")
+logger = get_logger("icdev.chat_manager")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

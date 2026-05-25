@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Resolve classification marking for a project.
 
@@ -40,7 +42,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.compliance.resolve_marking")
+logger = get_logger("icdev.compliance.resolve_marking")
 
 DEFAULT_DB = BASE_DIR / "data" / "icdev.db"
 

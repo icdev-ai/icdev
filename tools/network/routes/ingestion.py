@@ -8,6 +8,7 @@ Registered on the NDC Flask blueprint via ``register_ingestion_routes(bp)``.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from tools.db.storage import get_connection
@@ -15,7 +16,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-logger = logging.getLogger("icdev.network.routes.ingestion")
+logger = get_logger("icdev.network.routes.ingestion")
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 _UPLOAD_DIR = _ICDEV_ROOT / "data" / "ndc_uploads"

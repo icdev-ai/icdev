@@ -17,6 +17,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import abc
 import logging
@@ -33,7 +34,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("saas.rate_limiter")
+logger = get_logger("saas.rate_limiter")
 
 # ---------------------------------------------------------------------------
 # Tier rate limits (requests per window)

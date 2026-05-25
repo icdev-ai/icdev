@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """CLAUDE.md section indexer for semantic layer MCP tools (Phase 44 — D277).
 
@@ -21,7 +23,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
-logger = logging.getLogger("icdev.context_indexer")
+logger = get_logger("icdev.context_indexer")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CLAUDE_MD = BASE_DIR / "CLAUDE.md"

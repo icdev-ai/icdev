@@ -26,6 +26,7 @@ Usage:
     print(snap["dti_score"])
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -34,7 +35,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.dat")
+logger = get_logger("icdev.strategos.dat")
 
 REFRESH_HOURS = 6  # target cadence
 CABLE_WEIGHT = 0.40

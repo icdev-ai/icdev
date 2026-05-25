@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """SoapBaseConnector — base class for SOAP/WSDL web services (D-CF-SOAP-1).
 
@@ -20,7 +22,7 @@ from tools.databridge.connector import (
     SchemaField,
 )
 
-logger = logging.getLogger("databridge.connectors.soap_base")
+logger = get_logger("databridge.connectors.soap_base")
 
 try:
     import zeep

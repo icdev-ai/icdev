@@ -345,6 +345,45 @@ models:
     pricing: { input_per_1k: 0.0001, output_per_1k: 0.0003 }
 
 # -----------------------------------------------------------------------
+# Task Category Capability Matrix
+# -----------------------------------------------------------------------
+# Maps task categories to preferred models in priority order.
+# Used by LLMRouter.get_models_for_category() and CoT/CoD role selection.
+# Add new Ollama models to the appropriate categories when you pull them.
+task_categories:
+  coding:
+    preferred: [qwen3-local, codestral-local, claude-sonnet, gpt-4o, llama-local]
+    description: "Code generation, debugging, refactoring"
+
+  reasoning:
+    preferred: [deepseek-local, qwen3-local, claude-opus, o3, llama-local]
+    description: "Multi-step reasoning, chain-of-thought, proofs"
+
+  writing:
+    preferred: [llama-local, claude-sonnet, kimi-cloud, gemini-2.5-pro]
+    description: "Long-form prose, narrative, documentation"
+
+  vision:
+    preferred: [gemma3-local, gemma4-local, llava-local, claude-sonnet, gpt-4o]
+    description: "Image analysis, screenshots, UI understanding"
+
+  summarization:
+    preferred: [qwen3-local, claude-haiku, gpt-4o-mini, llama-local]
+    description: "Document condensation, distillation"
+
+  long_context:
+    preferred: [kimi-cloud, claude-opus, gemini-2.5-pro, gpt-oss-cloud]
+    description: "Tasks requiring 32K+ context window"
+
+  structured_output:
+    preferred: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-pro]
+    description: "JSON schema adherence, structured extraction"
+
+  agentic:
+    preferred: [qwen3-local, claude-sonnet, gpt-4o, llama-local]
+    description: "Tool use, multi-step planning, function calling"
+
+# -----------------------------------------------------------------------
 # Function -> Model Routing
 # -----------------------------------------------------------------------
 # Maps each ICDEV™ function to a model with fallback chain.
@@ -593,6 +632,39 @@ routing:
     effort: low
     disable_thinking: true
 
+  # -----------------------------------------------------------------------
+  # Chain-of-Thought role chains
+  # Each CoT role uses a different preferred model family for true multi-LLM reasoning.
+  # - cot_reasoner: thinking/reasoning-capable models first
+  # - cot_critic:   cloud review models first (different perspective from reasoner)
+  # - cot_synthesizer: best synthesis models first
+  # -----------------------------------------------------------------------
+  cot_reasoner:
+    chain: [deepseek-local, qwen3-local, claude-opus, o3, llama-local]
+    effort: high
+
+  cot_critic:
+    chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro, llama-local]
+    effort: high
+
+  cot_synthesizer:
+    chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: high
+
+  # -----------------------------------------------------------------------
+  # Chain-of-Debate role chains
+  # cod_debater_pool: large diverse pool — get_diverse_models() picks N
+  #   distinct models maximizing provider variety (ollama, anthropic, openai, google)
+  # cod_judge: best available model for final synthesis / verdict
+  # -----------------------------------------------------------------------
+  cod_debater_pool:
+    chain: [qwen3-local, llama-local, deepseek-local, claude-haiku, claude-sonnet, gpt-4o, gpt-4o-mini, gemini-2.5-flash, kimi-cloud]
+    effort: medium
+
+  cod_judge:
+    chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro]
+    effort: high
+
   default:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
@@ -679,6 +751,13 @@ settings:
   max_retry_delay_seconds: 30.0
   availability_cache_ttl_seconds: 1800
   prefer_local: false    # Two-tier handles local/cloud split — do not set true (blocks Claude tier2)
+  # Ollama auto-discovery: on startup, probes /api/tags and registers new models in-memory
+  # so they are immediately usable. Does NOT write to this file. Curate capabilities by hand.
+  ollama_discovery:
+    enabled: true
+    probe_providers: [ollama, ollama_cloud]
+    default_capabilities: [summarization, writing]
+    refresh_interval_seconds: 3600
 
 # -----------------------------------------------------------------------
 # Two-Tier Routing (qwen3 worker → Claude planner/reviewer)
@@ -870,6 +949,12 @@ chain_orchestration:
     enabled: true
     max_rounds: 3
     self_consistency_runs: 1
+    # Role routing keys — each role uses a distinct preferred model family for true multi-LLM CoT.
+    # Takes precedence over *_model keys below. Set to null in per_function to use *_model fallback.
+    reasoner_role: cot_reasoner       # deepseek-local → qwen3-local → cloud (thinking-focused)
+    critic_role: cot_critic           # claude-sonnet → qwen3-local → cloud (review-focused)
+    synthesizer_role: cot_synthesizer # claude-sonnet → qwen3-local → cloud (synthesis-focused)
+    # Legacy direct model names — used as fallback when *_role resolves to nothing
     reasoner_model: qwen3-local
     critic_model: claude-sonnet
     synthesizer_model: claude-sonnet
@@ -885,6 +970,10 @@ chain_orchestration:
       news_reasoning:
         max_rounds: 2
         self_consistency_runs: 1
+        # Override to local-only by nulling roles and setting direct model names
+        reasoner_role: null
+        critic_role: null
+        synthesizer_role: null
         reasoner_model: qwen3-local
         critic_model: qwen3-local
         synthesizer_model: qwen3-local
@@ -892,6 +981,10 @@ chain_orchestration:
     enabled: true
     num_debaters: 3
     debate_rounds: 2
+    # Role routing keys for true multi-LLM debate.
+    judge_role: cod_judge             # claude-sonnet → qwen3-local → cloud (best judgment)
+    debater_pool_role: cod_debater_pool  # get_diverse_models() picks N distinct models
+    # Legacy direct model names — used as fallback when pool returns nothing
     judge_model: claude-sonnet
     debater_models:
       - qwen3-local
@@ -906,7 +999,10 @@ chain_orchestration:
       intaas_multiperspectivity:
         num_debaters: 3
         debate_rounds: 2
+        judge_role: cod_judge
         judge_model: claude-sonnet
+        # Override to local-only debaters by nulling pool role and using legacy list
+        debater_pool_role: null
         debater_models:
           - qwen3-local
           - qwen3-local

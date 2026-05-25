@@ -15,6 +15,7 @@ Usage:
   python tools/migration_canvas/cam_seed_demo.py --project analytics-k8s-aws
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -25,7 +26,7 @@ from pathlib import Path
 
 import yaml
 
-logger = logging.getLogger("icdev.cam_seed_demo")
+logger = get_logger("icdev.cam_seed_demo")
 
 _PROJECTS_DIR = Path(__file__).resolve().parent.parent.parent / "context" / "migration" / "projects"
 

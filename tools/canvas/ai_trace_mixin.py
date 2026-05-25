@@ -37,13 +37,14 @@ decision_type values: compliance_finding, threat_assessment, remediation,
                       chain_of_thought, chain_of_debate
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
 import uuid
 from typing import Any, List, Optional
 
-logger = logging.getLogger("icdev.canvas.ai_trace")
+logger = get_logger("icdev.canvas.ai_trace")
 
 # Lazy singleton — resolved once per process
 _tracer = None

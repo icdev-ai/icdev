@@ -1,12 +1,13 @@
 # CUI // SP-CTI
 """Ticket adapter — routes to Jira / ServiceNow / GitHub Issues strategy."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 
 from tools.workflow_hitl.adapters.base import ExternalStepAdapter
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TicketAdapter(ExternalStepAdapter):

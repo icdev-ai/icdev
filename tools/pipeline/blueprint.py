@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Pipeline Design Canvas — Flask Blueprint integration.
 
@@ -29,7 +31,7 @@ from flask import (
     g,
 )
 
-logger = logging.getLogger("icdev.pipeline")
+logger = get_logger("icdev.pipeline")
 
 _PIPELINE_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _PIPELINE_DIR.parent.parent

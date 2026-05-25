@@ -8,12 +8,13 @@ nc_intent_validations, nc_versions, topologies.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
 import os
 
-logger = logging.getLogger("icdev.network.routes.analysis")
+logger = get_logger("icdev.network.routes.analysis")
 
 
 def register_analysis_routes(bp, get_conn=None, helpers=None):

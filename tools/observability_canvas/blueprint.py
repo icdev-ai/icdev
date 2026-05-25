@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV Observability Design Canvas — Flask Blueprint integration.
 
@@ -29,7 +31,7 @@ from flask import (
     session,
 )
 
-logger = logging.getLogger("icdev.observability_canvas")
+logger = get_logger("icdev.observability_canvas")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _OC_DIR = Path(__file__).resolve().parent

@@ -9,6 +9,13 @@ Rows are NOT append-only (they are updated when processed).
 Safe to re-run: uses CREATE TABLE IF NOT EXISTS.
 """
 
+import sys
+from pathlib import Path
+
+_BASE = Path(__file__).resolve().parent.parent.parent.parent
+if str(_BASE) not in sys.path:
+    sys.path.insert(0, str(_BASE))
+
 MIGRATION_ID = "024"
 MIGRATION_NAME = "telegram_inbox"
 DESCRIPTION = "Create telegram_inbox table for durable Telegram message receipt and replay"

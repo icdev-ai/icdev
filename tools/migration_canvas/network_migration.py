@@ -12,6 +12,7 @@ All hardware specs are read from the DB — nothing is hardcoded here.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -21,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.migration_canvas.network_migration")
+logger = get_logger("icdev.migration_canvas.network_migration")
 
 try:
     from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision

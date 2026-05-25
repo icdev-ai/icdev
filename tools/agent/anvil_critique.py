@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ANVIL Critique Phase — Adversarial Plan Review (Phase 61, Feature 3).
 
@@ -41,7 +43,7 @@ from tools.compat.datetime_utils import utc_now_iso  # noqa: E402
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "anvil_critique_config.yaml"
 
-logger = logging.getLogger("icdev.anvil_critique")
+logger = get_logger("icdev.anvil_critique")
 
 # Valid finding types (must match DB CHECK constraint)
 FINDING_TYPES = (

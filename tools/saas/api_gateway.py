@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -54,7 +56,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
-logger = logging.getLogger("saas.gateway")
+logger = get_logger("saas.gateway")
 
 # ---------------------------------------------------------------------------
 # Constants

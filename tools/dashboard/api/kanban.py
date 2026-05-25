@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
@@ -1400,6 +1401,18 @@ def remove_task_tag(task_id, tag_id):
 
 # ── Executor chain toggle ───────────────────────────────────────────────
 
+def _read_env_file(key: str) -> str | None:
+    """Read a key from the .env file, or None if absent."""
+    env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+    if not env_path.exists():
+        return None
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith(f"{key}="):
+            return stripped[len(key) + 1 :]
+    return None
+
+
 def _update_env_file(key: str, value: str) -> None:
     """Update or append a key in the .env file."""
     env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
@@ -1422,6 +1435,8 @@ def executor_chain_setting():
     """Read or update the global ICDEV_KANBAN_EXECUTOR_CHAIN env override."""
     if request.method == "GET":
         chain = os.environ.get("ICDEV_KANBAN_EXECUTOR_CHAIN", "")
+        if not chain:
+            chain = _read_env_file("ICDEV_KANBAN_EXECUTOR_CHAIN") or ""
         if not chain:
             return jsonify({"chain": None, "message": "Using fallback from args/strategos_config.yaml"})
         return jsonify({"chain": [x.strip() for x in chain.split(",") if x.strip()]})

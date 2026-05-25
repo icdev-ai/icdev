@@ -18,6 +18,7 @@ Public API::
     get_past_context(ticker, n_same, n_cross) -> str # prompt-ready context string
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
@@ -26,7 +27,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _LOG_PATH = Path(__file__).parent.parent.parent / "data" / "fathomdesk_decisions.md"
 _PENDING = "pending"

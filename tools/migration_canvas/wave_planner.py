@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Wave Planner — server migration wave grouping and dependency visualization.
 
@@ -12,7 +14,7 @@ from datetime import datetime, timezone
 
 import logging
 
-logger = logging.getLogger("icdev.wave_planner")
+logger = get_logger("icdev.wave_planner")
 
 WAVE_STATUSES = ("planned", "in_progress", "complete", "blocked")
 DEP_TYPES = ("network", "application", "database", "auth", "storage")

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Chain Anchor Service — periodically anchors Merkle roots to Hyperledger Fabric.
 
@@ -27,7 +29,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("blockchain.chain_anchor")
+logger = get_logger("blockchain.chain_anchor")
 
 # Optional imports (graceful degradation)
 try:

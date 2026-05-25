@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Command Router — Parse, validate, and dispatch ICDEV™ commands.
 
@@ -31,7 +33,7 @@ from tools.gateway.response_filter import (  # noqa: E402
     format_response,
 )
 
-logger = logging.getLogger("icdev.gateway.command_router")
+logger = get_logger("icdev.gateway.command_router")
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 

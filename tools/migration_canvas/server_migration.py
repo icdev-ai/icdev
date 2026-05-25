@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Server Migration Canvas engine.
 
@@ -17,7 +19,7 @@ import uuid
 from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
 
-logger = logging.getLogger("icdev.server_migration")
+logger = get_logger("icdev.server_migration")
 
 
 def _mc_conn():

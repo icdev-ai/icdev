@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 """Row-Level Security (RLS) for ICDEV™.
 
 Dual-backend:
@@ -24,7 +26,7 @@ import logging
 import re
 from typing import Any, Optional, Set, Tuple
 
-logger = logging.getLogger("security.rls")
+logger = get_logger("security.rls")
 
 # ---------------------------------------------------------------------------
 # SQLite predicate injection (regex-based)

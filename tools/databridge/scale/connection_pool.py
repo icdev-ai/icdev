@@ -6,6 +6,7 @@ Prevents one noisy connector type from starving others.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
@@ -17,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 from tools.databridge.connector import DataConnector
 
-logger = logging.getLogger("databridge.scale.connection_pool")
+logger = get_logger("databridge.scale.connection_pool")
 
 
 @dataclass

@@ -27,6 +27,7 @@ CLI:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -50,7 +51,7 @@ from tools.db.storage import get_connection  # noqa: E402, F401
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-logger = logging.getLogger("icdev.capture_ai_blueprint")
+logger = get_logger("icdev.capture_ai_blueprint")
 
 BLUEPRINT_DIR = _ROOT / "data" / "proposal_genesis" / "blueprints"
 

@@ -6,10 +6,11 @@ pipeline health, deployment queue, and CI/CD status.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 
-logger = logging.getLogger("icdev.mission_canvas.cicd_bridge")
+logger = get_logger("icdev.mission_canvas.cicd_bridge")
 
 
 def get_cicd_status(mission_id: str) -> dict:

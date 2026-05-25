@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 """Field-Level Security for ICDEV™ API responses.
 
 Recursively strips or redacts fields in dicts/lists based on policies from
@@ -23,7 +25,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger("security.field")
+logger = get_logger("security.field")
 
 # Audit logging — disabled by default. Enable: ICDEV_AUDIT_FIELD=1
 # Or in tests: import tools.security.field_security as fs; fs.AUDIT_FIELD = True

@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """LLM-powered natural language → twin delta converter for all 5 design canvases."""
 
@@ -5,7 +7,7 @@ import json
 import logging
 from typing import Optional
 
-logger = logging.getLogger("icdev.twin_chat")
+logger = get_logger("icdev.twin_chat")
 
 _NETWORK_SYSTEM = """You are a network topology change analyst for a classified government network.
 The user will describe a proposed change in plain English. Convert it to a JSON topology delta.

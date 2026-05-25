@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -50,7 +52,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.mbse.diagram_extractor")
+logger = get_logger("icdev.mbse.diagram_extractor")
 
 # ---------------------------------------------------------------------------
 # Graceful imports — optional dependencies

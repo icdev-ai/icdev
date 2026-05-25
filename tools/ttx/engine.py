@@ -2,6 +2,7 @@
 """TTX Engine — main orchestrator for tabletop exercise sessions."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -21,7 +22,7 @@ from .persona_generator import generate_persona
 from .leaderboard import compute_leaderboard, get_leaderboard, award_ribbons
 from .aar_generator import generate_aar
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class TTXEngine:

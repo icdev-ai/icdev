@@ -20,13 +20,14 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 
 from tools.fathomdesk.llm_factory import get_llm
 from tools.llm.provider import LLMRequest
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SYSTEM_PROMPT = (
     "You are a senior portfolio strategist. Given analyst reports from four lenses "

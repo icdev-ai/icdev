@@ -17,6 +17,7 @@ FORGE-compliant: LLM calls go through tools/llm/router.py.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -61,7 +62,7 @@ from tools.pulse.db import (
 )
 from tools.pulse.writeguard import run_full_quality_check, rewrite_content
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------

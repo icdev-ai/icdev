@@ -12,6 +12,7 @@ the dev team wires the tools. FORGE OPS RUNTIME (Track C) builds the runtime.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -21,7 +22,7 @@ from typing import Any
 
 import yaml
 
-_log = logging.getLogger(__name__)
+_log = get_logger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _NODE_MAP_PATH = _PROJECT_ROOT / "args" / "aadc_node_tool_map.yaml"

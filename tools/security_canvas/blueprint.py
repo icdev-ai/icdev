@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """ICDEV™ Security Design Canvas — Flask Blueprint integration.
 
@@ -30,7 +32,7 @@ from flask import (
     session,
 )
 
-logger = logging.getLogger("icdev.security_canvas")
+logger = get_logger("icdev.security_canvas")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _SC_DIR = Path(__file__).resolve().parent

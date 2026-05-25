@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [CUI // SP-CTI]
 """ICDEV™ Security Design Canvas — Collaborative Editing.
 
@@ -11,7 +13,7 @@ import threading
 import uuid as _uuid
 from datetime import datetime, timezone
 
-logger = logging.getLogger("icdev.security_canvas.collab")
+logger = get_logger("icdev.security_canvas.collab")
 
 # In-memory session store (single-process; for multi-process use Redis)
 _sessions = {}  # design_id -> CollabSession

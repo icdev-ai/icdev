@@ -6,6 +6,7 @@ and DuckDuckGo site-scoped search as fallback.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -25,7 +26,7 @@ def _is_air_gapped() -> bool:
     return os.environ.get("ICDEV_ENVIRONMENT", "").lower() == "air-gapped"
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants

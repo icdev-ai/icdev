@@ -21,6 +21,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -40,7 +41,7 @@ from tools.databridge.connector import (
     SchemaField,
 )
 
-logger = logging.getLogger("databridge.saas_base")
+logger = get_logger("databridge.saas_base")
 
 REQUEST_TIMEOUT = 30  # seconds
 USER_AGENT = "ICDEV-DataBridge/1.0"  # ASCII-safe for HTTP headers

@@ -7,11 +7,12 @@ Two-level cache cost model:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from typing import Any
 
-log = logging.getLogger("icdev.cache_savings.savings")
+log = get_logger("icdev.cache_savings.savings")
 
 # Anthropic claude-sonnet-4-6 pricing (USD / token)
 _IN  = 3.00 / 1_000_000      # $3.00/MTok

@@ -13,6 +13,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -22,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from tools.finetune.provider import FineTuneProvider, FineTuneRequest, FineTuneStatus
 
-logger = logging.getLogger("icdev.finetune.azure")
+logger = get_logger("icdev.finetune.azure")
 
 # Azure OpenAI status → ICDEV™ status mapping
 _STATUS_MAP = {

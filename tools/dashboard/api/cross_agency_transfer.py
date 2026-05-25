@@ -13,12 +13,13 @@ POST /transfers          — submit a transfer request; returns audit event IDs
 GET  /transfers/<id>     — query all audit events for a transfer_id
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 
 from flask import Blueprint, jsonify, request
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 cross_agency_transfer_api = Blueprint("cross_agency_transfer_api", __name__)
 

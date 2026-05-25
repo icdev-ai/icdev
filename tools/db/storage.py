@@ -45,6 +45,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import os
 import re
@@ -1073,7 +1074,7 @@ def get_connection(db_path: str = None) -> StorageConnection:
                 ) from exc
             import logging
 
-            logging.getLogger(__name__).warning(
+            get_logger(__name__).warning(
                 "PostgreSQL unavailable (%s), falling back to SQLite",
                 exc,
             )

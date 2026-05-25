@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI — ICDEV Pipeline SLA Handler
 # Classification: CUI — Controlled Unclassified Information
 """
@@ -9,7 +11,7 @@ import logging
 import time
 from contextlib import contextmanager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 IL5_PIPELINE_TIMEOUT_SECONDS = 30
 

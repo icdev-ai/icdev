@@ -7,6 +7,7 @@ session validation is handled by the ICDEV auth middleware registered on the
 parent Flask app.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import dataclasses
 import logging
@@ -27,7 +28,7 @@ from tools.workflow_hitl.engine import WorkflowEngine
 from tools.workflow_hitl import report_generator
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ── Feature-flag guard ────────────────────────────────────────────────────────
 

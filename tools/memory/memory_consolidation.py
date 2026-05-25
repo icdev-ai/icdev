@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """AI-driven memory consolidation (Phase 44 — D276).
 
@@ -22,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-logger = logging.getLogger("icdev.memory_consolidation")
+logger = get_logger("icdev.memory_consolidation")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

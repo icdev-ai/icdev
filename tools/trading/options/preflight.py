@@ -21,6 +21,7 @@ Gates loaded from `args/options_risk_gates.yaml`. Hot-reloadable.
 There are 6 gates total (Gate 0 through Gate 5).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import enum
 import logging
@@ -32,7 +33,7 @@ import yaml
 
 from tools.trading.options import strategies as _catalog
 
-_log = logging.getLogger(__name__)
+_log = get_logger(__name__)
 
 
 class GateResultCode(str, enum.Enum):

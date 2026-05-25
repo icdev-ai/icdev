@@ -16,7 +16,6 @@ execute without human approval. The daemon monitors subprocess completion.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import shutil
 import subprocess
@@ -867,6 +866,156 @@ def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[s
     return removed
 
 
+def _capture_diff_stats(task_id: str) -> dict:
+    """Return files_changed/lines_added/lines_removed for kanban/{task_id} vs main.
+
+    Parses the last line of `git diff --stat main..kanban/{task_id}` which is:
+      "N files changed, M insertions(+), L deletions(-)"
+    Returns zeros on any error (non-blocking, best-effort).
+    """
+    import subprocess as _sp
+    import re as _re
+
+    branch = f"kanban/{task_id}"
+    default = {"files_changed": 0, "lines_added": 0, "lines_removed": 0}
+    try:
+        result = _sp.run(
+            ["git", "diff", "--stat", f"{_default_branch()}..{branch}"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return default
+        summary = result.stdout.strip().splitlines()[-1]
+        fc = int((_re.search(r"(\d+) file", summary) or type("", (), {"group": lambda *_: "0"})()).group(1))
+        la = int((_re.search(r"(\d+) insertion", summary) or type("", (), {"group": lambda *_: "0"})()).group(1))
+        lr = int((_re.search(r"(\d+) deletion", summary) or type("", (), {"group": lambda *_: "0"})()).group(1))
+        return {"files_changed": fc, "lines_added": la, "lines_removed": lr}
+    except Exception:
+        return default
+
+
+def _post_merge_route_smoke(task_id: str, commit_summary: str) -> None:
+    """Smoke-test routes affected by this task immediately after merge.
+
+    Creates a Kanban bug task if any route returns a server error, so the
+    failure surfaces in the backlog rather than silently breaking the dashboard.
+    """
+    try:
+        from tools.testing.route_smoke import (
+            _routes_for_changed_files,
+            _server_up,
+            run_smoke,
+        )
+    except ImportError:
+        logger.debug("route_smoke not available — skipping post-merge smoke")
+        return
+
+    base = "http://localhost:5050"
+    if not _server_up(base, timeout=3.0):
+        logger.debug("Dashboard not running — post-merge smoke skipped for %s", task_id)
+        return
+
+    # Derive affected routes from the commit summary (filenames in short log)
+    changed_files: list[str] = []
+    for line in commit_summary.splitlines():
+        # git log --oneline lines don't contain filenames; use a best-effort
+        # parse of task_id path components as the canvas slug
+        pass
+
+    # Better: list files changed on the branch via git
+    try:
+        import subprocess as _sp3
+        _flist = _sp3.run(
+            ["git", "diff", "--name-only", "HEAD~1", "HEAD"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if _flist.returncode == 0:
+            changed_files = [f.strip() for f in _flist.stdout.splitlines() if f.strip()]
+    except Exception:
+        pass
+
+    routes = _routes_for_changed_files(changed_files) if changed_files else []
+    if not routes:
+        logger.debug("No affected routes detected for %s — smoke skipped", task_id)
+        return
+
+    logger.info(
+        "Post-merge smoke: %d routes for task %s (changed files: %s)",
+        len(routes), task_id, changed_files[:5],
+    )
+    passed, results = run_smoke(routes, base=base, timeout=10.0, verbose=False)
+
+    if passed:
+        logger.info("Post-merge smoke PASSED for task %s (%d routes)", task_id, len(routes))
+        return
+
+    # Smoke failed — log failures and create a bug task
+    failures = [r for r in results if not r["ok"]]
+    failure_lines = "\n".join(
+        f"  - {f['route']}: HTTP {f.get('status')} — {f.get('error')}"
+        for f in failures
+    )
+    logger.warning(
+        "Post-merge smoke FAILED for task %s: %d/%d routes broken\n%s",
+        task_id, len(failures), len(routes), failure_lines,
+    )
+
+    try:
+        from tools.logging.build_logger import capture_pytest
+        capture_pytest(
+            returncode=1,
+            stdout=f"Post-merge smoke failed for {task_id}:\n{failure_lines}",
+            stderr="",
+            duration_s=0,
+            passed=len(results) - len(failures),
+            failed=len(failures),
+            skipped=0,
+        )
+    except Exception as _log_exc:
+        logger.debug("build_logger capture failed: %s", _log_exc)
+
+    # Create a high-priority bug task so the failure enters the remediation queue
+    try:
+        import json as _json
+        import urllib.request as _ureq
+        desc = (
+            f"## Post-Merge Smoke Failure\n\n"
+            f"Task **{task_id}** was merged to main but the following routes are broken:\n\n"
+            f"{failure_lines}\n\n"
+            f"**Triggered by:** post-merge route smoke gate\n"
+            f"**Commit summary:**\n```\n{commit_summary[:500]}\n```\n\n"
+            f"**Changed files:** {', '.join(changed_files[:10])}\n\n"
+            f"Fix the routes listed above so they return HTTP 200 without server errors."
+        )
+        payload = _json.dumps({
+            "title": f"[SMOKE-FAIL] Post-merge: {len(failures)} route(s) broken — {task_id}",
+            "task_type": "bug",
+            "priority": "critical",
+            "status": "backlog",
+            "description": desc,
+        }).encode("utf-8")
+        req = _ureq.Request(
+            f"{base}/api/kanban/tasks",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with _ureq.urlopen(req, timeout=10) as resp:
+            body = _json.loads(resp.read())
+            logger.warning(
+                "Created smoke-fail bug task %s for post-merge failures of %s",
+                body.get("id"), task_id,
+            )
+    except Exception as exc:
+        logger.warning("Failed to create smoke-fail bug task for %s: %s", task_id, exc)
+
+
 def _cleanup_worktree(task_id: str):
     """Merge the kanban task branch to main (fast-forward) then remove
     the worktree. If merge fails, the branch is preserved for manual
@@ -894,7 +1043,46 @@ def _cleanup_worktree(task_id: str):
     except Exception as exc:
         logger.warning("Worktree remove failed for %s: %s", task_id, exc)
 
+    # Capture diff stats + branch name + commit summary before the branch is deleted
+    diff_stats = _capture_diff_stats(task_id)
+
+    # Commit summary (one line per commit on the branch)
+    _commit_summary = ""
+    try:
+        import subprocess as _sp2
+        _log = _sp2.run(
+            ["git", "log", "--oneline", f"{_default_branch()}..kanban/{task_id}"],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+        )
+        _commit_summary = _log.stdout.strip()[:1000] if _log.returncode == 0 else ""
+    except Exception:
+        pass
+
     merged_ok = _merge_worktree_to_main(task_id)
+
+    # Post-merge route smoke — catches runtime failures that static checks miss.
+    # Only runs when merge succeeded and the dashboard is up.
+    if merged_ok:
+        _post_merge_route_smoke(task_id, _commit_summary)
+
+    # Persist change metrics + branch info to kanban_tasks (best-effort)
+    try:
+        _ds_conn = get_connection()
+        _ds_conn.execute(
+            "UPDATE kanban_tasks SET "
+            "files_changed = ?, lines_added = ?, lines_removed = ?, "
+            "branch_name = ?, commit_summary = ? "
+            "WHERE id = ?",
+            (
+                diff_stats["files_changed"], diff_stats["lines_added"], diff_stats["lines_removed"],
+                f"kanban/{task_id}", _commit_summary or None,
+                task_id,
+            ),
+        )
+        _ds_conn.commit()
+        _ds_conn.close()
+    except Exception as _ds_exc:
+        logger.warning("diff_stats write failed for %s: %s", task_id, _ds_exc)
 
     try:
         # Only delete the branch if merge succeeded; otherwise PRESERVE
@@ -1244,16 +1432,29 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
                 f"Parent: {task.get('title', '')}"
             )
             now = _utcnow_iso()
+            # Capture active span so each decomposed task carries a trace link
+            _decomp_trace_id: str | None = None
+            _decomp_span_id: str | None = None
+            try:
+                from tools.observability import get_tracer as _get_tracer  # noqa: PLC0415
+                _sp = _get_tracer().get_active_span()
+                if _sp:
+                    _decomp_trace_id = getattr(_sp, "trace_id", None)
+                    _decomp_span_id = getattr(_sp, "span_id", None)
+            except Exception:
+                pass
             try:
                 conn.execute(
                     "INSERT INTO kanban_tasks "
                     "(id, title, description, task_type, priority, status, "
-                    " executor_type, source_prediction_id, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " executor_type, source_prediction_id, created_at, updated_at, "
+                    " trace_id, span_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         child_id, child_title, child_desc, parent_type,
                         parent_priority, "backlog", "claude_cli",
                         source_pred, now, now,
+                        _decomp_trace_id, _decomp_span_id,
                     ),
                 )
                 child_task = {
@@ -1344,6 +1545,17 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
         # Decompose into 5 sub-tasks
         prev_dep = task.get("depends_on_task_id")
         now = _utcnow_iso()
+        # Capture active span for phase-gate sub-tasks
+        _gate_trace_id: str | None = None
+        _gate_span_id: str | None = None
+        try:
+            from tools.observability import get_tracer as _gt  # noqa: PLC0415
+            _gsp = _gt().get_active_span()
+            if _gsp:
+                _gate_trace_id = getattr(_gsp, "trace_id", None)
+                _gate_span_id = getattr(_gsp, "span_id", None)
+        except Exception:
+            pass
         created = 0
         for idx, (slug, label, desc) in enumerate(_PHASE_GATE_STEPS, start=1):
             child_id = f"{task_id}-{idx}-{slug}"
@@ -1353,14 +1565,16 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
                     "INSERT INTO kanban_tasks "
                     "(id, title, description, task_type, priority, status, "
                     " scheduled_at, created_at, updated_at, "
-                    " executor_type, depends_on_task_id, dispatch_source, failure_count) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " executor_type, depends_on_task_id, dispatch_source, failure_count, "
+                    " trace_id, span_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         child_id, child_title, desc,
                         task.get("task_type") or "test",
                         task.get("priority") or "high",
                         "scheduled", now, now, now, "claude_cli",
                         prev_dep, "auto_decomp_phase_gate", 0,
+                        _gate_trace_id, _gate_span_id,
                     ),
                 )
                 created += 1
@@ -1577,6 +1791,45 @@ def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
     return True, None
 
 
+def _close_orphaned_rca_children(parent_task_id: str, actor: str = "scheduler") -> None:
+    """When a task moves to 'done', cancel any open diag-/RCA children that
+    the self_debug reflex created for it. These tasks become moot once the
+    parent is resolved and must not linger in 'suggested'/'backlog' forever.
+
+    Matches tasks whose id starts with ``diag-<parent_task_id>`` or whose
+    title contains the parent task id and task_type is 'chore'/'research'
+    (the two types self_debug uses for RCA cards).
+    """
+    try:
+        conn = get_connection()
+        now = _utcnow_iso()
+        prefix = f"diag-{parent_task_id}"
+        open_statuses = ("suggested", "backlog", "scheduled", "in_progress")
+        placeholders = ",".join("?" * len(open_statuses))
+        rows = conn.execute(
+            f"SELECT id FROM kanban_tasks "  # nosec B608
+            f"WHERE (id LIKE ? OR (title LIKE ? AND task_type IN ('chore','research','fix'))) "
+            f"  AND status IN ({placeholders})",
+            (f"{prefix}%", f"%{parent_task_id}%", *open_statuses),
+        ).fetchall()
+        orphan_ids = [dict(r)["id"] for r in rows]
+        if orphan_ids:
+            ph = ",".join("?" * len(orphan_ids))
+            conn.execute(
+                f"UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=?, "  # nosec B608
+                f"last_failure_reason=? WHERE id IN ({ph})",
+                (now, now, f"auto-closed: parent {parent_task_id} resolved", *orphan_ids),
+            )
+            conn.commit()
+            logger.info(
+                "_close_orphaned_rca_children: closed %d orphan(s) of %s: %s",
+                len(orphan_ids), parent_task_id, orphan_ids,
+            )
+        conn.close()
+    except Exception as exc:
+        logger.warning("_close_orphaned_rca_children failed for %s: %s", parent_task_id, exc)
+
+
 def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") -> Optional[str]:
     """If the just-completed child had a decomposed parent whose remaining
     children are now all done, close the parent as well.
@@ -1741,7 +1994,7 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                 return
 
         # HITL gate: block in_progress→done when a HITL approval is pending
-        if new_status == "done" and os.getenv("ICDEV_HITL_KANBAN_GATE", "").lower() in ("true", "1"):
+        if new_status == "done" and __import__("os").getenv("ICDEV_HITL_KANBAN_GATE", "").lower() in ("true", "1"):
             try:
                 from tools.workflow_hitl.gate import HITLGate
                 pending = HITLGate().get_pending(task_id)
@@ -1849,6 +2102,14 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             _auto_close_decomposed_parent(task_id, actor=actor)
         except Exception as exc:
             logger.warning("auto-close check failed for %s: %s", task_id, exc)
+        # Orphan sweep: close any diag-/RCA tasks created by self_debug for
+        # this task that are still open. When a task is done its diagnostics
+        # are moot — leaving them in 'suggested' or 'backlog' pollutes the
+        # board indefinitely with no actionable work.
+        try:
+            _close_orphaned_rca_children(task_id, actor=actor)
+        except Exception as exc:
+            logger.warning("rca-orphan sweep failed for %s: %s", task_id, exc)
 
     # Broadcast SSE event for real-time dashboard updates
     try:
@@ -2252,6 +2513,39 @@ _ollama_running_count: int = 0
 # The reflex run() checks this to mark them done immediately rather than
 # routing through the in_progress polling loop.
 _ollama_completed: set = set()
+
+# D-AUTO-DEGRADE: Track executors that have hit rate/token limits.
+# When degraded, the scheduler skips them in the fallback chain.
+_degraded_executors: set = set()
+_degraded_executors_probed_at: Dict[str, datetime] = {}
+_DEGRADATION_PROBE_INTERVAL = timedelta(minutes=5)  # Default if no reset hint parsed
+
+
+def _build_effective_executor_chain(original_chain: list) -> list:
+    """Return executor chain with degraded executors moved to the end (or removed).
+
+    If all executors are degraded, returns the original chain anyway so the
+    scheduler can attempt them as a last resort.
+    """
+    degraded = [tier for tier in original_chain if tier in _degraded_executors]
+    active = [tier for tier in original_chain if tier not in _degraded_executors]
+
+    # Check if any degraded executor is past its resume time
+    now = datetime.now(timezone.utc)
+    recovered = []
+    for tier in degraded:
+        resume_at = _degraded_executors_probed_at.get(tier)
+        if resume_at is not None and now >= resume_at:
+            recovered.append(tier)
+            _degraded_executors.discard(tier)
+            _degraded_executors_probed_at.pop(tier, None)
+            logger.info("kanban: executor %s recovered (resume_at passed)", tier)
+
+    active.extend(recovered)
+
+    if active:
+        return active
+    return original_chain
 
 
 class _LLMTaskHandle:
@@ -2803,6 +3097,20 @@ def _set_executor_type(task_id: str, executor_type: str) -> None:
         logger.debug("kanban: failed to set executor_type for %s: %s", task_id, exc)
 
 
+def _get_executor_type(task_id: str) -> str | None:
+    """Read executor_type from the task row."""
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT executor_type FROM kanban_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
 def _dispatch_to_claude(task: dict, prompt_path: str):
     """Dispatch a task to the appropriate executor.
 
@@ -2865,21 +3173,30 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     task_log = PROMPT_DIR / f"{task_id}.log"
 
     try:
-        import yaml as _yaml  # noqa: PLC0415
-        _cfg_path = BASE_DIR / "args" / "strategos_config.yaml"
-        with open(_cfg_path, encoding="utf-8") as _f:
-            _sc = _yaml.safe_load(_f) or {}
-        _fallback_chain = _sc.get("executor", {}).get(
-            "fallback_chain", ["claude_cli", "gitlab", "ollama_local"]
-        )
+        # Env-var override for quick mode switching (e.g. air-gap toggle).
+        _env_chain = os.environ.get("ICDEV_KANBAN_EXECUTOR_CHAIN", "")
+        if _env_chain:
+            _fallback_chain = [x.strip() for x in _env_chain.split(",") if x.strip()]
+        else:
+            import yaml as _yaml  # noqa: PLC0415
+            _cfg_path = BASE_DIR / "args" / "strategos_config.yaml"
+            with open(_cfg_path, encoding="utf-8") as _f:
+                _sc = _yaml.safe_load(_f) or {}
+            _fallback_chain = _sc.get("executor", {}).get(
+                "fallback_chain", ["claude_cli", "gitlab", "ollama_local"]
+            )
     except Exception:
         _fallback_chain = ["claude_cli", "gitlab", "ollama_local"]
 
     task_desc = task.get("description", task.get("title", ""))
     task_type = task.get("task_type", "chore")
 
+    # D-AUTO-DEGRADE: Build effective chain skipping degraded executors.
+    # If all executors are degraded, fall back to the full chain anyway.
+    effective_chain = _build_effective_executor_chain(_fallback_chain)
+
     dispatched = False
-    for tier in _fallback_chain:
+    for tier in effective_chain:
         if tier == "claude_cli":
             if _claude_code_available():
                 _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
@@ -3961,13 +4278,9 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             # group (...) instead of non-capturing (?:...), no \b word boundary.
             # Git's -E uses POSIX ERE which does not support \s or (?:...).
             _safe = re.escape(table_name).replace(r"\-", r"[-]")
-            # Accept both CREATE TABLE and ALTER TABLE ... RENAME TO as proof
-            # that the table is defined (rename-copy-drop migration pattern).
             pattern = (
-                rf"(CREATE[[:space:]]+TABLE[[:space:]]+"
+                rf"CREATE[[:space:]]+TABLE[[:space:]]+"
                 rf"(IF[[:space:]]+NOT[[:space:]]+EXISTS[[:space:]]+)?{_safe}"
-                rf"|ALTER[[:space:]]+TABLE[[:space:]]+[[:alnum:]_]+[[:space:]]+"
-                rf"RENAME[[:space:]]+TO[[:space:]]+{_safe})"
             )
             found = False
             try:
@@ -4001,9 +4314,7 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                 # engine differences). Reading files with Python is robust.
                 import re as _re
                 _py_pat = _re.compile(
-                    rf"(?:CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
-                    rf"|ALTER\s+TABLE\s+\w+\s+RENAME\s+TO\s+)"
-                    rf"{re.escape(table_name)}\b",
+                    rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{re.escape(table_name)}\b",
                     _re.IGNORECASE,
                 )
                 for _root in [
@@ -4313,6 +4624,7 @@ _dispatch_times: Dict[str, datetime] = {}
 _current_exec_tier: Optional[str] = None
 
 _SILENT_DISPATCH_THRESHOLD = 5 * 60  # 5 min — no log file content yet = never dispatched
+_ABSOLUTE_MAX_IN_PROGRESS_SECONDS = 24 * 60 * 60  # 24 h hard ceiling — force-reap even if in _running
 
 
 def _task_log_is_empty(tid: str) -> bool:
@@ -4322,6 +4634,55 @@ def _task_log_is_empty(tid: str) -> bool:
         return not log_path.exists() or log_path.stat().st_size == 0
     except Exception:
         return False
+
+
+_SUGGESTED_DECAY_HOURS = 48  # tasks soft-stuck in 'suggested' are re-queued after this
+
+
+def _promote_stale_suggested() -> None:
+    """Decay sweep: re-queue 'suggested' tasks that have been stuck >48 h
+    and are NOT hard-quarantined (failure_count < 5 and last_failure_reason
+    does not contain 'hard-quarantine' or 'hitl').
+
+    Prevents tasks from rotting in 'suggested' forever when the underlying
+    issue resolves on its own (transient resource exhaustion, flaky E2E,
+    resolved dependency). Hard-quarantined tasks (fc >= 5 or explicit
+    hard-quarantine reason) still require human review.
+    """
+    try:
+        conn = get_connection()
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=_SUGGESTED_DECAY_HOURS)
+        ).isoformat()
+        rows = conn.execute(
+            "SELECT id, failure_count, last_failure_reason FROM kanban_tasks "
+            "WHERE status = 'suggested' AND updated_at < ?",
+            (cutoff,),
+        ).fetchall()
+        promoted = []
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for r in rows:
+            d = dict(r)
+            fc = d.get("failure_count") or 0
+            reason = (d.get("last_failure_reason") or "").lower()
+            if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
+                continue  # genuinely quarantined — leave for human review
+            conn.execute(
+                "UPDATE kanban_tasks SET status='scheduled', scheduled_at=?, "
+                "updated_at=?, failure_count=0, "
+                "last_failure_reason='decay-promoted: re-queued after 48 h in suggested' "
+                "WHERE id=?",
+                (now_iso, now_iso, d["id"]),
+            )
+            promoted.append(d["id"])
+        if promoted:
+            conn.commit()
+            logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
+            for tid in promoted:
+                print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
+        conn.close()
+    except Exception as exc:
+        logger.warning("suggested-decay sweep failed: %s", exc)
 
 
 def _reap_stale_in_progress() -> None:
@@ -4355,8 +4716,6 @@ def _reap_stale_in_progress() -> None:
         for r in rows:
             d = dict(r)
             tid = d["id"]
-            if tid in _running:
-                continue  # live subprocess — skip
 
             # Fetch updated_at separately to get the real timestamp
             ts_row = conn.execute(
@@ -4382,11 +4741,28 @@ def _reap_stale_in_progress() -> None:
 
             age_seconds = (now - updated_at).total_seconds()
 
+            # Hard ceiling: any task in_progress for >24 h is force-reaped even
+            # if it appears to have a live subprocess. A genuine 24 h run does
+            # not exist; this catches hung processes whose PID is still in
+            # _running but whose work long since stalled (scheduler-crash + restart
+            # race, grandchild processes that survived a kill, etc.).
+            if age_seconds >= _ABSOLUTE_MAX_IN_PROGRESS_SECONDS:
+                threshold = _ABSOLUTE_MAX_IN_PROGRESS_SECONDS
+                reap_label = "absolute-max-age (>24 h)"
+                if tid in _running:
+                    try:
+                        _running[tid].kill()
+                    except Exception:
+                        pass
+                    _running.pop(tid, None)
+            elif tid in _running:
+                continue  # live subprocess within normal budget — skip
+
             # Fast-reap silent dispatch: task is not in _running AND log file
             # is still empty — subprocess never wrote a single byte, so it
             # never actually started. Use a short 5-min window instead of the
             # normal 2× budget to catch these within the next cycle or two.
-            if _task_log_is_empty(tid) and age_seconds >= _SILENT_DISPATCH_THRESHOLD:
+            elif _task_log_is_empty(tid) and age_seconds >= _SILENT_DISPATCH_THRESHOLD:
                 threshold = _SILENT_DISPATCH_THRESHOLD
                 reap_label = "silent-dispatch (no log output)"
             else:
@@ -4597,9 +4973,24 @@ def _check_completed():
                     )
                 else:
                     _move_task(task_id, "backlog")
+                    # Backoff delay: 5 min × retry count before next dispatch.
+                    # Prevents a structurally-slow task from immediately burning
+                    # another 900 s slot on the very next scheduler cycle.
+                    _backoff_seconds = _tout_count * 5 * 60
+                    _backoff_at = (datetime.now(timezone.utc) + timedelta(seconds=_backoff_seconds)).isoformat()
+                    try:
+                        _bo_conn = get_connection()
+                        _bo_conn.execute(
+                            "UPDATE kanban_tasks SET scheduled_at = ? WHERE id = ?",
+                            (_backoff_at, task_id),
+                        )
+                        _bo_conn.commit()
+                        _bo_conn.close()
+                    except Exception as _bo_exc:
+                        logger.warning("backoff scheduled_at update failed for %s: %s", task_id, _bo_exc)
                     print(
                         f"  Kanban: {task_id} timeout {_tout_count}/"
-                        f"{MAX_TIMEOUT_RETRIES} — returned to backlog"
+                        f"{MAX_TIMEOUT_RETRIES} — backoff {_backoff_seconds // 60} min"
                     )
                 # Build task dict for notification
                 task_dict = {"id": task_id, "title": task_id}
@@ -4702,6 +5093,19 @@ def _check_completed():
                     wait_minutes = int(wait_seconds / 60) + 1
                     reset_msg = f" (reset hint: {reset_hint})" if reset_hint else ""
                     resume_local = resume_at.astimezone().strftime("%I:%M %p")
+
+                    # D-AUTO-DEGRADE: Mark claude_cli as degraded
+                    executor_type = _get_executor_type(task_id) or "claude_cli"
+                    if executor_type == "claude_cli":
+                        _degraded_executors.add(executor_type)
+                        _degraded_executors_probed_at[executor_type] = resume_at
+                        logger.info(
+                            "kanban: executor %s degraded for %s (resume_at=%s)",
+                            executor_type,
+                            task_id,
+                            resume_local,
+                        )
+
                     print(
                         f"  Kanban: {task_id} TOKEN EXHAUSTED"
                         f"{reset_msg} — retry {retry_count}/"
@@ -5462,6 +5866,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             _reap_stale_in_progress()
     except Exception as _rip_exc:
         logger.warning("stale-in_progress reaper failed: %s", _rip_exc)
+    # Suggested-decay: re-queue soft-stuck tasks once every ~4 h (1/240 cycles).
+    try:
+        if _rr.random() < 0.004:  # noqa: S311
+            _promote_stale_suggested()
+    except Exception as _pss_exc:
+        logger.warning("suggested-decay sweep failed: %s", _pss_exc)
 
     # 1. Check for completed claude subprocesses
     completed = _check_completed()

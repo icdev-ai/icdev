@@ -16,6 +16,7 @@ Endpoints:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -124,7 +125,7 @@ IDC_PLANS: dict[str, dict] = {
     },
 }
 
-logger = logging.getLogger("icdev.dashboard.poam_api")
+logger = get_logger("icdev.dashboard.poam_api")
 
 poam_api = Blueprint("poam_api", __name__, url_prefix="/api/poam")
 

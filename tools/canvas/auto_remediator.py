@@ -39,6 +39,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import importlib
@@ -58,7 +59,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger("icdev.canvas.auto_remediator")
+logger = get_logger("icdev.canvas.auto_remediator")
 
 DATA_DIR = _REPO_ROOT / "data"
 BACKUP_DIR = _REPO_ROOT / "backups" / "canvas"

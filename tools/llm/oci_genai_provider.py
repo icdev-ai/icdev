@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -32,7 +34,7 @@ from tools.llm.provider import (
     LLMResponse,
 )
 
-logger = logging.getLogger("icdev.llm.oci_genai")
+logger = get_logger("icdev.llm.oci_genai")
 
 try:
     import oci

@@ -6,6 +6,7 @@ Exposes the lab_health probe results at /api/ndc/labs/health and
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 
@@ -13,7 +14,7 @@ from flask import Blueprint, jsonify
 
 from tools.network.lab_health import load_backends, probe_all, probe_backend
 
-logger = logging.getLogger("icdev.dashboard.ndc_labs")
+logger = get_logger("icdev.dashboard.ndc_labs")
 
 ndc_labs_api = Blueprint("ndc_labs_api", __name__, url_prefix="/api/ndc/labs")
 

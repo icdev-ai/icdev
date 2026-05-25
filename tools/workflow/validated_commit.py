@@ -25,6 +25,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import concurrent.futures
 import json
@@ -36,7 +37,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

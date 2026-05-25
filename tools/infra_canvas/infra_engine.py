@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV Infrastructure Design Canvas — Assessment Engine.
 
@@ -12,7 +14,7 @@ from typing import Any
 
 from tools.infra_canvas.constants import INFRA_COMPLIANCE_RULES
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 try:
     import yaml as _yaml

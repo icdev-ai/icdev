@@ -20,6 +20,7 @@ POC: ICDEV™ System Administrator
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 from pathlib import Path
 from typing import List
@@ -1698,7 +1699,7 @@ import logging
 import sys
 from pathlib import Path
 
-logger = logging.getLogger("{app_name}.sidecar")
+logger = get_logger("{app_name}.sidecar")
 
 SIDECAR_ROOT = Path(__file__).resolve().parent
 # The main project tools are in the parent's tools/ directory

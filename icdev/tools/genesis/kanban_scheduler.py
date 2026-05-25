@@ -21,6 +21,7 @@ __pycache__ clearing.
 """
 
 import argparse
+import json
 import logging
 import sys
 import time
@@ -58,6 +59,11 @@ def main():
         "--once",
         action="store_true",
         help="Run one cycle and exit (for Task Scheduler)",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON status output (useful with --once for scripted callers)",
     )
     args = parser.parse_args()
 
@@ -180,18 +186,43 @@ def main():
     except Exception as exc:
         logger.warning("Startup recovery failed: %s", str(exc).encode("ascii", errors="replace").decode("ascii"))
 
+    # Startup inbox replay — process any Telegram messages that arrived while offline.
+    try:
+        from tools.notifications.adapters.telegram_listener import replay_inbox
+
+        inbox_result = replay_inbox()
+        if inbox_result["replayed"] or inbox_result["failed"]:
+            logger.info(
+                "Startup inbox replay: replayed=%d failed=%d",
+                inbox_result["replayed"],
+                inbox_result["failed"],
+            )
+    except Exception as exc:
+        logger.warning("Startup inbox replay failed: %s", exc)
+
     if args.once:
         logger.info("Running single kanban cycle...")
         # [DISPATCH POINT - once mode]
         reflex_name = kanban_run.__module__.rsplit(".", 1)[-1]
         result = observe(reflex_name, kanban_run, dummy_config, dummy_trust)
         details = result.get("details", {})
+        activated = details.get("tasks_activated", 0)
+        completed = details.get("completed_this_cycle", [])
+        running = details.get("running", [])
         logger.info(
             "Cycle complete: activated=%s, completed=%s, running=%s",
-            details.get("tasks_activated", 0),
-            len(details.get("completed_this_cycle", [])),
-            len(details.get("running", [])),
+            activated,
+            len(completed),
+            len(running),
         )
+        if args.json:
+            print(json.dumps({
+                "cycle": 1,
+                "status": details.get("status", "ok"),
+                "tasks_activated": activated,
+                "completed": len(completed),
+                "running": len(running),
+            }))
         return
 
     logger.info("Kanban scheduler started (interval=%ds)", args.interval)
@@ -289,27 +320,11 @@ def _cleanup_orphan_processes() -> None:
             pid_file.unlink(missing_ok=True)
             continue
         try:
-            import subprocess
-            import os
-            # Check if process still running (Windows + Unix)
-            if os.name == "nt":
-                result = subprocess.run(
-                    ["tasklist", "/FI", f"PID eq {pid}"],
-                    capture_output=True, text=True, timeout=5,
-                )
-                if str(pid) in result.stdout and "claude" in result.stdout.lower():
-                    subprocess.run(
-                        ["taskkill", "/F", "/PID", str(pid)],
-                        capture_output=True, timeout=5,
-                    )
+            from tools.compat.platform_utils import pid_exists, kill_process, find_pids_by_cmdline
+            claude_pids = set(find_pids_by_cmdline("claude"))
+            if pid in claude_pids and pid_exists(pid):
+                if kill_process(pid, force=True):
                     killed += 1
-            else:
-                try:
-                    os.kill(pid, 0)
-                    os.kill(pid, 9)
-                    killed += 1
-                except ProcessLookupError:
-                    pass
         except Exception as exc:
             logger.debug("orphan cleanup error for pid %s: %s", pid, exc)
         finally:

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 """ICDEV™ SaaS -- Namespace Provisioner.
 
 CUI // SP-CTI
@@ -49,7 +51,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("namespace_provisioner")
+logger = get_logger("namespace_provisioner")
 
 # ---------------------------------------------------------------------------
 # Constants

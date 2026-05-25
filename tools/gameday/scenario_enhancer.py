@@ -8,6 +8,7 @@ CYBER_SCENARIOS list for the next run.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -15,7 +16,7 @@ import os
 
 from .constants import DEFAULT_AGENT_MODEL, OLLAMA_BASE_URL
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 try:
     import requests as _requests

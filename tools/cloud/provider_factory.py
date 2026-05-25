@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """CSP Provider Factory — config-driven cloud service resolution.
 
@@ -75,7 +77,7 @@ from tools.cloud.registry_provider import (
     LocalDockerProvider,
 )
 
-logger = logging.getLogger("icdev.cloud.factory")
+logger = get_logger("icdev.cloud.factory")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "cloud_config.yaml"

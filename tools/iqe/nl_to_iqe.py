@@ -1,12 +1,13 @@
 """IQE NL-to-IQE translator — converts natural language questions to IQE query strings."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
 import re
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 _OLLAMA_MODEL = os.environ.get("OLLAMA_IQE_MODEL", os.environ.get("OLLAMA_TOPO_MODEL", "qwen3.5:latest"))

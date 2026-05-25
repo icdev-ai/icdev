@@ -13,6 +13,7 @@ Usage in ICDEV dashboard app.py:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -35,7 +36,7 @@ from flask import (
     session,
 )
 
-logger = logging.getLogger("icdev.network")
+logger = get_logger("icdev.network")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _NETWORK_DIR = Path(__file__).resolve().parent

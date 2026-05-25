@@ -19,6 +19,7 @@ CLI:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -32,7 +33,7 @@ from typing import Any, Dict, List
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.redaction.ner_recognizer")
+logger = get_logger("icdev.redaction.ner_recognizer")
 
 # ---------------------------------------------------------------------------
 # Regex-based NER heuristics (fallback when Ollama unavailable)

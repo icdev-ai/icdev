@@ -7,12 +7,13 @@ Juniper, AWS, and Azure catalogs are static known-good entries.
 Users may also define custom vendors and supply their own URLs.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from html.parser import HTMLParser
 from urllib.request import Request, urlopen  # nosec B310
 
-logger = logging.getLogger("icdev.network.stencil_catalog")
+logger = get_logger("icdev.network.stencil_catalog")
 
 CISCO_LISTING_URL = "https://www.cisco.com/c/en/us/products/visio-stencil-listing.html"
 

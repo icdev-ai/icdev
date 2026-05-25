@@ -6,12 +6,13 @@ in configurable chunks, concatenating results or yielding per-chunk.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import time
 from typing import Any, Dict, Iterator, List, Optional
 
-logger = logging.getLogger("databridge.scale.chunked_pipeline")
+logger = get_logger("databridge.scale.chunked_pipeline")
 
 try:
     import pyarrow as pa

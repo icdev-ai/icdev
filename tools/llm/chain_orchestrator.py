@@ -14,6 +14,7 @@ config from args/llm_config.yaml.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import copy
@@ -38,7 +39,7 @@ from tools.llm.chain_prompts import ChainPrompts
 from tools.llm.provider import LLMRequest, LLMResponse
 from tools.llm.router import LLMRouter
 
-logger = logging.getLogger("icdev.llm.chain_orchestrator")
+logger = get_logger("icdev.llm.chain_orchestrator")
 
 DEFAULT_COST_CAP_USD = 0.50
 DEFAULT_TOKEN_CAP = 32000
@@ -109,6 +110,13 @@ class ChainOrchestrator:
                 "enabled": mode_cfg.get("enabled", True),
                 "max_rounds": mode_cfg.get("max_rounds", 3),
                 "self_consistency_runs": mode_cfg.get("self_consistency_runs", 1),
+                # Role routing keys — each maps to a distinct routing chain for multi-LLM CoT.
+                # Takes precedence over *_model keys. A per_function override of null disables
+                # the role key so the legacy *_model fallback is used instead.
+                "reasoner_role": mode_cfg.get("reasoner_role", "cot_reasoner"),
+                "critic_role": mode_cfg.get("critic_role", "cot_critic"),
+                "synthesizer_role": mode_cfg.get("synthesizer_role", "cot_synthesizer"),
+                # Legacy direct model names — fallback when role key is null or chain is empty
                 "reasoner_model": mode_cfg.get("reasoner_model", "qwen3-local"),
                 "critic_model": mode_cfg.get("critic_model", "claude-sonnet"),
                 "synthesizer_model": mode_cfg.get("synthesizer_model", "claude-sonnet"),
@@ -119,14 +127,19 @@ class ChainOrchestrator:
                 "enabled": mode_cfg.get("enabled", True),
                 "num_debaters": mode_cfg.get("num_debaters", 3),
                 "debate_rounds": mode_cfg.get("debate_rounds", 2),
+                # Role routing keys for multi-LLM CoD
+                "judge_role": mode_cfg.get("judge_role", "cod_judge"),
+                "debater_pool_role": mode_cfg.get("debater_pool_role", "cod_debater_pool"),
+                # Legacy direct model names — fallback when pool returns nothing
                 "judge_model": mode_cfg.get("judge_model", "claude-sonnet"),
                 "debater_models": mode_cfg.get("debater_models", ["qwen3-local", "claude-sonnet", "openai-gpt4o"]),
                 "excluded_functions": mode_cfg.get("excluded_functions", []),
             })
 
-        # Per-function overrides take highest priority
+        # Per-function overrides take highest priority (null values explicitly preserved
+        # so per_function can zero out a role key to force legacy *_model path)
         result = copy.deepcopy(defaults)
-        result.update({k: v for k, v in per_fn.items() if v is not None})
+        result.update(per_fn)  # include null/None overrides — _invoke_model handles them
         return result
 
     def _is_excluded(self, function: str, mode: str) -> bool:
@@ -151,17 +164,41 @@ class ChainOrchestrator:
         function: str,
         timeout: float,
     ) -> Tuple[LLMResponse, float]:
-        """Invoke a specific model via the router, with timeout.
+        """Invoke a model or routing role via the router, with timeout.
+
+        model_name is interpreted as:
+        1. A routing chain key (e.g. 'cot_reasoner') — if present in routing: config,
+           uses router.invoke_for_role() with full availability + RL + fallback chain.
+        2. A direct logical model name (e.g. 'qwen3-local') — legacy path, calls
+           _invoke_model_direct() for backward compat with per_function direct overrides.
 
         Returns (response, elapsed_seconds).
+        Raises RuntimeError or LLMUnavailableError if invocation fails.
         """
         start = time.time()
-        response = self.router._invoke_model_direct(model_name, request)
+
+        routing = getattr(self.router, "_config", {}).get("routing", {})
+        if model_name in routing:
+            # Full chain-based routing: availability check + RL ranking + fallback
+            from tools.llm.router import LLMUnavailableError
+            try:
+                response = self.router.invoke_for_role(model_name, function, request)
+            except LLMUnavailableError as exc:
+                raise RuntimeError(
+                    f"Role '{model_name}' unavailable for '{function}': {exc}"
+                ) from exc
+        else:
+            # Legacy: direct model name — single attempt, no fallback chain
+            response = self.router._invoke_model_direct(model_name, request)
+            if response is None:
+                raise RuntimeError(
+                    f"Model '{model_name}' returned None for '{function}'. "
+                    "Consider using a routing chain key instead of a direct model name."
+                )
+
         elapsed = time.time() - start
         if elapsed > timeout:
-            raise TimeoutError(f"Model {model_name} exceeded {timeout}s timeout")
-        if response is None:
-            raise RuntimeError(f"Model {model_name} returned None")
+            raise TimeoutError(f"Model/role '{model_name}' exceeded {timeout:.1f}s timeout")
         return response, elapsed
 
     def _build_request(
@@ -388,9 +425,10 @@ class ChainOrchestrator:
             )
             reasoner_req = self._build_request(request, sys_prompt, usr_prompt)
 
+            reasoner_role = cfg.get("reasoner_role") or cfg["reasoner_model"]
             try:
                 resp, elapsed = self._invoke_model(
-                    cfg["reasoner_model"], reasoner_req, function, deadline - time.time()
+                    reasoner_role, reasoner_req, function, deadline - time.time()
                 )
             except Exception as exc:
                 logger.warning("CoT reasoner failed: %s", exc)
@@ -398,15 +436,15 @@ class ChainOrchestrator:
                 break
 
             reasoning = resp.content or ""
-            cost = self._compute_cost(resp.model_id or cfg["reasoner_model"], resp.input_tokens, resp.output_tokens)
+            cost = self._compute_cost(resp.model_id or reasoner_role, resp.input_tokens, resp.output_tokens)
             total_cost += cost
             total_tokens += resp.input_tokens + resp.output_tokens
-            models_used.add(resp.model_id or cfg["reasoner_model"])
+            models_used.add(resp.model_id or reasoner_role)
 
             rounds.append({
                 "round": round_num,
                 "step": "reason",
-                "model_id": resp.model_id or cfg["reasoner_model"],
+                "model_id": resp.model_id or reasoner_role,
                 "input_tokens": resp.input_tokens,
                 "output_tokens": resp.output_tokens,
                 "cost_usd": round(cost, 6),
@@ -417,7 +455,7 @@ class ChainOrchestrator:
                 decision_type="chain_of_thought",
                 decision=f"Round {round_num} reasoning",
                 rationale=reasoning[:2000],
-                model_used=resp.model_id or cfg["reasoner_model"],
+                model_used=resp.model_id or reasoner_role,
                 confidence=0.0,
             )
 
@@ -436,9 +474,10 @@ class ChainOrchestrator:
                 )
                 critic_req = self._build_request(request, sys_prompt, usr_prompt)
 
+                critic_role = cfg.get("critic_role") or cfg["critic_model"]
                 try:
                     resp, elapsed = self._invoke_model(
-                        cfg["critic_model"], critic_req, function, deadline - time.time()
+                        critic_role, critic_req, function, deadline - time.time()
                     )
                 except Exception as exc:
                     logger.warning("CoT critic failed: %s", exc)
@@ -446,15 +485,15 @@ class ChainOrchestrator:
                     break
 
                 critique = resp.content or ""
-                cost = self._compute_cost(resp.model_id or cfg["critic_model"], resp.input_tokens, resp.output_tokens)
+                cost = self._compute_cost(resp.model_id or critic_role, resp.input_tokens, resp.output_tokens)
                 total_cost += cost
                 total_tokens += resp.input_tokens + resp.output_tokens
-                models_used.add(resp.model_id or cfg["critic_model"])
+                models_used.add(resp.model_id or critic_role)
 
                 rounds.append({
                     "round": round_num,
                     "step": "critic",
-                    "model_id": resp.model_id or cfg["critic_model"],
+                    "model_id": resp.model_id or critic_role,
                     "input_tokens": resp.input_tokens,
                     "output_tokens": resp.output_tokens,
                     "cost_usd": round(cost, 6),
@@ -479,9 +518,10 @@ class ChainOrchestrator:
                 )
                 synth_req = self._build_request(request, sys_prompt, usr_prompt)
 
+                synthesizer_role = cfg.get("synthesizer_role") or cfg["synthesizer_model"]
                 try:
                     resp, elapsed = self._invoke_model(
-                        cfg["synthesizer_model"], synth_req, function, deadline - time.time()
+                        synthesizer_role, synth_req, function, deadline - time.time()
                     )
                 except Exception as exc:
                     logger.warning("CoT synthesizer failed: %s", exc)
@@ -489,15 +529,15 @@ class ChainOrchestrator:
                     break
 
                 final_content = resp.content or ""
-                cost = self._compute_cost(resp.model_id or cfg["synthesizer_model"], resp.input_tokens, resp.output_tokens)
+                cost = self._compute_cost(resp.model_id or synthesizer_role, resp.input_tokens, resp.output_tokens)
                 total_cost += cost
                 total_tokens += resp.input_tokens + resp.output_tokens
-                models_used.add(resp.model_id or cfg["synthesizer_model"])
+                models_used.add(resp.model_id or synthesizer_role)
 
                 rounds.append({
                     "round": round_num,
                     "step": "synthesize",
-                    "model_id": resp.model_id or cfg["synthesizer_model"],
+                    "model_id": resp.model_id or synthesizer_role,
                     "input_tokens": resp.input_tokens,
                     "output_tokens": resp.output_tokens,
                     "cost_usd": round(cost, 6),
@@ -571,22 +611,23 @@ class ChainOrchestrator:
         )
         vote_req = self._build_request(request, sys_prompt, usr_prompt)
 
+        synthesizer_role = cfg.get("synthesizer_role") or cfg["synthesizer_model"]
         try:
             vote_resp, _ = self._invoke_model(
-                cfg["synthesizer_model"], vote_req, function, cfg["timeout_seconds"]
+                synthesizer_role, vote_req, function, cfg["timeout_seconds"]
             )
             final_content = vote_resp.content or answers[0]
             cost = self._compute_cost(
-                vote_resp.model_id or cfg["synthesizer_model"],
+                vote_resp.model_id or synthesizer_role,
                 vote_resp.input_tokens,
                 vote_resp.output_tokens,
             )
             total_cost += cost
             total_tokens += vote_resp.input_tokens + vote_resp.output_tokens
-            models_used.add(vote_resp.model_id or cfg["synthesizer_model"])
+            models_used.add(vote_resp.model_id or synthesizer_role)
             all_rounds.append({
                 "step": "majority_vote",
-                "model_id": vote_resp.model_id or cfg["synthesizer_model"],
+                "model_id": vote_resp.model_id or synthesizer_role,
                 "input_tokens": vote_resp.input_tokens,
                 "output_tokens": vote_resp.output_tokens,
                 "cost_usd": round(cost, 6),
@@ -641,10 +682,23 @@ class ChainOrchestrator:
 
         num_debaters = cfg["num_debaters"]
         debate_rounds = cfg["debate_rounds"]
-        debater_models = cfg["debater_models"]
-        judge_model = cfg["judge_model"]
         timeout = cfg["timeout_seconds"]
         deadline = time.time() + timeout
+
+        # Select distinct debater models — maximize provider diversity for genuine multi-LLM debate.
+        # get_diverse_models() picks N models from different provider families (ollama, anthropic,
+        # openai, google). Falls back to legacy debater_models list if pool is empty.
+        debater_pool_key = cfg.get("debater_pool_role") or ""
+        debater_models_assigned: List[str] = []
+        if debater_pool_key:
+            try:
+                debater_models_assigned = self.router.get_diverse_models(debater_pool_key, num_debaters)
+            except Exception as exc:
+                logger.debug("get_diverse_models failed for '%s': %s — using legacy list", debater_pool_key, exc)
+        if not debater_models_assigned:
+            debater_models_assigned = cfg.get("debater_models", ["qwen3-local"])
+
+        judge_role = cfg.get("judge_role") or cfg.get("judge_model", "claude-sonnet")
 
         user_prompt = ""
         if request.messages and isinstance(request.messages[0], dict):
@@ -672,7 +726,8 @@ class ChainOrchestrator:
             with ThreadPoolExecutor(max_workers=num_debaters) as executor:
                 futures = {}
                 for i in range(num_debaters):
-                    model_name = debater_models[i % len(debater_models)]
+                    # Each debater slot uses a pinned distinct model for the full debate
+                    model_name = debater_models_assigned[i % len(debater_models_assigned)]
                     prior = [a["argument"] for a in debate_history if a["debater"] != i + 1]
                     sys_prompt, usr_prompt = ChainPrompts.debater(
                         user_prompt,
@@ -690,7 +745,7 @@ class ChainOrchestrator:
 
                 for future in as_completed(futures):
                     i = futures[future]
-                    model_name = debater_models[i % len(debater_models)]
+                    model_name = debater_models_assigned[i % len(debater_models_assigned)]
                     try:
                         resp, elapsed = future.result(timeout=deadline - time.time())
                         argument = resp.content or ""
@@ -756,17 +811,17 @@ class ChainOrchestrator:
 
             try:
                 resp, elapsed = self._invoke_model(
-                    judge_model, judge_req, function, deadline - time.time()
+                    judge_role, judge_req, function, deadline - time.time()
                 )
                 final_content = resp.content or ""
-                cost = self._compute_cost(resp.model_id or judge_model, resp.input_tokens, resp.output_tokens)
+                cost = self._compute_cost(resp.model_id or judge_role, resp.input_tokens, resp.output_tokens)
                 total_cost += cost
                 total_tokens += resp.input_tokens + resp.output_tokens
-                models_used.add(resp.model_id or judge_model)
+                models_used.add(resp.model_id or judge_role)
 
                 rounds.append({
                     "step": "judge",
-                    "model_id": resp.model_id or judge_model,
+                    "model_id": resp.model_id or judge_role,
                     "input_tokens": resp.input_tokens,
                     "output_tokens": resp.output_tokens,
                     "cost_usd": round(cost, 6),

@@ -9,6 +9,7 @@ Uses gemma4:e4b (independent model, different from team agents) to:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -30,7 +31,7 @@ from .db import (
     update_team_scores,
 )
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 try:
     import requests as _requests

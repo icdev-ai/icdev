@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 """Security middleware for ICDEV™ — Flask before/after_request hooks.
 
 Wires:
@@ -17,7 +19,7 @@ Usage:
 import logging
 from typing import Any, Optional, Set
 
-logger = logging.getLogger("security.middleware")
+logger = get_logger("security.middleware")
 
 # Public endpoints that skip MAC/field checks (auth still runs separately)
 DEFAULT_PUBLIC_ENDPOINTS = {

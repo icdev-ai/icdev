@@ -16,6 +16,7 @@ Usage:
     python tools/strategos/osint_privacy_sanitizer.py --health --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -32,7 +33,7 @@ sys.path.insert(0, str(BASE_DIR))
 from tools.redaction.detector import RedactionDetector  # noqa: E402
 from tools.redaction.anonymizer import RedactionAnonymizer  # noqa: E402
 
-logger = logging.getLogger("icdev.strategos.osint_privacy")
+logger = get_logger("icdev.strategos.osint_privacy")
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s  %(message)s")
 
 # Commercial privacy: default to "redact" for PII, "mask" for contact info.

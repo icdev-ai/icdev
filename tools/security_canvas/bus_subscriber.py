@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """SDC canvas event bus subscriber.
 
@@ -8,7 +10,7 @@ Listens for PDC pipeline_deployed events and:
 import logging
 from datetime import datetime, timezone
 
-logger = logging.getLogger("icdev.security_canvas.bus_subscriber")
+logger = get_logger("icdev.security_canvas.bus_subscriber")
 
 
 def _handle_pipeline_deployed(

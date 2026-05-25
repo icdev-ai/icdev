@@ -6,6 +6,7 @@ All orchestration is now delegated to tools.ai_game_engine.GameSession.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
@@ -14,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _TEAMS_YAML = Path(__file__).parent.parent.parent / "args" / "gameday_teams.yaml"
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Dashboard API: WriteGuard — Content Quality Analysis, Export & History.
 
@@ -29,7 +31,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 writeguard_api = Blueprint("writeguard_api", __name__, url_prefix="/api/writeguard")
 

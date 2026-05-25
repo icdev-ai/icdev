@@ -15,6 +15,7 @@ Tables:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -32,7 +33,7 @@ from tools.databridge.connector import (
     DataConnector,
 )
 
-logger = logging.getLogger("databridge.megaport")
+logger = get_logger("databridge.megaport")
 
 _BASE_URL = "https://api.megaport.com/v2"
 _REQUEST_TIMEOUT = 30

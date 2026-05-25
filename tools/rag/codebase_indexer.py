@@ -17,6 +17,7 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import ast
@@ -69,7 +70,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOG = logging.getLogger("codebase_indexer")
+LOG = get_logger("codebase_indexer")
 
 # Extensions we care about, mapped to a file_type label
 EXTENSION_MAP: dict[str, str] = {

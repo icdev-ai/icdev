@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Prompt Version Control for ICDEV™.
 
@@ -31,7 +33,7 @@ from typing import Any, Dict, List, Optional
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("icdev.llm.prompt_registry")
+logger = get_logger("icdev.llm.prompt_registry")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 HARDPROMPTS_DIR = BASE_DIR / "hardprompts"

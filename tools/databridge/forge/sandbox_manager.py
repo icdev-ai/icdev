@@ -7,6 +7,7 @@ Both paths log to db_forge_sandbox_log (append-only, NIST AU).
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -20,7 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("databridge.forge.sandbox_manager")
+logger = get_logger("databridge.forge.sandbox_manager")
 
 DB_PATH = Path(__file__).resolve().parents[3] / "data" / "icdev.db"
 

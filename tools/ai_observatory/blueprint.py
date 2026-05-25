@@ -13,12 +13,13 @@ All 8 required components per CLAUDE.md dashboard gate are present:
   8. IQE: tools/iqe/adapters/ai_observatory.py + /api/iqe-query + widget + dispatch entry
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 
 from flask import Blueprint, jsonify, render_template, request as flask_request
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 bp = Blueprint("ai_observatory", __name__)
 

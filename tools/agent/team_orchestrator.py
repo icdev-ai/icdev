@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """DAG-based workflow engine for multi-agent task orchestration.
 
@@ -32,7 +34,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 HARDPROMPT_PATH = BASE_DIR / "hardprompts" / "agent" / "task_decomposition.md"
 SCHEMA_PATH = BASE_DIR / "context" / "agent" / "response_schemas" / "task_decomposition.json"
 
-logger = logging.getLogger("icdev.team_orchestrator")
+logger = get_logger("icdev.team_orchestrator")
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ and writes the gd_ai_leaderboard snapshot table.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from typing import Any
@@ -13,7 +14,7 @@ from typing import Any
 from tools.db.storage import get_connection
 from .db import upsert_leaderboard
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def refresh_leaderboard(tournament_id: int) -> list[dict]:

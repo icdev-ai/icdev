@@ -7,13 +7,14 @@ Reads/writes: nc_change_requests, nc_change_request_items,
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
 import uuid
 from datetime import datetime, timezone
 
-logger = logging.getLogger("icdev.network.routes.governance")
+logger = get_logger("icdev.network.routes.governance")
 
 
 def register_governance_routes(bp, get_conn=None, helpers=None):

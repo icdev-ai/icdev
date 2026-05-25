@@ -39,6 +39,7 @@ force suggested-card-only behavior.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -53,7 +54,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from tools.workflow.git_utils import default_branch
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 TRIAGED_DIR = BASE_DIR / ".tmp" / "kanban" / "triaged"

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Resilience — Circuit Breaker.
 
@@ -43,7 +45,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.resilience.circuit_breaker")
+logger = get_logger("icdev.resilience.circuit_breaker")
 
 
 # ---------------------------------------------------------------------------

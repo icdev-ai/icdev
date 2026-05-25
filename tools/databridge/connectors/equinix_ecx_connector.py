@@ -16,6 +16,7 @@ Tables:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -34,7 +35,7 @@ from tools.databridge.connector import (
     DataConnector,
 )
 
-logger = logging.getLogger("databridge.equinix_ecx")
+logger = get_logger("databridge.equinix_ecx")
 
 _BASE_URL = "https://api.equinix.com/fabric/v4"
 _TOKEN_URL = "https://api.equinix.com/oauth2/v2/token"

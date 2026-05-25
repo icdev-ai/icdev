@@ -7,13 +7,14 @@ Time Available, Civil Considerations.
 Auto-population pulls from existing Strategos data tables when available.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.mett_tc")
+logger = get_logger("icdev.strategos.mett_tc")
 
 
 def _now_utc() -> str:

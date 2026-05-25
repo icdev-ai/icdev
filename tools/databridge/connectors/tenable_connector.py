@@ -10,6 +10,7 @@ Callers may pass a raw filter via ``ConnectorRequest.query``.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -31,7 +32,7 @@ from tools.databridge.connector import (
 )
 from tools.databridge.registry import register_connector
 
-logger = logging.getLogger("databridge.tenable")
+logger = get_logger("databridge.tenable")
 
 REQUEST_TIMEOUT = 30
 USER_AGENT = "ICDEV-DataBridge/1.0"

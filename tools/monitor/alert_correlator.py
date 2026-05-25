@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Alert correlation engine. Groups related alerts by service and time window,
 deduplicates alerts from multiple sources (ELK, Splunk, Prometheus),
@@ -14,7 +16,7 @@ from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

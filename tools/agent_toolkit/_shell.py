@@ -16,6 +16,7 @@ Design rules:
     when audit=True (best-effort; never fails the call on audit errors).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import shlex
@@ -24,7 +25,7 @@ import time
 from pathlib import Path
 from typing import List, Optional, Union
 
-logger = logging.getLogger("icdev.agent_toolkit.shell")
+logger = get_logger("icdev.agent_toolkit.shell")
 
 PathLike = Union[str, Path]
 

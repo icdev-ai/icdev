@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Response Filter — IL-aware response redaction for the Remote Command Gateway.
 
@@ -21,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.gateway.response_filter")
+logger = get_logger("icdev.gateway.response_filter")
 
 # Graceful audit import
 try:

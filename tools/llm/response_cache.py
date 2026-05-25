@@ -21,6 +21,7 @@ CLI::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -41,7 +42,7 @@ try:
 except ImportError:
     LLMResponse = None
 
-logger = logging.getLogger("icdev.llm.response_cache")
+logger = get_logger("icdev.llm.response_cache")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"

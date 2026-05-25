@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ SaaS Phase 5 -- Bedrock Token Metering.
 
@@ -49,7 +51,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("saas.bedrock.metering")
+logger = get_logger("saas.bedrock.metering")
 
 # ---------------------------------------------------------------------------
 # Default token budgets per tier (monthly)

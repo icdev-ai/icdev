@@ -13,6 +13,7 @@ CLI:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import calendar
@@ -46,7 +47,7 @@ _DEFAULT_POLL_INTERVAL = 15  # minutes
 _MAX_INPUT_BYTES = 50_000  # 50 KB — feed abuse guard (OPT-58)
 _MAX_SUMMARY_CHARS = 500
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # HTML sanitizer — B3 (OPT-58)

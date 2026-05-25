@@ -2,6 +2,7 @@
 """TTX Engine — real-time leaderboard and end-of-session category ribbons."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from typing import Any
 from tools.db.storage import get_connection
 from .constants import RIBBON_DEFS
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def _now() -> str:

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """User Binder — Identity binding between messaging channel users and ICDEV™ users.
 
@@ -25,7 +27,7 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-logger = logging.getLogger("icdev.gateway.user_binder")
+logger = get_logger("icdev.gateway.user_binder")
 
 # Graceful audit import
 try:

@@ -1,6 +1,7 @@
 # CUI // SP-CTI
 """External step lifecycle — create, send, poll, mark_complete."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import hmac
@@ -12,7 +13,7 @@ from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _now() -> str:

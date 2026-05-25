@@ -19,6 +19,7 @@ Configuration (env):
   BGPALERTER_MAX_AGE_H  — only ingest alerts younger than N hours (default: 2)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -27,7 +28,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 1
 BGPALERTER_ALERT_DIR = os.environ.get("BGPALERTER_ALERT_DIR", "")

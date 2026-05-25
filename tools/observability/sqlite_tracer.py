@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """SQLite Trace Backend — Air-gapped span storage (D280).
 
@@ -33,7 +35,7 @@ from typing import Any, Dict, List, Optional
 
 from tools.observability.tracer import Span, Tracer
 
-logger = logging.getLogger("icdev.observability.sqlite_tracer")
+logger = get_logger("icdev.observability.sqlite_tracer")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DB_PATH = BASE_DIR / "data" / "icdev.db"

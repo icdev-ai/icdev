@@ -4478,18 +4478,25 @@ projects:
     priority: critical
 - key: aac
   name: AI Augmentation Canvas (AAC) — Codebase AI Opportunity Assessment
-  description: |
-    13th ICDEV canvas. Scans external client codebases (Python/Java/C#/Go/Rust/TypeScript)
+  description: '13th ICDEV canvas. Scans external client codebases (Python/Java/C#/Go/Rust/TypeScript)
+
     to identify features that should be replaced or enhanced with AI.
+
     Detects 8 AI-augmentable patterns, scores by value x feasibility x risk,
+
     maps to IL-appropriate models, and generates prioritized transformation roadmaps
+
     for technical leads and architects.
+
+    '
   task_prefix: aac-
   default_open: true
   briefs:
-    - '8 AI-augmentable patterns x 6 languages (Python / Java / C# / Go / Rust / TypeScript)'
-    - 'Scoring: value x feasibility x risk -> composite priority + IL4/IL5/IL6 model recommendations'
-    - 'Outputs: prioritized roadmap with AIMC model-selection links + AADC agentic-topology links'
+  - 8 AI-augmentable patterns x 6 languages (Python / Java / C# / Go / Rust / TypeScript)
+  - 'Scoring: value x feasibility x risk -> composite priority + IL4/IL5/IL6 model
+    recommendations'
+  - 'Outputs: prioritized roadmap with AIMC model-selection links + AADC agentic-topology
+    links'
   epics:
   - key: cfg
     title: Config & Context Files
@@ -4515,27 +4522,74 @@ projects:
   - key: test
     title: Tests & Validation
     priority: critical
-
+  - key: ext
+    title: EXT
+    priority: medium
+  - key: opp
+    title: OPP
+    priority: medium
 - key: sdc-demo
   name: SDC Demo Strategy
   task_prefix: sdc-demo-
   briefs:
-    - Red Team to Compliant — 15-minute executive demo showing 47 STRIDE findings reduced to 0 CAT1 via 12-step SDC automation
-    - Knowledge base population with NIST 800-53, DISA STIGs, MITRE ATT&CK, NIST CSF 2.0, NIST 800-207 ZTA
-    - WOW factors: ROI calculator, compliance timeline widget, ATT&CK overlay, ISSO gate simulation
+  - Red Team to Compliant — 15-minute executive demo showing 47 STRIDE findings reduced
+    to 0 CAT1 via 12-step SDC automation
+  - Knowledge base population with NIST 800-53, DISA STIGs, MITRE ATT&CK, NIST CSF
+    2.0, NIST 800-207 ZTA
+  - WOW factors: ROI calculator, compliance timeline widget, ATT&CK overlay, ISSO
+      gate simulation
   epics:
-    - key: phase1-kb
-      title: Knowledge Base Population
-      priority: medium
-    - key: phase2-synth
-      title: Synthetic Data Generation
-      priority: critical
-    - key: phase3-runner
-      title: SDC Demo Runner
-      priority: critical
-    - key: phase4-playbook
-      title: Executive Playbooks + IQE Queries
-      priority: critical
-    - key: phase5-wow
-      title: WOW Factor Enhancements
-      priority: high
+  - key: phase1-kb
+    title: Knowledge Base Population
+    priority: medium
+  - key: phase2-synth
+    title: Synthetic Data Generation
+    priority: critical
+  - key: phase3-runner
+    title: SDC Demo Runner
+    priority: critical
+  - key: phase4-playbook
+    title: Executive Playbooks + IQE Queries
+    priority: critical
+  - key: phase5-wow
+    title: WOW Factor Enhancements
+    priority: high
+- key: gl
+  name: GovLift — Full-Fledged Federal Migration Automation Platform
+  description: Transform GovLift from a basic tracker into the "Cutover for Government"
+    — a FedRAMP-ready runbook orchestration platform where compliance artifacts are
+    first-class outputs of every migration execution step. 5 phases covering runbook
+    orchestration (Cutover.com parity), compliance-as-code (FedRAMP differentiator),
+    agentic autonomous recovery (AI differentiator), digital twin simulation (risk
+    mitigation), and intelligence layer wiring (Creative/Research/Innovation engines).
+  task_prefix: gl-
+  default_open: true
+  briefs:
+  - 'Phase 1: Runbook engine + marketplace — 5 tables, 2 modules, 4 pages, ~18 API
+    routes (gl-p1-01..19)'
+  - 'Phase 2: Compliance-as-code — 3 tables, 1 module, 1 page, 4 API routes (gl-p2-01..11)'
+  - 'Phase 3: Agentic recovery + dependency mapper — 2 tables, 2 modules, 1 page,
+    4 API routes (gl-p3-01..11)'
+  - 'Phase 4: Digital twin simulation — 2 tables, 1 module, 1 page, 4 API routes
+    (gl-p4-01..10)'
+  - 'Phase 5: Intelligence layer wiring — 1 table, 1 module, 1 page, 3 API routes
+    (gl-p5-01..10)'
+  epics:
+  - key: p0
+    title: Phase 0 — Foundation (project registration + engine config)
+    priority: high
+  - key: p1
+    title: Phase 1 — Runbook Orchestration Engine (Cutover.com parity)
+    priority: critical
+  - key: p2
+    title: Phase 2 — Compliance-as-Code (FedRAMP differentiator)
+    priority: critical
+  - key: p3
+    title: Phase 3 — Agentic Autonomous Recovery (AI differentiator)
+    priority: high
+  - key: p4
+    title: Phase 4 — Digital Twin Simulation (risk mitigation)
+    priority: high
+  - key: p5
+    title: Phase 5 — Intelligence Layer (Creative/Research/Innovation wiring)
+    priority: medium

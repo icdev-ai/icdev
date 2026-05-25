@@ -31,6 +31,7 @@ Non-goals:
     * Kubernetes or BullMQ
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -50,7 +51,7 @@ from tools.ci import error_classifier as ec
 from tools.kanban.state_machine import KanbanState
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = ROOT / "args" / "pr_watcher_config.yaml"
 
