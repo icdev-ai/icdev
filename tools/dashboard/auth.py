@@ -32,6 +32,24 @@ from flask import (
 
 from tools.dashboard.config import DASHBOARD_SECRET, DB_PATH
 
+
+def _attach_security_context(user: dict) -> None:
+    """Build a SecurityContext from an authenticated user dict and attach to Flask g.
+
+    This is the single place that bridges the auth layer → RLS layer.
+    Called after every successful authentication path in _auth_before_request().
+    """
+    try:
+        from tools.security.security_context import SecurityContext
+        g.security_context = SecurityContext(
+            user_id=str(user.get("id", "") or ""),
+            role=user.get("role", "") or "",
+            tenant_id=user.get("tenant_id") or None,
+            classification=user.get("classification", "CUI") or "CUI",
+        )
+    except Exception:
+        pass
+
 # ---------------------------------------------------------------------------
 # Key generation & hashing
 # ---------------------------------------------------------------------------
@@ -405,6 +423,7 @@ def _auth_before_request():
         user = get_user_by_id(user_id)
         if user and user["status"] == "active":
             g.current_user = dict(user)
+            _attach_security_context(g.current_user)
             return None
         else:
             # Session invalid — clear it
@@ -417,6 +436,7 @@ def _auth_before_request():
         user = validate_api_key(raw_key)
         if user:
             g.current_user = dict(user)
+            _attach_security_context(g.current_user)
             # Set session so subsequent requests use cookie
             session["user_id"] = user["id"]
             log_auth_event(
@@ -445,6 +465,7 @@ def _auth_before_request():
         user = bootstrap_env_user(env_key)
         if user:
             g.current_user = dict(user)
+            _attach_security_context(g.current_user)
             session["user_id"] = user["id"]
             return None
 

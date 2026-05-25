@@ -3839,12 +3839,17 @@ def create_app() -> Flask:
     # ---- Database helper ----
     def _get_db():
         import os
+        from flask import has_request_context
         if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
             conn = get_connection()
         else:
             conn = get_connection(db_path=str(DB_PATH))
         try:
-            conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
+            if not has_request_context():
+                # CLI / background tasks: no user session, bypass RLS safely.
+                conn.set_security_context(None)
+            # In a request context: _attach_flask_security_context() already wired
+            # g.security_context (set by auth middleware) into the connection.
         except Exception:
             pass
         return conn
