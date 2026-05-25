@@ -262,7 +262,7 @@ KG_EDGES = [
     ("evt-usv-strike-1",   "actor-ukraine",     "executed_by"),
     ("evt-usv-strike-1",   "actor-russia-bsf",  "targeted"),
     ("evt-sevastopol-1",   "actor-ukraine",     "executed_by"),
-    ("evt-sevastopol-1",   "sup-kaohsiung",     "disrupted"),  # noqa: demonstration
+    ("evt-sevastopol-1",   "sup-kaohsiung",     "disrupted"),
     ("evt-tsmc-cyber",     "actor-apt41",       "executed_by"),
     ("evt-tsmc-cyber",     "sup-kaohsiung",     "targeted_supply"),
     ("cap-usv-ukraine",    "loc-black-sea",     "operates_in"),
