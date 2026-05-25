@@ -70,12 +70,19 @@ class IL5Fetcher:
         if params:
             url += "?" + "&".join(params)
 
+        parsed_scheme = urllib.parse.urlparse(url).scheme
+        if parsed_scheme not in ("http", "https"):
+            raise IL5FetchError(
+                f"IL5 fetcher: URL scheme '{parsed_scheme}' is not permitted; "
+                "only 'http' and 'https' are allowed."
+            )
+
         try:
             req = urllib.request.Request(
                 url,
                 headers={"Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310
                 raw = resp.read().decode("utf-8")
             items: List[Dict[str, Any]] = json.loads(raw)
         except urllib.error.URLError as exc:
