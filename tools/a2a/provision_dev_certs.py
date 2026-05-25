@@ -18,10 +18,9 @@ from __future__ import annotations
 import argparse
 import datetime
 import ipaddress
-import os
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 # Ensure repo root is on PYTHONPATH
 ROOT = Path(__file__).resolve().parent.parent.parent
