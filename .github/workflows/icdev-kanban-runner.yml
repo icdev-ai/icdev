@@ -165,18 +165,7 @@ jobs:
             ANVIL_RC=$?
             set -e
             if [ "$ANVIL_RC" -ne 0 ]; then
-              CRITICAL=$(python3 -c "
-import json, sys
-try:
-    data = json.load(open('/tmp/anvil_result.json'))
-    bad = [s for s in data.get('steps', [])
-           if not s.get('skipped')
-           and s.get('returncode', 0) != 0
-           and 'e2e_runner' not in s.get('command', '')]
-    print(len(bad))
-except Exception as e:
-    print('1')
-")
+              CRITICAL=$(python3 -c "import json,sys; d=json.load(open('/tmp/anvil_result.json')); bad=[s for s in d.get('steps',[]) if not s.get('skipped') and s.get('returncode',0)!=0 and 'e2e_runner' not in s.get('command','')]; print(len(bad))" 2>/dev/null || echo 1)
               if [ "$CRITICAL" -gt 0 ]; then
                 echo "ANVIL: $CRITICAL critical step(s) failed (non-e2e)."
                 exit 1
