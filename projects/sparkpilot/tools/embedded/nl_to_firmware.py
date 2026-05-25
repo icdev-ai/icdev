@@ -13,10 +13,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sqlite3
-import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -251,7 +249,7 @@ def generate_code(command: str, board: str = "simulator", params: dict | None = 
         "code": code,
         "next_steps": [
             f"Compile: python tools/embedded/cmake_generator.py --project-id proj --board {board}",
-            f"Deploy: python tools/fleet/ota_manager.py --firmware-id <id> --device-id <id>",
+            "Deploy: python tools/fleet/ota_manager.py --firmware-id <id> --device-id <id>",
             "Or load in simulator: python tools/simulator/sim_runner.py --code <file>",
         ],
     }

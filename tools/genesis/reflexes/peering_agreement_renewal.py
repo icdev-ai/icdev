@@ -74,7 +74,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                                 "SELECT id FROM noc_alarms WHERE alarm_source='peering_renewal' AND device_name=? AND cleared=0 LIMIT 1",
                                 (str(item.get("id", "")),),
                             )
-                        existing = nocc.cursor().fetchone() if False else None  # handled above
+                        _existing = nocc.cursor().fetchone() if False else None  # noqa: F841
                         try:
                             r = nocc.execute(
                                 "SELECT id FROM noc_alarms WHERE alarm_source='peering_renewal' AND device_name=? AND cleared=0 LIMIT 1",

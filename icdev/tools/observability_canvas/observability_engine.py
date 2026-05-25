@@ -696,7 +696,9 @@ def check_nc_audit_to_siem_forwarder(canvas_project_id: str, odc_design_id: str)
     """
     violations: list = []
     try:
-        import sqlite3 as _sq, pathlib as _pl, json as _js
+        import sqlite3 as _sq
+        import pathlib as _pl
+        import json as _js
         _data = _pl.Path(__file__).resolve().parents[2] / "data"
 
         # 1. Load NDC topologies for canvas_project_id

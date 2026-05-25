@@ -6,6 +6,7 @@ from __future__ import annotations
 import requests
 from typing import Any
 
+from src.clients.http_client import BaseHTTPClient
 from src.models.feed import FeedItem
 
 
@@ -13,10 +14,16 @@ class SatelliteError(Exception):
     """Raised on unrecoverable satellite API errors or unexpected response formats."""
 
 
-class SatelliteClient:
+class SatelliteClient(BaseHTTPClient):
     """Client for the satellite imagery API."""
 
-    def __init__(self, base_url: str, api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str | None = None,
+        timeout: tuple[int, int] | int | None = None,
+    ) -> None:
+        super().__init__(timeout=timeout)
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
 
@@ -25,6 +32,7 @@ class SatelliteClient:
         headers = kwargs.pop("headers", {})
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        kwargs.setdefault("timeout", self.timeout)
         try:
             resp = requests.request(method, url, headers=headers, **kwargs)
             resp.raise_for_status()

@@ -1164,7 +1164,7 @@ def create_network_blueprint():
             if not coa_data:
                 try:
                     from tools.ndc.executive_summary_generator import generate_executive_summary
-                    exec_sum = generate_executive_summary(horizon_days=365)
+                    _exec_sum = generate_executive_summary(horizon_days=365)  # noqa: F841
                     coa_data = {
                         "coa_1": {
                             "id": 1,
@@ -12597,7 +12597,6 @@ Planning rules:
             generate_phase_graph, generate_final_graph,
             generate_phase_physical_graph, generate_phase_logical_graph,
             compute_physical_infoboxes, compute_logical_infoboxes,
-            _annotate_physical_edges, _build_logical_graph,
             run_consolidation_analysis, load_consolidation,
         )
 

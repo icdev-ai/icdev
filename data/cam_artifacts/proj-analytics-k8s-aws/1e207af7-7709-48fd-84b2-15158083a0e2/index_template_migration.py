@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 # Migrate Elasticsearch index templates and aliases to OpenSearch.
-import json, requests
+import requests
 from requests_aws4auth import AWS4Auth
 import boto3
 

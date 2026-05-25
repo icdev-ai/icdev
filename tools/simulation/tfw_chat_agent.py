@@ -608,7 +608,7 @@ def _handle_refactor(session_id: str, canvas_type: str, args_text: str) -> dict:
     reply = _llm_call(system, user)
     if not reply:
         reply = (
-            f"LLM unavailable. Common Java→Python mappings:\n"
+            "LLM unavailable. Common Java→Python mappings:\n"
             "- `Spring @Service` → `class MyService:` with dependency injection via constructor\n"
             "- `JDBC/Hibernate` → `SQLAlchemy` ORM or `asyncpg` for async\n"
             "- `EhCache` → `redis-py` with `@lru_cache` for in-process caching\n"

@@ -1,18 +1,20 @@
 # CUI // SP-CTI
 """Combined seed orchestrator for all AI canvas DoD/IC demo data.
 
-Runs T1–T5 in order:
+Runs T1–T6 in order:
   T1 — AADC 8 designs (seed_ai_canvases_aadc.py)
   T2 — AIMC 8 designs (seed_ai_canvases_aimc.py)
   T3 — AAC 5 scans (seed_ai_canvases_aac.py)
   T4 — Observatory 200 decisions (seed_ai_canvases_observatory.py)
   T5 — KG 38 nodes + 30+ edges (seed_ai_canvases_kg.py)
+  T6 — SDC demo before/after state (seed_sdc_demo.py)
 
 Flags:
   --reset-all         DELETE existing records before reseeding
   --json              Machine-readable output
   --skip-observatory  Skip T4
   --skip-kg           Skip T5
+  --skip-sdc          Skip T6
 
 Run:
     python tools/db/seeds/seed_ai_canvases_all.py
@@ -45,6 +47,7 @@ def main(
     reset_all: bool = False,
     skip_observatory: bool = False,
     skip_kg: bool = False,
+    skip_sdc: bool = False,
     verbose: bool = True,
 ) -> list[dict]:
     from tools.db.seeds.seed_ai_canvases_aadc import main as seed_aadc
@@ -52,6 +55,7 @@ def main(
     from tools.db.seeds.seed_ai_canvases_aac import main as seed_aac
     from tools.db.seeds.seed_ai_canvases_observatory import main as seed_obs
     from tools.db.seeds.seed_ai_canvases_kg import main as seed_kg
+    from tools.db.seeds.seed_sdc_demo import main as seed_sdc
 
     steps = [
         ("T1 — AADC designs", seed_aadc),
@@ -62,6 +66,8 @@ def main(
         steps.append(("T4 — Observatory decisions", seed_obs))
     if not skip_kg:
         steps.append(("T5 — KG nodes+edges", seed_kg))
+    if not skip_sdc:
+        steps.append(("T6 — SDC demo state", seed_sdc))
 
     results = []
     for label, fn in steps:
@@ -85,6 +91,7 @@ if __name__ == "__main__":
     parser.add_argument("--reset-all", action="store_true", help="Delete and reseed all records")
     parser.add_argument("--skip-observatory", action="store_true")
     parser.add_argument("--skip-kg", action="store_true")
+    parser.add_argument("--skip-sdc", action="store_true")
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
 
@@ -95,6 +102,7 @@ if __name__ == "__main__":
         reset_all=args.reset_all,
         skip_observatory=args.skip_observatory,
         skip_kg=args.skip_kg,
+        skip_sdc=args.skip_sdc,
         verbose=not args.as_json,
     )
 

@@ -408,7 +408,7 @@ def create_ccc_blueprint() -> Blueprint:
                 "notes": data.get("notes", ""),
             }
             loa_result = create_loa_request(conn, loa_data)
-            loa_id = loa_result.get("loa_id") or loa_result.get("loa_number")
+            _loa_id = loa_result.get("loa_id") or loa_result.get("loa_number")  # noqa: F841
             # Fetch the numeric id for generate_loa_for_facility
             try:
                 loa_row = conn.execute("SELECT id FROM ccc_loa_requests WHERE loa_number=?", (loa_result.get("loa_number"),)).fetchone()

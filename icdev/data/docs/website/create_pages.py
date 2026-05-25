@@ -178,7 +178,7 @@ print(f'Blog: ID={blog_id}')
 # Set Blog as the posts page
 try:
     wp.wp.setOptions(*auth, {'page_for_posts': str(blog_id)})
-    print(f'Blog set as posts page')
+    print('Blog set as posts page')
 except Exception as e:
     print(f'Could not set posts page: {e}')
 

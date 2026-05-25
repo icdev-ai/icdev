@@ -811,3 +811,13 @@
 |------|------|-------------|-------|--------|
 | Cloud Topology Overlay | tools\ndc\cloud_topology_overlay.py | Auto-registered: ndc/cloud_topology_overlay.py | --json | JSON |
 | Executive Summary Generator | tools\ndc\executive_summary_generator.py | Auto-registered: ndc/executive_summary_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Config Translator | tools\ndc\config_translator.py | Auto-registered: ndc/config_translator.py | --json | JSON |
+| Port Mapping Generator | tools\ndc\port_mapping_generator.py | Auto-registered: ndc/port_mapping_generator.py | --json | JSON |
+| Seed Dewie Demo | tools\ndc\seed_dewie_demo.py | Auto-registered: ndc/seed_dewie_demo.py | --json | JSON |
+| Isso Gate | tools\sdc\isso_gate.py | Auto-registered: sdc/isso_gate.py | --json | JSON |
+| Sdc Demo | tools\iqe\adapters\sdc_demo.py | Auto-registered: adapters/sdc_demo.py | --json | JSON |

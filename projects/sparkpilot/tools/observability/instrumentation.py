@@ -29,7 +29,6 @@ import json
 import logging
 from typing import Any, Callable, Dict, Optional
 
-from tools.observability.tracer import Span, set_content_tag
 
 logger = logging.getLogger("sparkpilot.observability.instrumentation")
 

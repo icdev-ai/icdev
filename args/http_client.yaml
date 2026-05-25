@@ -1,0 +1,7 @@
+# HTTP client configuration — edit here to tune thresholds without touching code
+timeout:
+  connect: 10   # seconds to establish a TCP connection
+  read: 30      # seconds to wait for the first byte of a response
+max_retries: 3
+backoff_factor: 0.5
+max_redirects: 10

@@ -79,9 +79,9 @@ def _checklist_md(categories: dict, apps: list, project: dict) -> str:
             f"#### {app['name']}",
             "",
             f"- [ ] Application responds to health check: `curl -f http://{safe}.internal/health`",
-            f"- [ ] Verify data integrity (row counts match source)",
-            f"- [ ] Check error rate in CloudWatch: < 0.1% over 5 min",
-            f"- [ ] Confirm no rollback triggers in past 30 min",
+            "- [ ] Verify data integrity (row counts match source)",
+            "- [ ] Check error rate in CloudWatch: < 0.1% over 5 min",
+            "- [ ] Confirm no rollback triggers in past 30 min",
             "",
         ]
 
@@ -156,11 +156,11 @@ def _validate_script(apps: list, project: dict) -> str:
         lines += [
             f"# {app['name']}",
             f"def check_{safe}_health():",
-            f"    try:",
+            "    try:",
             f"        req = urllib.request.urlopen('http://{host}/health', timeout=5)",
-            f"        return req.status == 200, f'HTTP {{req.status}}'",
-            f"    except urllib.error.URLError as e:",
-            f"        return False, f'Unreachable: {{e.reason}}'",
+            "        return req.status == 200, f'HTTP {req.status}'",
+            "    except urllib.error.URLError as e:",
+            "        return False, f'Unreachable: {e.reason}'",
             "",
             f"check('{app['name']} health endpoint', check_{safe}_health)",
             "",

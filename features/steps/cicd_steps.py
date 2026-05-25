@@ -1,7 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Step definitions for ICDEV™ CI/CD integration BDD scenarios."""
 
-import json
 import os
 import subprocess
 import sys
@@ -9,7 +8,6 @@ import sys
 from behave import given, then, when, use_step_matcher
 
 from tools.ci.core.event_envelope import BOT_IDENTIFIER, EventEnvelope
-from tools.ci.core.event_router import EventRouter
 
 
 # ---------------------------------------------------------------------------

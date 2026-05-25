@@ -336,7 +336,7 @@ def verify_syntax(dry_run: bool) -> list[str]:
             errors += 1
 
     if errors == 0:
-        actions.append(f"SYNTAX OK: All files compile successfully")
+        actions.append("SYNTAX OK: All files compile successfully")
     else:
         actions.append(f"SYNTAX ERRORS: {errors} files have errors")
 
@@ -364,34 +364,34 @@ def main():
     for a in actions:
         print(f"  {a}")
 
-    print(f"\nStep 2: Copying data directories to icdev/data/...")
+    print("\nStep 2: Copying data directories to icdev/data/...")
     actions = copy_data_dirs(dry_run)
     all_actions.extend(actions)
     for a in actions:
         print(f"  {a}")
 
-    print(f"\nStep 3: Updating imports in icdev/tools/...")
+    print("\nStep 3: Updating imports in icdev/tools/...")
     actions = update_imports(dry_run)
     all_actions.extend(actions)
     print(f"  {len(actions)} files updated")
 
-    print(f"\nStep 4: Updating imports in tests/...")
+    print("\nStep 4: Updating imports in tests/...")
     actions = update_imports_in_tests(dry_run)
     all_actions.extend(actions)
     print(f"  {len(actions)} files updated")
 
-    print(f"\nStep 5: Updating BASE_DIR patterns...")
+    print("\nStep 5: Updating BASE_DIR patterns...")
     actions = update_base_dir(dry_run)
     all_actions.extend(actions)
     print(f"  {len(actions)} files updated")
 
-    print(f"\nStep 6: Creating backward-compat shim...")
+    print("\nStep 6: Creating backward-compat shim...")
     actions = create_tools_shim(dry_run)
     all_actions.extend(actions)
     for a in actions:
         print(f"  {a}")
 
-    print(f"\nStep 7: Verifying syntax...")
+    print("\nStep 7: Verifying syntax...")
     actions = verify_syntax(dry_run)
     all_actions.extend(actions)
     for a in actions:

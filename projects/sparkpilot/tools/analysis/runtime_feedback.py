@@ -16,7 +16,6 @@ import argparse
 import json
 import re
 import sqlite3
-import sys
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone

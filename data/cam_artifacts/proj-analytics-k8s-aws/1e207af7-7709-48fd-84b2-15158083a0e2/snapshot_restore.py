@@ -1,6 +1,8 @@
 # CUI // SP-CTI
 # Elasticsearch → OpenSearch: S3 snapshot + restore migration
-import boto3, json, time, requests
+import boto3
+import time
+import requests
 from requests_aws4auth import AWS4Auth
 
 ES_HOST   = "https://elasticsearch.kube-system.svc.cluster.local:9200"

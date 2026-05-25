@@ -8,13 +8,11 @@ normalize -> extract features -> match patterns -> decide -> fix -> PR -> notify
 
 import argparse
 import json
-import os
 import sqlite3
 import subprocess
 import sys
-import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 

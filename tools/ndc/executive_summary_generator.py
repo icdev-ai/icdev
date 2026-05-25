@@ -221,8 +221,8 @@ def _render_markdown(data: Dict[str, Any]) -> str:
         "",
         "## Portfolio at a Glance",
         "",
-        f"| Metric | Value |",
-        f"|--------|-------|",
+        "| Metric | Value |",
+        "|--------|-------|",
         f"| Devices at Risk | {ps['total_devices']} |",
         f"| Sites Affected | {ps['sites_at_risk']} |",
         f"| Total Replacement Cost | ${ps['total_replacement_cost']:,.0f} |",
@@ -234,8 +234,8 @@ def _render_markdown(data: Dict[str, Any]) -> str:
         "",
         "## COA Strategy Comparison",
         "",
-        f"| Strategy | Risk | Downtime (hrs) | Est. Cost |",
-        f"|----------|------|----------------|-----------|",
+        "| Strategy | Risk | Downtime (hrs) | Est. Cost |",
+        "|----------|------|----------------|-----------|",
     ]
     for key, coa in coas.items():
         lines.append(

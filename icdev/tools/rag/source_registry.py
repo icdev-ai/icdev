@@ -584,6 +584,37 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "description": "ICDEV tool category groupings (manifest.md section headers)",
     },
 
+    # --- NIST Knowledge Base (D-KB-NIST) ---
+    "nist_csf_20": {
+        "table": "nist_csf_20_sections",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["section_id", "title", "description", "guidance_text"],
+        "metadata_cols": ["section_id"],
+        "priority": 2,
+        "mode": "batch",
+        "description": "NIST Cybersecurity Framework 2.0 (CSWP.29) sections and guidance",
+    },
+    "nist_800_207": {
+        "table": "nist_800_207_sections",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["section_id", "title", "description", "guidance_text"],
+        "metadata_cols": ["section_id"],
+        "priority": 2,
+        "mode": "batch",
+        "description": "NIST SP 800-207 Zero Trust Architecture sections and guidance",
+    },
+    "nist_800_218": {
+        "table": "nist_800_218_sections",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["section_id", "title", "description", "guidance_text"],
+        "metadata_cols": ["section_id"],
+        "priority": 2,
+        "mode": "batch",
+        "description": "NIST SP 800-218 Secure Software Development Framework (SSDF) sections and guidance",
+    },
     # --- Strategos Conflict Intelligence ---
     "sg_corpus_documents": {
         "table": "sg_corpus_documents",

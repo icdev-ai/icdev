@@ -1,0 +1,8 @@
+# Intent: Show designs that have achieved IL5 readiness (0 CAT1, posture grade A).
+# Use during Scenario C to demonstrate after-state compliance.
+
+foreach t in sdc_demo.threat_summary
+  where t.snapshot_label == "after"
+  where t.cat1_count == 0
+  where t.posture_grade == "A"
+  select t.design_id, t.posture_grade, t.controls_implemented, t.controls_total, t.risk_score

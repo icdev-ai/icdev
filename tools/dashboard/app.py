@@ -2562,6 +2562,7 @@ def create_app() -> Flask:
             "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
             "aac":            ("tools.iqe.adapters.ai_augmentation", ["ai_augmentation.opportunities", "ai_augmentation.scans", "ai_augmentation.roadmaps"]),
             "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
+            "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
@@ -2687,7 +2688,26 @@ def create_app() -> Flask:
     @app.route("/wizard")
     def wizard_page():
         """Getting Started wizard — guides new users to the right workflow."""
-        return render_template("wizard.html")
+        import yaml as _yaml
+        uc_meta = {}
+        try:
+            uc_path = BASE_DIR / "args" / "use_cases.yaml"
+            if uc_path.exists():
+                with open(uc_path, "r", encoding="utf-8") as _fh:
+                    data = _yaml.safe_load(_fh) or {}
+                for uc in data.get("use_cases", []):
+                    uc_meta[uc["id"]] = {
+                        "label": uc.get("label", ""),
+                        "description": uc.get("description", "").strip(),
+                        "canvas_wiring": uc.get("canvas_wiring", []),
+                        "req_count": len(uc.get("template_requirements", [])),
+                        "fast_track": uc.get("fast_track", False),
+                        "badge": uc.get("badge", ""),
+                        "category": uc.get("category", ""),
+                    }
+        except Exception as _e:
+            app.logger.warning("wizard_page: failed to load use_cases.yaml: %s", _e)
+        return render_template("wizard.html", use_case_meta=uc_meta)
 
     @app.route("/chat")
     def chat_new():
@@ -2698,6 +2718,9 @@ def create_app() -> Flask:
         frameworks = flask_request.args.get("frameworks", "")
         custom_role_name = flask_request.args.get("custom_role_name", "")
         custom_role_desc = flask_request.args.get("custom_role_desc", "")
+        use_case_id = flask_request.args.get("use_case", "")
+        skip_fast_track = flask_request.args.get("skip_fast_track", "") == "1"
+        from_wizard = flask_request.args.get("from_wizard", "") == "1"
         # ?canvas= deep link — pre-selects canvas mode (forwarded from /simulate/chat redirect)
         canvas = flask_request.args.get("canvas", "") or flask_request.args.get("canvas_type", "")
         _allowed = {"cam", "ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
@@ -2714,6 +2737,9 @@ def create_app() -> Flask:
             wizard_custom_role_name=custom_role_name,
             wizard_custom_role_desc=custom_role_desc,
             wizard_canvas=wizard_canvas,
+            wizard_use_case=use_case_id,
+            wizard_skip_fast_track=skip_fast_track,
+            from_wizard=from_wizard,
             llm_models=llm_models,
             llm_default_model=llm_default_model,
         )

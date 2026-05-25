@@ -3036,7 +3036,7 @@ def generate_phase_diagram(
 
     phase_no = phase_info.get("phase_no", 0)
     name = phase_info.get("name", "Unknown Phase")
-    actions = phase_info.get("actions", [])
+    _actions = phase_info.get("actions", [])  # noqa: F841
     validation = phase_info.get("validation", "")
     rollback = phase_info.get("rollback", "")
 

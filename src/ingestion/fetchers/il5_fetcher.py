@@ -16,7 +16,6 @@ import logging
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 log = logging.getLogger(__name__)

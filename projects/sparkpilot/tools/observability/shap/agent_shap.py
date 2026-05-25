@@ -23,10 +23,8 @@ import logging
 import math
 import random
 import sqlite3
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger("sparkpilot.observability.shap")
 

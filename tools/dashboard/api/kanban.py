@@ -1398,6 +1398,51 @@ def remove_task_tag(task_id, tag_id):
         conn.close()
 
 
+# ── Executor chain toggle ───────────────────────────────────────────────
+
+def _update_env_file(key: str, value: str) -> None:
+    """Update or append a key in the .env file."""
+    env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    found = False
+    new_lines = []
+    for line in lines:
+        if line.strip().startswith(f"{key}="):
+            new_lines.append(f"{key}={value}")
+            found = True
+        else:
+            new_lines.append(line)
+    if not found:
+        new_lines.append(f"{key}={value}")
+    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
+@kanban_api.route("/settings/executor-chain", methods=["GET", "POST"])
+def executor_chain_setting():
+    """Read or update the global ICDEV_KANBAN_EXECUTOR_CHAIN env override."""
+    if request.method == "GET":
+        chain = os.environ.get("ICDEV_KANBAN_EXECUTOR_CHAIN", "")
+        if not chain:
+            return jsonify({"chain": None, "message": "Using fallback from args/strategos_config.yaml"})
+        return jsonify({"chain": [x.strip() for x in chain.split(",") if x.strip()]})
+
+    data = request.get_json(force=True, silent=True) or {}
+    chain_list = data.get("chain")
+    if not isinstance(chain_list, list) or not chain_list:
+        return jsonify({"error": "chain must be a non-empty list of executor names"}), 400
+    valid = {"claude_cli", "gitlab", "github_actions", "ollama_local"}
+    invalid = [x for x in chain_list if x not in valid]
+    if invalid:
+        return jsonify({"error": f"Invalid executors: {invalid}. Valid: {sorted(valid)}"}), 400
+    chain_str = ",".join(chain_list)
+    try:
+        _update_env_file("ICDEV_KANBAN_EXECUTOR_CHAIN", chain_str)
+        os.environ["ICDEV_KANBAN_EXECUTOR_CHAIN"] = chain_str
+        return jsonify({"status": "updated", "chain": chain_list})
+    except Exception as exc:
+        return jsonify({"error": str(exc)[:200]}), 500
+
+
 @kanban_api.route("/iqe-query", methods=["POST"])
 def kanban_iqe_query():
     """Natural-language IQE query against Kanban collections."""

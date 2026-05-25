@@ -20,7 +20,6 @@ import argparse
 import hashlib
 import json
 import sqlite3
-import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -315,19 +314,19 @@ def main():
     else:
         if args.bundle:
             s = result["summary"]
-            print(f"\n=== SWFT Evidence Bundle ===")
+            print("\n=== SWFT Evidence Bundle ===")
             print(f"  Bundle ID: {result['bundle_id']}")
             print(f"  Readiness: {s['readiness_pct']}%")
             print(f"  Required: {s['required_met']}/{s['required_total']}")
             print(f"  Optional: {s['optional_met']}/{s['optional_total']}")
             print(f"  All Required Met: {s['all_required_met']}")
         else:
-            print(f"\n=== SWFT Validation ===")
+            print("\n=== SWFT Validation ===")
             print(f"  Valid: {result['valid']}")
             print(f"  Blocking Gaps: {result['blocking_gaps']}")
             print(f"  Warning Gaps: {result['warning_gaps']}")
             if result["recommendations"]:
-                print(f"  Recommendations:")
+                print("  Recommendations:")
                 for rec in result["recommendations"]:
                     print(f"    - {rec}")
 

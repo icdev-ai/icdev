@@ -6,7 +6,6 @@ Targets data/sparkpilot.db.
 Adds: dev_profiles (D183), dev_profile_locks (D184), dev_profile_detections (D185).
 """
 
-import sqlite3
 
 
 def _table_exists(conn, table):

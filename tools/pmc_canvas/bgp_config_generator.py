@@ -83,7 +83,7 @@ def _gen_ios_xr(*, peer_asn, our_asn, neighbor_ip, desc, import_policy,
         f"neighbor {neighbor_ip}",
         f"  remote-as {peer_asn}",
         f"  description {desc}",
-        f"  update-source Loopback0",
+        "  update-source Loopback0",
     ]
     if md5_password:
         lines.append(f"  password clear {md5_password}")
@@ -92,7 +92,7 @@ def _gen_ios_xr(*, peer_asn, our_asn, neighbor_ip, desc, import_policy,
         f"    route-policy {import_policy} in",
         f"    route-policy {export_policy} out",
         f"    maximum-prefix {max_prefixes} 80 warning-only",
-        f"    soft-reconfiguration inbound always",
+        "    soft-reconfiguration inbound always",
         "  !",
         "!",
     ]
@@ -131,7 +131,7 @@ def _gen_eos(*, peer_asn, our_asn, neighbor_ip, desc, import_policy,
     if md5_password:
         lines.append(f"neighbor {neighbor_ip} password 7 {md5_password}")
     lines += [
-        f"!",
+        "!",
         f"address-family {af}",
         f"   neighbor {neighbor_ip} activate",
         f"   neighbor {neighbor_ip} route-map {import_policy} in",
@@ -157,8 +157,8 @@ def _gen_nokia_sros(*, peer_asn, our_asn, neighbor_ip, desc, import_policy,
     lines += [
         f"        family {af_section}",
         f"        prefix-limit {max_prefixes}",
-        f"    exit",
-        f"exit",
+        "    exit",
+        "exit",
     ]
     return "\n".join(lines)
 
@@ -173,13 +173,13 @@ def _gen_frr(*, peer_asn, our_asn, neighbor_ip, desc, import_policy,
     if md5_password:
         lines.append(f"neighbor {neighbor_ip} password {md5_password}")
     lines += [
-        f"!",
+        "!",
         f"address-family {af}",
         f" neighbor {neighbor_ip} activate",
         f" neighbor {neighbor_ip} route-map {import_policy} in",
         f" neighbor {neighbor_ip} route-map {export_policy} out",
         f" neighbor {neighbor_ip} maximum-prefix {max_prefixes}",
-        f"exit-address-family",
+        "exit-address-family",
     ]
     return "\n".join(lines)
 
@@ -200,8 +200,8 @@ def _gen_bird2(*, peer_asn, our_asn, neighbor_ip, desc, import_policy,
         f"        import filter {import_policy};",
         f"        export filter {export_policy};",
         f"        import limit {max_prefixes} action warn;",
-        f"    }};",
-        f"}}",
+        "    };",
+        "}",
     ]
     return "\n".join(lines)
 

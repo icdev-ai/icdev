@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 
 from .constants import (
     ACHIEVEMENTS, XP_MULT_FIRST_TRY_NO_HINTS, XP_MULT_WITH_HINTS,
-    XP_MULT_REFLECT_CORRECT, XP_HINT_PENALTY, XP_SPEED_BONUS,
+    XP_HINT_PENALTY, XP_SPEED_BONUS,
     XP_SPEED_BONUS_THRESHOLD_S, XP_DAILY_LOGIN_BASE, XP_STREAK_BONUS_PER_DAY,
-    xp_to_level, xp_to_next_level, LEVELS,
+    xp_to_next_level,
 )
 from .db import (
     update_user_xp, grant_achievement, get_user_achievements, get_user,

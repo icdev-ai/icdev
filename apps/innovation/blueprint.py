@@ -14,8 +14,7 @@ from .db import (
     create_assessment, get_latest_assessment, approve_assessment,
     create_pilot, list_pilots,
     add_comment, list_comments,
-    pipeline_stats, recent_ideas,
-    VALID_STATUSES,
+    pipeline_stats, VALID_STATUSES,
 )
 from .intake_engine import get_rounds, generate_brief
 from .scoring_engine import compute_score

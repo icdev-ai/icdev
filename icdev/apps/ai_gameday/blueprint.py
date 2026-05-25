@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import yaml
 
-from flask import Blueprint, g, jsonify, render_template, request
+from flask import Blueprint, jsonify, render_template, request
 
 from .constants import (
     APP_NAME, SCENARIO_SLUG, AI_TOOLS_CATALOG, INJECT_TYPES, LEVELS,
@@ -19,18 +19,18 @@ from .constants import (
 from .db import migrate
 from tools.ai_game_engine.ontology import (
     resolve_scenario_ontology, resolve_role_ontology, filter_by_ontology_class,
-    ONTOLOGY_NAMESPACES, SCENARIO_ONTOLOGY, ROLE_ONTOLOGY, EVENT_ONTOLOGY,
+    ONTOLOGY_NAMESPACES,
 )
 from tools.ai_game_engine.scenario_registry import load_scenario
 from tools.ttx.engine import TTXEngine
 from tools.ttx.scenario_loader import list_scenario_slugs
 from tools.ttx.session_manager import get_session, list_sessions, get_session_by_code
-from tools.ttx.team_manager import list_teams, get_team, get_team_by_code, list_members
+from tools.ttx.team_manager import list_teams, get_team_by_code
 from tools.ttx.inject_dispatcher import (
-    get_all_injects, get_dispatched_injects, get_inject_by_id,
+    get_all_injects, get_dispatched_injects,
 )
 from tools.ttx.leaderboard import get_leaderboard, compute_leaderboard, award_ribbons
-from tools.ttx.aar_generator import generate_aar, export_aar_pdf
+from tools.ttx.aar_generator import generate_aar
 from tools.db.storage import get_connection
 
 bp = Blueprint("ai_gameday", __name__)

@@ -90,7 +90,7 @@ def _ios_xr_iface(index: int, is_loopback: bool = False) -> str:
 
 def _nokia_sros_iface(index: int, is_loopback: bool = False) -> str:
     if is_loopback:
-        return f"system"
+        return "system"
     return f"1/1/{index + 1}"
 
 

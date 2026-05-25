@@ -83,6 +83,7 @@ def generate_agreement_document(conn, agreement_id: str) -> str:
     noc_phone = a.get("noc_phone", "")
     legal_entity = a.get("legal_entity", partner_name)
     notes = a.get("notes", "")
+    notes_section = ("NOTES\n------\n" + notes + "\n") if notes else ""
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     doc = f"""// CUI // SP-CTI //
@@ -161,7 +162,7 @@ c) Both parties shall promptly notify the other of any suspected BGP hijack,
 
 7. COSTS
 --------
-This agreement is {("settlement-free (no monetary exchange)" if peering_type == "settlement_free" else f"a paid arrangement. Monthly charges as separately negotiated.")}.
+This agreement is {("settlement-free (no monetary exchange)" if peering_type == "settlement_free" else "a paid arrangement. Monthly charges as separately negotiated.")}.
 
 8. TERM & TERMINATION
 ---------------------
@@ -182,7 +183,7 @@ This agreement shall be governed by applicable law as agreed by the parties
 in a separate Master Services Agreement, or in the absence thereof, by the
 laws of the jurisdiction of Party A.
 
-{("NOTES\n------\n" + notes + chr(10)) if notes else ""}
+{notes_section}
 SIGNATURES
 ----------
 Party A Authorized Signature:

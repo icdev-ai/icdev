@@ -684,10 +684,10 @@ def _build_ansible_inventory(design_id: str, nodes: list, ts: str) -> str:
             graph_lines.append(f"{slug} ansible_host={{{{ neptune_{tf_slug}_endpoint }}}} ansible_port=8182")
 
     sections = [
-        f"# Ansible Inventory — DDC Data Infrastructure",
+        "# Ansible Inventory — DDC Data Infrastructure",
         f"# Design: {design_id}",
         f"# Generated: {ts}",
-        f"# Populate from: terraform output -json > terraform_outputs.json",
+        "# Populate from: terraform output -json > terraform_outputs.json",
         "",
     ]
     if len(db_lines) > 1:

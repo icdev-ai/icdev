@@ -4515,3 +4515,27 @@ projects:
   - key: test
     title: Tests & Validation
     priority: critical
+
+- key: sdc-demo
+  name: SDC Demo Strategy
+  task_prefix: sdc-demo-
+  briefs:
+    - Red Team to Compliant — 15-minute executive demo showing 47 STRIDE findings reduced to 0 CAT1 via 12-step SDC automation
+    - Knowledge base population with NIST 800-53, DISA STIGs, MITRE ATT&CK, NIST CSF 2.0, NIST 800-207 ZTA
+    - WOW factors: ROI calculator, compliance timeline widget, ATT&CK overlay, ISSO gate simulation
+  epics:
+    - key: phase1-kb
+      title: Knowledge Base Population
+      priority: medium
+    - key: phase2-synth
+      title: Synthetic Data Generation
+      priority: critical
+    - key: phase3-runner
+      title: SDC Demo Runner
+      priority: critical
+    - key: phase4-playbook
+      title: Executive Playbooks + IQE Queries
+      priority: critical
+    - key: phase5-wow
+      title: WOW Factor Enhancements
+      priority: high

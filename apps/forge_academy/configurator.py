@@ -69,7 +69,7 @@ def _handle_rag_search(config: dict) -> dict:
         from tools.rag.retriever import retrieve
         results = retrieve(query, top_k=3)
         return {"status": "ok", "action": "rag_search", "results": results}
-    except Exception as exc:
+    except Exception:
         return {"status": "ok", "action": "rag_search",
                 "results": [{"text": f"RAG demo: searched for '{query}'", "score": 0.92}],
                 "note": "Live RAG unavailable — demo mode"}

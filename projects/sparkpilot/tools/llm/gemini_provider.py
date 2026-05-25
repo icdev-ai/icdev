@@ -50,7 +50,6 @@ def _convert_messages_to_gemini(
       {"role": "user", "parts": ["text"]}
       {"role": "user", "parts": [{"text": "desc"}, {"inline_data": {"mime_type": ..., "data": ...}}]}
     """
-    import base64
 
     result: List[Dict[str, Any]] = []
 

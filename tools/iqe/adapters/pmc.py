@@ -167,7 +167,7 @@ def policies_adapter(query: str, conn=None, **_) -> list[dict]:
 
 def register(registry) -> None:
     """Register PMC collections with the IQE registry."""
-    if not os.environ.get("ICDEV_PMC_ENABLED", "false").lower() in ("true", "1"):
+    if os.environ.get("ICDEV_PMC_ENABLED", "false").lower() not in ("true", "1"):
         return
 
     registry.register("pmc.peers", peers_adapter, description="BGP peers — ASN, org, policy, status")

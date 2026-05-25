@@ -862,7 +862,8 @@ def create_wf_blueprint() -> Blueprint:
             if not f.filename:
                 return jsonify({"error": "Empty filename"}), 400
             current_user = _get_current_user() or "anonymous"
-            import tempfile, pathlib
+            import tempfile
+            import pathlib
             suffix = pathlib.Path(f.filename).suffix
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 f.save(tmp.name)

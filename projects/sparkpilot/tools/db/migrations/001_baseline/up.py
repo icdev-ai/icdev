@@ -58,7 +58,6 @@ def up(conn):
 
 def down(conn):
     """Drop all tables (DEVELOPMENT ONLY — never in production)."""
-    import sqlite3
     c = conn.cursor()
     c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'schema_migrations'")
     tables = [row[0] for row in c.fetchall()]

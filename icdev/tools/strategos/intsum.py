@@ -150,9 +150,9 @@ def _build_prompts(ctx: dict[str, Any]) -> list[str]:
             f"indicators to watch. Do NOT use headers or bullet points.\n\nData:\n{base_context}"
         ),
         (
-            f"Write a 1-2 sentence Distribution paragraph for a military INTSUM. "
-            f"Include classification (CUI // SP-CTI) and distribution statement. "
-            f"Do NOT use headers or bullet points."
+            "Write a 1-2 sentence Distribution paragraph for a military INTSUM. "
+            "Include classification (CUI // SP-CTI) and distribution statement. "
+            "Do NOT use headers or bullet points."
         ),
     ]
     return prompts

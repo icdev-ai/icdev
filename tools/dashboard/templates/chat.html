@@ -90,6 +90,13 @@
             </div>
         </div>
 
+        <!-- Wizard origin banner -->
+        <div id="wizard-origin-banner" class="wizard-origin-banner" style="display:none;">
+            <span class="wizard-origin-icon">&#x1F3AF;</span>
+            <span class="wizard-origin-text">Started from <strong id="wizard-origin-label">Getting Started</strong></span>
+            <button class="wizard-origin-dismiss" onclick="document.getElementById('wizard-origin-banner').style.display='none';" title="Dismiss">&#x2715;</button>
+        </div>
+
         <!-- Message stream -->
         <div id="message-stream" class="chat-messages"></div>
 
@@ -364,7 +371,10 @@
         wizardClassification: {{ (wizard_classification or '')|tojson if wizard_classification is defined else '""' }},
         wizardFrameworks: {{ (wizard_frameworks or '')|tojson if wizard_frameworks is defined else '""' }},
         customRoleName: {{ (wizard_custom_role_name or '')|tojson if wizard_custom_role_name is defined else '""' }},
-        customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson if wizard_custom_role_desc is defined else '""' }}
+        customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson if wizard_custom_role_desc is defined else '""' }},
+        useCaseId: {{ (wizard_use_case or '')|tojson if wizard_use_case is defined else '""' }},
+        skipFastTrack: {{ 'true' if wizard_skip_fast_track else 'false' }},
+        fromWizard: {{ 'true' if from_wizard else 'false' }}
     };
 </script>
 {% endblock %}

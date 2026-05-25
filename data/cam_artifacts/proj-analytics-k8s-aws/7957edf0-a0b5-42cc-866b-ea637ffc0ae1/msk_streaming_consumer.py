@@ -1,9 +1,9 @@
 # CUI // SP-CTI
 # MSK Kafka streaming consumer — replaces NiFi real-time flow.
 # Deploy as AWS Glue Streaming job or Lambda with MSK trigger.
-import json, os
+import json
+import os
 from kafka import KafkaConsumer
-import boto3
 
 MSK_BROKERS = os.environ["MSK_BOOTSTRAP_SERVERS"].split(",")
 TOPIC        = os.environ.get("KAFKA_TOPIC", "analytics-events")

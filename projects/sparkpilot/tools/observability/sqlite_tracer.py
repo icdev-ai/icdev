@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from tools.observability.tracer import NullSpan, Span, Tracer
+from tools.observability.tracer import Span, Tracer
 
 logger = logging.getLogger("sparkpilot.observability.sqlite_tracer")
 

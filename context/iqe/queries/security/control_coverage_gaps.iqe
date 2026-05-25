@@ -1,0 +1,7 @@
+# Intent: Identify designs where controls_implemented is less than 50% of controls_total.
+# Surfaces high-priority remediation targets for security operations.
+
+foreach t in sdc_demo.threat_summary
+  where t.snapshot_label == "before"
+  where t.controls_implemented < t.controls_total
+  select t.design_id, t.controls_implemented, t.controls_total, t.cat1_count, t.posture_grade

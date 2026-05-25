@@ -6,7 +6,6 @@ rate limiting by tier, and IL5 ISSO approval workflow.
 """
 
 import hashlib
-import json
 import os
 import shutil
 import sqlite3

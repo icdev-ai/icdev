@@ -81,7 +81,6 @@ def _record_event(conn, xc_id: int, event_type: str, old_status: str,
 def _set_order_status(conn, xc_id: int, new_status: str, order_id: str = "",
                       carrier_ticket_id: str = "", ordered_by: str = "",
                       estimated_delivery: str = "") -> None:
-    now = datetime.now(timezone.utc).isoformat()
     sets_pg = "order_status = %s"
     sets_sq = "order_status = ?"
     params: list = [new_status]

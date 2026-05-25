@@ -869,7 +869,7 @@ def update_constitution_check(spec_dir: Path, validation_results: dict) -> Path:
     ]
 
     if summary:
-        lines.append(f"## Summary")
+        lines.append("## Summary")
         lines.append(summary)
         lines.append("")
 

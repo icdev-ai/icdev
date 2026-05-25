@@ -126,7 +126,7 @@ def _get_iac_artifacts(run_id: str) -> list[dict]:
             return [
                 {"name": "Terraform Main", "path": f"data/studio_artifacts/ddc/terraform/main_{uid}.tf", "type": "tf"},
                 {"name": "Terraform Variables", "path": "data/studio_artifacts/ddc/terraform/variables.tf", "type": "tf"},
-                {"name": "Terraform tfvars", "path": f"data/studio_artifacts/ddc/terraform/terraform.tfvars.example", "type": "tf"},
+                {"name": "Terraform tfvars", "path": "data/studio_artifacts/ddc/terraform/terraform.tfvars.example", "type": "tf"},
             ]
     return []
 

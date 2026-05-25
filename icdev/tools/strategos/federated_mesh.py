@@ -15,7 +15,7 @@ import logging
 import math
 import re
 import uuid
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
