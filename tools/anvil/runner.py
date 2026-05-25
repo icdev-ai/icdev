@@ -65,6 +65,11 @@ def extract_commands(markdown_path: Path) -> list[str]:
     return cmds
 
 
+def _is_background(cmd: str) -> bool:
+    """True when the command ends with ' &' — shell background syntax unsupported by subprocess."""
+    return cmd.rstrip().endswith(" &")
+
+
 def _is_safe(cmd: str) -> bool:
     stripped = cmd.strip().lstrip("!").strip()
     return any(stripped.startswith(p) for p in _ALLOWED_PREFIXES)
@@ -79,6 +84,9 @@ def _substitute(cmd: str, args: list[str]) -> str:
 
 def _run_one(cmd: str, args: list[str], *, timeout: int = 600) -> dict[str, Any]:
     expanded = _substitute(cmd, args)
+    if _is_background(expanded):
+        return {"command": cmd, "skipped": True,
+                "reason": "background process (& suffix) — not supported in headless runner"}
     if not _is_safe(expanded):
         return {"command": cmd, "skipped": True,
                 "reason": "prefix not in allowlist"}
