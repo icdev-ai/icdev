@@ -35,7 +35,7 @@ spec:
       containers:
         - name: monitor
           image: ${ECR_REGISTRY}/icdev-monitor:latest
-          args: ["tools/a2a/agent_server.py", "--agent-id", "monitor-agent", "--port", "8450"]
+          args: ["tools/a2a/agent_entrypoint.py", "--agent-id", "monitor-agent", "--port", "8450", "--no-tls"]
           ports:
             - containerPort: 8450
               protocol: TCP

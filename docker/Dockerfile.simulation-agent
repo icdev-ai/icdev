@@ -55,4 +55,4 @@ EXPOSE 8455
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:8455/health || exit 1
 
-ENTRYPOINT ["python", "tools/a2a/agent_server.py", "--agent-id", "simulation-agent", "--port", "8455"]
+ENTRYPOINT ["python", "tools/a2a/agent_entrypoint.py", "--agent-id", "simulation-agent", "--port", "8455", "--no-tls"]

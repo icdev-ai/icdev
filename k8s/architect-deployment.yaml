@@ -32,7 +32,7 @@ spec:
       containers:
         - name: architect
           image: ${ECR_REGISTRY}/icdev-agent:latest
-          args: ["tools/a2a/agent_server.py", "--agent-id", "architect-agent", "--port", "8444"]
+          args: ["tools/a2a/agent_entrypoint.py", "--agent-id", "architect-agent", "--port", "8444", "--no-tls"]
           ports:
             - containerPort: 8444
               protocol: TCP
