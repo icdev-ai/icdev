@@ -23,6 +23,9 @@ on:
         default: "ollama_cloud"
         type: string
 
+permissions:
+  contents: write   # required for ci-fix commit + push to main
+
 env:
   PYTHONPATH: "."
   ICDEV_STORAGE_BACKEND: sqlite
