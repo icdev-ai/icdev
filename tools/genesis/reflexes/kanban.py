@@ -3287,8 +3287,11 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
             if ok:
                 _dispatch_times[task_id] = datetime.now(timezone.utc)
                 _set_executor_type(task_id, "github_actions")
+                # Move to in_progress immediately — GA is async and the
+                # _github_actions_dispatched in-memory set is lost on restart.
+                _move_task(task_id, "in_progress")
                 _github_actions_dispatched.add(task_id)
-                print(f"  Kanban: dispatched {task_id} via GitHub Actions")
+                print(f"  Kanban: dispatched {task_id} via GitHub Actions → in_progress")
                 dispatched = True
                 break
         elif tier == "ollama_local":
