@@ -40,6 +40,7 @@
 <!-- Actions -->
 <div style="margin: 16px 0; display: flex; gap: 8px;">
     <button class="btn btn-primary" onclick="openOppModal()">+ New Opportunity</button>
+    <a href="/proposals/reviews-dashboard" class="btn btn-secondary">Executive Review Dashboard</a>
 </div>
 
 <!-- Opportunity Table -->
@@ -58,6 +59,7 @@
                 <th>Type</th>
                 <th>Set-Aside</th>
                 <th>Status</th>
+                <th>Win %</th>
                 <th>Proposal Mgr</th>
             </tr>
         </thead>
@@ -77,10 +79,23 @@
                     {% set status_colors = {'intake': 'info', 'bid_no_bid': 'warning', 'go': 'success', 'writing': 'info', 'review': 'warning', 'final': 'success', 'submitted': 'success', 'won': 'success', 'lost': 'error', 'no_bid': 'warning', 'cancelled': 'error'} %}
                     <span class="badge badge-{{ status_colors.get(opp.status, 'info') }}">{{ opp.status | replace('_', ' ') | title }}</span>
                 </td>
+                <td>
+                    {% if opp.win_probability is not none %}
+                        {% if opp.win_probability >= 70 %}
+                            <span style="color:var(--status-green); font-weight:bold;">{{ opp.win_probability }}%</span>
+                        {% elif opp.win_probability >= 40 %}
+                            <span style="color:var(--status-yellow, #ffc107); font-weight:bold;">{{ opp.win_probability }}%</span>
+                        {% else %}
+                            <span style="color:var(--status-red); font-weight:bold;">{{ opp.win_probability }}%</span>
+                        {% endif %}
+                    {% else %}
+                        <span style="color:var(--text-secondary);">—</span>
+                    {% endif %}
+                </td>
                 <td>{{ opp.proposal_manager or '—' }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="9" class="text-muted" style="text-align:center;">No opportunities yet. Click "+ New Opportunity" to create one.</td></tr>
+            <tr><td colspan="10" class="text-muted" style="text-align:center;">No opportunities yet. Click "+ New Opportunity" to create one.</td></tr>
             {% endfor %}
         </tbody>
     </table>

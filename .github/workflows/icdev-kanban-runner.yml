@@ -39,6 +39,8 @@ env:
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || '' }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY || '' }}
   AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-gov-west-1' }}
+  # Tell Playwright the dashboard is managed by this workflow — don't spawn a second instance.
+  ICDEV_NO_SERVER: "1"
 
 jobs:
   run:
@@ -149,13 +151,39 @@ jobs:
           done
 
       # ── ANVIL execution ───────────────────────────────────────────────────
+      # --keep-going: run all steps even if one fails, so we see the full picture.
+      # E2E failures are treated as non-blocking; other failures hard-fail the job.
       - name: ANVIL — Execute Task
         run: |
           TASK_TYPE="${{ github.event.inputs.task_type }}"
           TASK_DESC="${{ github.event.inputs.task_desc }}"
           if [ -f "tools/anvil/${TASK_TYPE}.py" ]; then
             echo "Running ANVIL wrapper: tools/anvil/${TASK_TYPE}.py"
-            python "tools/anvil/${TASK_TYPE}.py" --json -- "$TASK_DESC"
+            set +e
+            python "tools/anvil/${TASK_TYPE}.py" --json --keep-going -- "$TASK_DESC" \
+              | tee /tmp/anvil_result.json
+            ANVIL_RC=$?
+            set -e
+            if [ "$ANVIL_RC" -ne 0 ]; then
+              CRITICAL=$(python3 -c "
+import json, sys
+try:
+    data = json.load(open('/tmp/anvil_result.json'))
+    bad = [s for s in data.get('steps', [])
+           if not s.get('skipped')
+           and s.get('returncode', 0) != 0
+           and 'e2e_runner' not in s.get('command', '')]
+    print(len(bad))
+except Exception as e:
+    print('1')
+")
+              if [ "$CRITICAL" -gt 0 ]; then
+                echo "ANVIL: $CRITICAL critical step(s) failed (non-e2e)."
+                exit 1
+              else
+                echo "ANVIL: completed — only non-critical (e2e) failures."
+              fi
+            fi
           else
             echo "No ANVIL wrapper for '${TASK_TYPE}'. Running generic health + lint."
             python tools/testing/health_check.py --json

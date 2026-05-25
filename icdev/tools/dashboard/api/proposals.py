@@ -1118,6 +1118,33 @@ def get_stats(opp_id):
         except (ValueError, TypeError):
             days_left = None
 
+        # By-volume compliance breakdown (prop-cmp-05)
+        volumes = conn.execute(
+            "SELECT id, volume_number, title FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number",
+            (opp_id,),
+        ).fetchall()
+        by_volume = []
+        for vol in volumes:
+            vc = conn.execute(
+                """SELECT compliance_status FROM proposal_compliance_matrix
+                   WHERE opportunity_id = ? AND volume_id = ?""",
+                (opp_id, vol["id"]),
+            ).fetchall()
+            vc_total = len(vc)
+            vc_compliant = sum(1 for c in vc if c["compliance_status"] == "compliant")
+            vc_partial = sum(1 for c in vc if c["compliance_status"] == "partial")
+            vc_not = sum(1 for c in vc if c["compliance_status"] == "not_addressed")
+            by_volume.append({
+                "volume_id": vol["id"],
+                "volume_number": vol["volume_number"],
+                "title": vol["title"],
+                "total_reqs": vc_total,
+                "compliant": vc_compliant,
+                "partial": vc_partial,
+                "not_addressed": vc_not,
+                "coverage_pct": round(((vc_compliant + vc_partial) / vc_total * 100) if vc_total > 0 else 0, 1),
+            })
+
         return jsonify(
             {
                 "sections_total": total,
@@ -1129,6 +1156,7 @@ def get_stats(opp_id):
                 "open_findings": open_findings,
                 "finding_severity_distribution": severity_dist,
                 "days_to_deadline": days_left,
+                "by_volume": by_volume,
             }
         )
     finally:
@@ -1171,3 +1199,741 @@ def create_contract_from_opportunity(opp_id):
         return jsonify(result), 201
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =====================================================================
+# Questions CRUD (prop-fix-03)
+# =====================================================================
+
+
+@proposals_api.route("/opportunities/<opp_id>/questions", methods=["GET"])
+def list_questions(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/questions"""
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number, created_at",
+            (opp_id,),
+        ).fetchall()
+        return jsonify({"questions": [dict(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/questions", methods=["POST"])
+def create_question(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/questions"""
+    data = request.get_json(force=True, silent=True) or {}
+    if not data.get("question_text"):
+        return jsonify({"error": "question_text is required"}), 400
+    q_id = _uuid()
+    conn = _get_db()
+    try:
+        # Auto-assign question_number
+        max_row = conn.execute(
+            "SELECT MAX(question_number) as mx FROM proposal_questions WHERE opportunity_id = ?",
+            (opp_id,),
+        ).fetchone()
+        q_num = (max_row["mx"] or 0) + 1
+        conn.execute(
+            """INSERT INTO proposal_questions
+               (id, opportunity_id, question_number, question_text, category, priority,
+                source, rfp_section_ref, status, ambiguity_trigger, created_by, classification)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                q_id, opp_id, q_num,
+                data["question_text"],
+                data.get("category", "scope"),
+                data.get("priority", "medium"),
+                data.get("source", "manual"),
+                data.get("rfp_section_ref"),
+                data.get("status", "draft"),
+                data.get("ambiguity_trigger"),
+                data.get("created_by"),
+                data.get("classification", "CUI"),
+            ),
+        )
+        conn.commit()
+        return jsonify({"id": q_id, "question_number": q_num}), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/questions/<q_id>", methods=["GET"])
+def get_question(q_id):
+    """GET /api/proposals/questions/<q_id>"""
+    conn = _get_db()
+    try:
+        row = conn.execute("SELECT * FROM proposal_questions WHERE id = ?", (q_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Question not found"}), 404
+        q = dict(row)
+        responses = conn.execute(
+            "SELECT * FROM proposal_question_responses WHERE question_id = ? ORDER BY created_at",
+            (q_id,),
+        ).fetchall()
+        q["responses"] = [dict(r) for r in responses]
+        return jsonify(q)
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/questions/<q_id>", methods=["PUT"])
+def update_question(q_id):
+    """PUT /api/proposals/questions/<q_id>"""
+    data = request.get_json(force=True, silent=True) or {}
+    allowed = {
+        "question_text", "category", "priority", "rfp_section_ref", "status",
+        "ambiguity_trigger", "approved_by", "approved_at", "submitted_at",
+    }
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+    updates["updated_at"] = now_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        conn.execute(
+            f"UPDATE proposal_questions SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [q_id],
+        )
+        conn.commit()
+        return jsonify({"id": q_id})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/questions/<q_id>", methods=["DELETE"])
+def delete_question(q_id):
+    """DELETE /api/proposals/questions/<q_id>"""
+    conn = _get_db()
+    try:
+        conn.execute("DELETE FROM proposal_question_responses WHERE question_id = ?", (q_id,))
+        conn.execute("DELETE FROM proposal_questions WHERE id = ?", (q_id,))
+        conn.commit()
+        return jsonify({"deleted": q_id})
+    finally:
+        conn.close()
+
+
+# =====================================================================
+# Question Responses CRUD (prop-fix-04)
+# =====================================================================
+
+
+@proposals_api.route("/questions/<q_id>/responses", methods=["POST"])
+def create_question_response(q_id):
+    """POST /api/proposals/questions/<q_id>/responses"""
+    conn = _get_db()
+    try:
+        q = conn.execute("SELECT opportunity_id FROM proposal_questions WHERE id = ?", (q_id,)).fetchone()
+        if not q:
+            return jsonify({"error": "Question not found"}), 404
+        data = request.get_json(force=True, silent=True) or {}
+        if not data.get("response_text"):
+            return jsonify({"error": "response_text is required"}), 400
+        r_id = _uuid()
+        conn.execute(
+            """INSERT INTO proposal_question_responses
+               (id, question_id, opportunity_id, amendment_id, response_text,
+                response_date, impacts_requirements, impact_notes, recorded_by, classification)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                r_id, q_id, q["opportunity_id"],
+                data.get("amendment_id"),
+                data["response_text"],
+                data.get("response_date"),
+                int(bool(data.get("impacts_requirements", 0))),
+                data.get("impact_notes"),
+                data.get("recorded_by"),
+                data.get("classification", "CUI"),
+            ),
+        )
+        # Mark question as answered
+        conn.execute(
+            "UPDATE proposal_questions SET status = 'answered', updated_at = ? WHERE id = ?",
+            (now_iso(), q_id),
+        )
+        conn.commit()
+        return jsonify({"id": r_id}), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/question-responses/<qr_id>", methods=["PUT"])
+def update_question_response(qr_id):
+    """PUT /api/proposals/question-responses/<qr_id>"""
+    data = request.get_json(force=True, silent=True) or {}
+    allowed = {"response_text", "response_date", "impacts_requirements", "impact_notes", "amendment_id"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if "impacts_requirements" in updates:
+        updates["impacts_requirements"] = int(bool(updates["impacts_requirements"]))
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        conn.execute(
+            f"UPDATE proposal_question_responses SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [qr_id],
+        )
+        conn.commit()
+        return jsonify({"id": qr_id})
+    finally:
+        conn.close()
+
+
+# =====================================================================
+# Amendments CRUD (prop-fix-05)
+# =====================================================================
+
+
+@proposals_api.route("/opportunities/<opp_id>/amendments", methods=["GET"])
+def list_amendments(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/amendments"""
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM proposal_amendments WHERE opportunity_id = ? ORDER BY version_number",
+            (opp_id,),
+        ).fetchall()
+        return jsonify({"amendments": [dict(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/amendments", methods=["POST"])
+def create_amendment(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/amendments"""
+    data = request.get_json(force=True, silent=True) or {}
+    if not data.get("title"):
+        return jsonify({"error": "title is required"}), 400
+    source_type = data.get("source_type", "text")
+    if source_type not in ("file", "text"):
+        return jsonify({"error": "source_type must be 'file' or 'text'"}), 400
+    a_id = _uuid()
+    conn = _get_db()
+    try:
+        max_row = conn.execute(
+            "SELECT MAX(version_number) as mx FROM proposal_amendments WHERE opportunity_id = ?",
+            (opp_id,),
+        ).fetchone()
+        ver_num = (max_row["mx"] or 0) + 1
+        conn.execute(
+            """INSERT INTO proposal_amendments
+               (id, opportunity_id, version_number, title, description, amendment_date,
+                source_type, file_path, amendment_text, diff_summary, uploaded_by, classification)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                a_id, opp_id, ver_num,
+                data["title"],
+                data.get("description"),
+                data.get("amendment_date"),
+                source_type,
+                data.get("file_path"),
+                data.get("amendment_text"),
+                data.get("diff_summary"),
+                data.get("uploaded_by"),
+                data.get("classification", "CUI"),
+            ),
+        )
+        conn.commit()
+        return jsonify({"id": a_id, "version_number": ver_num}), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/amendments/<amend_id>", methods=["PUT"])
+def update_amendment(amend_id):
+    """PUT /api/proposals/amendments/<amend_id>"""
+    data = request.get_json(force=True, silent=True) or {}
+    allowed = {
+        "title", "description", "amendment_date", "amendment_text",
+        "diff_summary", "diff_data", "changes_detected",
+    }
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        conn.execute(
+            f"UPDATE proposal_amendments SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [amend_id],
+        )
+        conn.commit()
+        return jsonify({"id": amend_id})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/amendments/<amend_id>", methods=["DELETE"])
+def delete_amendment(amend_id):
+    """DELETE /api/proposals/amendments/<amend_id>"""
+    conn = _get_db()
+    try:
+        conn.execute("DELETE FROM proposal_amendments WHERE id = ?", (amend_id,))
+        conn.commit()
+        return jsonify({"deleted": amend_id})
+    finally:
+        conn.close()
+
+
+# =====================================================================
+# Capture Manager APIs (prop-cap-04, prop-cap-05, prop-cap-06)
+# =====================================================================
+
+_CAPTURE_PHASES = ("pipeline", "qualify", "capture", "bid_no_bid", "proposal", "submitted", "closed")
+
+
+@proposals_api.route("/opportunities/<opp_id>/capture", methods=["PATCH"])
+def update_capture_fields(opp_id):
+    """PATCH /api/proposals/opportunities/<opp_id>/capture"""
+    data = request.get_json(force=True, silent=True) or {}
+    allowed = {"win_probability", "capture_notes", "win_themes", "key_discriminators",
+               "ptw_low", "ptw_high", "capture_phase"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if "capture_phase" in updates and updates["capture_phase"] not in _CAPTURE_PHASES:
+        return jsonify({"error": f"capture_phase must be one of {_CAPTURE_PHASES}"}), 400
+    if "win_probability" in updates:
+        try:
+            wp = int(updates["win_probability"])
+            if not 0 <= wp <= 100:
+                raise ValueError
+            updates["win_probability"] = wp
+        except (ValueError, TypeError):
+            return jsonify({"error": "win_probability must be an integer 0-100"}), 400
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+    updates["updated_at"] = now_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        conn.execute(
+            f"UPDATE proposal_opportunities SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [opp_id],
+        )
+        conn.commit()
+        return jsonify({"id": opp_id})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/competitors", methods=["GET"])
+def list_competitors(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/competitors"""
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM proposal_competitors WHERE opportunity_id = ? ORDER BY company_name",
+            (opp_id,),
+        ).fetchall()
+        return jsonify({"competitors": [dict(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/competitors", methods=["POST"])
+def create_competitor(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/competitors"""
+    data = request.get_json(force=True, silent=True) or {}
+    if not data.get("company_name"):
+        return jsonify({"error": "company_name is required"}), 400
+    c_id = _uuid()
+    conn = _get_db()
+    try:
+        conn.execute(
+            """INSERT INTO proposal_competitors
+               (id, opportunity_id, company_name, incumbent, strengths, weaknesses,
+                estimated_price, win_probability_pct, notes, classification)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (c_id, opp_id, data["company_name"],
+             int(bool(data.get("incumbent", 0))),
+             data.get("strengths"), data.get("weaknesses"),
+             data.get("estimated_price"), data.get("win_probability_pct"),
+             data.get("notes"), data.get("classification", "CUI")),
+        )
+        conn.commit()
+        return jsonify({"id": c_id}), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/competitors/<cid>", methods=["PUT"])
+def update_competitor(cid):
+    """PUT /api/proposals/competitors/<cid>"""
+    data = request.get_json(force=True, silent=True) or {}
+    allowed = {"company_name", "incumbent", "strengths", "weaknesses",
+               "estimated_price", "win_probability_pct", "notes"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if "incumbent" in updates:
+        updates["incumbent"] = int(bool(updates["incumbent"]))
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+    updates["updated_at"] = now_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        conn.execute(
+            f"UPDATE proposal_competitors SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [cid],
+        )
+        conn.commit()
+        return jsonify({"id": cid})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/competitors/<cid>", methods=["DELETE"])
+def delete_competitor(cid):
+    """DELETE /api/proposals/competitors/<cid>"""
+    conn = _get_db()
+    try:
+        conn.execute("DELETE FROM proposal_competitors WHERE id = ?", (cid,))
+        conn.commit()
+        return jsonify({"deleted": cid})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/teaming", methods=["GET"])
+def list_teaming_partners(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/teaming"""
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM proposal_teaming_partners WHERE opportunity_id = ? ORDER BY company_name",
+            (opp_id,),
+        ).fetchall()
+        return jsonify({"partners": [dict(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/teaming", methods=["POST"])
+def create_teaming_partner(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/teaming"""
+    data = request.get_json(force=True, silent=True) or {}
+    if not data.get("company_name"):
+        return jsonify({"error": "company_name is required"}), 400
+    role = data.get("role", "sub")
+    if role not in ("prime", "sub", "key_sub", "mentor_protege"):
+        return jsonify({"error": "role must be prime, sub, key_sub, or mentor_protege"}), 400
+    t_id = _uuid()
+    conn = _get_db()
+    try:
+        conn.execute(
+            """INSERT INTO proposal_teaming_partners
+               (id, opportunity_id, company_name, role, naics, cage_code,
+                capabilities, workshare_pct, notes, classification)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (t_id, opp_id, data["company_name"], role,
+             data.get("naics"), data.get("cage_code"),
+             data.get("capabilities"), data.get("workshare_pct"),
+             data.get("notes"), data.get("classification", "CUI")),
+        )
+        conn.commit()
+        return jsonify({"id": t_id}), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/teaming/<tid>", methods=["PUT"])
+def update_teaming_partner(tid):
+    """PUT /api/proposals/teaming/<tid>"""
+    data = request.get_json(force=True, silent=True) or {}
+    allowed = {"company_name", "role", "naics", "cage_code", "capabilities", "workshare_pct", "notes"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+    updates["updated_at"] = now_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        conn.execute(
+            f"UPDATE proposal_teaming_partners SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [tid],
+        )
+        conn.commit()
+        return jsonify({"id": tid})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/teaming/<tid>", methods=["DELETE"])
+def delete_teaming_partner(tid):
+    """DELETE /api/proposals/teaming/<tid>"""
+    conn = _get_db()
+    try:
+        conn.execute("DELETE FROM proposal_teaming_partners WHERE id = ?", (tid,))
+        conn.commit()
+        return jsonify({"deleted": tid})
+    finally:
+        conn.close()
+
+
+# =====================================================================
+# Version Snapshots (prop-rev-05)
+# =====================================================================
+
+
+@proposals_api.route("/opportunities/<opp_id>/snapshots", methods=["POST"])
+def create_snapshot(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/snapshots — serialize current state."""
+    import json as _json
+    conn = _get_db()
+    try:
+        opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+        if not opp:
+            return jsonify({"error": "Opportunity not found"}), 404
+        sections = conn.execute(
+            "SELECT * FROM proposal_sections WHERE opportunity_id = ?", (opp_id,)
+        ).fetchall()
+        compliance = conn.execute(
+            "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
+        ).fetchall()
+        snapshot = {
+            "opportunity": dict(opp),
+            "sections": [dict(s) for s in sections],
+            "compliance": [dict(c) for c in compliance],
+        }
+        data = request.get_json(silent=True) or {}
+        max_ver = conn.execute(
+            "SELECT MAX(version_number) as mx FROM proposal_versions WHERE opportunity_id = ?",
+            (opp_id,),
+        ).fetchone()
+        ver_num = (max_ver["mx"] or 0) + 1
+        v_id = _uuid()
+        conn.execute(
+            """INSERT INTO proposal_versions
+               (id, opportunity_id, version_number, label, snapshot_json, created_by, classification)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (v_id, opp_id, ver_num, data.get("label"), _json.dumps(snapshot),
+             data.get("created_by"), data.get("classification", "CUI")),
+        )
+        conn.commit()
+        return jsonify({"id": v_id, "version_number": ver_num}), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/snapshots", methods=["GET"])
+def list_snapshots(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/snapshots"""
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, opportunity_id, version_number, label, created_by, classification, created_at "
+            "FROM proposal_versions WHERE opportunity_id = ? ORDER BY version_number",
+            (opp_id,),
+        ).fetchall()
+        return jsonify({"snapshots": [dict(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/snapshots/<v_id>/diff", methods=["GET"])
+def diff_snapshots(v_id):
+    """GET /api/proposals/snapshots/<v_id>/diff?against=<v_id2>"""
+    import json as _json
+    against = request.args.get("against")
+    conn = _get_db()
+    try:
+        a = conn.execute("SELECT * FROM proposal_versions WHERE id = ?", (v_id,)).fetchone()
+        if not a:
+            return jsonify({"error": "Snapshot not found"}), 404
+        if not against:
+            return jsonify({"error": "against query param required"}), 400
+        b = conn.execute("SELECT * FROM proposal_versions WHERE id = ?", (against,)).fetchone()
+        if not b:
+            return jsonify({"error": "Comparison snapshot not found"}), 404
+        snap_a = _json.loads(a["snapshot_json"] or "{}")
+        snap_b = _json.loads(b["snapshot_json"] or "{}")
+        # Simple section-text diff
+        secs_a = {s["id"]: s.get("content", "") for s in snap_a.get("sections", [])}
+        secs_b = {s["id"]: s.get("content", "") for s in snap_b.get("sections", [])}
+        diffs = []
+        all_ids = set(secs_a) | set(secs_b)
+        for sid in all_ids:
+            ca = secs_a.get(sid, "")
+            cb = secs_b.get(sid, "")
+            if ca != cb:
+                diffs.append({"section_id": sid, "from": cb, "to": ca})
+        return jsonify({
+            "version_a": a["version_number"],
+            "version_b": b["version_number"],
+            "section_diffs": diffs,
+        })
+    finally:
+        conn.close()
+
+
+# =====================================================================
+# Compliance Editor APIs (prop-cmp-03 through prop-cmp-06)
+# =====================================================================
+
+
+@proposals_api.route("/opportunities/<opp_id>/shred", methods=["GET"])
+def list_shred_items(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/shred?status=unassigned"""
+    status_filter = request.args.get("status")
+    conn = _get_db()
+    try:
+        if status_filter:
+            rows = conn.execute(
+                "SELECT * FROM proposal_shred_items WHERE opportunity_id = ? AND status = ? ORDER BY rfp_section",
+                (opp_id, status_filter),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM proposal_shred_items WHERE opportunity_id = ? ORDER BY rfp_section, statement_type",
+                (opp_id,),
+            ).fetchall()
+        return jsonify({"shred_items": [dict(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/shred", methods=["POST"])
+def create_shred_item(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/shred"""
+    data = request.get_json(force=True, silent=True) or {}
+    if not data.get("statement_text"):
+        return jsonify({"error": "statement_text is required"}), 400
+    s_id = _uuid()
+    conn = _get_db()
+    try:
+        conn.execute(
+            """INSERT INTO proposal_shred_items
+               (id, opportunity_id, statement_text, statement_type, rfp_section, rfp_page,
+                section_id, writer, status, notes, classification)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (s_id, opp_id, data["statement_text"],
+             data.get("statement_type", "shall"),
+             data.get("rfp_section"), data.get("rfp_page"),
+             data.get("section_id"), data.get("writer"),
+             data.get("status", "unassigned"),
+             data.get("notes"), data.get("classification", "CUI")),
+        )
+        conn.commit()
+        return jsonify({"id": s_id}), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/shred/<item_id>", methods=["PUT"])
+def update_shred_item(item_id):
+    """PUT /api/proposals/shred/<item_id>"""
+    data = request.get_json(force=True, silent=True) or {}
+    allowed = {"statement_text", "statement_type", "rfp_section", "rfp_page",
+               "section_id", "writer", "status", "notes"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+    updates["updated_at"] = now_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        conn.execute(
+            f"UPDATE proposal_shred_items SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [item_id],
+        )
+        conn.commit()
+        return jsonify({"id": item_id})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/shred/<item_id>", methods=["DELETE"])
+def delete_shred_item(item_id):
+    """DELETE /api/proposals/shred/<item_id>"""
+    conn = _get_db()
+    try:
+        conn.execute("DELETE FROM proposal_shred_items WHERE id = ?", (item_id,))
+        conn.commit()
+        return jsonify({"deleted": item_id})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/amendments/<amend_id>/impact", methods=["PUT"])
+def update_amendment_impact(amend_id):
+    """PUT /api/proposals/amendments/<amend_id>/impact"""
+    import json as _json
+    data = request.get_json(force=True, silent=True) or {}
+    req_ids = data.get("requirement_ids", [])
+    conn = _get_db()
+    try:
+        conn.execute(
+            "UPDATE proposal_amendments SET changed_requirement_ids = ? WHERE id = ?",
+            (_json.dumps(req_ids), amend_id),
+        )
+        conn.commit()
+        return jsonify({"id": amend_id, "requirement_ids": req_ids})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/amendments/<amend_id>/impact", methods=["GET"])
+def get_amendment_impact(amend_id):
+    """GET /api/proposals/amendments/<amend_id>/impact — returns linked compliance items."""
+    import json as _json
+    conn = _get_db()
+    try:
+        row = conn.execute(
+            "SELECT changed_requirement_ids, opportunity_id FROM proposal_amendments WHERE id = ?",
+            (amend_id,),
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Amendment not found"}), 404
+        req_ids = _json.loads(row["changed_requirement_ids"] or "[]")
+        items = []
+        if req_ids:
+            placeholders = ",".join("?" * len(req_ids))
+            items = conn.execute(
+                f"SELECT * FROM proposal_compliance_matrix WHERE id IN ({placeholders})",
+                req_ids,
+            ).fetchall()
+        return jsonify({"requirement_ids": req_ids, "compliance_items": [dict(i) for i in items]})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/compliance/orphaned", methods=["GET"])
+def get_orphaned_requirements(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/compliance/orphaned"""
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            """SELECT * FROM proposal_compliance_matrix
+               WHERE opportunity_id = ? AND section_id IS NULL
+                 AND compliance_status != 'not_applicable'
+               ORDER BY requirement_number""",
+            (opp_id,),
+        ).fetchall()
+        return jsonify({"orphaned": [dict(r) for r in rows], "count": len(rows)})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/findings/<finding_id>", methods=["PUT"])
+def update_finding(finding_id):
+    """PUT /api/proposals/findings/<finding_id> — update status, close with evidence."""
+    data = request.get_json(force=True, silent=True) or {}
+    allowed = {"status", "description", "recommendation", "assigned_to", "due_date",
+               "resolved_evidence", "closure_approved_by"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+    updates["updated_at"] = now_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        conn.execute(
+            f"UPDATE proposal_review_findings SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [finding_id],
+        )
+        conn.commit()
+        return jsonify({"id": finding_id})
+    finally:
+        conn.close()
