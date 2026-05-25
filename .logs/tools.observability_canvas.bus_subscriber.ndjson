@@ -44,3 +44,7 @@
 {"ts": "2026-05-25T14:41:11.833776+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-25T14:41:47.170937+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-25T14:43:54.709584+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T14:44:21.512320+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T14:46:22.412909+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T14:47:02.086631+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T14:47:55.976804+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}

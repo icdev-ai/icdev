@@ -6317,15 +6317,7 @@ CREATE INDEX IF NOT EXISTS idx_prop_qr_opp ON proposal_question_responses(opport
 -- prop-cmp-02: changed_requirement_ids on proposal_amendments (ALTER TABLE)
 -- =========================================================================
 
--- prop-cap-01: capture pipeline fields (idempotent ALTER TABLEs handled in Python init)
-ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS win_probability INTEGER;
-ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS capture_notes TEXT;
-ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS win_themes TEXT;
-ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS key_discriminators TEXT;
-ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS ptw_low NUMERIC;
-ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS ptw_high NUMERIC;
-ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS capture_phase TEXT CHECK(capture_phase IN (
-    'pipeline','qualify','capture','bid_no_bid','proposal','submitted','closed') OR capture_phase IS NULL);
+-- prop-cap-01: capture pipeline fields (idempotent ALTER TABLEs handled in Python init via PROPOSALS_ALTER_SQL)
 
 -- prop-cap-02: competitor intelligence
 CREATE TABLE IF NOT EXISTS proposal_competitors (
@@ -6361,10 +6353,7 @@ CREATE TABLE IF NOT EXISTS proposal_teaming_partners (
 );
 CREATE INDEX IF NOT EXISTS idx_prop_team_opp ON proposal_teaming_partners(opportunity_id);
 
--- prop-rev-01: executive summary + finding closure fields
-ALTER TABLE proposal_reviews ADD COLUMN IF NOT EXISTS executive_summary TEXT;
-ALTER TABLE proposal_review_findings ADD COLUMN IF NOT EXISTS resolved_evidence TEXT;
-ALTER TABLE proposal_review_findings ADD COLUMN IF NOT EXISTS closure_approved_by TEXT;
+-- prop-rev-01: executive summary + finding closure fields (handled via PROPOSALS_ALTER_SQL)
 
 -- prop-rev-02: version snapshots
 CREATE TABLE IF NOT EXISTS proposal_versions (
@@ -6398,8 +6387,7 @@ CREATE TABLE IF NOT EXISTS proposal_shred_items (
 CREATE INDEX IF NOT EXISTS idx_prop_shred_opp ON proposal_shred_items(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_prop_shred_status ON proposal_shred_items(status);
 
--- prop-cmp-02: amendment impact tracking
-ALTER TABLE proposal_amendments ADD COLUMN IF NOT EXISTS changed_requirement_ids TEXT;
+-- prop-cmp-02: amendment impact tracking (handled via PROPOSALS_ALTER_SQL)
 
 -- =========================================================================
 -- ANVIL Critique Phase (Phase 61 — Feature 3)
@@ -10520,6 +10508,21 @@ FINETUNE_ALTER_SQL = [
     "ALTER TABLE projects ADD COLUMN finetune_dataset_count INTEGER DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN finetune_active_model_count INTEGER DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN finetune_last_training TIMESTAMP",
+]
+
+# Proposals Module Enhancement — capture / review / compliance columns (prop-cap/rev/cmp)
+PROPOSALS_ALTER_SQL = [
+    "ALTER TABLE proposal_opportunities ADD COLUMN win_probability INTEGER",
+    "ALTER TABLE proposal_opportunities ADD COLUMN capture_notes TEXT",
+    "ALTER TABLE proposal_opportunities ADD COLUMN win_themes TEXT",
+    "ALTER TABLE proposal_opportunities ADD COLUMN key_discriminators TEXT",
+    "ALTER TABLE proposal_opportunities ADD COLUMN ptw_low NUMERIC",
+    "ALTER TABLE proposal_opportunities ADD COLUMN ptw_high NUMERIC",
+    "ALTER TABLE proposal_opportunities ADD COLUMN capture_phase TEXT",
+    "ALTER TABLE proposal_reviews ADD COLUMN executive_summary TEXT",
+    "ALTER TABLE proposal_review_findings ADD COLUMN resolved_evidence TEXT",
+    "ALTER TABLE proposal_review_findings ADD COLUMN closure_approved_by TEXT",
+    "ALTER TABLE proposal_amendments ADD COLUMN changed_requirement_ids TEXT",
 ]
 
 
