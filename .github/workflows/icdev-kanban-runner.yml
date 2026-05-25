@@ -1,5 +1,6 @@
 # CUI // SP-CTI
 name: ICDEV Kanban Runner
+run-name: "[${{ github.event.inputs.task_type }}] ${{ github.event.inputs.task_id }} — ${{ github.event.inputs.task_desc }}"
 
 on:
   workflow_dispatch:
