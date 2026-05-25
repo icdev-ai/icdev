@@ -2992,7 +2992,7 @@ def _dispatch_github_actions(task_id: str, task_desc: str, task_type: str) -> bo
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    llm_provider = _os.getenv("LLM_PROVIDER", "ollama").strip() or "ollama"
+    llm_provider = _os.getenv("LLM_PROVIDER", "ollama_cloud").strip() or "ollama_cloud"
     payload = {
         "ref": "main",
         "inputs": {
@@ -3238,8 +3238,9 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     task_log = PROMPT_DIR / f"{task_id}.log"
 
     try:
+        import os as _os_chain  # noqa: PLC0415
         # Env-var override for quick mode switching (e.g. air-gap toggle).
-        _env_chain = os.environ.get("ICDEV_KANBAN_EXECUTOR_CHAIN", "")
+        _env_chain = _os_chain.environ.get("ICDEV_KANBAN_EXECUTOR_CHAIN", "")
         if _env_chain:
             _fallback_chain = [x.strip() for x in _env_chain.split(",") if x.strip()]
         else:
