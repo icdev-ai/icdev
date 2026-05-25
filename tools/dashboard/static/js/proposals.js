@@ -123,6 +123,13 @@
     pink_team: '#ff69b4', red_team: '#dc3545', gold_team: '#ffc107', white_glove: '#e0e0e0'
   };
 
+  var OUTCOME_RING = {
+    'pass': '#28a745',
+    'pass_with_findings': '#ffc107',
+    'major_rework': '#fd7e14',
+    'fail': '#dc3545'
+  };
+
   function renderReviewPipeline(containerId, reviews) {
     var el = document.getElementById(containerId);
     if (!el) return;
@@ -135,14 +142,22 @@
       var color = REVIEW_COLORS[gate];
       var status = r ? r.status : 'not_scheduled';
       var opacity = r ? '1' : '0.3';
+      // Outcome ring: colored border on completed reviews based on overall_rating
+      var ringColor = (status === 'completed' && r && r.overall_rating && OUTCOME_RING[r.overall_rating])
+        ? OUTCOME_RING[r.overall_rating] : 'transparent';
+      var ringStyle = ringColor !== 'transparent'
+        ? 'box-shadow:0 0 0 4px ' + ringColor + ';' : '';
       html += '<div style="flex:1;text-align:center;">';
       html += '<div style="width:48px;height:48px;border-radius:50%;background:' + color +
-        ';opacity:' + opacity + ';margin:0 auto 6px;display:flex;align-items:center;justify-content:center;">';
+        ';opacity:' + opacity + ';margin:0 auto 6px;display:flex;align-items:center;justify-content:center;' + ringStyle + '">';
       if (status === 'completed') html += '<span style="font-size:20px;color:#000;">&#10003;</span>';
       else if (status === 'in_progress') html += '<span style="font-size:16px;color:#000;">&#9654;</span>';
       html += '</div>';
       html += '<div style="font-size:11px;color:' + palette('secondary') + ';">' + statusLabel(gate) + '</div>';
       html += '<div style="font-size:10px;color:' + palette('muted') + ';">' + statusLabel(status) + '</div>';
+      if (r && r.overall_rating && status === 'completed') {
+        html += '<div style="font-size:9px;color:' + (OUTCOME_RING[r.overall_rating] || palette('muted')) + ';font-weight:bold;text-transform:uppercase;">' + r.overall_rating.replace(/_/g, ' ') + '</div>';
+      }
       html += '</div>';
       if (i < REVIEW_GATES.length - 1) {
         html += '<div style="font-size:18px;color:' + palette('muted') + ';">&#8594;</div>';

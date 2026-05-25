@@ -724,6 +724,102 @@ def _register_govcon_pages(app: "Flask", _get_db):
         finally:
             conn.close()
 
+    @app.route("/proposals/reviews-dashboard")
+    def proposals_reviews_dashboard():
+        """Executive cross-proposal review dashboard (prop-rev-07)."""
+        from datetime import date
+
+        conn = _get_db()
+        try:
+            raw_opps = conn.execute(
+                "SELECT * FROM proposal_opportunities WHERE status NOT IN ('won','lost','no_bid','cancelled') ORDER BY due_date ASC"
+            ).fetchall()
+            review_gates = ["pink_team", "red_team", "gold_team", "white_glove"]
+            opps = []
+            unresolved_critical = 0
+            passed = 0
+            pass_with_findings = 0
+            failed = 0
+            today = date.today()
+            for row in raw_opps:
+                opp = dict(row)
+                reviews = conn.execute(
+                    "SELECT * FROM proposal_reviews WHERE opportunity_id = ?", (opp["id"],)
+                ).fetchall()
+                rev_map = {r["review_type"]: dict(r) for r in reviews}
+                opp["review_map"] = rev_map
+                # Count outcomes
+                for r in rev_map.values():
+                    if r.get("overall_rating") == "pass":
+                        passed += 1
+                    elif r.get("overall_rating") == "pass_with_findings":
+                        pass_with_findings += 1
+                    elif r.get("overall_rating") == "fail":
+                        failed += 1
+                # Critical open findings
+                crit = conn.execute(
+                    """SELECT COUNT(*) as cnt FROM proposal_review_findings f
+                       JOIN proposal_reviews r ON f.review_id = r.id
+                       WHERE r.opportunity_id = ? AND f.severity = 'critical' AND f.status IN ('open','in_progress')""",
+                    (opp["id"],),
+                ).fetchone()
+                opp["critical_open"] = crit["cnt"] if crit else 0
+                unresolved_critical += opp["critical_open"]
+                try:
+                    opp["days_left"] = (date.fromisoformat(opp["due_date"]) - today).days
+                except Exception:
+                    opp["days_left"] = None
+                opps.append(opp)
+            return render_template(
+                "proposals/reviews_dashboard.html",
+                opportunities=opps,
+                unresolved_critical=unresolved_critical,
+                passed=passed,
+                pass_with_findings=pass_with_findings,
+                failed=failed,
+            )
+        finally:
+            conn.close()
+
+    @app.route("/proposals/<opp_id>/compliance/gaps")
+    def proposals_compliance_gaps(opp_id):
+        """Compliance gap drill-down — all not_addressed requirements (prop-cmp-10)."""
+        conn = _get_db()
+        try:
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            if not opp:
+                return render_template("404.html", message="Opportunity not found"), 404
+            opp = dict(opp)
+            orphaned = conn.execute(
+                """SELECT * FROM proposal_compliance_matrix
+                   WHERE opportunity_id = ? AND (section_id IS NULL OR section_id = '')
+                     AND compliance_status != 'not_applicable'
+                   ORDER BY requirement_number""",
+                (opp_id,),
+            ).fetchall()
+            orphaned = [dict(r) for r in orphaned]
+            compliance_total = conn.execute(
+                "SELECT COUNT(*) as cnt FROM proposal_compliance_matrix WHERE opportunity_id = ?",
+                (opp_id,),
+            ).fetchone()["cnt"]
+            sections = conn.execute(
+                """SELECT s.id, s.section_number, s.title FROM proposal_sections s
+                   WHERE s.opportunity_id = ? ORDER BY s.section_number""",
+                (opp_id,),
+            ).fetchall()
+            sections = [dict(s) for s in sections]
+            gap_pct = round(len(orphaned) / compliance_total * 100, 1) if compliance_total > 0 else 0
+            return render_template(
+                "proposals/compliance_gaps.html",
+                opp=opp,
+                orphaned=orphaned,
+                compliance_total=compliance_total,
+                sections=sections,
+                gap_pct=gap_pct,
+            )
+        finally:
+            conn.close()
+
     @app.route("/govcon")
     def govcon_pipeline_page():
         """GovCon Intelligence — pipeline status, recent opportunities, domain distribution."""

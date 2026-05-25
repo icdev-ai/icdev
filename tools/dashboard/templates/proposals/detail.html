@@ -88,6 +88,7 @@
     <button class="tab-btn" data-tab="tab-drafts">AI Drafts</button>
     <button class="tab-btn" data-tab="tab-questions">Questions <span class="badge badge-info" style="font-size:10px; vertical-align:middle;">{{ question_stats.total }}</span></button>
     <button class="tab-btn" data-tab="tab-amendments">Amendments <span class="badge badge-info" style="font-size:10px; vertical-align:middle;">{{ amendments|length }}</span></button>
+    <button class="tab-btn" data-tab="tab-capture">Capture</button>
 </div>
 
 <!-- ===================== Overview Tab ===================== -->
@@ -151,7 +152,17 @@
                         {% set pri_colors = {'critical_path': 'error', 'high': 'warning', 'standard': 'info', 'supporting': 'info'} %}
                         <span class="badge badge-{{ pri_colors.get(sec.priority, 'info') }}">{{ sec.priority | replace('_', ' ') | title }}</span>
                     </td>
-                    <td>{{ sec.current_word_count or 0 }}{% if sec.word_limit %}/{{ sec.word_limit }}{% endif %}</td>
+                    <td>
+                        {{ sec.current_word_count or 0 }}{% if sec.word_limit %}/{{ sec.word_limit }}{% endif %}
+                        {% if sec.word_limit and sec.current_word_count %}
+                            {% set wc_pct = (sec.current_word_count / sec.word_limit * 100)|round(0)|int %}
+                            {% if wc_pct > 100 %}
+                                <span class="badge badge-error" title="Over limit">{{ wc_pct }}%</span>
+                            {% elif wc_pct > 90 %}
+                                <span class="badge badge-warning" title="Near limit">{{ wc_pct }}%</span>
+                            {% endif %}
+                        {% endif %}
+                    </td>
                     <td class="{% if sec.overdue %}text-danger{% endif %}">{{ sec.due_date or '—' }}</td>
                 </tr>
                 {% endfor %}
@@ -172,8 +183,9 @@
         <div id="compliance-bar" style="flex:1; margin-left:16px;"></div>
     </div>
     {% if compliance_stats.total > 0 and compliance_stats.not_addressed > 0 %}
-    <div class="card" style="padding:12px; margin-bottom:12px; border-left:3px solid var(--status-red);">
-        <strong>{{ compliance_stats.not_addressed }}</strong> requirements not yet addressed ({{ compliance_stats.gap_pct }}% gap)
+    <div class="card" style="padding:12px; margin-bottom:12px; border-left:3px solid var(--status-red); display:flex; justify-content:space-between; align-items:center;">
+        <span><strong>{{ compliance_stats.not_addressed }}</strong> requirements not yet addressed ({{ compliance_stats.gap_pct }}% gap)</span>
+        <a href="/proposals/{{ opp.id }}/compliance/gaps" class="btn btn-sm btn-error">View Gaps</a>
     </div>
     {% endif %}
     <div class="table-container">
@@ -232,6 +244,7 @@
                     <th>Description</th>
                     <th>Assigned To</th>
                     <th>Status</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -250,6 +263,11 @@
                     <td>
                         {% set fs_colors = {'open': 'error', 'in_progress': 'warning', 'resolved': 'success', 'deferred': 'info', 'wont_fix': 'info'} %}
                         <span class="badge badge-{{ fs_colors.get(f.status, 'info') }}">{{ f.status | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>
+                        {% if f.status in ('open', 'in_progress') %}
+                        <button class="btn btn-sm btn-success" onclick="openCloseFindingModal('{{ f.id }}')">Close</button>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -462,6 +480,91 @@
             </div>
             <pre id="diff-content" style="background:var(--bg-primary, #0a0a1a); border:1px solid var(--border-color); padding:12px; border-radius:4px; overflow-x:auto; font-size:12px; line-height:1.6; max-height:500px; overflow-y:auto;"></pre>
         </div>
+    </div>
+</div>
+
+<!-- ===================== Capture Tab ===================== -->
+<div id="tab-capture" class="tab-content" style="display:none;">
+    <div style="margin:16px 0; display:flex; gap:8px;">
+        <button class="btn btn-primary" onclick="openPropModal('edit-capture-modal')">Edit Capture Info</button>
+        <button class="btn btn-secondary" onclick="openPropModal('add-competitor-modal')">+ Competitor</button>
+        <button class="btn btn-secondary" onclick="openPropModal('add-teaming-modal')">+ Teaming Partner</button>
+    </div>
+
+    <!-- Capture fields card -->
+    <div class="stat-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:20px;">
+        <div class="stat-card">
+            <div class="stat-value" id="cap-win-prob"
+                 style="color:{% if opp.win_probability is not none %}{% if opp.win_probability >= 70 %}var(--status-green){% elif opp.win_probability >= 40 %}var(--status-yellow, #ffc107){% else %}var(--status-red){% endif %}{% else %}var(--text-secondary){% endif %};">
+                {% if opp.win_probability is not none %}{{ opp.win_probability }}%{% else %}—{% endif %}
+            </div>
+            <div class="stat-label">Win Probability</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">
+                {% if opp.capture_phase %}
+                <span class="badge badge-info">{{ opp.capture_phase | replace('_', ' ') | title }}</span>
+                {% else %}—{% endif %}
+            </div>
+            <div class="stat-label">Capture Phase</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">
+                {% if opp.ptw_low or opp.ptw_high %}
+                ${{ opp.ptw_low|int if opp.ptw_low else '?' }}M – ${{ opp.ptw_high|int if opp.ptw_high else '?' }}M
+                {% else %}—{% endif %}
+            </div>
+            <div class="stat-label">Price-to-Win Range</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="cap-comp-count">—</div>
+            <div class="stat-label">Competitors Tracked</div>
+        </div>
+    </div>
+
+    {% if opp.win_themes %}
+    <div class="card" style="padding:14px; margin-bottom:12px;">
+        <strong>Win Themes</strong>
+        <div style="margin-top:6px; color:var(--text-secondary); white-space:pre-wrap;">{{ opp.win_themes }}</div>
+    </div>
+    {% endif %}
+    {% if opp.key_discriminators %}
+    <div class="card" style="padding:14px; margin-bottom:12px;">
+        <strong>Key Discriminators</strong>
+        <div style="margin-top:6px; color:var(--text-secondary); white-space:pre-wrap;">{{ opp.key_discriminators }}</div>
+    </div>
+    {% endif %}
+    {% if opp.capture_notes %}
+    <div class="card" style="padding:14px; margin-bottom:16px;">
+        <strong>Capture Notes</strong>
+        <div style="margin-top:6px; color:var(--text-secondary); white-space:pre-wrap;">{{ opp.capture_notes }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Competitors sub-table -->
+    <h3 style="margin:16px 0 8px; font-size:14px;">Competitor Intelligence</h3>
+    <div class="table-container" id="competitors-table-wrap">
+        <table id="competitors-table">
+            <thead><tr>
+                <th>Company</th><th>Incumbent</th><th>Win Prob</th><th>Est. Price</th><th>Strengths</th><th>Weaknesses</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="competitors-tbody">
+                <tr><td colspan="7" style="text-align:center; color:var(--text-secondary);">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Teaming partners sub-table -->
+    <h3 style="margin:20px 0 8px; font-size:14px;">Teaming Partners</h3>
+    <div class="table-container" id="teaming-table-wrap">
+        <table id="teaming-table">
+            <thead><tr>
+                <th>Company</th><th>Role</th><th>NAICS</th><th>CAGE</th><th>Workshare %</th><th>Capabilities</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="teaming-tbody">
+                <tr><td colspan="7" style="text-align:center; color:var(--text-secondary);">Loading...</td></tr>
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -763,10 +866,184 @@
                     <label>Participants</label>
                     <input type="text" name="participants" placeholder="Comma-separated names">
                 </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Executive Summary</label>
+                    <textarea name="executive_summary" rows="3" placeholder="High-level summary for executive audience..." style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closePropModal('create-review-modal')">Cancel</button>
                 <button type="submit" class="btn btn-primary">Schedule Review</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Capture Modal -->
+<div id="edit-capture-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Edit Capture Info</h2>
+            <button class="modal-close" onclick="closePropModal('edit-capture-modal')">&times;</button>
+        </div>
+        <form id="edit-capture-form" onsubmit="return submitCaptureForm(event, '{{ opp.id }}')">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Win Probability (0-100)</label>
+                    <input type="number" name="win_probability" min="0" max="100" value="{{ opp.win_probability if opp.win_probability is not none else '' }}" placeholder="e.g., 65">
+                </div>
+                <div class="form-group">
+                    <label>Capture Phase</label>
+                    <select name="capture_phase">
+                        <option value="">— Not set —</option>
+                        {% for phase in ['pipeline','qualify','capture','bid_no_bid','proposal','submitted','closed'] %}
+                        <option value="{{ phase }}" {% if opp.capture_phase == phase %}selected{% endif %}>{{ phase | replace('_', ' ') | title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>PTW Low ($M)</label>
+                    <input type="number" name="ptw_low" step="0.1" value="{{ opp.ptw_low or '' }}" placeholder="e.g., 10.5">
+                </div>
+                <div class="form-group">
+                    <label>PTW High ($M)</label>
+                    <input type="number" name="ptw_high" step="0.1" value="{{ opp.ptw_high or '' }}" placeholder="e.g., 15.0">
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Win Themes</label>
+                    <textarea name="win_themes" rows="3" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;">{{ opp.win_themes or '' }}</textarea>
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Key Discriminators</label>
+                    <textarea name="key_discriminators" rows="3" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;">{{ opp.key_discriminators or '' }}</textarea>
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Capture Notes</label>
+                    <textarea name="capture_notes" rows="3" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;">{{ opp.capture_notes or '' }}</textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePropModal('edit-capture-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Competitor Modal -->
+<div id="add-competitor-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Add Competitor</h2>
+            <button class="modal-close" onclick="closePropModal('add-competitor-modal')">&times;</button>
+        </div>
+        <form id="add-competitor-form" onsubmit="return submitCompetitorForm(event, '{{ opp.id }}')">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Company Name *</label>
+                    <input type="text" name="company_name" required placeholder="e.g., Acme Defense Corp">
+                </div>
+                <div class="form-group">
+                    <label>Incumbent?</label>
+                    <select name="incumbent">
+                        <option value="0">No</option>
+                        <option value="1">Yes</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Win Probability %</label>
+                    <input type="number" name="win_probability_pct" min="0" max="100" placeholder="e.g., 30">
+                </div>
+                <div class="form-group">
+                    <label>Estimated Price ($M)</label>
+                    <input type="number" name="estimated_price" step="0.1" placeholder="e.g., 12.5">
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Strengths</label>
+                    <textarea name="strengths" rows="2" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Weaknesses</label>
+                    <textarea name="weaknesses" rows="2" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePropModal('add-competitor-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Competitor</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Teaming Partner Modal -->
+<div id="add-teaming-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Add Teaming Partner</h2>
+            <button class="modal-close" onclick="closePropModal('add-teaming-modal')">&times;</button>
+        </div>
+        <form id="add-teaming-form" onsubmit="return submitTeamingForm(event, '{{ opp.id }}')">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Company Name *</label>
+                    <input type="text" name="company_name" required placeholder="e.g., Stellar Systems LLC">
+                </div>
+                <div class="form-group">
+                    <label>Role</label>
+                    <select name="role">
+                        <option value="prime">Prime</option>
+                        <option value="sub" selected>Subcontractor</option>
+                        <option value="key_sub">Key Sub</option>
+                        <option value="mentor_protege">Mentor-Protégé</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Workshare %</label>
+                    <input type="number" name="workshare_pct" min="0" max="100" step="0.1" placeholder="e.g., 25">
+                </div>
+                <div class="form-group">
+                    <label>NAICS Code</label>
+                    <input type="text" name="naics" placeholder="e.g., 541512">
+                </div>
+                <div class="form-group">
+                    <label>CAGE Code</label>
+                    <input type="text" name="cage_code" placeholder="e.g., 1ABC2">
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Capabilities</label>
+                    <textarea name="capabilities" rows="2" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePropModal('add-teaming-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Partner</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Close Finding Modal -->
+<div id="close-finding-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content" style="max-width:480px;">
+        <div class="modal-header">
+            <h2>Close Finding</h2>
+            <button class="modal-close" onclick="closePropModal('close-finding-modal')">&times;</button>
+        </div>
+        <form id="close-finding-form" onsubmit="return submitCloseFinding(event)">
+            <input type="hidden" id="close-finding-id" name="finding_id">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Resolution Evidence *</label>
+                    <textarea name="resolved_evidence" required rows="3" placeholder="Describe how this finding was addressed..." style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Approved By</label>
+                    <input type="text" name="closure_approved_by" placeholder="Name of approver">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePropModal('close-finding-modal')">Cancel</button>
+                <button type="submit" class="btn btn-success">Close Finding</button>
             </div>
         </form>
     </div>
@@ -1056,9 +1333,9 @@ function generateQuestions(oppId) {
 }
 
 function changeQuestionStatus(qId, newStatus) {
-    fetch("/api/govcon/questions/" + qId + "/status", {
+    fetch("/api/proposals/questions/" + qId, {
         method: "PUT", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({status: newStatus, changed_by: "dashboard_user"})
+        body: JSON.stringify({status: newStatus})
     }).then(function(r) { return r.json(); }).then(function(data) {
         if (data.error) { alert(data.error); } else { location.reload(); }
     });
@@ -1100,12 +1377,12 @@ function bulkStatusChange(oppId, newStatus) {
     var ids = [];
     document.querySelectorAll(".q-checkbox:checked").forEach(function(cb) { ids.push(cb.value); });
     if (ids.length === 0) return;
-    fetch("/api/govcon/opportunities/" + oppId + "/questions/bulk-status", {
-        method: "PUT", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({question_ids: ids, status: newStatus, changed_by: "dashboard_user"})
-    }).then(function(r) { return r.json(); }).then(function(data) {
-        if (data.error) { alert(data.error); } else { location.reload(); }
-    });
+    Promise.all(ids.map(function(id) {
+        return fetch("/api/proposals/questions/" + id, {
+            method: "PUT", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({status: newStatus})
+        }).then(function(r) { return r.json(); });
+    })).then(function() { location.reload(); });
 }
 
 function exportQuestions(oppId) {
@@ -1140,12 +1417,12 @@ function submitQuestion(e, oppId) {
     var form = document.getElementById("add-question-form");
     var data = {};
     new FormData(form).forEach(function(v, k) { data[k] = v; });
-    fetch("/api/govcon/opportunities/" + oppId + "/questions", {
+    fetch("/api/proposals/opportunities/" + oppId + "/questions", {
         method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify(data)
     }).then(function(r) { return r.json(); }).then(function(res) {
         if (res.error) { alert(res.error); } else {
-            ICDEV.proposals.closeModal("add-question-modal");
+            closePropModal("add-question-modal");
             location.reload();
         }
     });
@@ -1154,7 +1431,7 @@ function submitQuestion(e, oppId) {
 
 function openResponseModal(qId) {
     document.getElementById("response-question-id").value = qId;
-    ICDEV.proposals.openModal("record-response-modal");
+    openPropModal("record-response-modal");
 }
 
 function submitResponse(e) {
@@ -1165,16 +1442,16 @@ function submitResponse(e) {
     var data = {
         response_text: fd.get("response_text"),
         response_date: fd.get("response_date") || undefined,
-        impacts_requirements: fd.get("impacts_requirements") === "on",
+        impacts_requirements: fd.get("impacts_requirements") === "on" ? 1 : 0,
         impact_notes: fd.get("impact_notes") || "",
         recorded_by: "dashboard_user"
     };
-    fetch("/api/govcon/questions/" + qId + "/response", {
+    fetch("/api/proposals/questions/" + qId + "/responses", {
         method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify(data)
     }).then(function(r) { return r.json(); }).then(function(res) {
         if (res.error) { alert(res.error); } else {
-            ICDEV.proposals.closeModal("record-response-modal");
+            closePropModal("record-response-modal");
             location.reload();
         }
     });
@@ -1194,16 +1471,19 @@ function submitAmendment(e, oppId, sourceType) {
     var formId = sourceType === "file" ? "upload-amendment-form" : "paste-amendment-form";
     var modalId = sourceType === "file" ? "upload-amendment-modal" : "paste-amendment-modal";
     var form = document.getElementById(formId);
-    var data = {};
-    new FormData(form).forEach(function(v, k) { data[k] = v; });
-    fetch("/api/govcon/opportunities/" + oppId + "/amendments", {
+    var data = {source_type: sourceType};
+    new FormData(form).forEach(function(v, k) {
+        // "text" textarea in paste form maps to amendment_text
+        data[k === "text" ? "amendment_text" : k] = v;
+    });
+    fetch("/api/proposals/opportunities/" + oppId + "/amendments", {
         method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify(data)
     }).then(function(r) { return r.json(); }).then(function(res) {
         if (res.error || res.status === "error") {
             alert(res.error || res.message || "Upload failed");
         } else {
-            ICDEV.proposals.closeModal(modalId);
+            closePropModal(modalId);
             location.reload();
         }
     });
@@ -1309,6 +1589,149 @@ function submitReviewForm(event, oppId) {
     }).then(function(r) { return r.json(); }).then(function(resp) {
         if (resp.id) { location.reload(); } else { alert('Error: ' + (resp.error || JSON.stringify(resp))); btn.disabled = false; }
     }).catch(function(e) { alert('Request failed: ' + e); btn.disabled = false; });
+    return false;
+}
+
+// ── Capture Tab ───────────────────────────────────────────────────────
+
+function submitCaptureForm(event, oppId) {
+    event.preventDefault();
+    var data = {};
+    new FormData(event.target).forEach(function(v, k) { if (v !== '') data[k] = v; });
+    if ('win_probability' in data) data.win_probability = parseInt(data.win_probability, 10);
+    if ('ptw_low' in data) data.ptw_low = parseFloat(data.ptw_low);
+    if ('ptw_high' in data) data.ptw_high = parseFloat(data.ptw_high);
+    fetch('/api/proposals/opportunities/' + oppId + '/capture', {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); }).then(function(resp) {
+        if (resp.error) { alert(resp.error); }
+        else { closePropModal('edit-capture-modal'); location.reload(); }
+    });
+    return false;
+}
+
+function loadCaptureData(oppId) {
+    // Load competitors
+    fetch('/api/proposals/opportunities/' + oppId + '/competitors')
+    .then(function(r) { return r.json(); }).then(function(data) {
+        var tbody = document.getElementById('competitors-tbody');
+        if (!tbody) return;
+        var comps = data.competitors || [];
+        document.getElementById('cap-comp-count').textContent = comps.length;
+        if (comps.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No competitors tracked yet.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = comps.map(function(c) {
+            return '<tr>' +
+                '<td>' + escHtml(c.company_name) + (c.incumbent ? ' <span class="badge badge-warning">Incumbent</span>' : '') + '</td>' +
+                '<td>' + (c.incumbent ? 'Yes' : 'No') + '</td>' +
+                '<td>' + (c.win_probability_pct != null ? c.win_probability_pct + '%' : '—') + '</td>' +
+                '<td>' + (c.estimated_price != null ? '$' + c.estimated_price + 'M' : '—') + '</td>' +
+                '<td style="max-width:150px;">' + escHtml(c.strengths || '—') + '</td>' +
+                '<td style="max-width:150px;">' + escHtml(c.weaknesses || '—') + '</td>' +
+                '<td><button class="btn btn-sm btn-error" onclick="deleteCompetitor(\'' + c.id + '\')">Remove</button></td>' +
+            '</tr>';
+        }).join('');
+    });
+    // Load teaming partners
+    fetch('/api/proposals/opportunities/' + oppId + '/teaming')
+    .then(function(r) { return r.json(); }).then(function(data) {
+        var tbody = document.getElementById('teaming-tbody');
+        if (!tbody) return;
+        var partners = data.partners || [];
+        if (partners.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);">No teaming partners yet.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = partners.map(function(p) {
+            return '<tr>' +
+                '<td>' + escHtml(p.company_name) + '</td>' +
+                '<td><span class="badge badge-info">' + (p.role || '—') + '</span></td>' +
+                '<td>' + (p.naics || '—') + '</td>' +
+                '<td>' + (p.cage_code || '—') + '</td>' +
+                '<td>' + (p.workshare_pct != null ? p.workshare_pct + '%' : '—') + '</td>' +
+                '<td style="max-width:150px;">' + escHtml(p.capabilities || '—') + '</td>' +
+                '<td><button class="btn btn-sm btn-error" onclick="deleteTeamingPartner(\'' + p.id + '\')">Remove</button></td>' +
+            '</tr>';
+        }).join('');
+    });
+}
+
+function submitCompetitorForm(event, oppId) {
+    event.preventDefault();
+    var data = {};
+    new FormData(event.target).forEach(function(v, k) { data[k] = v; });
+    data.incumbent = parseInt(data.incumbent || 0, 10);
+    if (data.win_probability_pct) data.win_probability_pct = parseInt(data.win_probability_pct, 10);
+    if (data.estimated_price) data.estimated_price = parseFloat(data.estimated_price);
+    fetch('/api/proposals/opportunities/' + oppId + '/competitors', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); }).then(function(resp) {
+        if (resp.error) { alert(resp.error); }
+        else { closePropModal('add-competitor-modal'); loadCaptureData(oppId); }
+    });
+    return false;
+}
+
+function submitTeamingForm(event, oppId) {
+    event.preventDefault();
+    var data = {};
+    new FormData(event.target).forEach(function(v, k) { if (v !== '') data[k] = v; });
+    if (data.workshare_pct) data.workshare_pct = parseFloat(data.workshare_pct);
+    fetch('/api/proposals/opportunities/' + oppId + '/teaming', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); }).then(function(resp) {
+        if (resp.error) { alert(resp.error); }
+        else { closePropModal('add-teaming-modal'); loadCaptureData(oppId); }
+    });
+    return false;
+}
+
+function deleteCompetitor(cid) {
+    if (!confirm('Remove this competitor?')) return;
+    fetch('/api/proposals/competitors/' + cid, {method: 'DELETE'})
+    .then(function() { location.reload(); });
+}
+
+function deleteTeamingPartner(tid) {
+    if (!confirm('Remove this teaming partner?')) return;
+    fetch('/api/proposals/teaming/' + tid, {method: 'DELETE'})
+    .then(function() { location.reload(); });
+}
+
+// Auto-load capture data when Capture tab is activated
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.tab-btn[data-tab="tab-capture"]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            loadCaptureData('{{ opp.id }}');
+        });
+    });
+});
+
+// ── Finding Closure ───────────────────────────────────────────────────
+
+function openCloseFindingModal(findingId) {
+    document.getElementById('close-finding-id').value = findingId;
+    openPropModal('close-finding-modal');
+}
+
+function submitCloseFinding(event) {
+    event.preventDefault();
+    var form = document.getElementById('close-finding-form');
+    var fd = new FormData(form);
+    var findingId = fd.get('finding_id');
+    var data = {
+        status: 'resolved',
+        resolved_evidence: fd.get('resolved_evidence'),
+        closure_approved_by: fd.get('closure_approved_by') || null
+    };
+    fetch('/api/proposals/findings/' + findingId, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); }).then(function(resp) {
+        if (resp.error) { alert(resp.error); }
+        else { closePropModal('close-finding-modal'); location.reload(); }
+    });
     return false;
 }
 </script>

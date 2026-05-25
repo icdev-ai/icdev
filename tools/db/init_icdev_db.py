@@ -6307,6 +6307,101 @@ CREATE INDEX IF NOT EXISTS idx_prop_qr_question ON proposal_question_responses(q
 CREATE INDEX IF NOT EXISTS idx_prop_qr_opp ON proposal_question_responses(opportunity_id);
 
 -- =========================================================================
+-- Proposals Module Enhancement — Capture / Review / Compliance tables
+-- prop-cap-01: capture fields on proposal_opportunities (ALTER TABLE)
+-- prop-cap-02: proposal_competitors
+-- prop-cap-03: proposal_teaming_partners
+-- prop-rev-01: review/finding extra fields (ALTER TABLE)
+-- prop-rev-02: proposal_versions
+-- prop-cmp-01: proposal_shred_items
+-- prop-cmp-02: changed_requirement_ids on proposal_amendments (ALTER TABLE)
+-- =========================================================================
+
+-- prop-cap-01: capture pipeline fields (idempotent ALTER TABLEs handled in Python init)
+ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS win_probability INTEGER;
+ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS capture_notes TEXT;
+ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS win_themes TEXT;
+ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS key_discriminators TEXT;
+ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS ptw_low NUMERIC;
+ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS ptw_high NUMERIC;
+ALTER TABLE proposal_opportunities ADD COLUMN IF NOT EXISTS capture_phase TEXT CHECK(capture_phase IN (
+    'pipeline','qualify','capture','bid_no_bid','proposal','submitted','closed') OR capture_phase IS NULL);
+
+-- prop-cap-02: competitor intelligence
+CREATE TABLE IF NOT EXISTS proposal_competitors (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    company_name TEXT NOT NULL,
+    incumbent INTEGER DEFAULT 0,
+    strengths TEXT,
+    weaknesses TEXT,
+    estimated_price NUMERIC,
+    win_probability_pct INTEGER,
+    notes TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_comp_opp ON proposal_competitors(opportunity_id);
+
+-- prop-cap-03: teaming partners
+CREATE TABLE IF NOT EXISTS proposal_teaming_partners (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    company_name TEXT NOT NULL,
+    role TEXT CHECK(role IN ('prime','sub','key_sub','mentor_protege')),
+    naics TEXT,
+    cage_code TEXT,
+    capabilities TEXT,
+    workshare_pct NUMERIC,
+    notes TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_team_opp ON proposal_teaming_partners(opportunity_id);
+
+-- prop-rev-01: executive summary + finding closure fields
+ALTER TABLE proposal_reviews ADD COLUMN IF NOT EXISTS executive_summary TEXT;
+ALTER TABLE proposal_review_findings ADD COLUMN IF NOT EXISTS resolved_evidence TEXT;
+ALTER TABLE proposal_review_findings ADD COLUMN IF NOT EXISTS closure_approved_by TEXT;
+
+-- prop-rev-02: version snapshots
+CREATE TABLE IF NOT EXISTS proposal_versions (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    version_number INTEGER NOT NULL,
+    label TEXT,
+    snapshot_json TEXT,
+    created_by TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_ver_opp ON proposal_versions(opportunity_id);
+
+-- prop-cmp-01: shred matrix
+CREATE TABLE IF NOT EXISTS proposal_shred_items (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    statement_text TEXT NOT NULL,
+    statement_type TEXT CHECK(statement_type IN ('shall','must','will','should')),
+    rfp_section TEXT,
+    rfp_page TEXT,
+    section_id TEXT REFERENCES proposal_sections(id),
+    writer TEXT,
+    status TEXT DEFAULT 'unassigned' CHECK(status IN ('unassigned','assigned','drafted','complete')),
+    notes TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_shred_opp ON proposal_shred_items(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_prop_shred_status ON proposal_shred_items(status);
+
+-- prop-cmp-02: amendment impact tracking
+ALTER TABLE proposal_amendments ADD COLUMN IF NOT EXISTS changed_requirement_ids TEXT;
+
+-- =========================================================================
 -- ANVIL Critique Phase (Phase 61 — Feature 3)
 -- =========================================================================
 
