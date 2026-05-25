@@ -184,6 +184,25 @@ jobs:
         if: always()
         run: kill $(cat /tmp/dashboard.pid 2>/dev/null) 2>/dev/null || true
 
+      # ── CI auto-fix commit + push ─────────────────────────────────────────
+      # Fires only for ci-fix-* tasks. After ANVIL applies the fix, commit any
+      # changed files and push to main so CI can re-run and validate the fix.
+      # The push uses GITHUB_TOKEN (read-write by default for workflow_dispatch).
+      # Guard: only pushes when git diff finds staged changes — avoids empty commits.
+      - name: Commit and push CI auto-fix
+        if: startsWith(github.event.inputs.task_id, 'ci-fix-')
+        run: |
+          git config user.email "ci-autofix@github.com"
+          git config user.name "ICDEV CI AutoFix [bot]"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "fix(ci-auto): ${{ github.event.inputs.task_id }} — ${{ github.event.inputs.task_desc }}"
+            git push origin HEAD:main
+            echo "Pushed CI auto-fix commit to main."
+          else
+            echo "No changes to commit — fix already applied or ANVIL found nothing to change."
+          fi
+
       - name: Summary
         if: always()
         run: |
