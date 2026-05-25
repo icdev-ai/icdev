@@ -1,0 +1,27 @@
+# CUI // SP-CTI
+# ICDEV™ Dashboard Authentication Configuration
+# All hardcoded thresholds for JWT, CSRF, API keys, and logging.
+# Override via environment variables where noted; otherwise edit here.
+---
+
+jwt:
+  # Access token lifetime in minutes. Env: ICDEV_JWT_ACCESS_TTL_MINUTES
+  access_ttl_minutes: 15
+  # Refresh token lifetime in days. Env: ICDEV_JWT_REFRESH_TTL_DAYS
+  refresh_ttl_days: 7
+  # Entropy for generated HS256 secret (bytes). Env: ICDEV_JWT_SECRET_ENTROPY_BYTES
+  secret_entropy_bytes: 32
+
+csrf:
+  # Entropy for per-request CSRF tokens (bytes). Env: ICDEV_CSRF_TOKEN_ENTROPY_BYTES
+  token_entropy_bytes: 24
+
+api_key:
+  # Entropy for generated API keys (bytes = half the hex length). Env: ICDEV_API_KEY_ENTROPY_BYTES
+  entropy_bytes: 32
+  # Number of visible characters shown after the key prefix in the UI.
+  prefix_display_length: 8
+
+logging:
+  # Maximum User-Agent string length stored in auth event logs.
+  user_agent_max_length: 256

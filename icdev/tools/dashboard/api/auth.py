@@ -93,8 +93,8 @@ submit on POST/PUT/PATCH/DELETE (C3) applied by a blueprint-level before_request
 hook registered inside register_api_blueprints().
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -106,16 +106,48 @@ import jwt  # PyJWT
 from flask import Blueprint, g, jsonify, request
 from urllib.parse import urlsplit
 
-logger = logging.getLogger("icdev.dashboard.api.auth")
+logger = get_logger("icdev.dashboard.api.auth")
 
 # ---------------------------------------------------------------------------
-# Configuration
+# Configuration — loaded from args/auth_config.yaml with env-var overrides
 # ---------------------------------------------------------------------------
+
+_AUTH_CONFIG_PATH = Path(__file__).resolve().parents[3] / "args" / "auth_config.yaml"
+
+
+def _load_auth_config() -> dict:
+    try:
+        import yaml
+        with open(_AUTH_CONFIG_PATH, "r", encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except Exception:
+        return {}
+
+
+_auth_cfg = _load_auth_config()
 
 JWT_ALGORITHM = "HS256"
 JWT_ISSUER = "icdev-dashboard"
-ACCESS_TTL = timedelta(minutes=15)
-REFRESH_TTL = timedelta(days=7)
+
+_access_ttl_minutes = int(
+    os.environ.get("ICDEV_JWT_ACCESS_TTL_MINUTES", None)
+    or _auth_cfg.get("jwt", {}).get("access_ttl_minutes", 15)
+)
+_refresh_ttl_days = int(
+    os.environ.get("ICDEV_JWT_REFRESH_TTL_DAYS", None)
+    or _auth_cfg.get("jwt", {}).get("refresh_ttl_days", 7)
+)
+_jwt_secret_entropy = int(
+    os.environ.get("ICDEV_JWT_SECRET_ENTROPY_BYTES", None)
+    or _auth_cfg.get("jwt", {}).get("secret_entropy_bytes", 32)
+)
+_csrf_token_entropy = int(
+    os.environ.get("ICDEV_CSRF_TOKEN_ENTROPY_BYTES", None)
+    or _auth_cfg.get("csrf", {}).get("token_entropy_bytes", 24)
+)
+
+ACCESS_TTL = timedelta(minutes=_access_ttl_minutes)
+REFRESH_TTL = timedelta(days=_refresh_ttl_days)
 
 # Endpoints that skip @require_jwt. Match prefixes via startswith(); exact
 # matches pass through unchanged. Paths are what Flask sees (after blueprint
@@ -151,7 +183,7 @@ def _load_jwt_secret() -> str:
         if _DEV_SECRET_PATH.exists():
             return _DEV_SECRET_PATH.read_text(encoding="utf-8").strip()
         _DEV_SECRET_PATH.parent.mkdir(parents=True, exist_ok=True)
-        generated = secrets.token_hex(32)
+        generated = secrets.token_hex(_jwt_secret_entropy)
         _DEV_SECRET_PATH.write_text(generated, encoding="utf-8")
         logger.warning(
             "ICDEV_JWT_SECRET not set; wrote dev secret to %s. "
@@ -164,7 +196,7 @@ def _load_jwt_secret() -> str:
         # ephemeral secret. Tokens will not survive a restart, which is a
         # loud failure mode \u2014 operator will notice immediately.
         logger.error("Could not persist dev JWT secret (%s); using ephemeral", exc)
-        return secrets.token_hex(32)
+        return secrets.token_hex(_jwt_secret_entropy)
 
 
 _JWT_SECRET = _load_jwt_secret()
@@ -179,7 +211,7 @@ def issue_access_token(sub: str, role: str = "user", csrf: str | None = None) ->
     """Mint a 15-min access token and return ``{token, expires_at, csrf}``."""
     now = datetime.now(timezone.utc)
     exp = now + ACCESS_TTL
-    csrf_token = csrf or secrets.token_urlsafe(24)
+    csrf_token = csrf or secrets.token_urlsafe(_csrf_token_entropy)
     payload: dict[str, Any] = {
         "iss": JWT_ISSUER,
         "sub": sub,
@@ -517,7 +549,7 @@ def install_csrf_cookie_middleware(app) -> None:
     @app.after_request
     def _seed_csrf_cookie(resp):
         if request.method == "GET" and CSRF_COOKIE_NAME not in request.cookies:
-            token = secrets.token_urlsafe(24)
+            token = secrets.token_urlsafe(_csrf_token_entropy)
             resp.set_cookie(
                 CSRF_COOKIE_NAME,
                 token,

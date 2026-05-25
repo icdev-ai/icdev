@@ -17,6 +17,7 @@ import hashlib
 import os
 import secrets
 import uuid
+from pathlib import Path
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 
@@ -33,11 +34,40 @@ from flask import (
 from tools.dashboard.config import DASHBOARD_SECRET, DB_PATH
 
 # ---------------------------------------------------------------------------
+# Auth configuration — loaded from args/auth_config.yaml with env-var overrides
+# ---------------------------------------------------------------------------
+
+_AUTH_CONFIG_PATH = Path(__file__).resolve().parents[2] / "args" / "auth_config.yaml"
+
+
+def _load_auth_config() -> dict:
+    try:
+        import yaml
+        with open(_AUTH_CONFIG_PATH, "r", encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except Exception:
+        return {}
+
+
+_auth_cfg = _load_auth_config()
+
+_api_key_entropy = int(
+    os.environ.get("ICDEV_API_KEY_ENTROPY_BYTES", None)
+    or _auth_cfg.get("api_key", {}).get("entropy_bytes", 32)
+)
+_key_prefix_display_length = int(
+    _auth_cfg.get("api_key", {}).get("prefix_display_length", 8)
+)
+_user_agent_max_length = int(
+    _auth_cfg.get("logging", {}).get("user_agent_max_length", 256)
+)
+
+# ---------------------------------------------------------------------------
 # Key generation & hashing
 # ---------------------------------------------------------------------------
 
 API_KEY_PREFIX = "icdev_dash_"
-API_KEY_LENGTH = 32  # 32 random bytes = 64 hex chars
+API_KEY_LENGTH = _api_key_entropy
 
 
 def generate_api_key() -> str:
@@ -52,9 +82,10 @@ def hash_api_key(raw_key: str) -> str:
 
 
 def key_prefix(raw_key: str) -> str:
-    """Extract the first 8 visible chars after the prefix for display."""
+    """Extract the first N visible chars after the prefix for display."""
     after_prefix = raw_key[len(API_KEY_PREFIX) :]
-    return after_prefix[:8] if len(after_prefix) >= 8 else after_prefix
+    n = _key_prefix_display_length
+    return after_prefix[:n] if len(after_prefix) >= n else after_prefix
 
 
 # ---------------------------------------------------------------------------
@@ -343,7 +374,7 @@ def require_role(*roles):
                     user.get("id", "unknown") if isinstance(user, dict) else user["id"],
                     "permission_denied",
                     ip_address=request.remote_addr,
-                    user_agent=request.headers.get("User-Agent", "")[:256],
+                    user_agent=request.headers.get("User-Agent", "")[:_user_agent_max_length],
                     details=f"required={roles}, had={user_role}",
                 )
                 abort(403)
@@ -423,7 +454,7 @@ def _auth_before_request():
                 user["id"],
                 "login_success",
                 ip_address=request.remote_addr,
-                user_agent=request.headers.get("User-Agent", "")[:256],
+                user_agent=request.headers.get("User-Agent", "")[:_user_agent_max_length],
                 details="via_api_key",
             )
             return None
@@ -433,7 +464,7 @@ def _auth_before_request():
                 None,
                 "login_failed",
                 ip_address=request.remote_addr,
-                user_agent=request.headers.get("User-Agent", "")[:256],
+                user_agent=request.headers.get("User-Agent", "")[:_user_agent_max_length],
                 details="invalid_api_key",
             )
             if request.is_json or request.path.startswith("/api/"):
@@ -528,7 +559,7 @@ def register_dashboard_auth(app: Flask):
         app.secret_key = DASHBOARD_SECRET
     else:
         # Auto-generate — sessions won't survive restarts but that's OK for dev
-        app.secret_key = secrets.token_hex(32)
+        app.secret_key = secrets.token_hex(_api_key_entropy)
 
     # Auto-provision API key on first install
     _auto_provision_env_key()
