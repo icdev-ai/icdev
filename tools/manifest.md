@@ -828,3 +828,9 @@
 |------|------|-------------|-------|--------|
 | Version Anomaly Detector | tools\ai_augmentation\version_anomaly_detector.py | Auto-registered: ai_augmentation/version_anomaly_detector.py | --json | JSON |
 | Migrate To Icdev Logger | tools\refactor\migrate_to_icdev_logger.py | Auto-registered: refactor/migrate_to_icdev_logger.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Runbook Engine | tools\govlift\runbook_engine.py | Auto-registered: govlift/runbook_engine.py | --json | JSON |
