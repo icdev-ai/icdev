@@ -289,8 +289,8 @@ def _process_inbox() -> Tuple[List[int], List[int]]:
             except Exception as exc:
                 error_text = f"{type(exc).__name__}: {exc}"
                 conn.execute(
-                    "UPDATE telegram_inbox SET error = ?, processed_at = ? WHERE update_id = ?",
-                    (error_text, _utcnow_iso(), update_id),
+                    "UPDATE telegram_inbox SET error = ? WHERE update_id = ?",
+                    (error_text, update_id),
                 )
                 conn.commit()
                 failed.append(update_id)
@@ -302,7 +302,7 @@ def _process_inbox() -> Tuple[List[int], List[int]]:
                 _reply(chat_id, reply)
 
             conn.execute(
-                "UPDATE telegram_inbox SET processed_at = ? WHERE update_id = ?",
+                "UPDATE telegram_inbox SET processed_at = ?, error = NULL WHERE update_id = ?",
                 (_utcnow_iso(), update_id),
             )
             conn.commit()
