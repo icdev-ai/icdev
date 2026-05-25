@@ -245,7 +245,38 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
     if "INSERT INTO" in sql and "ON CONFLICT" not in sql and "OR IGNORE" in original.upper():
         sql = sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
 
-    # 7. ? placeholder → %s
+    # 7. Escape bare % inside SQL string literals to %% so psycopg2 does not
+    #    misinterpret them as format specifiers (e.g. '%aadc%' in a LIKE clause).
+    #    Must happen before ? → %s so we don't accidentally double-escape params.
+    def _escape_pct_in_literals(s: str) -> str:
+        out: list[str] = []
+        in_str = False
+        i = 0
+        while i < len(s):
+            ch = s[i]
+            if not in_str:
+                if ch == "'":
+                    in_str = True
+                out.append(ch)
+            else:
+                if ch == "'":
+                    # SQL '' escape sequence stays inside the literal
+                    if i + 1 < len(s) and s[i + 1] == "'":
+                        out.append("''")
+                        i += 1
+                    else:
+                        in_str = False
+                        out.append(ch)
+                elif ch == "%":
+                    out.append("%%")
+                else:
+                    out.append(ch)
+            i += 1
+        return "".join(out)
+
+    sql = _escape_pct_in_literals(sql)
+
+    # 7b. ? placeholder → %s
     sql = sql.replace("?", "%s")
 
     # 8. DDL translations (CREATE TABLE / CREATE INDEX)
