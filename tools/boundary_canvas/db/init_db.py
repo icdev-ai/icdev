@@ -37,10 +37,10 @@ def get_connection():
     """
     if _BDC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
+            from tools.db.storage import get_canvas_connection
 
-            # Use ICDEV's storage layer which handles PG translation
-            conn = _icdev_conn(db_path=os.environ.get("BDC_PG_DATABASE", "boundary_canvas"))
+            # Use ICDEV's canvas connection (RLS disabled) for PostgreSQL
+            conn = get_canvas_connection("BDC_PG_DATABASE")
             return conn
         except ImportError:
             pass  # Fall through to SQLite

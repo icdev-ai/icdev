@@ -266,6 +266,10 @@ def _auto_register_in_db(agent_id: str, name: str, description: str, port: int) 
             "skills": [],  # Populated below if we can read card
             "port": port,
         }
+        # Populate skills from agent card if available
+        card = _load_agent_card(agent_id)
+        if card:
+            capabilities["skills"] = [s.get("id") for s in card.get("skills", []) if s.get("id")]
         register_agent(
             agent_id=agent_id,
             name=name,
