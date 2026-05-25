@@ -3144,6 +3144,141 @@ def _poll_github_actions_completions() -> None:
             logger.warning("kanban: GA poll error for %s: %s", task_id, _exc)
 
 
+# Workflows to monitor for CI failures. Kanban runner is intentionally excluded.
+_CI_WATCHED_WORKFLOWS: list = ["icdev-ci.yml", "ci_cd_pipeline.yml"]
+
+
+def _detect_and_queue_ci_failures() -> None:
+    """Detect failed CI runs on main and enqueue auto-fix tasks in the backlog.
+
+    Watches _CI_WATCHED_WORKFLOWS for conclusion=failure on the main branch.
+    For each unprocessed failure:
+      - Fetches failed-step logs from the GitHub API
+      - Creates a backlog task (id=ci-fix-{run_id}, type=fix, executor=github_actions)
+        so the scheduler dispatches it to the kanban runner for auto-remediation.
+
+    Infinite-loop guards:
+      - Deduped by run_id: once a ci-fix-{id} task exists, the run is never requeued.
+      - Kanban runner failures are skipped (workflow path contains kanban-runner).
+      - Runs triggered by a ci-fix task (display_title contains 'ci-fix-') are skipped.
+    """
+    import os as _os
+    try:
+        import requests as _req
+    except ImportError:
+        return
+
+    token = _os.getenv("GITHUB_TOKEN", "").strip()
+    repo = _os.getenv("GITHUB_RUNNER_REPO", "").strip()
+    if not token or not repo:
+        return
+
+    _hdrs = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    try:
+        _conn = get_connection()
+    except Exception:
+        return
+
+    now = datetime.now(timezone.utc)
+
+    for wf_file in _CI_WATCHED_WORKFLOWS:
+        try:
+            runs_resp = _req.get(
+                f"https://api.github.com/repos/{repo}/actions/workflows/"
+                f"{wf_file}/runs?status=failure&per_page=5&branch=main",
+                headers=_hdrs, timeout=10,
+            )
+            if runs_resp.status_code != 200:
+                continue
+        except Exception as _re:
+            logger.warning("kanban: CI failure poll error for %s: %s", wf_file, _re)
+            continue
+
+        for _run in runs_resp.json().get("workflow_runs", []):
+            run_id = str(_run["id"])
+            run_title = _run.get("display_title") or _run.get("name") or ""
+            wf_path = _run.get("path", "")
+
+            # Guard 1: never queue failures from the kanban runner itself
+            if "kanban-runner" in wf_path or "kanban_runner" in wf_path:
+                continue
+
+            # Guard 2: never queue a failure caused by a ci-fix task (no recursion)
+            if "ci-fix-" in run_title:
+                continue
+
+            task_id = f"ci-fix-{run_id}"
+
+            # Guard 3: dedup — skip if a fix task for this run already exists
+            if _conn.execute("SELECT 1 FROM kanban_tasks WHERE id=?", (task_id,)).fetchone():
+                continue
+
+            # Fetch failed job logs for error context
+            error_ctx = (
+                f"CI workflow: {wf_file}\n"
+                f"Run URL: {_run.get('html_url', '')}\n"
+                f"Triggered by commit: {run_title}\n\n"
+            )
+            try:
+                _jobs_resp = _req.get(
+                    f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs",
+                    headers=_hdrs, timeout=10,
+                )
+                _jobs = _jobs_resp.json().get("jobs", []) if _jobs_resp.status_code == 200 else []
+                _failed_jobs = [j for j in _jobs if j.get("conclusion") == "failure"]
+
+                for _job in _failed_jobs[:3]:
+                    _jname = _job.get("name", "unknown job")
+                    _fsteps = [s for s in _job.get("steps", []) if s.get("conclusion") == "failure"]
+                    _step_names = ", ".join(s.get("name", "") for s in _fsteps[:3])
+                    error_ctx += f"=== Job: {_jname} | Failed steps: {_step_names} ===\n"
+
+                    # Fetch the job log (redirects to pre-signed URL)
+                    _log_resp = _req.get(
+                        f"https://api.github.com/repos/{repo}/actions/jobs/{_job['id']}/logs",
+                        headers=_hdrs, timeout=15, allow_redirects=True,
+                    )
+                    if _log_resp.status_code == 200:
+                        # Keep error-bearing lines only (filter runner noise)
+                        _error_lines = [
+                            ln for ln in _log_resp.text.splitlines()
+                            if any(
+                                kw in ln
+                                for kw in (
+                                    "error", "Error", "ERROR", "FAILED", "failed",
+                                    "exit code", ">> Issue", "ModuleNotFoundError",
+                                    "ImportError", "SyntaxError", "not found",
+                                    "cannot import", "Traceback",
+                                )
+                            )
+                        ]
+                        error_ctx += "\n".join(_error_lines[:80]) + "\n\n"
+            except Exception as _le:
+                logger.warning("kanban: log fetch failed for run %s: %s", run_id, _le)
+                error_ctx += f"(log fetch failed: {_le})\n"
+
+            # Insert fix task
+            _title = f"fix(ci): auto-fix {wf_file} failure — run {run_id}"
+            try:
+                _conn.execute(
+                    "INSERT OR IGNORE INTO kanban_tasks "
+                    "(id, title, description, priority, task_type, status, "
+                    " executor_type, tags, created_at, updated_at) "
+                    "VALUES (?, ?, ?, 'high', 'fix', 'backlog', 'github_actions', "
+                    "        'ci_autofix', ?, ?)",
+                    (_task_id := task_id, _title, error_ctx[:8000], now.isoformat(), now.isoformat()),
+                )
+                _conn.commit()
+                logger.info("kanban: queued CI fix task %s for run %s", task_id, run_id)
+            except Exception as _ie:
+                logger.warning("kanban: failed to insert ci-fix task %s: %s", task_id, _ie)
+
+
 def _dispatch_ollama_local(task_id: str, task_desc: str, task_type: str) -> bool:
     """Run an Ollama-backed anvil script directly for the EXEC_OLLAMA_LOCAL tier.
 
@@ -6066,6 +6201,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         _poll_github_actions_completions()
     except Exception as _gp_exc:
         logger.warning("GA completion poll failed: %s", _gp_exc)
+
+    # 0f. CI failure detector — every ~10 cycles (≈10 min) scan watched workflows
+    # for failures and enqueue ci-fix-{run_id} tasks into the backlog.
+    try:
+        import random as _rcf  # noqa: PLC0415
+        if _rcf.random() < 0.10:  # ~1-in-10 ≈ once per 10 min  # noqa: S311
+            _detect_and_queue_ci_failures()
+    except Exception as _cf_exc:
+        logger.warning("CI failure detection failed: %s", _cf_exc)
 
     # Suggested-decay: re-queue soft-stuck tasks once every ~4 h (1/240 cycles).
     try:
