@@ -1,0 +1,12 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:5050",
+      "localStorage": [
+        { "name": "icdev_tour_completed",  "value": "1"   },
+        { "name": "icdev_tour_last_step",  "value": "999" }
+      ]
+    }
+  ]
+}
