@@ -55,12 +55,64 @@ def _generate_id(prefix="dprof"):
     return f"{prefix}-{h}"
 
 
+def _ensure_schema(conn) -> None:
+    """Create dev_profiles tables if they don't exist (idempotent)."""
+    try:
+        from tools.db.migrations.dev_profiles_003 import DEV_PROFILES_SCHEMA  # type: ignore
+        conn.executescript(DEV_PROFILES_SCHEMA)
+    except ImportError:
+        pass
+    try:
+        conn.execute("SELECT 1 FROM dev_profiles LIMIT 1")
+    except Exception:
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS dev_profiles (
+    id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    profile_md TEXT,
+    profile_yaml TEXT NOT NULL,
+    dimensions TEXT,
+    template TEXT,
+    inherits_from TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    is_active INTEGER DEFAULT 1,
+    change_summary TEXT,
+    approved_by TEXT,
+    approved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dev_profiles_scope ON dev_profiles(scope, scope_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_dev_profiles_active ON dev_profiles(scope_id, is_active, version);
+CREATE TABLE IF NOT EXISTS dev_profile_locks (
+    id TEXT PRIMARY KEY,
+    profile_id TEXT NOT NULL,
+    dimension_path TEXT NOT NULL,
+    lock_owner_role TEXT NOT NULL,
+    locked_by TEXT NOT NULL,
+    locked_at TEXT NOT NULL DEFAULT (datetime('now')),
+    reason TEXT,
+    is_active INTEGER DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS dev_profile_detections (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    project_id TEXT,
+    session_id TEXT,
+    detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+    detection_results TEXT NOT NULL
+);
+""")
+
+
 def _get_connection(db_path=None):
     """Get a DB connection with row factory."""
     path = db_path or DB_PATH
     conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    _ensure_schema(conn)
     return conn
 
 
