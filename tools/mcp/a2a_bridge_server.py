@@ -23,6 +23,8 @@ as a standalone service in docker-compose.
 from __future__ import annotations
 
 import argparse
+import os
+import ssl
 import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -54,10 +56,16 @@ class MCPA2ABridge:
         host: str = "0.0.0.0",
         port: int = 9000,
         db_path: Optional[Path] = None,
+        tls_cert: Optional[str] = None,
+        tls_key: Optional[str] = None,
+        tls_ca: Optional[str] = None,
     ):
         self.host = host
         self.port = port
         self.db_path = db_path or DB_PATH
+        self.tls_cert = tls_cert
+        self.tls_key = tls_key
+        self.tls_ca = tls_ca
         self.name = "ICDEV™ MCP Gateway"
         self.description = "Unified MCP tool gateway exposed over A2A HTTP"
         self.version = "1.0.0"
@@ -277,9 +285,23 @@ class MCPA2ABridge:
         }), 400 if code != -32700 else 422
 
     def run(self, debug: bool = False) -> None:
+        ssl_ctx = None
+        if self.tls_cert and self.tls_key:
+            if os.path.exists(self.tls_cert) and os.path.exists(self.tls_key):
+                ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                ssl_ctx.load_cert_chain(self.tls_cert, self.tls_key)
+                if self.tls_ca and os.path.exists(self.tls_ca):
+                    ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+                    ssl_ctx.load_verify_locations(self.tls_ca)
+                    logger.info("Mutual TLS enabled (client cert required)")
+                else:
+                    logger.info("TLS enabled (server-side only)")
+            else:
+                logger.warning(f"TLS cert/key not found ({self.tls_cert}, {self.tls_key}). Starting without TLS.")
+
         logger.info(f"Starting MCP-A2A Bridge on {self.host}:{self.port}")
         logger.info(f"Exposing {len(self._tool_registry)} MCP tools as A2A skills")
-        self.app.run(host=self.host, port=self.port, debug=debug)
+        self.app.run(host=self.host, port=self.port, debug=debug, ssl_context=ssl_ctx)
 
 
 def _utcnow_iso() -> str:
@@ -291,10 +313,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="MCP-A2A Bridge Server")
     parser.add_argument("--host", default="0.0.0.0", help="Bind host")
     parser.add_argument("--port", type=int, default=9000, help="Bind port")
+    parser.add_argument("--tls-cert", help="TLS certificate path")
+    parser.add_argument("--tls-key", help="TLS private key path")
+    parser.add_argument("--tls-ca", help="TLS CA cert for mutual TLS")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
 
-    bridge = MCPA2ABridge(host=args.host, port=args.port)
+    bridge = MCPA2ABridge(
+        host=args.host,
+        port=args.port,
+        tls_cert=args.tls_cert,
+        tls_key=args.tls_key,
+        tls_ca=args.tls_ca,
+    )
     bridge.run(debug=args.debug)
 
 

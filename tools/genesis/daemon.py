@@ -283,6 +283,28 @@ class GenesisDaemon(DaemonBase):
             status["implementation_status"] = f"error: {e}"
         return status
 
+    def _observe(self, name: str, fn, config: Dict[str, Any], trust: TrustKernelBase) -> Dict[str, Any]:
+        """Wrap a reflex invocation with tracing and metrics.
+
+        Logs start/end, captures timing, and records exceptions.
+        Returns the reflex result unchanged.
+        """
+        import time
+        start = time.time()
+        logger.info(f"[GENESIS] Reflex '{name}' starting")
+        try:
+            result = fn(config, trust)
+            elapsed_ms = round((time.time() - start) * 1000, 2)
+            success = result.get("success", False) if isinstance(result, dict) else False
+            logger.info(f"[GENESIS] Reflex '{name}' finished in {elapsed_ms}ms (success={success})")
+            if isinstance(result, dict):
+                result["_observed"] = {"duration_ms": elapsed_ms, "timestamp": utcnow_iso()}
+            return result
+        except Exception as exc:
+            elapsed_ms = round((time.time() - start) * 1000, 2)
+            logger.exception(f"[GENESIS] Reflex '{name}' failed after {elapsed_ms}ms")
+            return {"success": False, "error": str(exc), "_observed": {"duration_ms": elapsed_ms, "timestamp": utcnow_iso()}}
+
     def run_reflex_impl(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Execute a single reflex via tools/genesis/reflexes/<name>.py."""
         risk_tier = config.get("risk_tier", RISK_GREEN)
@@ -296,9 +318,7 @@ class GenesisDaemon(DaemonBase):
             if hasattr(module, "run"):
                 # [DISPATCH POINT] Centralized reflex invocation via importlib.
                 # All 22 reflexes in REFLEX_NAMES are dispatched here.
-                # observe() wrapper should wrap module.run(config, trust) here:
-                #   result = observe(name, module.run, config, trust)
-                result = module.run(config, trust)
+                result = self._observe(name, module.run, config, trust)
                 success = result.get("success", False)
                 if success:
                     try:
