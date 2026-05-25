@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Central HTTP client with mTLS, CA bundle, and proxy support.
+"""Central HTTP client with mTLS, CA bundle, proxy, retry, and redirect support.
 
 All outbound HTTPS calls (LLM providers, SAM.gov, Ollama, marketplace, etc.)
 should go through `get_session()` or `request()` so operators can harden the
@@ -79,7 +79,9 @@ def _load_config() -> dict:
 def _cfg(section: str, key: str, default: float) -> float:
     cfg = _load_config()
     try:
-        return float(cfg.get(section, {}).get(key, default))
+        if section:
+            return float(cfg.get(section, {}).get(key, default))
+        return float(cfg.get(key, default))
     except (TypeError, ValueError):
         return default
 
