@@ -75,7 +75,7 @@ def _watch_sla(conn, dry_run: bool, result: Dict[str, Any]) -> None:
             conn,
             "SELECT id, circuit_id, carrier, customer, sla_type, target_value, "
             "measured_value, breach, period_start, period_end "
-            "FROM noc_sla_records WHERE breach = FALSE OR breach = 0",
+            "FROM noc_sla_records WHERE breach = FALSE",
             "SELECT id, circuit_id, carrier, customer, sla_type, target_value, "
             "measured_value, breach, period_start, period_end "
             "FROM noc_sla_records WHERE breach = 0",

@@ -52,6 +52,14 @@ def _get_conn():
         return conn
 
 
+def _safe_execute(conn, sql, params):
+    expected = sql.count("?")
+    actual = len(params) if isinstance(params, (list, tuple)) else 1
+    if expected != actual:
+        raise ValueError(f"Placeholder mismatch: {expected} placeholders but {actual} params")
+    conn.execute(sql, params)
+
+
 def _reset_demo_data(conn) -> None:
     for tbl in (
         "noc_sla_records",
@@ -212,7 +220,7 @@ def seed_incidents(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _INCIDENTS:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9],
             row[10], row[11], row[12], row[13], "CUI",
             _ts(count * 2), _ts(count * 2 + row[11]) if row[11] else None, _ts(count * 2),
@@ -230,7 +238,7 @@ def seed_alarms(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _ALARMS:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row["id"], row["alarm_source"], row["source_alarm_id"], row["severity"], row["alarm_type"],
             row["device_name"], row["device_ip"], row["circuit_id"], row["carrier"], row["description"],
             row["raw_payload"], row["correlated_incident_id"], row["suppressed"], row["acknowledged"],
@@ -250,7 +258,7 @@ def seed_rfcs(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _RFCS:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11],
             row[12], row[13], row[14], row[15], "CUI", _ts(count * 4), _ts(count * 4),
         ))
@@ -264,7 +272,7 @@ def seed_mops(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _MOPS:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row[0], row[1], row[2], row[3], row[4], row[5], "", "CUI", _ts(count * 3), _ts(count * 3),
         ))
         count += 1
@@ -278,7 +286,7 @@ def seed_maintenance_windows(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _MAINTENANCE_WINDOWS:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9],
             row[10], row[11], row[12], "CUI", _ts(count * 8), _ts(count * 8),
         ))
@@ -293,7 +301,7 @@ def seed_sla_records(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _SLA_RECORDS:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row["id"], row["circuit_id"], row["carrier"], row["customer"], row["sla_type"],
             row["target_value"], row["measured_value"], row["measurement_period"], row["breach"],
             row["breach_minutes"], row["credit_eligible"], row["period_start"], row["period_end"],

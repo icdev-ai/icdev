@@ -8,3 +8,6 @@
 {"ts": "2026-05-25T12:36:52.586414+00:00", "level": "INFO", "component": "pulse.capability_scanner", "message": "Loaded 57 capabilities from 18 domain files", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-25T12:37:36.874042+00:00", "level": "INFO", "component": "pulse.capability_scanner", "message": "Loaded 57 capabilities from 18 domain files", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-25T12:39:25.653220+00:00", "level": "INFO", "component": "pulse.capability_scanner", "message": "Loaded 57 capabilities from 18 domain files", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T15:04:51.906723+00:00", "level": "INFO", "component": "pulse.capability_scanner", "message": "Loaded 57 capabilities from 18 domain files", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T15:07:57.571262+00:00", "level": "INFO", "component": "pulse.capability_scanner", "message": "Loaded 57 capabilities from 18 domain files", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T15:10:03.601608+00:00", "level": "INFO", "component": "pulse.capability_scanner", "message": "Loaded 57 capabilities from 18 domain files", "trace_id": null, "session_id": null, "extra": {}}

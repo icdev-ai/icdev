@@ -52,6 +52,14 @@ def _get_conn():
         return conn
 
 
+def _safe_execute(conn, sql, params):
+    expected = sql.count("?")
+    actual = len(params) if isinstance(params, (list, tuple)) else 1
+    if expected != actual:
+        raise ValueError(f"Placeholder mismatch: {expected} placeholders but {actual} params")
+    conn.execute(sql, params)
+
+
 def _reset_demo_data(conn) -> None:
     for tbl in ("dsoc_mitigations", "dsoc_threats", "dsoc_scrubbing_centers", "dsoc_rtbh_entries", "dsoc_flowspec_rules", "dsoc_bgp_hijacks"):
         try:
@@ -62,34 +70,34 @@ def _reset_demo_data(conn) -> None:
 
 
 _FLOWSPEC_RULES = [
-    {"rule_name": "FS-DROP-SYNFLOOD", "destination_prefix": "", "source_prefix": "", "protocol": "tcp", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "drop", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:666", "status": "active", "applied_routers": "RTR-01,RTR-02", "expires_at": "", "created_by": "system", "classification": "CUI", "created_at": _ts(0), "updated_at": _ts(0)},
-    {"rule_name": "FS-RATE-UDPFLOOD", "destination_prefix": "", "source_prefix": "", "protocol": "udp", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "rate-limit", "rate_limit_bps": 1000000000, "redirect_vrf": "", "community": "64512:667", "status": "active", "applied_routers": "RTR-01", "expires_at": "", "created_by": "system", "classification": "CUI", "created_at": _ts(2), "updated_at": _ts(2)},
-    {"rule_name": "FS-DROP-ICMP", "destination_prefix": "", "source_prefix": "", "protocol": "icmp", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "drop", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:668", "status": "active", "applied_routers": "RTR-01,RTR-02", "expires_at": "", "created_by": "system", "classification": "CUI", "created_at": _ts(4), "updated_at": _ts(4)},
-    {"rule_name": "FS-REDIRECT-SCRUB", "destination_prefix": "192.0.2.0/24", "source_prefix": "", "protocol": "", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "redirect", "rate_limit_bps": 0, "redirect_vrf": "SCRUB-01", "community": "64512:669", "status": "active", "applied_routers": "RTR-01", "expires_at": "", "created_by": "system", "classification": "CUI", "created_at": _ts(6), "updated_at": _ts(6)},
-    {"rule_name": "FS-DROP-AMPLIFY", "destination_prefix": "", "source_prefix": "", "protocol": "udp", "dst_port": "53", "src_port": "", "packet_length": "", "dscp": "", "action": "drop", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:670", "status": "active", "applied_routers": "RTR-02", "expires_at": "", "created_by": "system", "classification": "CUI", "created_at": _ts(8), "updated_at": _ts(8)},
-    {"rule_name": "FS-SAMPLE-DDOS", "destination_prefix": "203.0.113.0/24", "source_prefix": "", "protocol": "", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "sample", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:671", "status": "active", "applied_routers": "RTR-01", "expires_at": "", "created_by": "system", "classification": "CUI", "created_at": _ts(10), "updated_at": _ts(10)},
-    {"rule_name": "FS-MARK-TOS", "destination_prefix": "", "source_prefix": "", "protocol": "tcp", "dst_port": "443", "src_port": "", "packet_length": "", "dscp": "", "action": "mark", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:672", "status": "active", "applied_routers": "RTR-01,RTR-02", "expires_at": "", "created_by": "system", "classification": "CUI", "created_at": _ts(12), "updated_at": _ts(12)},
-    {"rule_name": "FS-DROP-SPOOF", "destination_prefix": "", "source_prefix": "10.0.0.0/8", "protocol": "", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "drop", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:673", "status": "active", "applied_routers": "RTR-01", "expires_at": "", "created_by": "system", "classification": "CUI", "created_at": _ts(14), "updated_at": _ts(14)},
-    {"rule_name": "FS-RATE-SSHFLOOD", "destination_prefix": "", "source_prefix": "", "protocol": "tcp", "dst_port": "22", "src_port": "", "packet_length": "", "dscp": "", "action": "rate-limit", "rate_limit_bps": 50000000, "redirect_vrf": "", "community": "64512:674", "status": "active", "applied_routers": "RTR-02", "expires_at": "", "created_by": "system", "classification": "CUI", "created_at": _ts(16), "updated_at": _ts(16)},
-    {"rule_name": "FS-EXPIRED-DRAFT", "destination_prefix": "198.51.100.0/24", "source_prefix": "", "protocol": "", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "drop", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:675", "status": "expired", "applied_routers": "", "expires_at": _ts(18), "created_by": "system", "classification": "CUI", "created_at": _ts(18), "updated_at": _ts(48)},
+    {"id": 1, "rule_name": "FS-DROP-SYNFLOOD", "destination_prefix": "", "source_prefix": "", "protocol": "tcp", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "drop", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:666", "status": "active", "applied_routers": "RTR-01,RTR-02", "expires_at": None, "created_by": "system", "classification": "CUI", "created_at": _ts(0), "updated_at": _ts(0)},
+    {"id": 2, "rule_name": "FS-RATE-UDPFLOOD", "destination_prefix": "", "source_prefix": "", "protocol": "udp", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "rate-limit", "rate_limit_bps": 1000000000, "redirect_vrf": "", "community": "64512:667", "status": "active", "applied_routers": "RTR-01", "expires_at": None, "created_by": "system", "classification": "CUI", "created_at": _ts(2), "updated_at": _ts(2)},
+    {"id": 3, "rule_name": "FS-DROP-ICMP", "destination_prefix": "", "source_prefix": "", "protocol": "icmp", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "drop", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:668", "status": "active", "applied_routers": "RTR-01,RTR-02", "expires_at": None, "created_by": "system", "classification": "CUI", "created_at": _ts(4), "updated_at": _ts(4)},
+    {"id": 4, "rule_name": "FS-REDIRECT-SCRUB", "destination_prefix": "192.0.2.0/24", "source_prefix": "", "protocol": "", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "redirect", "rate_limit_bps": 0, "redirect_vrf": "SCRUB-01", "community": "64512:669", "status": "active", "applied_routers": "RTR-01", "expires_at": None, "created_by": "system", "classification": "CUI", "created_at": _ts(6), "updated_at": _ts(6)},
+    {"id": 5, "rule_name": "FS-DROP-AMPLIFY", "destination_prefix": "", "source_prefix": "", "protocol": "udp", "dst_port": "53", "src_port": "", "packet_length": "", "dscp": "", "action": "drop", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:670", "status": "active", "applied_routers": "RTR-02", "expires_at": None, "created_by": "system", "classification": "CUI", "created_at": _ts(8), "updated_at": _ts(8)},
+    {"id": 6, "rule_name": "FS-SAMPLE-DDOS", "destination_prefix": "203.0.113.0/24", "source_prefix": "", "protocol": "", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "sample", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:671", "status": "active", "applied_routers": "RTR-01", "expires_at": None, "created_by": "system", "classification": "CUI", "created_at": _ts(10), "updated_at": _ts(10)},
+    {"id": 7, "rule_name": "FS-MARK-TOS", "destination_prefix": "", "source_prefix": "", "protocol": "tcp", "dst_port": "443", "src_port": "", "packet_length": "", "dscp": "", "action": "mark", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:672", "status": "active", "applied_routers": "RTR-01,RTR-02", "expires_at": None, "created_by": "system", "classification": "CUI", "created_at": _ts(12), "updated_at": _ts(12)},
+    {"id": 8, "rule_name": "FS-DROP-SPOOF", "destination_prefix": "", "source_prefix": "10.0.0.0/8", "protocol": "", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "drop", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:673", "status": "active", "applied_routers": "RTR-01", "expires_at": None, "created_by": "system", "classification": "CUI", "created_at": _ts(14), "updated_at": _ts(14)},
+    {"id": 9, "rule_name": "FS-RATE-SSHFLOOD", "destination_prefix": "", "source_prefix": "", "protocol": "tcp", "dst_port": "22", "src_port": "", "packet_length": "", "dscp": "", "action": "rate-limit", "rate_limit_bps": 50000000, "redirect_vrf": "", "community": "64512:674", "status": "active", "applied_routers": "RTR-02", "expires_at": None, "created_by": "system", "classification": "CUI", "created_at": _ts(16), "updated_at": _ts(16)},
+    {"id": 10, "rule_name": "FS-EXPIRED-DRAFT", "destination_prefix": "198.51.100.0/24", "source_prefix": "", "protocol": "", "dst_port": "", "src_port": "", "packet_length": "", "dscp": "", "action": "drop", "rate_limit_bps": 0, "redirect_vrf": "", "community": "64512:675", "status": "expired", "applied_routers": "", "expires_at": _ts(18), "created_by": "system", "classification": "CUI", "created_at": _ts(18), "updated_at": _ts(48)},
 ]
 
 _RTBH_ENTRIES = [
-    ("192.0.2.128/25", "syn_flood", "system", "active", "64512:666", "192.0.2.1", "RTR-01,RTR-02", "", 60),
-    ("203.0.113.64/26", "udp_flood", "system", "active", "64512:667", "192.0.2.1", "RTR-01", "", 120),
-    ("198.51.100.0/24", "volumetric_attack", "system", "withdrawn", "64512:668", "192.0.2.1", "RTR-01,RTR-02", _ts(24), 60),
-    ("10.0.0.0/8", "spoofed_traffic", "system", "active", "64512:673", "192.0.2.1", "RTR-01", "", 240),
-    ("172.16.0.0/12", "amplification", "system", "active", "64512:670", "192.0.2.1", "RTR-02", "", 180),
-    ("192.168.0.0/16", "icmp_flood", "system", "active", "64512:668", "192.0.2.1", "RTR-01,RTR-02", "", 90),
-    ("0.0.0.0/0", "manual", "noc-smith", "withdrawn", "64512:999", "192.0.2.1", "RTR-01", _ts(36), 30),
-    ("198.18.0.0/15", "policy", "system", "active", "64512:999", "192.0.2.1", "RTR-02", "", 1440),
+    (1, "192.0.2.128/25", "syn_flood", "system", "active", "64512:666", "192.0.2.1", "RTR-01,RTR-02", None, 60),
+    (2, "203.0.113.64/26", "udp_flood", "system", "active", "64512:667", "192.0.2.1", "RTR-01", None, 120),
+    (3, "198.51.100.0/24", "volumetric_attack", "system", "withdrawn", "64512:668", "192.0.2.1", "RTR-01,RTR-02", _ts(24), 60),
+    (4, "10.0.0.0/8", "spoofed_traffic", "system", "active", "64512:673", "192.0.2.1", "RTR-01", None, 240),
+    (5, "172.16.0.0/12", "amplification", "system", "active", "64512:670", "192.0.2.1", "RTR-02", None, 180),
+    (6, "192.168.0.0/16", "icmp_flood", "system", "active", "64512:668", "192.0.2.1", "RTR-01,RTR-02", None, 90),
+    (7, "0.0.0.0/0", "manual", "noc-smith", "withdrawn", "64512:999", "192.0.2.1", "RTR-01", _ts(36), 30),
+    (8, "198.18.0.0/15", "policy", "system", "active", "64512:999", "192.0.2.1", "RTR-02", None, 1440),
 ]
 
 _SCRUBBING_CENTERS = [
-    ("Scrub-Ashburn-01", "Ashburn", "Arbor Networks", 200.0, 145.5, "operational", "Lumen,ATT", "192.0.2.254/32"),
-    ("Scrub-Dallas-01", "Dallas", "F5 Silverline", 150.0, 88.2, "operational", "Zayo,Verizon", "198.51.100.254/32"),
-    ("Scrub-London-01", "London", "Arbor Networks", 120.0, 67.0, "degraded", "Lumen,Cogent", "203.0.113.254/32"),
-    ("Scrub-Tokyo-01", "Tokyo", "NTT DDoS", 100.0, 42.0, "operational", "NTT", "192.0.2.253/32"),
+    (1, "Scrub-Ashburn-01", "Ashburn", "Arbor Networks", 200.0, 145.5, "operational", "Lumen,ATT", "192.0.2.254/32"),
+    (2, "Scrub-Dallas-01", "Dallas", "F5 Silverline", 150.0, 88.2, "operational", "Zayo,Verizon", "198.51.100.254/32"),
+    (3, "Scrub-London-01", "London", "Arbor Networks", 120.0, 67.0, "degraded", "Lumen,Cogent", "203.0.113.254/32"),
+    (4, "Scrub-Tokyo-01", "Tokyo", "NTT DDoS", 100.0, 42.0, "operational", "NTT", "192.0.2.253/32"),
 ]
 
 _THREATS = []
@@ -139,14 +147,14 @@ _BGP_HIJACKS = [
 
 def seed_flowspec_rules(conn) -> int:
     sql = """INSERT OR IGNORE INTO dsoc_flowspec_rules (
-        rule_name, destination_prefix, source_prefix, protocol, dst_port, src_port, packet_length,
+        id, rule_name, destination_prefix, source_prefix, protocol, dst_port, src_port, packet_length,
         dscp, action, rate_limit_bps, redirect_vrf, community, status, applied_routers, expires_at,
         created_by, classification, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _FLOWSPEC_RULES:
-        conn.execute(sql, (
-            row["rule_name"], row["destination_prefix"], row["source_prefix"], row["protocol"],
+        _safe_execute(conn, sql, (
+            row["id"], row["rule_name"], row["destination_prefix"], row["source_prefix"], row["protocol"],
             row["dst_port"], row["src_port"], row["packet_length"], row["dscp"], row["action"],
             row["rate_limit_bps"], row["redirect_vrf"], row["community"], row["status"],
             row["applied_routers"], row["expires_at"], row["created_by"], row["classification"],
@@ -158,24 +166,24 @@ def seed_flowspec_rules(conn) -> int:
 
 def seed_rtbh_entries(conn) -> int:
     sql = """INSERT OR IGNORE INTO dsoc_rtbh_entries (
-        prefix, trigger_reason, triggered_by, status, community, nexthop, applied_routers,
+        id, prefix, trigger_reason, triggered_by, status, community, nexthop, applied_routers,
         withdrawn_at, auto_withdraw_minutes, classification, created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)"""
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _RTBH_ENTRIES:
-        conn.execute(sql, (*row, "CUI", _ts(count * 2)))
+        _safe_execute(conn, sql, (*row, "CUI", _ts(count * 2)))
         count += 1
     return count
 
 
 def seed_scrubbing_centers(conn) -> int:
     sql = """INSERT OR IGNORE INTO dsoc_scrubbing_centers (
-        name, location, provider, capacity_gbps, current_load_gbps, status, upstream_links,
+        id, name, location, provider, capacity_gbps, current_load_gbps, status, upstream_links,
         anycast_prefix, classification, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)"""
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _SCRUBBING_CENTERS:
-        conn.execute(sql, (*row, "CUI", _ts(count * 3), _ts(count * 3)))
+        _safe_execute(conn, sql, (*row, "CUI", _ts(count * 3), _ts(count * 3)))
         count += 1
     return count
 
@@ -187,7 +195,7 @@ def seed_threats(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _THREATS:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row["source_prefix"], row["threat_type"], row["confidence_pct"], row["attack_vector"],
             row["feed_source"], row["first_seen"], row["last_seen"], row["packets_per_sec"],
             row["bits_per_sec"], row["is_active"], row["classification"], row["first_seen"],
@@ -203,7 +211,7 @@ def seed_mitigations(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _MITIGATIONS:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row["mitigation_number"], row["target_prefix"], row["mitigation_type"], row["status"],
             row["attack_type"], row["peak_traffic_gbps"], row["scrubbing_center_id"],
             row["flowspec_rule_id"], row["rtbh_id"], row["started_by"], row["started_at"],
@@ -221,7 +229,7 @@ def seed_bgp_hijacks(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _BGP_HIJACKS:
-        conn.execute(sql, (*row, "", "CUI", _ts(count * 4), _ts(count * 4)))
+        _safe_execute(conn, sql, (*row, "", "CUI", _ts(count * 4), _ts(count * 4)))
         count += 1
     return count
 

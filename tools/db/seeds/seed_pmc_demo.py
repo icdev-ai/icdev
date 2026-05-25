@@ -52,6 +52,14 @@ def _get_conn():
         return conn
 
 
+def _safe_execute(conn, sql, params):
+    expected = sql.count("?")
+    actual = len(params) if isinstance(params, (list, tuple)) else 1
+    if expected != actual:
+        raise ValueError(f"Placeholder mismatch: {expected} placeholders but {actual} params")
+    conn.execute(sql, params)
+
+
 def _reset_demo_data(conn) -> None:
     for tbl in ("peering_policies", "peering_requests", "peering_prefixes", "peering_ix", "peering_peers"):
         try:
@@ -166,10 +174,10 @@ def seed_peers(conn) -> int:
         id, asn, org_name, peer_type, policy, status, peeringdb_net_id, peeringdb_synced_at,
         ipv4_prefix_count, ipv6_prefix_count, max_prefixes_v4, max_prefixes_v6, traffic_ratio,
         noc_email, irr_as_set, rir, md5_password, multihop, notes, classification, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _PEERS:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row[0], row[2], row[1], row[3], row[4], row[5], None, _ts(count * 3),
             row[6], row[7], 1000, 1000, random.uniform(0.5, 3.0), row[10], row[8], row[9], "", 1, "", "CUI",
             _ts(count * 2), _ts(count * 2),
@@ -185,7 +193,7 @@ def seed_ix(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _IX:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8],
             row[9], row[9], row[10], row[11], "CUI", _ts(count * 4), _ts(count * 4),
         ))
@@ -200,7 +208,7 @@ def seed_prefixes(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _PREFIXES:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row["id"], row["peer_id"], row["prefix"], row["address_family"], row["max_length"],
             row["origin_asn"], row["rpki_status"], row["roa_found"], row["irr_registered"],
             row["last_validated"], row["classification"], row["last_validated"],
@@ -216,7 +224,7 @@ def seed_requests(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _REQUESTS:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             row["id"], row["peer_id"], row["request_type"], row["status"], row["ix_id"],
             row["proposed_speed"], row["contact_method"], row["contact_address"], row["notes"],
             row["sent_at"], row["responded_at"], row["classification"], row["sent_at"], row["sent_at"],
@@ -232,7 +240,7 @@ def seed_policies(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _POLICIES:
-        conn.execute(sql, (
+        _safe_execute(conn, sql, (
             _uid(), row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], "CUI", _ts(count * 2), _ts(count * 2),
         ))
         count += 1
