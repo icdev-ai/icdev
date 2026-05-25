@@ -176,3 +176,7 @@
 {"ts": "2026-05-25T16:34:55.824040+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-25T16:35:24.504363+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-25T16:35:33.961502+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T16:36:05.919662+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T16:36:24.282206+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T16:36:45.368673+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T16:36:59.315515+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}

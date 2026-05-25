@@ -815,6 +815,42 @@ services:
       - icdev-net
     restart: "no"
 
+  # MCP-A2A Bridge — exposes all 265+ MCP tools over HTTP for A2A agents
+  icdev-mcp-bridge:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent-base
+    image: icdev/mcp-bridge:latest
+    container_name: icdev-mcp-bridge
+    depends_on:
+      icdev-init:
+        condition: service_completed_successfully
+    ports:
+      - "9000:9000"
+    environment:
+      <<: *common-env
+      PORT: "9000"
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    networks:
+      - icdev-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/health"]
+      <<: *healthcheck-defaults
+    logging: *default-logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    command: ["tools/mcp/a2a_bridge_server.py", "--port", "9000"]
+
   # SaaS API Gateway — REST + MCP Streamable HTTP entry point
   # Note: Host port 9443 maps to container port 8443 (Dockerfile default)
   icdev-api-gateway:

@@ -337,6 +337,20 @@ def main() -> None:
     registered_count = _register_skills(server, card, skill_map)
     logger.info(f"Registered {registered_count} skills")
 
+    # 5b. Register default echo skill (for testing / health checks)
+    def _echo_handler(task):
+        task.output_data = {"echo": task.input_data}
+        task.update_status(TaskStatus.COMPLETED.value, "Echo complete")
+        return task
+
+    server.register_skill(
+        skill_id="echo",
+        handler=_echo_handler,
+        name="Echo",
+        description="Echoes back the input data (for testing)",
+    )
+    logger.info("Registered default echo skill")
+
     # 6. Auto-register in DB (unless disabled)
     if not args.no_auto_register:
         _auto_register_in_db(args.agent_id, name, description, args.port)

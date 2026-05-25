@@ -82,3 +82,5 @@
 {"ts": "2026-05-25T16:34:01.778828+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-25T16:34:55.926392+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-25T16:35:24.606691+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T16:36:06.020940+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T16:36:45.468293+00:00", "level": "INFO", "component": "tools.observability_canvas.bus_subscriber", "message": "odc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
