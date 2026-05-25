@@ -212,6 +212,220 @@ _QUESTION_RESPONSES = {
 }
 
 
+_DRAFT_CONTENT = {
+    "cloud": [
+        (
+            "Technical Approach",
+            """**1.0 Technical Approach — Cloud Migration and Modernization**
+
+Our team proposes a proven, four-phase cloud migration methodology — Assess, Plan, Execute, and Validate — that minimizes operational risk while accelerating the path to a FedRAMP High-authorized cloud environment.
+
+**Phase 1: Discovery and Assessment.** Within the first 60 days, Nexora Federal Solutions will deploy our Cloud Readiness Assessment Framework (CRAF) to inventory all 200 production workloads, classify each by data sensitivity, dependency complexity, and migration suitability. We will produce a Migration Decision Matrix categorizing workloads into Rehost (Lift-and-Shift), Replatform, Refactor, or Retain disposition buckets.
+
+**Phase 2: Migration Planning.** Our certified AWS and Azure architects will design the target-state architecture aligned to the DoD Cloud Computing Security Requirements Guide (CC SRG) at Impact Level 4. We will establish the FedRAMP High authorization boundary, define the system security plan (SSP) outline, and coordinate with the Government's Authorizing Official (AO) on the ATO milestones.
+
+**Phase 3: Phased Execution.** Migration waves will be executed in 30-day sprints using our Infrastructure-as-Code (IaC) automation toolchain (Terraform + Ansible). Each wave undergoes a pre-migration baseline capture, automated smoke testing post-migration, and a performance validation gate before the next wave commences. Zero-downtime migration will be achieved through blue-green deployment patterns for all Tier 1 applications.
+
+**Phase 4: Validation and ATO Support.** We will conduct a full security control assessment against all NIST SP 800-53 Rev 5 High baseline controls, produce POA&M artifacts for any residual findings, and support the Agency's AO through the ATO package submission. Our target is ATO issuance within 12 months of contract award.""",
+        ),
+        (
+            "Management Approach",
+            """**2.0 Management Approach**
+
+Nexora Federal Solutions will establish a dedicated Cloud Migration Program Management Office (PMO) led by our proposed Program Manager, a PMP-certified professional with 15 years of Federal IT modernization experience. Our management framework integrates Agile delivery with rigorous Earned Value Management (EVM) reporting to provide full visibility into schedule, cost, and technical performance.
+
+**Governance.** A bi-weekly Program Review Board (PRB) will convene with Government and contractor leadership to review migration wave status, resolve blockers, and approve change requests. Risk and issue registers will be maintained in the Government-approved ITSM system and updated within 24 hours of any new risk identification.
+
+**Staffing.** Our team of 22 FTEs is fully cleared and available for assignment within 30 days of award. Key personnel include the Program Manager, Cloud Architect Lead, Security Engineer, and DevSecOps Lead — all of whom have submitted letters of commitment and current resumes.
+
+**Quality Assurance.** An independent QA Lead will review all deliverables against the CDRL requirements matrix prior to submission. Our defect density target is fewer than 2 defects per KLOC across all IaC code artifacts.""",
+        ),
+        (
+            "Past Performance",
+            """**3.0 Past Performance**
+
+**Reference 1: DHS CBP Cloud Modernization (2022–2024)**
+Contract Value: $24.7M | Agency: U.S. Customs and Border Protection
+Nexora Federal Solutions successfully migrated 312 workloads to AWS GovCloud (US) achieving FedRAMP High ATO in 10 months. We delivered zero Sev-1 incidents during the migration window and received an Exceptional CPARS rating.
+
+**Reference 2: DoD USTRANSCOM Infrastructure Modernization (2021–2023)**
+Contract Value: $18.2M | Agency: U.S. Transportation Command
+Led the migration of the JOPES legacy environment to Azure Government IL4, executing 8 migration waves over 14 months with 99.97% uptime maintained throughout. Government assessed performance as Very Good across all evaluation factors.
+
+**Reference 3: HHS CMS Data Platform Cloud Migration (2020–2022)**
+Contract Value: $31.4M | Agency: Centers for Medicare & Medicaid Services
+Designed and executed a hybrid cloud architecture migrating CMS analytics workloads to AWS GovCloud, achieving FedRAMP Moderate ATO and reducing annual infrastructure costs by 34%. Past performance rating: Exceptional.""",
+        ),
+    ],
+    "security": [
+        (
+            "Technical Approach",
+            """**1.0 Technical Approach — Cybersecurity Assessment and Hardening**
+
+CyberShield Federal LLC proposes a comprehensive, risk-based cybersecurity assessment methodology grounded in NIST SP 800-53 Rev 5 and aligned to the NIST Cybersecurity Framework (CSF). Our approach delivers an actionable security posture baseline, a prioritized remediation roadmap, and full ATO documentation support within the period of performance.
+
+**Assessment Scope and Methodology.** Our Security Assessment Team will evaluate all 20 NIST SP 800-53 Rev 5 High baseline control families across all in-scope systems, including the six systems currently operating under IATO. We employ a combination of automated scanning (Tenable.sc, Qualys), manual control testing, and architecture review to ensure complete coverage.
+
+**Vulnerability Management.** Identified findings will be categorized using CVSS v3.1 scores and imported directly into the Government's ITSM-integrated POAM tracking system. All Critical and High findings will receive remediation verification within 72 hours of contractor remediation action. Our average POAM closure rate on comparable programs is 94% within the initial 180-day remediation window.
+
+**Continuous Monitoring.** We will implement a continuous monitoring capability using Splunk SIEM integrated with the agency SOC, providing real-time alerting on all CAT I vulnerabilities and automated weekly compliance dashboard reporting to the ISSM and AO.""",
+        ),
+        (
+            "Management Approach",
+            """**2.0 Management Approach**
+
+Our Cybersecurity Assessment PMO is structured around three functional leads: Assessment Lead (CISSP), Remediation Lead (CISM), and Continuous Monitoring Lead (GCIH). All personnel hold active TS/SCI clearances and are immediately available for assignment.
+
+**Staffing Plan.** We will place 14 security professionals on-site within 15 days of award, with full staffing complement (18 FTEs) achieved by day 30. Our 15% bench strength is maintained through our corporate cybersecurity talent pipeline of 40+ cleared professionals available for surge.
+
+**Reporting.** Weekly vulnerability status reports will be delivered every Friday by COB. Monthly POAM status reviews will be conducted with the Government's ISSM. All deliverables comply with CDRL A001 through A006 schedule requirements.""",
+        ),
+        (
+            "Past Performance",
+            """**3.0 Past Performance**
+
+**Reference 1: DoD DLA Enterprise Security Assessment (2023–2024)**
+Contract Value: $9.8M | Agency: Defense Logistics Agency
+Conducted FISMA High baseline assessment across 47 systems, identified and tracked 2,847 findings to closure at a 97% rate. ATO packages delivered for 12 systems. CPARS: Exceptional.
+
+**Reference 2: VA OIT Cybersecurity Hardening (2022–2023)**
+Contract Value: $14.3M | Agency: Department of Veterans Affairs
+Implemented NIST CSF-aligned security controls across VA's national data center infrastructure. Reduced critical/high vulnerability count by 89% in 6 months. CPARS: Very Good.
+
+**Reference 3: DHS ICE Network Security Assessment (2021–2022)**
+Contract Value: $7.1M | Agency: U.S. Immigration and Customs Enforcement
+Performed penetration testing and red team exercises across ICE enterprise network. Delivered 156-page remediation report accepted without revision. CPARS: Exceptional.""",
+        ),
+    ],
+    "devsecops": [
+        (
+            "Technical Approach",
+            """**1.0 Technical Approach — DevSecOps Pipeline Implementation**
+
+DigitalFederal Systems proposes a hardened, DoD Enterprise DevSecOps Reference Design (DSOP)-compliant CI/CD pipeline that integrates security at every stage of the software development lifecycle. Our pipeline architecture is container-native, tool-agnostic at the application layer, and operates entirely within Government-approved IL4 infrastructure.
+
+**Pipeline Architecture.** Our reference pipeline consists of: (1) Source Control — GitLab Ultimate on DoD Platform One; (2) SAST — SonarQube with OWASP ruleset plus Semgrep for IaC security; (3) SCA — Black Duck for open-source dependency scanning; (4) Container Scanning — Anchore Enterprise against the DoD Iron Bank hardened image registry; (5) DAST — OWASP ZAP automated integration testing; (6) Artifact Registry — Nexus Repository with signed artifact chain-of-custody; (7) Deployment — ArgoCD GitOps with automated drift detection.
+
+**Shift-Left Security.** All 8 application teams (120 concurrent users) will receive a 2-day DevSecOps Fundamentals training course within the first 45 days. Security gates are non-bypassable in the pipeline — any Critical or High SAST/DAST finding blocks the merge request until resolved or formally risk-accepted by the ISSO.
+
+**SBOM.** CycloneDX-format SBOMs will be generated automatically for all custom-developed software at each release. COTS components included in our managed toolchain are documented in the Tool Equivalency Matrix (Attachment A to our Technical Volume).""",
+        ),
+        (
+            "Management Approach",
+            """**2.0 Management Approach**
+
+DigitalFederal Systems will operate under a DevOps Program Management framework combining SAFe Agile at the program level with Scrum at the team level. Our Program Manager holds SAFe Program Consultant (SPC) and PMP certifications with 12 years of Federal DevSecOps experience.
+
+**Sprint Cadence.** Two-week sprints will be executed across all 8 application teams. Monthly Program Increment (PI) Planning sessions will synchronize team backlogs with Government priorities. Sprint velocity and defect escape rate metrics will be reported monthly per CDRL A003 format.
+
+**Labor Rate Management.** All labor categories are fixed at negotiated rates with 3% annual escalation per option year exercise as confirmed in Section B.4. No Time-and-Materials components are included in this proposal.""",
+        ),
+        (
+            "Past Performance",
+            """**3.0 Past Performance**
+
+**Reference 1: DISA DoD DevSecOps Platform Deployment (2023–2024)**
+Contract Value: $22.1M | Agency: Defense Information Systems Agency
+Deployed DoD Platform One IL5 DevSecOps environment supporting 14 program offices and 600+ developers. Reduced mean time to deploy from 6 weeks to 4 hours. CPARS: Exceptional.
+
+**Reference 2: Army PEO Enterprise Software DevSecOps (2022–2023)**
+Contract Value: $16.8M | Agency: Army Program Executive Office Enterprise Information Systems
+Established GitLab-based CI/CD pipeline for GCSS-Army modernization, achieving ATO for containerized workloads in 8 months. Defect escape rate reduced by 73%. CPARS: Very Good.
+
+**Reference 3: NGA Cloud-Native DevSecOps (2021–2022)**
+Contract Value: $11.4M | Agency: National Geospatial-Intelligence Agency
+Implemented multi-cloud DevSecOps pipeline spanning AWS IC and Azure Government, supporting 22 development teams. Zero Critical security findings escaped to production. CPARS: Exceptional.""",
+        ),
+    ],
+    "ai_ml": [
+        (
+            "Technical Approach",
+            """**1.0 Technical Approach — AI/ML Platform Development**
+
+QuantumLeap Analytics proposes an end-to-end AI/ML platform architecture designed for operational resilience, model governance, and compliance with DoD AI Ethics Principles and NIST AI RMF. Our platform supports the full ML lifecycle — from data ingestion through model training, validation, deployment, and continuous monitoring.
+
+**Platform Architecture.** The platform comprises four integrated layers: (1) Data Foundation — a Government-furnished data lake on AWS GovCloud with automated data quality validation and lineage tracking; (2) Training Infrastructure — GPU clusters (A100-series) with MLflow experiment tracking and DVC data versioning; (3) Model Registry — MLflow Model Registry with mandatory Model Cards (per Attachment 7 template) for each production model; (4) Inference Layer — dual deployment to NIPRNet (batch and API inference) and SIPR (inference-only, air-gap compatible).
+
+**AI Governance.** Our AI Governance Plan addresses all Model Card requirements, bias detection via IBM AI Fairness 360, adversarial robustness testing via IBM ART, and quarterly NIST AI RMF Govern/Map/Measure/Manage cycle reviews. We will achieve AI RMF Tier 2 maturity at award and Tier 3 by end of base period per Attachment 8 milestones.
+
+**MLOps.** Model versioning, A/B testing infrastructure, and data/concept drift monitoring via Evidently AI will be operational within 90 days of award. All training data is stored in Government-approved GovCloud storage with AES-256 encryption at rest and TLS 1.3 in transit.""",
+        ),
+        (
+            "Management Approach",
+            """**2.0 Management Approach**
+
+QuantumLeap Analytics fields a multidisciplinary team led by a Program Manager (10 years Federal AI/ML, PMP) and a Lead Data Scientist (PhD, Computer Science, 8 publications in applied ML). Our 16-person team includes 4 PhDs, 6 MS-level data scientists, and 6 ML engineers — all cleared to TS/SCI.
+
+**Delivery Model.** We operate two-week sprints with monthly model performance review boards attended by Government technical leads. All model promotion decisions are documented with rationale, test metrics, and ISSO approval prior to production deployment.
+
+**IP and Data Rights.** Per the revised Section H.12, the Government retains unlimited rights to all models trained on Government-furnished data. QuantumLeap retains background IP in our reusable MLOps toolchain components, which are licensed to the Government for unlimited use during the period of performance.""",
+        ),
+        (
+            "Past Performance",
+            """**3.0 Past Performance**
+
+**Reference 1: IC Element Computer Vision Platform (2023–2024)**
+Contract Value: $28.4M | Agency: Intelligence Community Element (FOUO)
+Developed and deployed 12 production ML models for imagery analysis. Average model accuracy 94.2%. All models delivered with DoD AI Ethics-compliant documentation. CPARS: Exceptional.
+
+**Reference 2: DoD OUSD(R&E) AI Readiness Assessment Tool (2022–2023)**
+Contract Value: $8.7M | Agency: Office of the Under Secretary of Defense for Research and Engineering
+Built federated ML training infrastructure supporting 6 DoD Components. NIPRNet-to-SIPR model migration completed without security incidents. CPARS: Very Good.
+
+**Reference 3: DHS CBP Predictive Analytics Platform (2021–2022)**
+Contract Value: $19.3M | Agency: U.S. Customs and Border Protection
+Deployed 8 ML models supporting border security operations with 97.8% uptime SLA achieved. FedRAMP High ATO secured for AI platform. CPARS: Exceptional.""",
+        ),
+    ],
+    "management": [
+        (
+            "Technical Approach",
+            """**1.0 Technical Approach — Help Desk and O&M Support**
+
+FedSupport Services proposes a structured, ITIL v4-aligned service management approach that delivers measurable improvements to Tier 1, 2, and 3 Help Desk operations while ensuring seamless transition from the incumbent and achieving all SLA targets from Day 1.
+
+**Service Delivery Model.** Our three-tier support model provides: Tier 1 — 24/7/365 Service Desk with IVR triage and live agent support targeting 85% First Contact Resolution (FCR); Tier 2 — Subject Matter Expert escalation for infrastructure, network, and application issues (MTTR target: 4 hours for P1, 8 hours for P2); Tier 3 — Engineering Support for complex break-fix, change management, and problem management.
+
+**Tooling.** We will implement ServiceNow ITSM (Government-furnished, integrated with agency CMDB within 30 days of award) as the single pane of glass for all incident, problem, change, and request management. Knowledge base articles will be created for the top 50 ticket categories within 60 days of transition-in.
+
+**Staffing Surge.** Our bench strength of 22% (above the 15% required) ensures we can absorb the Year 3 seat count growth to 4,200 without service degradation. Surge staffing is drawn from our corporate talent pool of 85 cleared Help Desk professionals.""",
+        ),
+        (
+            "Management Approach",
+            """**2.0 Management Approach**
+
+FedSupport Services will staff a Service Delivery Manager (ITIL v4 Managing Professional certified) as the primary Government interface. Our transition-in plan ensures zero service disruption through a 60-day parallel operations period with the incumbent.
+
+**SLA Performance.** Based on our track record across 12 Federal Help Desk contracts, we consistently achieve 98.2% FCR rate and 99.4% SLA compliance. Service credits per Section H.8 Table 2 (assessed against the full calendar month value) represent a maximum exposure of 2% of monthly contract value, which we have incurred on only 2 of 144 contract months across our portfolio.
+
+**Reporting.** Monthly service reports will be delivered NLT the 5th business day of the following month per CDRL A001. Reports will include SLA scorecards, trend analysis, and a rolling 90-day improvement plan.""",
+        ),
+        (
+            "Past Performance",
+            """**3.0 Past Performance**
+
+**Reference 1: GSA Enterprise Help Desk Services (2022–2024)**
+Contract Value: $31.7M | Agency: General Services Administration
+Provided Tier 1/2/3 support for 18,400 GSA users across 11 regional offices. Achieved 99.1% SLA compliance and 97.4% FCR. Customer satisfaction score: 4.6/5.0. CPARS: Exceptional.
+
+**Reference 2: HHS NIH IT Service Desk (2021–2023)**
+Contract Value: $19.8M | Agency: National Institutes of Health
+Managed 22,000-seat Help Desk with ServiceNow ITSM. Reduced average handle time from 8.2 to 5.4 minutes in first 6 months. Zero SLA credits assessed in 24 months of performance. CPARS: Very Good.
+
+**Reference 3: DoE NNSA IT Support Services (2020–2022)**
+Contract Value: $14.2M | Agency: National Nuclear Security Administration
+Delivered classified (SCI) and unclassified Help Desk services for 6,800 NNSA users. Achieved FISMA Moderate compliance for all ITSM tooling within 90 days of award. CPARS: Exceptional.""",
+        ),
+    ],
+}
+
+_DRAFT_STATUSES = [
+    ("approved", 0.92, 0.88),
+    ("reviewed", 0.78, 0.71),
+    ("draft", 0.65, 0.58),
+]
+
+
 def _weighted_status() -> str:
     pool = []
     for status, weight in _COMPLIANCE_STATUSES:
@@ -241,6 +455,7 @@ def enrich(dry_run: bool = False) -> dict:
         conn.execute(f"DELETE FROM proposal_reviews WHERE opportunity_id IN ({placeholders})", opp_ids)
         conn.execute(f"DELETE FROM proposal_compliance_matrix WHERE opportunity_id IN ({placeholders})", opp_ids)
         conn.execute(f"DELETE FROM proposal_amendments WHERE opportunity_id IN ({placeholders})", opp_ids)
+        conn.execute(f"DELETE FROM proposal_section_drafts WHERE opportunity_id IN ({placeholders})", opp_ids)
         # Update sections with richer metadata
         conn.execute(
             f"""UPDATE proposal_sections SET
@@ -275,7 +490,7 @@ def enrich(dry_run: bool = False) -> dict:
             [now] + opp_ids
         )
 
-    inserted = {"compliance": 0, "reviews": 0, "findings": 0, "questions": 0, "responses": 0, "amendments": 0}
+    inserted = {"compliance": 0, "reviews": 0, "findings": 0, "questions": 0, "responses": 0, "amendments": 0, "drafts": 0}
 
     for opp_id, domain in opps:
         domain_key = domain if domain in _COMPLIANCE_TEMPLATES else "management"
@@ -285,6 +500,8 @@ def enrich(dry_run: bool = False) -> dict:
 
         amendments_templates = _AMENDMENTS.get(domain_key, _AMENDMENTS["management"])
 
+        draft_templates = _DRAFT_CONTENT.get(domain_key, _DRAFT_CONTENT["management"])
+
         if dry_run:
             inserted["compliance"] += len(compliance_templates)
             inserted["reviews"] += 2
@@ -292,6 +509,7 @@ def enrich(dry_run: bool = False) -> dict:
             inserted["questions"] += len(questions_templates)
             inserted["responses"] += 3
             inserted["amendments"] += len(amendments_templates)
+            inserted["drafts"] += len(draft_templates)
             continue
 
         # Compliance matrix
@@ -410,6 +628,23 @@ def enrich(dry_run: bool = False) -> dict:
                 )
                 inserted["responses"] += 1
 
+        # Section drafts
+        for i, (section_label, draft_text) in enumerate(draft_templates):
+            sec_id = sec_ids[i] if i < len(sec_ids) else (sec_ids[0] if sec_ids else None)
+            status, conf_score, confidence = _DRAFT_STATUSES[i % len(_DRAFT_STATUSES)]
+            meta = {"best_coverage": round(confidence * 0.95, 2), "rag_chunks_used": _RNG.randint(3, 8)}
+            conn.execute(
+                """INSERT INTO proposal_section_drafts
+                    (id, section_id, opportunity_id, draft_content, draft_method,
+                     confidence_score, confidence, domain_category, generation_model,
+                     status, metadata, classification, created_at, updated_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (str(uuid.uuid4()), sec_id, opp_id, draft_text, "two_tier",
+                 conf_score, confidence, domain_key, "qwen3+claude-sonnet-4-5",
+                 status, json.dumps(meta), "CUI", now, now)
+            )
+            inserted["drafts"] += 1
+
         # Amendments
         for ver_num, title, description, diff_summary in amendments_templates:
             amd_date = (date.today() - timedelta(days=21 - (ver_num * 7))).isoformat()
@@ -456,6 +691,7 @@ def _main() -> None:
             print(f"  Questions:        {ins['questions']}")
             print(f"  Responses:        {ins['responses']}")
             print(f"  Amendments:       {ins['amendments']}")
+            print(f"  Drafts:           {ins['drafts']}")
 
 
 if __name__ == "__main__":

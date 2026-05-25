@@ -17,19 +17,22 @@ on:
         required: true
         type: string
       llm_provider:
-        description: "LLM provider: ollama (air-gap local) | anthropic | openai | gemini | bedrock"
+        description: "LLM provider: ollama_cloud | ollama | anthropic | openai | gemini | bedrock"
         required: false
-        default: "ollama"
+        default: "ollama_cloud"
         type: string
 
 env:
   PYTHONPATH: "."
   ICDEV_STORAGE_BACKEND: sqlite
-  LLM_PROVIDER: ${{ github.event.inputs.llm_provider || 'ollama' }}
-  # Ollama (local/air-gap)
+  LLM_PROVIDER: ${{ github.event.inputs.llm_provider || 'ollama_cloud' }}
+  # Ollama Cloud (air-gap via API key — no local install required)
+  OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+  OLLAMA_CLOUD_BASE_URL: ${{ secrets.OLLAMA_CLOUD_BASE_URL || 'https://ollama.com' }}
+  # Local Ollama fallback (used only when OLLAMA_API_KEY is absent)
   OLLAMA_BASE_URL: "http://localhost:11434"
   OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL || 'qwen2.5:7b' }}
-  # Cloud providers — injected from GitHub Actions secrets; empty string when unused
+  # Cloud provider API keys — injected from secrets; empty when unused
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || '' }}
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || '' }}
   GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || '' }}
@@ -39,7 +42,7 @@ env:
 
 jobs:
   run:
-    name: Execute Kanban Task (${{ github.event.inputs.llm_provider || 'ollama' }})
+    name: Execute Kanban Task (${{ github.event.inputs.llm_provider || 'ollama_cloud' }})
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
@@ -53,29 +56,36 @@ jobs:
           pip install -r requirements.txt 2>/dev/null || true
           pip install flask pyyaml requests
 
-      # ── Ollama (local / air-gap) ──────────────────────────────────────────
-      # Skipped automatically when:
-      #   • llm_provider != 'ollama'
+      # ── Local Ollama install ───────────────────────────────────────────────
+      # Skipped when:
+      #   • OLLAMA_API_KEY is set (using Ollama Cloud — no daemon needed)
+      #   • llm_provider is a cloud provider (anthropic, openai, gemini, bedrock)
       #   • RUNNER_LABEL=self-hosted (runner has Ollama pre-installed)
-      - name: Install Ollama + pull model
+      - name: Install local Ollama + pull model
         if: >
+          secrets.OLLAMA_API_KEY == '' &&
           (github.event.inputs.llm_provider == 'ollama' || github.event.inputs.llm_provider == '') &&
           (vars.RUNNER_LABEL == '' || vars.RUNNER_LABEL == 'ubuntu-latest')
         run: |
           curl -fsSL https://ollama.com/install.sh | sh
           ollama serve &
-          # Wait for daemon to be ready
           for i in $(seq 1 12); do
             curl -sf http://localhost:11434/ && break || sleep 5
           done
           ollama pull "$OLLAMA_MODEL"
 
-      # ── Cloud provider validation ─────────────────────────────────────────
-      - name: Validate cloud provider credentials
-        if: github.event.inputs.llm_provider != 'ollama' && github.event.inputs.llm_provider != ''
+      # ── Cloud provider credential validation ──────────────────────────────
+      - name: Validate provider credentials
         run: |
-          PROVIDER="${{ github.event.inputs.llm_provider }}"
+          PROVIDER="${{ github.event.inputs.llm_provider || 'ollama_cloud' }}"
           case "$PROVIDER" in
+            ollama_cloud)
+              [ -n "$OLLAMA_API_KEY" ] || { echo "ERROR: OLLAMA_API_KEY secret not set for ollama_cloud provider"; exit 1; }
+              echo "Ollama Cloud key present."
+              ;;
+            ollama)
+              echo "Local Ollama — no API key required."
+              ;;
             anthropic)
               [ -n "$ANTHROPIC_API_KEY" ] || { echo "ERROR: ANTHROPIC_API_KEY secret not set"; exit 1; }
               echo "Anthropic key present."
@@ -93,7 +103,7 @@ jobs:
               echo "AWS credentials present."
               ;;
             *)
-              echo "WARNING: Unknown provider '$PROVIDER' — continuing without validation."
+              echo "WARNING: Unknown provider '$PROVIDER' — continuing."
               ;;
           esac
 
@@ -114,4 +124,4 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "Task ${{ github.event.inputs.task_id }} (${{ github.event.inputs.task_type }}) | provider=${{ github.event.inputs.llm_provider || 'ollama' }} | completed."
+          echo "Task ${{ github.event.inputs.task_id }} (${{ github.event.inputs.task_type }}) | provider=${{ github.event.inputs.llm_provider || 'ollama_cloud' }} | completed."
