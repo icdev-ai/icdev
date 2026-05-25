@@ -984,7 +984,9 @@ def update_finding(find_id):
         if not old:
             return jsonify({"error": "Finding not found"}), 404
 
-        allowed = ["status", "assigned_to", "resolved_at", "resolution_notes"]
+        allowed = ["status", "assigned_to", "resolved_at", "resolution_notes",
+                   "description", "recommendation", "due_date",
+                   "resolved_evidence", "closure_approved_by"]
         sets = []
         params = []
         for key in allowed:
@@ -1916,24 +1918,3 @@ def get_orphaned_requirements(opp_id):
         conn.close()
 
 
-@proposals_api.route("/findings/<finding_id>", methods=["PUT"])
-def update_finding(finding_id):
-    """PUT /api/proposals/findings/<finding_id> — update status, close with evidence."""
-    data = request.get_json(force=True, silent=True) or {}
-    allowed = {"status", "description", "recommendation", "assigned_to", "due_date",
-               "resolved_evidence", "closure_approved_by"}
-    updates = {k: v for k, v in data.items() if k in allowed}
-    if not updates:
-        return jsonify({"error": "No updatable fields provided"}), 400
-    updates["updated_at"] = now_iso()
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    conn = _get_db()
-    try:
-        conn.execute(
-            f"UPDATE proposal_review_findings SET {set_clause} WHERE id = ?",
-            list(updates.values()) + [finding_id],
-        )
-        conn.commit()
-        return jsonify({"id": finding_id})
-    finally:
-        conn.close()
