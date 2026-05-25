@@ -78,7 +78,7 @@ This file is the auditor's evidence artifact. It must include:
 
 Also log the validation event to the audit trail:
 ```bash
-python tools/audit/audit_logger.py --event-type "code.validation" --actor "icdev_builder" --action "Full 4-tier DevSecOps validation passed — bug fix" --project-id "<project_id>"
+python tools/audit/audit_logger.py --event "code.validation" --actor "icdev_builder" --action "Full 4-tier DevSecOps validation passed — bug fix" --project-id "<project_id>"
 ```
 
 ---
