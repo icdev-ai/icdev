@@ -3212,6 +3212,17 @@ def _detect_and_queue_ci_failures() -> None:
             if "ci-fix-" in run_title:
                 continue
 
+            # Guard 3: only act on failures from the last 24 hours
+            try:
+                from datetime import timedelta as _td
+                _run_created = datetime.fromisoformat(
+                    (_run.get("created_at") or "").replace("Z", "+00:00")
+                )
+                if (now - _run_created) > _td(hours=24):
+                    continue
+            except Exception:
+                pass
+
             task_id = f"ci-fix-{run_id}"
 
             # Guard 3: dedup — skip if a fix task for this run already exists
@@ -3269,7 +3280,7 @@ def _detect_and_queue_ci_failures() -> None:
                     "INSERT OR IGNORE INTO kanban_tasks "
                     "(id, title, description, priority, task_type, status, "
                     " executor_type, tags, created_at, updated_at) "
-                    "VALUES (?, ?, ?, 'high', 'fix', 'backlog', 'github_actions', "
+                    "VALUES (?, ?, ?, 'high', 'fix', 'backlog', 'claude_cli', "
                     "        'ci_autofix', ?, ?)",
                     (_task_id := task_id, _title, error_ctx[:8000], now.isoformat(), now.isoformat()),
                 )

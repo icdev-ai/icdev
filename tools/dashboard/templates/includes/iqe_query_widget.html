@@ -70,7 +70,10 @@ if (!window.icdevIQERun) {
       var question = ta.value.trim();
       if (!question) { ta.focus(); return; }
       var apiRoute = widget.dataset.api;
-      if (!apiRoute) return;
+      if (!apiRoute) {
+        if (statusEl) { statusEl.textContent = '⚠ IQE endpoint not configured for this page'; statusEl.className = 'iqe-status iqe-error'; statusEl.style.display = ''; }
+        return;
+      }
       if (btn) { btn.disabled = true; btn.textContent = '…'; }
       if (statusEl) { statusEl.style.display = ''; statusEl.className = 'iqe-status'; statusEl.textContent = 'Translating to IQE…'; }
       if (previewEl) previewEl.style.display = 'none';

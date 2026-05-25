@@ -104,6 +104,17 @@ class A2AAgentServer:
         def health():
             return jsonify({"status": "healthy", "agent_id": self.agent_id})
 
+        @self.app.route("/skills", methods=["GET"])
+        def list_skills():
+            return jsonify({"skills": list(self._skills.values())})
+
+        @self.app.route("/skills/<skill_id>", methods=["GET"])
+        def get_skill(skill_id):
+            info = self._skills.get(skill_id)
+            if not info:
+                return jsonify({"error": f"Skill not found: {skill_id}"}), 404
+            return jsonify(info)
+
         # ── Mailbox Routes (Phase C) ──────────────────────────────
 
         @self.app.route("/messages/send", methods=["POST"])
