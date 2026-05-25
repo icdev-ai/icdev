@@ -17,7 +17,7 @@ on:
         required: true
         type: string
       llm_provider:
-        description: "LLM provider (ollama | claude | openai)"
+        description: "LLM provider: ollama (air-gap local) | anthropic | openai | gemini | bedrock"
         required: false
         default: "ollama"
         type: string
@@ -26,12 +26,20 @@ env:
   PYTHONPATH: "."
   ICDEV_STORAGE_BACKEND: sqlite
   LLM_PROVIDER: ${{ github.event.inputs.llm_provider || 'ollama' }}
+  # Ollama (local/air-gap)
   OLLAMA_BASE_URL: "http://localhost:11434"
   OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL || 'qwen2.5:7b' }}
+  # Cloud providers — injected from GitHub Actions secrets; empty string when unused
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || '' }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || '' }}
+  GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || '' }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || '' }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY || '' }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-gov-west-1' }}
 
 jobs:
   run:
-    name: Execute Kanban Task
+    name: Execute Kanban Task (${{ github.event.inputs.llm_provider || 'ollama' }})
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
@@ -45,20 +53,55 @@ jobs:
           pip install -r requirements.txt 2>/dev/null || true
           pip install flask pyyaml requests
 
-      - name: Install Ollama (GitHub-hosted runners only)
-        if: vars.RUNNER_LABEL == '' || vars.RUNNER_LABEL == 'ubuntu-latest'
+      # ── Ollama (local / air-gap) ──────────────────────────────────────────
+      # Skipped automatically when:
+      #   • llm_provider != 'ollama'
+      #   • RUNNER_LABEL=self-hosted (runner has Ollama pre-installed)
+      - name: Install Ollama + pull model
+        if: >
+          (github.event.inputs.llm_provider == 'ollama' || github.event.inputs.llm_provider == '') &&
+          (vars.RUNNER_LABEL == '' || vars.RUNNER_LABEL == 'ubuntu-latest')
         run: |
           curl -fsSL https://ollama.com/install.sh | sh
           ollama serve &
-          sleep 5
+          # Wait for daemon to be ready
+          for i in $(seq 1 12); do
+            curl -sf http://localhost:11434/ && break || sleep 5
+          done
           ollama pull "$OLLAMA_MODEL"
 
+      # ── Cloud provider validation ─────────────────────────────────────────
+      - name: Validate cloud provider credentials
+        if: github.event.inputs.llm_provider != 'ollama' && github.event.inputs.llm_provider != ''
+        run: |
+          PROVIDER="${{ github.event.inputs.llm_provider }}"
+          case "$PROVIDER" in
+            anthropic)
+              [ -n "$ANTHROPIC_API_KEY" ] || { echo "ERROR: ANTHROPIC_API_KEY secret not set"; exit 1; }
+              echo "Anthropic key present."
+              ;;
+            openai)
+              [ -n "$OPENAI_API_KEY" ] || { echo "ERROR: OPENAI_API_KEY secret not set"; exit 1; }
+              echo "OpenAI key present."
+              ;;
+            gemini)
+              [ -n "$GOOGLE_API_KEY" ] || { echo "ERROR: GOOGLE_API_KEY secret not set"; exit 1; }
+              echo "Google API key present."
+              ;;
+            bedrock)
+              [ -n "$AWS_ACCESS_KEY_ID" ] || { echo "ERROR: AWS_ACCESS_KEY_ID secret not set"; exit 1; }
+              echo "AWS credentials present."
+              ;;
+            *)
+              echo "WARNING: Unknown provider '$PROVIDER' — continuing without validation."
+              ;;
+          esac
+
+      # ── ANVIL execution ───────────────────────────────────────────────────
       - name: ANVIL — Execute Task
         run: |
           TASK_TYPE="${{ github.event.inputs.task_type }}"
           TASK_DESC="${{ github.event.inputs.task_desc }}"
-
-          # Map task_type to ANVIL wrapper if it exists
           if [ -f "tools/anvil/${TASK_TYPE}.py" ]; then
             echo "Running ANVIL wrapper: tools/anvil/${TASK_TYPE}.py"
             python "tools/anvil/${TASK_TYPE}.py" --json -- "$TASK_DESC"
@@ -71,5 +114,4 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "Task ${{ github.event.inputs.task_id }} (${{ github.event.inputs.task_type }}) completed."
-          echo "See run logs above for details."
+          echo "Task ${{ github.event.inputs.task_id }} (${{ github.event.inputs.task_type }}) | provider=${{ github.event.inputs.llm_provider || 'ollama' }} | completed."
