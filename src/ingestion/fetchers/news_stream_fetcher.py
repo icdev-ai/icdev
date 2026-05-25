@@ -129,7 +129,7 @@ class NewsStreamFetcher:
                 full_url,
                 headers={"Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310 — scheme validated above
                 raw = resp.read().decode("utf-8")
             data: Dict[str, Any] = json.loads(raw)
         except urllib.error.HTTPError as exc:
@@ -186,7 +186,7 @@ class NewsStreamFetcher:
                 full_url,
                 headers={"Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310 — scheme validated above
                 raw = resp.read().decode("utf-8")
             data: Dict[str, Any] = json.loads(raw)
         except urllib.error.HTTPError as exc:
