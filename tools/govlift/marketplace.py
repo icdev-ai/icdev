@@ -4,6 +4,7 @@
 Provides submit/approve/reject/download/stats operations for
 govlift_marketplace_items backed by govlift_runbook_templates.
 All DB access via get_connection() — never sqlite3.connect().
+SQL uses ? placeholders; StorageCursor translates to %s for PostgreSQL.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 if str(_ICDEV_ROOT) not in sys.path:
     sys.path.insert(0, str(_ICDEV_ROOT))
 
-from tools.db.storage import get_connection, translate_sql
+from tools.db.storage import get_connection
 
 
 def _now() -> str:
@@ -38,8 +39,10 @@ def _row_to_dict(row) -> dict:
 
 
 def _fetch_item(conn, item_id: str) -> dict:
-    sql = translate_sql("SELECT * FROM govlift_marketplace_items WHERE id = ?")
-    row = conn.execute(sql, (item_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM govlift_marketplace_items WHERE id = ?",
+        (item_id,),
+    ).fetchone()
     return _row_to_dict(row)
 
 
@@ -55,20 +58,22 @@ def publish_template(template_id: str, author: str, description: str = "") -> di
     """
     conn = get_connection()
     try:
-        tpl_sql = translate_sql("SELECT id, name FROM govlift_runbook_templates WHERE id = ?")
-        tpl_row = conn.execute(tpl_sql, (template_id,)).fetchone()
+        tpl_row = conn.execute(
+            "SELECT id, name FROM govlift_runbook_templates WHERE id = ?",
+            (template_id,),
+        ).fetchone()
         if not tpl_row:
             raise ValueError(f"Template '{template_id}' not found")
         tpl = _row_to_dict(tpl_row)
 
         mp_id = _mp_id()
         now = _now()
-        ins = translate_sql(
+        conn.execute(
             "INSERT INTO govlift_marketplace_items "
             "(id, template_id, title, author, description, status, created_at) "
-            "VALUES (?,?,?,?,?,'submitted',?)"
+            "VALUES (?,?,?,?,?,'submitted',?)",
+            (mp_id, template_id, tpl["name"], author, description, now),
         )
-        conn.execute(ins, (mp_id, template_id, tpl["name"], author, description, now))
         conn.commit()
         return _fetch_item(conn, mp_id)
     finally:
@@ -97,10 +102,10 @@ def list_items(status: str | None = None, author: str | None = None) -> list[dic
             clauses.append("author = ?")
             params.append(author)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-        sql = translate_sql(
-            f"SELECT * FROM govlift_marketplace_items {where} ORDER BY created_at DESC"
-        )
-        rows = conn.execute(sql, params).fetchall()
+        rows = conn.execute(
+            f"SELECT * FROM govlift_marketplace_items {where} ORDER BY created_at DESC",
+            params,
+        ).fetchall()
         return [_row_to_dict(r) for r in rows]
     finally:
         conn.close()
@@ -121,12 +126,12 @@ def approve_item(item_id: str, reviewer: str, notes: str = "") -> dict:
                 f"Can only approve items in 'submitted' status; current status: {item['status']}"
             )
         now = _now()
-        upd = translate_sql(
+        conn.execute(
             "UPDATE govlift_marketplace_items "
             "SET status='approved', reviewed_by=?, review_notes=?, published_at=? "
-            "WHERE id=?"
+            "WHERE id=?",
+            (reviewer, notes, now, item_id),
         )
-        conn.execute(upd, (reviewer, notes, now, item_id))
         conn.commit()
         return _fetch_item(conn, item_id)
     finally:
@@ -143,12 +148,12 @@ def reject_item(item_id: str, reviewer: str, notes: str = "") -> dict:
         item = _fetch_item(conn, item_id)
         if not item:
             raise ValueError(f"Marketplace item '{item_id}' not found")
-        upd = translate_sql(
+        conn.execute(
             "UPDATE govlift_marketplace_items "
             "SET status='rejected', reviewed_by=?, review_notes=? "
-            "WHERE id=?"
+            "WHERE id=?",
+            (reviewer, notes, item_id),
         )
-        conn.execute(upd, (reviewer, notes, item_id))
         conn.commit()
         return _fetch_item(conn, item_id)
     finally:
@@ -169,16 +174,16 @@ def download_item(item_id: str) -> dict:
         if item["status"] != "approved":
             raise ValueError("Only approved items can be downloaded")
 
-        upd = translate_sql(
-            "UPDATE govlift_marketplace_items SET downloads = downloads + 1 WHERE id = ?"
+        conn.execute(
+            "UPDATE govlift_marketplace_items SET downloads = downloads + 1 WHERE id = ?",
+            (item_id,),
         )
-        conn.execute(upd, (item_id,))
         conn.commit()
 
-        tpl_sql = translate_sql(
-            "SELECT * FROM govlift_runbook_templates WHERE id = ?"
-        )
-        tpl_row = conn.execute(tpl_sql, (item["template_id"],)).fetchone()
+        tpl_row = conn.execute(
+            "SELECT * FROM govlift_runbook_templates WHERE id = ?",
+            (item["template_id"],),
+        ).fetchone()
         tpl = _row_to_dict(tpl_row)
 
         return {"item": _fetch_item(conn, item_id), "template": tpl}
@@ -190,18 +195,17 @@ def get_stats() -> dict:
     """Return aggregate marketplace statistics."""
     conn = get_connection()
     try:
-        total_sql = translate_sql("SELECT COUNT(*) FROM govlift_marketplace_items")
-        total_items = conn.execute(total_sql).fetchone()[0]
+        total_items = conn.execute(
+            "SELECT COUNT(*) FROM govlift_marketplace_items"
+        ).fetchone()[0]
 
-        approved_sql = translate_sql(
+        approved_items = conn.execute(
             "SELECT COUNT(*) FROM govlift_marketplace_items WHERE status = 'approved'"
-        )
-        approved_items = conn.execute(approved_sql).fetchone()[0]
+        ).fetchone()[0]
 
-        downloads_sql = translate_sql(
+        total_downloads = conn.execute(
             "SELECT COALESCE(SUM(downloads), 0) FROM govlift_marketplace_items"
-        )
-        total_downloads = conn.execute(downloads_sql).fetchone()[0]
+        ).fetchone()[0]
 
         return {
             "total_items": total_items,
