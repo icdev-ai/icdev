@@ -73,37 +73,59 @@ jobs:
           ollama pull "$OLLAMA_MODEL"
 
       # ── Cloud provider credential validation ──────────────────────────────
+      # Warns on missing keys but does not block — lets ANVIL attempt execution
+      # and surface the real error (missing key → LLM router fallback or fail).
       - name: Validate provider credentials
         run: |
           PROVIDER="${{ github.event.inputs.llm_provider || 'ollama_cloud' }}"
+          MISSING=0
           case "$PROVIDER" in
             ollama_cloud)
-              [ -n "$OLLAMA_API_KEY" ] || { echo "ERROR: OLLAMA_API_KEY secret not set for ollama_cloud provider"; exit 1; }
-              echo "Ollama Cloud key present."
+              if [ -z "$OLLAMA_API_KEY" ]; then
+                echo "WARNING: OLLAMA_API_KEY secret not set — add it at Settings > Secrets > Actions > New repository secret (name: OLLAMA_API_KEY)"
+                MISSING=1
+              else
+                echo "OK: Ollama Cloud key present (length=${#OLLAMA_API_KEY})."
+              fi
               ;;
             ollama)
-              echo "Local Ollama — no API key required."
+              echo "OK: Local Ollama — no API key required."
               ;;
             anthropic)
-              [ -n "$ANTHROPIC_API_KEY" ] || { echo "ERROR: ANTHROPIC_API_KEY secret not set"; exit 1; }
-              echo "Anthropic key present."
+              if [ -z "$ANTHROPIC_API_KEY" ]; then
+                echo "WARNING: ANTHROPIC_API_KEY secret not set"; MISSING=1
+              else
+                echo "OK: Anthropic key present."
+              fi
               ;;
             openai)
-              [ -n "$OPENAI_API_KEY" ] || { echo "ERROR: OPENAI_API_KEY secret not set"; exit 1; }
-              echo "OpenAI key present."
+              if [ -z "$OPENAI_API_KEY" ]; then
+                echo "WARNING: OPENAI_API_KEY secret not set"; MISSING=1
+              else
+                echo "OK: OpenAI key present."
+              fi
               ;;
             gemini)
-              [ -n "$GOOGLE_API_KEY" ] || { echo "ERROR: GOOGLE_API_KEY secret not set"; exit 1; }
-              echo "Google API key present."
+              if [ -z "$GOOGLE_API_KEY" ]; then
+                echo "WARNING: GOOGLE_API_KEY secret not set"; MISSING=1
+              else
+                echo "OK: Google API key present."
+              fi
               ;;
             bedrock)
-              [ -n "$AWS_ACCESS_KEY_ID" ] || { echo "ERROR: AWS_ACCESS_KEY_ID secret not set"; exit 1; }
-              echo "AWS credentials present."
+              if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+                echo "WARNING: AWS_ACCESS_KEY_ID secret not set"; MISSING=1
+              else
+                echo "OK: AWS credentials present."
+              fi
               ;;
             *)
               echo "WARNING: Unknown provider '$PROVIDER' — continuing."
               ;;
           esac
+          if [ "$MISSING" -eq 1 ]; then
+            echo "Credential missing — ANVIL will attempt with available providers."
+          fi
 
       # ── ANVIL execution ───────────────────────────────────────────────────
       - name: ANVIL — Execute Task
