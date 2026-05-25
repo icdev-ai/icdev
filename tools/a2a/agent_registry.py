@@ -24,10 +24,28 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 AGENT_CARDS_DIR = Path(__file__).resolve().parent / "agent_cards"
 
 
+def _ensure_table(conn: sqlite3.Connection) -> None:
+    """Create the agents table if it does not exist."""
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS agents (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            url TEXT NOT NULL,
+            status TEXT DEFAULT 'active',
+            capabilities TEXT,
+            last_heartbeat TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )"""
+    )
+    conn.commit()
+
+
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
     conn = get_connection(db_path=str(path))
+    _ensure_table(conn)
     return conn
 
 
