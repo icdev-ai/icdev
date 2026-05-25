@@ -1,0 +1,1 @@
+{"ts": "2026-05-25T05:18:50.919974+00:00", "level": "WARNING", "component": "tools.genesis.reflexes.kanban", "message": "Telegram notification failed: HTTP Error 400: Bad Request", "trace_id": null, "session_id": null, "extra": {}}
