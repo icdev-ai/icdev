@@ -127,7 +127,7 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "orchestrator-agent", "--port", "8443"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "orchestrator-agent", "--port", "8443", "--no-tls"]
 
   # Architect Agent — ANVIL/M-ANVIL A/T phases, system design
   icdev-architect:
@@ -163,7 +163,7 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "architect-agent", "--port", "8444"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "architect-agent", "--port", "8444", "--no-tls"]
 
   # ====================================================================
   # Domain Tier
@@ -203,7 +203,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "builder-agent", "--port", "8445"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "builder-agent", "--port", "8445", "--no-tls"]
 
   # Compliance Agent — ATO artifacts (SSP, POAM, STIG, SBOM, FedRAMP, CMMC)
   icdev-compliance:
@@ -239,7 +239,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "compliance-agent", "--port", "8446"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "compliance-agent", "--port", "8446", "--no-tls"]
 
   # Security Agent — SAST, dependency audit, secret detection, container scan
   icdev-security:
@@ -275,7 +275,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "security-agent", "--port", "8447"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "security-agent", "--port", "8447", "--no-tls"]
 
   # Infrastructure Agent — Terraform, Ansible, K8s, pipeline gen
   icdev-infrastructure:
@@ -311,7 +311,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "infrastructure-agent", "--port", "8448"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "infrastructure-agent", "--port", "8448", "--no-tls"]
 
   # MBSE Agent — SysML parsing, DOORS NG, digital thread, model-code sync
   icdev-mbse:
@@ -347,7 +347,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "mbse-agent", "--port", "8451"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "mbse-agent", "--port", "8451", "--no-tls"]
 
   # Modernization Agent — Legacy analysis, 7R assessment, migration planning
   icdev-modernization:
@@ -383,7 +383,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "modernization-agent", "--port", "8452"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "modernization-agent", "--port", "8452", "--no-tls"]
 
   # Requirements Analyst Agent — Conversational intake, gap detection, SAFe decomposition
   icdev-requirements:
@@ -419,7 +419,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "requirements-analyst-agent", "--port", "8453"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "requirements-analyst-agent", "--port", "8453", "--no-tls"]
 
   # Supply Chain Agent — Dependency graph, SBOM aggregation, ISA lifecycle, CVE triage
   icdev-supply-chain:
@@ -455,7 +455,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "supply-chain-agent", "--port", "8454"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "supply-chain-agent", "--port", "8454", "--no-tls"]
 
   # Simulation Agent — Digital Program Twin, Monte Carlo, COA generation
   icdev-simulation:
@@ -491,7 +491,7 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "simulation-agent", "--port", "8455"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "simulation-agent", "--port", "8455", "--no-tls"]
 
   # Integration Agent — Jira, ServiceNow, GitLab sync, DOORS NG ReqIF export
   icdev-integration:
@@ -527,7 +527,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "integration-agent", "--port", "8456"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "integration-agent", "--port", "8456", "--no-tls"]
 
   # DevSecOps Agent — Pipeline security, ZTA maturity, policy-as-code
   icdev-devsecops:
@@ -563,7 +563,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "devsecops-agent", "--port", "8457"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "devsecops-agent", "--port", "8457", "--no-tls"]
 
   # Gateway Agent — Remote command reception from messaging channels
   icdev-gateway:
@@ -599,7 +599,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "gateway-agent", "--port", "8458"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "gateway-agent", "--port", "8458", "--no-tls"]
 
   # ====================================================================
   # Support Tier
@@ -639,7 +639,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "knowledge-agent", "--port", "8449"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "knowledge-agent", "--port", "8449", "--no-tls"]
 
   # Monitor Agent — Log analysis, metrics, SIEM alert forwarding, health checks
   # SLA: 5-second alert delivery to downstream SIEM (NIST AU-6, SI-4)
@@ -681,7 +681,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "monitor-agent", "--port", "8450"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "monitor-agent", "--port", "8450", "--no-tls"]
 
   # ====================================================================
   # Web Dashboard & API Gateway
