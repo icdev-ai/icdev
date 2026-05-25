@@ -734,7 +734,6 @@ def _register_govcon_pages(app: "Flask", _get_db):
             raw_opps = conn.execute(
                 "SELECT * FROM proposal_opportunities WHERE status NOT IN ('won','lost','no_bid','cancelled') ORDER BY due_date ASC"
             ).fetchall()
-            review_gates = ["pink_team", "red_team", "gold_team", "white_glove"]
             opps = []
             unresolved_critical = 0
             passed = 0
@@ -10017,6 +10016,8 @@ def create_app() -> Flask:
 
     return app
 
+
+app = create_app()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ICDEV™ Dashboard")

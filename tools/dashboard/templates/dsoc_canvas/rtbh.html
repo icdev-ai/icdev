@@ -68,7 +68,7 @@
               {{ entry.applied_routers if entry.applied_routers else '—' }}
             </td>
             <td class="text-muted" style="font-size:.78rem;">
-              {{ entry.created_at[:16].replace('T', ' ') if entry.created_at else '—' }}
+              {{ entry.created_at | ts }}
             </td>
             <td>
               {% if entry.status | lower == 'active' %}

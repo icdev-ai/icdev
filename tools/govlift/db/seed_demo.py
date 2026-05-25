@@ -229,7 +229,7 @@ def seed_compliance_artifacts(conn) -> None:
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 f"ca-{_uid()}", f"exec-{_uid()}", f"step-{_uid()}",
-                f"AC-{random.randint(1, 6)}", f"NIST-800-53",
+                f"AC-{random.randint(1, 6)}", "NIST-800-53",
                 random.choice(artifact_types),
                 json.dumps({"finding": "synthetic"}),
                 _ts(), "CUI",

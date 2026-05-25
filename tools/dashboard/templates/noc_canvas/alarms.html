@@ -75,7 +75,7 @@
         <td style="color:#94a3b8;font-size:.78rem;">{{ a.circuit_id or '' }}{% if a.carrier %} / {{ a.carrier }}{% endif %}</td>
         <td style="color:#cbd5e1;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ a.description }}">{{ a.description }}</td>
         <td style="color:#64748b;font-size:.75rem;">{{ a.alarm_source }}</td>
-        <td style="color:#64748b;font-size:.75rem;white-space:nowrap;">{{ a.first_seen[:16] if a.first_seen else '—' }}</td>
+        <td style="color:#64748b;font-size:.75rem;white-space:nowrap;">{{ a.first_seen | ts }}</td>
         <td style="white-space:nowrap;">
           {% if not a.acknowledged %}
           <button class="btn-ack" onclick="ackAlarm('{{ a.id }}')">Ack</button>

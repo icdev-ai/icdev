@@ -1314,7 +1314,6 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
     if raw is None:
         raw = _generate_sample_macro()
         data_source = "sample"
-        import logging
         get_logger(__name__).warning(
             "MACRO DATA FALLBACK: using sample data — live FRED/yfinance unavailable. "
             "Trading decisions may be based on synthetic indicators."

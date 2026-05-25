@@ -2,10 +2,8 @@
 """Unit tests for tools.logging.icdev_logger (LOG-03)."""
 import json
 import logging
-import tempfile
 from pathlib import Path
 
-import pytest
 
 # Ensure repo root on path
 import sys

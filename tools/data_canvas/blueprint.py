@@ -2082,7 +2082,7 @@ def create_data_canvas_blueprint():
         design = conn.execute("SELECT * FROM data_designs WHERE id=?", (design_id,)).fetchone()
         if not design:
             return render_template("404.html"), 404
-        design = _row_to_dict(design)
+        design = row_to_dict(design)
         try:
             snapshots = conn.execute(
                 "SELECT * FROM data_twin_snapshots WHERE design_id=? ORDER BY created_at DESC LIMIT 20",
@@ -2093,7 +2093,7 @@ def create_data_canvas_blueprint():
         return render_template(
             "data_canvas/twin.html",
             design=design,
-            snapshots=[_row_to_dict(s) for s in snapshots],
+            snapshots=[row_to_dict(s) for s in snapshots],
         )
 
     @bp.route("/api/twin/<design_id>/snapshot", methods=["POST"])

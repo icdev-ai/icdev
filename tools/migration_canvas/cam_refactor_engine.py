@@ -34,7 +34,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-logger = get_logger("icdev.cam_refactor_engine")
+logger = logging.getLogger("icdev.cam_refactor_engine")
 
 _ROOT = Path(__file__).resolve().parents[2]
 _REFACTOR_RULES_PATH = _ROOT / "context" / "migration" / "refactor_rules.yaml"

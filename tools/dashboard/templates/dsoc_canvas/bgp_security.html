@@ -94,7 +94,7 @@
               </span>
             </td>
             <td><small>{{ h.detection_source }}</small></td>
-            <td><small>{{ h.detected_at[:16] if h.detected_at else '' }}</small></td>
+            <td><small>{{ h.detected_at | ts }}</small></td>
             <td>
               <button class="btn btn-xs btn-outline-success"
                       onclick="resolveHijack({{ h.id }}, 'resolved')">Resolve</button>
