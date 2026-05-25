@@ -482,4 +482,15 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 });
 </script>
+
+{% set iqe_canvas = "compliance" %}
+{% set iqe_api_route = "/api/compliance/iqe-query" %}
+{% set iqe_title = "Query Compliance Data" %}
+{% set iqe_examples = [
+    {"label": "Open violations", "query": "foreach v in compliance.violations where v.status == \"open\" select v.weakness_description, v.severity, v.control_id, v.responsible_party"},
+    {"label": "Controls not implemented", "query": "foreach c in compliance.controls where c.implementation_status == \"not-implemented\" select c.control_id, c.family, c.title, c.impact_level"},
+    {"label": "Low compliance snapshots", "query": "foreach s in compliance.snapshots where s.compliance_score_end < 70 select s.project_id, s.pi_number, s.compliance_score_end, s.poam_items_opened"},
+    {"label": "All violations", "query": "foreach v in compliance.violations select v.weakness_description, v.severity, v.status, v.milestone_date"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
 {% endblock %}

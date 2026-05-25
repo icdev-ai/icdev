@@ -79,10 +79,10 @@
             </td>
             <td class="text-muted" style="font-size:.82rem;">{{ t.feed_source or '—' }}</td>
             <td class="text-muted" style="font-size:.78rem;">
-              {{ t.first_seen[:16].replace('T', ' ') if t.first_seen else '—' }}
+              {{ t.first_seen | ts }}
             </td>
             <td class="text-muted" style="font-size:.78rem;">
-              {{ t.last_seen[:16].replace('T', ' ') if t.last_seen else '—' }}
+              {{ t.last_seen | ts }}
             </td>
             <td class="text-muted" style="font-size:.82rem;">
               {{ '{:,}'.format(t.pps | int) if t.pps else '—' }}

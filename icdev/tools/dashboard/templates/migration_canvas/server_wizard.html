@@ -208,6 +208,26 @@
 .session-card-host { font-size: 14px; font-weight: 700; }
 .session-card-meta { font-size: 12px; color: #7a8cb0; margin-top: 4px; }
 .session-card-score { font-size: 22px; font-weight: 700; color: #2980b9; text-align: center; }
+
+/* ── Guidance callout ─────────────────────────────────────────── */
+.guidance-panel { background: #111f35; border: 1px solid #1e4a7e; border-radius: 8px; margin-top: 20px; overflow: hidden; }
+.guidance-toggle { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; cursor: pointer; user-select: none; }
+.guidance-toggle:hover { background: #162d4a; }
+.guidance-title { font-size: 12px; font-weight: 700; color: #4a9ade; text-transform: uppercase; letter-spacing: 0.5px; }
+.guidance-chevron { font-size: 12px; color: #4a6080; transition: transform 0.2s; }
+.guidance-panel.open .guidance-chevron { transform: rotate(180deg); }
+.guidance-body { display: none; padding: 0 14px 14px; }
+.guidance-panel.open .guidance-body { display: block; }
+.challenge-card { background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+.challenge-card:last-child { margin-bottom: 0; }
+.challenge-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.challenge-card-title { font-size: 12px; font-weight: 600; color: #eaeaea; }
+.challenge-card-desc { font-size: 11px; color: #7a8cb0; margin-bottom: 4px; }
+.challenge-card-source { font-size: 10px; color: #4a6080; font-style: italic; }
+.badge-critical { background: #3d1515; color: #e74c3c; }
+.badge-high { background: #3d2200; color: #e67e22; }
+.badge-medium { background: #3d3200; color: #f1c40f; }
+.badge-low { background: #2a2a2a; color: #7a8cb0; }
 </style>
 {% endblock %}
 
@@ -340,19 +360,40 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <label>Classification</label>
-        <select id="s1-classification">
-          <option value="CUI // SP-CTI" {% if not srv_session or srv_session.classification == 'CUI // SP-CTI' %}selected{% endif %}>CUI // SP-CTI</option>
-          <option value="CUI" {% if srv_session and srv_session.classification == 'CUI' %}selected{% endif %}>CUI</option>
-          <option value="PUBLIC" {% if srv_session and srv_session.classification == 'PUBLIC' %}selected{% endif %}>PUBLIC</option>
-        </select>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Classification</label>
+          <select id="s1-classification">
+            <option value="CUI // SP-CTI" {% if not srv_session or srv_session.classification == 'CUI // SP-CTI' %}selected{% endif %}>CUI // SP-CTI</option>
+            <option value="CUI" {% if srv_session and srv_session.classification == 'CUI' %}selected{% endif %}>CUI</option>
+            <option value="PUBLIC" {% if srv_session and srv_session.classification == 'PUBLIC' %}selected{% endif %}>PUBLIC</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Impact Level (IL)</label>
+          <select id="s1-il-level">
+            <option value="IL2">IL2 — Public / Low</option>
+            <option value="IL4" selected>IL4 — CUI / GovCloud</option>
+            <option value="IL5">IL5 — CUI / DoD Dedicated</option>
+            <option value="IL6">IL6 — SECRET / SIPR</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Compliance check result panel -->
+      <div id="s1-compliance-panel" style="display:none;margin-top:12px;padding:14px;border-radius:8px;border:1px solid #2a3550;background:#0f1929;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <span id="s1-compliance-badge" style="padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;">CHECKING...</span>
+          <span style="font-size:13px;color:#7a8cb0;">Compliance Gate</span>
+        </div>
+        <div id="s1-compliance-findings"></div>
       </div>
 
       <div class="nw-actions">
-        <button class="btn btn-primary" onclick="step1Next()">
+        <button class="btn btn-primary" id="s1-proceed-btn" onclick="step1Next()">
           {% if srv_session %}Update &amp; Continue{% else %}Create Session →{% endif %}
         </button>
+        <button class="btn" style="margin-left:8px;background:#1a2035;color:#7a8cb0;border:1px solid #2a3550;" onclick="runComplianceCheck()" title="Run compliance check without advancing">Check Compliance</button>
       </div>
     </div>
 
@@ -854,6 +895,15 @@
       </div>
     </div>
 
+    <!-- ── Guidance callout ──────────────────────────────────────── -->
+    <div id="guidance-panel" class="guidance-panel" style="display:none">
+      <div class="guidance-toggle" onclick="this.closest('.guidance-panel').classList.toggle('open')">
+        <span class="guidance-title">Research Intelligence — Common Issues at This Step</span>
+        <span class="guidance-chevron">▼</span>
+      </div>
+      <div class="guidance-body" id="guidance-body"></div>
+    </div>
+
   </main>
 </div>
 {% endif %}
@@ -865,6 +915,7 @@
 const STATE = {
   sid: {{ ('"' + sid + '"') | safe if sid else 'null' }},
   step: 1,
+  migrationType: {{ ('"' + srv_session.migration_type + '"') | safe if (srv_session and srv_session.migration_type) else 'null' }},
   catalogItems: [],
   selectedInstanceId: null,
   cutoverSteps: [],
@@ -900,6 +951,48 @@ function switchStep(n) {
   if (n === 6) loadMaps();
   if (n === 7) loadCutoverSteps();
   if (n === 8) { loadTestCases(); refreshReadiness(); }
+  loadGuidance(n);
+}
+
+// ── Guidance callout ─────────────────────────────────────────────────
+async function loadGuidance(step) {
+  const panel = document.getElementById('guidance-panel');
+  const body  = document.getElementById('guidance-body');
+  if (!panel || !body) return;
+
+  const mtype = STATE.migrationType ||
+    document.querySelector('input[name=migration_type]:checked')?.value || '';
+  const qs = `step=${step}${mtype ? '&type=' + encodeURIComponent(mtype) : ''}`;
+
+  let guidance = [];
+  try {
+    const r = await api(`/migration-canvas/server-migration/guidance?${qs}`);
+    guidance = Array.isArray(r) ? r : (Array.isArray(r.guidance) ? r.guidance : []);
+  } catch (_) { /* network error — hide panel */ }
+
+  if (!guidance.length) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  const SEV_CLASS = { critical: 'critical', high: 'high', medium: 'medium', low: 'low' };
+  body.innerHTML = guidance.slice(0, 3).map(g => {
+    const sev = (g.severity || 'low').toLowerCase();
+    const cls = SEV_CLASS[sev] || 'low';
+    const desc = (g.description || g.body || '').slice(0, 120);
+    const title = g.title || g.challenge || '';
+    return `<div class="challenge-card">
+      <div class="challenge-card-header">
+        <span class="badge badge-${cls}">${sev}</span>
+        <span class="challenge-card-title">${title}</span>
+      </div>
+      <div class="challenge-card-desc">${desc}</div>
+      <div class="challenge-card-source">Source: Research Engine — Application &amp; Cloud Migration Dossier</div>
+    </div>`;
+  }).join('');
+
+  panel.style.display = '';
+  panel.classList.remove('open'); // collapsed by default
 }
 
 async function loadGuidanceStep2() {
@@ -956,11 +1049,69 @@ document.querySelectorAll('.option-card').forEach(card => {
   });
 });
 
+async function runComplianceCheck() {
+  const tgt = document.getElementById('s1-tgt-platform').value || 'commercial';
+  const il  = document.getElementById('s1-il-level').value || 'IL4';
+  const mtype = document.querySelector('input[name=migration_type]:checked')?.value;
+  const panel = document.getElementById('s1-compliance-panel');
+  const badge = document.getElementById('s1-compliance-badge');
+  const findings_div = document.getElementById('s1-compliance-findings');
+  const btn = document.getElementById('s1-proceed-btn');
+
+  panel.style.display = '';
+  badge.textContent = 'CHECKING...';
+  badge.style.background = '#2a3550';
+  badge.style.color = '#7a8cb0';
+  findings_div.innerHTML = '';
+
+  const r = await api('/migration-canvas/api/compliance-gate', 'POST', {
+    il_level: il,
+    target_env: tgt,
+    migration_type: mtype || null,
+  });
+
+  const status = (r.status || 'pass').toUpperCase();
+  const colors = { PASS: ['#27ae60','#0f2b1f'], WARN: ['#f39c12','#2b200a'], BLOCK: ['#e74c3c','#2b0a0a'] };
+  const [fg, bg] = colors[status] || colors.PASS;
+  badge.textContent = status;
+  badge.style.background = bg;
+  badge.style.color = fg;
+  panel.style.borderColor = fg;
+
+  if (r.findings && r.findings.length > 0) {
+    findings_div.innerHTML = r.findings.map(f =>
+      `<div style="font-size:12px;color:${f.severity==='block'?'#e74c3c':f.severity==='warn'?'#f39c12':'#7a8cb0'};margin-bottom:4px;">
+        [${f.rule}] ${f.message}
+      </div>`
+    ).join('');
+  } else {
+    findings_div.innerHTML = '<div style="font-size:12px;color:#27ae60;">All compliance checks passed.</div>';
+  }
+
+  // Block advance if status is block
+  if (status === 'BLOCK') {
+    btn.disabled = true;
+    btn.title = 'Compliance gate blocked — resolve findings before proceeding.';
+    btn.style.opacity = '0.5';
+    toast('Compliance BLOCKED — see findings above', 'err');
+  } else {
+    btn.disabled = false;
+    btn.title = '';
+    btn.style.opacity = '';
+    if (status === 'WARN') toast('Compliance warnings — review before proceeding', 'warn');
+  }
+  return r;
+}
+
 async function step1Next() {
   const mtype = document.querySelector('input[name=migration_type]:checked')?.value;
   if (!mtype) { toast('Select a migration type', 'err'); return; }
   const tgt = document.getElementById('s1-tgt-platform').value;
   if (!tgt) { toast('Select a target platform', 'err'); return; }
+
+  // Run compliance check before advancing
+  const cr = await runComplianceCheck();
+  if (cr && cr.status === 'block') return;  // Already disabled button + toasted
 
   const body = {
     migration_type: mtype,
@@ -969,8 +1120,10 @@ async function step1Next() {
     tgt_platform: tgt,
     tgt_region: document.getElementById('s1-tgt-region').value,
     classification: document.getElementById('s1-classification').value,
+    il_level: document.getElementById('s1-il-level').value,
   };
 
+  STATE.migrationType = mtype;
   if (STATE.sid) {
     await api(`/migration-canvas/api/server-migration/${STATE.sid}`, 'PATCH', body);
     toast('Session updated');

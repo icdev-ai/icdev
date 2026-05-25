@@ -3,7 +3,7 @@
 {% block title %}Chat — ICDEV™ Dashboard{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}?v=20260518e">
 {% endblock %}
 
 {% block content %}
@@ -46,13 +46,26 @@
         <div class="chat-sidebar__uc-section">
             <div class="chat-sidebar__uc-header">
                 <strong>Common Use Cases</strong>
-                <button id="btn-uc-collapse" class="chat-uc-collapse-btn" title="Collapse" aria-label="Toggle use cases">&#x25BE;</button>
+                <span class="chat-uc-toolbar-btns">
+                    <button id="btn-uc-chain-mode" class="chat-uc-toolbar-btn" title="Chain use cases">&#x26D3;</button>
+                    <button id="btn-uc-create" class="chat-uc-toolbar-btn" title="Create new use case">&#xFF0B;</button>
+                    <button id="btn-uc-import" class="chat-uc-toolbar-btn" title="Import use case bundle">&#x2191;</button>
+                    <button id="btn-uc-compact" class="chat-uc-toolbar-btn chat-uc-toolbar-btn--active" title="Toggle compact view">&#x2261;</button>
+                    <button id="btn-uc-collapse" class="chat-uc-collapse-btn" title="Collapse" aria-label="Toggle use cases">&#x25BE;</button>
+                </span>
             </div>
             <div id="uc-panel" class="chat-uc-panel">
                 <div class="chat-uc-search-wrap">
                     <input type="text" id="usecase-search" class="chat-uc-search" placeholder="Search use cases..." autocomplete="off">
                 </div>
-                <div id="usecase-list" class="chat-uc-list">
+                <div id="uc-category-chips" class="chat-uc-chips"></div>
+                <div id="uc-chain-bar" class="chat-uc-chain-bar" style="display:none">
+                    <span id="uc-chain-count">0 selected</span>
+                    <input id="uc-chain-name" class="chat-uc-chain-input" placeholder="Name this chain...">
+                    <button id="btn-chain-activate" class="btn btn-xs btn-primary">Activate Chain</button>
+                    <button id="btn-chain-cancel" class="btn btn-xs btn-secondary">Cancel</button>
+                </div>
+                <div id="usecase-list" class="chat-uc-list chat-uc-list--compact">
                     <div class="chat-uc-loading">Loading...</div>
                 </div>
             </div>
@@ -75,6 +88,13 @@
                 <button id="btn-focus-mode" class="chat-toggle-btn chat-toggle-btn--focus" title="Focus mode — hide sidebars">Focus</button>
                 <button id="btn-close-context" class="chat-toggle-btn chat-toggle-btn--close">Close</button>
             </div>
+        </div>
+
+        <!-- Wizard origin banner -->
+        <div id="wizard-origin-banner" class="wizard-origin-banner" style="display:none;">
+            <span class="wizard-origin-icon">&#x1F3AF;</span>
+            <span class="wizard-origin-text">Started from <strong id="wizard-origin-label">Getting Started</strong></span>
+            <button class="wizard-origin-dismiss" onclick="document.getElementById('wizard-origin-banner').style.display='none';" title="Dismiss">&#x2715;</button>
         </div>
 
         <!-- Message stream -->
@@ -125,6 +145,21 @@
 
         <!-- RICOAS Tab Content -->
         <div id="ricoas-sidebar" class="chat-right-tab-content chat-right-tab-content--active" data-tab-content="ricoas">
+            <div class="tab-processing-bar" id="ricoas-processing-bar">
+                <span class="tab-processing-spinner"></span>
+                <span>AI is processing&hellip;</span>
+            </div>
+            <!-- Workflow Step Bar — shown when active use case has workflow_steps -->
+            <div id="workflow-step-bar" class="sidebar-section" style="display:none;">
+                <h4 class="chat-sidebar-heading">Workflow Progress</h4>
+                <div class="wf-step-progress">
+                    <div class="wf-step-indicator" id="wf-step-indicator">Step 1</div>
+                    <div class="wf-step-label" id="wf-step-label"></div>
+                    <div class="wf-step-dots" id="wf-step-dots"></div>
+                </div>
+                <button class="btn btn-sm btn-primary wf-next-btn" id="wf-next-btn" onclick="advanceWorkflowStep()">Next Step &#x2192;</button>
+            </div>
+
             <!-- Compliance Frameworks -->
             <div class="sidebar-section" id="frameworks-section" style="display:none;">
                 <h4 class="chat-sidebar-heading">Compliance Frameworks</h4>
@@ -205,10 +240,11 @@
                 <div id="uc-specific-actions" class="uc-specific-actions" style="display:none;"></div>
                 <h4 class="chat-sidebar-heading">What's next?</h4>
                 <button class="btn btn-warning" onclick="ICDEV.chatSendToKanban()">&#x1F4CB; Send to Kanban</button>
-                <button class="btn btn-secondary" onclick="ICDEV.chatRunSimulation()">Run Simulation (COAs)</button>
+                <button class="btn btn-secondary" onclick="ICDEV.chatRunSimulation()">&#x1F9EA; Dry Run (COAs)</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatViewRequirements()">View Requirements</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatValidatePRD()">&#x2714; Validate PRD</button>
+                <a id="uc-standalone-link" class="btn btn-secondary" style="display:none;" download>&#x2B07; Standalone App</a>
             </div>
 
             <!-- Build Pipeline -->
@@ -226,16 +262,24 @@
 
         <!-- Governance Tab Content -->
         <div id="gov-sidebar" class="chat-right-tab-content" data-tab-content="gov">
+            <div class="tab-processing-bar" id="gov-processing-bar">
+                <span class="tab-processing-spinner"></span>
+                <span>AI is processing&hellip;</span>
+            </div>
             <div class="gov-sidebar-header">
                 <strong class="gov-sidebar-title">AI Governance</strong>
             </div>
             <div id="gov-sidebar-content">
-                <p class="gov-sidebar-placeholder">Loading governance status...</p>
+                <p class="gov-sidebar-placeholder">Governance status updates as the AI processes your request.</p>
             </div>
         </div>
 
         <!-- Intelligence Tab Content -->
         <div id="intel-sidebar" class="chat-right-tab-content" data-tab-content="intel">
+            <div class="tab-processing-bar" id="intel-processing-bar">
+                <span class="tab-processing-spinner"></span>
+                <span>AI is processing&hellip;</span>
+            </div>
             <div class="intel-sidebar-header">
                 <strong class="intel-sidebar-title">Intelligence</strong>
                 <span class="intel-sidebar-subtitle">RAG + Bayesian + Quality + Genesis</span>
@@ -295,7 +339,8 @@
         <div class="chat-modal__field">
             <label class="chat-modal__label">Agent Model</label>
             <select id="new-ctx-model" class="chat-modal__select">
-                <option value="sonnet">Sonnet (Default)</option>
+                <option value="kimi-cloud" selected>Kimi Cloud (Default)</option>
+                <option value="sonnet">Sonnet</option>
                 <option value="opus">Opus</option>
                 <option value="haiku">Haiku</option>
             </select>
@@ -326,13 +371,16 @@
         wizardClassification: {{ (wizard_classification or '')|tojson if wizard_classification is defined else '""' }},
         wizardFrameworks: {{ (wizard_frameworks or '')|tojson if wizard_frameworks is defined else '""' }},
         customRoleName: {{ (wizard_custom_role_name or '')|tojson if wizard_custom_role_name is defined else '""' }},
-        customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson if wizard_custom_role_desc is defined else '""' }}
+        customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson if wizard_custom_role_desc is defined else '""' }},
+        useCaseId: {{ (wizard_use_case or '')|tojson if wizard_use_case is defined else '""' }},
+        skipFastTrack: {{ 'true' if wizard_skip_fast_track else 'false' }},
+        fromWizard: {{ 'true' if from_wizard else 'false' }}
     };
 </script>
 {% endblock %}
 
 {% block scripts %}
-<script defer src="{{ url_for('static', filename='js/chat.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/chat.js') }}?v=20260518e"></script>
 <script>
 // Right sidebar tab switching
 (function() {
@@ -613,6 +661,11 @@
                         <option value="modernization">Modernization</option>
                         <option value="budget">Budget</option>
                         <option value="knowledge">Knowledge</option>
+                        <option value="acquisition">Acquisition &amp; Contracting</option>
+                        <option value="compliance_ato">Compliance &amp; ATO</option>
+                        <option value="zero_trust">Zero Trust</option>
+                        <option value="it_operations">IT Operations</option>
+                        <option value="state_local">State &amp; Local</option>
                         <option value="compliance">Compliance</option>
                         <option value="general">General</option>
                     </select>
@@ -620,9 +673,10 @@
                 <div class="uc-form-group uc-form-group--third">
                     <label for="uc-f-model">Agent Model</label>
                     <select id="uc-f-model" class="form-control">
-                        <option value="opus">Opus (most capable)</option>
-                        <option value="sonnet">Sonnet (balanced)</option>
-                        <option value="haiku">Haiku (fast)</option>
+                        <option value="kimi-cloud">Kimi Cloud (Default)</option>
+                        <option value="sonnet">Sonnet</option>
+                        <option value="opus">Opus</option>
+                        <option value="haiku">Haiku</option>
                     </select>
                 </div>
                 <div class="uc-form-group uc-form-group--third uc-form-group--vcenter">
@@ -647,11 +701,191 @@
                     <div id="uc-f-qa-list" class="uc-qa-list"></div>
                     <button type="button" class="btn btn-sm btn-secondary" id="uc-qa-add-btn">+ Add Action</button>
                 </div>
+                <!-- Fast-track user_config section — shown only when use case has fast_track:true -->
+                <div id="uc-user-config-section" class="uc-form-group uc-form-group--full" style="display:none;">
+                    <div class="uc-user-config-header">
+                        <span class="uc-badge uc-badge--blue">Fast Track</span>
+                        <span class="uc-label-hint" style="margin-left:6px;">Customize the pre-loaded requirements framework for this use case</span>
+                    </div>
+                    <div class="uc-user-config-grid">
+                        <div class="uc-user-config-col">
+                            <label class="uc-config-label">Industries</label>
+                            <div id="uc-industries-list" class="uc-tag-list"></div>
+                            <div class="uc-tag-add-row">
+                                <input type="text" id="uc-industries-input" class="uc-tag-input" placeholder="Add industry...">
+                                <button type="button" class="btn btn-sm btn-secondary" id="uc-industries-add-btn">+</button>
+                            </div>
+                        </div>
+                        <div class="uc-user-config-col">
+                            <label class="uc-config-label">Equipment Types</label>
+                            <div id="uc-equipment-list" class="uc-tag-list"></div>
+                            <div class="uc-tag-add-row">
+                                <input type="text" id="uc-equipment-input" class="uc-tag-input" placeholder="Add equipment type...">
+                                <button type="button" class="btn btn-sm btn-secondary" id="uc-equipment-add-btn">+</button>
+                            </div>
+                        </div>
+                        <div class="uc-user-config-col">
+                            <label class="uc-config-label">Vendors</label>
+                            <div id="uc-vendors-list" class="uc-tag-list"></div>
+                            <div class="uc-tag-add-row">
+                                <input type="text" id="uc-vendors-input" class="uc-tag-input" placeholder="Add vendor...">
+                                <button type="button" class="btn btn-sm btn-secondary" id="uc-vendors-add-btn">+</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="uc-skip-types-section">
+                        <label class="uc-config-label">Skip Requirement Types <span class="uc-label-hint">(excluded from AI Boost and RICOAS score)</span></label>
+                        <div class="uc-skip-checkboxes">
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="security"> Security</label>
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="non_functional"> Non-Functional</label>
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="compliance"> Compliance</label>
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="interface"> Interface</label>
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="data"> Data</label>
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="performance"> Performance</label>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="uc-modal__footer">
             <button class="btn btn-secondary" id="uc-modal-cancel">Cancel</button>
             <button class="btn btn-primary" id="uc-modal-save">Save Changes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Creation Wizard Modal -->
+<div id="uc-create-wizard" class="uc-modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="uc-wiz-title">
+    <div class="uc-modal uc-wizard-modal">
+        <div class="uc-modal__header">
+            <h3 id="uc-wiz-title">Create Use Case</h3>
+            <div style="font-size:0.75rem;color:#8b949e">Step <span id="uc-wiz-step-num">1</span> of 5</div>
+            <button class="uc-modal__close" id="uc-wiz-close" aria-label="Close">&#x2715;</button>
+        </div>
+        <div class="uc-modal__body uc-wizard-body">
+            <!-- Step 1: Starting Point -->
+            <div class="uc-wizard-step" id="uc-wiz-s1">
+                <label class="uc-field-label">How would you like to start?</label>
+                <div class="uc-archetype-btns" style="flex-direction:column;gap:10px;margin-top:10px">
+                    <label class="uc-wiz-radio-label"><input type="radio" name="wiz-start" value="blank" checked> Start blank — define everything yourself</label>
+                    <label class="uc-wiz-radio-label"><input type="radio" name="wiz-start" value="clone"> Clone an existing use case</label>
+                </div>
+                <div id="uc-wiz-clone-wrap" style="display:none;margin-top:12px">
+                    <label class="uc-field-label">Clone from</label>
+                    <select id="uc-wiz-clone-from" class="form-control"></select>
+                </div>
+            </div>
+            <!-- Step 2: Identity -->
+            <div class="uc-wizard-step" id="uc-wiz-s2" style="display:none">
+                <div class="uc-field-group">
+                    <label class="uc-field-label">Name <span style="color:#f85149">*</span></label>
+                    <input id="uc-wiz-label" class="form-control" placeholder="e.g. ATO Package Builder">
+                </div>
+                <div style="display:flex;gap:10px">
+                    <div class="uc-field-group" style="flex:0 0 80px">
+                        <label class="uc-field-label">Icon</label>
+                        <input id="uc-wiz-icon" class="form-control" placeholder="🛡" maxlength="4">
+                    </div>
+                    <div class="uc-field-group" style="flex:1">
+                        <label class="uc-field-label">Category</label>
+                        <select id="uc-wiz-category" class="form-control">
+                            <option value="general">General</option>
+                            <option value="modernization">Modernization</option>
+                            <option value="budget">Budget</option>
+                            <option value="knowledge">Knowledge</option>
+                            <option value="acquisition">Acquisition &amp; Contracting</option>
+                            <option value="compliance_ato">Compliance &amp; ATO</option>
+                            <option value="zero_trust">Zero Trust</option>
+                            <option value="it_operations">IT Operations</option>
+                            <option value="state_local">State &amp; Local</option>
+                        </select>
+                    </div>
+                    <div class="uc-field-group" style="flex:0 0 120px">
+                        <label class="uc-field-label">Badge</label>
+                        <input id="uc-wiz-badge" class="form-control" placeholder="RMF">
+                    </div>
+                </div>
+                <div class="uc-field-group">
+                    <label class="uc-field-label">Description</label>
+                    <textarea id="uc-wiz-desc" class="form-control" rows="3" placeholder="One sentence describing what this use case helps users accomplish..."></textarea>
+                </div>
+            </div>
+            <!-- Step 3: AI Persona -->
+            <div class="uc-wizard-step" id="uc-wiz-s3" style="display:none">
+                <label class="uc-field-label">Government persona templates</label>
+                <div class="uc-archetype-btns" style="margin-bottom:10px">
+                    <button type="button" class="uc-archetype-btn" data-archetype="ko">KO</button>
+                    <button type="button" class="uc-archetype-btn" data-archetype="isso">ISSO/RMF</button>
+                    <button type="button" class="uc-archetype-btn" data-archetype="zt">Zero Trust</button>
+                    <button type="button" class="uc-archetype-btn" data-archetype="ito">IT Ops</button>
+                    <button type="button" class="uc-archetype-btn" data-archetype="sl">State/Local</button>
+                    <button type="button" class="uc-archetype-btn" data-archetype="pm">Gov PM</button>
+                </div>
+                <div class="uc-field-group">
+                    <label class="uc-field-label">AI System Prompt <span style="color:#8b949e;font-size:0.75rem">(defines the AI persona)</span></label>
+                    <textarea id="uc-wiz-system" class="form-control" rows="10" placeholder="You are a senior government program manager with expertise in..."></textarea>
+                </div>
+                <div class="uc-field-group">
+                    <label class="uc-field-label">Opening Message <span style="color:#8b949e;font-size:0.75rem">(shown to user when starting)</span></label>
+                    <textarea id="uc-wiz-seed" class="form-control" rows="4" placeholder="Welcome! I'm here to help you..."></textarea>
+                </div>
+            </div>
+            <!-- Step 4: Requirements -->
+            <div class="uc-wizard-step" id="uc-wiz-s4" style="display:none">
+                <label class="uc-field-label">Template Requirements <span style="color:#8b949e;font-size:0.75rem">(pre-seeded when use case starts)</span></label>
+                <div id="uc-wiz-req-list" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;margin:8px 0"></div>
+                <button type="button" id="uc-wiz-add-req" class="btn btn-secondary btn-sm">&#xFF0B; Add Requirement</button>
+            </div>
+            <!-- Step 5: Wiring -->
+            <div class="uc-wizard-step" id="uc-wiz-s5" style="display:none">
+                <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:12px">
+                    <label class="uc-skip-check"><input type="checkbox" id="uc-wiz-ricoas" checked> RICOAS intake</label>
+                    <label class="uc-skip-check"><input type="checkbox" id="uc-wiz-fast-track" checked> Fast Track (⚡ Ready badge)</label>
+                    <div style="display:flex;align-items:center;gap:6px">
+                        <label class="uc-field-label" style="margin:0">AI Boost %</label>
+                        <input type="number" id="uc-wiz-boost" class="form-control" value="70" min="0" max="100" style="width:70px">
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                        <label class="uc-field-label" style="margin:0">Model</label>
+                        <select id="uc-wiz-model" class="form-control" style="width:140px">
+                            <option value="kimi-cloud">kimi-cloud</option>
+                            <option value="sonnet">claude-sonnet</option>
+                            <option value="opus">claude-opus</option>
+                            <option value="gpt-4o">gpt-4o</option>
+                        </select>
+                    </div>
+                </div>
+                <label class="uc-field-label">Workflow Steps <span style="color:#8b949e;font-size:0.75rem">(ordered journey for the user)</span></label>
+                <div id="uc-wiz-steps-list" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;margin:8px 0"></div>
+                <button type="button" id="uc-wiz-add-step" class="btn btn-secondary btn-sm">&#xFF0B; Add Step</button>
+            </div>
+        </div>
+        <div class="uc-modal__footer">
+            <button class="btn btn-secondary" id="uc-wiz-prev" style="display:none">&#x2190; Previous</button>
+            <button class="btn btn-primary" id="uc-wiz-next">Next &#x2192;</button>
+            <button class="btn btn-primary" id="uc-wiz-finish" style="display:none">&#x2713; Create Use Case</button>
+        </div>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div id="uc-import-modal" class="uc-modal-overlay" style="display:none;" role="dialog" aria-modal="true">
+    <div class="uc-modal" style="max-width:420px">
+        <div class="uc-modal__header">
+            <h3>Import Use Case Bundle</h3>
+            <button class="uc-modal__close" id="uc-import-close" aria-label="Close">&#x2715;</button>
+        </div>
+        <div class="uc-modal__body" style="padding:16px">
+            <p style="font-size:0.8rem;color:#8b949e;margin-bottom:12px">Select a <code>.yaml</code> bundle file exported from any ICDEV instance.</p>
+            <input type="file" id="uc-import-file" accept=".yaml,.yml" class="form-control" style="margin-bottom:10px">
+            <label class="uc-skip-check" style="margin-bottom:12px">
+                <input type="checkbox" id="uc-import-overwrite"> Overwrite existing use cases with same ID
+            </label>
+            <div id="uc-import-result" style="font-size:0.8rem;margin-top:8px"></div>
+        </div>
+        <div class="uc-modal__footer">
+            <button class="btn btn-secondary" id="uc-import-cancel">Cancel</button>
+            <button class="btn btn-primary" id="uc-import-submit">&#x2191; Import</button>
         </div>
     </div>
 </div>

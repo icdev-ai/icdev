@@ -111,6 +111,291 @@
   <div id="impact-results" style="display:none;padding:10px 16px;border-top:1px solid var(--border);"></div>
 </section>
 
+<!-- ═══════════════ AI COA COMPARISON ═══════════════ -->
+<section class="panel panel-wide" id="coa-section" style="margin-bottom:20px;">
+  <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h2 class="panel-title">AI-Generated Courses of Action</h2>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <span style="font-size:11px;color:#8099b8;">HITL Review &rarr; Select &rarr; AI regenerates plan</span>
+      {% if first_topo_id %}
+      <a href="/network/migration-phases/{{ first_topo_id }}" class="btn btn-primary" style="font-size:0.75rem;padding:3px 10px;" target="_blank">&#x1F5FA; Phase Diagrams</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="padding:12px 16px;">
+    {% set coas = [
+      ('coa_1', '#e74c3c', 'high', 'Rip & Replace', '2–4h', '1 day', 'Swap hardware in single window. Fastest, highest risk.'),
+      ('coa_2', '#f39c12', 'medium', 'Phased Cutover', '5–15 min/phase', '2 weeks', 'Migrate per circuit over 1–2 weeks. Balanced risk.'),
+      ('coa_3', '#27ae60', 'low', 'Side-by-Side VLAN', 'Near-zero', '3 weeks', 'Old + new parallel on same VLAN. Safest. Recommended.')
+    ] %}
+
+    <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;">
+      {% for key, color, risk, name, downtime, duration, desc in coas %}
+      {% set coa_obj = coa_data.get(key, {}) %}
+      {% set is_selected = project.selected_coa == coa_obj.get('id', loop.index) %}
+      <div class="coa-card {% if is_selected %}coa-selected{% endif %}" id="coa-card-{{ loop.index }}" style="border:1px solid {{ color }};border-radius:8px;padding:14px;background:{{ color }}08;position:relative;">
+        {% if is_selected %}
+        <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:{{ color }};color:#fff;font-size:10px;font-weight:700;padding:2px 10px;border-radius:10px;">SELECTED</div>
+        {% endif %}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-weight:700;font-size:14px;color:{{ color }};">{{ name }}</div>
+          <span class="health-pill {% if risk == 'high' %}pill-red{% elif risk == 'medium' %}pill-yellow{% else %}pill-green{% endif %}" style="font-size:10px;text-transform:uppercase;">{{ risk }} risk</span>
+        </div>
+        <div style="font-size:12px;color:#b0c4dc;line-height:1.5;margin-bottom:10px;">{{ desc }}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#8099b8;margin-bottom:12px;">
+          <div><span style="color:#a0b8d0;font-weight:600;">Downtime:</span> {{ downtime }}</div>
+          <div><span style="color:#a0b8d0;font-weight:600;">Duration:</span> {{ duration }}</div>
+        </div>
+        <button onclick="selectCoa({{ loop.index }}, '{{ name }}')" class="btn {% if is_selected %}btn-secondary{% else %}btn-primary{% endif %}" style="width:100%;font-size:12px;" {% if is_selected %}disabled{% endif %}>
+          {% if is_selected %}✓ Selected{% else %}Select {{ name }}{% endif %}
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Feedback box -->
+    <div style="margin-top:14px;display:flex;gap:8px;align-items:flex-start;">
+      <input id="coa-feedback" type="text" placeholder="HITL feedback: e.g. 'Add rollback window' or 'Too risky for Friday'"
+             value="{{ project.coa_feedback or '' }}"
+             style="flex:1;background:#0d1b2e;border:1px solid #1e3a6e;border-radius:4px;padding:6px 10px;color:#e2e8f0;font-size:12px;">
+      <button onclick="submitCoaFeedback()" class="btn btn-secondary" style="font-size:11px;padding:5px 12px;">Save Feedback</button>
+    </div>
+    <div id="coa-feedback-status" style="font-size:11px;margin-top:6px;color:#8099b8;"></div>
+  </div>
+</section>
+
+<!-- ═══════════════ MIGRATION PLAN ═══════════════ -->
+<section class="panel panel-wide" id="migration-plan-section" style="margin-bottom:20px;">
+  <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h2 class="panel-title">Migration Plan</h2>
+    <div style="display:flex;gap:6px;">
+      <a href="/network/migration-hub" class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;">Migration Hub</a>
+      {% if first_topo_id %}
+      <a href="/network/migration-phases/{{ first_topo_id }}" class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" target="_blank">3-Panel Diagram</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if migration_phases %}
+  <style>
+  .mp-plan-card { border:1px solid #1e3a6e; border-radius:8px; margin:10px 16px; overflow:hidden; background:#0d1b2e; }
+  .mp-plan-header { display:flex; align-items:center; gap:10px; padding:10px 14px; background:#111f35; cursor:pointer; user-select:none; }
+  .mp-plan-header:hover { background:#1a2d48; }
+  .mp-plan-num { width:28px; height:28px; border-radius:50%; background:#2563eb; color:#fff; font-size:0.75rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .mp-plan-title { font-weight:700; font-size:0.9rem; flex:1; color:#e2e8f0; }
+  .mp-plan-status { font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:10px; text-transform:uppercase; }
+  .status-pending,.status-planned { background:#2a4a8a; color:#c0d4f0; }
+  .status-in_progress { background:#1a4a8e; color:#90c0f0; }
+  .status-completed { background:#0f3a20; color:#4ade80; }
+  .status-rolled_back { background:#3d1515; color:#f87171; }
+  .mp-plan-dur { font-size:0.75rem; color:#a0b8d0; flex-shrink:0; }
+  .mp-plan-chevron { color:#a0b8d0; transition:transform .2s; }
+  .mp-plan-card.open .mp-plan-chevron { transform:rotate(180deg); }
+  .mp-plan-body { display:none; padding:14px 16px; border-top:1px solid #1e3a6e; background:#0a1628; }
+  .mp-plan-card.open .mp-plan-body { display:block; }
+  .mp-meta-strip { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:14px; font-size:0.8rem; color:#b0c4dc; }
+  .mp-meta-strip .meta-item { display:flex; align-items:flex-start; gap:5px; }
+  .mp-meta-strip .meta-label { font-weight:700; color:#8099b8; white-space:nowrap; }
+  .mp-steps-list { margin:0 0 14px; padding:0; list-style:none; }
+  .mp-step-row { display:flex; gap:10px; padding:6px 0; border-bottom:1px solid #1e3a6e; align-items:flex-start; }
+  .mp-step-row:last-child { border-bottom:none; }
+  .mp-step-index { width:22px; height:22px; border-radius:50%; background:#1e3a8a; color:#93c5fd; font-size:0.7rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+  .mp-step-text { font-size:0.83rem; color:#e2e8f0; line-height:1.45; }
+  .mp-sop-section { margin-top:12px; }
+  .mp-sop-label { font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#8099b8; margin-bottom:8px; }
+  .mp-sop-entry { border:1px solid #1e3a6e; border-radius:6px; margin-bottom:8px; overflow:hidden; }
+  .mp-sop-entry-hdr { display:flex; align-items:center; gap:8px; padding:7px 12px; background:#111f35; cursor:pointer; }
+  .mp-sop-entry-hdr:hover { background:#1a2d48; }
+  .mp-sop-badge { font-size:0.65rem; font-weight:700; padding:2px 7px; border-radius:10px; background:#1e3a8a; color:#93c5fd; }
+  .mp-sop-name { font-size:0.82rem; font-weight:600; color:#e2e8f0; flex:1; }
+  .mp-sop-steps-body { display:none; padding:10px 12px; border-top:1px solid #1e3a6e; background:#0a1628; }
+  .mp-sop-entry.open .mp-sop-steps-body { display:block; }
+  .sop-step-row { display:flex; gap:8px; padding:5px 0; font-size:0.8rem; border-bottom:1px solid #1e3a6e; }
+  .sop-step-row:last-child { border-bottom:none; }
+  .sop-step-n { color:#60a5fa; font-weight:700; flex-shrink:0; width:18px; }
+  .sop-step-action { flex:1; color:#e2e8f0; }
+  .sop-step-verify { font-size:0.72rem; color:#4ade80; margin-top:2px; }
+  .sop-step-time { font-size:0.7rem; color:#a0b8d0; flex-shrink:0; }
+  .sop-prereq { font-size:0.78rem; color:#b0c4dc; margin-bottom:8px; }
+  .sop-prereq span { background:#2a4a8a; color:#c0d4f0; padding:2px 7px; border-radius:10px; margin:2px; display:inline-block; font-size:0.72rem; }
+  </style>
+
+  {% for ph in migration_phases %}
+  <div class="mp-plan-card" id="mpcard-{{ ph.phase_num }}">
+    <div class="mp-plan-header" onclick="toggleMpCard('mpcard-{{ ph.phase_num }}')">
+      <div class="mp-plan-num">{{ ph.phase_num }}</div>
+      <div class="mp-plan-title">{{ ph.title or 'Phase ' ~ ph.phase_num }}</div>
+      <span class="mp-plan-status status-{{ ph.status or 'pending' }}">{{ (ph.status or 'pending')|title }}</span>
+      {% if ph.duration_days %}<span class="mp-plan-dur">{{ ph.duration_days }}d</span>{% endif %}
+      <span class="mp-plan-chevron">▾</span>
+    </div>
+    <div class="mp-plan-body">
+      <div class="mp-meta-strip">
+        <div class="meta-item"><span class="meta-label">🕐 Window:</span> {{ ph.maintenance_window or 'TBD' }}</div>
+        {% if ph.rollback_criteria %}
+        <div class="meta-item"><span class="meta-label">↩ Rollback:</span> {{ ph.rollback_criteria }}</div>
+        {% endif %}
+        {% if ph.dependencies and ph.dependencies != '[]' %}
+        <div class="meta-item"><span class="meta-label">⛔ Depends on:</span> {{ ph.dependencies }}</div>
+        {% endif %}
+      </div>
+
+      <!-- Prescriptive Steps -->
+      {% if ph.steps %}
+      <ul class="mp-steps-list">
+        {% for step in ph.steps %}
+        {% if step %}
+        <li class="mp-step-row">
+          <div class="mp-step-index">{{ loop.index }}</div>
+          <div class="mp-step-text">{{ step }}</div>
+        </li>
+        {% endif %}
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      <!-- Linked SOPs -->
+      {% if ph.linked_docs %}
+      <div class="mp-sop-section">
+        <div class="mp-sop-label">📄 Reference SOPs ({{ ph.linked_docs|length }})</div>
+        {% for doc in ph.linked_docs %}
+        <div class="mp-sop-entry {% if doc.steps %}clickable{% endif %}" {% if doc.steps %}onclick="toggleSopEntry(this)"{% endif %}>
+          <div class="mp-sop-entry-hdr">
+            <span class="mp-sop-badge">{{ (doc.doc_type or doc.doc_source or 'SOP')|upper }}</span>
+            <span class="mp-sop-name">{{ doc.doc_title }}</span>
+            {% if doc.steps %}<span style="font-size:0.7rem;color:#718096;">{{ doc.steps|length }} steps ▾</span>{% endif %}
+            {% if doc.relevance_note %}<span style="font-size:0.7rem;color:#718096;font-style:italic;">{{ doc.relevance_note }}</span>{% endif %}
+          </div>
+          {% if doc.steps %}
+          <div class="mp-sop-steps-body">
+            {% if doc.prerequisites %}
+            <div class="sop-prereq">
+              <strong>Prerequisites:</strong>
+              {% for p in doc.prerequisites %}<span>{{ p }}</span>{% endfor %}
+            </div>
+            {% endif %}
+            {% for step in doc.steps %}
+            <div class="sop-step-row">
+              <span class="sop-step-n">{{ step.number }}.</span>
+              <div style="flex:1;">
+                <div class="sop-step-action">{{ step.text }}</div>
+                {% if step.verify %}<div class="sop-step-verify">✓ {{ step.verify }}</div>{% endif %}
+              </div>
+              {% if step.time_est %}<span class="sop-step-time">{{ step.time_est }}</span>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+  {% endfor %}
+
+  <script>
+  function toggleMpCard(id) {
+    const card = document.getElementById(id);
+    if (card) card.classList.toggle('open');
+  }
+  function toggleSopEntry(el) {
+    el.classList.toggle('open');
+  }
+  // Auto-open Phase 1 on load
+  document.addEventListener('DOMContentLoaded', () => {
+    const first = document.querySelector('.mp-plan-card');
+    if (first) first.classList.add('open');
+  });
+  </script>
+
+  {% else %}
+  <div style="padding:20px 16px;color:#a0b8d0;font-size:0.85rem;">
+    No migration phases defined for this project.
+    <a href="/network/migration-hub" style="color:#60a5fa;">Create one in the Migration Hub →</a>
+  </div>
+  {% endif %}
+</section>
+
+<!-- ═══════════════ PORT MAPPING & CONFIG TRANSLATION ═══════════════ -->
+<section class="panel panel-wide" id="port-mapping-section" style="margin-bottom:20px;">
+  <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h2 class="panel-title">Port Mapping & Config Translation</h2>
+    {% if target_device_id %}
+    <div style="font-size:11px;color:#8099b8;">Device: <span style="color:#a0b8d0;font-weight:600;">{{ target_device_id }}</span> &rarr; AI-mapped to replacement</div>
+    {% endif %}
+  </div>
+
+  <div style="padding:12px 16px;">
+    {% if port_mapping.port_mappings %}
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#8099b8;margin-bottom:8px;">AI-Generated Port Mapping</div>
+      <table class="data-table" style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>Old Port</th><th>&rarr;</th><th>New Port</th><th>Service / Role</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pm in port_mapping.port_mappings %}
+          <tr>
+            <td style="font-family:monospace;color:#e2e8f0;">{{ pm.old_port }}</td>
+            <td style="color:#8099b8;">&rarr;</td>
+            <td style="font-family:monospace;color:#a5b4fc;">{{ pm.new_port }}</td>
+            <td>{{ pm.service }}</td>
+            <td>
+              {% if pm.status == 'mapped' %}
+                <span class="health-pill pill-green">Auto</span>
+              {% else %}
+                <span class="health-pill pill-yellow">Manual</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="display:flex;gap:12px;margin-top:8px;font-size:11px;color:#8099b8;">
+        <div><span style="color:#eaeaea;font-weight:700;">{{ port_mapping.mapped_count or 0 }}</span> auto-mapped</div>
+        <div><span style="color:#eaeaea;font-weight:700;">{{ port_mapping.unmapped_count or 0 }}</span> manual</div>
+        {% if port_mapping.conflicts %}
+        <div><span style="color:#e74c3c;font-weight:700;">{{ port_mapping.conflicts|length }}</span> conflicts</div>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p style="padding:8px 0;color:#8099b8;font-size:12px;">No port mapping data available. Select a COA above to trigger AI generation.</p>
+    {% endif %}
+
+    {% if config_translation.lines %}
+    <div style="margin-top:16px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#8099b8;margin-bottom:8px;">Config Translation ({{ config_translation.source_vendor }} &rarr; {{ config_translation.target_vendor }}) — Confidence {{ (config_translation.confidence * 100)|round(0)|int }}%</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:10px;">
+          <div style="font-size:10px;color:#8099b8;text-transform:uppercase;margin-bottom:6px;">Original Config</div>
+          <pre style="margin:0;font-size:11px;color:#b0c4dc;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;">{% for line in config_translation.lines[:80] %}{% if not line.changed %}{{ line.old }}
+{% endif %}{% endfor %}</pre>
+        </div>
+        <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:10px;">
+          <div style="font-size:10px;color:#8099b8;text-transform:uppercase;margin-bottom:6px;">Translated Config</div>
+          <pre style="margin:0;font-size:11px;color:#b0c4dc;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;">{% for line in config_translation.lines[:80] %}{% if line.changed %}
+<span style="color:#a5b4fc;background:#1e3a6e;padding:0 2px;border-radius:2px;">{{ line.new }}</span>{% else %}{{ line.new }}{% endif %}
+{% endfor %}</pre>
+        </div>
+      </div>
+      {% if config_translation.notes %}
+      <div style="margin-top:8px;font-size:11px;color:#8099b8;">
+        {% for note in config_translation.notes %}
+        <div><span style="color:#f39c12;">⚠</span> {{ note }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+
 <!-- Submit Review Modal -->
 <div id="review-modal" class="modal" style="display:none;">
   <div class="modal-content">
@@ -470,5 +755,31 @@ function checkGate(target){fetch(NC_BASE+`/api/projects/${PID}/gate-check`,{meth
   .then(r=>r.json()).then(d=>{const el=document.getElementById('gate-result');
     if(d.blocked){el.innerHTML='<div style="color:var(--danger);font-size:12px;"><strong>BLOCKED:</strong> '+d.failures.map(f=>'<div style="margin:2px 0;">- '+f+'</div>').join('')+'</div>';}
     else{el.innerHTML='<div style="color:var(--success);font-size:12px;">READY for '+target+'</div>';}});}
+
+// ── COA Selection ─────────────────────────────────────────────────────
+function selectCoa(coaId, coaName) {
+  if(!confirm('Select "'+coaName+'" as the migration strategy?\n\nAI will regenerate the migration plan, port mappings, and config translation based on this COA.')) return;
+  const feedback = document.getElementById('coa-feedback').value;
+  fetch(NC_BASE+`/api/projects/${PID}/select-coa`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({coa_id: coaId, feedback: feedback})
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok){ location.reload(); }
+    else { alert(d.error||'Failed to select COA'); }
+  });
+}
+function submitCoaFeedback() {
+  const feedback = document.getElementById('coa-feedback').value;
+  fetch(NC_BASE+`/api/projects/${PID}/select-coa`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({coa_id: {{ project.selected_coa or 0 }}, feedback: feedback})
+  }).then(r=>r.json()).then(d=>{
+    const el = document.getElementById('coa-feedback-status');
+    if(d.ok){ el.textContent = '✓ Feedback saved.'; el.style.color = '#27ae60'; }
+    else { el.textContent = '✗ ' + (d.error||'Failed'); el.style.color = '#e74c3c'; }
+  });
+}
 </script>
 {% endblock %}

@@ -81,17 +81,17 @@
             </td>
             <td class="text-muted" style="font-size:.82rem;">{{ m.attack_type or '—' }}</td>
             <td>
-              {% set peak = m.peak_gbps | float %}
+              {% set peak = m.peak_traffic_gbps | float %}
               <span class="{% if peak >= 100 %}dsoc-critical{% elif peak >= 10 %}dsoc-warn{% else %}text-light{% endif %} fw-bold">
                 {{ peak }}
               </span>
             </td>
             <td class="text-muted" style="font-size:.82rem;">{{ m.started_by or '—' }}</td>
             <td class="text-muted" style="font-size:.78rem;">
-              {{ m.started_at[:16].replace('T', ' ') if m.started_at else '—' }}
+              {{ m.started_at | ts }}
             </td>
             <td class="text-muted" style="font-size:.78rem;">
-              {{ m.ended_at[:16].replace('T', ' ') if m.ended_at else '—' }}
+              {{ m.ended_at | ts }}
             </td>
             <td>
               {% if m.status | lower == 'active' %}

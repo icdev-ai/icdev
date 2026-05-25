@@ -131,6 +131,8 @@ def _from_assessment(report: dict, design_id: str, design_name: str) -> list[dic
 
     ts = report.get("created_at", "")
     for f in findings:
+        if isinstance(f, str):
+            continue
         sev = f.get("severity", "MEDIUM").upper()
         if sev in ("CRITICAL", "HIGH", "MEDIUM"):
             out.append({

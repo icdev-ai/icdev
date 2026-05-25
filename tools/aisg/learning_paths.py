@@ -25,6 +25,18 @@ _TRACK_META: dict[str, dict] = {
             "Capstone: Deploy a Pattern to Production",
         ],
     },
+    "explorer": {
+        "icon": "🔍",
+        "badge": "AI Explorer Badge",
+        "badge_color": "success",
+        "duration_hours": 4,
+        "modules": [
+            "What is AI?",
+            "Run Your First Workflow",
+            "Deploy a Document Q&A Pattern",
+            "Explore the Dashboard",
+        ],
+    },
     "aisg-track-configurator": {
         "icon": "⚡",
         "badge": "AI Configurator Badge",
@@ -43,6 +55,18 @@ _TRACK_META: dict[str, dict] = {
             "Air-Gap Mode Setup",
             "Custom Pattern Creation",
             "Capstone: Configure a Full IL4 Stack",
+        ],
+    },
+    "practitioner": {
+        "icon": "🛠️",
+        "badge": "AI Practitioner Badge",
+        "badge_color": "info",
+        "duration_hours": 10,
+        "modules": [
+            "Wire Real Data Sources",
+            "Label Training Examples",
+            "Integrate AI into Live Workflows",
+            "Monitor & Tune Performance",
         ],
     },
     "aisg-track-builder": {
@@ -67,6 +91,18 @@ _TRACK_META: dict[str, dict] = {
             "Publishing to Marketplace",
             "Air-Gap Deployment Strategy",
             "Capstone: Ship a Production Canvas",
+        ],
+    },
+    "architect": {
+        "icon": "🏗️",
+        "badge": "AI Architect Badge",
+        "badge_color": "warning",
+        "duration_hours": 20,
+        "modules": [
+            "Automate Fine-Tuning Pipelines",
+            "Build Reusable FORGE Goals",
+            "Mentor Teams Through Tracks",
+            "Scale Multi-Agent Systems",
         ],
     },
 }
@@ -183,6 +219,13 @@ def update_progress(user_email: str, track_id: str, tasks_completed: int) -> dic
     return {"status": "ok", "tasks_completed": tasks_completed}
 
 
+_ID_TO_META = {
+    "consumer": "aisg-track-consumer",
+    "configurator": "aisg-track-configurator",
+    "builder": "aisg-track-builder",
+}
+
+
 def get_tracks(user_email: str | None = None) -> list[dict]:
     """Return learning tracks with optional per-user progress.
 
@@ -195,7 +238,7 @@ def get_tracks(user_email: str | None = None) -> list[dict]:
 
     tracks = []
     for row in db_rows:
-        meta = _TRACK_META.get(row["id"], {})
+        meta = _TRACK_META.get(_ID_TO_META.get(row["id"], row["id"]), {})
         progress = _get_user_progress(user_email, row["id"]) if user_email else 0
         tracks.append(
             {

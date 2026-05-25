@@ -194,7 +194,7 @@
 
             <!-- ── Canvases ──────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if '/network' in request.path or '/devops' in request.path or '/infra' in request.path or '/data' in request.path or '/migration-canvas' in request.path or '/migration-intel' in request.path or '/boundary' in request.path or '/observability' in request.path or '/quality' in request.path or '/agentic-ai' in request.path or '/ai-ml' in request.path or '/canvas-compliance' in request.path or '/canvas-kg' in request.path or '/mission-canvas' in request.path or '/supply_chain' in request.path %}active{% endif %}">Canvases ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if '/network' in request.path or '/devops' in request.path or '/infra' in request.path or '/data' in request.path or '/migration-canvas' in request.path or '/migration-intel' in request.path or '/boundary' in request.path or '/observability' in request.path or '/quality' in request.path or '/agentic-ai' in request.path or '/ai-ml' in request.path or '/canvas-compliance' in request.path or '/canvas-kg' in request.path or '/mission-canvas' in request.path or '/supply_chain' in request.path or '/demo-runner' in request.path %}active{% endif %}">Canvases ▾</a>
                 <ul class="nav-dropdown-menu">
                     {% if network_enabled %}
                     <li class="nav-section-label">Network</li>
@@ -255,11 +255,16 @@
                     <li><a href="/quality/runbooks">Runbooks</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
-                    {% if aadc_enabled %}
+                    {% if aadc_enabled or demo_runner_enabled %}
                     <li class="nav-section-label">Agentic AI</li>
+                    {% if aadc_enabled %}
                     <li><a href="/agentic-ai/" style="color:#a5b4fc;">Dashboard</a></li>
                     <li><a href="/agentic-ai/canvas/new">New Design</a></li>
                     <li><a href="/agentic-ai/impact-graph">Impact Graph</a></li>
+                    {% endif %}
+                    {% if demo_runner_enabled %}
+                    <li><a href="/demo-runner/" style="color:#f59e0b;">&#9654; Demo Runner</a></li>
+                    {% endif %}
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     {% if aimc_enabled %}
@@ -298,6 +303,7 @@
                     <li><a href="/pmc/policies">Route Policies</a></li>
                     <li><a href="/pmc/requests">Peering Requests</a></li>
                     <li><a href="/pmc/transit">Transit Pricing</a></li>
+                    <li><a href="/network/partners">Partner Registry</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     {% if ccc_enabled %}
@@ -306,6 +312,7 @@
                     <li><a href="/ccc/circuits">Circuits</a></li>
                     <li><a href="/ccc/cross-connects">Cross-Connects</a></li>
                     <li><a href="/ccc/loa">LOA Requests</a></li>
+                    <li><a href="/ccc/orders">Orders</a></li>
                     <li><a href="/ccc/capacity">Capacity Plans</a></li>
                     <li><a href="/ccc/dwdm">DWDM Spans</a></li>
                     <li class="nav-dropdown-divider"></li>
@@ -319,6 +326,11 @@
                     <li><a href="/dsoc/threats">Threats</a></li>
                     <li><a href="/dsoc/mitigations">Mitigations</a></li>
                     <li><a href="/dsoc/bgp-security">BGP Security</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if aac_enabled %}
+                    <li class="nav-section-label">AI Augmentation</li>
+                    <li><a href="/ai-augmentation/" style="color:#6ee7b7;">AI Augmentation</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     {% if govlift_enabled %}
@@ -387,6 +399,7 @@
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">Security</li>
                     <li><a href="/security/" style="color:#e94560;">Security Canvas</a></li>
+                    <li><a href="/security/demo" style="color:#27ae60;">SDC Demo Runner</a></li>
                     <li><a href="/security-scan">Security Scans</a></li>
                     <li><a href="/stig-manager">STIG Manager</a></li>
                     <li><a href="/pr-intel">PR Intelligence</a></li>
@@ -868,6 +881,8 @@
             [/^\/pmc/, 'pmc'],
             [/^\/ccc/, 'ccc'],
             [/^\/dsoc/, 'dsoc'],
+            [/^\/ai-augmentation/, 'aac'],
+            [/^\/demo-runner/, 'demo_runner'],
         ];
 
         function detectCanvas() {

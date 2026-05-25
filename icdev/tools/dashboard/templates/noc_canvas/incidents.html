@@ -49,7 +49,7 @@
         <td style="color:#94a3b8;font-size:.8rem;">{{ i.assigned_to or '—' }}</td>
         <td><span class="status-pill status-{{ i.status }}">{{ i.status }}</span></td>
         <td>{% if i.sla_breach %}<span class="sla-breach">BREACH</span>{% else %}<span style="color:#22c55e;font-size:.75rem;">OK</span>{% endif %}</td>
-        <td style="color:#64748b;font-size:.75rem;white-space:nowrap;">{{ i.created_at[:16] if i.created_at else '—' }}</td>
+        <td style="color:#64748b;font-size:.75rem;white-space:nowrap;">{{ i.created_at | ts }}</td>
       </tr>
       {% else %}
       <tr><td colspan="8" style="text-align:center;color:#64748b;padding:30px;">No incidents found</td></tr>

@@ -3016,16 +3016,33 @@ def _dispatch_github_actions(task_id: str, task_desc: str, task_type: str) -> bo
 
     if resp.status_code == 204:
         run_url = f"https://github.com/{repo}/actions"
+        run_id = "pending"
+        try:
+            import time as _time
+            _time.sleep(6)
+            runs_url = (
+                f"https://api.github.com/repos/{repo}/actions/workflows/"
+                f"{workflow_file}/runs?per_page=10&event=workflow_dispatch"
+            )
+            runs_resp = _requests.get(runs_url, headers=headers, timeout=10)
+            if runs_resp.status_code == 200:
+                for _run in runs_resp.json().get("workflow_runs", []):
+                    if task_id in (_run.get("display_title") or _run.get("name") or ""):
+                        run_id = str(_run["id"])
+                        run_url = _run.get("html_url", run_url)
+                        break
+        except Exception as _poll_exc:
+            logger.warning("kanban: could not capture run_id for %s: %s", task_id, _poll_exc)
         try:
             conn = get_connection()
             conn.execute(
                 "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
-                ("pending", run_url, datetime.now(timezone.utc).isoformat(), task_id),
+                (run_id, run_url, datetime.now(timezone.utc).isoformat(), task_id),
             )
             conn.commit()
         except Exception as _db_exc:
             logger.warning("kanban: failed to store execution_id for %s: %s", task_id, _db_exc)
-        logger.info("kanban: GitHub Actions workflow triggered for task %s", task_id)
+        logger.info("kanban: GitHub Actions workflow triggered for task %s (run_id=%s)", task_id, run_id)
         return True
 
     logger.warning(
@@ -3033,6 +3050,98 @@ def _dispatch_github_actions(task_id: str, task_desc: str, task_type: str) -> bo
         resp.status_code, task_id, resp.text[:200],
     )
     return False
+
+
+_ga_last_polled: dict = {}  # task_id -> datetime of last poll
+
+
+def _poll_github_actions_completions() -> None:
+    """Check GA API for completed runs and move tasks to done/backlog.
+
+    Runs at the start of each scheduler cycle. Rate-limited to one API call
+    per task per 60 seconds to stay well within GitHub's 5000-req/hour limit.
+    Tasks with execution_id='pending' are matched by task_id in the run name.
+    """
+    import os as _os
+    try:
+        import requests as _req
+    except ImportError:
+        return
+
+    token = _os.getenv("GITHUB_TOKEN", "").strip()
+    repo = _os.getenv("GITHUB_RUNNER_REPO", "").strip()
+    workflow_file = _os.getenv("GITHUB_WORKFLOW_FILE", "icdev-kanban-runner.yml")
+    if not token or not repo:
+        return
+
+    _hdrs = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    try:
+        _conn = get_connection()
+        _rows = _conn.execute(
+            "SELECT id, execution_id FROM kanban_tasks "
+            "WHERE status='in_progress' AND executor_type='github_actions'"
+        ).fetchall()
+    except Exception:
+        return
+
+    now = datetime.now(timezone.utc)
+    for _row in _rows:
+        task_id = _row["id"]
+        run_id = _row["execution_id"] or "pending"
+
+        # Rate-limit: skip if polled within the last 60 seconds
+        _last = _ga_last_polled.get(task_id)
+        if _last and (now - _last).total_seconds() < 60:
+            continue
+        _ga_last_polled[task_id] = now
+
+        try:
+            if run_id == "pending":
+                # Discover run_id by matching task_id in the run display_title
+                _search_url = (
+                    f"https://api.github.com/repos/{repo}/actions/workflows/"
+                    f"{workflow_file}/runs?per_page=20&event=workflow_dispatch"
+                )
+                _sr = _req.get(_search_url, headers=_hdrs, timeout=10)
+                if _sr.status_code == 200:
+                    for _run in _sr.json().get("workflow_runs", []):
+                        if task_id in (_run.get("display_title") or _run.get("name") or ""):
+                            run_id = str(_run["id"])
+                            _conn.execute(
+                                "UPDATE kanban_tasks SET execution_id=?, executor_url=? WHERE id=?",
+                                (run_id, _run.get("html_url", ""), task_id),
+                            )
+                            _conn.commit()
+                            break
+                if run_id == "pending":
+                    continue  # still not found — check next cycle
+
+            # Check run status
+            _run_resp = _req.get(
+                f"https://api.github.com/repos/{repo}/actions/runs/{run_id}",
+                headers=_hdrs, timeout=10,
+            )
+            if _run_resp.status_code != 200:
+                continue
+            _data = _run_resp.json()
+            if _data.get("status") == "completed":
+                _conclusion = _data.get("conclusion", "")
+                if _conclusion == "success":
+                    logger.info("kanban: GA run %s for %s succeeded → done", run_id, task_id)
+                    _move_task(task_id, "done")
+                else:
+                    logger.warning(
+                        "kanban: GA run %s for %s conclusion=%s → backlog", run_id, task_id, _conclusion
+                    )
+                    _move_task(task_id, "backlog")
+                _ga_last_polled.pop(task_id, None)
+        except Exception as _exc:
+            logger.warning("kanban: GA poll error for %s: %s", task_id, _exc)
 
 
 def _dispatch_ollama_local(task_id: str, task_desc: str, task_type: str) -> bool:
@@ -5952,6 +6061,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             _reap_stale_in_progress()
     except Exception as _rip_exc:
         logger.warning("stale-in_progress reaper failed: %s", _rip_exc)
+    # 0e. GA completion poller — move completed GA runs to done/backlog and free slots.
+    try:
+        _poll_github_actions_completions()
+    except Exception as _gp_exc:
+        logger.warning("GA completion poll failed: %s", _gp_exc)
+
     # Suggested-decay: re-queue soft-stuck tasks once every ~4 h (1/240 cycles).
     try:
         if _rr.random() < 0.004:  # noqa: S311

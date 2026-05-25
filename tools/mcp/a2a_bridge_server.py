@@ -23,13 +23,11 @@ as a standalone service in docker-compose.
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))

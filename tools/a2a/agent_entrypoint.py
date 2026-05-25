@@ -20,7 +20,6 @@ import os
 import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -178,7 +177,7 @@ def _make_tool_delegate_handler(skill_id: str, tool_command: str) -> Callable[[T
             cmd = tool_command
             # If the task has input_data and the command doesn't already have --json, append it
             if task.input_data and "--json" not in cmd:
-                cmd += f" --json"
+                cmd += " --json"
 
             # Run the tool
             result = subprocess.run(
@@ -287,11 +286,12 @@ def main() -> None:
     parser.add_argument("--tls-cert", help="TLS certificate path")
     parser.add_argument("--tls-key", help="TLS private key path")
     parser.add_argument("--tls-ca", help="TLS CA cert for mutual TLS")
+    parser.add_argument("--no-tls", action="store_true", help="Disable TLS even if certs are configured")
     parser.add_argument("--debug", action="store_true", help="Enable Flask debug")
     parser.add_argument("--no-auto-register", action="store_true", help="Skip DB auto-registration")
     args = parser.parse_args()
 
-    logger.info(f"=== A2A Agent Entrypoint ===")
+    logger.info("=== A2A Agent Entrypoint ===")
     logger.info(f"Agent ID: {args.agent_id}")
     logger.info(f"Bind:     {args.host}:{args.port}")
 
@@ -315,7 +315,26 @@ def main() -> None:
             args.tls_key = tls_cfg["key"]
         if not args.tls_ca and tls_cfg.get("ca"):
             args.tls_ca = tls_cfg["ca"]
-        logger.info(f"Loaded agent config from args/agent_config.yaml")
+        logger.info("Loaded agent config from args/agent_config.yaml")
+
+    # 2b. Resolve relative cert paths against project root
+    def _resolve_cert(path: str) -> str:
+        if not path:
+            return path
+        p = Path(path)
+        if not p.is_absolute():
+            p = ROOT / p
+        return str(p)
+
+    args.tls_cert = _resolve_cert(args.tls_cert)
+    args.tls_key = _resolve_cert(args.tls_key)
+    args.tls_ca = _resolve_cert(args.tls_ca)
+
+    if args.no_tls:
+        args.tls_cert = None
+        args.tls_key = None
+        args.tls_ca = None
+        logger.info("TLS disabled via --no-tls")
 
     # 3. Load skill-tool mapping from .agents/skills/
     skill_map = _load_skill_tool_map()

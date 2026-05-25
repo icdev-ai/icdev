@@ -78,6 +78,16 @@
 
   .cls-badge { display:inline-block; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:700; text-transform:uppercase; background:#0f3460; color:#4fc3f7; }
 
+  /* PII/CUI warning banner */
+  .pii-banner { background:#3d2700; border:1px solid #ff9800; border-radius:6px; padding:10px 14px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+  .pii-banner-title { color:#ff9800; font-size:12px; font-weight:700; margin-bottom:6px; }
+  .pii-chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .pii-chip { padding:2px 8px; border-radius:12px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.3px; }
+  .pii-chip-high { background:#5c1010; border:1px solid #e74c3c; color:#ef5350; }
+  .pii-chip-medium { background:#3d2700; border:1px solid #ff9800; color:#ff9800; }
+  .pii-dismiss { background:transparent; border:none; color:#ff9800; font-size:18px; cursor:pointer; padding:0 2px; line-height:1; flex-shrink:0; margin-top:-2px; }
+  .pii-dismiss:hover { color:#eaeaea; }
+
   /* Pagination */
   .pagination { display:flex; gap:6px; align-items:center; margin-top:8px; }
   .page-btn { padding:3px 10px; background:#0a1628; border:1px solid #1e3a6e; color:#7a8cb0; border-radius:4px; font-size:11px; cursor:pointer; }
@@ -179,6 +189,7 @@
           <button class="btn-export" id="exportBtn" onclick="exportCsv()" style="display:none">Export CSV</button>
         </div>
       </div>
+      <div id="piiBanner"></div>
       <div id="resultsBody">
         <div class="empty-results">Run a query to see results here.</div>
       </div>
@@ -228,7 +239,29 @@ function clearEditor() {
   document.getElementById('clsLabel').innerHTML = '';
   document.getElementById('exportBtn').style.display = 'none';
   document.getElementById('pagination').style.display = 'none';
+  const pb = document.getElementById('piiBanner'); pb.innerHTML = ''; pb.style.display = 'none';
   _allRows = []; _cols = [];
+}
+
+function renderPiiBanner(pii) {
+  const el = document.getElementById('piiBanner');
+  if (!pii || !pii.has_warnings) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  const warnings = pii.warnings || [];
+  const cols = [...new Set(warnings.map(w => w.column))];
+  const chips = warnings.map(w => {
+    const sev = (w.severity || 'MEDIUM').toUpperCase();
+    const cls = sev === 'HIGH' ? 'pii-chip-high' : 'pii-chip-medium';
+    return `<span class="pii-chip ${cls}">${escHtml(w.column)}: ${escHtml(w.pii_type)} (${sev})</span>`;
+  }).join('');
+  el.innerHTML = `<div class="pii-banner">
+    <div><div class="pii-banner-title">&#9888; CUI Sensitivity Detected &mdash; ${cols.length} column(s) contain potential PII/CUI data: ${cols.map(escHtml).join(', ')}</div><div class="pii-chips">${chips}</div></div>
+    <button class="pii-dismiss" onclick="this.closest('.pii-banner').parentElement.style.display='none'" title="Dismiss">&#215;</button>
+  </div>`;
+  el.style.display = '';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function loadHistory(idx) {
@@ -258,6 +291,7 @@ async function runQuery() {
     });
     const data = await resp.json();
     if (!resp.ok) {
+      renderPiiBanner(null);
       body.innerHTML = `<div class="err-banner">&#9888; ${data.error || 'Query failed'}</div>`;
     } else {
       _allRows = data.rows || [];
@@ -266,6 +300,7 @@ async function runQuery() {
       document.getElementById('rowCountLabel').textContent = `${data.row_count.toLocaleString()} rows`;
       document.getElementById('execLabel').textContent = `${data.exec_ms}ms`;
       document.getElementById('clsLabel').innerHTML = `<span class="cls-badge">${(data.classification||'CUI').split(' ')[0]}</span>`;
+      renderPiiBanner(data.pii_warnings);
       if (data.truncated) body.innerHTML = '<div class="truncate-warn">&#9888; Results truncated at 1,000 rows. Refine your query.</div>';
       else body.innerHTML = '';
       renderPage();

@@ -422,7 +422,7 @@ const map = L.map("sg-map", {
     // Air-gap deployments: set STRATEGOS_PMTILES_URL to a local path and serve
     // protomaps-leaflet.js from tools/dashboard/static/vendor/protomaps/ instead.
     const pmScript = document.createElement("script");
-    pmScript.src = "https://unpkg.com/protomaps-leaflet@4.0.0/dist/protomaps-leaflet.min.js";
+    pmScript.src = "/strategos/static/js/pmtiles.js";
     pmScript.onload = function () {
       try {
         protomapsL.leafletLayer({

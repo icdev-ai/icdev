@@ -418,14 +418,24 @@
       + '</details>';
   }
 
-  function renderProjectCards(payload) {
+  function renderProjectCards(payload, pendingCount) {
     var container = document.getElementById('projects-container');
     var section   = document.getElementById('projects-in-flight');
     if (!container) return;
 
     var projects = (payload && payload.projects) || [];
     if (projects.length === 0) {
-      container.innerHTML = '';
+      if (pendingCount > 0) {
+        // All tracked projects are complete; surface the untracked queue so
+        // the section doesn't silently disappear while tasks remain pending.
+        container.innerHTML = '<div style="padding:0.5rem 0; color:var(--text-secondary); font-size:0.85rem;">'
+          + '<span style="margin-right:0.5rem;">📋</span>'
+          + '<strong>' + pendingCount + '</strong> task' + (pendingCount !== 1 ? 's' : '') + ' queued (scheduled / backlog)'
+          + ' &mdash; no active project tracking. Run <code>kanban_project_sync.py</code> to register them.'
+          + '</div>';
+      } else {
+        container.innerHTML = '';
+      }
       return;
     }
     if (section) section.style.display = '';
@@ -513,20 +523,22 @@
       var projectData = settled[1].status === 'fulfilled' ? settled[1].value : null;
       var eventsData  = settled[2].status === 'fulfilled' ? settled[2].value : null;
 
+      var pendingCount = (liveData && liveData.pending_tasks_count) || 0;
       renderLiveTasks(
         (liveData && liveData.tasks) || [],
         liveData && liveData.scheduler_last_seen_secs != null
           ? liveData.scheduler_last_seen_secs : null
       );
-      renderProjectCards(projectData);
+      renderProjectCards(projectData, pendingCount);
       renderEventFeed(eventsData);
 
-      // Show section if live tasks, projects, or recent events are present
+      // Show section if live tasks, queued tasks, active projects, or recent events are present
       var section = document.getElementById('projects-in-flight');
-      var hasLive   = !!(liveData && liveData.tasks && liveData.tasks.length > 0);
-      var hasProj   = !!(projectData && projectData.projects && projectData.projects.length > 0);
-      var hasEvents = !!(eventsData && eventsData.events && eventsData.events.length > 0);
-      if (section) section.style.display = (hasLive || hasProj || hasEvents) ? '' : 'none';
+      var hasLive    = !!(liveData && liveData.tasks && liveData.tasks.length > 0);
+      var hasPending = !!(liveData && liveData.pending_tasks_count > 0);
+      var hasProj    = !!(projectData && projectData.projects && projectData.projects.length > 0);
+      var hasEvents  = !!(eventsData && eventsData.events && eventsData.events.length > 0);
+      if (section) section.style.display = (hasLive || hasPending || hasProj || hasEvents) ? '' : 'none';
     });
   }
 

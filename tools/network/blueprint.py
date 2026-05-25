@@ -4307,7 +4307,7 @@ def create_network_blueprint():
     # Partner Registry
     # ══════════════════════════════════════════════════════════════════════
 
-    @bp.route("/network/partners")
+    @bp.route("/partners")
     @nc_login_required
     def nc_partners_page():
         return render_template("network/partners.html")
@@ -13251,7 +13251,7 @@ Planning rules:
 
     # ── FCC Compliance ──────────────────────────────────────────────────────────
 
-    @bp.route("/network/fcc")
+    @bp.route("/fcc")
     @nc_login_required
     def network_fcc():
         from tools.network.fcc_compliance import (
@@ -13271,7 +13271,7 @@ Planning rules:
                 checks[name] = {"error": str(exc)}
         return render_template("network/fcc_compliance.html", checks=checks)
 
-    @bp.route("/api/network/fcc/<check_type>")
+    @bp.route("/api/fcc/<check_type>")
     def api_network_fcc(check_type):
         from tools.network.fcc_compliance import (
             calea_checklist, part36_assessment,

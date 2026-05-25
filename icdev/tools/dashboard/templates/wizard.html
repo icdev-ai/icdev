@@ -9,7 +9,7 @@
         <span class="current">Getting Started</span>
     </div>
     <h1>Getting Started</h1>
-    <p class="subtitle">Answer 4 quick questions and we'll recommend the best path for you</p>
+    <p class="subtitle">Answer 5 quick questions and we'll recommend the best path for you</p>
 </div>
 
 <div class="wizard-container">
@@ -46,6 +46,11 @@
                 <span class="wizard-option-icon">&#x1F4CB;</span>
                 <div class="wizard-option-title">Capture Requirements</div>
                 <div class="wizard-option-desc">Gather and structure requirements from stakeholders</div>
+            </div>
+            <div class="wizard-option" data-value="assess" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F916;</span>
+                <div class="wizard-option-title">Assess for AI Augmentation</div>
+                <div class="wizard-option-desc">Scan code for AI-augmentable patterns and build a scored modernization roadmap</div>
             </div>
         </div>
     </div>
@@ -158,27 +163,57 @@
         </div>
     </div>
 
-    <!-- Step 5: Development Standards (Phase 34) -->
+    <!-- Step 5: Development Standards (default) / Repository Source (assess) -->
     <div class="wizard-step" id="wizard-step-4">
-        <div class="wizard-question">How should we set up your development standards?</div>
-        <p style="color: var(--text-secondary); margin-bottom:16px; font-size:0.9rem;">
-            Choose how to configure coding conventions, tooling preferences, and quality standards.
-        </p>
-        <div class="wizard-options">
-            <div class="wizard-option" data-value="template_recommended" onclick="ICDEV.wizardSelect(this)">
-                <span class="wizard-option-icon">&#x1F4CB;</span>
-                <div class="wizard-option-title">Use recommended standards</div>
-                <div class="wizard-option-desc">Apply the recommended template based on your sector and compliance needs</div>
+        <!-- Default content: Development Standards -->
+        <div id="wizard-step-4-default">
+            <div class="wizard-question">How should we set up your development standards?</div>
+            <p style="color: var(--text-secondary); margin-bottom:16px; font-size:0.9rem;">
+                Choose how to configure coding conventions, tooling preferences, and quality standards.
+            </p>
+            <div class="wizard-options">
+                <div class="wizard-option" data-value="template_recommended" onclick="ICDEV.wizardSelect(this)">
+                    <span class="wizard-option-icon">&#x1F4CB;</span>
+                    <div class="wizard-option-title">Use recommended standards</div>
+                    <div class="wizard-option-desc">Apply the recommended template based on your sector and compliance needs</div>
+                </div>
+                <div class="wizard-option" data-value="scan_codebase" onclick="ICDEV.wizardSelect(this)">
+                    <span class="wizard-option-icon">&#x1F50D;</span>
+                    <div class="wizard-option-title">Scan my existing codebase</div>
+                    <div class="wizard-option-desc">Auto-detect standards from an existing repository (advisory — you review before applying)</div>
+                </div>
+                <div class="wizard-option" data-value="skip_profile" onclick="ICDEV.wizardSelect(this)">
+                    <span class="wizard-option-icon">&#x23ED;</span>
+                    <div class="wizard-option-title">Skip for now</div>
+                    <div class="wizard-option-desc">Configure development standards later via the Dev Profiles page</div>
+                </div>
             </div>
-            <div class="wizard-option" data-value="scan_codebase" onclick="ICDEV.wizardSelect(this)">
-                <span class="wizard-option-icon">&#x1F50D;</span>
-                <div class="wizard-option-title">Scan my existing codebase</div>
-                <div class="wizard-option-desc">Auto-detect standards from an existing repository (advisory — you review before applying)</div>
+        </div>
+
+        <!-- Assess-only content: Repository Source -->
+        <div id="wizard-step-4-assess" style="display:none;">
+            <div class="wizard-question">What repository should we scan?</div>
+            <p style="color: var(--text-secondary); margin-bottom:16px; font-size:0.9rem;">
+                Provide a GitHub/GitLab URL or a local filesystem path. We'll clone, scan, score opportunities, and generate a modernization roadmap.
+            </p>
+            <div style="margin-bottom:16px;">
+                <label style="display:block; font-weight:600; margin-bottom:6px; color:var(--text-primary);">Repository URL or Local Path</label>
+                <input type="text" id="assess-source-url" placeholder="https://github.com/user/repo  or  /path/to/project"
+                       oninput="ICDEV.assessSourceChange()"
+                       style="width:100%; padding:10px 12px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-primary); color:var(--text-primary); font-size:14px; box-sizing:border-box;">
+                <p id="assess-source-hint" style="color:var(--text-secondary); font-size:12px; margin-top:6px;">Git URLs are shallow-cloned automatically. Local paths must be accessible from the ICDEV server.</p>
             </div>
-            <div class="wizard-option" data-value="skip_profile" onclick="ICDEV.wizardSelect(this)">
-                <span class="wizard-option-icon">&#x23ED;</span>
-                <div class="wizard-option-title">Skip for now</div>
-                <div class="wizard-option-desc">Configure development standards later via the Dev Profiles page</div>
+            <div class="wizard-options">
+                <div class="wizard-option" data-value="scan_now" onclick="ICDEV.wizardSelect(this)">
+                    <span class="wizard-option-icon">&#x1F680;</span>
+                    <div class="wizard-option-title">Scan now & build roadmap</div>
+                    <div class="wizard-option-desc">Run the AI Augmentation Canvas scan immediately and generate kanban tasks</div>
+                </div>
+                <div class="wizard-option" data-value="enter_later" onclick="ICDEV.wizardSelect(this)">
+                    <span class="wizard-option-icon">&#x23ED;</span>
+                    <div class="wizard-option-title">I'll enter this on the AAC page</div>
+                    <div class="wizard-option-desc">Skip the URL now and go straight to the AI Augmentation Canvas</div>
+                </div>
             </div>
         </div>
     </div>
@@ -235,89 +270,104 @@
         il6: ["fedramp_high", "cmmc_l3", "cnssi_1253", "nist_800_207"]
     };
 
-    var PATHS = {
-        build_developer: {
-            name: "Build & Ship",
-            desc: "Full development pipeline with compliance baked in from the start.",
-            steps: [
-                { title: "Create Project", desc: "Initialize with compliance scaffolding", cmd: "/icdev-init" },
-                { title: "Write Tests First", desc: "Generate test cases from requirements", cmd: "/icdev-build (RED phase)" },
-                { title: "Build Code", desc: "TDD: write code to pass tests", cmd: "/icdev-build (GREEN phase)" },
-                { title: "Security Scan", desc: "SAST, dependency audit, secrets", cmd: "/icdev-secure" },
-                { title: "Generate ATO Artifacts", desc: "SSP, POA&M, STIG, SBOM", cmd: "/icdev-comply" },
-                { title: "Deploy", desc: "Generate IaC and CI/CD pipeline", cmd: "/icdev-deploy" }
-            ]
-        },
-        build_pm: {
-            name: "Requirements to Build",
-            desc: "Start by capturing requirements, then hand off to development team.",
-            steps: [
-                { title: "Capture Requirements", desc: "AI-guided intake conversation", cmd: "/icdev-intake" },
-                { title: "Review & Approve", desc: "Score readiness, detect gaps", cmd: "readiness_scorer.py" },
-                { title: "Generate COAs", desc: "3 options: speed, balanced, comprehensive", cmd: "/icdev-simulate" },
-                { title: "Approve & Decompose", desc: "SAFe epics, features, stories", cmd: "decomposition_engine.py" },
-                { title: "Hand Off to Dev Team", desc: "Push to Jira/GitLab", cmd: "/icdev-integrate" }
-            ]
-        },
-        comply_isso: {
-            name: "Quick ATO Package",
-            desc: "Generate the minimum required ATO artifacts for your project.",
-            steps: [
-                { title: "Categorize System", desc: "FIPS 199 security categorization", cmd: "fips199_categorizer.py" },
-                { title: "Validate Requirements", desc: "Check all 17 FIPS 200 security areas", cmd: "fips200_validator.py" },
-                { title: "Generate SSP", desc: "System Security Plan", cmd: "/icdev-comply" },
-                { title: "Create POA&M", desc: "Document gaps with fix deadlines", cmd: "poam_generator.py" },
-                { title: "STIG Check", desc: "Security technical compliance", cmd: "stig_checker.py" },
-                { title: "Generate SBOM", desc: "Software inventory", cmd: "sbom_generator.py" }
-            ]
-        },
-        comply_developer: {
-            name: "Build with Compliance",
-            desc: "Build your application with security compliance integrated from day one.",
-            steps: [
-                { title: "Create Project", desc: "Scaffolding includes compliance templates", cmd: "/icdev-init" },
-                { title: "Build with TDD", desc: "Tests include security scenarios", cmd: "/icdev-build" },
-                { title: "Run Security Scans", desc: "SAST + dependency audit", cmd: "/icdev-secure" },
-                { title: "Generate Artifacts", desc: "SSP, POA&M, STIG, SBOM", cmd: "/icdev-comply" },
-                { title: "ATO Assessment", desc: "FedRAMP + CMMC readiness", cmd: "fedramp_assessor.py" }
-            ]
-        },
-        modernize: {
-            name: "Modernize Legacy App",
-            desc: "Analyze, assess, and migrate your legacy application to modern architecture.",
-            steps: [
-                { title: "Analyze Legacy Code", desc: "Scan codebase for complexity", cmd: "/icdev-modernize" },
-                { title: "UI Analysis", desc: "Analyze screenshots for complexity", cmd: "ui_analyzer.py" },
-                { title: "7R Assessment", desc: "Score migration strategies", cmd: "seven_r_assessor.py" },
-                { title: "Create Migration Plan", desc: "Strangler fig or big bang", cmd: "migration_code_generator.py" },
-                { title: "Generate Code", desc: "Modernized code output", cmd: "/icdev-modernize --generate" },
-                { title: "Validate Compliance", desc: "Ensure ATO maintained", cmd: "compliance_bridge.py" }
-            ]
-        },
-        requirements: {
-            name: "Requirements to Approval",
-            desc: "AI-guided conversation to capture, analyze, and approve requirements.",
-            steps: [
-                { title: "Start Intake Session", desc: "AI-guided Q&A conversation", cmd: "/icdev-intake" },
-                { title: "Upload Documents", desc: "SOW, CDD, CONOPS extraction", cmd: "document_extractor.py" },
-                { title: "Detect Gaps", desc: "Find missing requirements", cmd: "gap_detector.py" },
-                { title: "Score Readiness", desc: "5-dimension readiness check", cmd: "readiness_scorer.py" },
-                { title: "Decompose Work", desc: "Epics, features, stories", cmd: "decomposition_engine.py" },
-                { title: "Generate COAs", desc: "3 cost/schedule options", cmd: "/icdev-simulate" },
-                { title: "Submit for Approval", desc: "Route to reviewers", cmd: "/icdev-integrate" }
-            ]
-        }
+    // Use-case metadata from server (rendered from args/use_cases.yaml)
+    var USE_CASE_META = {{ use_case_meta|tojson }};
+
+    // Wizard goal+role → use_case_id mapping
+    var WIZARD_TO_USE_CASE = {
+        'build:developer': 'general_modernization',
+        'build:solutions_architect': 'general_modernization',
+        'build:pm': 'program_status_review',
+        'build:co': 'grant_tech_proposal',
+        'build:sales_engineer': 'grant_tech_proposal',
+        'build:biz_dev': 'grant_tech_proposal',
+        'build:isso': 'ato_package_builder',
+        'build:analyst': 'cdrl_generator',
+        'modernize:developer': 'general_modernization',
+        'modernize:solutions_architect': 'general_modernization',
+        'modernize:pm': 'program_status_review',
+        'modernize:co': 'grant_tech_proposal',
+        'modernize:sales_engineer': 'grant_tech_proposal',
+        'modernize:biz_dev': 'grant_tech_proposal',
+        'modernize:isso': 'ato_package_builder',
+        'modernize:analyst': 'cdrl_generator',
+        'comply:isso': 'ato_package_builder',
+        'comply:developer': 'fedramp_auth_prep',
+        'comply:pm': 'program_status_review',
+        'comply:co': 'cjis_compliance_prep',
+        'comply:analyst': 'sbom_attestation',
+        'comply:solutions_architect': 'fedramp_auth_prep',
+        'comply:sales_engineer': 'fedramp_auth_prep',
+        'comply:biz_dev': 'cjis_compliance_prep',
+        'requirements:developer': 'general_modernization',
+        'requirements:solutions_architect': 'general_modernization',
+        'requirements:pm': 'program_status_review',
+        'requirements:co': 'cdrl_generator',
+        'requirements:analyst': 'cdrl_generator',
+        'requirements:isso': 'ato_package_builder',
+        'requirements:sales_engineer': 'grant_tech_proposal',
+        'requirements:biz_dev': 'grant_tech_proposal',
+        'requirements:innovator': 'general_modernization',
+        'build:innovator': 'general_modernization',
+        'modernize:innovator': 'general_modernization',
+        'comply:innovator': 'ato_package_builder',
+        'build:custom': 'general_modernization',
+        'modernize:custom': 'general_modernization',
+        'comply:custom': 'ato_package_builder',
+        'requirements:custom': 'general_modernization',
+        'assess:developer': 'ai_assessment_canvas',
+        'assess:solutions_architect': 'ai_assessment_canvas',
+        'assess:pm': 'ai_assessment_canvas',
+        'assess:co': 'ai_assessment_canvas',
+        'assess:sales_engineer': 'ai_assessment_canvas',
+        'assess:biz_dev': 'ai_assessment_canvas',
+        'assess:isso': 'ai_assessment_canvas',
+        'assess:analyst': 'ai_assessment_canvas',
+        'assess:innovator': 'ai_assessment_canvas',
+        'assess:custom': 'ai_assessment_canvas'
+    };
+
+    // Legacy path names for display fallback
+    var PATH_NAMES = {
+        build_developer: "Build & Ship",
+        build_pm: "Requirements to Build",
+        comply_isso: "Quick ATO Package",
+        comply_developer: "Build with Compliance",
+        modernize: "Modernize Legacy App",
+        requirements: "Requirements to Approval"
     };
 
     function getPath(goal, role) {
-        var r = (typeof role === "object") ? "developer" : role;
-        if (goal === "modernize") return PATHS.modernize;
-        if (goal === "requirements") return PATHS.requirements;
-        if (goal === "comply" && r === "isso") return PATHS.comply_isso;
-        if (goal === "comply") return PATHS.comply_developer;
-        var pmRoles = ["pm", "co", "sales_engineer", "biz_dev"];
-        if (goal === "build" && pmRoles.indexOf(r) !== -1) return PATHS.build_pm;
-        return PATHS.build_developer;
+        var r = (typeof role === "object") ? "custom" : role;
+        var key = goal + ":" + (r || "developer");
+        var ucId = WIZARD_TO_USE_CASE[key] || "general_modernization";
+        var meta = USE_CASE_META[ucId] || {};
+        return {
+            ucId: ucId,
+            name: meta.label || PATH_NAMES[goal + "_" + r] || "Build & Ship",
+            desc: meta.description || "",
+            canvasWiring: meta.canvas_wiring || [],
+            reqCount: meta.req_count || 0,
+            fastTrack: meta.fast_track || false,
+            badge: meta.badge || ""
+        };
+    }
+
+    function isAssessGoal() {
+        return state.answers[0] === "assess";
+    }
+
+    function toggleStep4Content() {
+        var def = document.getElementById("wizard-step-4-default");
+        var assess = document.getElementById("wizard-step-4-assess");
+        if (!def || !assess) return;
+        if (isAssessGoal()) {
+            def.style.display = "none";
+            assess.style.display = "";
+        } else {
+            def.style.display = "";
+            assess.style.display = "none";
+        }
     }
 
     window.ICDEV = window.ICDEV || {};
@@ -342,7 +392,44 @@
             state.answers[state.step] = val;
         }
 
+        // Assess step 4: store option + URL as object; enable next only if valid
+        if (state.step === 4 && isAssessGoal()) {
+            var urlInput = document.getElementById("assess-source-url");
+            var url = urlInput ? urlInput.value.trim() : "";
+            var previous = state.answers[4];
+            var previousUrl = (typeof previous === "object" && previous) ? (previous.url || "") : "";
+            state.answers[4] = { option: val, url: url || previousUrl };
+            if (val === "scan_now") {
+                document.getElementById("wizard-next").disabled = !url && !previousUrl;
+            } else if (val === "enter_later") {
+                document.getElementById("wizard-next").disabled = false;
+            } else {
+                document.getElementById("wizard-next").disabled = true;
+            }
+            return;
+        }
+
         document.getElementById("wizard-next").disabled = false;
+    };
+
+    ICDEV.assessSourceChange = function() {
+        if (state.step === 4 && isAssessGoal()) {
+            var urlInput = document.getElementById("assess-source-url");
+            var url = urlInput ? urlInput.value.trim() : "";
+            var ans = state.answers[4];
+            var opt = (typeof ans === "object" && ans) ? ans.option : "";
+            // Update stored URL
+            if (typeof ans === "object" && ans) {
+                ans.url = url;
+            } else {
+                state.answers[4] = { option: opt, url: url };
+            }
+            if (opt === "scan_now") {
+                document.getElementById("wizard-next").disabled = !url;
+            } else {
+                document.getElementById("wizard-next").disabled = !opt;
+            }
+        }
     };
 
     // Update custom role fields on input
@@ -382,12 +469,20 @@
             return;
         }
         state.step++;
+        // Toggle step 4 content based on goal when entering step 4
+        if (state.step === 4) {
+            toggleStep4Content();
+        }
         updateUI();
     };
 
     ICDEV.wizardBack = function() {
         if (state.step <= 0) return;
         state.step--;
+        // Toggle step 4 content based on goal when returning to step 4
+        if (state.step === 4) {
+            toggleStep4Content();
+        }
         updateUI();
     };
 
@@ -435,6 +530,43 @@
         document.getElementById("wizard-next").disabled = false;
     }
 
+    function restoreSelection() {
+        var val = state.answers[state.step];
+        if (val == null) return;
+
+        // Restore assess source URL on step 4
+        if (state.step === 4 && isAssessGoal()) {
+            var urlInput = document.getElementById("assess-source-url");
+            if (urlInput && state.answers[4] && typeof state.answers[4] === "object" && state.answers[4].url) {
+                urlInput.value = state.answers[4].url;
+            }
+        }
+
+        var opts = document.querySelectorAll("#wizard-step-" + state.step + " .wizard-option");
+        for (var i = 0; i < opts.length; i++) {
+            var optVal = opts[i].getAttribute("data-value");
+            if (typeof val === "object" && val.custom && optVal === "custom") {
+                opts[i].classList.add("selected");
+                document.getElementById("custom-role-form").style.display = "block";
+                var nInput = document.getElementById("custom-role-name");
+                var dInput = document.getElementById("custom-role-desc");
+                if (nInput) nInput.value = val.name || "";
+                if (dInput) dInput.value = val.description || "";
+            } else if (optVal === val) {
+                opts[i].classList.add("selected");
+            } else if (state.step === 4 && isAssessGoal() && typeof val === "object" && val.option === optVal) {
+                opts[i].classList.add("selected");
+            }
+        }
+        // Restore framework checkboxes on step 3
+        if (state.step === 3 && Array.isArray(val)) {
+            var checks = document.querySelectorAll("#wizard-frameworks input[type=checkbox]");
+            for (var c = 0; c < checks.length; c++) {
+                checks[c].checked = val.indexOf(checks[c].value) !== -1;
+            }
+        }
+    }
+
     function updateUI() {
         var steps = document.querySelectorAll(".wizard-step");
         for (var i = 0; i < steps.length; i++) {
@@ -457,6 +589,7 @@
             nav.style.display = "none";
         } else {
             nav.style.display = "flex";
+            restoreSelection();
             // Framework step is always ready
             if (state.step === 3) {
                 nextBtn.disabled = false;
@@ -465,6 +598,15 @@
                 var n = document.getElementById("custom-role-name");
                 var d = document.getElementById("custom-role-desc");
                 nextBtn.disabled = !(n && n.value.trim() && d && d.value.trim());
+            } else if (state.step === 4 && isAssessGoal()) {
+                var ans4 = state.answers[4];
+                var opt4 = (typeof ans4 === "object" && ans4) ? ans4.option : "";
+                var url4 = (typeof ans4 === "object" && ans4) ? (ans4.url || "") : "";
+                if (opt4 === "scan_now") {
+                    nextBtn.disabled = !url4;
+                } else {
+                    nextBtn.disabled = !opt4;
+                }
             } else {
                 nextBtn.disabled = !state.answers[state.step];
             }
@@ -478,20 +620,26 @@
         var roleParam = (typeof roleVal === "object") ? "custom" : roleVal;
         var path = getPath(state.answers[0], roleVal);
         var frameworks = state.answers[3] || [];
+        var goal = state.answers[0];
 
-        var chatUrl = "/chat?goal=" + encodeURIComponent(state.answers[0])
-            + "&role=" + encodeURIComponent(roleParam)
+        // Build chat URLs
+        var chatUrlBase = "/chat?use_case=" + encodeURIComponent(path.ucId)
             + "&classification=" + encodeURIComponent(state.answers[2])
-            + "&frameworks=" + encodeURIComponent(frameworks.join(","));
+            + "&frameworks=" + encodeURIComponent(frameworks.join(","))
+            + "&from_wizard=1";
 
         // Add custom role params if applicable
         if (typeof roleVal === "object" && roleVal.custom) {
-            chatUrl += "&custom_role_name=" + encodeURIComponent(roleVal.name || "");
-            chatUrl += "&custom_role_desc=" + encodeURIComponent(roleVal.description || "");
+            chatUrlBase += "&custom_role_name=" + encodeURIComponent(roleVal.name || "");
+            chatUrlBase += "&custom_role_desc=" + encodeURIComponent(roleVal.description || "");
         }
 
-        var html = '<h2>Recommended Path</h2>';
+        var html = '<div class="wizard-recommendation">';
+        html += '<h2>Recommended Path</h2>';
         html += '<div class="recommended-path">' + path.name + '</div>';
+        if (path.badge) {
+            html += '<span class="badge" style="display:inline-block; margin-bottom:12px; padding:4px 10px; background:var(--accent-blue); color:#fff; border-radius:12px; font-size:0.75rem;">' + path.badge + '</span>';
+        }
         html += '<p style="color: var(--text-secondary); margin-bottom: 20px;">' + path.desc + '</p>';
 
         // Show selected persona
@@ -509,21 +657,59 @@
             html += '</p>';
         }
 
-        html += '<div class="path-steps">';
-        for (var i = 0; i < path.steps.length; i++) {
-            var s = path.steps[i];
-            html += '<div class="path-step">';
-            html += '<div class="step-number">' + (i + 1) + '</div>';
-            html += '<div class="step-text"><strong>' + s.title + '</strong>';
-            html += '<span>' + s.desc + '</span>';
-            html += '<br><code style="font-size:0.75rem; margin-top:4px; display:inline-block;">' + s.cmd + '</code>';
-            html += '</div></div>';
+        // Canvas wiring chips
+        if (path.canvasWiring.length > 0) {
+            html += '<div style="margin-bottom: 16px;">';
+            html += '<strong>Canvases involved:</strong> <br>';
+            for (var c = 0; c < path.canvasWiring.length; c++) {
+                var canvasName = path.canvasWiring[c].replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
+                html += '<span class="canvas-chip" style="display:inline-block; margin:4px 4px 0 0; padding:4px 10px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:12px; font-size:0.8rem;">' + canvasName + '</span>';
+            }
+            html += '</div>';
         }
-        html += '</div>';
-        html += '<div style="margin-top:24px;">';
-        html += '<a href="' + chatUrl + '" class="btn btn-primary btn-lg">Start Requirements Chat &rarr;</a> ';
-        html += '<a href="/quick-paths" class="btn btn-secondary">View All Quick Paths</a> ';
+
+        // Pre-built requirements count
+        if (path.reqCount > 0) {
+            html += '<div style="margin-bottom: 20px;">';
+            html += '<strong>Pre-built requirements:</strong> ' + path.reqCount;
+            if (path.fastTrack) {
+                html += '<span style="color:var(--text-secondary); font-size:0.85rem; margin-left:8px;">(Auto-decomposed into kanban tasks on launch)</span>';
+            }
+            html += '</div>';
+        }
+
+        // Assess-specific source display
+        var assessUrl = "";
+        if (goal === "assess" && typeof state.answers[4] === "object" && state.answers[4]) {
+            assessUrl = state.answers[4].url || "";
+            var assessOpt = state.answers[4].option || "";
+            if (assessUrl) {
+                html += '<div style="margin-bottom: 20px; padding:10px 14px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px;">';
+                html += '<strong>Repository Source:</strong> <span style="color:var(--accent-blue);">' + assessUrl + '</span>';
+                html += '<span style="color:var(--text-secondary); font-size:0.85rem; margin-left:8px;">(' + (assessOpt === "scan_now" ? "scan now" : "enter later") + ')</span>';
+                html += '</div>';
+            }
+        }
+
+        // CTAs — assess vs standard
+        html += '<div style="margin-top:24px; display:flex; gap:12px; flex-wrap:wrap;">';
+        if (goal === "assess") {
+            var aacUrl = "/ai-augmentation" + (assessUrl ? "?scan_url=" + encodeURIComponent(assessUrl) : "");
+            if (assessUrl && assessOpt === "scan_now") {
+                html += '<a href="' + aacUrl + '" class="btn btn-primary btn-lg">Scan Repository &rarr;</a>';
+            } else {
+                html += '<a href="' + aacUrl + '" class="btn btn-primary btn-lg">Go to AAC &rarr;</a>';
+            }
+            html += '<a href="' + chatUrlBase + '" class="btn btn-secondary">Chat First</a>';
+        } else if (path.fastTrack) {
+            html += '<a href="' + chatUrlBase + '" class="btn btn-primary btn-lg">Launch Workflow &rarr;</a>';
+            html += '<a href="' + chatUrlBase + '&skip_fast_track=1" class="btn btn-secondary">Customize First</a>';
+        } else {
+            html += '<a href="' + chatUrlBase + '" class="btn btn-primary btn-lg">Start Chat &rarr;</a>';
+        }
         html += '<button class="btn btn-secondary" onclick="location.reload()">Start Over</button>';
+        html += '</div>';
+
         html += '</div>';
         document.getElementById("wizard-result").innerHTML = html;
     }

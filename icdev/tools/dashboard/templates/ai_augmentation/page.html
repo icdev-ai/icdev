@@ -33,7 +33,7 @@
     </div>
     <div>
       <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">Source Path / URL</label>
-      <input id="aac-input-ref" type="text" placeholder="e.g. tools/modernization/ or /path/to/project"
+      <input id="aac-input-ref" type="text" placeholder="e.g. tools/modernization/  |  https://github.com/user/repo"
              style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:5px;font-size:13px;box-sizing:border-box;">
     </div>
     <div>
@@ -365,6 +365,20 @@
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-top:16px;">CUI // SP-CTI</div>
 
 <script>
+(function() {
+  // Pre-fill scan_url from query param if present (wizard hand-off)
+  var params = new URLSearchParams(window.location.search);
+  var prefill = params.get('scan_url');
+  if (prefill) {
+    var inputRef = document.getElementById('aac-input-ref');
+    var inputType = document.getElementById('aac-input-type');
+    if (inputRef) inputRef.value = prefill;
+    if (inputType) {
+      inputType.value = /^https?:\/\//.test(prefill) ? 'git_url' : 'local_path';
+    }
+  }
+})();
+
 async function aacRunScan() {
   const btn      = document.getElementById('aac-run-btn');
   const statusEl = document.getElementById('aac-scan-status');
