@@ -58,7 +58,7 @@
             <td>{{ p.growth_rate_pct | round(2) }}%</td>
             <td>{{ (p.confidence_score * 100) | round(0) | int }}%</td>
             <td style="font-size:.78rem;max-width:280px;">{{ p.recommended_action }}</td>
-            <td class="text-muted" style="font-size:.8rem;">{{ p.plan_date[:10] if p.plan_date else '—' }}</td>
+            <td class="text-muted" style="font-size:.8rem;">{{ p.plan_date | ts }}</td>
           </tr>
           {% else %}
           <tr><td colspan="10" class="text-center text-muted py-4">

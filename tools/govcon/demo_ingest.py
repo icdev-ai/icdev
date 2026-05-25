@@ -227,7 +227,7 @@ def run(
             print(f"\n[5/5] Triggering Bedrock fine-tuning ({bedrock_model})...")
             results["train"] = _step_train_bedrock(s3_bucket, bedrock_model)
         elif train == "local":
-            print(f"\n[5/5] Running local QLoRA fine-tuning...")
+            print("\n[5/5] Running local QLoRA fine-tuning...")
             results["train"] = _step_train_local(model_path, adapter_output)
         print(f"      Training: {results['train'].get('status', 'done')}")
 

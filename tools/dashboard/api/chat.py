@@ -1579,7 +1579,7 @@ def _build_standalone_html(uc: dict) -> str:
             document.getElementById('quot-total').textContent = fmt(quot);
             var varEl = document.getElementById('variance-total');
             var absAmt = Math.abs(varAmt);
-            var fmtAbs = '$' + absAmt.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            var fmtAbs = '$' + absAmt.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');
             varEl.textContent = varAmt > 0 ? '+' + fmtAbs : varAmt < 0 ? '-' + fmtAbs : fmtAbs;
             varEl.style.color = varAmt > 0 ? '#f85149' : varAmt < 0 ? '#3fb950' : '';
         }"""

@@ -518,7 +518,7 @@ def enrich(dry_run: bool = False) -> dict:
             response = (
                 f"Addressed in Volume I, Section {i+1}.{i+1}. Our approach leverages proven methodologies "
                 f"to fully satisfy this requirement." if status == "compliant" else
-                (f"Partially addressed. Volume I provides high-level approach; detailed procedures to be provided at PDR." if status == "partial" else "")
+                ("Partially addressed. Volume I provides high-level approach; detailed procedures to be provided at PDR." if status == "partial" else "")
             )
             conn.execute(
                 """INSERT INTO proposal_compliance_matrix

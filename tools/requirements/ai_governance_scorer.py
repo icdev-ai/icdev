@@ -21,6 +21,7 @@ Usage:
     result = score_ai_governance_readiness(project_id, conn=conn)
 """
 
+import json
 import sqlite3
 from tools.db.storage import get_connection
 from pathlib import Path

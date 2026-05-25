@@ -2193,7 +2193,8 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_attack_ttp_coverage(design_id):
         """Return MITRE ATT&CK tactic/technique coverage for a design's attack snapshots."""
-        import sqlite3 as _sq, json as _json
+        import sqlite3 as _sq
+        import json as _json
         _db = Path(__file__).resolve().parents[2] / "data" / "security_canvas.db"
         try:
             conn = _sq.connect(str(_db))

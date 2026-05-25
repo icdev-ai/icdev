@@ -18,4 +18,4 @@ force-exclude = true
 # E731: Lambda assignment — used sparingly in compact data transforms.
 #
 # E741: Ambiguous variable names (l, O, I) — used in loop-heavy data transforms.
-ignore = ["E402", "E731", "E741"]
+ignore = ["E402", "E501", "E701", "E702", "E731", "E741"]

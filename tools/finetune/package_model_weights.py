@@ -108,7 +108,7 @@ def _write_package_files(pkg_root: Path, model_name: str, model_files_dir: Path)
 
     # Copy model files
     model_dest = src_dir / "model"
-    print(f"Copying model files to package structure...")
+    print("Copying model files to package structure...")
     if model_dest.exists():
         shutil.rmtree(model_dest)
     shutil.copytree(str(model_files_dir), str(model_dest))
@@ -224,7 +224,7 @@ def _main() -> None:
     else:
         print(f"\nWheel built: {result['wheel_path']}")
         print(f"Size: {result['size_mb']} MB")
-        print(f"\nNext steps:")
+        print("\nNext steps:")
         print(f"  1. Push to mirror:  {result['push_cmd']}")
         print(f"  2. Install on target: {result['install_cmd']}")
         print(f"  3. Verify: python -c \"import {result['package_name'].replace('-', '_')}; "

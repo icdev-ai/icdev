@@ -15,7 +15,6 @@ Verifies:
 """
 from pathlib import Path
 
-import pytest
 
 # ---------------------------------------------------------------------------
 # Paths

@@ -137,7 +137,7 @@
               {% endif %}
             </td>
             <td class="text-muted" style="font-size:.78rem;">
-              {{ rule.created_at[:10] if rule.created_at else '—' }}
+              {{ rule.created_at | ts }}
             </td>
             <td>
               {% if rule.status | lower == 'active' %}

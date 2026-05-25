@@ -17,7 +17,7 @@ import time
 from datetime import datetime, timezone
 from tools.db.storage import get_connection
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 try:
     import yaml
