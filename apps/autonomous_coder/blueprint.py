@@ -25,7 +25,6 @@ def run_coder():
 
     try:
         import apps.autonomous_coder as ac
-        from apps.autonomous_coder.safety.circuit_breaker import BreakerConfig
 
         result = ac.run(
             task,

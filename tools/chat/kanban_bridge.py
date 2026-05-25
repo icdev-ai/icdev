@@ -34,7 +34,8 @@ def _now() -> str:
 
 
 def _short_id(prefix: str = "task") -> str:
-    import hashlib, time
+    import hashlib
+    import time
     seed = str(time.time_ns()).encode()
     return f"{prefix}-{hashlib.sha256(seed).hexdigest()[:10]}"
 

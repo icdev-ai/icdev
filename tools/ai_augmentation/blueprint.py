@@ -15,6 +15,8 @@ import logging
 
 from flask import Blueprint, jsonify, render_template, request
 
+import re
+
 from tools.ai_augmentation.db.init_db import get_connection, init_db
 from tools.ai_augmentation.engine import run_scan
 
@@ -119,6 +121,10 @@ def api_scan():
 
     if not input_ref:
         return jsonify({"error": "input_ref is required"}), 400
+
+    # Auto-detect git URLs if input_type wasn't explicitly set
+    if input_type == "local_path" and re.match(r"^(https?://|git@)", input_ref):
+        input_type = "git_url"
 
     try:
         result = run_scan(input_type, input_ref, {"il_level": il_level})

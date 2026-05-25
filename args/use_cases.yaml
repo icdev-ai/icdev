@@ -7,6 +7,37 @@
 # Users can customize with industry/equipment/vendor specifics or skip straight to
 # "Send to Kanban".
 #
+# ─────────────────────────────────────────────────────────────────────────────
+# WIZARD MAPPING
+# The Getting Started wizard (/wizard) maps goal+role to use cases via the
+# WIZARD_TO_USE_CASE table in tools/dashboard/templates/wizard.html.
+# When updating this catalog, keep the mapping in sync:
+#
+#   build + developer/solutions_architect/innovator/custom → general_modernization
+#   build + pm                → program_status_review
+#   build + co/sales_engineer/biz_dev → grant_tech_proposal
+#   build + isso              → ato_package_builder
+#   build + analyst           → cdrl_generator
+#   modernize + developer/solutions_architect/innovator/custom → general_modernization
+#   modernize + pm            → program_status_review
+#   modernize + co/sales_engineer/biz_dev → grant_tech_proposal
+#   modernize + isso          → ato_package_builder
+#   modernize + analyst       → cdrl_generator
+#   comply + isso             → ato_package_builder
+#   comply + developer/solutions_architect/sales_engineer → fedramp_auth_prep
+#   comply + pm               → program_status_review
+#   comply + co/biz_dev       → cjis_compliance_prep
+#   comply + analyst          → sbom_attestation
+#   requirements + developer/solutions_architect/innovator/custom → general_modernization
+#   requirements + pm           → program_status_review
+#   requirements + co/analyst   → cdrl_generator
+#   requirements + isso       → ato_package_builder
+#   requirements + sales_engineer/biz_dev → grant_tech_proposal
+#   assess + any role         → ai_assessment_canvas
+#
+# Fallback (any unmatched combo): general_modernization
+# ─────────────────────────────────────────────────────────────────────────────
+#
 # Schema per entry:
 #   id:                    unique slug (snake_case)
 #   label:                 display name in sidebar
@@ -2004,3 +2035,189 @@ use_cases:
         priority: high
         text: "System shall ensure all personnel with access to CJI complete CJIS Security Policy awareness training within 6 months of hire and every 2 years thereafter."
         criteria: "Acceptance: Training completion tracked per user; biennial recertification enforced; non-completers lose CJI access after 30-day grace period; records on file."
+
+  - id: ai_assessment_canvas
+    label: AI Assessment Canvas
+    category: modernization
+    icon: "🤖"
+    description: >
+      Scan source repositories for AI-augmentable code patterns, score each
+      opportunity by value, feasibility, and risk, then generate a phased
+      modernization roadmap with direct dispatch to Kanban.
+    badge: AI Boost
+    agent_model: kimi-cloud
+    ricoas: true
+    fast_track: true
+    boost_threshold: 70
+    skip_requirement_types: []
+    canvas_wiring:
+      - ai_augmentation_canvas
+      - aimc
+      - aadc
+      - kanban
+    quick_actions:
+      - icon: "🔍"
+        label: Run AAC Scan
+        url: /ai-augmentation
+        target: _blank
+      - icon: "📊"
+        label: AIMC Models
+        url: /ai-ml/models/new
+        target: _blank
+      - icon: "🗺"
+        label: AADC Topologies
+        url: /agentic-ai/topologies/new
+        target: _blank
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+    user_config:
+      industries:
+        defaults:
+          - Telecom
+          - Healthcare
+          - Government
+          - Defense
+          - Finance
+          - Manufacturing
+          - Energy
+          - Transportation
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
+    system_prompt: |
+      You are an AI Augmentation expert specializing in detecting AI-augmentable
+      code patterns and building scored modernization roadmaps. You operate across
+      Python, Java, C#, Go, Rust, and TypeScript codebases.
+
+      The AI Assessment Canvas framework is pre-loaded with 12 validated requirements
+      covering pattern detection, scoring, IL model selection, roadmap phasing, and
+      Kanban dispatch.
+
+      The AAC engine detects 8 pattern types:
+        - nested_conditionals (if-depth ≥3) → ML classifier
+        - regex_user_input → NLP extractor
+        - string_template_rendering → LLM generation
+        - scheduled_cron → agentic trigger
+        - hardcoded_threshold → anomaly detection
+        - db_render_notify_chain → LLM synthesis
+        - keyword_list_search → vector semantic search
+        - large_rule_table → decision agent
+
+      Each opportunity is scored on three dimensions:
+        - Value = usage_freq×0.40 + task_complexity×0.35 + automation_deficit×0.25
+        - Feasibility = data_avail×0.40 + il_model_exists×0.35 + integration_simplicity×0.25
+        - Risk = reversibility×0.40 + compliance_safety×0.35 + dependency_simplicity×0.25
+      Composite = value×0.45 + feasibility×0.35 + (1−risk)×0.20
+
+      Roadmap phases:
+        - P1 ≥0.70: Quick Wins (low effort, high impact)
+        - P2 ≥0.50: Core Modernization (medium effort, solid ROI)
+        - P3 ≥0.30: Long-Horizon Investments (high effort, strategic value)
+
+      Your role is to help the user configure the scan target (local path, git URL,
+      or upload), select the IL level, and review the scored roadmap. When the user
+      provides their repo path or language stack, refine the pre-loaded requirements.
+      If no customization is provided, confirm the generic framework is ready and the
+      PRD is available immediately.
+
+      When generating additional requirements via AI Boost, focus on:
+        - Scan configuration (input type, path/URL, language scope)
+        - Scoring calibration (weight adjustments, IL-level compliance penalties)
+        - IL model selection per paradigm (matching classification level)
+        - Roadmap sequencing and effort estimation
+        - Kanban task dispatch criteria (which phases to promote)
+        - Agent readiness pre-check (code quality, testing, documentation pillars)
+
+      Keep responses focused. One or two questions at a time if the user wants to
+      customize. Map all findings to the AAC 8-pattern framework.
+    seed_message: |
+      Your **AI Assessment Canvas** framework is loaded and ready.
+
+      12 pre-built requirements are in place covering:
+      • Pattern detection configuration (Semgrep + AST fallback, 8 pattern types)
+      • Opportunity scoring (value, feasibility, risk, composite)
+      • IL model selection per AI paradigm (classifier, extractor, generation, trigger, anomaly, search, agent)
+      • Roadmap phasing (P1 Quick Wins, P2 Core, P3 Long-Horizon)
+      • Kanban dispatch criteria (which opportunities become backlog tasks)
+      • Agent readiness pre-check (11 pillars: code quality, testing, docs, security, IL classification, NIST controls, STIG)
+
+      **AI Boost will run automatically and your PRD will be ready immediately — no input needed.**
+
+      Or personalize it with your specifics:
+      - **Codebase location** — local path, git URL, or upload
+      - **Language stack** — Python, Java, C#, Go, Rust, TypeScript
+      - **IL level** — IL4, IL5, IL6 (affects compliance penalties and model selection)
+
+      Skip customization → click **Send to Kanban** to dispatch a build task right now.
+    template_requirements:
+      - type: functional
+        priority: high
+        text: "System shall configure and execute an AI Augmentation Canvas scan targeting a specified source repository, supporting local paths, git URLs, or uploaded archives."
+        criteria: "Acceptance: Scan accepts at least one of local_path, git_url, or upload; input validation prevents directory traversal; scan status tracked from running to completed."
+      - type: functional
+        priority: high
+        text: "System shall detect all 8 AI-augmentable pattern types across supported languages (Python, Java, C#, Go, Rust, TypeScript) using Semgrep CLI with Python AST and C# regex/tree-sitter fallbacks."
+        criteria: "Acceptance: Each of the 8 pattern types is detected at least once in a representative test repository; fallback paths execute when Semgrep is unavailable."
+      - type: functional
+        priority: high
+        text: "System shall score every detected opportunity using the deterministic multi-criteria model: value_score, feasibility_score, risk_score, and composite_score, all in [0.0, 1.0]."
+        criteria: "Acceptance: Every opportunity in a completed scan has a corresponding aac_scores row with all four sub-scores populated; composite_score ordering matches manual calculation on a sample."
+      - type: functional
+        priority: high
+        text: "System shall generate a prioritized modernization roadmap with phase bands: P1 (composite ≥0.70), P2 (≥0.50), P3 (≥0.30), including estimated effort days per phase."
+        criteria: "Acceptance: Roadmap has at least one phase; every opportunity appears in exactly one phase; total_effort_days is the sum of phase effort estimates."
+      - type: functional
+        priority: high
+        text: "System shall dispatch selected roadmap opportunities to the Kanban backlog as atomic tasks, preserving opportunity metadata (pattern type, AI paradigm, module path, score)."
+        criteria: "Acceptance: POST /api/kanban/from-plan or equivalent creates one kanban_tasks row per dispatched opportunity; task title and description include pattern type and composite score."
+      - type: functional
+        priority: medium
+        text: "System shall run an agent readiness pre-check across 11 pillars (code quality, documentation, testing, structure, dependencies, configuration, security, IL classification, NIST controls, STIG, append-only audit) before scan execution."
+        criteria: "Acceptance: Readiness check produces pillar_scores for all 11 pillars; overall_readiness_score is a weighted aggregate; results stored in aac_scans.language_profile."
+      - type: data
+        priority: medium
+        text: "System shall persist scan metadata, opportunities, scores, roadmaps, and audit events to the AAC database (PostgreSQL default, SQLite fallback to data/aac_canvas.db)."
+        criteria: "Acceptance: After any scan, aac_scans, aac_opportunities, aac_scores, aac_roadmaps, and aac_audit_log all contain rows linked by scan_id; no orphaned records."
+      - type: data
+        priority: medium
+        text: "System shall recommend an IL-appropriate AI model for each opportunity based on its detected AI paradigm, with higher-capability models reserved for decision_agent and llm_generation paradigms."
+        criteria: "Acceptance: Every opportunity has an il_recommended_model value derived from the paradigm-to-model mapping; il5/il6 penalties applied to compliance-sensitive paradigms."
+      - type: performance
+        priority: medium
+        text: "System shall complete a scan of a 10,000-LOC repository in under 5 minutes on standard ICDEV hardware, including pattern detection, scoring, and roadmap generation."
+        criteria: "Acceptance: Benchmark scan of a 10k-LOC repo completes end-to-end in ≤300 seconds; timing logged in aac_scans.scan_metadata."
+      - type: compliance
+        priority: high
+        text: "System shall apply IL-level compliance penalties to opportunity risk scores, increasing risk weighting for IL5 and IL6 environments where AI-generated code requires additional review gates."
+        criteria: "Acceptance: IL4 opportunities use baseline risk weights; IL5/IL6 opportunities have elevated risk_score for agentic_trigger and llm_generation paradigms; penalty magnitude documented."
+      - type: interface
+        priority: medium
+        text: "System shall export AAC scan results and roadmap phases in JSON format compatible with downstream AIMC model registration and AADC topology creation workflows."
+        criteria: "Acceptance: JSON export includes scan_id, opportunities list with scores, roadmap phases with aimc_links and aadc_links; validates against AIMC/AADC ingestion schemas."
+      - type: interface
+        priority: high
+        text: "System shall provide an IQE natural-language query endpoint enabling users to ask questions about opportunities, scans, and roadmaps without writing SQL."
+        criteria: "Acceptance: IQE adapter registered for collections ai_augmentation.opportunities, .scans, .roadmaps; POST /api/iqe-query returns results for at least 3 example queries."
+    canvas_seeds:
+      - canvas: ai_augmentation
+        templates: [AI Pattern Detection Setup, Opportunity Scoring Matrix, Roadmap Phase Planner]
+        snippets: [Semgrep Rule Config, IL Model Selection Guide, Kanban Dispatch Script]
+    workflow_steps:
+      - step: 1
+        label: Scan Configuration & Agent Readiness
+        description: Configure target repo, IL level, and run 11-pillar readiness pre-check
+        canvas: ai_augmentation_canvas
+        action: run_scan
+      - step: 2
+        label: Pattern Detection & Opportunity Scoring
+        description: Detect 8 pattern types and score each opportunity on value, feasibility, risk
+        canvas: ai_augmentation_canvas
+        action: review_requirements
+      - step: 3
+        label: Roadmap Generation & Kanban Dispatch
+        description: Build P1/P2/P3 phased roadmap and dispatch opportunities to Kanban backlog
+        canvas: kanban
+        action: send_to_kanban

@@ -186,6 +186,20 @@ def main():
     except Exception as exc:
         logger.warning("Startup recovery failed: %s", str(exc).encode("ascii", errors="replace").decode("ascii"))
 
+    # Startup inbox replay — process any Telegram messages that arrived while offline.
+    try:
+        from tools.notifications.adapters.telegram_listener import replay_inbox
+
+        inbox_result = replay_inbox()
+        if inbox_result["replayed"] or inbox_result["failed"]:
+            logger.info(
+                "Startup inbox replay: replayed=%d failed=%d",
+                inbox_result["replayed"],
+                inbox_result["failed"],
+            )
+    except Exception as exc:
+        logger.warning("Startup inbox replay failed: %s", exc)
+
     if args.once:
         logger.info("Running single kanban cycle...")
         # [DISPATCH POINT - once mode]

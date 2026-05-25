@@ -9,7 +9,6 @@ Adds: innovation_signals (D206), innovation_triage_log (D206),
       innovation_feedback.
 """
 
-import sqlite3
 
 
 def _table_exists(conn, table):

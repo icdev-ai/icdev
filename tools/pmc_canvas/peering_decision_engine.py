@@ -171,9 +171,9 @@ def generate_peering_brief(evaluation: dict[str, Any]) -> str:
 
     lines = [
         f"## Peering Recommendation: {rec} (AS{asn} — {org})",
-        f"",
+        "",
         f"**Composite Score:** {score:.1%}",
-        f"",
+        "",
         "**Key Findings:**",
     ]
     for r in evaluation.get("reasons", []):

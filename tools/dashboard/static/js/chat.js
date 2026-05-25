@@ -1947,9 +1947,25 @@
 
         // Check for wizard params (auto-create intake context)
         var cfg = window._CHAT_CONFIG || {};
+
+        // Show wizard origin banner when arriving from wizard
+        if (cfg.fromWizard) {
+            var banner = document.getElementById('wizard-origin-banner');
+            var bannerLabel = document.getElementById('wizard-origin-label');
+            if (banner) {
+                banner.style.display = 'flex';
+                if (bannerLabel && cfg.useCaseId) {
+                    bannerLabel.textContent = cfg.useCaseId.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
+                }
+            }
+        }
+
         if (cfg.sessionId) {
             // Resume existing intake session
             loadIntakeSession(cfg.sessionId);
+        } else if (cfg.useCaseId) {
+            // Auto-activate use case from wizard
+            startUseCase(cfg.useCaseId, { skipFastTrack: cfg.skipFastTrack });
         } else if (cfg.wizardGoal) {
             // Create new intake context from wizard
             createIntakeContext({});
@@ -2545,7 +2561,8 @@
 
     // ---- Start use case (create context + seed message) ----
 
-    function startUseCase(ucId) {
+    function startUseCase(ucId, options) {
+        options = options || {};
         var card = document.querySelector('.chat-uc-card[data-uc-id="' + ucId + '"]');
         var compactRow = document.querySelector('.chat-uc-compact-row[data-uc-id="' + ucId + '"]');
         if (card) card.classList.add('chat-uc-card--loading');
@@ -2563,7 +2580,8 @@
                 // Store fast-track config before context creation
                 _fastTrackConfig = null;
                 _fastTrackDone = false;
-                if (uc.fast_track) {
+                var shouldFastTrack = uc.fast_track && !options.skipFastTrack;
+                if (shouldFastTrack) {
                     _fastTrackConfig = {
                         skip_requirement_types: uc.skip_requirement_types || [],
                         user_config: uc.user_config || {},
@@ -2577,7 +2595,7 @@
                     uc_category: uc.category || '',
                     uc_label: uc.label || '',
                     suppress_intake_welcome: !!uc.seed_message,
-                    fast_track: !!uc.fast_track,
+                    fast_track: shouldFastTrack,
                     skip_requirement_types: uc.skip_requirement_types || [],
                     user_config: uc.user_config || {},
                     template_requirements: uc.template_requirements || []
@@ -2698,7 +2716,6 @@
                     appendMessage({ role: 'system', content: 'PRD generation failed — you can still download it manually from the Requirements panel.' });
                     return;
                 }
-                // Trigger PRD download
                 var markdown = prd.prd_markdown || prd.content || '';
                 var totalReqs = prd.requirement_count || '';
                 var blob = new Blob([markdown], { type: 'text/markdown' });
@@ -2715,43 +2732,44 @@
                 appendMessage({
                     role: 'system',
                     content: 'PRD ready' + reqSummary + '. <a href="' + url + '" download="' + escHtml(label.replace(/\s+/g, '_') + '_PRD.md') + '">[Download PRD]</a>'
-                        + '<br><button class="uc-send-kanban-btn" onclick="window._sendToKanban(' + JSON.stringify(sessionId) + ',' + JSON.stringify(label) + ',' + JSON.stringify(markdown.slice(0, 2000)) + ')">Send to Kanban</button>'
                 });
 
                 refreshReadiness();
+
+                // Fast-track: automatically decompose PRD into atomic kanban tasks
+                if (markdown) {
+                    appendMessage({ role: 'system', content: 'Decomposing PRD into atomic tasks and queueing to Kanban...' });
+                    fetch('/api/kanban/from-plan', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ markdown: markdown, session_id: sessionId })
+                    })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (result) {
+                        if (result && result.tasks_created) {
+                            appendMessage({
+                                role: 'system',
+                                content: result.tasks_created + ' atomic task' + (result.tasks_created === 1 ? '' : 's') + ' added to Kanban backlog. <a href="/kanban" target="_blank">[View Kanban →]</a>'
+                            });
+                            if (typeof ICDEV !== 'undefined' && typeof ICDEV.refreshKanban === 'function') {
+                                ICDEV.refreshKanban();
+                            }
+                        } else if (result && result.error) {
+                            appendMessage({ role: 'system', content: 'Kanban decomposition: ' + result.error + ' — you can send tasks manually from the Requirements panel.' });
+                        } else {
+                            appendMessage({ role: 'system', content: 'No atomic tasks could be extracted from the PRD — you can create tasks manually in Kanban.' });
+                        }
+                    })
+                    .catch(function () {
+                        appendMessage({ role: 'system', content: 'Kanban queue failed — open <a href="/kanban" target="_blank">Kanban</a> and create tasks manually.' });
+                    });
+                }
             });
         })
         .catch(function (err) {
             appendMessage({ role: 'system', content: 'Fast-track error: ' + (err.message || 'unknown') + '. You can run AI Boost manually.' });
         });
     }
-
-    // Exposed globally so inline onclick can call it
-    window._sendToKanban = function sendToKanban(sessionId, ucLabel, prdExcerpt) {
-        var today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
-        fetch('/api/kanban/tasks', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                title: (ucLabel || 'Use Case') + ' — ' + today,
-                description: prdExcerpt || '',
-                task_type: 'build',
-                priority: 'medium',
-                status: 'backlog'
-            })
-        })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (data) {
-            if (data && !data.error) {
-                appendMessage({ role: 'system', content: 'Task added to Kanban backlog. <a href="/kanban" target="_blank">[View Kanban →]</a>' });
-            } else {
-                appendMessage({ role: 'system', content: 'Kanban task creation failed — open <a href="/kanban" target="_blank">Kanban</a> and create manually.' });
-            }
-        })
-        .catch(function () {
-            appendMessage({ role: 'system', content: 'Could not reach Kanban API.' });
-        });
-    };
 
     // Wrap switchContext to keep action bar in sync on context switches
     var _origSwitchContext = switchContext;

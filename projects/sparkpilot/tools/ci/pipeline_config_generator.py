@@ -484,11 +484,11 @@ def _build_gate_evaluation_script(gates: dict, platform: str) -> str:
     # STIG gate
     script_lines.append("try:")
     script_lines.append("    stig = json.load(open('.tmp/stig.json'))")
-    script_lines.append(f"    cat1 = stig.get('summary', {{}}).get('cat1_count', 0)")
+    script_lines.append("    cat1 = stig.get('summary', {}).get('cat1_count', 0)")
     script_lines.append(f"    if cat1 > {stig_max_cat1}:")
     script_lines.append(f"        errors.append(f'STIG: {{cat1}} CAT1 findings (max {stig_max_cat1})')")
     if stig_max_cat2 > 0:
-        script_lines.append(f"    cat2 = stig.get('summary', {{}}).get('cat2_count', 0)")
+        script_lines.append("    cat2 = stig.get('summary', {}).get('cat2_count', 0)")
         script_lines.append(f"    if cat2 > {stig_max_cat2}:")
         script_lines.append(f"        errors.append(f'STIG: {{cat2}} CAT2 findings (max {stig_max_cat2})')")
     script_lines.append("except FileNotFoundError: pass")
@@ -496,7 +496,7 @@ def _build_gate_evaluation_script(gates: dict, platform: str) -> str:
     # Vulnerability gate
     script_lines.append("try:")
     script_lines.append("    sast = json.load(open('.tmp/sast.json'))")
-    script_lines.append(f"    critical = sast.get('summary', {{}}).get('critical', 0)")
+    script_lines.append("    critical = sast.get('summary', {}).get('critical', 0)")
     script_lines.append(f"    if critical > {max_critical_vulns}:")
     script_lines.append(f"        errors.append(f'SAST: {{critical}} critical findings (max {max_critical_vulns})')")
     script_lines.append("except FileNotFoundError: pass")

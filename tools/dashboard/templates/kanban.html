@@ -10,7 +10,15 @@
     <input type="text" id="kanban-filter-input" placeholder="Filter by title, id, priority..." aria-label="Filter tasks"
            style="flex:1; max-width:420px; padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
     <span id="kanban-filter-count" style="font-size:12px; color:var(--text-dim);"></span>
-    <div style="margin-left:auto; display:flex; gap:8px;">
+    <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+        <label style="font-size:12px; color:var(--text-dim); white-space:nowrap;">Executor:</label>
+        <select id="kanban-executor-chain" onchange="setExecutorChain(this.value)" title="Global executor fallback chain (affects scheduler dispatch)"
+                style="padding:6px 8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-size:13px; cursor:pointer;">
+            <option value="claude_cli,gitlab,ollama_local">🤖 Claude CLI → GitLab → Ollama</option>
+            <option value="gitlab,ollama_local">🦊 GitLab → Ollama (air-gap)</option>
+            <option value="github_actions,ollama_local">⚙️ GitHub Actions → Ollama (air-gap)</option>
+            <option value="ollama_local">🦙 Ollama Local only</option>
+        </select>
         <button class="btn" onclick="openDepMapModal()" title="View dependency graph">🔗 Dep Map</button>
         <button class="btn" onclick="openTagManagerModal()" title="Manage tags">🏷 Tags</button>
         <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
@@ -911,8 +919,52 @@ function applyKanbanFilter(query) {
     if (countEl) countEl.textContent = q ? matched + ' match' + (matched === 1 ? '' : 'es') : '';
 }
 
+function setExecutorChain(value) {
+    fetch('/api/kanban/settings/executor-chain', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({chain: value.split(',')}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            alert('Executor chain update failed: ' + data.error);
+        } else {
+            // Best-effort toast instead of alert
+            var el = document.getElementById('kanban-filter-count');
+            if (el) {
+                var old = el.textContent;
+                el.textContent = 'Executor chain updated ✓';
+                setTimeout(function() { el.textContent = old; }, 2000);
+            }
+        }
+    })
+    .catch(function(err) {
+        console.error('setExecutorChain failed:', err);
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     refreshKanbanTasks();
+
+    // Load current executor chain setting into the header toggle
+    fetch('/api/kanban/settings/executor-chain')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.chain) {
+            var sel = document.getElementById('kanban-executor-chain');
+            var wanted = data.chain.join(',');
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value === wanted) {
+                    sel.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+    })
+    .catch(function(err) {
+        console.error('Failed to load executor chain setting:', err);
+    });
 
     // Wire filter input once debounce_filter.js is ready
     var input = document.getElementById('kanban-filter-input');

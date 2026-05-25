@@ -299,7 +299,7 @@ def _verify_orphan_db_table(table: str) -> Tuple[str, str]:
     if refs >= _ORPHAN_MIN_REFS:
         return "promote", f"No CREATE TABLE migration; {refs} code reference(s) — write migration"
 
-    return "dismiss", f"No CREATE TABLE migration and 0 code references — dead reference, dismiss"
+    return "dismiss", "No CREATE TABLE migration and 0 code references — dead reference, dismiss"
 
 
 # ---------------------------------------------------------------------------

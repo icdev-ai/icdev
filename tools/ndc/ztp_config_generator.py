@@ -365,7 +365,7 @@ def run(run_id: str = "", project_id: str = "default", canvas: str = _CANVAS) ->
         f"**Generated:** {ts}  ",
         f"**Canvas:** {canvas}  ",
         f"**Topology:** {topo['name']}  ",
-        f"**Gate:** ✓ PASS",
+        "**Gate:** ✓ PASS",
         "",
         "## Generated Artifacts",
         "",

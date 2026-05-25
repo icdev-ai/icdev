@@ -19,7 +19,7 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-from tools.observability.tracer import NullSpan, NullTracer, Span, Tracer
+from tools.observability.tracer import Span, Tracer
 
 logger = logging.getLogger("sparkpilot.observability.otel_tracer")
 

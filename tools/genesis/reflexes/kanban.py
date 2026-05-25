@@ -3173,13 +3173,18 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     task_log = PROMPT_DIR / f"{task_id}.log"
 
     try:
-        import yaml as _yaml  # noqa: PLC0415
-        _cfg_path = BASE_DIR / "args" / "strategos_config.yaml"
-        with open(_cfg_path, encoding="utf-8") as _f:
-            _sc = _yaml.safe_load(_f) or {}
-        _fallback_chain = _sc.get("executor", {}).get(
-            "fallback_chain", ["claude_cli", "gitlab", "ollama_local"]
-        )
+        # Env-var override for quick mode switching (e.g. air-gap toggle).
+        _env_chain = os.environ.get("ICDEV_KANBAN_EXECUTOR_CHAIN", "")
+        if _env_chain:
+            _fallback_chain = [x.strip() for x in _env_chain.split(",") if x.strip()]
+        else:
+            import yaml as _yaml  # noqa: PLC0415
+            _cfg_path = BASE_DIR / "args" / "strategos_config.yaml"
+            with open(_cfg_path, encoding="utf-8") as _f:
+                _sc = _yaml.safe_load(_f) or {}
+            _fallback_chain = _sc.get("executor", {}).get(
+                "fallback_chain", ["claude_cli", "gitlab", "ollama_local"]
+            )
     except Exception:
         _fallback_chain = ["claude_cli", "gitlab", "ollama_local"]
 

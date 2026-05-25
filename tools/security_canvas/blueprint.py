@@ -2121,4 +2121,118 @@ def create_security_blueprint():
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    # ── SDC Demo Runner ───────────────────────────────────────────────────────
+
+    @bp.route("/demo")
+    @sc_login_required
+    def sc_demo_page():
+        """SDC Demo Runner — 3-scenario executive/customer/prospect demo."""
+        return render_template("security_canvas/demo.html", page_title="SDC Demo Runner")
+
+    @bp.route("/api/sdc-demo-run", methods=["POST"])
+    @sc_login_required
+    def sc_api_sdc_demo_run():
+        """Run one or more SDC demo scenarios and return JSON result."""
+        data = request.get_json(silent=True) or {}
+        scenarios = data.get("scenarios") or None
+        audience = data.get("audience", "exec")
+        simulate = bool(data.get("simulate", False))
+        try:
+            from tools.sdc.demo_runner import run_sdc_demo
+            result = run_sdc_demo(scenarios=scenarios, audience=audience, simulate=simulate)
+            return jsonify({"ok": True, **result})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/compliance-timeline/<design_id>")
+    @sc_login_required
+    def sc_api_compliance_timeline(design_id):
+        """Return before/after compliance timeline for a design."""
+        try:
+            import sqlite3 as _sq
+            _db = Path(__file__).resolve().parents[2] / "data" / "security_canvas.db"
+            conn = _sq.connect(str(_db))
+            conn.row_factory = _sq.Row
+            rows = conn.execute(
+                "SELECT * FROM sdc_compliance_timeline WHERE design_id=? ORDER BY snapshot_label",
+                (design_id,),
+            ).fetchall()
+            conn.close()
+            return jsonify({"ok": True, "design_id": design_id, "snapshots": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/roi/<design_id>")
+    @sc_login_required
+    def sc_api_roi(design_id):
+        """Return ROI metrics for a design."""
+        try:
+            from tools.sdc.roi_calculator import compute_roi
+            result = compute_roi(design_id)
+            return jsonify({"ok": True, **result})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/isso-approve", methods=["POST"])
+    @sc_login_required
+    def sc_api_isso_approve():
+        """Simulate ISSO approval — writes real sc_audit record."""
+        data = request.get_json(silent=True) or {}
+        step_run_id = data.get("step_run_id", "demo-run-step-04")
+        approver = data.get("approver", "isso-demo@agency.gov")
+        reason = data.get("reason", "demo-auto-approve")
+        try:
+            from tools.sdc.isso_gate import approve_demo
+            result = approve_demo(step_run_id, approver=approver, reason=reason)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/attack-ttp-coverage/<design_id>")
+    @sc_login_required
+    def sc_api_attack_ttp_coverage(design_id):
+        """Return MITRE ATT&CK tactic/technique coverage for a design's attack snapshots."""
+        import sqlite3 as _sq, json as _json
+        _db = Path(__file__).resolve().parents[2] / "data" / "security_canvas.db"
+        try:
+            conn = _sq.connect(str(_db))
+            conn.row_factory = _sq.Row
+            snaps = conn.execute(
+                "SELECT nodes_json FROM sdc_attack_snapshots WHERE component_id=?",
+                (design_id,),
+            ).fetchall()
+            conn.close()
+
+            # Aggregate TTP IDs from node data across all snapshots
+            tactic_map: dict = {
+                "Initial Access":       [],
+                "Credential Access":    [],
+                "Privilege Escalation": [],
+                "Lateral Movement":     [],
+                "Exfiltration":         [],
+                "Impact":               [],
+            }
+            _TACTIC_LOOKUP = {
+                "T1190": "Initial Access", "T1566": "Initial Access", "T1078": "Initial Access",
+                "T1552": "Credential Access", "T1539": "Credential Access", "T1110": "Credential Access",
+                "T1068": "Privilege Escalation", "T1548": "Privilege Escalation", "T1611": "Privilege Escalation",
+                "T1557": "Lateral Movement", "T1563": "Lateral Movement",
+                "T1071": "Exfiltration", "T1530": "Exfiltration", "T1020": "Exfiltration",
+                "T1499": "Impact", "T1485": "Impact", "T1498": "Impact",
+            }
+            seen: set = set()
+            for snap in snaps:
+                nodes = _json.loads(snap["nodes_json"] or "[]")
+                for node in nodes:
+                    ttp = node.get("ttp")
+                    if ttp and ttp not in seen:
+                        seen.add(ttp)
+                        tactic = _TACTIC_LOOKUP.get(ttp, "Initial Access")
+                        if ttp not in tactic_map[tactic]:
+                            tactic_map[tactic].append(ttp)
+
+            return jsonify({"ok": True, "design_id": design_id, "tactics": tactic_map, "ttps": list(seen)})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
     return bp

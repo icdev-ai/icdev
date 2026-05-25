@@ -184,7 +184,7 @@ def _generate_section_content(
 ) -> tuple[str, list[dict]]:
     """Generate prose for one section. Returns (prose, citations_list)."""
     if not chunks:
-        return f"*No source material available for this section.*", []
+        return "*No source material available for this section.*", []
 
     citations = []
     for i, chunk in enumerate(chunks, 1):

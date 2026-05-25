@@ -8,7 +8,6 @@ Adds: child_capabilities, child_telemetry, child_learned_behaviors,
       staging_environments, propagation_log.
 """
 
-import sqlite3
 
 
 def _table_exists(conn, table):

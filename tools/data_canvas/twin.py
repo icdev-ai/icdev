@@ -80,6 +80,6 @@ def quality_gate(design_id: str, schema_changes: list, baseline_snap_id: str | N
                                "recommendation": "Add a DEFAULT value or make nullable for backward-compatible migration"})
         if c.get("change") in ("remove_column", "drop_column"):
             violations.append({"severity": "medium", "id": c.get("column") or c.get("old_name", "?"),
-                               "title": f"Column removal may break referential integrity",
+                               "title": "Column removal may break referential integrity",
                                "recommendation": "Verify no foreign keys or views reference this column"})
     return {"violations": violations, "gate": "fail" if violations else "pass"}

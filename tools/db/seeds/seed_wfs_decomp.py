@@ -254,11 +254,11 @@ def main() -> None:
     conn.close()
 
     print(f"[seed_wfs_decomp] done — {inserted} inserted, {skipped} skipped (conflict)")
-    print(f"  wfs-decomp-01  YAML schema: composite + sub_steps + recursive linter")
-    print(f"  wfs-decomp-02  JS data model: sub_steps + import/export + expand icon")
-    print(f"  wfs-decomp-03  UX: navigation stack + breadcrumb + drillInto/drillOut")
-    print(f"  wfs-decomp-04  Sub-canvas parity: all node types + validate + connect")
-    print(f"  wfs-decomp-05  V&V: red_team + owasp_llm + any-template + recursive nesting")
+    print("  wfs-decomp-01  YAML schema: composite + sub_steps + recursive linter")
+    print("  wfs-decomp-02  JS data model: sub_steps + import/export + expand icon")
+    print("  wfs-decomp-03  UX: navigation stack + breadcrumb + drillInto/drillOut")
+    print("  wfs-decomp-04  Sub-canvas parity: all node types + validate + connect")
+    print("  wfs-decomp-05  V&V: red_team + owasp_llm + any-template + recursive nesting")
     print()
     print("View at: http://localhost:5050/kanban")
 

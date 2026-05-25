@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 # Bedrock Knowledge Base + OpenSearch vector store setup.
 # Run after OpenSearch restore and index template migration.
-import boto3, json
+import boto3
 
 bedrock_agent = boto3.client("bedrock-agent", region_name="us-east-1")
 OPENSEARCH_HOST = "https://search-analytics-xxxx.us-east-1.es.amazonaws.com"

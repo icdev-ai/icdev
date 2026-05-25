@@ -427,9 +427,13 @@ def _probe_coherence_status(
         try:
             report = json.loads(stdout)
         except json.JSONDecodeError:
-            # Sometimes there's log noise before the JSON — find the
-            # JSON object at the end by scanning backward for '{'
-            idx = stdout.rfind("{")
+            # Log noise precedes the JSON — find the first '{' at the
+            # start of a line (not inside a string like '{%' in messages)
+            idx = -1
+            for i, ch in enumerate(stdout):
+                if ch == "{" and (i == 0 or stdout[i - 1] == "\n"):
+                    idx = i
+                    break
             if idx >= 0:
                 report = json.loads(stdout[idx:])
             else:

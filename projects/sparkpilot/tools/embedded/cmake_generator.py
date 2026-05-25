@@ -15,7 +15,6 @@ import argparse
 import json
 import sqlite3
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "sparkpilot.db"
@@ -106,7 +105,7 @@ def generate_cmakelists(board: str, project_name: str = "sparkpilot_app",
     cfg = BOARD_CONFIGS.get(board, BOARD_CONFIGS["simulator"])
 
     lines = [
-        f'cmake_minimum_required(VERSION 3.16)',
+        'cmake_minimum_required(VERSION 3.16)',
         f'project({project_name} C)',
         '',
         f'# Target: {board} ({cfg["cpu"]})',
@@ -158,7 +157,7 @@ def generate_cmakelists(board: str, project_name: str = "sparkpilot_app",
 
     if board != "simulator":
         lines.extend([
-            f'# Flash size optimization',
+            '# Flash size optimization',
             f'target_compile_options({project_name} PRIVATE -Os -ffunction-sections -fdata-sections)',
             f'target_link_options({project_name} PRIVATE -Wl,--gc-sections)',
             '',

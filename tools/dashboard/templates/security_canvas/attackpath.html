@@ -221,4 +221,46 @@ function loadData() {
 
 document.addEventListener('DOMContentLoaded', loadData);
 </script>
+
+{# MITRE ATT&CK Tactic Sidebar Overlay #}
+<div id="attck-sidebar" style="position:fixed;right:0;top:60px;width:220px;background:#12111a;border-left:1px solid #333;border-bottom:1px solid #333;padding:12px;z-index:100;max-height:calc(100vh - 80px);overflow-y:auto;border-radius:0 0 0 8px;">
+  <div style="font-size:11px;font-weight:700;color:#e74c3c;letter-spacing:1px;margin-bottom:10px;">MITRE ATT&CK</div>
+  <button id="attck-load-btn" onclick="loadAttckOverlay()"
+    style="width:100%;padding:6px;border-radius:4px;border:1px solid #e74c3c44;background:#1a0a0a;color:#e74c3c;font-size:11px;cursor:pointer;margin-bottom:10px;">
+    Load Overlay
+  </button>
+  <div id="attck-content" style="display:none;"></div>
+</div>
+<script>
+function loadAttckOverlay() {
+  document.getElementById('attck-load-btn').textContent = 'Loading...';
+  fetch('/security/api/attack-ttp-coverage/demo-design-001')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.ok) { document.getElementById('attck-load-btn').textContent = 'Error'; return; }
+      document.getElementById('attck-load-btn').style.display = 'none';
+      const el = document.getElementById('attck-content');
+      const colors = {
+        'Initial Access': '#e74c3c', 'Credential Access': '#9b59b6',
+        'Privilege Escalation': '#e67e22', 'Lateral Movement': '#3498db',
+        'Exfiltration': '#1abc9c', 'Impact': '#e74c3c'
+      };
+      let html = '';
+      Object.entries(d.tactics).forEach(function(entry) {
+        const tactic = entry[0], ttps = entry[1];
+        if (!ttps.length) return;
+        const color = colors[tactic] || '#666';
+        html += '<div style="margin-bottom:10px;">';
+        html += '<div style="font-size:10px;color:' + color + ';font-weight:700;margin-bottom:4px;">' + tactic + '</div>';
+        ttps.forEach(function(ttp) {
+          html += '<span style="display:inline-block;background:' + color + '22;color:' + color + ';border:1px solid ' + color + '44;border-radius:4px;padding:1px 6px;font-size:10px;margin:2px;">' + ttp + '</span>';
+        });
+        html += '</div>';
+      });
+      el.innerHTML = html;
+      el.style.display = 'block';
+    })
+    .catch(function() { document.getElementById('attck-load-btn').textContent = 'Unavailable'; });
+}
+</script>
 {% endblock %}

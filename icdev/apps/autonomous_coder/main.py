@@ -33,14 +33,13 @@ def _print_result(result, verbose: bool = False, out_file: str | None = None) ->
     if result.validation.suggestion:
         print(f"  Suggestion: {result.validation.suggestion}")
 
-    print(f"\nGENERATED CODE:")
+    print("\nGENERATED CODE:")
     print("-" * 40)
     print(result.code)
     print("-" * 40)
 
     if verbose:
         print("\nAUDIT LOG:")
-        from apps.autonomous_coder.governance.audit_logger import AuditLogger
         for entry in result.audit_log:
             ts = entry["created_at"][11:19]
             payload = entry.get("payload") or ""

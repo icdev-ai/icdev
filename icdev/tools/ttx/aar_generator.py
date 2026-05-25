@@ -39,7 +39,7 @@ def generate_aar(session_id: int) -> str:
     lines: list[str] = []
     _h = lines.append
 
-    _h(f"# CUI // SP-CTI")
+    _h("# CUI // SP-CTI")
     _h(f"# After-Action Report — {session['scenario_slug'].replace('_', ' ').title()}")
     _h(f"**Session ID:** {session_id}  ")
     _h(f"**Facilitator:** {session.get('facilitator_name', 'N/A')}  ")

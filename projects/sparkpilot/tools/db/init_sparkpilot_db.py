@@ -8,7 +8,6 @@ Creates all tables for the SparkPilot embedded AI co-pilot:
 """
 
 import sqlite3
-import sys
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "sparkpilot.db"

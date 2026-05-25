@@ -8,7 +8,6 @@ without subprocess or network calls for fast, dependency-free execution.
 """
 
 import os
-import sqlite3
 
 from behave import given, then, when
 

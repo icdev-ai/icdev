@@ -1,0 +1,5 @@
+# Intent: Show recent SDC demo run history with audience targeting and pass/fail status.
+# Useful for sales teams tracking which prospects have seen which scenarios.
+
+foreach r in sdc_demo.runs
+  select r.id, r.audience, r.scenarios_json, r.status, r.created_at

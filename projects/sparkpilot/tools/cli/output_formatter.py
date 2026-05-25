@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import functools
-import io
 import json
 import os
 import sys

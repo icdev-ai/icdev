@@ -36,7 +36,6 @@ DB_PATH = BASE_DIR / "data" / "sparkpilot.db"
 sys.path.insert(0, str(BASE_DIR))
 from tools.project.manifest_loader import (
     load_manifest,
-    detect_vcs_platform,
     _apply_defaults,
 )
 
@@ -479,7 +478,7 @@ def _format_markdown(context: dict) -> str:
 
     # Header
     name = project.get("name", "Unknown")
-    lines.append(f"## SPARKPILOT Project Context")
+    lines.append("## SPARKPILOT Project Context")
     lines.append("")
 
     # Project info

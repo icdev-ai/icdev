@@ -61,10 +61,10 @@ def _tfvars(apps: list, project: dict) -> str:
         f"# Generated: {_now()}",
         "",
         f'project_name    = "{proj_name}"',
-        f'environment     = "production"',
+        'environment     = "production"',
         f'classification  = "{project.get("classification", "CUI")}"',
         f'impact_level    = "{project.get("impact_level", "IL4")}"',
-        f'aws_region      = "us-gov-west-1"',
+        'aws_region      = "us-gov-west-1"',
         "",
         "# Application targets",
     ]
@@ -101,7 +101,7 @@ def _wave_yaml(waves: list, apps: list) -> str:
             f"    strategy: {strat}",
             f"    status: {w.get('status', 'planned')}",
             f"    estimated_hours: {est_hrs}",
-            f"    applications:",
+            "    applications:",
         ]
         wave_apps = [a for a in apps if a.get("migration_strategy") == strat] or apps[:2]
         for app in wave_apps[:3]:

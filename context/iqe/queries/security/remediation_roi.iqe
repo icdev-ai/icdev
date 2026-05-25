@@ -1,0 +1,6 @@
+# Intent: Compare remediation_hours before vs after — demonstrates automation ROI.
+# Use during Scenario C to show 200h manual → 4h automated savings narrative.
+
+foreach t in sdc_demo.threat_summary
+  where t.design_id == "demo-design-001"
+  select t.snapshot_label, t.remediation_hours, t.cat1_count, t.cat2_count, t.posture_grade

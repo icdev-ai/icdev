@@ -348,7 +348,7 @@ def main() -> None:
         n_nodes, n_edges = seed_kg(conn)
         n_wargames = seed_wargames(conn)
         conn.commit()
-        print(f"Seeded:")
+        print("Seeded:")
         print(f"  sg_orbat_units:   {n_orbat} units")
         print(f"  sg_ghost_signals: {n_ghost} signals")
         print(f"  sg_iw_effects:    {n_iw} effects")

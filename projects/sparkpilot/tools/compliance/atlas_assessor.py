@@ -25,7 +25,6 @@ Usage:
     python tools/compliance/atlas_assessor.py --project-id proj-123 --human
 """
 
-import json
 import sys
 from pathlib import Path
 from typing import Dict, Optional

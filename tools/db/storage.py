@@ -585,7 +585,8 @@ def _write_rls_audit(table_name: str, tenant_id: Optional[str]) -> None:
 def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
     """Append one row to column_mask_audit. Never raises."""
     try:
-        import sqlite3 as _sq, json as _js
+        import sqlite3 as _sq
+        import json as _js
         from datetime import datetime, timezone
         _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
         _ac.execute(

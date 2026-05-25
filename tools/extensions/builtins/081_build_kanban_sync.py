@@ -107,7 +107,8 @@ def _inject_advisory(context_id: str, tasks: list[dict], canvas: str) -> None:
     try:
         conn = get_connection()
         from datetime import datetime, timezone
-        import hashlib, time
+        import hashlib
+        import time
         msg_id = "msg-" + hashlib.sha256(str(time.time_ns()).encode()).hexdigest()[:10]
         label = f" [{canvas}]" if canvas else ""
         body = (

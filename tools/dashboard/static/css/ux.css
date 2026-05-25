@@ -367,20 +367,42 @@
 .wizard-progress {
     display: flex;
     justify-content: center;
-    gap: 8px;
+    align-items: center;
+    gap: 0;
     margin-bottom: 32px;
+    position: relative;
+}
+
+.wizard-progress::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: calc(100% - 40px);
+    max-width: 300px;
+    height: 3px;
+    background: var(--border-color, #2a2a40);
+    border-radius: 2px;
+    z-index: 0;
 }
 
 .wizard-progress-dot {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     background: var(--border-color, #2a2a40);
-    transition: background 0.3s;
+    transition: all 0.3s;
+    position: relative;
+    z-index: 1;
+    margin: 0 16px;
+    border: 2px solid var(--bg-primary, #0f0f1a);
 }
 
 .wizard-progress-dot.active {
     background: var(--accent-blue, #4a90d9);
+    box-shadow: 0 0 0 4px rgba(74, 144, 217, 0.25);
+    transform: scale(1.2);
 }
 
 .wizard-progress-dot.completed {
@@ -830,6 +852,38 @@
     transform: translateX(-50%);
     border: 6px solid transparent;
     border-top-color: #30363d;
+}
+
+/* Wizard origin banner in chat */
+.wizard-origin-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    background: rgba(74, 144, 217, 0.12);
+    border-bottom: 1px solid rgba(74, 144, 217, 0.3);
+    font-size: 0.85rem;
+    color: var(--text-secondary, #a0a0b8);
+}
+.wizard-origin-banner .wizard-origin-icon {
+    font-size: 1rem;
+}
+.wizard-origin-banner .wizard-origin-text strong {
+    color: var(--accent-blue-light, #6db3f8);
+    font-weight: 600;
+}
+.wizard-origin-banner .wizard-origin-dismiss {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-secondary, #a0a0b8);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0 4px;
+    line-height: 1;
+}
+.wizard-origin-banner .wizard-origin-dismiss:hover {
+    color: var(--text-primary, #e0e0e0);
 }
 
 

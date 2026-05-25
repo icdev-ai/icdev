@@ -341,7 +341,7 @@ def _check_files_exist(sections: dict, spec_base: Path) -> list:
                 target_section="filesystem",
                 status="inconsistent",
                 message=f"Referenced file does not exist: {fpath}",
-                suggestion=f"Verify path or move to 'New Files' subsection if it will be created.",
+                suggestion="Verify path or move to 'New Files' subsection if it will be created.",
             ))
 
     # Warn about new files that already exist

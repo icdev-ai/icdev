@@ -20,6 +20,10 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
+import shutil
+import subprocess
+import tempfile
 from datetime import datetime, timezone
 from typing import Any
 
@@ -230,6 +234,33 @@ def _promote_top_opportunities(
     return len(promoted_opps)
 
 
+def _is_git_url(ref: str) -> bool:
+    """Return True if ref looks like a git or HTTPS repository URL."""
+    return bool(
+        re.match(r"^(https?://|git@)", ref)
+        or ref.endswith(".git")
+    )
+
+
+def _clone_git_url(url: str) -> str:
+    """Shallow-clone a git URL into a temp directory and return the local path.
+
+    Raises RuntimeError if git is unavailable or the clone fails.
+    """
+    if not shutil.which("git"):
+        raise RuntimeError("git CLI is not installed; cannot clone remote repository")
+
+    clone_dir = tempfile.mkdtemp(prefix="aac_git_")
+    cmd = ["git", "clone", "--depth", "1", "--single-branch", url, clone_dir]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if proc.returncode != 0:
+        shutil.rmtree(clone_dir, ignore_errors=True)
+        raise RuntimeError(
+            f"git clone failed (exit {proc.returncode}): {proc.stderr.strip()}"
+        )
+    return clone_dir
+
+
 def _count_source(path: str) -> tuple[int, int]:
     p = pathlib.Path(path)
     total_files = total_loc = 0
@@ -265,142 +296,153 @@ def run_scan(
 
     init_db()
 
-    total_files, total_loc = _count_source(input_ref)
+    # ── Git URL normalisation ───────────────────────────────────────────────────
+    cloned_path: str | None = None
+    scan_path = input_ref
+    if input_type == "git_url" or _is_git_url(input_ref):
+        cloned_path = _clone_git_url(input_ref)
+        scan_path = cloned_path
 
-    # 1a. Agent Readiness check (runs before Semgrep scan)
     try:
-        readiness_result = run_readiness_check(input_ref)
-    except Exception as exc:  # noqa: BLE001
-        readiness_result = {
-            "pillar_scores": {},
-            "overall_readiness_score": 0.0,
-            "icdev_checks": {},
-            "error": str(exc),
+        total_files, total_loc = _count_source(scan_path)
+
+        # 1a. Agent Readiness check (runs before Semgrep scan)
+        try:
+            readiness_result = run_readiness_check(scan_path)
+        except Exception as exc:  # noqa: BLE001
+            readiness_result = {
+                "pillar_scores": {},
+                "overall_readiness_score": 0.0,
+                "icdev_checks": {},
+                "error": str(exc),
+            }
+
+        language_profile: dict = {
+            "python": total_files,
+            "agent_readiness_summary": {
+                "pillar_scores": readiness_result["pillar_scores"],
+                "overall_readiness_score": readiness_result["overall_readiness_score"],
+                "icdev_checks": readiness_result["icdev_checks"],
+            },
         }
 
-    language_profile: dict = {
-        "python": total_files,
-        "agent_readiness_summary": {
-            "pillar_scores": readiness_result["pillar_scores"],
-            "overall_readiness_score": readiness_result["overall_readiness_score"],
-            "icdev_checks": readiness_result["icdev_checks"],
-        },
-    }
-
-    # 1b. Insert scan record
-    conn = get_connection()
-    try:
-        scan_id: int = _insert(
-            conn,
-            "INSERT INTO aac_scans "
-            "(input_type, input_ref, language_profile, total_files, total_loc, status) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (input_type, input_ref, _dump(language_profile), total_files, total_loc, "running"),
-            "scan_id",
-        )
-
-        _exec(
-            conn,
-            "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
-            ("scan_started", scan_id, "system", _dump({"input_type": input_type, "input_ref": input_ref})),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    # 2. Detect patterns (Semgrep or AST fallback)
-    patterns = detect_patterns(input_ref)
-
-    # 3. Insert opportunities + scores
-    opp_rows: list[dict] = []
-    score_rows: list[dict] = []
-
-    conn = get_connection()
-    try:
-        for pat in patterns:
-            paradigm = _PATTERN_TO_PARADIGM.get(pat["pattern_type"], "llm_generation")
-            il_model = _PARADIGM_TO_MODEL.get(paradigm, "claude-sonnet-4-6")
-
-            opp_id: int = _insert(
+        # 1b. Insert scan record
+        conn = get_connection()
+        try:
+            scan_id: int = _insert(
                 conn,
-                "INSERT INTO aac_opportunities "
-                "(scan_id, module_path, function_name, line_start, line_end, language, "
-                "pattern_type, pattern_detail, ai_paradigm, il_recommended_model, data_requirements) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    scan_id,
-                    pat["module_path"],
-                    pat.get("function_name", "<unknown>"),
-                    pat.get("line_start", 0),
-                    pat.get("line_end", 0),
-                    pat.get("language", "python"),
-                    pat["pattern_type"],
-                    _dump(pat.get("pattern_detail", {})),
-                    paradigm,
-                    il_model,
-                    _dump({}),
-                ),
-                "opportunity_id",
+                "INSERT INTO aac_scans "
+                "(input_type, input_ref, language_profile, total_files, total_loc, status) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (input_type, input_ref, _dump(language_profile), total_files, total_loc, "running"),
+                "scan_id",
             )
 
-            score = score_opportunity(pat, scan_context)
             _exec(
                 conn,
-                "INSERT INTO aac_scores "
-                "(opportunity_id, value_score, feasibility_score, risk_score, composite_score, score_detail) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+                ("scan_started", scan_id, "system", _dump({"input_type": input_type, "input_ref": input_ref})),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # 2. Detect patterns (Semgrep or AST fallback)
+        patterns = detect_patterns(scan_path)
+
+        # 3. Insert opportunities + scores
+        opp_rows: list[dict] = []
+        score_rows: list[dict] = []
+
+        conn = get_connection()
+        try:
+            for pat in patterns:
+                paradigm = _PATTERN_TO_PARADIGM.get(pat["pattern_type"], "llm_generation")
+                il_model = _PARADIGM_TO_MODEL.get(paradigm, "claude-sonnet-4-6")
+
+                opp_id: int = _insert(
+                    conn,
+                    "INSERT INTO aac_opportunities "
+                    "(scan_id, module_path, function_name, line_start, line_end, language, "
+                    "pattern_type, pattern_detail, ai_paradigm, il_recommended_model, data_requirements) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        scan_id,
+                        pat["module_path"],
+                        pat.get("function_name", "<unknown>"),
+                        pat.get("line_start", 0),
+                        pat.get("line_end", 0),
+                        pat.get("language", "python"),
+                        pat["pattern_type"],
+                        _dump(pat.get("pattern_detail", {})),
+                        paradigm,
+                        il_model,
+                        _dump({}),
+                    ),
+                    "opportunity_id",
+                )
+
+                score = score_opportunity(pat, scan_context)
+                _exec(
+                    conn,
+                    "INSERT INTO aac_scores "
+                    "(opportunity_id, value_score, feasibility_score, risk_score, composite_score, score_detail) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        opp_id,
+                        score["value_score"],
+                        score["feasibility_score"],
+                        score["risk_score"],
+                        score["composite_score"],
+                        _dump(score["score_detail"]),
+                    ),
+                )
+                conn.commit()
+
+                opp_rows.append({"opportunity_id": opp_id, **pat})
+                score_rows.append({"opportunity_id": opp_id, **score})
+        finally:
+            conn.close()
+
+        # 4. Generate roadmap (persists to aac_roadmaps internally)
+        roadmap = generate_roadmap(scan_id, opp_rows, score_rows)
+
+        # 5. Promote top opportunities to kanban
+        kanban_promoted = _promote_top_opportunities(opp_rows, score_rows, scan_id, roadmap["roadmap_id"])
+
+        # 6. Mark scan completed + final audit entry
+        conn = get_connection()
+        try:
+            _exec(
+                conn,
+                "UPDATE aac_scans SET status = ?, completed_at = ? WHERE scan_id = ?",
+                ("completed", _now(), scan_id),
+            )
+            _exec(
+                conn,
+                "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
                 (
-                    opp_id,
-                    score["value_score"],
-                    score["feasibility_score"],
-                    score["risk_score"],
-                    score["composite_score"],
-                    _dump(score["score_detail"]),
+                    "scan_completed",
+                    scan_id,
+                    "system",
+                    _dump({"opportunities_count": len(opp_rows), "roadmap_id": roadmap["roadmap_id"]}),
                 ),
             )
             conn.commit()
+        finally:
+            conn.close()
 
-            opp_rows.append({"opportunity_id": opp_id, **pat})
-            score_rows.append({"opportunity_id": opp_id, **score})
+        return {
+            "scan_id": scan_id,
+            "opportunities_count": len(opp_rows),
+            "scores_count": len(score_rows),
+            "roadmap_id": roadmap["roadmap_id"],
+            "kanban_promoted": kanban_promoted,
+            "status": "completed",
+            "pillar_scores": readiness_result["pillar_scores"],
+            "overall_readiness_score": readiness_result["overall_readiness_score"],
+            "icdev_checks": readiness_result["icdev_checks"],
+        }
     finally:
-        conn.close()
-
-    # 4. Generate roadmap (persists to aac_roadmaps internally)
-    roadmap = generate_roadmap(scan_id, opp_rows, score_rows)
-
-    # 5. Promote top opportunities to kanban
-    kanban_promoted = _promote_top_opportunities(opp_rows, score_rows, scan_id, roadmap["roadmap_id"])
-
-    # 6. Mark scan completed + final audit entry
-    conn = get_connection()
-    try:
-        _exec(
-            conn,
-            "UPDATE aac_scans SET status = ?, completed_at = ? WHERE scan_id = ?",
-            ("completed", _now(), scan_id),
-        )
-        _exec(
-            conn,
-            "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
-            (
-                "scan_completed",
-                scan_id,
-                "system",
-                _dump({"opportunities_count": len(opp_rows), "roadmap_id": roadmap["roadmap_id"]}),
-            ),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    return {
-        "scan_id": scan_id,
-        "opportunities_count": len(opp_rows),
-        "scores_count": len(score_rows),
-        "roadmap_id": roadmap["roadmap_id"],
-        "kanban_promoted": kanban_promoted,
-        "status": "completed",
-        "pillar_scores": readiness_result["pillar_scores"],
-        "overall_readiness_score": readiness_result["overall_readiness_score"],
-        "icdev_checks": readiness_result["icdev_checks"],
-    }
+        if cloned_path:
+            shutil.rmtree(cloned_path, ignore_errors=True)

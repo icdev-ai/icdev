@@ -18,10 +18,9 @@ Usage:
 
 import json
 import logging
-import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger("sparkpilot.code_pattern_scanner")
 

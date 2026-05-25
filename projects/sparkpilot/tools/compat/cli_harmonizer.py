@@ -26,7 +26,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TOOLS_DIR = PROJECT_ROOT / "tools"

@@ -23,7 +23,6 @@ Architecture decisions: D296-D300.
 import argparse
 import dataclasses
 import json
-import os
 import sqlite3
 import sys
 import time
@@ -38,7 +37,6 @@ DB_PATH = PROJECT_ROOT / "data" / "sparkpilot.db"
 sys.path.insert(0, str(PROJECT_ROOT))
 from tools.testing.production_audit import (
     AuditCheck,
-    AuditReport,
     CHECK_REGISTRY,
     run_audit,
     _run_subprocess,
@@ -364,7 +362,7 @@ def _run_auto_fix(
     rc, stdout, stderr = _run_subprocess(cmd, timeout=180)
 
     if rc == 0:
-        return "fixed", f"Auto-fix succeeded (exit 0)", {"stdout_tail": stdout[-500:] if stdout else "", "stderr_tail": stderr[-200:] if stderr else ""}
+        return "fixed", "Auto-fix succeeded (exit 0)", {"stdout_tail": stdout[-500:] if stdout else "", "stderr_tail": stderr[-200:] if stderr else ""}
     else:
         return "failed", f"Auto-fix failed (exit {rc}): {stderr[:300]}", {"returncode": rc, "stdout_tail": stdout[-500:] if stdout else "", "stderr_tail": stderr[-500:] if stderr else ""}
 
@@ -580,7 +578,7 @@ def run_remediation(
                     if verification.status == "pass":
                         verified_pass += 1
                         if stream:
-                            print(f"    [OK] Verification passed", file=sys.stderr)
+                            print("    [OK] Verification passed", file=sys.stderr)
                     else:
                         verified_fail += 1
                         if stream:
