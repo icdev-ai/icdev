@@ -179,6 +179,52 @@ _SCHEMA_STATEMENTS = [
 
     "CREATE INDEX IF NOT EXISTS idx_govlift_rollback_mig ON govlift_rollback_events(migration_id)",
     "CREATE INDEX IF NOT EXISTS idx_govlift_rollback_status ON govlift_rollback_events(status)",
+
+    # ── Compliance Artifacts ─────────────────────────────────────────────────
+    """CREATE TABLE IF NOT EXISTS govlift_compliance_artifacts (
+        id              TEXT PRIMARY KEY,
+        execution_id    TEXT NOT NULL,
+        step_id         TEXT,
+        control_id      TEXT NOT NULL,
+        control_family  TEXT,
+        artifact_type   TEXT CHECK(artifact_type IN ('ssp_delta','poam_entry','stig_finding','evidence','sbom_diff')),
+        content_json    TEXT DEFAULT '{}',
+        generated_at    TEXT,
+        classification  TEXT DEFAULT 'CUI'
+    )""",
+
+    "CREATE INDEX IF NOT EXISTS idx_govlift_ca_execution ON govlift_compliance_artifacts(execution_id)",
+    "CREATE INDEX IF NOT EXISTS idx_govlift_ca_control ON govlift_compliance_artifacts(control_id)",
+
+    # ── ATO Boundaries ───────────────────────────────────────────────────────
+    """CREATE TABLE IF NOT EXISTS govlift_ato_boundaries (
+        id                    TEXT PRIMARY KEY,
+        name                  TEXT NOT NULL,
+        workload_ids_json     TEXT DEFAULT '[]',
+        boundary_type         TEXT,
+        fedramp_level         TEXT,
+        classification_level  TEXT,
+        vendor_list_json      TEXT DEFAULT '[]',
+        last_assessed         TEXT,
+        classification        TEXT DEFAULT 'CUI'
+    )""",
+
+    "CREATE INDEX IF NOT EXISTS idx_govlift_ato_name ON govlift_ato_boundaries(name)",
+
+    # ── Supply Chain Risks ───────────────────────────────────────────────────
+    f"""CREATE TABLE IF NOT EXISTS govlift_supply_chain_risks (
+        id              TEXT PRIMARY KEY,
+        runbook_id      TEXT,
+        vendor_name     TEXT NOT NULL,
+        risk_level      TEXT CHECK ({CHECK_RISK_LEVEL}),
+        cve_count       INT DEFAULT 0,
+        findings_json   TEXT DEFAULT '[]',
+        scanned_at      TEXT,
+        classification  TEXT DEFAULT 'CUI'
+    )""",
+
+    "CREATE INDEX IF NOT EXISTS idx_govlift_scr_vendor ON govlift_supply_chain_risks(vendor_name)",
+    "CREATE INDEX IF NOT EXISTS idx_govlift_scr_risk ON govlift_supply_chain_risks(risk_level)",
 ]
 
 
