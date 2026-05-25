@@ -256,6 +256,8 @@ VALID_EVENT_TYPES = (
     "cross_agency_transfer_rejected",
     # Alert dispatcher events (secure log store integration)
     "pir_alert_generated",
+    # ANVIL build validation events
+    "code.validation",
 )
 
 
