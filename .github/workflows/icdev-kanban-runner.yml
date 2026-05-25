@@ -137,6 +137,9 @@ jobs:
           fi
 
       # ── Dashboard server (required for E2E steps inside ANVIL) ───────────
+      - name: Initialize database
+        run: python tools/db/init_icdev_db.py
+
       - name: Start dashboard server
         run: |
           python tools/dashboard/app.py &
