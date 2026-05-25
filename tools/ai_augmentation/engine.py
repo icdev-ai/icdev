@@ -234,6 +234,92 @@ def _promote_top_opportunities(
     return len(promoted_opps)
 
 
+def _promote_phase_opportunities(
+    roadmap: dict,
+    opp_rows: list[dict],
+    score_rows: list[dict],
+    scan_id: int,
+) -> int:
+    """Create [Phase] kanban tasks for every opportunity bucketed into P1/P2/P3.
+
+    One task per opportunity, labelled with its roadmap phase.  Tasks whose ID
+    already exists are skipped (idempotent).  Returns the count inserted.
+    """
+    from tools.db.storage import get_connection as _icdev_get_connection
+
+    roadmap_id: str = roadmap.get("roadmap_id", "")
+    # 'rm-8a699d41b6' → '8a699'
+    short_id = roadmap_id[3:8] if len(roadmap_id) > 8 else roadmap_id.replace("-", "")
+
+    score_index: dict[int, dict] = {int(s["opportunity_id"]): s for s in score_rows}
+    opp_index: dict[int, dict] = {int(o["opportunity_id"]): o for o in opp_rows}
+
+    inserted = 0
+    icdev_conn = _icdev_get_connection()
+    try:
+        for phase in roadmap.get("phases", []):
+            phase_label = phase.get("label", "")
+            for opp_item in phase.get("opportunities", []):
+                opp_id = int(opp_item.get("opportunity_id", 0))
+                task_id = f"aac-rm-{short_id}-phase-{opp_id}"
+
+                existing = _exec(
+                    icdev_conn,
+                    "SELECT id FROM kanban_tasks WHERE id = ?",
+                    (task_id,),
+                ).fetchone()
+                if existing:
+                    continue
+
+                opp = opp_index.get(opp_id, opp_item)
+                score = score_index.get(opp_id, {})
+
+                # Prefer opp_index (has computed paradigm/model); fall back to roadmap item
+                paradigm = opp.get("ai_paradigm") or opp_item.get("ai_paradigm", "")
+                model = opp.get("il_recommended_model") or opp_item.get("il_recommended_model", "")
+                pattern_type = opp.get("pattern_type") or opp_item.get("pattern_type", "")
+                module_path = opp.get("module_path") or opp_item.get("module_path", "")
+                function_name = (
+                    opp.get("function_name") or opp_item.get("function_name", "<unknown>")
+                )
+
+                title = f"[Phase] {pattern_type} in {module_path} -> {paradigm}"
+                description = json.dumps(
+                    {
+                        "opportunity_id": opp_id,
+                        "scan_id": scan_id,
+                        "roadmap_id": roadmap_id,
+                        "phase": phase_label,
+                        "pattern_type": pattern_type,
+                        "module_path": module_path,
+                        "function_name": function_name,
+                        "ai_paradigm": paradigm,
+                        "model_recommendation": model,
+                        "scores": {
+                            "composite": float(score.get("composite_score", 0.0)),
+                            "value": float(score.get("value_score", 0.0)),
+                            "feasibility": float(score.get("feasibility_score", 0.0)),
+                            "risk": float(score.get("risk_score", 0.0)),
+                        },
+                    },
+                    indent=2,
+                )
+                priority = "high" if float(score.get("composite_score", 0.0)) >= 0.7 else "medium"
+                _exec(
+                    icdev_conn,
+                    "INSERT INTO kanban_tasks "
+                    "(id, title, description, task_type, priority, status, executor_type) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (task_id, title, description, "build", priority, "suggested", "claude_cli"),
+                )
+                icdev_conn.commit()
+                inserted += 1
+    finally:
+        icdev_conn.close()
+
+    return inserted
+
+
 def _is_git_url(ref: str) -> bool:
     """Return True if ref looks like a git or HTTPS repository URL."""
     return bool(
@@ -399,7 +485,12 @@ def run_scan(
                 )
                 conn.commit()
 
-                opp_rows.append({"opportunity_id": opp_id, **pat})
+                opp_rows.append({
+                    "opportunity_id": opp_id,
+                    "ai_paradigm": paradigm,
+                    "il_recommended_model": il_model,
+                    **pat,
+                })
                 score_rows.append({"opportunity_id": opp_id, **score})
         finally:
             conn.close()
@@ -407,8 +498,9 @@ def run_scan(
         # 4. Generate roadmap (persists to aac_roadmaps internally)
         roadmap = generate_roadmap(scan_id, opp_rows, score_rows)
 
-        # 5. Promote top opportunities to kanban
+        # 5. Promote top opportunities to kanban (top-5 [AI Opp] + all-phase [Phase])
         kanban_promoted = _promote_top_opportunities(opp_rows, score_rows, scan_id, roadmap["roadmap_id"])
+        phase_promoted = _promote_phase_opportunities(roadmap, opp_rows, score_rows, scan_id)
 
         # 6. Mark scan completed + final audit entry
         conn = get_connection()
@@ -438,6 +530,7 @@ def run_scan(
             "scores_count": len(score_rows),
             "roadmap_id": roadmap["roadmap_id"],
             "kanban_promoted": kanban_promoted,
+            "phase_promoted": phase_promoted,
             "status": "completed",
             "pillar_scores": readiness_result["pillar_scores"],
             "overall_readiness_score": readiness_result["overall_readiness_score"],
