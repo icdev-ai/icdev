@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway-agent
-          image: ${REGISTRY}/icdev-gateway-agent:latest
+          image: ${ECR_REGISTRY}/icdev-gateway-agent:latest
           args: ["tools/a2a/agent_entrypoint.py", "--agent-id", "gateway-agent", "--port", "8458", "--no-tls"]
           ports:
             - containerPort: 8458

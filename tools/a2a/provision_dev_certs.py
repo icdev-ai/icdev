@@ -43,11 +43,12 @@ AGENT_NAMES: List[str] = [
     "monitor",
     "mbse",
     "modernization",
-    "requirements_analyst",
-    "supply_chain",
+    "requirements-analyst",
+    "supply-chain",
     "simulation",
     "gateway",
     "devsecops",
+    "integration",
 ]
 
 DAYS_VALID = 365
