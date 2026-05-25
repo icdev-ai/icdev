@@ -51,10 +51,19 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install Python dependencies
         run: |
           pip install -r requirements.txt 2>/dev/null || true
           pip install flask pyyaml requests
+
+      - name: Install Node dependencies + Playwright browsers
+        run: |
+          npm ci 2>/dev/null || npm install 2>/dev/null || true
+          npx playwright install chromium --with-deps 2>/dev/null || true
 
       # ── Local Ollama install ───────────────────────────────────────────────
       # Only runs when llm_provider=ollama (local daemon mode).
