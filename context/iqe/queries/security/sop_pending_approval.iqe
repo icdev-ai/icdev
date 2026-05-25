@@ -1,0 +1,8 @@
+# Intent: Show all SOP workflow steps pending ISSO/AO approval — open HITL gates blocking
+#         design promotion to the next phase of the 12-step SDC workflow.
+# Expected violation shape: rows where status == "pending" and approved_by is null;
+#   each row is a workflow gate that must be cleared before IaC generation can proceed.
+
+foreach s in sdc_demo.workflow_steps
+  where s.status == "pending"
+  select s.design_id, s.step_id, s.step_name, s.status, s.started_at, s.created_at

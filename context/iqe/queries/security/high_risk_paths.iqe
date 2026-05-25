@@ -1,0 +1,8 @@
+# Intent: Surface all attack-graph edges with risk_score >= 7 — high-risk traversal paths
+#         requiring immediate remediation to prevent lateral movement or data exfiltration.
+# Expected violation shape: rows where risk_score >= 7.0;
+#   each row is a high-risk edge in the SDC Attack Path Twin that warrants leadership attention.
+
+foreach e in attack.edges
+  where e.risk_score >= 7.0
+  select e.snapshot_id, e.component_id, e.source, e.target, e.risk_score, e.encrypted, e.authenticated
