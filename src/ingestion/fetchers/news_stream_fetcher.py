@@ -118,12 +118,18 @@ class NewsStreamFetcher:
         query_string = urllib.parse.urlencode(params)
         full_url = f"{self.base_url}/everything?{query_string}"
 
+        _parsed = urllib.parse.urlparse(full_url)
+        if _parsed.scheme not in {"http", "https"}:
+            raise NewsStreamFetchError(
+                f"Blocked NewsAPI request: scheme {_parsed.scheme!r} not permitted"
+            )
+
         try:
             req = urllib.request.Request(
                 full_url,
                 headers={"Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310
                 raw = resp.read().decode("utf-8")
             data: Dict[str, Any] = json.loads(raw)
         except urllib.error.HTTPError as exc:
@@ -169,12 +175,18 @@ class NewsStreamFetcher:
         query_string = urllib.parse.urlencode(params)
         full_url = f"{_DEFAULT_GDELT_URL}?{query_string}"
 
+        _parsed = urllib.parse.urlparse(full_url)
+        if _parsed.scheme not in {"http", "https"}:
+            raise NewsStreamFetchError(
+                f"Blocked GDELT request: scheme {_parsed.scheme!r} not permitted"
+            )
+
         try:
             req = urllib.request.Request(
                 full_url,
                 headers={"Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310
                 raw = resp.read().decode("utf-8")
             data: Dict[str, Any] = json.loads(raw)
         except urllib.error.HTTPError as exc:
