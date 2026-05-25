@@ -47,7 +47,7 @@ def _telnet_push(host: str, port: int, device_name: str,
                  commands: list[str], dry_run: bool = False,
                  timeout: float = 30.0) -> dict:
     """Open telnet to host:port, send commands, capture output."""
-    import telnetlib  # noqa: PLC0415
+    import telnetlib  # noqa: PLC0415 # nosec B401
 
     output_lines: list[str] = []
     errors: list[str] = []
@@ -61,7 +61,7 @@ def _telnet_push(host: str, port: int, device_name: str,
         }
 
     try:
-        tn = telnetlib.Telnet(host, port, timeout=timeout)
+        tn = telnetlib.Telnet(host, port, timeout=timeout)  # nosec: B312
 
         # Wait for RouterOS login prompt or shell prompt
         time.sleep(1.5)

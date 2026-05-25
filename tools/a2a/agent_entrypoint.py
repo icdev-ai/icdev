@@ -182,7 +182,7 @@ def _make_tool_delegate_handler(skill_id: str, tool_command: str) -> Callable[[T
             # Run the tool
             result = subprocess.run(
                 cmd,
-                shell=True,
+                shell=True,  # nosec: B602 — cmd is built from allowlisted internal constants, not user input
                 capture_output=True,
                 text=True,
                 cwd=str(ROOT),
