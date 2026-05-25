@@ -136,6 +136,15 @@ jobs:
             echo "Credential missing — ANVIL will attempt with available providers."
           fi
 
+      # ── Dashboard server (required for E2E steps inside ANVIL) ───────────
+      - name: Start dashboard server
+        run: |
+          python tools/dashboard/app.py &
+          echo $! > /tmp/dashboard.pid
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:5050/ && echo "Dashboard ready." && break || sleep 2
+          done
+
       # ── ANVIL execution ───────────────────────────────────────────────────
       - name: ANVIL — Execute Task
         run: |
@@ -149,6 +158,10 @@ jobs:
             python tools/testing/health_check.py --json
             python -m ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E731,E741
           fi
+
+      - name: Stop dashboard server
+        if: always()
+        run: kill $(cat /tmp/dashboard.pid 2>/dev/null) 2>/dev/null || true
 
       - name: Summary
         if: always()
