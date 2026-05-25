@@ -154,15 +154,25 @@ jobs:
             curl -sf http://localhost:5050/ && echo "Dashboard ready." && break || sleep 2
           done
 
-      # ── ANVIL execution ───────────────────────────────────────────────────
-      # --keep-going: run all steps even if one fails, so we see the full picture.
-      # E2E failures are treated as non-blocking; other failures hard-fail the job.
-      - name: ANVIL — Execute Task
+      # ── Agentic execution (LLM-backed) ───────────────────────────────────
+      # When OLLAMA_API_KEY or ANTHROPIC_API_KEY is present, run the agentic
+      # runner (LLMRouter → Ollama/Anthropic) so the GA executor has the same
+      # reasoning capability as the local Claude CLI executor.
+      # Falls back to static ANVIL wrappers if no LLM key is available.
+      - name: Agentic — Execute Task
         run: |
+          TASK_ID="${{ github.event.inputs.task_id }}"
           TASK_TYPE="${{ github.event.inputs.task_type }}"
           TASK_DESC="${{ github.event.inputs.task_desc }}"
-          if [ -f "tools/anvil/${TASK_TYPE}.py" ]; then
-            echo "Running ANVIL wrapper: tools/anvil/${TASK_TYPE}.py"
+          if [ -n "$OLLAMA_API_KEY" ] || [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "LLM key detected — running agentic runner (provider=$LLM_PROVIDER)"
+            python tools/anvil/agentic_runner.py \
+              --task-id  "$TASK_ID" \
+              --task-desc "$TASK_DESC" \
+              --task-type "$TASK_TYPE" \
+              --max-turns 6
+          elif [ -f "tools/anvil/${TASK_TYPE}.py" ]; then
+            echo "No LLM key — falling back to static ANVIL wrapper: tools/anvil/${TASK_TYPE}.py"
             set +e
             python "tools/anvil/${TASK_TYPE}.py" --json --keep-going -- "$TASK_DESC" \
               | tee /tmp/anvil_result.json
@@ -178,7 +188,7 @@ jobs:
               fi
             fi
           else
-            echo "No ANVIL wrapper for '${TASK_TYPE}'. Running generic health + lint."
+            echo "No LLM key and no ANVIL wrapper for '${TASK_TYPE}'. Running generic health + lint."
             python tools/testing/health_check.py --json
             python -m ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E731,E741
           fi
