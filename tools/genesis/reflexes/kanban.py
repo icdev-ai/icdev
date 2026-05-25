@@ -2992,13 +2992,14 @@ def _dispatch_github_actions(task_id: str, task_desc: str, task_type: str) -> bo
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
+    llm_provider = _os.getenv("LLM_PROVIDER", "ollama").strip() or "ollama"
     payload = {
         "ref": "main",
         "inputs": {
             "task_id": task_id,
             "task_desc": task_desc,
             "task_type": task_type,
-            "llm_provider": "ollama",
+            "llm_provider": llm_provider,
         },
     }
 
