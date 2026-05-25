@@ -3,6 +3,7 @@
 
 Provides CRUD operations for govlift_runbook_templates.
 All DB access via get_connection() — never sqlite3.connect().
+SQL uses ? placeholders; StorageCursor translates to %s for PostgreSQL.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 if str(_ICDEV_ROOT) not in sys.path:
     sys.path.insert(0, str(_ICDEV_ROOT))
 
-from tools.db.storage import get_connection, translate_sql
+from tools.db.storage import get_connection
 from tools.govlift.constants import WORKLOAD_TYPES, RUNBOOK_CATEGORIES
 
 
@@ -57,12 +58,12 @@ def create_template(
     steps_json = json.dumps(steps)
     conn = get_connection()
     try:
-        sql = translate_sql(
+        conn.execute(
             "INSERT INTO govlift_runbook_templates "
             "(id, name, category, description, workload_type, author, steps_json, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)"
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (rbt_id, name, category, description, workload_type, author, steps_json, now),
         )
-        conn.execute(sql, (rbt_id, name, category, description, workload_type, author, steps_json, now))
         conn.commit()
         return get_template(rbt_id)
     finally:
@@ -73,8 +74,10 @@ def get_template(template_id: str) -> dict:
     """Return a runbook template by ID, or {} if not found."""
     conn = get_connection()
     try:
-        sql = translate_sql("SELECT * FROM govlift_runbook_templates WHERE id = ?")
-        row = conn.execute(sql, (template_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM govlift_runbook_templates WHERE id = ?",
+            (template_id,),
+        ).fetchone()
         return _row_to_dict(row)
     finally:
         conn.close()
@@ -93,10 +96,10 @@ def list_templates(category: str | None = None, author: str | None = None) -> li
             clauses.append("author = ?")
             params.append(author)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-        sql = translate_sql(
-            f"SELECT * FROM govlift_runbook_templates {where} ORDER BY created_at DESC"
-        )
-        rows = conn.execute(sql, params).fetchall()
+        rows = conn.execute(
+            f"SELECT * FROM govlift_runbook_templates {where} ORDER BY created_at DESC",
+            params,
+        ).fetchall()
         return [_row_to_dict(r) for r in rows]
     finally:
         conn.close()
