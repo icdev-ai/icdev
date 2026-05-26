@@ -67,7 +67,7 @@
     <div style="color:#5a7aa0;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-top:4px;">Est. Days</div>
   </div>
   <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:#f59e0b;">{{ roadmap.phases|length }}</div>
+    <div style="font-size:28px;font-weight:700;color:#34d399;">{{ roadmap.phases|length }}</div>
     <div style="color:#5a7aa0;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-top:4px;">Phases</div>
   </div>
   <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:16px;text-align:center;">
@@ -155,7 +155,7 @@
                          'P3': {'bg': '#2e1a0e', 'border': '#b45309', 'label': '#f59e0b', 'badge': '#451a03'}} %}
 
   {% for phase in roadmap.phases %}
-  {% set ph_key = phase.label.split(' ')[0] if phase.label else 'P3' %}
+  {% set ph_key = phase.phase_id if phase.phase_id else 'P3' %}
   {% set colors = phase_colors.get(ph_key, phase_colors['P3']) %}
 
   <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;margin-bottom:16px;overflow:hidden;">
@@ -165,8 +165,13 @@
         <span style="background:{{ colors.border }};color:#fff;border-radius:4px;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">{{ ph_key }}</span>
         <span style="color:{{ colors.label }};font-weight:600;font-size:14px;">{{ phase.label.split('—')[1].strip() if '—' in phase.label else phase.label }}</span>
       </div>
-      <div style="display:flex;align-items:center;gap:16px;">
+      <div style="display:flex;align-items:center;gap:10px;">
         <span style="color:#5a7aa0;font-size:12px;">{{ phase.count }} opportunities &middot; {{ phase.total_effort_days }}d</span>
+        <button onclick="generatePRD('{{ roadmap.roadmap_id }}', '{{ ph_key }}')"
+                id="prd-btn-{{ ph_key }}"
+                style="background:#0d2518;color:#34d399;border:1px solid #16a34a;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">
+          &#128196; Generate PRD
+        </button>
         <button onclick="sendPhaseToKanban('{{ roadmap.roadmap_id }}', '{{ ph_key }}')"
                 id="send-btn-{{ ph_key }}"
                 style="background:{{ colors.border }};color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">
@@ -195,8 +200,19 @@
             {{ opp.module_path.split('/')[-1] if '/' in (opp.module_path or '') else (opp.module_path or '—') }}
           </td>
           <td style="padding:8px 12px;">
-            <span style="background:{{ colors.badge }};color:{{ colors.label }};border:1px solid {{ colors.border }};border-radius:4px;padding:2px 8px;font-size:11px;font-weight:500;">
-              {{ opp.pattern_type or '—' }}
+            {% set _pt_tips = {
+              'hardcoded_threshold': 'Literal numeric constant in comparison/arithmetic (e.g. if x > 0.7). Replace with anomaly_detection model to learn thresholds dynamically from historical data.',
+              'nested_conditionals': 'Decision tree with 3+ nesting levels. Replace with ml_classifier trained on labeled examples.',
+              'string_template_rendering': 'Template rendering that benefits from LLM-generated, context-aware output.',
+              'scheduled_cron': 'Time-based trigger — replace with agentic_trigger on event conditions.',
+              'regex_user_input': 'Regex on user text; nlp_extractor handles variation and ambiguity more robustly.',
+              'db_render_notify_chain': 'Manual DB→render→notify orchestration; llm_generation pipeline manages context.',
+              'keyword_list_search': 'Keyword list check; embedding_search enables semantic similarity matching.',
+              'large_rule_table': 'Dict/map with 10+ business rules; decision_agent reasons with context.'
+            } %}
+            <span style="background:{{ colors.badge }};color:{{ colors.label }};border:1px solid {{ colors.border }};border-radius:4px;padding:2px 8px;font-size:11px;font-weight:500;cursor:help;"
+                  title="{{ _pt_tips.get(opp.pattern_type, opp.pattern_type) }}">
+              {{ opp.pattern_type or '—' }}{% if _pt_tips.get(opp.pattern_type) %} ⓘ{% endif %}
             </span>
           </td>
           <td style="padding:8px 12px;color:#80c0a0;font-size:11px;">{{ opp.ai_paradigm or '—' }}</td>
@@ -241,7 +257,7 @@
     </div>
     {% set ns = namespace(offset=0) %}
     {% for phase in roadmap.phases %}
-    {% set ph_key = phase.label.split(' ')[0] if phase.label else 'P?' %}
+    {% set ph_key = phase.phase_id if phase.phase_id else 'P?' %}
     {% set days = phase.total_effort_days|int %}
     {% set start_col = (ns.offset / total_days * bar_width)|int if total_days > 0 else 0 %}
     {% set width_col = (days / total_days * bar_width)|int if total_days > 0 else 0 %}
@@ -300,7 +316,22 @@
           <td style="padding:7px 12px;color:#3a5a80;font-size:11px;">{{ loop.index }}</td>
           <td style="padding:7px 12px;color:#a8c8e0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.module_path }}">{{ opp.module_path }}</td>
           <td style="padding:7px 12px;color:#a8c8e0;">{{ opp.function_name }}</td>
-          <td style="padding:7px 12px;"><span style="background:#0d2545;color:#6ab0e0;border:1px solid #1a4070;border-radius:3px;padding:2px 6px;font-size:11px;">{{ opp.pattern_type }}</span></td>
+          <td style="padding:7px 12px;">
+            {% set _at_tips = {
+              'hardcoded_threshold': 'Literal numeric constant in comparison/arithmetic (e.g. if x > 0.7). Replace with anomaly_detection model.',
+              'nested_conditionals': '3+ nesting levels of conditional logic. Replace with ml_classifier.',
+              'string_template_rendering': 'Template rendering; candidate for llm_generation.',
+              'scheduled_cron': 'Time-based trigger; candidate for agentic_trigger.',
+              'regex_user_input': 'Regex on user input; candidate for nlp_extractor.',
+              'db_render_notify_chain': 'DB→render→notify chain; candidate for llm_generation pipeline.',
+              'keyword_list_search': 'Keyword list check; candidate for embedding_search.',
+              'large_rule_table': '10+ entry rule dict; candidate for decision_agent.'
+            } %}
+            <span style="background:#0d2545;color:#6ab0e0;border:1px solid #1a4070;border-radius:3px;padding:2px 6px;font-size:11px;cursor:help;"
+                  title="{{ _at_tips.get(opp.pattern_type, opp.pattern_type) }}">
+              {{ opp.pattern_type }}{% if _at_tips.get(opp.pattern_type) %} ⓘ{% endif %}
+            </span>
+          </td>
           <td style="padding:7px 12px;color:#80c0a0;font-size:11px;">{{ opp.ai_paradigm }}</td>
           <td style="padding:7px 12px;color:#6080a0;font-size:11px;">{{ opp.il_recommended_model or '—' }}</td>
           <td style="padding:7px 12px;">
@@ -322,7 +353,12 @@
 <!-- ── Recent Scans ────────────────────────────────────────────────────────── -->
 {% if scans %}
 <div style="margin-bottom:24px;">
-  <h3 style="color:#9bb8d8;font-size:14px;margin-bottom:12px;text-transform:uppercase;letter-spacing:.8px;">Recent Scans</h3>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <h3 style="color:#9bb8d8;font-size:14px;margin:0;text-transform:uppercase;letter-spacing:.8px;">Recent Scans</h3>
+    <button onclick="deleteAllScans()" style="background:#2a0808;color:#e05050;border:1px solid #6b1f1f;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;">
+      &#128465; Delete All
+    </button>
+  </div>
   <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead>
@@ -330,18 +366,24 @@
           <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">ID</th>
           <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Type</th>
           <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Source</th>
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Summary</th>
           <th style="padding:7px 12px;text-align:right;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Files</th>
           <th style="padding:7px 12px;text-align:right;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">LOC</th>
           <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Status</th>
           <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Created</th>
+          <th style="padding:7px 12px;text-align:center;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Actions</th>
         </tr>
       </thead>
       <tbody>
       {% for scan in scans %}
-        <tr style="border-bottom:1px solid #0d1e30;" onmouseover="this.style.background='#0a1830'" onmouseout="this.style.background=''">
+        <tr id="scan-row-{{ scan.scan_id }}" style="border-bottom:1px solid #0d1e30;" onmouseover="this.style.background='#0a1830'" onmouseout="this.style.background=''">
           <td style="padding:6px 12px;color:#6080a0;">#{{ scan.scan_id }}</td>
           <td style="padding:6px 12px;color:#a8c8e0;">{{ scan.input_type }}</td>
-          <td style="padding:6px 12px;color:#a8c8e0;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ scan.input_ref }}">{{ scan.input_ref }}</td>
+          <td style="padding:6px 12px;color:#a8c8e0;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ scan.input_ref }}">{{ scan.input_ref }}</td>
+          <td style="padding:6px 12px;color:#7a9ab0;font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+              title="{{ scan.project_summary or '' }}">
+            {{ (scan.project_summary or '—')[:90] }}{% if scan.project_summary and scan.project_summary|length > 90 %}…{% endif %}
+          </td>
           <td style="padding:6px 12px;text-align:right;color:#80a0c0;">{{ scan.total_files }}</td>
           <td style="padding:6px 12px;text-align:right;color:#80a0c0;">{{ scan.total_loc }}</td>
           <td style="padding:6px 12px;">
@@ -351,6 +393,12 @@
             {% endif %}
           </td>
           <td style="padding:6px 12px;color:#5a7090;font-size:11px;">{{ scan.created_at }}</td>
+          <td style="padding:6px 12px;text-align:center;">
+            <button onclick="deleteScan({{ scan.scan_id }})"
+                    style="background:#2a0808;color:#e05050;border:1px solid #6b1f1f;padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer;">
+              &#128465;
+            </button>
+          </td>
         </tr>
       {% endfor %}
       </tbody>
@@ -358,6 +406,41 @@
   </div>
 </div>
 {% endif %}
+
+<!-- ── PRD Modal ──────────────────────────────────────────────────────────── -->
+<div id="prd-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10000;overflow:auto;">
+  <div style="background:#0d1b2e;border:1px solid #16a34a;border-radius:10px;max-width:820px;margin:40px auto;padding:28px 32px;position:relative;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <span style="color:#34d399;font-size:15px;font-weight:700;">&#128196; Product Requirements Document</span>
+      <div style="display:flex;gap:8px;">
+        <button onclick="downloadPRD()" style="background:#1a3a2e;color:#34d399;border:1px solid #16a34a;padding:6px 16px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;">&#11123; Download .md</button>
+        <button onclick="closePRD()" style="background:#2a0d0d;color:#e05050;border:1px solid #6b1f1f;padding:6px 16px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;">&#10005; Close</button>
+      </div>
+    </div>
+    <div id="prd-content" style="background:#060f22;border:1px solid #1a3560;border-radius:6px;padding:18px 22px;color:#b8d0e8;font-size:13px;line-height:1.8;max-height:65vh;overflow-y:auto;
+      --prd-h: #34d399; --prd-code: #a5b4fc; --prd-border: #1a3560;">
+    </div>
+    <style>
+      #prd-content h1,#prd-content h2,#prd-content h3{color:var(--prd-h);margin:.9em 0 .4em;}
+      #prd-content h1{font-size:16px;border-bottom:1px solid #1a3560;padding-bottom:6px;}
+      #prd-content h2{font-size:14px;}
+      #prd-content h3{font-size:13px;}
+      #prd-content p,#prd-content li{margin:.3em 0;}
+      #prd-content code{background:#0a1428;color:var(--prd-code);border:1px solid #1a3560;border-radius:3px;padding:1px 5px;font-size:11px;font-family:'Courier New',monospace;}
+      #prd-content pre{background:#0a1428;border:1px solid #1a3560;border-radius:5px;padding:10px 14px;overflow-x:auto;}
+      #prd-content pre code{border:none;background:none;padding:0;}
+      #prd-content table{width:100%;border-collapse:collapse;font-size:12px;margin:.6em 0;}
+      #prd-content th{background:#060f22;color:#5a7aa0;text-align:left;padding:6px 10px;border:1px solid #1a3560;font-size:10px;text-transform:uppercase;letter-spacing:.5px;}
+      #prd-content td{padding:6px 10px;border:1px solid #1a3560;color:#a8c8e0;}
+      #prd-content tr:nth-child(even) td{background:#040c1a;}
+      #prd-content blockquote{border-left:3px solid #1a4070;padding:4px 12px;color:#5a8aaa;margin:.5em 0;}
+      #prd-content ul,#prd-content ol{padding-left:1.4em;}
+      #prd-content input[type=checkbox]{margin-right:6px;}
+      #prd-content hr{border:none;border-top:1px solid #1a3560;margin:.8em 0;}
+      #prd-content a{color:#60a5fa;}
+    </style>
+  </div>
+</div>
 
 <!-- ── IQE Widget ─────────────────────────────────────────────────────────── -->
 {% include "includes/iqe_query_widget.html" %}
@@ -456,7 +539,8 @@ async function sendPhaseToKanban(roadmapId, phaseId) {
     if (data.error) {
       showToast('Error: ' + data.error, false);
     } else {
-      showToast(phaseId + ': ' + data.created + ' tasks created, ' + data.skipped + ' skipped');
+      const epics = data.epics || 0;
+      showToast(phaseId + ': ' + data.created + ' tasks created (' + epics + ' epic + atomics), ' + data.skipped + ' skipped');
       if (btn) { btn.textContent = '&#10003; Sent'; btn.style.background = '#16a34a'; }
     }
   } catch(e) {
@@ -483,13 +567,100 @@ async function sendAllToKanban() {
     if (data.error) {
       showToast('Error: ' + data.error, false);
     } else {
-      showToast('All phases: ' + data.created + ' tasks created, ' + data.skipped + ' already existed');
+      const epics = data.epics || 0;
+      showToast('All phases: ' + data.created + ' tasks created (' + epics + ' epics + atomics), ' + data.skipped + ' already existed');
       if (btn) { btn.innerHTML = '<span style="font-size:16px;">&#10003;</span> Sent to Kanban'; btn.style.background='linear-gradient(135deg,#16a34a,#15803d)'; }
     }
   } catch(e) {
     showToast('Network error: ' + e.message, false);
   } finally {
     if (btn) btn.disabled = false;
+  }
+}
+
+// ── PRD ──────────────────────────────────────────────────────────────────────
+let _currentPRD = '';
+
+async function generatePRD(roadmapId, phaseId) {
+  const btn = document.getElementById('prd-btn-' + phaseId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+
+  try {
+    const resp = await fetch('/ai-augmentation/api/generate-prd', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({roadmap_id: roadmapId, phase_id: phaseId})
+    });
+    const data = await resp.json();
+    if (data.error) {
+      showToast('PRD error: ' + data.error, false);
+    } else {
+      _currentPRD = data.prd || '';
+      const prdEl = document.getElementById('prd-content');
+      if (typeof marked !== 'undefined') {
+        prdEl.innerHTML = marked.parse(_currentPRD);
+        prdEl.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = false);
+      } else {
+        prdEl.innerHTML = '<pre style="white-space:pre-wrap;">' + _currentPRD.replace(/</g,'&lt;') + '</pre>';
+      }
+      document.getElementById('prd-modal').style.display = '';
+    }
+  } catch(e) {
+    showToast('Network error: ' + e.message, false);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📄 Generate PRD'; }
+  }
+}
+
+function closePRD() {
+  document.getElementById('prd-modal').style.display = 'none';
+}
+
+function downloadPRD() {
+  if (!_currentPRD) return;
+  const blob = new Blob([_currentPRD], {type: 'text/markdown'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'aac-prd-' + new Date().toISOString().slice(0,10) + '.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Close modal on backdrop click
+document.getElementById('prd-modal').addEventListener('click', function(e) {
+  if (e.target === this) closePRD();
+});
+
+// ── Delete scans ──────────────────────────────────────────────────────────────
+async function deleteScan(scanId) {
+  try {
+    const resp = await fetch('/ai-augmentation/api/scan/' + scanId, {method: 'DELETE'});
+    const data = await resp.json();
+    if (data.error) {
+      showToast('Delete error: ' + data.error, false);
+    } else {
+      const row = document.getElementById('scan-row-' + scanId);
+      if (row) row.remove();
+      showToast('Scan #' + scanId + ' deleted');
+    }
+  } catch(e) {
+    showToast('Network error: ' + e.message, false);
+  }
+}
+
+async function deleteAllScans() {
+  if (!confirm('Delete ALL scan records and their opportunities, scores, and roadmaps? This cannot be undone.')) return;
+  try {
+    const resp = await fetch('/ai-augmentation/api/scan/all', {method: 'DELETE'});
+    const data = await resp.json();
+    if (data.error) {
+      showToast('Delete error: ' + data.error, false);
+    } else {
+      showToast(data.deleted_scans + ' scan(s) deleted — reloading…');
+      setTimeout(() => window.location.reload(), 1500);
+    }
+  } catch(e) {
+    showToast('Network error: ' + e.message, false);
   }
 }
 </script>
