@@ -6,3 +6,4 @@
 {"ts": "2026-05-25T17:32:29.041012+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.bus_subscriber", "message": "aadc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-25T23:59:17.871153+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.bus_subscriber", "message": "aadc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-26T00:26:46.608366+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.bus_subscriber", "message": "aadc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-26T20:34:22.925116+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.bus_subscriber", "message": "aadc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
