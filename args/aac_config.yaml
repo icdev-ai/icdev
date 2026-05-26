@@ -41,6 +41,12 @@ semgrep:
   timeout_seconds: 60
   metrics: "off"
 
+il_penalties:
+  # Compliance burden added per IL level when compliance_impact is not provided
+  il4: 0.0
+  il5: 0.1
+  il6: 0.2
+
 anomaly_detection:
   # Minimum composite score for an opportunity to be registered as an innovation signal
   innovation_signal_min_score: 0.60
@@ -51,3 +57,7 @@ anomaly_detection:
     p3_min_score: 0.30  # "P3 — Long-Horizon Investments"
   # Minimum composite score to assign "high" priority to a kanban task
   priority_high_min_score: 0.70
+  # Score anomaly detection thresholds (used by detect_score_anomalies)
+  value_feasibility_max_delta: 0.50   # flag when |value - feasibility| exceeds this
+  component_outlier_floor: 0.05       # flag component below this value
+  component_outlier_ceiling: 0.95     # flag component above this value
