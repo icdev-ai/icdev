@@ -4961,7 +4961,7 @@ _dispatch_times: Dict[str, datetime] = {}
 # Current executor tier — updated once per scheduler cycle
 _current_exec_tier: Optional[str] = None
 
-_SILENT_DISPATCH_THRESHOLD = 5 * 60  # 5 min — no log file content yet = never dispatched
+_SILENT_DISPATCH_THRESHOLD = 1 * 60  # 1 min — no log file content yet = never dispatched
 _ABSOLUTE_MAX_IN_PROGRESS_SECONDS = 24 * 60 * 60  # 24 h hard ceiling — force-reap even if in _running
 
 
