@@ -11,6 +11,19 @@ PORTAL_PORT: 8443
    taskkill /f /im python.exe 2>/dev/null; echo "Cleared Python processes"
    ```
 
+0. Reset any stuck IN PROGRESS tasks back to backlog (orphaned by the taskkill above):
+   ```bash
+   python -c "
+from tools.db.storage import get_connection
+with get_connection() as conn:
+    cur = conn.cursor()
+    cur.execute(\"UPDATE kanban_tasks SET status='backlog', updated_at=datetime('now') WHERE status='in_progress'\")
+    n = cur.rowcount
+    conn.commit()
+    print(f'Reset {n} stuck in_progress task(s) to backlog')
+"
+   ```
+
 0. Read the dashboard port from `.env` (uses `ICDEV_DASHBOARD_PORT`, defaults to 5050):
    ```bash
    DASHBOARD_PORT=$(python -c "from dotenv import dotenv_values; print(dotenv_values('.env').get('ICDEV_DASHBOARD_PORT', '5050'))")
