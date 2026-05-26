@@ -105,6 +105,89 @@ def _insert(conn: Any, sql: str, params: tuple, id_col: str = "id") -> int:
     return cur.lastrowid or 0
 
 
+def _build_summary(input_ref: str, opp_rows: list[dict]) -> str:
+    """Derive a one-sentence plain-English project summary without LLM calls."""
+    ref = input_ref.strip().rstrip("/")
+    if re.match(r"^(https?://|git@)", ref):
+        name = ref.rstrip("/").split("/")[-1].replace(".git", "")
+    else:
+        name = pathlib.Path(ref).name or ref
+
+    if not opp_rows:
+        return f"'{name}' — no AI-augmentable patterns detected."
+
+    pattern_counts: dict[str, int] = {}
+    paradigm_counts: dict[str, int] = {}
+    for opp in opp_rows:
+        pt = opp.get("pattern_type", "unknown")
+        pa = opp.get("ai_paradigm", "")
+        pattern_counts[pt] = pattern_counts.get(pt, 0) + 1
+        if pa:
+            paradigm_counts[pa] = paradigm_counts.get(pa, 0) + 1
+
+    top_patterns = sorted(pattern_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+    top_paradigms = sorted(paradigm_counts.items(), key=lambda x: x[1], reverse=True)[:2]
+    pattern_str = ", ".join(f"{count}× {pt}" for pt, count in top_patterns)
+    paradigm_str = " + ".join(p for p, _ in top_paradigms) if top_paradigms else "llm_generation"
+    return (
+        f"'{name}' — {len(opp_rows)} augmentation opportunities: "
+        f"{pattern_str}. Recommended AI: {paradigm_str}."
+    )
+
+
+def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], scan_id: int) -> int:
+    """Option C: cross-register high-scoring AAC opportunities (>=0.60) to innovation_signals."""
+    score_index = {int(s["opportunity_id"]): s for s in score_rows}
+    registered = 0
+    try:
+        from tools.db.storage import get_connection as _icdev_conn
+        import hashlib
+        conn = _icdev_conn()
+        try:
+            for opp in opp_rows:
+                opp_id = int(opp.get("opportunity_id", 0))
+                score = score_index.get(opp_id, {})
+                composite = float(score.get("composite_score", 0.0))
+                if composite < 0.60:
+                    continue
+                pattern = opp.get("pattern_type", "")
+                paradigm = opp.get("ai_paradigm", "")
+                module = opp.get("module_path", "")
+                title = f"AI Augmentation: {pattern} → {paradigm} in {module}"
+                description = (
+                    f"Detected by AAC scan #{scan_id}. Pattern: {pattern}, "
+                    f"AI paradigm: {paradigm}, composite score: {composite:.2f}."
+                )
+                content_hash = hashlib.sha256(
+                    f"aac-{scan_id}-{opp_id}".encode()
+                ).hexdigest()[:32]
+                signal_id = f"aac-{scan_id}-{opp_id}"
+                # Skip if already registered
+                existing = conn.execute(
+                    "SELECT id FROM innovation_signals WHERE id = ?", (signal_id,)
+                ).fetchone()
+                if existing:
+                    continue
+                conn.execute(
+                    "INSERT INTO innovation_signals "
+                    "(id, source, source_type, title, description, content_hash, "
+                    "discovered_at, status, category, innovation_score) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        signal_id, "aac_opportunities", "internal_analysis",
+                        title, description, content_hash,
+                        _now(), "approved", "ai_augmentation_opportunity", composite,
+                    ),
+                )
+                conn.commit()
+                registered += 1
+        finally:
+            conn.close()
+    except Exception:
+        pass  # innovation_signals table may not exist in all environments
+    return registered
+
+
 def _phase_label(score: float) -> str:
     if score >= 0.7:
         return "P1 — Quick Wins"
@@ -498,9 +581,22 @@ def run_scan(
         # 4. Generate roadmap (persists to aac_roadmaps internally)
         roadmap = generate_roadmap(scan_id, opp_rows, score_rows)
 
+        # 4a. Build and store deterministic project summary
+        project_summary = _build_summary(input_ref, opp_rows)
+        conn = get_connection()
+        try:
+            _exec(conn, "UPDATE aac_scans SET project_summary = ? WHERE scan_id = ?",
+                  (project_summary, scan_id))
+            conn.commit()
+        finally:
+            conn.close()
+
         # 5. Promote top opportunities to kanban (top-5 [AI Opp] + all-phase [Phase])
         kanban_promoted = _promote_top_opportunities(opp_rows, score_rows, scan_id, roadmap["roadmap_id"])
         phase_promoted = _promote_phase_opportunities(roadmap, opp_rows, score_rows, scan_id)
+
+        # 5a. Option C: register high-scoring opps as innovation signals
+        _register_innovation_signals(opp_rows, score_rows, scan_id)
 
         # 6. Mark scan completed + final audit entry
         conn = get_connection()

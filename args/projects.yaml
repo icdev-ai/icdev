@@ -4,29 +4,53 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: ci
+  name: Ci Project
+  description: Auto-registered project for tasks with prefix 'ci-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: ci-
+  default_open: true
+  briefs: []
+  epics:
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: cap
+    title: CAP
+    priority: medium
+  - key: cmp
+    title: CMP
+    priority: medium
+  - key: rev
+    title: REV
+    priority: medium
 - key: prop
   name: Proposals Module Enhancement
-  description: RLS hardening + Capture Manager / Executive Reviewer / Compliance Editor features for the GovCon Proposals module.
+  description: RLS hardening + Capture Manager / Executive Reviewer / Compliance Editor
+    features for the GovCon Proposals module.
   task_prefix: prop-
   default_open: true
   briefs:
-    - "Fix RLS bypass and add missing API endpoints (questions, amendments, question-responses)"
-    - "Add capture pipeline, competitor intel, PTW tracking, and teaming partners"
-    - "Add executive review dashboard, outcome-aware pipeline colors, and version diff"
-    - "Add shred matrix, amendment impact tracking, and compliance gap drill-down"
+  - Fix RLS bypass and add missing API endpoints (questions, amendments, question-responses)
+  - Add capture pipeline, competitor intel, PTW tracking, and teaming partners
+  - Add executive review dashboard, outcome-aware pipeline colors, and version diff
+  - Add shred matrix, amendment impact tracking, and compliance gap drill-down
   epics:
-    - key: fix
-      title: RLS & API Fixes
-      priority: critical
-    - key: cap
-      title: Capture Manager
-      priority: high
-    - key: rev
-      title: Executive Reviewer
-      priority: high
-    - key: cmp
-      title: Compliance Editor
-      priority: high
+  - key: fix
+    title: RLS & API Fixes
+    priority: critical
+  - key: cap
+    title: Capture Manager
+    priority: high
+  - key: rev
+    title: Executive Reviewer
+    priority: high
+  - key: cmp
+    title: Compliance Editor
+    priority: high
+  - key: import
+    title: IMPORT
+    priority: medium
 - key: fix_dispatcher
   name: Fix Dispatcher Project
   description: Auto-registered project for tasks with prefix 'fix-dispatcher-'. Update
@@ -134,6 +158,39 @@ projects:
     priority: medium
   - key: tst
     title: TST
+    priority: medium
+  - key: acad
+    title: ACAD
+    priority: medium
+  - key: anvil
+    title: ANVIL
+    priority: medium
+  - key: canvas
+    title: CANVAS
+    priority: medium
+  - key: forge
+    title: FORGE
+    priority: medium
+  - key: game
+    title: GAME
+    priority: medium
+  - key: reg
+    title: REG
+    priority: medium
+  - key: rt
+    title: RT
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+  - key: wf
+    title: WF
     priority: medium
 - key: cot
   name: Cot Project
@@ -401,6 +458,24 @@ projects:
   - key: inf
     title: Infrastructure + V&V Gate
     priority: high
+  - key: an
+    title: AN
+    priority: medium
+  - key: cli
+    title: CLI
+    priority: medium
+  - key: fr
+    title: FR
+    priority: medium
+  - key: mcp
+    title: MCP
+    priority: medium
+  - key: pii
+    title: PII
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: ddx
   name: DDC Data Science Extensions — Anomaly Detection, PII Guard, CLI, Freshness,
     MCP Gate
@@ -4371,6 +4446,30 @@ projects:
   - key: ep4
     title: AI Observatory Dashboard — Unified Cross-Canvas AI Visibility
     priority: high
+  - key: es
+    title: ES
+    priority: medium
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: input
+    title: INPUT
+    priority: medium
+  - key: labels
+    title: LABELS
+    priority: medium
+  - key: modal
+    title: MODAL
+    priority: medium
+  - key: sidebar
+    title: SIDEBAR
+    priority: medium
+  - key: stats
+    title: STATS
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: chat-ux
   name: Chat UX — Non-Developer Accessibility & Bug Fixes
   description: '18-task initiative to fix a blocking P0 bug (impact_level DB constraint
@@ -4577,6 +4676,24 @@ projects:
   - key: phase5-wow
     title: WOW Factor Enhancements
     priority: high
+  - key: p0
+    title: P0
+    priority: medium
+  - key: p1
+    title: P1
+    priority: medium
+  - key: p2
+    title: P2
+    priority: medium
+  - key: p3
+    title: P3
+    priority: medium
+  - key: p4
+    title: P4
+    priority: medium
+  - key: p5
+    title: P5
+    priority: medium
 - key: gl
   name: GovLift — Full-Fledged Federal Migration Automation Platform
   description: Transform GovLift from a basic tracker into the "Cutover for Government"
@@ -4593,8 +4710,7 @@ projects:
   - 'Phase 2: Compliance-as-code — 3 tables, 1 module, 1 page, 4 API routes (gl-p2-01..11)'
   - 'Phase 3: Agentic recovery + dependency mapper — 2 tables, 2 modules, 1 page,
     4 API routes (gl-p3-01..11)'
-  - 'Phase 4: Digital twin simulation — 2 tables, 1 module, 1 page, 4 API routes
-    (gl-p4-01..10)'
+  - 'Phase 4: Digital twin simulation — 2 tables, 1 module, 1 page, 4 API routes (gl-p4-01..10)'
   - 'Phase 5: Intelligence layer wiring — 1 table, 1 module, 1 page, 3 API routes
     (gl-p5-01..10)'
   epics:

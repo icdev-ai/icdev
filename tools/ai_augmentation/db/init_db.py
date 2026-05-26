@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS aac_scans (
     total_files      INTEGER DEFAULT 0,
     total_loc        INTEGER DEFAULT 0,
     status           TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed')),
+    project_summary  TEXT,
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at     TIMESTAMP
 )"""
@@ -132,6 +133,12 @@ def init_db() -> None:
             if stmt:
                 conn.execute(stmt)
         conn.commit()
+        # Lazy migration: add project_summary column if missing (existing DBs)
+        try:
+            conn.execute("ALTER TABLE aac_scans ADD COLUMN project_summary TEXT")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
         print(f"[init_db] AAC schema ready ({_AAC_BACKEND})")
     finally:
         conn.close()
