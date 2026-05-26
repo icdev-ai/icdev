@@ -5,6 +5,16 @@
 
 pillars:
   configuration:
+    ci_pipeline:
+      # Minimum GitHub Actions workflow files required to pass the ci-pipeline criterion.
+      # A single stub workflow is anomalously low for a project claiming CI readiness.
+      min_workflows: 1
+
+    iac:
+      # Minimum IaC files (Terraform .tf, Helm Chart.yaml, K8s manifests) required to pass.
+      # A single file is the floor; raise to 2+ for projects with complex multi-environment infra.
+      min_files: 1
+
     task_runner:
       # Minimum Makefile targets required to pass the task-runner criterion.
       # A Makefile with fewer targets is an anomaly — likely a stub, not a real task runner.
