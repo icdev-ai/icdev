@@ -144,6 +144,61 @@ resource "aws_db_instance" "{name}" {{
   tags = local.common_tags
 }}
 ''',
+    "ent-datalake": '''
+# Medallion lake zones for {label}
+resource "aws_kms_key" "{name}_lake_key" {{
+  description             = "{label} lake CMK — {classification}"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  tags                    = local.common_tags
+}}
+resource "aws_s3_bucket" "{name}_landing" {{
+  bucket = "{slug}-landing"
+  tags   = merge(local.common_tags, {{ Zone = "Landing" }})
+}}
+resource "aws_s3_bucket_server_side_encryption_configuration" "{name}_landing_sse" {{
+  bucket = aws_s3_bucket.{name}_landing.id
+  rule {{ apply_server_side_encryption_by_default {{
+    sse_algorithm     = "aws:kms"
+    kms_master_key_id = aws_kms_key.{name}_lake_key.arn
+  }} }}
+}}
+resource "aws_s3_bucket_lifecycle_configuration" "{name}_landing_lc" {{
+  bucket = aws_s3_bucket.{name}_landing.id
+  rule {{ id = "expire-landing" status = "Enabled" expiration {{ days = 7 }} }}
+}}
+resource "aws_s3_bucket" "{name}_raw" {{
+  bucket = "{slug}-raw"
+  tags   = merge(local.common_tags, {{ Zone = "Raw" }})
+}}
+resource "aws_s3_bucket_versioning" "{name}_raw_ver" {{
+  bucket = aws_s3_bucket.{name}_raw.id
+  versioning_configuration {{ status = "Enabled" }}
+}}
+resource "aws_s3_bucket_server_side_encryption_configuration" "{name}_raw_sse" {{
+  bucket = aws_s3_bucket.{name}_raw.id
+  rule {{ apply_server_side_encryption_by_default {{
+    sse_algorithm     = "aws:kms"
+    kms_master_key_id = aws_kms_key.{name}_lake_key.arn
+  }} }}
+}}
+resource "aws_s3_bucket" "{name}_curated" {{
+  bucket = "{slug}-curated"
+  tags   = merge(local.common_tags, {{ Zone = "Curated" }})
+}}
+resource "aws_s3_bucket_versioning" "{name}_curated_ver" {{
+  bucket = aws_s3_bucket.{name}_curated.id
+  versioning_configuration {{ status = "Enabled" }}
+}}
+resource "aws_s3_bucket" "{name}_consumption" {{
+  bucket = "{slug}-consumption"
+  tags   = merge(local.common_tags, {{ Zone = "Consumption" }})
+}}
+resource "aws_s3_bucket_versioning" "{name}_consumption_ver" {{
+  bucket = aws_s3_bucket.{name}_consumption.id
+  versioning_configuration {{ status = "Enabled" }}
+}}
+''',
     "ent-warehouse": '''
 resource "aws_redshift_cluster" "{name}" {{
   cluster_identifier = "{slug}"
