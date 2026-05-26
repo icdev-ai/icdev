@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pathlib
+from functools import lru_cache
+from typing import Any
 
 from tools.ai_augmentation.agent_readiness.pillars._base import (
     Criterion,
@@ -14,15 +16,59 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
     _search,
 )
 
+# ---------------------------------------------------------------------------
+# Anomaly-detection threshold loader
+# ---------------------------------------------------------------------------
+_ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_config.yaml"
+_DEFAULTS: dict[str, Any] = {
+    "readme_min_content_length": 80,
+    "inline_docs_sample_size": 20,
+    "min_jsdoc_files": 2,
+    "docstring_ratio_denominator": 3,
+}
+
+
+@lru_cache(maxsize=1)
+def _load_thresholds() -> dict[str, int]:
+    """Load documentation-pillar anomaly-detection thresholds from args/agent_readiness_config.yaml.
+
+    Falls back to hard-coded defaults if the config file is absent or malformed.
+    """
+    try:
+        import yaml  # optional dep — present in all ICDEV environments
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) or {}
+        cfg = data.get("pillars", {}).get("documentation", {})
+        readme = cfg.get("readme", {})
+        inline = cfg.get("inline_docs", {})
+        return {
+            "readme_min_content_length": int(
+                readme.get("min_content_length", _DEFAULTS["readme_min_content_length"])
+            ),
+            "inline_docs_sample_size": int(
+                inline.get("sample_size", _DEFAULTS["inline_docs_sample_size"])
+            ),
+            "min_jsdoc_files": int(
+                inline.get("min_jsdoc_files", _DEFAULTS["min_jsdoc_files"])
+            ),
+            "docstring_ratio_denominator": int(
+                inline.get("docstring_ratio_denominator", _DEFAULTS["docstring_ratio_denominator"])
+            ),
+        }
+    except Exception:  # noqa: BLE001
+        return dict(_DEFAULTS)
+
 
 def _check_readme(repo: pathlib.Path) -> CriterionResult:
     cid = "readme-present"
+    thresholds = _load_thresholds()
+    min_length = thresholds["readme_min_content_length"]
     found = _exists(repo, "README.md", "README.rst", "README.txt", "README")
     if found:
         content = _read(repo, found) or ""
-        if len(content) > 80:
+        if len(content) > min_length:
             return CriterionResult(cid, True, f"README found with content: {found}")
-        return CriterionResult(cid, False, f"README found but very short ({len(content)} chars).",
+        return CriterionResult(cid, False, f"README found but very short ({len(content)} chars, min {min_length}).",
                                "Expand README with installation, usage, and contribution sections.")
     return CriterionResult(cid, False, "No README file found.", "Add a README.md to document the project.")
 
@@ -63,25 +109,29 @@ def _check_api_docs(repo: pathlib.Path) -> CriterionResult:
 
 def _check_inline_docstrings(repo: pathlib.Path) -> CriterionResult:
     cid = "inline-docstrings"
+    thresholds = _load_thresholds()
+    sample_size = thresholds["inline_docs_sample_size"]
+    min_jsdoc = thresholds["min_jsdoc_files"]
+    ratio_denom = thresholds["docstring_ratio_denominator"]
     py_files = _glob_files(repo, "**/*.py")
     if not py_files:
         ts_files = _glob_files(repo, "**/*.ts") + _glob_files(repo, "**/*.js")
         if not ts_files:
             return CriterionResult(cid, True, "No Python/JS/TS source files found; check skipped.", skipped=True)
         # Check for JSDoc
-        sample = ts_files[:20]
+        sample = ts_files[:sample_size]
         jsdoc_count = sum(1 for f in sample if _search(f.read_text(encoding="utf-8", errors="replace"), r"/\*\*"))
-        if jsdoc_count >= 2:
+        if jsdoc_count >= min_jsdoc:
             return CriterionResult(cid, True, f"JSDoc comments found in {jsdoc_count}/{len(sample)} sampled files")
-        return CriterionResult(cid, False, "Few JSDoc comments detected in sampled files.",
+        return CriterionResult(cid, False, f"Few JSDoc comments detected ({jsdoc_count}/{len(sample)} sampled files, min {min_jsdoc}).",
                                "Add JSDoc to public functions and classes.")
-    sample = py_files[:20]
+    sample = py_files[:sample_size]
     docstring_count = sum(
         1 for f in sample
         if _search(f.read_text(encoding="utf-8", errors="replace"), r'""".*?"""', flags=0)
         or _search(f.read_text(encoding="utf-8", errors="replace"), r"'''.*?'''", flags=0)
     )
-    if docstring_count >= max(1, len(sample) // 3):
+    if docstring_count >= max(1, len(sample) // ratio_denom):
         return CriterionResult(cid, True, f"Docstrings found in {docstring_count}/{len(sample)} sampled Python files")
     return CriterionResult(cid, False, f"Low docstring coverage ({docstring_count}/{len(sample)} sampled files).",
                            "Add module and function docstrings to improve maintainability.")
