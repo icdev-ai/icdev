@@ -23,12 +23,15 @@ _ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_confi
 _DEFAULTS: dict[str, Any] = {
     "min_makefile_targets": 3,
     "min_npm_scripts": 3,
+    # Values below these are anomalously low for a repo claiming CI/IaC readiness.
+    "min_ci_workflows": 1,
+    "min_iac_files": 1,
 }
 
 
 @lru_cache(maxsize=1)
-def _load_task_runner_thresholds() -> dict[str, int]:
-    """Load task-runner anomaly-detection thresholds from args/agent_readiness_config.yaml.
+def _load_thresholds() -> dict[str, int]:
+    """Load all configuration-pillar anomaly-detection thresholds from args/agent_readiness_config.yaml.
 
     Falls back to hard-coded defaults if the config file is absent or malformed,
     so the pillar degrades gracefully in air-gap or stripped environments.
@@ -37,10 +40,15 @@ def _load_task_runner_thresholds() -> dict[str, int]:
         import yaml  # optional dep — present in all ICDEV environments
         raw = _ARGS_PATH.read_text(encoding="utf-8")
         data = yaml.safe_load(raw) or {}
-        tr = data.get("pillars", {}).get("configuration", {}).get("task_runner", {})
+        cfg = data.get("pillars", {}).get("configuration", {})
+        tr = cfg.get("task_runner", {})
+        ci = cfg.get("ci_pipeline", {})
+        iac = cfg.get("iac", {})
         return {
             "min_makefile_targets": int(tr.get("min_makefile_targets", _DEFAULTS["min_makefile_targets"])),
             "min_npm_scripts": int(tr.get("min_npm_scripts", _DEFAULTS["min_npm_scripts"])),
+            "min_ci_workflows": int(ci.get("min_workflows", _DEFAULTS["min_ci_workflows"])),
+            "min_iac_files": int(iac.get("min_files", _DEFAULTS["min_iac_files"])),
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
@@ -48,8 +56,16 @@ def _load_task_runner_thresholds() -> dict[str, int]:
 
 def _check_ci_pipeline(repo: pathlib.Path) -> CriterionResult:
     cid = "ci-pipeline"
+    thresholds = _load_thresholds()
+    min_workflows = thresholds["min_ci_workflows"]
     gh_workflows = _glob_files(repo, ".github/workflows/*.yml") + _glob_files(repo, ".github/workflows/*.yaml")
     if gh_workflows:
+        if len(gh_workflows) < min_workflows:
+            return CriterionResult(
+                cid, False,
+                f"Only {len(gh_workflows)} GitHub Actions workflow(s) found (min {min_workflows}).",
+                "Add more CI workflow files to reach the minimum required for anomaly-detection.",
+            )
         return CriterionResult(cid, True, f"GitHub Actions CI found ({len(gh_workflows)} workflow(s))")
     if _exists(repo, ".gitlab-ci.yml", ".gitlab-ci.yaml"):
         return CriterionResult(cid, True, "GitLab CI pipeline configured")
@@ -88,21 +104,48 @@ def _check_cd_deployment(repo: pathlib.Path) -> CriterionResult:
 
 def _check_iac_present(repo: pathlib.Path) -> CriterionResult:
     cid = "iac-present"
+    thresholds = _load_thresholds()
+    min_iac = thresholds["min_iac_files"]
     if _exists(repo, "terraform", "infra", "infrastructure", "tf"):
         d = _exists(repo, "terraform", "infra", "infrastructure", "tf")
-        if _glob_files(repo / d if d else repo, "**/*.tf"):
+        tf_files = _glob_files(repo / d if d else repo, "**/*.tf")
+        if tf_files:
+            if len(tf_files) < min_iac:
+                return CriterionResult(
+                    cid, False,
+                    f"Only {len(tf_files)} Terraform file(s) found in {d}/ (min {min_iac}).",
+                    "Add more .tf files to reach the anomaly-detection minimum.",
+                )
             return CriterionResult(cid, True, f"Terraform IaC found in {d}/")
     tf_files = _glob_files(repo, "**/*.tf")
     if tf_files:
-        return CriterionResult(cid, True, f"Terraform files found ({len(tf_files)} .tf files)")
+        if len(tf_files) >= min_iac:
+            return CriterionResult(cid, True, f"Terraform files found ({len(tf_files)} .tf files)")
+        return CriterionResult(
+            cid, False,
+            f"Only {len(tf_files)} Terraform file(s) found (min {min_iac}).",
+            "Add more .tf files to reach the anomaly-detection minimum.",
+        )
     helm = _glob_files(repo, "**/Chart.yaml")
     if helm:
-        return CriterionResult(cid, True, f"Helm chart(s) found ({len(helm)} Chart.yaml)")
+        if len(helm) >= min_iac:
+            return CriterionResult(cid, True, f"Helm chart(s) found ({len(helm)} Chart.yaml)")
+        return CriterionResult(
+            cid, False,
+            f"Only {len(helm)} Helm Chart.yaml file(s) found (min {min_iac}).",
+            "Add more Helm charts to reach the anomaly-detection minimum.",
+        )
     if _exists(repo, "ansible", "playbooks") or _glob_files(repo, "**/*.playbook.yml"):
         return CriterionResult(cid, True, "Ansible IaC found")
     k8s = _glob_files(repo, "**/*.k8s.yaml") + _glob_files(repo, "**/k8s/**/*.yaml")
     if k8s:
-        return CriterionResult(cid, True, f"Kubernetes manifests found ({len(k8s)} files)")
+        if len(k8s) >= min_iac:
+            return CriterionResult(cid, True, f"Kubernetes manifests found ({len(k8s)} files)")
+        return CriterionResult(
+            cid, False,
+            f"Only {len(k8s)} Kubernetes manifest(s) found (min {min_iac}).",
+            "Add more K8s manifests to reach the anomaly-detection minimum.",
+        )
     return CriterionResult(cid, False, "No Infrastructure-as-Code configuration found.",
                            "Add Terraform, Helm, or Kubernetes manifests for reproducible infrastructure.")
 
@@ -117,7 +160,7 @@ def _check_editorconfig(repo: pathlib.Path) -> CriterionResult:
 
 def _check_makefile_or_taskfile(repo: pathlib.Path) -> CriterionResult:
     cid = "task-runner"
-    thresholds = _load_task_runner_thresholds()
+    thresholds = _load_thresholds()
     min_makefile = thresholds["min_makefile_targets"]
     min_scripts = thresholds["min_npm_scripts"]
     if _exists(repo, "Makefile", "makefile"):
