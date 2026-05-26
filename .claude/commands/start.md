@@ -6,6 +6,11 @@ PORTAL_PORT: 8443
 
 ## Workflow
 
+0. Kill all running Python processes to ensure a clean start:
+   ```bash
+   taskkill /f /im python.exe 2>/dev/null; echo "Cleared Python processes"
+   ```
+
 0. Read the dashboard port from `.env` (uses `ICDEV_DASHBOARD_PORT`, defaults to 5050):
    ```bash
    DASHBOARD_PORT=$(python -c "from dotenv import dotenv_values; print(dotenv_values('.env').get('ICDEV_DASHBOARD_PORT', '5050'))")
