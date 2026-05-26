@@ -1,0 +1,14 @@
+# CUI // SP-CTI
+# Agent Readiness Pillar — Configurable Thresholds
+# Anomaly detection: values below min thresholds are flagged as anomalously low
+# for a project claiming task automation / CI readiness.
+
+pillars:
+  configuration:
+    task_runner:
+      # Minimum Makefile targets required to pass the task-runner criterion.
+      # A Makefile with fewer targets is an anomaly — likely a stub, not a real task runner.
+      min_makefile_targets: 3
+      # Minimum npm script entries required to pass the task-runner criterion.
+      # Fewer scripts indicate an underdeveloped automation setup.
+      min_npm_scripts: 3

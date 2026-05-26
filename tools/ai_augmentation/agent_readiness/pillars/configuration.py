@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pathlib
+from functools import lru_cache
+from typing import Any
 
 from tools.ai_augmentation.agent_readiness.pillars._base import (
     Criterion,
@@ -13,6 +15,35 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
     _read,
     _search,
 )
+
+# ---------------------------------------------------------------------------
+# Anomaly-detection threshold loader
+# ---------------------------------------------------------------------------
+_ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_config.yaml"
+_DEFAULTS: dict[str, Any] = {
+    "min_makefile_targets": 3,
+    "min_npm_scripts": 3,
+}
+
+
+@lru_cache(maxsize=1)
+def _load_task_runner_thresholds() -> dict[str, int]:
+    """Load task-runner anomaly-detection thresholds from args/agent_readiness_config.yaml.
+
+    Falls back to hard-coded defaults if the config file is absent or malformed,
+    so the pillar degrades gracefully in air-gap or stripped environments.
+    """
+    try:
+        import yaml  # optional dep — present in all ICDEV environments
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) or {}
+        tr = data.get("pillars", {}).get("configuration", {}).get("task_runner", {})
+        return {
+            "min_makefile_targets": int(tr.get("min_makefile_targets", _DEFAULTS["min_makefile_targets"])),
+            "min_npm_scripts": int(tr.get("min_npm_scripts", _DEFAULTS["min_npm_scripts"])),
+        }
+    except Exception:  # noqa: BLE001
+        return dict(_DEFAULTS)
 
 
 def _check_ci_pipeline(repo: pathlib.Path) -> CriterionResult:
@@ -86,10 +117,13 @@ def _check_editorconfig(repo: pathlib.Path) -> CriterionResult:
 
 def _check_makefile_or_taskfile(repo: pathlib.Path) -> CriterionResult:
     cid = "task-runner"
+    thresholds = _load_task_runner_thresholds()
+    min_makefile = thresholds["min_makefile_targets"]
+    min_scripts = thresholds["min_npm_scripts"]
     if _exists(repo, "Makefile", "makefile"):
         mk = _read(repo, "Makefile") or _read(repo, "makefile") or ""
         targets = sum(1 for l in mk.splitlines() if l and not l.startswith("\t") and ":" in l and not l.startswith("#"))
-        if targets >= 3:
+        if targets >= min_makefile:
             return CriterionResult(cid, True, f"Makefile with {targets} targets found")
     if _exists(repo, "Taskfile.yml", "Taskfile.yaml", "Taskfile.dist.yml"):
         return CriterionResult(cid, True, "Taskfile task runner found")
@@ -98,7 +132,7 @@ def _check_makefile_or_taskfile(repo: pathlib.Path) -> CriterionResult:
         import json
         try:
             scripts = json.loads(pkg).get("scripts", {})
-            if len(scripts) >= 3:
+            if len(scripts) >= min_scripts:
                 return CriterionResult(cid, True, f"npm scripts ({len(scripts)} tasks) in package.json")
         except Exception:
             pass
