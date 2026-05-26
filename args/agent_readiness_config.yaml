@@ -22,6 +22,21 @@ pillars:
       # Raise to 2 to require ≥50% coverage; lower to 4 for a lighter gate.
       docstring_ratio_denominator: 3
 
+  stig_compliance:
+    nlp_extractor:
+      # Enable Claude Haiku NLP extraction as a secondary pass when regex finds nothing.
+      # Set to false to run regex-only (no API calls, faster but less accurate for prose).
+      enabled: true
+      # Model used for NLP extraction. claude-haiku-4-5-20251001 balances speed and accuracy.
+      model: claude-haiku-4-5-20251001
+      # Max output tokens for the JSON response; 256 is sufficient for structured extraction.
+      max_tokens: 256
+      # Minimum confidence score (0.0–1.0) required to accept an NLP-detected reference.
+      # Lower values increase recall but risk false positives on ambiguous prose.
+      confidence_threshold: 0.7
+      # Characters of file content sampled per NLP call to control token cost.
+      text_sample_chars: 2000
+
   configuration:
     ci_pipeline:
       # Minimum GitHub Actions workflow files required to pass the ci-pipeline criterion.
