@@ -391,3 +391,4 @@
 {"ts": "2026-05-26T09:57:12.185924+00:00", "level": "INFO", "component": "__main__", "message": "Press Ctrl+C to stop", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-26T09:57:29.166325+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1: status=ok activated=3 completed=0 running=0", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-26T09:58:33.165789+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 2: status=executing activated=0 completed=0 running=3", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-26T09:59:38.572513+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 3: idle (no due tasks)", "trace_id": null, "session_id": null, "extra": {}}
