@@ -27,11 +27,38 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Any
 
+import yaml
+
 from tools.ai_augmentation.agent_readiness import run_readiness_check
 from tools.ai_augmentation.db.init_db import get_connection, init_db
 from tools.ai_augmentation.opportunity_scorer import score_opportunity
 from tools.ai_augmentation.pattern_classifier import detect_patterns
 from tools.ai_augmentation.roadmap_generator import generate_roadmap
+
+_CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / "args" / "aac_config.yaml"
+
+_FALLBACK_ANOMALY_THRESHOLDS = {
+    "innovation_signal_min_score": 0.60,
+    "phase": {
+        "p1_min_score": 0.70,
+        "p2_min_score": 0.50,
+        "p3_min_score": 0.30,
+    },
+    "priority_high_min_score": 0.70,
+}
+
+
+def _load_anomaly_thresholds() -> dict:
+    """Load anomaly_detection thresholds from args/aac_config.yaml with fallback."""
+    try:
+        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh)
+        if isinstance(cfg, dict) and "anomaly_detection" in cfg:
+            return cfg["anomaly_detection"]
+    except Exception:
+        pass
+    return dict(_FALLBACK_ANOMALY_THRESHOLDS)
+
 
 # Maps each pattern type to a valid AI paradigm (constants.AI_PARADIGMS)
 _PATTERN_TO_PARADIGM: dict[str, str] = {
@@ -136,7 +163,12 @@ def _build_summary(input_ref: str, opp_rows: list[dict]) -> str:
 
 
 def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], scan_id: int) -> int:
-    """Option C: cross-register high-scoring AAC opportunities (>=0.60) to innovation_signals."""
+    """Option C: cross-register high-scoring AAC opportunities to innovation_signals."""
+    thresholds = _load_anomaly_thresholds()
+    innovation_min = thresholds.get(
+        "innovation_signal_min_score",
+        _FALLBACK_ANOMALY_THRESHOLDS["innovation_signal_min_score"],
+    )
     score_index = {int(s["opportunity_id"]): s for s in score_rows}
     registered = 0
     try:
@@ -148,7 +180,7 @@ def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], s
                 opp_id = int(opp.get("opportunity_id", 0))
                 score = score_index.get(opp_id, {})
                 composite = float(score.get("composite_score", 0.0))
-                if composite < 0.60:
+                if composite < innovation_min:
                     continue
                 pattern = opp.get("pattern_type", "")
                 paradigm = opp.get("ai_paradigm", "")
@@ -188,12 +220,15 @@ def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], s
     return registered
 
 
-def _phase_label(score: float) -> str:
-    if score >= 0.7:
+def _phase_label(score: float, thresholds: dict | None = None) -> str:
+    if thresholds is None:
+        thresholds = _load_anomaly_thresholds()
+    phase_cfg = thresholds.get("phase", _FALLBACK_ANOMALY_THRESHOLDS["phase"])
+    if score >= phase_cfg.get("p1_min_score", 0.70):
         return "P1 — Quick Wins"
-    if score >= 0.5:
+    if score >= phase_cfg.get("p2_min_score", 0.50):
         return "P2 — Core Modernization"
-    if score >= 0.3:
+    if score >= phase_cfg.get("p3_min_score", 0.30):
         return "P3 — Long-Horizon Investments"
     return "Unclassified"
 
@@ -235,6 +270,11 @@ def _promote_top_opportunities(
     if not top5:
         return 0
 
+    thresholds = _load_anomaly_thresholds()
+    priority_high_min = thresholds.get(
+        "priority_high_min_score",
+        _FALLBACK_ANOMALY_THRESHOLDS["priority_high_min_score"],
+    )
     promoted_opps: list[dict] = []
     icdev_conn = _icdev_get_connection()
     try:
@@ -250,7 +290,7 @@ def _promote_top_opportunities(
             if existing:
                 continue
 
-            priority = "high" if opp["composite_score"] >= 0.7 else "medium"
+            priority = "high" if opp["composite_score"] >= priority_high_min else "medium"
             title = (
                 f"[AI Opp] {opp['pattern_type']} in "
                 f"{opp['module_path']}:{opp['function_name']} "
@@ -337,6 +377,11 @@ def _promote_phase_opportunities(
     score_index: dict[int, dict] = {int(s["opportunity_id"]): s for s in score_rows}
     opp_index: dict[int, dict] = {int(o["opportunity_id"]): o for o in opp_rows}
 
+    thresholds = _load_anomaly_thresholds()
+    priority_high_min = thresholds.get(
+        "priority_high_min_score",
+        _FALLBACK_ANOMALY_THRESHOLDS["priority_high_min_score"],
+    )
     inserted = 0
     icdev_conn = _icdev_get_connection()
     try:
@@ -387,7 +432,7 @@ def _promote_phase_opportunities(
                     },
                     indent=2,
                 )
-                priority = "high" if float(score.get("composite_score", 0.0)) >= 0.7 else "medium"
+                priority = "high" if float(score.get("composite_score", 0.0)) >= priority_high_min else "medium"
                 _exec(
                     icdev_conn,
                     "INSERT INTO kanban_tasks "

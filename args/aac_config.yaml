@@ -40,3 +40,14 @@ semgrep:
   rules_dir: context/ai_augmentation/semgrep_rules
   timeout_seconds: 60
   metrics: "off"
+
+anomaly_detection:
+  # Minimum composite score for an opportunity to be registered as an innovation signal
+  innovation_signal_min_score: 0.60
+  # Composite score thresholds that determine roadmap phase labels
+  phase:
+    p1_min_score: 0.70  # "P1 — Quick Wins"
+    p2_min_score: 0.50  # "P2 — Core Modernization"
+    p3_min_score: 0.30  # "P3 — Long-Horizon Investments"
+  # Minimum composite score to assign "high" priority to a kanban task
+  priority_high_min_score: 0.70
