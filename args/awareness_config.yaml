@@ -195,3 +195,34 @@ govchain:
   interval_minutes: 30       # How often the anchor reflex fires
   max_batch_size: 100        # Passed to ChainAnchor.anchor_audit_batch limit
   alert_on_pending_above: 500  # Log a warning when queue depth exceeds this
+
+# --------------------------------------------------------------------------
+# Data Design Canvas (DDC) + Data Mesh -- added 2026-05-26
+# Monitored routes, modules, and DB tables for health/drift/gap probes.
+# --------------------------------------------------------------------------
+data_canvas:
+  monitored_routes:
+    - /data/mesh
+    - /api/dm/summary
+    - /api/dm/domains
+    - /api/dm/products
+    - /api/dm/contracts
+    - /api/dm/policies
+    - /api/dm/governance/evaluate
+    - /api/dm/governance/federation
+  monitored_modules:
+    - tools.data_canvas.data_mesh.domain_manager
+    - tools.data_canvas.data_mesh.product_registry
+    - tools.data_canvas.data_mesh.contract_engine
+    - tools.data_canvas.data_mesh.governance_engine
+    - tools.data_canvas.sync.datahub_sync
+  monitored_db_tables:
+    - dm_domains
+    - dm_products
+    - dm_contracts
+    - dm_ports
+    - dm_policies
+    - dm_ownership
+    - dm_lineage
+    - dm_metrics
+    - dm_events
