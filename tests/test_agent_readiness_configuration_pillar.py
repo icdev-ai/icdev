@@ -6,14 +6,12 @@ import json
 import pathlib
 import textwrap
 
-import pytest
 
 from tools.ai_augmentation.agent_readiness.pillars.configuration import (
     PILLAR,
     _check_ci_pipeline,
     _check_iac_present,
     _check_makefile_or_taskfile,
-    _load_thresholds,
 )
 
 
