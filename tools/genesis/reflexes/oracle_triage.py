@@ -81,6 +81,50 @@ except ImportError:
     _llm_triage_task = None  # type: ignore[assignment]
     _harness_record_decision = None  # type: ignore[assignment]
 
+# Dynamic heuristics loaded once per process from args/oracle_heuristics.yaml
+_DYNAMIC_HEURISTICS: list[dict] | None = None
+
+
+def _load_dynamic_heuristics() -> list[dict]:
+    global _DYNAMIC_HEURISTICS
+    if _DYNAMIC_HEURISTICS is not None:
+        return _DYNAMIC_HEURISTICS
+    try:
+        import yaml
+        heuristics_path = BASE_DIR / "args" / "oracle_heuristics.yaml"
+        if heuristics_path.exists():
+            data = yaml.safe_load(heuristics_path.read_text(encoding="utf-8"))
+            _DYNAMIC_HEURISTICS = data.get("heuristics", []) if isinstance(data, dict) else []
+        else:
+            _DYNAMIC_HEURISTICS = []
+    except Exception as exc:
+        LOG.warning("[oracle_triage] failed to load oracle_heuristics.yaml: %s", exc)
+        _DYNAMIC_HEURISTICS = []
+    return _DYNAMIC_HEURISTICS
+
+
+def _apply_dynamic_heuristics(task: dict) -> tuple[str, str] | None:
+    """Check task against dynamic heuristics from args/oracle_heuristics.yaml.
+
+    Returns (action, reason) on first match, or None if no heuristic matched.
+    """
+    title: str = task.get("title", "")
+    title_lower = title.lower()
+    task_id: str = task.get("id", "")
+
+    for h in _load_dynamic_heuristics():
+        action = h.get("action", "skip")
+        reason = h.get("reason", h.get("name", "dynamic heuristic"))
+
+        if "match_title_prefix" in h and title.startswith(h["match_title_prefix"]):
+            return action, reason
+        if "match_title_contains" in h and h["match_title_contains"].lower() in title_lower:
+            return action, reason
+        if "match_id_prefix" in h and task_id.startswith(h["match_id_prefix"]):
+            return action, reason
+
+    return None
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -320,24 +364,13 @@ def _verify_orphan_db_table(table: str) -> Tuple[str, str]:
 def _verify_no_lens(task: Dict[str, Any]) -> Tuple[str, str]:
     """Heuristic triage for tasks that the Oracle created without a gap lens.
 
-    These come from the self_debug reflex (Oracle RCA), V&V scripts, or
-    feature-request sessions.
+    Checks dynamic heuristics from args/oracle_heuristics.yaml first (includes
+    baseline rules + any LLM-proposed amendments), then falls back to the LLM
+    fallback for cases nothing matched.
     """
-    task_id: str = task.get("id", "")
-    title: str = task.get("title", "")
-    title_lower = title.lower()
-
-    # Oracle RCA cards: self_debug reflex creates these for recurring failures
-    if title.startswith("Oracle RCA:") or task_id.startswith("diag-"):
-        return "promote", "Self-debug reflex RCA card — recurring scheduler failure needs fix"
-
-    # V&V cards: mandatory post-build verification tasks
-    if "v&v" in title_lower or "playwright v&v" in title_lower:
-        return "promote", "V&V card — mandatory verification gate, promote to run"
-
-    # Feature requests: real value but need human scoping before queuing
-    if title.startswith("[FR]"):
-        return "backlog", "Feature request — real value, promote to backlog for scoping"
+    match = _apply_dynamic_heuristics(task)
+    if match is not None:
+        return match
 
     if _llm_triage_task is not None:
         _a, _r, _c = _llm_triage_task(task)
