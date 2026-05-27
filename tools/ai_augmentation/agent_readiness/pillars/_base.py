@@ -50,15 +50,21 @@ class Pillar:
                 )
         return results
 
-    def score(self, results: list[CriterionResult]) -> dict:
+    def score(self, results: list[CriterionResult], anomaly_threshold: float = 0.5) -> dict:
         evaluated = [r for r in results if not r.skipped]
         passed = sum(1 for r in evaluated if r.passed)
         total = len(evaluated)
+        percentage = round(passed / total, 4) if total > 0 else 0.0
+        # Anomaly detection: flag pillars scoring below the configured threshold.
+        # Only meaningful when at least one criterion was evaluated (total > 0).
+        anomalous = total > 0 and percentage < anomaly_threshold
         return {
             "pillar_id": self.id,
             "passed": passed,
             "total": total,
-            "percentage": round(passed / total, 4) if total > 0 else 0.0,
+            "percentage": percentage,
+            "anomalous": anomalous,
+            "anomaly_threshold": anomaly_threshold,
         }
 
 
