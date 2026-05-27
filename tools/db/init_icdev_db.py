@@ -4110,6 +4110,15 @@ CREATE TABLE IF NOT EXISTS chat_tasks (
 CREATE INDEX IF NOT EXISTS idx_chat_task_ctx ON chat_tasks(context_id);
 CREATE INDEX IF NOT EXISTS idx_chat_task_status ON chat_tasks(status);
 
+CREATE TABLE IF NOT EXISTS chat_corrections (
+    id SERIAL PRIMARY KEY,
+    context_id TEXT NOT NULL,
+    correction_text TEXT NOT NULL,
+    turn_number INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_chat_corrections_ctx ON chat_corrections(context_id, created_at DESC);
+
 -- ============================================================
 -- Phase 69: Codebase Assistant (D-CA-1 to D-CA-10)
 -- ============================================================

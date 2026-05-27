@@ -242,6 +242,12 @@ def list_tasks():
         done_limit = int(request.args.get("done_limit") or 100)
     except (ValueError, TypeError):
         done_limit = 100
+    # Cap backlog+scheduled rows — 771 backlog rows × 3 LEFT JOINs + correlated
+    # subquery per row hangs the browser. Default 100; pass backlog_limit=0 to disable.
+    try:
+        backlog_limit = int(request.args.get("backlog_limit") or 100)
+    except (ValueError, TypeError):
+        backlog_limit = 100
     conn = get_connection()
     try:
         # Execution queue ordering: within the same priority, tasks that
@@ -293,10 +299,13 @@ def list_tasks():
                 "CASE kt.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
                 "WHEN 'medium' THEN 2 ELSE 3 END"
             )
-            queue_rows = conn.execute(
+            queue_sql = (
                 f"{select}WHERE kt.status IN ('backlog','scheduled') "
                 f"ORDER BY {priority_case}, kt.created_at ASC"  # nosec B608
-            ).fetchall()
+            )
+            if backlog_limit > 0:
+                queue_sql += f" LIMIT {backlog_limit}"  # nosec B608
+            queue_rows = conn.execute(queue_sql).fetchall()
             # in_progress + suggested are always returned in full so they
             # never get buried by a cap on the done bucket (which can be
             # thousands of rows). Only "done" is capped.
