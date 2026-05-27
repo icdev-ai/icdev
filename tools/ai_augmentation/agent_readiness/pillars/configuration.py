@@ -163,11 +163,16 @@ def _check_makefile_or_taskfile(repo: pathlib.Path) -> CriterionResult:
     thresholds = _load_thresholds()
     min_makefile = thresholds["min_makefile_targets"]
     min_scripts = thresholds["min_npm_scripts"]
+    makefile_anomaly: str | None = None
     if _exists(repo, "Makefile", "makefile"):
         mk = _read(repo, "Makefile") or _read(repo, "makefile") or ""
         targets = sum(1 for l in mk.splitlines() if l and not l.startswith("\t") and ":" in l and not l.startswith("#"))
         if targets >= min_makefile:
             return CriterionResult(cid, True, f"Makefile with {targets} targets found")
+        makefile_anomaly = (
+            f"Makefile found but only {targets} target(s) (min {min_makefile}) — "
+            "anomalously low for a project claiming task automation readiness."
+        )
     if _exists(repo, "Taskfile.yml", "Taskfile.yaml", "Taskfile.dist.yml"):
         return CriterionResult(cid, True, "Taskfile task runner found")
     pkg = _read(repo, "package.json")
@@ -179,6 +184,12 @@ def _check_makefile_or_taskfile(repo: pathlib.Path) -> CriterionResult:
                 return CriterionResult(cid, True, f"npm scripts ({len(scripts)} tasks) in package.json")
         except Exception:
             pass
+    if makefile_anomaly:
+        return CriterionResult(
+            cid, False, makefile_anomaly,
+            f"Add more Makefile targets to reach the anomaly-detection minimum ({min_makefile}), "
+            "or add a Taskfile/npm scripts as an alternative task runner.",
+        )
     return CriterionResult(cid, False, "No task runner found.",
                            "Add a Makefile, Taskfile, or npm scripts for common dev tasks.")
 

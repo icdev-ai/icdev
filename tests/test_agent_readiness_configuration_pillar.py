@@ -1,0 +1,252 @@
+# CUI // SP-CTI
+"""Tests for the configuration pillar's anomaly-detection threshold system."""
+from __future__ import annotations
+
+import json
+import pathlib
+import textwrap
+
+import pytest
+
+from tools.ai_augmentation.agent_readiness.pillars.configuration import (
+    PILLAR,
+    _check_ci_pipeline,
+    _check_iac_present,
+    _check_makefile_or_taskfile,
+    _load_thresholds,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _write(tmp_path: pathlib.Path, rel: str, content: str) -> pathlib.Path:
+    p = tmp_path / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(textwrap.dedent(content), encoding="utf-8")
+    return p
+
+
+# ---------------------------------------------------------------------------
+# _load_thresholds — config loading and fallback behaviour
+# ---------------------------------------------------------------------------
+
+class TestLoadThresholds:
+    def test_returns_yaml_values_when_config_present(self, tmp_path, monkeypatch):
+        cfg = tmp_path / "args" / "agent_readiness_config.yaml"
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text(
+            "pillars:\n"
+            "  configuration:\n"
+            "    task_runner:\n"
+            "      min_makefile_targets: 7\n"
+            "      min_npm_scripts: 5\n"
+            "    ci_pipeline:\n"
+            "      min_workflows: 2\n"
+            "    iac:\n"
+            "      min_files: 3\n",
+            encoding="utf-8",
+        )
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
+        mod._load_thresholds.cache_clear()
+        result = mod._load_thresholds()
+        assert result["min_makefile_targets"] == 7
+        assert result["min_npm_scripts"] == 5
+        assert result["min_ci_workflows"] == 2
+        assert result["min_iac_files"] == 3
+        mod._load_thresholds.cache_clear()
+
+    def test_falls_back_to_defaults_when_file_absent(self, tmp_path, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_ARGS_PATH", tmp_path / "nonexistent.yaml")
+        mod._load_thresholds.cache_clear()
+        result = mod._load_thresholds()
+        assert result["min_makefile_targets"] == 3
+        assert result["min_npm_scripts"] == 3
+        assert result["min_ci_workflows"] == 1
+        assert result["min_iac_files"] == 1
+        mod._load_thresholds.cache_clear()
+
+    def test_partial_config_merges_with_defaults(self, tmp_path, monkeypatch):
+        cfg = tmp_path / "agent_readiness_config.yaml"
+        cfg.write_text(
+            "pillars:\n  configuration:\n    ci_pipeline:\n      min_workflows: 4\n",
+            encoding="utf-8",
+        )
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
+        mod._load_thresholds.cache_clear()
+        result = mod._load_thresholds()
+        assert result["min_ci_workflows"] == 4
+        assert result["min_makefile_targets"] == 3   # default
+        mod._load_thresholds.cache_clear()
+
+    def test_falls_back_on_malformed_yaml(self, tmp_path, monkeypatch):
+        cfg = tmp_path / "agent_readiness_config.yaml"
+        cfg.write_text(":\tbad: yaml: [", encoding="utf-8")
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
+        mod._load_thresholds.cache_clear()
+        result = mod._load_thresholds()
+        assert result["min_makefile_targets"] == 3
+        mod._load_thresholds.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# _check_makefile_or_taskfile — anomaly detection for task runner
+# ---------------------------------------------------------------------------
+
+class TestCheckMakefileOrTaskfile:
+    def _patch_thresholds(self, monkeypatch, **overrides):
+        defaults = {"min_makefile_targets": 3, "min_npm_scripts": 3, "min_ci_workflows": 1, "min_iac_files": 1}
+        defaults.update(overrides)
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_load_thresholds", lambda: defaults)
+
+    def test_passes_when_makefile_meets_threshold(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch, min_makefile_targets=3)
+        _write(tmp_path, "Makefile", "build:\n\techo\ntest:\n\tpytest\ndeploy:\n\t./deploy.sh\n")
+        result = _check_makefile_or_taskfile(tmp_path)
+        assert result.passed
+
+    def test_reports_anomaly_when_makefile_below_threshold(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch, min_makefile_targets=3)
+        _write(tmp_path, "Makefile", "build:\n\techo\n")  # only 1 target
+        result = _check_makefile_or_taskfile(tmp_path)
+        assert not result.passed
+        assert "1 target" in result.message
+        assert "min 3" in result.message
+
+    def test_falls_through_to_taskfile_when_makefile_undersized(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch, min_makefile_targets=3)
+        _write(tmp_path, "Makefile", "build:\n\techo\n")
+        _write(tmp_path, "Taskfile.yml", "version: '3'\ntasks:\n  build:\n    cmd: echo hi\n")
+        result = _check_makefile_or_taskfile(tmp_path)
+        assert result.passed
+        assert "Taskfile" in result.message
+
+    def test_passes_with_taskfile(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch)
+        _write(tmp_path, "Taskfile.yml", "version: '3'\ntasks: {}\n")
+        result = _check_makefile_or_taskfile(tmp_path)
+        assert result.passed
+
+    def test_passes_with_enough_npm_scripts(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch, min_npm_scripts=2)
+        pkg = {"scripts": {"build": "tsc", "test": "jest", "lint": "eslint ."}}
+        _write(tmp_path, "package.json", json.dumps(pkg))
+        result = _check_makefile_or_taskfile(tmp_path)
+        assert result.passed
+
+    def test_fails_when_npm_scripts_below_threshold(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch, min_npm_scripts=3)
+        pkg = {"scripts": {"build": "tsc"}}  # only 1 script
+        _write(tmp_path, "package.json", json.dumps(pkg))
+        result = _check_makefile_or_taskfile(tmp_path)
+        assert not result.passed
+
+    def test_fails_with_no_task_runner(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch)
+        result = _check_makefile_or_taskfile(tmp_path)
+        assert not result.passed
+        assert "No task runner" in result.message
+
+
+# ---------------------------------------------------------------------------
+# _check_ci_pipeline — anomaly detection for CI workflow count
+# ---------------------------------------------------------------------------
+
+class TestCheckCiPipeline:
+    def _patch_thresholds(self, monkeypatch, **overrides):
+        defaults = {"min_makefile_targets": 3, "min_npm_scripts": 3, "min_ci_workflows": 1, "min_iac_files": 1}
+        defaults.update(overrides)
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_load_thresholds", lambda: defaults)
+
+    def test_passes_with_sufficient_workflows(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch, min_ci_workflows=1)
+        _write(tmp_path, ".github/workflows/ci.yml", "name: CI\non: push\njobs: {}\n")
+        result = _check_ci_pipeline(tmp_path)
+        assert result.passed
+
+    def test_reports_anomaly_when_below_min_workflows(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch, min_ci_workflows=2)
+        _write(tmp_path, ".github/workflows/ci.yml", "name: CI\non: push\njobs: {}\n")
+        result = _check_ci_pipeline(tmp_path)
+        assert not result.passed
+        assert "1" in result.message
+        assert "min 2" in result.message
+
+    def test_passes_with_gitlab_ci(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch)
+        _write(tmp_path, ".gitlab-ci.yml", "stages: [build]\n")
+        result = _check_ci_pipeline(tmp_path)
+        assert result.passed
+
+    def test_fails_with_no_ci(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch)
+        result = _check_ci_pipeline(tmp_path)
+        assert not result.passed
+
+
+# ---------------------------------------------------------------------------
+# _check_iac_present — anomaly detection for IaC file count
+# ---------------------------------------------------------------------------
+
+class TestCheckIacPresent:
+    def _patch_thresholds(self, monkeypatch, **overrides):
+        defaults = {"min_makefile_targets": 3, "min_npm_scripts": 3, "min_ci_workflows": 1, "min_iac_files": 1}
+        defaults.update(overrides)
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_load_thresholds", lambda: defaults)
+
+    def test_passes_with_sufficient_tf_files(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch, min_iac_files=1)
+        _write(tmp_path, "main.tf", 'resource "aws_s3_bucket" "b" {}\n')
+        result = _check_iac_present(tmp_path)
+        assert result.passed
+
+    def test_reports_anomaly_when_tf_below_min(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch, min_iac_files=2)
+        _write(tmp_path, "main.tf", 'resource "aws_s3_bucket" "b" {}\n')
+        result = _check_iac_present(tmp_path)
+        assert not result.passed
+        assert "1" in result.message or "Only" in result.message
+
+    def test_passes_with_helm_chart(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch, min_iac_files=1)
+        _write(tmp_path, "charts/myapp/Chart.yaml", "apiVersion: v2\nname: myapp\nversion: 0.1.0\n")
+        result = _check_iac_present(tmp_path)
+        assert result.passed
+
+    def test_fails_with_no_iac(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch)
+        result = _check_iac_present(tmp_path)
+        assert not result.passed
+
+
+# ---------------------------------------------------------------------------
+# PILLAR integration — run all criteria
+# ---------------------------------------------------------------------------
+
+class TestConfigurationPillarIntegration:
+    def test_pillar_has_expected_criteria(self):
+        ids = {c.id for c in PILLAR.criteria}
+        assert ids == {"ci-pipeline", "cd-deployment", "iac-present", "editorconfig", "task-runner"}
+
+    def test_score_all_pass(self, tmp_path, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_load_thresholds", lambda: {
+            "min_makefile_targets": 1, "min_npm_scripts": 1,
+            "min_ci_workflows": 1, "min_iac_files": 1,
+        })
+        _write(tmp_path, ".github/workflows/ci.yml",
+               "name: CI\non: push\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: kubectl apply -f .\n")
+        _write(tmp_path, "main.tf", 'resource "null_resource" "x" {}\n')
+        _write(tmp_path, ".editorconfig", "[*]\nindent_size = 4\n")
+        _write(tmp_path, "Makefile", "deploy:\n\techo hi\n")
+        results = PILLAR.run(tmp_path)
+        score = PILLAR.score(results)
+        assert score["passed"] == score["total"]
