@@ -33,8 +33,17 @@ supported_languages:
   - rust
   - typescript
 
-pattern_min_depth: 3   # min if-depth for conditional pattern detection
-rule_min_keys: 10      # min dict keys for rule-table pattern detection
+pattern_min_depth: 3        # min if-depth for conditional pattern detection
+rule_min_keys: 10           # min dict keys for rule-table pattern detection
+keyword_list_min_strings: 3 # min string literals for keyword-list-search detection
+java_min_if_depth: 2        # min if-depth for Java nested-conditional detection
+
+threshold_anomaly_detection:
+  enabled: true
+  z_score_threshold: 2.0  # flag constants with |z| above this
+  iqr_multiplier: 1.5     # IQR fence: Q1 - m*IQR to Q3 + m*IQR
+  min_sample_size: 5      # minimum distinct constants before z-score is applied
+  fallback_to_all: true   # when sample < min_sample_size, flag all constants
 
 semgrep:
   rules_dir: context/ai_augmentation/semgrep_rules

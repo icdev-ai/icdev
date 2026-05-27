@@ -49,6 +49,14 @@ def _load_config() -> dict[str, Any]:
 _cfg = _load_config()
 _PATTERN_MIN_DEPTH: int = int(_cfg.get("pattern_min_depth", 3))
 _RULE_MIN_KEYS: int = int(_cfg.get("rule_min_keys", 10))
+_KEYWORD_LIST_MIN_STRINGS: int = int(_cfg.get("keyword_list_min_strings", 3))
+
+_threshold_ad_cfg: dict[str, Any] = _cfg.get("threshold_anomaly_detection", {})
+_AD_ENABLED: bool = bool(_threshold_ad_cfg.get("enabled", True))
+_AD_Z_SCORE_THRESHOLD: float = float(_threshold_ad_cfg.get("z_score_threshold", 2.0))
+_AD_IQR_MULTIPLIER: float = float(_threshold_ad_cfg.get("iqr_multiplier", 1.5))
+_AD_MIN_SAMPLE_SIZE: int = int(_threshold_ad_cfg.get("min_sample_size", 5))
+_AD_FALLBACK_TO_ALL: bool = bool(_threshold_ad_cfg.get("fallback_to_all", True))
 
 _semgrep_cfg: dict[str, Any] = _cfg.get("semgrep", {})
 _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
@@ -197,6 +205,55 @@ _CRON_DEC_KEYWORDS: frozenset[str] = frozenset(
     {"task", "cron", "schedule", "periodic", "job", "beat"}
 )
 _THRESHOLD_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
+
+
+# ── Anomaly detection for hardcoded thresholds ────────────────────────────────
+
+
+def _collect_all_numeric_thresholds(tree: ast.AST) -> list[float]:
+    """Collect every numeric constant appearing in comparisons or binary ops."""
+    values: list[float] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            if any(isinstance(op, _THRESHOLD_OPS) for op in node.ops):
+                for c in [node.left, *node.comparators]:
+                    if isinstance(c, ast.Constant) and isinstance(c.value, (int, float)):
+                        values.append(float(c.value))
+        elif isinstance(node, ast.BinOp):
+            for side in (node.left, node.right):
+                if isinstance(side, ast.Constant) and isinstance(side.value, (int, float)):
+                    values.append(float(side.value))
+    return values
+
+
+def _is_threshold_anomalous(value: float, population: list[float]) -> bool:
+    """Return True if value is a statistical outlier in population.
+
+    Uses z-score first; falls back to IQR fence when variance is zero.
+    When the population is too small, respects _AD_FALLBACK_TO_ALL.
+    """
+    n = len(population)
+    if n < _AD_MIN_SAMPLE_SIZE:
+        return _AD_FALLBACK_TO_ALL
+
+    mean = sum(population) / n
+    variance = sum((x - mean) ** 2 for x in population) / n
+    if variance > 0:
+        z = abs(value - mean) / (variance ** 0.5)
+        if z > _AD_Z_SCORE_THRESHOLD:
+            return True
+
+    sorted_pop = sorted(population)
+    q1 = sorted_pop[n // 4]
+    q3 = sorted_pop[(3 * n) // 4]
+    iqr = q3 - q1
+    if iqr > 0:
+        lower = q1 - _AD_IQR_MULTIPLIER * iqr
+        upper = q3 + _AD_IQR_MULTIPLIER * iqr
+        if value < lower or value > upper:
+            return True
+
+    return False
 
 
 def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
@@ -479,6 +536,13 @@ def _detect_hardcoded_threshold(
     scope_map: dict[int, str],
 ) -> list[dict]:
     results: list[dict] = []
+
+    # Pre-collect the full population of numeric constants so the anomaly
+    # detector can decide which values are true outliers vs. routine literals.
+    population: list[float] = (
+        _collect_all_numeric_thresholds(tree) if _AD_ENABLED else []
+    )
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Compare):
             if not any(isinstance(op, _THRESHOLD_OPS) for op in node.ops):
@@ -489,15 +553,24 @@ def _detect_hardcoded_threshold(
                 for c in comparators
                 if isinstance(c, ast.Constant) and isinstance(c.value, (int, float))
             ]
-            if numeric_consts:
-                results.append({
-                    "pattern_type": "hardcoded_threshold",
-                    "module_path": file_path,
-                    "function_name": scope_map.get(id(node), "<module>"),
-                    "line_start": node.lineno,
-                    "line_end": node.end_lineno,
-                    "pattern_detail": {"kind": "compare", "constants": numeric_consts},
-                })
+            if not numeric_consts:
+                continue
+            if _AD_ENABLED and not any(
+                _is_threshold_anomalous(float(v), population) for v in numeric_consts
+            ):
+                continue
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": scope_map.get(id(node), "<module>"),
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "pattern_detail": {
+                    "kind": "compare",
+                    "constants": numeric_consts,
+                    "anomaly_detected": _AD_ENABLED,
+                },
+            })
         elif isinstance(node, ast.BinOp):
             left_const = (
                 isinstance(node.left, ast.Constant)
@@ -507,20 +580,24 @@ def _detect_hardcoded_threshold(
                 isinstance(node.right, ast.Constant)
                 and isinstance(node.right.value, (int, float))
             )
-            if left_const or right_const:
-                const_val = node.left.value if left_const else node.right.value  # type: ignore[union-attr]
-                results.append({
-                    "pattern_type": "hardcoded_threshold",
-                    "module_path": file_path,
-                    "function_name": scope_map.get(id(node), "<module>"),
-                    "line_start": node.lineno,
-                    "line_end": node.end_lineno,
-                    "pattern_detail": {
-                        "kind": "binop",
-                        "op": type(node.op).__name__,
-                        "constants": [const_val],
-                    },
-                })
+            if not (left_const or right_const):
+                continue
+            const_val = node.left.value if left_const else node.right.value  # type: ignore[union-attr]
+            if _AD_ENABLED and not _is_threshold_anomalous(float(const_val), population):
+                continue
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": scope_map.get(id(node), "<module>"),
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "pattern_detail": {
+                    "kind": "binop",
+                    "op": type(node.op).__name__,
+                    "constants": [const_val],
+                    "anomaly_detected": _AD_ENABLED,
+                },
+            })
     return results
 
 
@@ -586,7 +663,7 @@ def _detect_keyword_list_search(
                     and isinstance(k, ast.Constant)
                     and isinstance(k.value, str)
                 )
-            if str_count >= 3:
+            if str_count >= _KEYWORD_LIST_MIN_STRINGS:
                 results.append({
                     "pattern_type": "keyword_list_search",
                     "module_path": file_path,
@@ -686,7 +763,7 @@ _JAVA_RE_SWITCH         = re.compile(r'\bswitch\s*\(')
 _JAVA_RE_CASE           = re.compile(r'^\s*case\s+\S')
 _JAVA_RE_MODEL_ATTR     = re.compile(r'@ModelAttribute\b')
 _JAVA_RE_REPO_FIND      = re.compile(r'\.\s*find(?:All|By\w+)\s*\(')
-_JAVA_MIN_IF_DEPTH: int = 2  # Spring controllers rarely nest ≥3; 2 is enough signal
+_JAVA_MIN_IF_DEPTH: int = int(_cfg.get("java_min_if_depth", 2))
 
 
 def _cs_walk_scoped(root: Any, src: bytes):
