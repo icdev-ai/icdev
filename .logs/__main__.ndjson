@@ -126,3 +126,5 @@
 {"ts": "2026-05-27T01:15:34.234706+00:00", "level": "INFO", "component": "__main__", "message": "Press Ctrl+C to stop", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-27T01:16:16.663823+00:00", "level": "INFO", "component": "__main__", "message": "Another kanban scheduler is alive (pid=10792). Exiting to avoid duplicate dispatch.", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-27T01:16:27.154566+00:00", "level": "INFO", "component": "__main__", "message": "Another kanban scheduler is alive (pid=10792). Exiting to avoid duplicate dispatch.", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T01:17:34.706767+00:00", "level": "INFO", "component": "__main__", "message": "Kanban scheduler started (interval=60s)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T01:17:34.706909+00:00", "level": "INFO", "component": "__main__", "message": "Press Ctrl+C to stop", "trace_id": null, "session_id": null, "extra": {}}
