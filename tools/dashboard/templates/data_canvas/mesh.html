@@ -253,7 +253,9 @@ async function loadSummary() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const d = await res.json();
     renderHero(d.overall_score || 0);
-    renderPillars(d.pillar_scores || []);
+    const ps = d.pillar_scores;
+    const pillarList = Array.isArray(ps) ? ps : (ps ? Object.values(ps) : []);
+    renderPillars(pillarList);
     renderActivity(d.recent_products || [], d.recent_contracts || []);
     const now = new Date().toLocaleTimeString();
     document.getElementById('refreshInfo').textContent = 'Last updated: ' + now;

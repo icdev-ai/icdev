@@ -2740,7 +2740,7 @@ def create_data_canvas_blueprint():
             recent_contracts = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT c.id, c.title, c.status, c.created_at, "
+                    "SELECT c.id, c.name AS title, c.status, c.created_at, "
                     "p.name AS product_name, p.domain_id "
                     "FROM dm_contracts c "
                     "LEFT JOIN dm_data_products p ON p.id = c.product_id "
@@ -2757,46 +2757,51 @@ def create_data_canvas_blueprint():
                 return "Emerging"
             return "At Risk"
 
+        pillar_list = [
+            {
+                "key": "domain_ownership",
+                "label": "Domain Ownership",
+                "score": domain_score,
+                "count": domain_total,
+                "count_label": f"{domain_total} domain{'s' if domain_total != 1 else ''}",
+                "link": "/data/domains",
+                "score_label": _slabel(domain_score),
+            },
+            {
+                "key": "data_products",
+                "label": "Data Products",
+                "score": product_score,
+                "count": product_published,
+                "count_label": f"{product_published} published",
+                "link": "/data/products",
+                "score_label": _slabel(product_score),
+            },
+            {
+                "key": "data_contracts",
+                "label": "Data Contracts",
+                "score": contract_score,
+                "count": contract_active,
+                "count_label": f"{contract_active} active",
+                "link": "/data/contracts",
+                "score_label": _slabel(contract_score),
+            },
+            {
+                "key": "federated_governance",
+                "label": "Federated Governance",
+                "score": gov_score,
+                "count": gov_active,
+                "count_label": "Active" if gov_active > 0 else "None",
+                "link": "/data/governance",
+                "score_label": _slabel(gov_score),
+            },
+        ]
         return jsonify({
             "overall_score": overall_score,
-            "pillar_scores": [
-                {
-                    "key": "domain_ownership",
-                    "label": "Domain Ownership",
-                    "score": domain_score,
-                    "count": domain_total,
-                    "count_label": f"{domain_total} domain{'s' if domain_total != 1 else ''}",
-                    "link": "/data/domains",
-                    "score_label": _slabel(domain_score),
-                },
-                {
-                    "key": "data_products",
-                    "label": "Data Products",
-                    "score": product_score,
-                    "count": product_published,
-                    "count_label": f"{product_published} published",
-                    "link": "/data/products",
-                    "score_label": _slabel(product_score),
-                },
-                {
-                    "key": "data_contracts",
-                    "label": "Data Contracts",
-                    "score": contract_score,
-                    "count": contract_active,
-                    "count_label": f"{contract_active} active",
-                    "link": "/data/contracts",
-                    "score_label": _slabel(contract_score),
-                },
-                {
-                    "key": "federated_governance",
-                    "label": "Federated Governance",
-                    "score": gov_score,
-                    "count": gov_active,
-                    "count_label": "Active" if gov_active > 0 else "None",
-                    "link": "/data/governance",
-                    "score_label": _slabel(gov_score),
-                },
-            ],
+            "domain_count": domain_total,
+            "product_count": product_total,
+            "contract_count": contract_active,
+            "governance_score": gov_score,
+            "pillar_scores": {p["key"]: p for p in pillar_list},
             "recent_products": recent_products,
             "recent_contracts": recent_contracts,
         })

@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.27-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.28-blue" alt="Version">
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
   <img src="https://img.shields.io/badge/tools-530%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/agents-15-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
-  <img src="https://img.shields.io/badge/canvases-11-00acc1" alt="Design Canvases">
+  <img src="https://img.shields.io/badge/canvases-12-00acc1" alt="Design Canvases">
   <img src="https://img.shields.io/badge/solution%20packs-7-ff6b35" alt="Solution Packs">
   <img src="https://img.shields.io/badge/PyPI-icdev-informational" alt="PyPI">
 </p>
@@ -22,6 +22,18 @@ These aren't templates. They're living systems that can build their own features
 One developer built this. Imagine what your team could do with it.
 
 > **DISCLAIMER:** This repository does NOT contain classified or Controlled Unclassified Information (CUI). Terms like "CUI", "SECRET", "IL4", "IL5", "IL6" appear throughout as **configuration values and template strings** — not as indicators that this repository itself is classified. Classification terminology references publicly available U.S. government standards ([EO 13526](https://www.archives.gov/isoo/policy-documents/cnsi-eo.html), [32 CFR Part 2002](https://www.ecfr.gov/current/title-32/subtitle-B/chapter-XX/part-2002), [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)). File headers containing `[TEMPLATE: CUI // SP-CTI]` are **template markers** demonstrating the format ICDEV™ applies to generated artifacts.
+
+---
+
+## What's New in 1.2.28 — Data Canvas: Data Mesh, Governance & CSP
+
+- **Data Mesh module** (`/data/mesh`) — full domain-driven data mesh with domain registry, data product catalog, SLA enforcement, stewardship ownership matrix, and contract lifecycle management. Backed by `data_mesh/governance_engine.py` + `data_mesh/lineage_emitter.py`. Config: `args/data_mesh_config.yaml`.
+- **Data Canvas Governance Engine** (`/data/governance`) — policy enforcement dashboard aligned to NIST 800-188 and DoDI 8320.02. Stewardship workflows, governance rule library, data quality scoring, and audit-trail-backed policy decisions.
+- **Data Canvas Products Page** (`/data/products`) — first-class data product catalog with ownership, classification zone, lineage graph, SLA status, and consumer subscription tracking.
+- **CSP Analysis Module** (`/data/csp`) — Cloud Service Provider overlay for the Data Design Canvas. Cost projection, compliance posture per CSP, risk tiering, and data sovereignty tagging across 6 cloud providers.
+- **60+ dashboard templates synced to icdev/ package** — GovLift (18 pages: workloads, waves, STIG, audit, simulate, recovery), Info Ops (analysis, OSINT, reports), Innovation pipeline (idea detail, intake, pipeline), Network sub-pages (cloud topology, exec dashboard, subnet calc, partners), Studio (execution, sim hub), Security Canvas (demo, compliance timeline), FORGE Academy (pattern library, org readiness), GameDay (AI league, round ops, team detail), IL5 classification page, MFA setup/verify, proposals dashboard, intake PRD view, supply chain. All templates are now fully installable via `pip install icdev`.
+- **Genesis meta-harness CRLF fix** — `daemon.py`, `eval_harness.py`, `heuristic_writer.py`, `llm_triage.py`, `reflexes/harness.py` line endings normalized for cross-platform compatibility.
+- **STIG compliance pillar update** — `ai_augmentation/agent_readiness/pillars/stig_compliance.py` scoring logic tightened.
 
 ---
 
@@ -699,6 +711,10 @@ python tools/dashboard/app.py
 | `/security/ask` | **Ask SDC** — Q&A over the STRIDE × NIST crosswalk graph |
 | `/devops/ask` | **Ask PDC** — Q&A over pipeline stages + connectors |
 | `/boundary/ask` | **Ask BDC** — Q&A over authorization-boundary designs |
+| `/data/mesh` | **Data Mesh** — domain registry, data products, SLA enforcement, stewardship ownership |
+| `/data/governance` | **Data Governance Engine** — policy enforcement, NIST 800-188 / DoDI 8320.02 alignment, stewardship workflows |
+| `/data/products` | **Data Products** — catalog with classification, lineage, SLA status, and consumer subscriptions |
+| `/data/csp` | **CSP Analysis** — cost projection, compliance posture, risk tiering across 6 cloud providers |
 | `/data/ask` | **Ask DDC** — Q&A over column-level data lineage |
 | `/observability/ask` | **Ask ODC** — Q&A over detection coverage + Sigma rules |
 | `/infra/ask` | **Ask IDC** — Q&A over IaC designs (Terraform/Pulumi/CloudFormation resources) |
