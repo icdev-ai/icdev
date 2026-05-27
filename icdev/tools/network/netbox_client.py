@@ -11,9 +11,9 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import sys
 import urllib.error
 import urllib.parse
@@ -21,7 +21,7 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.network.netbox")
+logger = get_logger("icdev.network.netbox")
 
 # NetBox device role → canvas node type mapping
 _ROLE_TO_TYPE: dict[str, str] = {

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Gap handlers — MCP tool handlers for CLI tools not yet exposed via MCP.
 
@@ -13,7 +15,6 @@ Organized by category matching the tool_registry.py categories.
 """
 
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -23,7 +24,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
-logger = logging.getLogger("mcp.gap_handlers")
+logger = get_logger("mcp.gap_handlers")
 
 
 # ---------------------------------------------------------------------------

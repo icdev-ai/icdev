@@ -1,13 +1,16 @@
+from __future__ import annotations
+# CUI // SP-CTI
 """ICDEV™ Services Launcher — starts Dashboard + Genesis Daemon + Kanban Scheduler.
 
-Spawned by Task Scheduler via start_daemon.bat.
+Cross-platform: works on Windows, Linux, and macOS.
+Entry point: python tools/genesis/launch.py  (or start_daemon.bat / start_daemon.ps1 as wrappers)
 All services run as subprocesses with auto-restart on crash.
 Ollama health is checked before daemon start.
 """
 
+import os
 import subprocess
 import sys
-import os
 import time
 import urllib.request
 
@@ -26,8 +29,8 @@ if os.path.isfile(_env_file):
                 if _k:
                     os.environ.setdefault(_k, _v)
 
-# Ensure .tmp dirs exist
-os.makedirs(".tmp/genesis", exist_ok=True)
+# Ensure .tmp dirs exist (anchored to ROOT — container-safe)
+os.makedirs(os.path.join(ROOT, ".tmp", "genesis"), exist_ok=True)
 
 # Set environment for Genesis
 os.environ["ICDEV_GENESIS_ENABLED"] = "true"
@@ -36,22 +39,18 @@ os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 DASHBOARD_PORT = 5050
 TRADING_DASHBOARD_PORT = 5100
-LOG_FILE = ".tmp/genesis/launcher.log"
-_PID_FILE = ".tmp/genesis/launcher.pid"
+LOG_FILE = os.path.join(ROOT, ".tmp", "genesis", "launcher.log")
+_PID_FILE = os.path.join(ROOT, ".tmp", "genesis", "launcher.pid")
 
 
 def _acquire_pid_lock() -> bool:
     """Return True if this process is now the sole launcher. False = another is running."""
+    from tools.compat.platform_utils import pid_exists
     if os.path.exists(_PID_FILE):
         try:
             with open(_PID_FILE) as f:
                 existing_pid = int(f.read().strip())
-            # Check if that PID is still alive
-            result = subprocess.run(
-                ["powershell", "-Command", f"Get-Process -Id {existing_pid} -ErrorAction SilentlyContinue"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0 and str(existing_pid) in result.stdout:
+            if pid_exists(existing_pid):
                 return False  # another launcher is alive
         except Exception:
             pass  # stale or unreadable PID file — take the lock
@@ -113,8 +112,8 @@ def _child_env():
 
 def _start_dashboard():
     """Start Dashboard subprocess."""
-    _kill_stale_instances("dashboard/app.py")
-    dash_log = open(".tmp/dashboard.log", "a", encoding="utf-8")
+    _kill_stale_instances("tools/dashboard/app.py")
+    dash_log = open(os.path.join(ROOT, ".tmp", "dashboard.log"), "a", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "tools/dashboard/app.py", "--port", str(DASHBOARD_PORT)],
         stdout=dash_log,
@@ -129,7 +128,7 @@ def _start_dashboard():
 def _start_daemon():
     """Start Genesis Daemon subprocess."""
     _kill_stale_instances("genesis/daemon.py")
-    daemon_log = open(".tmp/genesis/daemon.log", "a", encoding="utf-8")
+    daemon_log = open(os.path.join(ROOT, ".tmp", "genesis", "daemon.log"), "a", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "tools/genesis/daemon.py"],
         stdout=daemon_log,
@@ -144,8 +143,8 @@ def _start_daemon():
 def _start_proposal_genesis():
     """Start Proposal Genesis Daemon subprocess."""
     _kill_stale_instances("proposal_genesis/daemon.py")
-    os.makedirs(".tmp/proposal_genesis", exist_ok=True)
-    pg_log = open(".tmp/proposal_genesis/daemon.log", "a", encoding="utf-8")
+    os.makedirs(os.path.join(ROOT, ".tmp", "proposal_genesis"), exist_ok=True)
+    pg_log = open(os.path.join(ROOT, ".tmp", "proposal_genesis", "daemon.log"), "a", encoding="utf-8")
     env = _child_env()
     env["ICDEV_PROPOSAL_GENESIS_ENABLED"] = "true"
     proc = subprocess.Popen(
@@ -159,30 +158,24 @@ def _start_proposal_genesis():
     return proc, pg_log
 
 
-def _kill_stale_instances(script_name: str):
+def _kill_stale_instances(script_name: str) -> None:
     """Kill any existing instances of a script before starting a fresh one.
 
+    Cross-platform: uses psutil when available, falls back to platform-agnostic
+    process enumeration via tools.compat.platform_utils.
     Prevents duplicate processes from accumulating across launcher restarts.
     """
+    from tools.compat.platform_utils import find_pids_by_cmdline, kill_process
+    own_pid = os.getpid()
     try:
-        result = subprocess.run(
-            ["powershell", "-Command",
-             f"Get-CimInstance Win32_Process | "
-             f"Where-Object {{ $_.CommandLine -like '*{script_name}*' -and $_.ProcessId -ne $PID }} | "
-             f"Select-Object -ExpandProperty ProcessId"],
-            capture_output=True, text=True, timeout=10,
-        )
-        for line in result.stdout.strip().splitlines():
-            pid = line.strip()
-            if pid.isdigit():
-                try:
-                    subprocess.run(
-                        ["taskkill", "/F", "/PID", pid],
-                        capture_output=True, timeout=5,
-                    )
+        for pid in find_pids_by_cmdline(script_name):
+            if pid == own_pid:
+                continue
+            try:
+                if kill_process(pid):
                     _log(f"Killed stale {script_name} (PID {pid})")
-                except Exception:
-                    pass
+            except Exception as exc:
+                _log(f"Could not kill stale {script_name} PID {pid}: {exc}")
     except Exception as exc:
         _log(f"Stale process cleanup failed for {script_name}: {exc}")
 
@@ -190,7 +183,7 @@ def _kill_stale_instances(script_name: str):
 def _start_kanban_scheduler():
     """Start Kanban Scheduler subprocess."""
     _kill_stale_instances("kanban_scheduler.py")
-    kb_log = open(".tmp/kanban_scheduler.log", "a", encoding="utf-8")
+    kb_log = open(os.path.join(ROOT, ".tmp", "kanban_scheduler.log"), "a", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "tools/genesis/kanban_scheduler.py", "--interval", "60"],
         stdout=kb_log,
@@ -205,7 +198,7 @@ def _start_kanban_scheduler():
 def _start_trading_dashboard():
     """Start FathomDesk trading dashboard subprocess."""
     _kill_stale_instances("trading/dashboard/app.py")
-    td_log = open(".tmp/trading_dashboard.log", "a", encoding="utf-8")
+    td_log = open(os.path.join(ROOT, ".tmp", "trading_dashboard.log"), "a", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "tools/trading/dashboard/app.py"],
         stdout=td_log,
@@ -251,40 +244,44 @@ def main():
         while True:
             time.sleep(30)
 
-            # Check dashboard
-            if dash_proc.poll() is not None:
-                _log(f"Dashboard exited (code {dash_proc.returncode}), restarting...")
-                dash_log_f.close()
-                time.sleep(2)
-                dash_proc, dash_log_f = _start_dashboard()
+            try:
+                # Check dashboard
+                if dash_proc.poll() is not None:
+                    _log(f"Dashboard exited (code {dash_proc.returncode}), restarting...")
+                    dash_log_f.close()
+                    time.sleep(2)
+                    dash_proc, dash_log_f = _start_dashboard()
 
-            # Check Genesis daemon
-            if daemon_proc.poll() is not None:
-                _log(f"Genesis Daemon exited (code {daemon_proc.returncode}), restarting...")
-                daemon_log_f.close()
-                time.sleep(5)
-                daemon_proc, daemon_log_f = _start_daemon()
+                # Check Genesis daemon
+                if daemon_proc.poll() is not None:
+                    _log(f"Genesis Daemon exited (code {daemon_proc.returncode}), restarting...")
+                    daemon_log_f.close()
+                    time.sleep(5)
+                    daemon_proc, daemon_log_f = _start_daemon()
 
-            # Check Proposal Genesis daemon
-            if pg_proc.poll() is not None:
-                _log(f"Proposal Genesis exited (code {pg_proc.returncode}), restarting...")
-                pg_log_f.close()
-                time.sleep(5)
-                pg_proc, pg_log_f = _start_proposal_genesis()
+                # Check Proposal Genesis daemon
+                if pg_proc.poll() is not None:
+                    _log(f"Proposal Genesis exited (code {pg_proc.returncode}), restarting...")
+                    pg_log_f.close()
+                    time.sleep(5)
+                    pg_proc, pg_log_f = _start_proposal_genesis()
 
-            # Check Kanban Scheduler
-            if kb_proc.poll() is not None:
-                _log(f"Kanban Scheduler exited (code {kb_proc.returncode}), restarting...")
-                kb_log_f.close()
-                time.sleep(2)
-                kb_proc, kb_log_f = _start_kanban_scheduler()
+                # Check Kanban Scheduler
+                if kb_proc.poll() is not None:
+                    _log(f"Kanban Scheduler exited (code {kb_proc.returncode}), restarting...")
+                    kb_log_f.close()
+                    time.sleep(2)
+                    kb_proc, kb_log_f = _start_kanban_scheduler()
 
-            # Check FathomDesk Trading Dashboard
-            if td_proc.poll() is not None:
-                _log(f"FathomDesk Dashboard exited (code {td_proc.returncode}), restarting...")
-                td_log_f.close()
-                time.sleep(2)
-                td_proc, td_log_f = _start_trading_dashboard()
+                # Check FathomDesk Trading Dashboard
+                if td_proc.poll() is not None:
+                    _log(f"FathomDesk Dashboard exited (code {td_proc.returncode}), restarting...")
+                    td_log_f.close()
+                    time.sleep(2)
+                    td_proc, td_log_f = _start_trading_dashboard()
+
+            except Exception as exc:
+                _log(f"Monitor loop error (non-fatal): {exc}")
 
     except KeyboardInterrupt:
         _log("Shutdown requested")

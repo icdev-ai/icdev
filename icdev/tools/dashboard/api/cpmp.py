@@ -66,9 +66,8 @@ def _classification():
 def _cor_access_log(conn, user_id, contract_id, action):
     try:
         conn.execute(
-            "INSERT INTO cpmp_cor_access_log (id, user_id, contract_id, action, accessed_at, classification) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (_uuid(), user_id, contract_id, action, now_isoformat(), _classification()),
+            "INSERT INTO cpmp_cor_access_log (user_id, contract_id, action) VALUES (?, ?, ?)",
+            (user_id, contract_id, action),
         )
     except Exception:
         pass
@@ -212,8 +211,9 @@ def list_wbs(contract_id):
     try:
         from tools.govcon.contract_manager import list_wbs as _list, build_wbs_tree as _tree
 
-        tree = request.args.get("tree", "").lower() == "true"
-        if tree:
+        mode = request.args.get("mode", "")
+        tree_flag = request.args.get("tree", "").lower() == "true"
+        if mode == "tree" or tree_flag:
             result = _tree(contract_id)
         else:
             result = _list(contract_id)
@@ -882,7 +882,7 @@ def cor_list_contracts():
         if not cor_email:
             return jsonify({"status": "error", "message": "Authenticated user has no email"}), 400
         conn = _get_db()
-        _cor_access_log(conn, cor_email, "all", "view_contracts")
+        _audit(conn, "cor.view_contracts", f"COR {cor_email} listed assigned contracts", actor=cor_email)
         conn.commit()
         conn.close()
         contracts = _get_cor_contracts(cor_email)

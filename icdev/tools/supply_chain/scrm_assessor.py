@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """NIST 800-161 Supply Chain Risk Management (SCRM) Assessor.
 
 Scores vendors across 6 SCRM dimensions (provenance, integrity, dependency,

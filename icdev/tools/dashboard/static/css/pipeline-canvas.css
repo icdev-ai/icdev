@@ -2,17 +2,17 @@
 /* Mirrors network-canvas.css dark theme with pipeline stage colors */
 
 :root {
-  --pc-bg: #1a1a2e;
-  --pc-bg2: #16213e;
-  --pc-bg3: #0f2040;
-  --pc-accent: #0f3460;
-  --pc-red: #e94560;
-  --pc-text: #eaeaea;
+  --pc-bg:       #1a1a2e;
+  --pc-bg2:      #16213e;
+  --pc-bg3:      #0f2040;
+  --pc-accent:   #0f3460;
+  --pc-red:      #e94560;
+  --pc-text:     #eaeaea;
   --pc-text-dim: #7a8cb0;
-  --pc-border: #1e3a6e;
-  --pc-success: #27ae60;
-  --pc-warning: #f39c12;
-  --pc-danger: #e74c3c;
+  --pc-border:   #1e3a6e;
+  --pc-success:  #27ae60;
+  --pc-warning:  #f39c12;
+  --pc-danger:   #e74c3c;
   --pc-font: 'Segoe UI', system-ui, sans-serif;
   --pc-mono: 'Cascadia Code', 'Consolas', monospace;
 
@@ -30,14 +30,13 @@
   --stage-compliance: #16a085;
 }
 
-/* ── Global dark theme overrides ──────────────────────────────────── */
-/* Ensures ALL text in the canvas page is light — prevents black text on dark bg */
+/* ── Global light theme ──────────────────────────────────────────── */
 body, html { background: var(--pc-bg); color: var(--pc-text); }
 *, *::before, *::after { color: inherit; }
 h1, h2, h3, h4, h5, h6, p, span, div, label, a, li, td, th, input, select, textarea, button, pre, code { color: var(--pc-text); }
 input, select, textarea { background: var(--pc-bg3); border-color: var(--pc-border); }
 a { color: var(--pc-red); }
-a:hover { color: #f06292; }
+a:hover { color: #a93226; }
 
 /* ── Layout ──────────────────────────────────────────────────────── */
 
@@ -47,7 +46,7 @@ a:hover { color: #f06292; }
 .pc-toolbar .tb-group:last-child { border-right: none; }
 
 .tb-btn { background: transparent; color: var(--pc-text-dim); border: 1px solid transparent; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap; }
-.tb-btn:hover { background: var(--pc-accent); color: var(--pc-text); border-color: var(--pc-border); }
+.tb-btn:hover { background: var(--pc-accent); color: var(--pc-text); border-color: var(--pc-border); border-color: #7ba7d4; }
 .tb-btn.active { background: var(--pc-accent); color: var(--pc-text); border-color: var(--pc-red); }
 .tb-status { margin-left: auto; font-size: 11px; color: var(--pc-text-dim); padding: 0 8px; }
 
@@ -70,8 +69,14 @@ a:hover { color: #f06292; }
 
 /* ── Canvas Area ─────────────────────────────────────────────────── */
 
-.pc-canvas-area { flex: 1; overflow: auto; position: relative; background: var(--pc-bg); }
-#pc-canvas-container { width: 5000px; height: 5000px; background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px); background-size: 10px 10px; }
+.pc-canvas-area { flex: 1; overflow: hidden; position: relative; background: #ffffff; cursor: grab; }
+.pc-canvas-area.is-panning { cursor: grabbing !important; user-select: none; }
+/* Keep default cursor over nodes so they stay interactive */
+.pc-canvas-area .joint-cell { cursor: default; }
+#pc-canvas-container { width: 100%; height: 100%; background-image: radial-gradient(circle, rgba(0,0,0,0.10) 1px, transparent 1px); background-size: 10px 10px; }
+
+/* Zoom label in toolbar */
+#pc-zoom-label { font-size: 11px; color: var(--pc-text-dim); min-width: 36px; text-align: center; padding: 0 4px; }
 
 /* ── Config Panel (Right) ────────────────────────────────────────── */
 
@@ -134,7 +139,8 @@ a:hover { color: #f06292; }
 
 /* ── CUI Banner ──────────────────────────────────────────────────── */
 
-.pc-cui-banner { background: #1a5276; color: #fff; text-align: center; font-size: 11px; padding: 2px; letter-spacing: 1px; }
+.pc-cui-banner { background: #1a5276; color: #ffffff !important; text-align: center; font-size: 11px; padding: 2px; letter-spacing: 1px; }
+.pc-cui-banner * { color: #ffffff !important; }
 
 /* ── Responsive ──────────────────────────────────────────────────── */
 
@@ -153,7 +159,7 @@ a:hover { color: #f06292; }
     width: 100% !important; height: auto !important; overflow: visible !important;
     border: none !important; background: #fff !important;
   }
-  body, .main-content, .card { background: #fff !important; color: #111 !important; }
+  body, .main-content, .card { background: #ffffff !important; color: #111111 !important; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   @page { size: landscape; margin: 0.5in; }
 }

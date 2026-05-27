@@ -7,6 +7,7 @@ findings into an audit report.  Non-destructive, read-only (GREEN tier).
 
 Scanner-tier only (zero Claude tokens).  Air-gap safe.
 """
+IMPLEMENTATION_STATUS = "full"
 
 import json
 import os

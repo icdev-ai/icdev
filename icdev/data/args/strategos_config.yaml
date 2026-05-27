@@ -110,15 +110,20 @@ opencti:
 
 executor:
   # Ordered list of execution backends tried in sequence.
-  # Supported values: 'claude_cli', 'gitlab', 'ollama_local'
+  # Supported values: 'claude_cli', 'gitlab', 'github_actions', 'ollama_local'
   fallback_chain:
     - claude_cli
     - gitlab
+    - github_actions
     - ollama_local
 
   # GitLab project used when the 'gitlab' executor is active.
   # Set via env var to avoid hardcoding sensitive project IDs.
   gitlab_runner_project_id: "${GITLAB_RUNNER_PROJECT_ID}"
+
+  # GitHub repository used when the 'github_actions' executor is active.
+  # Format: owner/repo (e.g. icdev-ai/icdev)
+  github_runner_repo: "${GITHUB_RUNNER_REPO}"
 
   # Maximum simultaneous inference requests to the local Ollama instance.
   ollama_max_concurrent: 1

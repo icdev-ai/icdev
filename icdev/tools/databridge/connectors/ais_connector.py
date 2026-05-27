@@ -38,10 +38,10 @@ Usage (CLI):
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
-import logging
 import sys
 import time
 from pathlib import Path
@@ -61,7 +61,7 @@ from tools.databridge.connector import (  # noqa: E402
 from tools.databridge.connectors.saas_base import SaaSBaseConnector  # noqa: E402
 from tools.databridge.registry import register_connector  # noqa: E402
 
-logger = logging.getLogger("databridge.ais")
+logger = get_logger("databridge.ais")
 
 _VESSELS_VALUE_BASE = "https://api.vesselsvalue.com"
 _VESSELS_VALUE_ENDPOINTS: Dict[str, str] = {

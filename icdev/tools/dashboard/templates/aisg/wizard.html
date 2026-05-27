@@ -3,258 +3,670 @@
 {% block title %}{{ app_name }} — AI Launchpad Wizard{% endblock %}
 
 {% block content %}
-<div class="page-header">
+<div class="wizard-outer">
+  <div class="wizard-header">
     <h1>AI Launchpad Wizard</h1>
-    <p class="page-subtitle">Answer a few questions and ICDEV™ generates a ready-to-run AI project plan tailored to your mission.</p>
-</div>
+    <p class="wizard-subtitle">Answer a few questions and ICDEV generates a ready-to-run AI project plan tailored to your mission.</p>
+  </div>
 
-<div class="wizard-container">
+  <div class="wizard-card">
     <!-- Progress Bar -->
-    <div class="wizard-progress">
-        <div class="progress-steps">
-            <div class="step active" id="step-dot-1">1</div>
-            <div class="step-line"></div>
-            <div class="step" id="step-dot-2">2</div>
-            <div class="step-line"></div>
-            <div class="step" id="step-dot-3">3</div>
-            <div class="step-line"></div>
-            <div class="step" id="step-dot-4">4</div>
-        </div>
-        <div class="progress-labels">
-            <span>Mission</span>
-            <span>Team</span>
-            <span>Tech</span>
-            <span>Generate</span>
-        </div>
-    </div>
+    <nav class="wizard-progress" aria-label="Wizard progress">
+      <ol class="progress-track">
+        <li class="progress-step active" id="step-dot-1" aria-current="step">
+          <span class="step-number">1</span>
+          <span class="step-label">Mission</span>
+        </li>
+        <li class="progress-step" id="step-dot-2">
+          <span class="step-number">2</span>
+          <span class="step-label">Team</span>
+        </li>
+        <li class="progress-step" id="step-dot-3">
+          <span class="step-number">3</span>
+          <span class="step-label">Tech</span>
+        </li>
+        <li class="progress-step" id="step-dot-4">
+          <span class="step-number">4</span>
+          <span class="step-label">Generate</span>
+        </li>
+      </ol>
+    </nav>
 
     <!-- Step 1: Mission -->
-    <div class="wizard-step active" id="step-1">
-        <h2>What is your mission objective?</h2>
-        <p class="step-desc">Describe the problem you want AI to solve in plain English.</p>
-        <div class="form-group">
-            <textarea id="mission-text" rows="4" placeholder="Example: Automate the review of contract documents to flag missing clauses before submission." style="width:100%;padding:12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:0.95rem;resize:vertical;"></textarea>
+    <section class="wizard-step active" id="step-1" aria-labelledby="step-1-heading">
+      <div class="step-header">
+        <h2 id="step-1-heading">What is your mission objective?</h2>
+        <p class="step-desc">Describe the problem you want AI to solve in plain English. The more detail, the better the plan.</p>
+      </div>
+
+      <div class="form-group">
+        <label for="mission-text" class="sr-only">Mission description</label>
+        <textarea id="mission-text" rows="5" placeholder="Example: Automate the review of contract documents to flag missing clauses before submission."></textarea>
+        <div class="char-count" id="mission-count">0 / 500</div>
+      </div>
+
+      <div class="form-group">
+        <label class="group-label">Which domain does this fall under?</label>
+        <div class="option-grid" id="domain-options" role="radiogroup" aria-label="Domain selection">
+          <button type="button" class="option-card" data-value="document_qa" onclick="selectOption(this, 'domain')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <span class="option-title">Document Q&amp;A</span>
+            <span class="option-desc">Policy, legal, HR knowledge bases</span>
+          </button>
+          <button type="button" class="option-card" data-value="procurement" onclick="selectOption(this, 'domain')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+            <span class="option-title">Procurement</span>
+            <span class="option-desc">SAM.gov, contracting, BD intel</span>
+          </button>
+          <button type="button" class="option-card" data-value="threat_triage" onclick="selectOption(this, 'domain')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <span class="option-title">Threat / Security</span>
+            <span class="option-desc">SOC triage, MITRE, incident response</span>
+          </button>
+          <button type="button" class="option-card" data-value="compliance" onclick="selectOption(this, 'domain')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="m9 18 2 2 4-4"/></svg>
+            <span class="option-title">Compliance / RMF</span>
+            <span class="option-desc">NIST, FedRAMP, CMMC evidence</span>
+          </button>
+          <button type="button" class="option-card" data-value="analytics" onclick="selectOption(this, 'domain')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            <span class="option-title">Data Analytics</span>
+            <span class="option-desc">BI, forecasting, anomaly detection</span>
+          </button>
+          <button type="button" class="option-card" data-value="custom" onclick="selectOption(this, 'domain')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span class="option-title">Custom / Other</span>
+            <span class="option-desc">Specialized or hybrid use case</span>
+          </button>
         </div>
-        <div class="form-group">
-            <label>Which area does this fall under?</label>
-            <div class="option-grid" id="domain-options">
-                <div class="option-card" data-value="document_qa" onclick="selectOption(this, 'domain')">
-                    <span class="option-icon">📄</span>
-                    <span>Document Q&amp;A</span>
-                </div>
-                <div class="option-card" data-value="procurement" onclick="selectOption(this, 'domain')">
-                    <span class="option-icon">🏛️</span>
-                    <span>Procurement</span>
-                </div>
-                <div class="option-card" data-value="threat_triage" onclick="selectOption(this, 'domain')">
-                    <span class="option-icon">🛡️</span>
-                    <span>Threat / Security</span>
-                </div>
-                <div class="option-card" data-value="compliance" onclick="selectOption(this, 'domain')">
-                    <span class="option-icon">✅</span>
-                    <span>Compliance / RMF</span>
-                </div>
-                <div class="option-card" data-value="analytics" onclick="selectOption(this, 'domain')">
-                    <span class="option-icon">📊</span>
-                    <span>Data Analytics</span>
-                </div>
-                <div class="option-card" data-value="custom" onclick="selectOption(this, 'domain')">
-                    <span class="option-icon">⚙️</span>
-                    <span>Custom / Other</span>
-                </div>
-            </div>
-        </div>
-    </div>
+      </div>
+    </section>
 
     <!-- Step 2: Team -->
-    <div class="wizard-step hidden" id="step-2">
-        <h2>Tell us about your team</h2>
-        <p class="step-desc">ICDEV™ adjusts the generated plan to match your team's skill level.</p>
-        <div class="form-group">
-            <label>Team AI experience</label>
-            <div class="option-grid">
-                <div class="option-card" data-value="none" onclick="selectOption(this, 'experience')">
-                    <span class="option-icon">🌱</span>
-                    <span>No AI experience</span>
-                </div>
-                <div class="option-card" data-value="beginner" onclick="selectOption(this, 'experience')">
-                    <span class="option-icon">📚</span>
-                    <span>Some training done</span>
-                </div>
-                <div class="option-card" data-value="intermediate" onclick="selectOption(this, 'experience')">
-                    <span class="option-icon">⚡</span>
-                    <span>1–2 AI projects shipped</span>
-                </div>
-                <div class="option-card" data-value="advanced" onclick="selectOption(this, 'experience')">
-                    <span class="option-icon">🚀</span>
-                    <span>AI team in place</span>
-                </div>
-            </div>
+    <section class="wizard-step hidden" id="step-2" aria-labelledby="step-2-heading">
+      <div class="step-header">
+        <h2 id="step-2-heading">Tell us about your team</h2>
+        <p class="step-desc">ICDEV adjusts the generated plan to match your team's skill level and capacity.</p>
+      </div>
+
+      <div class="form-group">
+        <label class="group-label">Team AI experience</label>
+        <div class="option-grid" role="radiogroup" aria-label="AI experience level">
+          <button type="button" class="option-card" data-value="none" onclick="selectOption(this, 'experience')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span class="option-title">No AI experience</span>
+            <span class="option-desc">First AI initiative; needs guided onboarding</span>
+          </button>
+          <button type="button" class="option-card" data-value="beginner" onclick="selectOption(this, 'experience')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            <span class="option-title">Some training done</span>
+            <span class="option-desc">Courses completed; no production AI yet</span>
+          </button>
+          <button type="button" class="option-card" data-value="intermediate" onclick="selectOption(this, 'experience')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            <span class="option-title">1 2 projects shipped</span>
+            <span class="option-desc">Small AI projects in production</span>
+          </button>
+          <button type="button" class="option-card" data-value="advanced" onclick="selectOption(this, 'experience')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span class="option-title">AI team in place</span>
+            <span class="option-desc">Dedicated ML engineers; mature MLOps</span>
+          </button>
         </div>
-        <div class="form-group">
-            <label>Team size</label>
-            <select id="team-size" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:0.95rem;width:100%;max-width:280px;">
-                <option value="1-3">1–3 people</option>
-                <option value="4-10" selected>4–10 people</option>
-                <option value="11-30">11–30 people</option>
-                <option value="30+">30+ people</option>
-            </select>
+      </div>
+
+      <div class="form-group">
+        <label class="group-label" for="team-size">Team size</label>
+        <div class="select-wrapper">
+          <select id="team-size">
+            <option value="1-3">1 3 people</option>
+            <option value="4-10" selected>4 10 people</option>
+            <option value="11-30">11 30 people</option>
+            <option value="30+">30+ people</option>
+          </select>
+          <svg class="select-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
-    </div>
+      </div>
+    </section>
 
     <!-- Step 3: Tech -->
-    <div class="wizard-step hidden" id="step-3">
-        <h2>Technology constraints</h2>
-        <p class="step-desc">ICDEV™ will only recommend options that fit your environment.</p>
-        <div class="form-group">
-            <label>Deployment environment</label>
-            <div class="option-grid">
-                <div class="option-card" data-value="cloud" onclick="selectOption(this, 'deploy')">
-                    <span class="option-icon">☁️</span>
-                    <span>Cloud (GovCloud / Commercial)</span>
-                </div>
-                <div class="option-card" data-value="on_prem" onclick="selectOption(this, 'deploy')">
-                    <span class="option-icon">🖥️</span>
-                    <span>On-Premise</span>
-                </div>
-                <div class="option-card" data-value="airgap" onclick="selectOption(this, 'deploy')">
-                    <span class="option-icon">🔒</span>
-                    <span>Air-Gapped / SIPR</span>
-                </div>
-            </div>
+    <section class="wizard-step hidden" id="step-3" aria-labelledby="step-3-heading">
+      <div class="step-header">
+        <h2 id="step-3-heading">Technology constraints</h2>
+        <p class="step-desc">ICDEV will only recommend options that fit your environment and compliance posture.</p>
+      </div>
+
+      <div class="form-group">
+        <label class="group-label">Deployment environment</label>
+        <div class="option-grid" role="radiogroup" aria-label="Deployment environment">
+          <button type="button" class="option-card" data-value="cloud" onclick="selectOption(this, 'deploy')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+            <span class="option-title">Cloud</span>
+            <span class="option-desc">GovCloud or commercial IaaS</span>
+          </button>
+          <button type="button" class="option-card" data-value="on_prem" onclick="selectOption(this, 'deploy')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+            <span class="option-title">On Premise</span>
+            <span class="option-desc">Self managed data centers</span>
+          </button>
+          <button type="button" class="option-card" data-value="airgap" onclick="selectOption(this, 'deploy')" role="radio" aria-checked="false" tabindex="0">
+            <svg class="option-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span class="option-title">Air Gapped / SIPR</span>
+            <span class="option-desc">Disconnected or classified networks</span>
+          </button>
         </div>
-        <div class="form-group">
-            <label>Classification level</label>
-            <div class="option-grid">
-                <div class="option-card" data-value="il2" onclick="selectOption(this, 'il')">
-                    <span class="option-icon">🟢</span>
-                    <span>IL2 — Public</span>
-                </div>
-                <div class="option-card" data-value="il4" onclick="selectOption(this, 'il')">
-                    <span class="option-icon">🟡</span>
-                    <span>IL4 — CUI</span>
-                </div>
-                <div class="option-card" data-value="il5" onclick="selectOption(this, 'il')">
-                    <span class="option-icon">🟠</span>
-                    <span>IL5 — CUI Dedicated</span>
-                </div>
-                <div class="option-card" data-value="il6" onclick="selectOption(this, 'il')">
-                    <span class="option-icon">🔴</span>
-                    <span>IL6 — SECRET</span>
-                </div>
-            </div>
+      </div>
+
+      <div class="form-group">
+        <label class="group-label">Classification level</label>
+        <div class="option-grid" role="radiogroup" aria-label="Classification level">
+          <button type="button" class="option-card" data-value="il2" onclick="selectOption(this, 'il')" role="radio" aria-checked="false" tabindex="0">
+            <span class="il-badge il2">IL2</span>
+            <span class="option-title">Public</span>
+            <span class="option-desc">Unclassified, open data</span>
+          </button>
+          <button type="button" class="option-card" data-value="il4" onclick="selectOption(this, 'il')" role="radio" aria-checked="false" tabindex="0">
+            <span class="il-badge il4">IL4</span>
+            <span class="option-title">CUI</span>
+            <span class="option-desc">Controlled Unclassified</span>
+          </button>
+          <button type="button" class="option-card" data-value="il5" onclick="selectOption(this, 'il')" role="radio" aria-checked="false" tabindex="0">
+            <span class="il-badge il5">IL5</span>
+            <span class="option-title">CUI Dedicated</span>
+            <span class="option-desc">Dedicated infrastructure</span>
+          </button>
+          <button type="button" class="option-card" data-value="il6" onclick="selectOption(this, 'il')" role="radio" aria-checked="false" tabindex="0">
+            <span class="il-badge il6">IL6</span>
+            <span class="option-title">SECRET</span>
+            <span class="option-desc">Classified / SIPR only</span>
+          </button>
         </div>
-    </div>
+      </div>
+    </section>
 
     <!-- Step 4: Generate -->
-    <div class="wizard-step hidden" id="step-4">
-        <h2>Ready to generate your AI project plan</h2>
-        <div id="wizard-summary" class="summary-card">
-            <p class="text-muted">Review your answers below, then click Generate.</p>
+    <section class="wizard-step hidden" id="step-4" aria-labelledby="step-4-heading">
+      <div class="step-header">
+        <h2 id="step-4-heading">Ready to generate your AI project plan</h2>
+        <p class="step-desc">Review your selections, then click Generate to see matched patterns.</p>
+      </div>
+
+      <div id="wizard-summary" class="summary-panel">
+        <p class="summary-placeholder">No selections yet. Go back to complete the wizard.</p>
+      </div>
+
+      <div id="wizard-result" class="result-panel hidden">
+        <div class="result-card">
+          <div class="result-header">
+            <svg class="result-check" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+            <h3>Recommended Pattern</h3>
+          </div>
+          <div id="result-content"></div>
+          <div class="result-actions">
+            <a id="result-pattern-link" href="/ai-patterns" class="btn btn-primary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+              Browse Pattern Library
+            </a>
+            <a href="/kanban" class="btn btn-ghost">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              View in Kanban
+            </a>
+          </div>
         </div>
-        <div id="wizard-result" style="display:none;margin-top:24px;">
-            <div class="result-card">
-                <div id="result-content"></div>
-                <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap;">
-                    <a id="result-pattern-link" href="/ai-patterns" class="btn btn-primary">Browse Pattern Library</a>
-                    <a href="/kanban" class="btn">View in Kanban</a>
-                </div>
-            </div>
-        </div>
-    </div>
+      </div>
+    </section>
 
     <!-- Navigation -->
-    <div class="wizard-nav">
-        <button class="btn" id="btn-back" onclick="stepBack()" style="display:none;">← Back</button>
-        <button class="btn btn-primary" id="btn-next" onclick="stepNext()">Next →</button>
-        <button class="btn btn-primary" id="btn-generate" onclick="generatePlan()" style="display:none;">✨ Generate Plan</button>
+    <div class="wizard-nav" id="wizard-nav">
+      <button type="button" class="btn btn-ghost" id="btn-back" onclick="stepBack()" style="display:none;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <div class="nav-spacer"></div>
+      <button type="button" class="btn btn-primary" id="btn-next" onclick="stepNext()">
+        Next
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <button type="button" class="btn btn-accent" id="btn-generate" onclick="generatePlan()" style="display:none;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Generate Plan
+      </button>
     </div>
+  </div>
 </div>
 {% endblock %}
 
-{% block styles %}
+{% block extra_css %}
 <style>
-.wizard-container {
-    max-width: 760px;
-    margin: 0 auto;
-    padding: 32px 24px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 16px;
+/* ── Layout ───────────────────────────────────────────────────────── */
+.wizard-outer {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
 }
+.wizard-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.wizard-header h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  letter-spacing: -0.02em;
+}
+.wizard-subtitle {
+  color: var(--text-dim, #888);
+  font-size: 0.92rem;
+  max-width: 520px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+.wizard-card {
+  background: var(--bg-card, #1a1a2e);
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: 20px;
+  padding: 32px 28px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+}
+@media (max-width: 640px) {
+  .wizard-card { padding: 24px 16px; }
+}
+
+/* ── Progress ─────────────────────────────────────────────────────── */
 .wizard-progress {
-    margin-bottom: 36px;
+  margin-bottom: 36px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
 }
-.progress-steps {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0;
-    margin-bottom: 8px;
+.progress-track {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 0;
 }
-.step {
-    width: 32px; height: 32px;
-    border-radius: 50%;
-    background: var(--bg-elevated, rgba(255,255,255,0.06));
-    border: 2px solid var(--border);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.85rem; font-weight: 600;
-    transition: all 0.2s;
+.progress-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  flex: 1;
+  max-width: 140px;
 }
-.step.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-.step.done { background: var(--success, #10b981); border-color: var(--success, #10b981); color: #fff; }
-.step-line { flex: 1; height: 2px; background: var(--border); max-width: 120px; }
-.progress-labels {
-    display: flex;
-    justify-content: space-around;
-    font-size: 0.78rem;
-    color: var(--text-dim);
+.progress-step::after {
+  content: '';
+  position: absolute;
+  top: 16px;
+  left: calc(50% + 20px);
+  right: calc(-50% + 20px);
+  height: 2px;
+  background: var(--border, rgba(255,255,255,0.1));
+  z-index: 0;
 }
-.wizard-step h2 { font-size: 1.2rem; margin-bottom: 8px; }
-.step-desc { color: var(--text-dim); margin-bottom: 20px; font-size: 0.9rem; }
-.form-group { margin-bottom: 24px; }
-.form-group label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 10px; }
+.progress-step:last-child::after { display: none; }
+.step-number {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-elevated, rgba(255,255,255,0.05));
+  border: 2px solid var(--border, rgba(255,255,255,0.12));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-dim, #888);
+  transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+  position: relative;
+  z-index: 1;
+}
+.step-label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-dim, #888);
+  transition: color 0.3s;
+}
+.progress-step.active .step-number {
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+  color: #fff;
+  box-shadow: 0 0 0 4px rgba(59,130,246,0.2);
+}
+.progress-step.active .step-label {
+  color: var(--accent, #3b82f6);
+  font-weight: 600;
+}
+.progress-step.done .step-number {
+  background: var(--success, #10b981);
+  border-color: var(--success, #10b981);
+  color: #fff;
+}
+.progress-step.done::after {
+  background: var(--success, #10b981);
+}
+
+/* ── Steps ────────────────────────────────────────────────────────── */
+.wizard-step {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  display: none;
+}
+.wizard-step.active {
+  opacity: 1;
+  transform: translateY(0);
+  display: block !important;
+}
+.step-header {
+  margin-bottom: 24px;
+}
+.step-header h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+.step-desc {
+  color: var(--text-dim, #888);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Forms ────────────────────────────────────────────────────────── */
+.form-group {
+  margin-bottom: 28px;
+}
+.form-group:last-child { margin-bottom: 0; }
+.group-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text, #e0e0e0);
+  letter-spacing: 0.01em;
+}
+textarea {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border, rgba(255,255,255,0.12));
+  background: var(--bg-elevated, rgba(255,255,255,0.04));
+  color: var(--text, #e0e0e0);
+  font-size: 0.95rem;
+  resize: vertical;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  font-family: inherit;
+  line-height: 1.5;
+}
+textarea:focus {
+  outline: none;
+  border-color: var(--accent, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+}
+textarea::placeholder {
+  color: var(--text-dim, #666);
+}
+.char-count {
+  text-align: right;
+  font-size: 0.78rem;
+  color: var(--text-dim, #666);
+  margin-top: 6px;
+}
+.select-wrapper {
+  position: relative;
+  max-width: 300px;
+}
+select {
+  width: 100%;
+  appearance: none;
+  padding: 12px 40px 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border, rgba(255,255,255,0.12));
+  background: var(--bg-elevated, rgba(255,255,255,0.04));
+  color: var(--text, #e0e0e0);
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+select:focus {
+  outline: none;
+  border-color: var(--accent, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+}
+.select-chevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--text-dim, #888);
+  pointer-events: none;
+}
+
+/* ── Option Cards ─────────────────────────────────────────────────── */
 .option-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+@media (max-width: 480px) {
+  .option-grid { grid-template-columns: 1fr 1fr; }
 }
 .option-card {
-    background: var(--bg-elevated, rgba(255,255,255,0.04));
-    border: 2px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 12px;
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.85rem;
-    text-align: center;
-    transition: border-color 0.15s, background 0.15s;
+  background: var(--bg-elevated, rgba(255,255,255,0.04));
+  border: 2px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: 14px;
+  padding: 18px 14px 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  transition: border-color 0.2s, background 0.2s, transform 0.15s, box-shadow 0.2s;
+  position: relative;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
 }
-.option-card:hover { border-color: var(--accent); }
-.option-card.selected { border-color: var(--accent); background: rgba(59,130,246,0.12); }
-.option-icon { font-size: 1.6rem; }
-.wizard-nav {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    margin-top: 32px;
-    padding-top: 20px;
-    border-top: 1px solid var(--border);
+.option-card:hover {
+  border-color: var(--accent, #3b82f6);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.2);
 }
-.summary-card {
-    background: var(--bg-elevated, rgba(255,255,255,0.04));
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 20px;
+.option-card.selected {
+  border-color: var(--accent, #3b82f6);
+  background: rgba(59,130,246,0.1);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+.option-card:focus-visible {
+  outline: none;
+  border-color: var(--accent, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+}
+.option-icon {
+  width: 28px;
+  height: 28px;
+  color: var(--accent, #3b82f6);
+  margin-bottom: 4px;
+}
+.option-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text, #e0e0e0);
+}
+.option-desc {
+  font-size: 0.75rem;
+  color: var(--text-dim, #888);
+  line-height: 1.4;
+}
+
+/* IL badges */
+.il-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.il-badge.il2 { background: rgba(16,185,129,0.15); color: #10b981; }
+.il-badge.il4 { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.il-badge.il5 { background: rgba(249,115,22,0.15); color: #f97316; }
+.il-badge.il6 { background: rgba(239,68,68,0.15); color: #ef4444; }
+
+/* ── Summary & Result ─────────────────────────────────────────────── */
+.summary-panel {
+  background: var(--bg-elevated, rgba(255,255,255,0.04));
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: 14px;
+  padding: 24px;
+}
+.summary-placeholder {
+  color: var(--text-dim, #888);
+  font-size: 0.9rem;
+  margin: 0;
+  text-align: center;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 520px) {
+  .summary-grid { grid-template-columns: 1fr; }
+}
+.summary-item dt {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.summary-item dd {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text, #e0e0e0);
+  line-height: 1.4;
+}
+.summary-item dd.mission-text {
+  font-size: 0.85rem;
+  color: var(--text-dim, #aaa);
+  line-height: 1.5;
+}
+
+.result-panel {
+  margin-top: 20px;
 }
 .result-card {
-    background: var(--bg-elevated, rgba(255,255,255,0.04));
-    border: 1px solid var(--accent);
-    border-radius: 10px;
-    padding: 20px;
+  background: var(--bg-elevated, rgba(255,255,255,0.04));
+  border: 1px solid var(--accent, rgba(59,130,246,0.35));
+  border-radius: 14px;
+  padding: 24px;
+}
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.result-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.result-check {
+  width: 24px;
+  height: 24px;
+  color: var(--success, #10b981);
+  flex-shrink: 0;
+}
+.result-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+/* ── Navigation ───────────────────────────────────────────────────── */
+.wizard-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border, rgba(255,255,255,0.08));
+}
+.nav-spacer { flex: 1; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  text-decoration: none;
+  line-height: 1;
+}
+.btn-primary {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--accent-hover, #2563eb);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59,130,246,0.3);
+}
+.btn-accent {
+  background: linear-gradient(135deg, var(--accent, #3b82f6), #8b5cf6);
+  color: #fff;
+}
+.btn-accent:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(139,92,246,0.35);
+}
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border, rgba(255,255,255,0.12));
+  color: var(--text, #e0e0e0);
+}
+.btn-ghost:hover {
+  background: var(--bg-elevated, rgba(255,255,255,0.06));
+  border-color: var(--text-dim, #888);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* ── Misc ─────────────────────────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
 }
 .hidden { display: none !important; }
 </style>
@@ -266,101 +678,140 @@ var _step = 1;
 var _answers = { domain: '', experience: '', deploy: '', il: '' };
 
 function selectOption(el, key) {
-    var parent = el.closest('.option-grid');
-    parent.querySelectorAll('.option-card').forEach(function(c) { c.classList.remove('selected'); });
-    el.classList.add('selected');
-    _answers[key] = el.dataset.value;
+  var parent = el.closest('.option-grid');
+  parent.querySelectorAll('.option-card').forEach(function(c) {
+    c.classList.remove('selected');
+    c.setAttribute('aria-checked', 'false');
+  });
+  el.classList.add('selected');
+  el.setAttribute('aria-checked', 'true');
+  _answers[key] = el.dataset.value;
+}
+
+// Keyboard support for option cards
+document.querySelectorAll('.option-card').forEach(function(card) {
+  card.addEventListener('keydown', function(e) {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      card.click();
+    }
+  });
+});
+
+// Character count
+var missionText = document.getElementById('mission-text');
+var missionCount = document.getElementById('mission-count');
+if (missionText && missionCount) {
+  missionText.addEventListener('input', function() {
+    var len = missionText.value.length;
+    missionCount.textContent = len + ' / 500';
+    missionCount.style.color = len > 500 ? '#e94560' : 'var(--text-dim, #666)';
+  });
 }
 
 function stepNext() {
-    if (_step === 1) {
-        var txt = document.getElementById('mission-text').value.trim();
-        if (!txt) { alert('Please describe your mission objective.'); return; }
-        _answers.mission = txt;
+  if (_step === 1) {
+    var txt = document.getElementById('mission-text').value.trim();
+    if (!txt) { alert('Please describe your mission objective.'); return; }
+    _answers.mission = txt;
+  }
+  if (_step < 3) {
+    document.getElementById('step-' + _step).classList.remove('active');
+    _step++;
+    document.getElementById('step-' + _step).classList.add('active');
+    document.getElementById('step-dot-' + (_step - 1)).classList.add('done');
+    document.getElementById('step-dot-' + (_step - 1)).classList.remove('active');
+    document.getElementById('step-dot-' + _step).classList.add('active');
+    document.getElementById('btn-back').style.display = 'inline-flex';
+    if (_step === 3) {
+      document.getElementById('btn-next').style.display = 'none';
+      document.getElementById('btn-generate').style.display = 'inline-flex';
     }
-    if (_step < 3) {
-        document.getElementById('step-' + _step).classList.remove('active');
-        _step++;
-        document.getElementById('step-' + _step).classList.add('active');
-        document.getElementById('step-dot-' + (_step - 1)).classList.add('done');
-        document.getElementById('step-dot-' + _step).classList.add('active');
-        document.getElementById('btn-back').style.display = 'inline-flex';
-        if (_step === 3) {
-            document.getElementById('btn-next').style.display = 'none';
-            document.getElementById('btn-generate').style.display = 'inline-flex';
-        }
-    }
+  }
 }
 
 function stepBack() {
-    if (_step > 1) {
-        document.getElementById('step-' + _step).classList.remove('active');
-        document.getElementById('step-dot-' + _step).classList.remove('active');
-        document.getElementById('step-dot-' + (_step - 1)).classList.remove('done');
-        _step--;
-        document.getElementById('step-' + _step).classList.add('active');
-        document.getElementById('step-dot-' + _step).classList.add('active');
-        if (_step === 1) document.getElementById('btn-back').style.display = 'none';
-        document.getElementById('btn-next').style.display = 'inline-flex';
-        document.getElementById('btn-generate').style.display = 'none';
+  if (_step > 1) {
+    document.getElementById('step-' + _step).classList.remove('active');
+    if (_step === 4) {
+      document.getElementById('step-dot-4').classList.remove('active');
+      document.getElementById('step-dot-3').classList.add('active');
+      document.getElementById('step-dot-3').classList.remove('done');
+      document.getElementById('wizard-nav').style.display = 'flex';
+    } else {
+      document.getElementById('step-dot-' + _step).classList.remove('active');
+      document.getElementById('step-dot-' + (_step - 1)).classList.remove('done');
+      document.getElementById('step-dot-' + (_step - 1)).classList.add('active');
     }
+    _step--;
+    document.getElementById('step-' + _step).classList.add('active');
+    if (_step === 1) document.getElementById('btn-back').style.display = 'none';
+    document.getElementById('btn-next').style.display = 'inline-flex';
+    document.getElementById('btn-generate').style.display = 'none';
+  }
 }
 
 function generatePlan() {
-    var btn = document.getElementById('btn-generate');
-    btn.disabled = true;
-    btn.textContent = 'Generating…';
+  var btn = document.getElementById('btn-generate');
+  btn.disabled = true;
+  btn.innerHTML = '<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" style=\"animation:spin 1s linear infinite\"><circle cx=\"12\" cy=\"12\" r=\"10\" stroke-dasharray=\"32\" stroke-dashoffset=\"12\" stroke-linecap=\"round\"/></svg> Generating&hellip;';
 
-    document.getElementById('step-3').classList.remove('active');
-    document.getElementById('step-dot-3').classList.add('done');
-    _step = 4;
-    document.getElementById('step-4').classList.add('active');
-    document.getElementById('step-dot-4').classList.add('active');
-    document.getElementById('wizard-nav').style.display = 'none';
+  document.getElementById('step-3').classList.remove('active');
+  document.getElementById('step-dot-3').classList.add('done');
+  document.getElementById('step-dot-3').classList.remove('active');
+  _step = 4;
+  document.getElementById('step-4').classList.add('active');
+  document.getElementById('step-dot-4').classList.add('active');
+  document.getElementById('wizard-nav').style.display = 'none';
 
-    var complexityMap = { none: 'beginner', beginner: 'beginner', intermediate: 'intermediate', advanced: 'advanced' };
-    var complexity = complexityMap[_answers.experience] || 'beginner';
-    var categoryMap = { document_qa: 'document_qa', procurement: 'procurement', threat_triage: 'threat_triage', compliance: 'compliance' };
-    var category = categoryMap[_answers.domain] || null;
+  var complexityMap = { none: 'beginner', beginner: 'beginner', intermediate: 'intermediate', advanced: 'advanced' };
+  var complexity = complexityMap[_answers.experience] || 'beginner';
+  var categoryMap = { document_qa: 'document_qa', procurement: 'procurement', threat_triage: 'threat_triage', compliance: 'compliance' };
+  var category = categoryMap[_answers.domain] || null;
 
-    var apiUrl = '/api/aisg/patterns' + (category ? '?category=' + category + '&complexity=' + complexity : '?complexity=' + complexity);
-    fetch(apiUrl)
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-            var patterns = d.patterns || [];
-            var summary = document.getElementById('wizard-summary');
-            summary.innerHTML =
-                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
-                  '<div><strong>Mission</strong><br><span style="color:var(--text-dim);font-size:0.88rem;">' + (_answers.mission || '—') + '</span></div>' +
-                  '<div><strong>Domain</strong><br>' + (_answers.domain || '—') + '</div>' +
-                  '<div><strong>Experience</strong><br>' + (_answers.experience || '—') + '</div>' +
-                  '<div><strong>Environment</strong><br>' + (_answers.deploy || '—') + ' / ' + (_answers.il || '—') + '</div>' +
-                '</div>';
+  var apiUrl = '/api/aisg/patterns' + (category ? '?category=' + category + '&complexity=' + complexity : '?complexity=' + complexity);
+  fetch(apiUrl)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var patterns = d.patterns || [];
+      var summary = document.getElementById('wizard-summary');
+      summary.innerHTML =
+        '<dl class=\"summary-grid\">' +
+          '<div class=\"summary-item\"><dt>Mission</dt><dd class=\"mission-text\">' + escapeHtml(_answers.mission || '—') + '</dd></div>' +
+          '<div class=\"summary-item\"><dt>Domain</dt><dd>' + (_answers.domain || '—') + '</dd></div>' +
+          '<div class=\"summary-item\"><dt>Experience</dt><dd>' + (_answers.experience || '—') + '</dd></div>' +
+          '<div class=\"summary-item\"><dt>Environment</dt><dd>' + (_answers.deploy || '—') + ' / ' + (_answers.il || '—') + '</dd></div>' +
+        '</dl>';
 
-            var resultContent = document.getElementById('result-content');
-            if (patterns.length === 0) {
-                resultContent.innerHTML = '<p>No matching patterns found. <a href="/ai-patterns">Browse all patterns →</a></p>';
-            } else {
-                var best = patterns[0];
-                document.getElementById('result-pattern-link').href = '/ai-patterns';
-                resultContent.innerHTML =
-                    '<h3 style="margin-top:0;">✅ Recommended Pattern</h3>' +
-                    '<div style="padding:16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);margin-bottom:16px;">' +
-                      '<strong>' + best.name + '</strong><br>' +
-                      '<span style="color:var(--text-dim);font-size:0.88rem;">' + (best.description || '') + '</span>' +
-                    '</div>' +
-                    '<p style="color:var(--text-dim);font-size:0.88rem;">Click <strong>Browse Pattern Library</strong> to deploy this pattern, or view all ' + patterns.length + ' matching pattern(s).</p>';
-            }
-            document.getElementById('wizard-result').style.display = 'block';
-            btn.textContent = '✨ Generate Plan';
-            btn.disabled = false;
-        })
-        .catch(function() {
-            document.getElementById('result-content').innerHTML = '<p style="color:#e94560;">Failed to generate plan. Please try again.</p>';
-            document.getElementById('wizard-result').style.display = 'block';
-            btn.textContent = '✨ Generate Plan';
-            btn.disabled = false;
-        });
+      var resultContent = document.getElementById('result-content');
+      if (patterns.length === 0) {
+        resultContent.innerHTML = '<p>No matching patterns found. <a href=\"/ai-patterns\">Browse all patterns &rarr;</a></p>';
+      } else {
+        var best = patterns[0];
+        document.getElementById('result-pattern-link').href = '/ai-patterns';
+        resultContent.innerHTML =
+          '<div class=\"pattern-highlight\">' +
+            '<strong>' + escapeHtml(best.name) + '</strong>' +
+            '<p>' + escapeHtml(best.description || '') + '</p>' +
+          '</div>' +
+          '<p style=\"color:var(--text-dim);font-size:0.88rem;margin-top:12px;\">Click <strong>Browse Pattern Library</strong> to deploy this pattern, or view all ' + patterns.length + ' matching pattern(s).</p>';
+      }
+      document.getElementById('wizard-result').classList.remove('hidden');
+      btn.innerHTML = '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" width=\"16\" height=\"16\"><polygon points=\"13 2 3 14 12 14 11 22 21 10 12 10 13 2\"/></svg> Generate Plan';
+      btn.disabled = false;
+    })
+    .catch(function() {
+      document.getElementById('result-content').innerHTML = '<p style=\"color:#e94560;\">Failed to generate plan. Please try again.</p>';
+      document.getElementById('wizard-result').classList.remove('hidden');
+      btn.innerHTML = '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" width=\"16\" height=\"16\"><polygon points=\"13 2 3 14 12 14 11 22 21 10 12 10 13 2\"/></svg> Generate Plan';
+      btn.disabled = false;
+    });
+}
+
+function escapeHtml(text) {
+  var div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 </script>
 {% endblock %}

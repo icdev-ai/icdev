@@ -14,16 +14,16 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from tools.finetune.provider import FineTuneProvider, FineTuneRequest, FineTuneStatus
 
-logger = logging.getLogger("icdev.finetune.openai")
+logger = get_logger("icdev.finetune.openai")
 
 # OpenAI status → ICDEV™ status mapping
 _STATUS_MAP = {

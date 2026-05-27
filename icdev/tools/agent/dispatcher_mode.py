@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Dispatcher-Only Orchestrator Mode (Phase 61, D-DISP-1).
 
@@ -30,7 +32,6 @@ CLI::
 import argparse
 import json
 import logging
-import os
 import sqlite3
 import sys
 import uuid
@@ -46,22 +47,7 @@ if str(BASE_DIR) not in sys.path:
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "agent_config.yaml"
 
-logger = logging.getLogger("icdev.dispatcher_mode")
-
-__all__ = [
-    "_startup_verified",
-    "verify_db_path",
-    "run_startup_verification",
-    "is_dispatcher_mode",
-    "get_dispatch_tools",
-    "get_blocked_tools",
-    "is_tool_allowed",
-    "filter_tools_for_dispatcher",
-    "get_redirect_agent",
-    "enable_for_project",
-    "disable_for_project",
-    "get_status",
-]
+logger = get_logger("icdev.dispatcher_mode")
 
 
 # ---------------------------------------------------------------------------
@@ -118,94 +104,6 @@ def _audit(
         )
     except Exception as exc:
         logger.debug("Audit logging failed (non-fatal): %s", exc)
-
-
-# ---------------------------------------------------------------------------
-# DB path verification hook
-# ---------------------------------------------------------------------------
-_startup_verified: set = set()
-
-
-def verify_db_path(db_path: Path = None) -> dict:
-    """Verify the database path exists and the connection is healthy.
-
-    For SQLite: confirms the file exists, is readable/writable, and
-    responds to a simple query. For PostgreSQL: confirms the connection
-    can be established.
-
-    Args:
-        db_path: Optional database path override.
-
-    Returns:
-        Dict with keys: ok, exists, readable, writable, query_ok, error.
-    """
-    path = db_path or DB_PATH
-    result = {
-        "ok": False,
-        "exists": False,
-        "readable": False,
-        "writable": False,
-        "query_ok": False,
-        "error": None,
-    }
-
-    # Check file existence for SQLite backends
-    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
-    if backend == "sqlite":
-        if not path.exists():
-            result["error"] = f"Database file not found: {path}"
-            return result
-        result["exists"] = True
-        result["readable"] = os.access(str(path), os.R_OK)
-        result["writable"] = os.access(str(path), os.W_OK)
-    else:
-        # PostgreSQL — existence is implicit if connection works
-        result["exists"] = True
-        result["readable"] = True
-        result["writable"] = True
-
-    try:
-        conn = _get_db(db_path)
-        conn.execute("SELECT 1")
-        conn.close()
-        result["query_ok"] = True
-    except Exception as exc:
-        result["error"] = f"Database connection/query failed: {exc}"
-        return result
-
-    result["ok"] = result["exists"] and result["readable"] and result["writable"] and result["query_ok"]
-    return result
-
-
-def run_startup_verification(db_path: Path = None):
-    """Mandatory startup hook: verifies DB before dispatcher proceeds.
-
-    Raises RuntimeError if the database path does not exist or the
-    connection is not healthy. Idempotent — safe to call multiple times
-    with the same db_path.
-
-    Args:
-        db_path: Optional database path override.
-    """
-    path = db_path or DB_PATH
-    path_key = str(path.resolve()) if isinstance(path, Path) else str(path)
-
-    if path_key in _startup_verified:
-        return
-
-    verification = verify_db_path(db_path)
-    if not verification["ok"]:
-        error_msg = (
-            f"Dispatcher startup ABORTED — database verification failed: "
-            f"{verification.get('error', 'unknown error')}. "
-            f"exists={verification['exists']}, readable={verification['readable']}, "
-            f"writable={verification['writable']}, query_ok={verification['query_ok']}"
-        )
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    _startup_verified.add(path_key)
-    logger.info("Dispatcher startup DB verification passed for %s", path_key)
 
 
 # ---------------------------------------------------------------------------
@@ -589,6 +487,83 @@ def disable_for_project(project_id: str, disabled_by: str = "system", db_path: P
         return result
     finally:
         conn.close()
+
+
+def verify_db_path(db_path: Path) -> dict:
+    """Check that a database path is accessible and queryable.
+
+    Args:
+        db_path: Path to the SQLite database file.
+
+    Returns:
+        Dict with keys: ok, exists, readable, writable, query_ok, error.
+    """
+    import os
+
+    result = {
+        "ok": False,
+        "exists": False,
+        "readable": False,
+        "writable": False,
+        "query_ok": False,
+        "error": None,
+    }
+
+    if not db_path.exists():
+        result["error"] = f"Database not found: {db_path}"
+        return result
+
+    result["exists"] = True
+
+    if not os.access(str(db_path), os.R_OK):
+        result["error"] = f"Database not readable: {db_path}"
+        return result
+
+    result["readable"] = True
+
+    if not os.access(str(db_path), os.W_OK):
+        result["error"] = f"Database not writable: {db_path}"
+        return result
+
+    result["writable"] = True
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("SELECT 1")
+        conn.close()
+        result["query_ok"] = True
+    except Exception as exc:
+        result["error"] = str(exc)
+        return result
+
+    result["ok"] = True
+    return result
+
+
+# Module-level cache of verified database paths (avoids redundant checks per process).
+_startup_verified: set = set()
+
+
+def run_startup_verification(db_path: Path = None) -> None:
+    """Verify the database is accessible at startup (once per process per path).
+
+    Args:
+        db_path: Path to the database to verify. Defaults to DB_PATH.
+
+    Raises:
+        RuntimeError: If the database fails verification, prefixed with "ABORTED".
+    """
+    target = (db_path or DB_PATH).resolve()
+    key = str(target)
+
+    if key in _startup_verified:
+        return
+
+    result = verify_db_path(target)
+    if not result["ok"]:
+        raise RuntimeError(f"ABORTED — dispatcher_mode startup verification failed: {result['error']}")
+
+    _startup_verified.add(key)
 
 
 def get_status(project_id: str = None, db_path: Path = None) -> dict:

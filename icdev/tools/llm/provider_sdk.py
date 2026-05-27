@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """ICDEV™ LLM Provider SDK — Public API for custom provider development.
 
@@ -29,7 +31,6 @@ Decision D67: OpenAI-compatible covers Ollama, vLLM, Azure.
 Decision D68: Function-level LLM routing (not agent-level).
 """
 
-import logging
 from typing import List
 
 # Re-export core types
@@ -44,7 +45,7 @@ from tools.llm.provider import (
     tools_to_openai,
 )
 
-logger = logging.getLogger("icdev.llm.provider_sdk")
+logger = get_logger("icdev.llm.provider_sdk")
 
 __all__ = [
     "BaseProvider",

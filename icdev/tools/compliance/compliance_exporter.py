@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """Auditor-friendly compliance exporter for the ICDEV™ platform.
 
 Exports compliance assessment results into CSV, Markdown executive summary,

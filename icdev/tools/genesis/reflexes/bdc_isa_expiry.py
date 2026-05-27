@@ -14,12 +14,13 @@ Reflex contract:
   - Must be idempotent — canvas event bus is append-only; Telegram is fire-and-forget
   - Must not raise — catches all exceptions and returns them in errors[]
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import Any, Dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 4
 

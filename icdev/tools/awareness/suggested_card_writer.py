@@ -27,6 +27,7 @@ CLI:
     python tools/awareness/suggested_card_writer.py --promote-all --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -38,7 +39,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-LOG = logging.getLogger("suggested_card_writer")
+LOG = get_logger("suggested_card_writer")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:

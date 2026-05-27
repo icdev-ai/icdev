@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """ICDEV™ Security Design Canvas — NDC Bridge.
 
@@ -8,11 +10,10 @@ Bidirectional sync between Network Design Canvas and Security Design Canvas:
 """
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 
-logger = logging.getLogger("icdev.security_canvas.bridge")
+logger = get_logger("icdev.security_canvas.bridge")
 
 
 def import_ndc_topology(topology_id: str) -> dict:

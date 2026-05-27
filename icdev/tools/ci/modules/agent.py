@@ -12,9 +12,9 @@ Implements the contract documented in
 clean-room rewrite).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -34,7 +34,7 @@ PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-_module_logger = logging.getLogger(__name__)
+_module_logger = get_logger(__name__)
 
 
 # ── Bot identifier ────────────────────────────────────────────────────────

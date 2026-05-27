@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
@@ -32,12 +33,19 @@ import argparse
 import json
 import re
 import uuid
+from dataclasses import dataclass
+from typing import Any, List, Optional
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# In-memory LRU cache for conversation history per session (TTL 30s)
+import time as _time
+_CONVERSATION_CACHE: dict = {}
+_CONVERSATION_CACHE_TTL = 30
 
 # Graceful import of audit logger
 try:
@@ -53,10 +61,22 @@ except ImportError:
 
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
-    path = db_path or DB_PATH
-    if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = get_connection(db_path=str(path))
+    import os
+    if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+        conn = get_connection()
+    else:
+        path = db_path or DB_PATH
+        if not path.exists():
+            raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+        conn = get_connection(db_path=str(path))
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+    try:
+        conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
+    except Exception:
+        pass
     return conn
 
 
@@ -159,273 +179,237 @@ except ImportError:
     pass
 
 
+def _build_conversation_history(session_id, conn, current_message):
+    """Return conversation_messages list for the LLM (last 10 turns + current)."""
+    cached = _CONVERSATION_CACHE.get(session_id)
+    if cached and (_time.time() - cached.get('timestamp', 0)) < _CONVERSATION_CACHE_TTL:
+        messages = list(cached['messages'])
+        messages.append({"role": "user", "content": current_message})
+        return messages
+
+    history_rows = conn.execute(
+        """SELECT turn_number, role, content
+           FROM intake_conversation
+           WHERE session_id = ?
+           ORDER BY turn_number DESC LIMIT 10""",
+        (session_id,),
+    ).fetchall()
+    messages = []
+    for row in reversed(history_rows):
+        r = dict(row)
+        if r["role"] == "system":
+            continue
+        msg_role = "assistant" if r["role"] == "analyst" else "user"
+        messages.append({"role": msg_role, "content": r["content"]})
+    _CONVERSATION_CACHE[session_id] = {
+        'messages': list(messages),
+        'timestamp': _time.time(),
+    }
+    messages.append({"role": "user", "content": current_message})
+    return messages
+
+
+def _append_readiness_section(system_parts, readiness):
+    """Append readiness score and targeted dimension probe to system_parts."""
+    dims = {k: readiness.get(k, 0)
+            for k in ("completeness", "clarity", "feasibility", "compliance", "testability")}
+    system_parts.append(f"Readiness score: {readiness.get('overall', 0):.0%}")
+    system_parts.append("Readiness by dimension:")
+    system_parts.extend(f"  {k}: {v:.0%}" for k, v in dims.items())
+    weakest = min(dims, key=dims.get)
+    dim_probes = {
+        "completeness": (
+            "Completeness is low — ask about requirement types not yet covered "
+            "(e.g., performance, security, data, integration, usability, deployment). "
+            "Probe for missing user roles, workflows, or edge cases."
+        ),
+        "clarity": (
+            "Clarity is low — some requirements use vague language. Ask the customer "
+            "to quantify terms (e.g., 'how many users?', 'what response time?', "
+            "'what does success look like?')."
+        ),
+        "feasibility": (
+            "Feasibility is low — ask about constraints: available timeline, team size, "
+            "technology limitations, existing systems to integrate with, hosting environment."
+        ),
+        "compliance": (
+            "Compliance is low — ask about security requirements: authentication "
+            "(CAC/PIV, MFA), encryption (FIPS 140-2), audit logging, access controls, "
+            "data handling rules, or any specific NIST/STIG/FedRAMP controls."
+        ),
+        "testability": (
+            "Testability is low — ask the customer to define acceptance criteria: "
+            "'How would you verify this works?', 'What does a successful outcome "
+            "look like?', 'What are the pass/fail conditions?'"
+        ),
+    }
+    system_parts.append("")
+    system_parts.append(f"PRIORITY: {dim_probes.get(weakest, '')}")
+
+
+def _append_doc_context_section(system_parts, session_id, conn):
+    """Append uploaded document summaries and extracted requirements to system_parts."""
+    doc_rows = conn.execute(
+        "SELECT file_name, document_type, extracted_requirements_count, "
+        "extracted_sections FROM intake_documents WHERE session_id = ?",
+        (session_id,),
+    ).fetchall()
+    if not doc_rows:
+        return
+    system_parts.append("")
+    system_parts.append("--- Uploaded Documents ---")
+    for dr in doc_rows:
+        d = dict(dr)
+        system_parts.append(
+            f"Document: {d['file_name']} (type: {d['document_type']}, "
+            f"{d['extracted_requirements_count']} requirements extracted)"
+        )
+        if d.get("extracted_sections"):
+            try:
+                sections = json.loads(d["extracted_sections"])
+                if isinstance(sections, dict):
+                    if sections.get("description"):
+                        system_parts.append(f"  Content: {sections['description'][:300]}")
+                    if sections.get("category"):
+                        system_parts.append(f"  Category: {sections['category']}")
+            except (json.JSONDecodeError, TypeError):
+                pass
+    doc_reqs = conn.execute(
+        "SELECT raw_text, requirement_type FROM intake_requirements "
+        "WHERE session_id = ? AND source_document IS NOT NULL ORDER BY created_at LIMIT 20",
+        (session_id,),
+    ).fetchall()
+    if doc_reqs:
+        system_parts.append("Requirements from documents:")
+        for dr in doc_reqs:
+            d = dict(dr)
+            system_parts.append(f"  - [{d['requirement_type'].upper()}] {d['raw_text'][:120]}")
+    system_parts.append(
+        "Reference the uploaded document content when asking follow-up questions. "
+        "Use extracted requirements as context to ask deeper, more specific questions."
+    )
+
+
+def _build_llm_system_prompt(session_data, signals, persona, ctx, session_id, conn):
+    """Assemble the full system prompt string for the LLM persona call."""
+    goal = ctx.get("goal", "build")
+    selected_fw = ctx.get("selected_frameworks", [])
+    req_count = signals.get("total_requirements", 0)
+    readiness = signals.get("readiness_update")
+
+    system_parts = [
+        persona.get("system_prompt", ""), "",
+        "--- Session Context ---",
+        f"Goal: {goal}",
+        f"Classification: {session_data.get('classification', 'UNCLASSIFIED')}",
+    ]
+    _il = session_data.get("impact_level", "")
+    if _il:
+        system_parts.append(f"Impact Level: {_il}")
+    if selected_fw:
+        system_parts.append(f"Selected Frameworks: {', '.join(selected_fw)}")
+    system_parts.append(f"Requirements captured so far: {req_count}")
+    skip_types = ctx.get("skip_requirement_types", [])
+    if skip_types:
+        system_parts.append(
+            f"OUT OF SCOPE — Do NOT ask about or generate requirements for: "
+            f"{', '.join(skip_types)}. These are explicitly excluded from this engagement."
+        )
+
+    active_tech_prompt = ctx.get("active_technique_prompt")
+    if active_tech_prompt:
+        system_parts += ["", "--- Active Elicitation Technique ---",
+                         active_tech_prompt,
+                         "IMPORTANT: Frame your response using the active technique above. "
+                         "Ask questions that align with the technique's approach."]
+
+    if readiness:
+        _append_readiness_section(system_parts, readiness)
+
+    cov = signals.get("coverage")
+    if cov:
+        system_parts += ["", "--- Conversation Coverage ---", cov["summary"],
+                         "IMPORTANT: Do NOT ask generic questions. Analyze what the customer "
+                         "has already told you and ask about a SPECIFIC missing topic from "
+                         "the list above. Reference what they said to show you were listening."]
+
+    url_contents = signals.get("url_contents", [])
+    if url_contents:
+        system_parts += ["", "--- URLs Referenced by Customer ---"]
+        for uc in url_contents:
+            system_parts.append(f"URL: {uc['url']}")
+            if uc.get("title"):
+                system_parts.append(f"Title: {uc['title']}")
+            system_parts += [f"Content: {uc['summary']}", ""]
+        system_parts.append(
+            "IMPORTANT: The customer shared URL(s). Review the content above and "
+            "reference relevant details in your response. Extract any requirements "
+            "or context from the linked content. Show the customer you reviewed their link."
+        )
+
+    _append_doc_context_section(system_parts, session_id, conn)
+
+    signal_notes = []
+    for req in signals.get("extracted_reqs", []):
+        _ = req  # counted below
+    extracted_reqs = signals.get("extracted_reqs", [])
+    if extracted_reqs:
+        signal_notes.append(f"Extracted {len(extracted_reqs)} requirement(s) this turn.")
+    ambiguities = signals.get("ambiguities", [])
+    if ambiguities:
+        signal_notes.append(f"Ambiguous terms detected: {', '.join(a['phrase'] for a in ambiguities)}")
+    boundary_flags = signals.get("boundary_flags", [])
+    if boundary_flags:
+        signal_notes.append(f"ATO boundary flags: {', '.join(f['tier'] for f in boundary_flags)}")
+    gap_signals = signals.get("gap_signals", [])
+    if gap_signals:
+        signal_notes.append(f"Gap signals: {'; '.join(gap_signals[:3])}")
+    if signal_notes:
+        system_parts += ["", "--- This Turn ---"] + signal_notes
+
+    clarifications = signals.get("clarification_signals", [])
+    if clarifications:
+        system_parts += ["", "--- Priority Clarification Questions ---"]
+        system_parts.extend(f"  [P{cq.get('priority', '?')}] {cq.get('question', '')}"
+                            for cq in clarifications[:3])
+        system_parts.append("IMPORTANT: Weave ONE of these clarification questions into your "
+                            "response naturally. Do not ask all at once.")
+
+    parallel_opps = signals.get("parallel_opportunities", [])
+    if parallel_opps:
+        system_parts += ["", "--- Parallel Execution Opportunities ---",
+                         f"Detected {len(parallel_opps)} group(s) of independent tasks "
+                         "that could run concurrently.",
+                         "Mention this when discussing implementation timeline."]
+
+    system_parts += ["", "Respond in character. Acknowledge what the customer said, reference "
+                     "any extracted requirements or issues, and ask a follow-up question "
+                     "that drives toward completeness. Keep the response concise (2-4 paragraphs)."]
+    return "\n".join(system_parts)
+
+
 def _generate_persona_response(session_data, message, signals, conn):
     """Generate an LLM-powered persona response for the intake conversation.
 
-    Builds a system prompt from the session's persona, conversation history,
-    and current turn signals, then calls the LLM router.
-
-    Args:
-        session_data: dict of the intake_sessions row.
-        message: The customer message for this turn.
-        signals: dict with keys like extracted_reqs, ambiguities,
-                 boundary_flags, gap_signals, devsecops_signals,
-                 zta_signals, mosa_signals, readiness_update.
-        conn: Active database connection.
-
-    Returns:
-        str with the persona response, or None if LLM is unavailable
-        or any error occurs (caller should fall back to deterministic response).
+    Returns str with the persona response, or None if LLM is unavailable
+    or any error occurs (caller should fall back to deterministic response).
     """
     if not _HAS_LLM:
         return None
-
     try:
-        # Load context from session
-        context_raw = session_data.get("context_summary") or "{}"
+        ctx = {}
         try:
-            ctx = json.loads(context_raw)
+            ctx = json.loads(session_data.get("context_summary") or "{}")
         except (json.JSONDecodeError, TypeError):
-            ctx = {}
+            pass
 
-        role = ctx.get("role", "developer")
-        custom_desc = ctx.get("custom_role_description", "")
-        persona = _load_persona(role, custom_desc)
+        persona = _load_persona(ctx.get("role", "developer"), ctx.get("custom_role_description", ""))
         if not persona:
             return None
 
-        # Build conversation history (last 10 turns)
         session_id = session_data.get("id", "")
-        history_rows = conn.execute(
-            """SELECT turn_number, role, content
-               FROM intake_conversation
-               WHERE session_id = ?
-               ORDER BY turn_number DESC LIMIT 10""",
-            (session_id,),
-        ).fetchall()
-        history_rows = list(reversed(history_rows))
-
-        conversation_messages = []
-        for row in history_rows:
-            r = dict(row)
-            msg_role = "assistant" if r["role"] == "analyst" else "user"
-            if r["role"] == "system":
-                continue
-            conversation_messages.append(
-                {
-                    "role": msg_role,
-                    "content": r["content"],
-                }
-            )
-        # Add current customer message
-        conversation_messages.append(
-            {
-                "role": "user",
-                "content": message,
-            }
-        )
-
-        # Build system prompt with persona + session context
-        goal = ctx.get("goal", "build")
-        selected_fw = ctx.get("selected_frameworks", [])
-        req_count = signals.get("total_requirements", 0)
-        readiness = signals.get("readiness_update")
-
-        system_parts = [
-            persona.get("system_prompt", ""),
-            "",
-            "--- Session Context ---",
-            f"Goal: {goal}",
-            f"Classification: {session_data.get('classification', 'CUI')}",
-            f"Impact Level: {session_data.get('impact_level', 'IL5')}",
-        ]
-        if selected_fw:
-            system_parts.append(f"Selected Frameworks: {', '.join(selected_fw)}")
-        system_parts.append(f"Requirements captured so far: {req_count}")
-
-        # Inject active elicitation technique (BMAD pattern)
-        active_tech_prompt = ctx.get("active_technique_prompt")
-        if active_tech_prompt:
-            system_parts.append("")
-            system_parts.append("--- Active Elicitation Technique ---")
-            system_parts.append(active_tech_prompt)
-            system_parts.append(
-                "IMPORTANT: Frame your response using the active technique above. "
-                "Ask questions that align with the technique's approach."
-            )
-
-        if readiness:
-            system_parts.append(f"Readiness score: {readiness.get('overall', 0):.0%}")
-            # Show per-dimension scores so the agent targets weak areas
-            dims = {
-                "completeness": readiness.get("completeness", 0),
-                "clarity": readiness.get("clarity", 0),
-                "feasibility": readiness.get("feasibility", 0),
-                "compliance": readiness.get("compliance", 0),
-                "testability": readiness.get("testability", 0),
-            }
-            dim_strs = [f"  {k}: {v:.0%}" for k, v in dims.items()]
-            system_parts.append("Readiness by dimension:")
-            system_parts.extend(dim_strs)
-            # Identify the weakest dimension and hint what to ask
-            weakest = min(dims, key=dims.get)
-            dim_probes = {
-                "completeness": (
-                    "Completeness is low — ask about requirement types not yet "
-                    "covered (e.g., performance, security, data, integration, "
-                    "usability, deployment). Probe for missing user roles, "
-                    "workflows, or edge cases."
-                ),
-                "clarity": (
-                    "Clarity is low — some requirements use vague language. "
-                    "Ask the customer to quantify terms (e.g., 'how many users?', "
-                    "'what response time?', 'what does success look like?')."
-                ),
-                "feasibility": (
-                    "Feasibility is low — ask about constraints: available "
-                    "timeline, team size, technology limitations, existing "
-                    "systems to integrate with, hosting environment."
-                ),
-                "compliance": (
-                    "Compliance is low — ask about security requirements: "
-                    "authentication (CAC/PIV, MFA), encryption (FIPS 140-2), "
-                    "audit logging, access controls, data handling rules, "
-                    "or any specific NIST/STIG/FedRAMP controls."
-                ),
-                "testability": (
-                    "Testability is low — ask the customer to define acceptance "
-                    "criteria: 'How would you verify this works?', 'What does "
-                    "a successful outcome look like?', 'What are the pass/fail "
-                    "conditions?'"
-                ),
-            }
-            system_parts.append("")
-            system_parts.append(f"PRIORITY: {dim_probes.get(weakest, '')}")
-
-        # Add conversation coverage analysis
-        cov = signals.get("coverage")
-        if cov:
-            system_parts.append("")
-            system_parts.append("--- Conversation Coverage ---")
-            system_parts.append(cov["summary"])
-            system_parts.append(
-                "IMPORTANT: Do NOT ask generic questions. Analyze what the customer "
-                "has already told you and ask about a SPECIFIC missing topic from "
-                "the list above. Reference what they said to show you were listening."
-            )
-
-        # Add URL content fetched from customer message
-        url_contents = signals.get("url_contents", [])
-        if url_contents:
-            system_parts.append("")
-            system_parts.append("--- URLs Referenced by Customer ---")
-            for uc in url_contents:
-                system_parts.append(f"URL: {uc['url']}")
-                if uc.get("title"):
-                    system_parts.append(f"Title: {uc['title']}")
-                system_parts.append(f"Content: {uc['summary']}")
-                system_parts.append("")
-            system_parts.append(
-                "IMPORTANT: The customer shared URL(s). Review the content above and "
-                "reference relevant details in your response. Extract any requirements "
-                "or context from the linked content. Show the customer you reviewed "
-                "their link."
-            )
-
-        # Add uploaded document context
-        doc_rows = conn.execute(
-            "SELECT file_name, document_type, extracted_requirements_count, "
-            "extracted_sections FROM intake_documents WHERE session_id = ?",
-            (session_id,),
-        ).fetchall()
-        if doc_rows:
-            system_parts.append("")
-            system_parts.append("--- Uploaded Documents ---")
-            for dr in doc_rows:
-                d = dict(dr)
-                system_parts.append(
-                    f"Document: {d['file_name']} (type: {d['document_type']}, "
-                    f"{d['extracted_requirements_count']} requirements extracted)"
-                )
-                if d.get("extracted_sections"):
-                    try:
-                        sections = json.loads(d["extracted_sections"])
-                        if isinstance(sections, dict):
-                            if sections.get("description"):
-                                system_parts.append(f"  Content: {sections['description'][:300]}")
-                            if sections.get("category"):
-                                system_parts.append(f"  Category: {sections['category']}")
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-            # Include document-extracted requirements as context
-            doc_reqs = conn.execute(
-                "SELECT raw_text, requirement_type FROM intake_requirements "
-                "WHERE session_id = ? AND source_document IS NOT NULL "
-                "ORDER BY created_at LIMIT 20",
-                (session_id,),
-            ).fetchall()
-            if doc_reqs:
-                system_parts.append("Requirements from documents:")
-                for dr in doc_reqs:
-                    d = dict(dr)
-                    system_parts.append(f"  - [{d['requirement_type'].upper()}] {d['raw_text'][:120]}")
-            system_parts.append(
-                "Reference the uploaded document content when asking follow-up "
-                "questions. Use extracted requirements as context to ask deeper, "
-                "more specific questions about the customer's needs."
-            )
-
-        # Add signal summary for this turn
-        signal_notes = []
-        extracted_reqs = signals.get("extracted_reqs", [])
-        if extracted_reqs:
-            signal_notes.append(f"Extracted {len(extracted_reqs)} requirement(s) this turn.")
-        ambiguities = signals.get("ambiguities", [])
-        if ambiguities:
-            terms = [a["phrase"] for a in ambiguities]
-            signal_notes.append(f"Ambiguous terms detected: {', '.join(terms)}")
-        boundary_flags = signals.get("boundary_flags", [])
-        if boundary_flags:
-            tiers = [f["tier"] for f in boundary_flags]
-            signal_notes.append(f"ATO boundary flags: {', '.join(tiers)}")
-        gap_signals = signals.get("gap_signals", [])
-        if gap_signals:
-            signal_notes.append(f"Gap signals: {'; '.join(gap_signals[:3])}")
-        if signal_notes:
-            system_parts.append("")
-            system_parts.append("--- This Turn ---")
-            system_parts.extend(signal_notes)
-
-        # Structured clarification questions (D159, spec-kit Pattern 4)
-        clarifications = signals.get("clarification_signals", [])
-        if clarifications:
-            system_parts.append("")
-            system_parts.append("--- Priority Clarification Questions ---")
-            for cq in clarifications[:3]:
-                system_parts.append(f"  [P{cq.get('priority', '?')}] {cq.get('question', '')}")
-            system_parts.append(
-                "IMPORTANT: Weave ONE of these clarification questions into your "
-                "response naturally. Do not ask all at once."
-            )
-
-        # Parallel execution opportunities (D161, spec-kit Pattern 7)
-        parallel_opps = signals.get("parallel_opportunities", [])
-        if parallel_opps:
-            system_parts.append("")
-            system_parts.append("--- Parallel Execution Opportunities ---")
-            system_parts.append(
-                f"Detected {len(parallel_opps)} group(s) of independent tasks that could run concurrently."
-            )
-            system_parts.append("Mention this when discussing implementation timeline.")
-
-        system_parts.append("")
-        system_parts.append(
-            "Respond in character. Acknowledge what the customer said, reference "
-            "any extracted requirements or issues, and ask a follow-up question "
-            "that drives toward completeness. Keep the response concise (2-4 paragraphs)."
-        )
-
-        system_prompt = "\n".join(system_parts)
+        conversation_messages = _build_conversation_history(session_id, conn, message)
+        system_prompt = _build_llm_system_prompt(session_data, signals, persona, ctx, session_id, conn)
 
         router = get_router()
         request = _LLMRequest(
@@ -438,9 +422,7 @@ def _generate_persona_response(session_data, message, signals, conn):
             classification=session_data.get("classification", "CUI"),
         )
         response = router.invoke("intake_persona_response", request)
-        if response and response.content:
-            return response.content.strip()
-        return None
+        return response.content.strip() if response and response.content else None
     except Exception:
         return None
 
@@ -448,6 +430,197 @@ def _generate_persona_response(session_data, message, signals, conn):
 # ---------------------------------------------------------------------------
 # Session management
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class _NewSessionParams:
+    """Typed container replacing the 11-param create_session signature."""
+
+    project_id: str
+    customer_name: str
+    customer_org: Optional[str] = None
+    impact_level: str = "IL5"
+    classification: Optional[str] = None
+    created_by: str = "icdev-requirements-analyst"
+    db_path: Any = None
+    role: str = "developer"
+    goal: str = "build"
+    selected_frameworks: Optional[List[str]] = None
+    custom_role_description: str = ""
+    extra_context: Optional[dict] = None
+    template_requirements: Optional[List[dict]] = None
+
+
+def _resolve_classification(project_id, classification, conn):
+    """Resolve session classification from project row or explicit value."""
+    if not project_id:
+        return classification if classification is not None else "CUI"
+    row = conn.execute(
+        "SELECT id, classification, impact_level FROM projects WHERE id = ?",
+        (project_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise ValueError(f"Project '{project_id}' not found in database.")
+    if classification is not None:
+        return classification
+    proj = dict(row) if hasattr(row, "keys") else {"classification": row[1], "impact_level": row[2]}
+    cls_val = (proj.get("classification") or "").upper()
+    il_val = (proj.get("impact_level") or "").upper()
+    if cls_val == "PUBLIC" or il_val == "IL2":
+        return "PUBLIC"
+    if cls_val in ("SECRET", "TOP SECRET", "TOP_SECRET") or il_val == "IL6":
+        return "SECRET"
+    return "CUI"
+
+
+def _try_llm_welcome(customer_name, customer_org, impact_level, classification,
+                     goal, selected_frameworks, project_id, persona):
+    """Attempt LLM-generated welcome; returns None on failure or no LLM."""
+    if not _HAS_LLM:
+        return None
+    try:
+        fw_text = f" Compliance frameworks: {', '.join(selected_frameworks)}." if selected_frameworks else ""
+        opening_system = (
+            f"{persona.get('system_prompt', '')}\n\n"
+            f"You are starting a requirements intake session with "
+            f"{customer_name} from {customer_org or 'their organization'}. "
+            f"Impact level: {impact_level}. Classification: {classification}. "
+            f"Goal: {goal}.{fw_text}\n\n"
+            f"Introduce yourself briefly in your role and ask your opening "
+            f"question. Keep it to 2-3 sentences."
+        )
+        router = get_router()
+        request = _LLMRequest(
+            messages=[{"role": "user", "content": "Begin the intake session."}],
+            system_prompt=opening_system,
+            max_tokens=512,
+            temperature=0.7,
+            agent_id="icdev-requirements-analyst",
+            project_id=project_id,
+            classification=classification or "CUI",
+        )
+        resp = router.invoke("intake_persona_response", request)
+        return resp.content.strip() if resp and resp.content else None
+    except Exception:
+        return None
+
+
+def _generate_welcome_message(params: "_NewSessionParams", classification: str) -> str:
+    """Return persona-appropriate welcome message for a new session."""
+    default_welcome = (
+        f"Session created. Welcome, {params.customer_name}. "
+        f"I'm the ICDEV™ Requirements Analyst. I'll help capture and "
+        f"structure your requirements for a {params.impact_level} system. "
+        f"Let's start with the mission context — what problem does "
+        f"this system need to solve?"
+    )
+    persona = _load_persona(params.role, params.custom_role_description)
+    if not persona:
+        return default_welcome
+    llm_welcome = _try_llm_welcome(
+        params.customer_name, params.customer_org, params.impact_level,
+        classification, params.goal, params.selected_frameworks,
+        params.project_id, persona,
+    )
+    if llm_welcome:
+        return llm_welcome
+    return persona.get("opening_question", "").strip() or default_welcome
+
+
+def _seed_template_requirements(session_id: str, template_reqs: list, classification: str, conn) -> None:
+    """Bulk-insert pre-authored template requirements (source_turn=0, status=validated)."""
+    for req in template_reqs:
+        req_type = req.get("type", "functional")
+        priority = req.get("priority", "medium")
+        raw_text = req.get("text", "").strip()
+        criteria = req.get("criteria", "").strip()
+        if not raw_text:
+            continue
+        req_id = _generate_id("req")
+        try:
+            conn.execute(
+                """INSERT INTO intake_requirements
+                   (id, session_id, source_turn, raw_text, requirement_type, priority,
+                    status, acceptance_criteria, classification)
+                   VALUES (?, ?, 0, ?, ?, ?, 'validated', ?, ?)""",
+                (req_id, session_id, raw_text, req_type, priority, criteria,
+                 classification or "CUI"),
+            )
+        except Exception:
+            pass
+
+
+def _create_session_impl(params: "_NewSessionParams") -> dict:
+    """Core session creation; delegates from the public create_session entrypoint."""
+    session_id = _generate_id("sess")
+    params.project_id = params.project_id or None
+    conn = _get_connection(params.db_path)
+
+    classification = _resolve_classification(params.project_id, params.classification, conn)
+
+    conn.execute(
+        """INSERT INTO intake_sessions
+           (id, project_id, customer_name, customer_org, session_status,
+            classification, impact_level, created_by)
+           VALUES (?, ?, ?, ?, 'active', ?, ?, ?)""",
+        (session_id, params.project_id, params.customer_name, params.customer_org,
+         classification, params.impact_level, params.created_by),
+    )
+    context = {
+        "role": params.role, "goal": params.goal,
+        "selected_frameworks": params.selected_frameworks or [],
+        "custom_role_description": params.custom_role_description,
+    }
+    # Merge extra_context (e.g. fast_track config from use case)
+    if params.extra_context and isinstance(params.extra_context, dict):
+        context.update(params.extra_context)
+    conn.execute("UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                 (json.dumps(context), session_id))
+    conn.execute(
+        """INSERT INTO intake_conversation
+           (session_id, turn_number, role, content, content_type)
+           VALUES (?, 0, 'system', ?, 'text')""",
+        (session_id, json.dumps({
+            "event": "session_created", "project_id": params.project_id,
+            "customer_name": params.customer_name, "impact_level": params.impact_level,
+        })),
+    )
+
+    # Bulk-insert template requirements (source_turn=0, status=validated)
+    if params.template_requirements:
+        _seed_template_requirements(session_id, params.template_requirements, classification, conn)
+
+    welcome_message = _generate_welcome_message(params, classification)
+
+    conn.execute(
+        """INSERT INTO intake_conversation
+           (session_id, turn_number, role, content, content_type, classification)
+           VALUES (?, 1, 'analyst', ?, 'text', ?)""",
+        (session_id, welcome_message, classification or "CUI"),
+    )
+    conn.commit()
+    conn.close()
+
+    if _HAS_AUDIT:
+        log_event(
+            event_type="intake_session_created",
+            actor=params.created_by,
+            action=f"Created intake session {session_id} for {params.customer_name}",
+            project_id=params.project_id,
+            details={"session_id": session_id, "impact_level": params.impact_level},
+        )
+    return {
+        "status": "ok",
+        "session_id": session_id,
+        "project_id": params.project_id,
+        "customer_name": params.customer_name,
+        "customer_org": params.customer_org,
+        "impact_level": params.impact_level,
+        "session_status": "active",
+        "readiness_score": 0.0,
+        "message": welcome_message,
+    }
 
 
 def create_session(
@@ -462,6 +635,8 @@ def create_session(
     goal: str = "build",
     selected_frameworks=None,
     custom_role_description: str = "",
+    extra_context: dict = None,
+    template_requirements: list = None,
 ) -> dict:
     """Create a new intake session. Returns session data dict.
 
@@ -470,154 +645,20 @@ def create_session(
     - If None, resolve from project metadata (classification + impact_level).
     - Public / IL2 -> "PUBLIC" (no marking required).
     - IL4/IL5 -> "CUI", IL6 -> "SECRET" (backward compat per ADR D54).
+
+    extra_context: merged into context_summary (holds skip_requirement_types, user_config, fast_track).
+    template_requirements: list of {type, priority, text, criteria} — bulk-inserted as source_turn=0.
     """
-    session_id = _generate_id("sess")
-    conn = _get_connection(db_path)
-
-    # Normalise empty project_id to None so FK constraint allows NULL
-    if not project_id:
-        project_id = None
-
-    # Validate project exists if provided
-    if project_id:
-        row = conn.execute(
-            "SELECT id, classification, impact_level FROM projects WHERE id = ?",
-            (project_id,),
-        ).fetchone()
-        if not row:
-            conn.close()
-            raise ValueError(f"Project '{project_id}' not found in database.")
-
-        # Resolve classification from project if not provided
-        if classification is None:
-            proj = dict(row) if hasattr(row, "keys") else {"classification": row[1], "impact_level": row[2]}
-            cls_val = (proj.get("classification") or "").upper()
-            il_val = (proj.get("impact_level") or "").upper()
-            if cls_val == "PUBLIC" or il_val == "IL2":
-                classification = "PUBLIC"
-            elif cls_val in ("SECRET", "TOP SECRET", "TOP_SECRET") or il_val == "IL6":
-                classification = "SECRET"
-            else:
-                classification = "CUI"
-    else:
-        if classification is None:
-            classification = "CUI"
-
-    conn.execute(
-        """INSERT INTO intake_sessions
-           (id, project_id, customer_name, customer_org, session_status,
-            classification, impact_level, created_by)
-           VALUES (?, ?, ?, ?, 'active', ?, ?, ?)""",
-        (session_id, project_id, customer_name, customer_org, classification, impact_level, created_by),
+    params = _NewSessionParams(
+        project_id=project_id, customer_name=customer_name,
+        customer_org=customer_org, impact_level=impact_level,
+        classification=classification, created_by=created_by, db_path=db_path,
+        role=role, goal=goal, selected_frameworks=selected_frameworks,
+        custom_role_description=custom_role_description,
+        extra_context=extra_context,
+        template_requirements=template_requirements,
     )
-
-    # Store session context (role, goal, frameworks, custom description)
-    context = {
-        "role": role,
-        "goal": goal,
-        "selected_frameworks": selected_frameworks or [],
-        "custom_role_description": custom_role_description,
-    }
-    conn.execute("UPDATE intake_sessions SET context_summary = ? WHERE id = ?", (json.dumps(context), session_id))
-
-    # Insert initial system turn
-    conn.execute(
-        """INSERT INTO intake_conversation
-           (session_id, turn_number, role, content, content_type)
-           VALUES (?, 0, 'system', ?, 'text')""",
-        (
-            session_id,
-            json.dumps(
-                {
-                    "event": "session_created",
-                    "project_id": project_id,
-                    "customer_name": customer_name,
-                    "impact_level": impact_level,
-                }
-            ),
-        ),
-    )
-
-    # Generate persona-appropriate welcome message
-    default_welcome = (
-        f"Session created. Welcome, {customer_name}. "
-        f"I'm the ICDEV™ Requirements Analyst. I'll help capture and "
-        f"structure your requirements for a {impact_level} system. "
-        f"Let's start with the mission context — what problem does "
-        f"this system need to solve?"
-    )
-    welcome_message = default_welcome
-
-    persona = _load_persona(role, custom_role_description)
-    if persona:
-        # Try LLM-powered welcome
-        llm_welcome = None
-        if _HAS_LLM:
-            try:
-                fw_text = ""
-                if selected_frameworks:
-                    fw_text = f" Compliance frameworks: {', '.join(selected_frameworks)}."
-                opening_system = (
-                    f"{persona.get('system_prompt', '')}\n\n"
-                    f"You are starting a requirements intake session with "
-                    f"{customer_name} from {customer_org or 'their organization'}. "
-                    f"Impact level: {impact_level}. Classification: {classification}. "
-                    f"Goal: {goal}.{fw_text}\n\n"
-                    f"Introduce yourself briefly in your role and ask your opening "
-                    f"question. Keep it to 2-3 sentences."
-                )
-                router = get_router()
-                request = _LLMRequest(
-                    messages=[{"role": "user", "content": "Begin the intake session."}],
-                    system_prompt=opening_system,
-                    max_tokens=512,
-                    temperature=0.7,
-                    agent_id="icdev-requirements-analyst",
-                    project_id=project_id,
-                    classification=classification or "CUI",
-                )
-                resp = router.invoke("intake_persona_response", request)
-                if resp and resp.content:
-                    llm_welcome = resp.content.strip()
-            except Exception:
-                pass
-
-        if llm_welcome:
-            welcome_message = llm_welcome
-        elif persona.get("opening_question"):
-            welcome_message = persona["opening_question"].strip()
-
-    # Store welcome as first analyst turn (turn_number=1)
-    conn.execute(
-        """INSERT INTO intake_conversation
-           (session_id, turn_number, role, content, content_type, classification)
-           VALUES (?, 1, 'analyst', ?, 'text', ?)""",
-        (session_id, welcome_message, classification or "CUI"),
-    )
-
-    conn.commit()
-    conn.close()
-
-    if _HAS_AUDIT:
-        log_event(
-            event_type="intake_session_created",
-            actor=created_by,
-            action=f"Created intake session {session_id} for {customer_name}",
-            project_id=project_id,
-            details={"session_id": session_id, "impact_level": impact_level},
-        )
-
-    return {
-        "status": "ok",
-        "session_id": session_id,
-        "project_id": project_id,
-        "customer_name": customer_name,
-        "customer_org": customer_org,
-        "impact_level": impact_level,
-        "session_status": "active",
-        "readiness_score": 0.0,
-        "message": welcome_message,
-    }
+    return _create_session_impl(params)
 
 
 def get_session(session_id: str, db_path=None) -> dict:
@@ -743,6 +784,106 @@ def pause_session(session_id: str, db_path=None) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _gather_advanced_signals(session_id, db_path):
+    """Return (clarification_signals, parallel_opportunities) for a session turn."""
+    clarification_signals = []
+    try:
+        from tools.requirements.clarification_engine import analyze_requirements_clarity
+        result = analyze_requirements_clarity(session_id, max_questions=3, db_path=db_path or DB_PATH)
+        clarification_signals = result.get("questions", [])
+    except (ImportError, Exception):
+        pass
+
+    parallel_opportunities = []
+    try:
+        from tools.requirements.decomposition_engine import detect_parallel_groups
+        parallel_opportunities = detect_parallel_groups(session_id, db_path=db_path or DB_PATH)
+    except (ImportError, Exception):
+        pass
+
+    return clarification_signals, parallel_opportunities
+
+
+def _append_mosa_probe_section(mosa_signals, response_parts, asked_pillars=None):
+    """Append MOSA detection summary and targeted pillar probe questions.
+
+    Returns the set of pillar keys whose questions were newly added this turn,
+    so the caller can persist them and skip re-asking next turn.
+    """
+    asked_pillars = asked_pillars or set()
+    mosa_pillars = mosa_signals.get("detected_pillars", [])
+    if mosa_signals.get("dod_ic_detected"):
+        response_parts.append(
+            "\nDoD/IC customer detected — MOSA (Modular Open Systems Approach) "
+            "is required per 10 U.S.C. §4401. ICDEV™ will enforce modular architecture, "
+            "open standards, and interface control documentation."
+        )
+    else:
+        response_parts.append("\nMOSA (Modular Open Systems Approach) signals detected. "
+                              "MOSA framework will be included in compliance assessment.")
+    if mosa_pillars:
+        response_parts.append(
+            f"  MOSA pillars identified: {', '.join(p.replace('_', ' ') for p in mosa_pillars)}")
+    all_pillars = {
+        "modular_architecture", "open_standards", "open_interfaces",
+        "data_rights", "competitive_sourcing", "continuous_assessment",
+    }
+    # Exclude pillars that were already asked in prior turns
+    missing = (all_pillars - set(mosa_pillars)) - asked_pillars
+    newly_asked = set()
+    if missing and len(mosa_pillars) < 4:
+        probes = {
+            "open_interfaces": "Do you have existing Interface Control Documents (ICDs) or API specifications?",
+            "data_rights": "What are the government data rights requirements? (GPR, unlimited rights, etc.)",
+            "competitive_sourcing": "Is multi-vendor replaceability a requirement?",
+            "open_standards": "Which standard protocols/data formats will be used? (REST/OpenAPI, gRPC, JSON, Protobuf)",
+            "modular_architecture": "Is the system designed with modular, loosely-coupled components?",
+            "continuous_assessment": "Will there be ongoing architecture reviews and modularity metrics?",
+        }
+        probe_keys = [p for p in sorted(missing) if p in probes][:2]
+        probe_qs = [probes[p] for p in probe_keys]
+        if probe_qs:
+            response_parts.append("\nTo complete MOSA assessment, please clarify:")
+            response_parts.extend(f"  - {q}" for q in probe_qs)
+            newly_asked = set(probe_keys)
+    return newly_asked
+
+
+def _append_ai_governance_probe_section(ai_governance_signals, response_parts):
+    """Append AI governance detection summary and targeted pillar probe questions."""
+    gov_pillars = ai_governance_signals.get("detected_pillars", [])
+    if ai_governance_signals.get("federal_agency_detected"):
+        response_parts.append(
+            "\nFederal agency detected — AI governance requirements apply per OMB M-25-21. "
+            "ICDEV™ will track AI inventory, model documentation, human oversight, "
+            "impact assessments, transparency, and accountability."
+        )
+    else:
+        response_parts.append("\nAI/ML system usage detected. AI governance framework "
+                              "will be included in compliance assessment.")
+    if gov_pillars:
+        response_parts.append(
+            f"  AI governance pillars identified: {', '.join(p.replace('_', ' ') for p in gov_pillars)}")
+    all_gov_pillars = {
+        "ai_inventory", "model_documentation", "human_oversight",
+        "impact_assessment", "transparency", "accountability",
+    }
+    missing_gov = all_gov_pillars - set(gov_pillars)
+    if missing_gov and len(gov_pillars) < 4:
+        gov_probes = {
+            "ai_inventory": "Does this system use AI/ML models? If so, what types (classification, NLP, recommendation, generation)?",
+            "model_documentation": "Are there existing model cards or documentation for the AI models used?",
+            "human_oversight": "What human oversight is in place for AI decisions? Is there an appeal process?",
+            "impact_assessment": "Has an algorithmic impact assessment been conducted? Does the AI make rights-impacting decisions?",
+            "transparency": "Are users notified when AI is making or supporting decisions?",
+            "accountability": "Is there a designated Chief AI Officer (CAIO) or responsible official?",
+        }
+        probe_qs = [gov_probes[p] for p in sorted(missing_gov) if p in gov_probes][:2]
+        if probe_qs:
+            response_parts.append("\nTo complete AI governance assessment, please clarify:")
+            response_parts.extend(f"  - {q}" for q in probe_qs)
+
+
 def process_turn(
     session_id: str,
     customer_message: str,
@@ -799,6 +940,9 @@ def process_turn(
     except (ValueError, TypeError):
         pass
     flagged_terms = set(context.get("flagged_ambiguities", []))
+    mosa_asked_pillars = set(context.get("mosa_asked_pillars", []))
+    asked_followup_dims = set(context.get("asked_followup_dims", []))
+    asked_clarifications = set(context.get("asked_clarification_questions", []))
     ambiguities = [a for a in raw_ambiguities if a["phrase"].lower() not in flagged_terms]
 
     # Record newly flagged terms so future turns skip them
@@ -830,30 +974,8 @@ def process_turn(
     # --- AI governance signals (Phase 50, D322) ---
     ai_governance_signals = _detect_ai_governance_signals(customer_message, session_data)
 
-    # --- Structured clarification (D159, spec-kit Pattern 4) ---
-    clarification_signals = []
-    try:
-        from tools.requirements.clarification_engine import analyze_requirements_clarity
-
-        db_path_resolved = db_path or DB_PATH
-        clarity_result = analyze_requirements_clarity(
-            session_id,
-            max_questions=3,
-            db_path=db_path_resolved,
-        )
-        clarification_signals = clarity_result.get("questions", [])
-    except (ImportError, Exception):
-        pass
-
-    # --- Detect parallel opportunities (D161, spec-kit Pattern 7) ---
-    parallel_opportunities = []
-    try:
-        from tools.requirements.decomposition_engine import detect_parallel_groups
-
-        db_path_resolved = db_path or DB_PATH
-        parallel_opportunities = detect_parallel_groups(session_id, db_path=db_path_resolved)
-    except (ImportError, Exception):
-        pass
+    # --- Structured clarification (D159) + parallel opportunities (D161) ---
+    clarification_signals, parallel_opportunities = _gather_advanced_signals(session_id, db_path)
 
     # --- Update session counters ---
     req_count = conn.execute(
@@ -973,87 +1095,17 @@ def process_turn(
             )
 
         if mosa_signals.get("mosa_detected"):
-            mosa_pillars = mosa_signals.get("detected_pillars", [])
-            if mosa_signals.get("dod_ic_detected"):
-                response_parts.append(
-                    "\nDoD/IC customer detected — MOSA (Modular Open Systems Approach) "
-                    "is required per 10 U.S.C. §4401. ICDEV™ will enforce modular architecture, "
-                    "open standards, and interface control documentation."
+            newly_asked = _append_mosa_probe_section(mosa_signals, response_parts, mosa_asked_pillars)
+            if newly_asked:
+                mosa_asked_pillars.update(newly_asked)
+                context["mosa_asked_pillars"] = sorted(mosa_asked_pillars)
+                conn.execute(
+                    "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                    (json.dumps(context), session_id),
                 )
-            else:
-                response_parts.append(
-                    "\nMOSA (Modular Open Systems Approach) signals detected. "
-                    "MOSA framework will be included in compliance assessment."
-                )
-            if mosa_pillars:
-                response_parts.append(
-                    f"  MOSA pillars identified: {', '.join(p.replace('_', ' ') for p in mosa_pillars)}"
-                )
-            # Probe for missing MOSA pillars
-            all_pillars = {
-                "modular_architecture",
-                "open_standards",
-                "open_interfaces",
-                "data_rights",
-                "competitive_sourcing",
-                "continuous_assessment",
-            }
-            missing = all_pillars - set(mosa_pillars)
-            if missing and len(mosa_pillars) < 4:
-                probes = {
-                    "open_interfaces": "Do you have existing Interface Control Documents (ICDs) or API specifications?",
-                    "data_rights": "What are the government data rights requirements? (GPR, unlimited rights, etc.)",
-                    "competitive_sourcing": "Is multi-vendor replaceability a requirement?",
-                    "open_standards": "Which standard protocols/data formats will be used? (REST/OpenAPI, gRPC, JSON, Protobuf)",
-                    "modular_architecture": "Is the system designed with modular, loosely-coupled components?",
-                    "continuous_assessment": "Will there be ongoing architecture reviews and modularity metrics?",
-                }
-                probe_q = [probes[p] for p in sorted(missing) if p in probes][:2]
-                if probe_q:
-                    response_parts.append("\nTo complete MOSA assessment, please clarify:")
-                    for q in probe_q:
-                        response_parts.append(f"  - {q}")
 
         if ai_governance_signals.get("ai_governance_detected"):
-            gov_pillars = ai_governance_signals.get("detected_pillars", [])
-            if ai_governance_signals.get("federal_agency_detected"):
-                response_parts.append(
-                    "\nFederal agency detected — AI governance requirements apply per OMB M-25-21. "
-                    "ICDEV™ will track AI inventory, model documentation, human oversight, "
-                    "impact assessments, transparency, and accountability."
-                )
-            else:
-                response_parts.append(
-                    "\nAI/ML system usage detected. AI governance framework will be included in compliance assessment."
-                )
-            if gov_pillars:
-                response_parts.append(
-                    f"  AI governance pillars identified: {', '.join(p.replace('_', ' ') for p in gov_pillars)}"
-                )
-            # Probe for missing governance pillars
-            all_gov_pillars = {
-                "ai_inventory",
-                "model_documentation",
-                "human_oversight",
-                "impact_assessment",
-                "transparency",
-                "accountability",
-            }
-            missing_gov = all_gov_pillars - set(gov_pillars)
-            if missing_gov and len(gov_pillars) < 4:
-                gov_probes = {
-                    "ai_inventory": "Does this system use AI/ML models? If so, what types (classification, NLP, recommendation, generation)?",
-                    "model_documentation": "Are there existing model cards or documentation for the AI models used?",
-                    "human_oversight": "What human oversight is in place for AI decisions? Is there an appeal process?",
-                    "impact_assessment": "Has an algorithmic impact assessment been conducted? Does the AI make rights-impacting decisions?",
-                    "transparency": "Are users notified when AI is making or supporting decisions?",
-                    "accountability": "Is there a designated Chief AI Officer (CAIO) or responsible official?",
-                }
-                probe_q = [gov_probes[p] for p in sorted(missing_gov) if p in gov_probes][:2]
-                if probe_q:
-                    response_parts.append("\nTo complete AI governance assessment, please clarify:")
-                    for q in probe_q:
-                        response_parts.append(f"  - {q}")
+            _append_ai_governance_probe_section(ai_governance_signals, response_parts)
 
         # Add readiness update and targeted follow-up question
         if readiness_update:
@@ -1102,15 +1154,27 @@ def process_turn(
                     "What are the pass/fail conditions or acceptance criteria?"
                 ),
             }
-            if dims[weakest] < 0.7:
+            if dims[weakest] < 0.7 and weakest not in asked_followup_dims:
                 response_parts.append(f"\n{followup_questions[weakest]}")
+                asked_followup_dims.add(weakest)
+                context["asked_followup_dims"] = sorted(asked_followup_dims)
+                conn.execute(
+                    "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                    (json.dumps(context), session_id),
+                )
 
         # Structured clarification from Impact × Uncertainty matrix (D159)
         if clarification_signals:
             top_q = clarification_signals[0]
             question_text = top_q.get("question", "")
-            if question_text:
+            if question_text and question_text not in asked_clarifications:
                 response_parts.append(f"\nTo help me clarify: {question_text}")
+                asked_clarifications.add(question_text)
+                context["asked_clarification_questions"] = sorted(asked_clarifications)
+                conn.execute(
+                    "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                    (json.dumps(context), session_id),
+                )
 
         # Parallel execution opportunities (D161)
         if parallel_opportunities:
@@ -1289,60 +1353,159 @@ _PRIORITY_KEYWORDS = {
 }
 
 
-def _extract_requirements_from_text(text, session_id, turn_number, conn):
-    """Extract structured requirements from customer text using keyword analysis."""
-    extracted = []
-    # Split on sentence boundaries
-    sentences = [s.strip() for s in text.replace("\n", ". ").split(".") if s.strip() and len(s.strip()) > 10]
+_IMPERATIVE_VERBS = {
+    "create", "build", "develop", "design", "implement", "deploy", "integrate",
+    "generate", "produce", "construct", "establish", "configure", "set up",
+    "monitor", "capture", "track", "detect", "alert", "notify", "log",
+    "display", "visualize", "visualise", "show", "render", "present", "depict",
+    "analyze", "analyse", "process", "correlate", "aggregate", "ingest",
+    "expose", "publish", "send", "deliver", "report",
+    "ensure", "enforce", "validate", "verify", "authenticate", "authorize",
+}
 
+_INTEREST_SIGNALS = {
+    "interested in", "i'd like", "id like", "looking for", "looking to",
+    "want to know", "want to see", "would like", "we'd like", "we would like",
+    "hoping to", "expect to", "plan to", "trying to",
+}
+
+_REQ_EXTRACTION_SYSTEM = """\
+You are a requirements analyst. Extract ALL distinct requirements from the user message below.
+A requirement is any expression of need, desire, capability, constraint, or system behaviour —
+including imperative sentences ("Create X"), interest statements ("I'm interested in Y"),
+and "I want / we need / it should" expressions.
+
+Return a JSON array only — no prose, no markdown. Each element:
+{
+  "text": "<exact or lightly cleaned requirement text>",
+  "type": "<functional|non_functional|constraint|interface|data|security|performance|compliance>",
+  "priority": "<high|medium|low>"
+}
+
+If the message contains no requirements (casual chat), return [].
+"""
+
+
+def _extract_requirements_llm(text: str, classification: str = "CUI") -> list[dict]:
+    """Use the LLM router to extract requirements from text.
+
+    Returns a list of dicts with keys: text, type, priority.
+    Returns empty list on any failure so the caller can fall back to keyword extraction.
+    """
+    if not _HAS_LLM:
+        return []
+    try:
+        router = get_router()
+        request = _LLMRequest(
+            messages=[{"role": "user", "content": text}],
+            system_prompt=_REQ_EXTRACTION_SYSTEM,
+            max_tokens=2048,
+            temperature=0.2,
+            classification=classification,
+        )
+        response = router.invoke("requirement_extraction", request)
+        if not response or not response.content:
+            return []
+
+        content = response.content.strip()
+        # Strip markdown fences if present
+        if content.startswith("```"):
+            content = content.split("```", 2)[-1] if content.count("```") >= 2 else content
+            content = content.lstrip("json").strip()
+        # Handle <think>...</think> from reasoning models
+        if "<think>" in content:
+            content = content[content.rfind("</think>") + len("</think>"):].strip()
+
+        parsed = json.loads(content)
+        if not isinstance(parsed, list):
+            return []
+
+        result = []
+        for item in parsed:
+            if not isinstance(item, dict) or not item.get("text", "").strip():
+                continue
+            result.append({
+                "text": item["text"].strip(),
+                "type": item.get("type", "functional"),
+                "priority": item.get("priority", "medium"),
+            })
+        return result
+    except Exception:
+        return []
+
+
+def _extract_requirements_from_text(text, session_id, turn_number, conn):
+    """Extract structured requirements. Tries LLM intent extraction first, falls back to keywords."""
+    # Look up classification once
+    sess_row = conn.execute(
+        "SELECT classification FROM intake_sessions WHERE id = ?",
+        (session_id,),
+    ).fetchone()
+    req_classification = sess_row[0] if sess_row else "CUI"
+
+    # --- Primary path: LLM-based intent extraction ---
+    llm_items = _extract_requirements_llm(text, req_classification)
+
+    extracted = []
+    if llm_items:
+        for item in llm_items:
+            req_id = _generate_id("req")
+            conn.execute(
+                """INSERT INTO intake_requirements
+                   (id, session_id, source_turn, raw_text, requirement_type,
+                    priority, status, classification)
+                   VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)""",
+                (req_id, session_id, turn_number,
+                 item["text"], item["type"], item["priority"], req_classification),
+            )
+            extracted.append({
+                "id": req_id,
+                "raw_text": item["text"],
+                "requirement_type": item["type"],
+                "priority": item["priority"],
+            })
+        return extracted
+
+    # --- Fallback: keyword-based extraction (used when LLM unavailable or returns []) ---
+    sentences = [s.strip() for s in text.replace("\n", ". ").split(".") if s.strip() and len(s.strip()) > 10]
     for sentence in sentences:
         lower = sentence.lower()
+        words = lower.split()
+        first_word = words[0] if words else ""
 
-        # Check if this sentence contains requirement-like language
         has_req_signal = any(
             kw in lower
             for kw in [
-                "need",
-                "want",
-                "must",
-                "shall",
-                "should",
-                "require",
-                "able to",
-                "capability",
-                "feature",
-                "support",
-                "provide",
-                "enable",
-                "allow",
-                "system will",
-                "system shall",
+                "need", "want", "must", "shall", "should", "require",
+                "able to", "capability", "feature", "support", "provide",
+                "enable", "allow", "system will", "system shall",
+                "interested in", "i'd like", "id like", "looking for",
+                "looking to", "would like", "we'd like", "hoping to",
+                "want to", "want to know", "want to see",
+                "monitor", "capture", "track", "detect", "alert",
+                "display", "visualize", "visualise", "depict", "render",
+                "analyze", "analyse", "correlate", "aggregate", "ingest",
+                "expose", "integrate", "deploy", "implement",
             ]
         )
         if not has_req_signal:
+            has_req_signal = first_word in _IMPERATIVE_VERBS
+        if not has_req_signal:
             continue
 
-        # Detect type
-        req_type = "functional"  # default
+        req_type = "functional"
         for rtype, keywords in _REQ_TYPE_KEYWORDS.items():
             if any(kw.lower() in lower for kw in keywords):
                 req_type = rtype
                 break
 
-        # Detect priority
-        priority = "medium"  # default
+        priority = "medium"
         for prio, keywords in _PRIORITY_KEYWORDS.items():
             if any(kw in lower for kw in keywords):
                 priority = prio
                 break
 
-        # Create requirement record — classification inherited from session
         req_id = _generate_id("req")
-        sess_row = conn.execute(
-            "SELECT classification FROM intake_sessions WHERE id = ?",
-            (session_id,),
-        ).fetchone()
-        req_classification = sess_row[0] if sess_row else "CUI"
         conn.execute(
             """INSERT INTO intake_requirements
                (id, session_id, source_turn, raw_text, requirement_type,
@@ -1350,15 +1513,12 @@ def _extract_requirements_from_text(text, session_id, turn_number, conn):
                VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)""",
             (req_id, session_id, turn_number, sentence.strip(), req_type, priority, req_classification),
         )
-
-        extracted.append(
-            {
-                "id": req_id,
-                "raw_text": sentence.strip(),
-                "requirement_type": req_type,
-                "priority": priority,
-            }
-        )
+        extracted.append({
+            "id": req_id,
+            "raw_text": sentence.strip(),
+            "requirement_type": req_type,
+            "priority": priority,
+        })
 
     return extracted
 
@@ -2314,7 +2474,7 @@ def _detect_ai_governance_signals(text, session_data=None):
 def _quick_readiness_estimate(session_id, conn):
     """Quick readiness estimate based on requirement counts and quality."""
     reqs = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ?",
+        "SELECT * FROM intake_requirements WHERE session_id = ? AND status IN ('draft', 'clarified', 'validated', 'approved', 'decomposed')",
         (session_id,),
     ).fetchall()
 

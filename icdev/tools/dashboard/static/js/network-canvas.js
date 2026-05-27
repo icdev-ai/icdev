@@ -185,6 +185,25 @@ const NODE_STYLES = {
   'internet-exchange':{ fill: '#0f2b1a', stroke: '#66bb6a', label: 'IXP',           symbol: 'IXP'},
   'cloud-region':     { fill: '#1a1a2e', stroke: '#636e72', label: 'Region',        symbol: 'REG'},
   'cloud':            { fill: '#0f0f2b', stroke: '#7f8c8d',  label: 'Cloud',         symbol: '☁' },
+  // ── DoD JWICS (SECRET/TS — red family, classified crimson) ──────────────────
+  'dod-jwics-backbone':    { fill: '#2b0808', stroke: '#e74c3c', label: 'JWICS Backbone',     symbol: 'JWX' },
+  'dod-jwics-gateway':     { fill: '#2b0808', stroke: '#ff6b6b', label: 'JWICS Gateway',      symbol: 'JWG' },
+  'dod-jwics-dns':         { fill: '#2b0a0a', stroke: '#ff4757', label: 'JWICS DNS',           symbol: 'JDN' },
+  'dod-jwics-mail-relay':  { fill: '#2b0a0a', stroke: '#e84393', label: 'JWICS Mail Relay',   symbol: 'JMR' },
+  'dod-type1-encryptor':   { fill: '#2b0f0f', stroke: '#ff4757', label: 'Type 1 Encryptor',   symbol: 'T1E' },
+  'dod-scif-lan':          { fill: '#1a0808', stroke: '#c0392b', label: 'SCIF LAN',            symbol: 'SCF' },
+  // ── DoD C2S — AWS Secret Region (amber-red, classified orange) ───────────
+  'dod-c2s-direct-connect':{ fill: '#2b1200', stroke: '#e67e22', label: 'C2S ClassifiedConnect', symbol: 'C2D' },
+  'dod-c2s-tgw':           { fill: '#2b1200', stroke: '#ff9800', label: 'C2S Transit GW',     symbol: 'C2T' },
+  'dod-c2s-vpc':           { fill: '#2b1200', stroke: '#ffb300', label: 'C2S VPC',             symbol: 'C2V' },
+  'dod-c2s-dns-phz':       { fill: '#2b1000', stroke: '#ffa000', label: 'C2S Route 53 PHZ',   symbol: 'C2Z' },
+  // ── DoD C2E — Azure Government Secret (dark violet, classified purple) ───
+  'dod-c2e-expressroute':  { fill: '#120a2b', stroke: '#8e44ad', label: 'C2E ExpressRoute',   symbol: 'C2X' },
+  'dod-c2e-vnet':          { fill: '#120a2b', stroke: '#9b59b6', label: 'C2E VNet',            symbol: 'C2N' },
+  'dod-c2e-dns-private':   { fill: '#120a2b', stroke: '#a569bd', label: 'C2E Private DNS',    symbol: 'C2P' },
+  // ── Shared DISA Secret-side ───────────────────────────────────────────────
+  'dod-secret-bcap':       { fill: '#2b0808', stroke: '#ff4757', label: 'Secret BCAP/CAP',    symbol: 'SBC' },
+  'dod-cds':               { fill: '#1a0a1a', stroke: '#ff7675', label: 'Cross-Domain (CDS)', symbol: 'CDS' },
   // Aliases for ingester types (so they never show '?')
   'vpn_gateway':      { fill: '#0f2b2b', stroke: '#00bcd4',  label: 'VPN GW',        symbol: '🔒' },
   'wan_link':         { fill: '#0f0f2b', stroke: '#7f8c8d',  label: 'WAN',           symbol: '☁' },
@@ -2422,6 +2441,39 @@ function graphToJSON() {
   return { nodes, edges, _annotationLegend: _annotationLegend, _phases: _phases, _aiCorrections: _aiCorrections.slice() };
 }
 
+function _resolveNodeOverlaps(g, padding) {
+  padding = padding == null ? 20 : padding;
+  const els = g.getElements();
+  if (els.length < 2) return;
+  for (let iter = 0; iter < 80; iter++) {
+    let moved = false;
+    for (let i = 0; i < els.length; i++) {
+      for (let j = i + 1; j < els.length; j++) {
+        const a = els[i], b = els[j];
+        const ap = a.position(), as_ = a.size();
+        const bp = b.position(), bs = b.size();
+        const p2 = padding / 2;
+        const ax1 = ap.x - p2, ay1 = ap.y - p2, ax2 = ap.x + as_.width + p2, ay2 = ap.y + as_.height + p2;
+        const bx1 = bp.x - p2, by1 = bp.y - p2, bx2 = bp.x + bs.width + p2, by2 = bp.y + bs.height + p2;
+        if (ax2 <= bx1 || bx2 <= ax1 || ay2 <= by1 || by2 <= ay1) continue;
+        let dx = (bx1 + bx2) / 2 - (ax1 + ax2) / 2;
+        let dy = (by1 + by2) / 2 - (ay1 + ay2) / 2;
+        if (dx === 0 && dy === 0) { dx = 1; dy = 0; }
+        const ovX = (ax2 - ax1) / 2 + (bx2 - bx1) / 2 - Math.abs(dx);
+        const ovY = (ay2 - ay1) / 2 + (by2 - by1) / 2 - Math.abs(dy);
+        if (ovX <= 0 || ovY <= 0) continue;
+        let px = 0, py = 0;
+        if (ovX <= ovY) { px = (ovX / 2 + 0.5) * (dx >= 0 ? 1 : -1); }
+        else            { py = (ovY / 2 + 0.5) * (dy >= 0 ? 1 : -1); }
+        a.position(ap.x - px, ap.y - py);
+        b.position(bp.x + px, bp.y + py);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
 function loadGraphJSON(data) {
   graph.clear();
   const nodes = data.nodes || [];
@@ -2472,6 +2524,7 @@ function loadGraphJSON(data) {
   if (dropped > 0) {
     console.warn('loadGraphJSON: dropped ' + dropped + ' edge(s) referencing missing nodes');
   }
+  _resolveNodeOverlaps(graph, 20);
   updateStatusBar();
   requestAnimationFrame(() => {
     graph.getElements().forEach(cell => _applyAiCorrectedGlow(cell));
@@ -2586,7 +2639,12 @@ async function loadTopology(id) {
     const r = await fetch(NC_BASE + `/api/topologies/${id}`);
     if (!r.ok) throw new Error('Not found');
     const data = await r.json();
-    if (data.graph_json) loadGraphJSON(data.graph_json);
+    if (data.graph_json) {
+      loadGraphJSON(data.graph_json);
+      if ((data.graph_json.nodes || []).length > 0) {
+        requestAnimationFrame(() => setTimeout(() => { if (typeof zoomFit === 'function') zoomFit(); }, 100));
+      }
+    }
     document.getElementById('topo-name-display').textContent = data.name || 'Untitled';
     setStatus('Loaded — ' + data.name);
     isDirty = false;
@@ -2763,6 +2821,7 @@ const TYPE_SETS = {
   ]),
   TYPE1_ENCRYPTOR: new Set([
     'type1-encryptor', 'kg-175d', 'kg-175g', 'kg-250', 'kg-340', 'kg-245x', 'kg-255',
+    'dod-type1-encryptor',
   ]),
   FIPS_ENCRYPTOR: new Set([
     'fips-140-l1', 'fips-140-l2', 'fips-140-l3', 'fips-140-l4',
@@ -2794,12 +2853,28 @@ const PHYS_TO_LOGICAL = {
   'az-vnet':         'vrf',
   'gcp-vpc':         'vrf',
   'oci-vcn':         'vrf',
-  'type1-encryptor': 'security-zone',
-  'fips-140-l1':     'security-zone',
-  'fips-140-l2':     'security-zone',
-  'fips-140-l3':     'security-zone',
-  'fips-140-l4':     'security-zone',
-  'hsm':             'security-zone',
+  'type1-encryptor':        'security-zone',
+  'fips-140-l1':            'security-zone',
+  'fips-140-l2':            'security-zone',
+  'fips-140-l3':            'security-zone',
+  'fips-140-l4':            'security-zone',
+  'hsm':                    'security-zone',
+  // DoD classified types
+  'dod-jwics-backbone':     'vrf',
+  'dod-jwics-gateway':      'vrf',
+  'dod-jwics-dns':          'security-zone',
+  'dod-jwics-mail-relay':   'security-zone',
+  'dod-type1-encryptor':    'security-zone',
+  'dod-scif-lan':           'security-zone',
+  'dod-c2s-direct-connect': 'vrf',
+  'dod-c2s-tgw':            'vrf',
+  'dod-c2s-vpc':            'vrf',
+  'dod-c2s-dns-phz':        'security-zone',
+  'dod-c2e-expressroute':   'vrf',
+  'dod-c2e-vnet':           'vrf',
+  'dod-c2e-dns-private':    'security-zone',
+  'dod-secret-bcap':        'security-zone',
+  'dod-cds':                'security-zone',
 };
 
 // Physical-layer types dropped when rendering the logical view (no logical equivalent).
@@ -5898,6 +5973,275 @@ function _deleteMultiSelected() {
   markDirty();
   setStatus('Deleted ' + n + ' nodes');
 }
+
+// ── Network IaC Validate & Deploy ─────────────────────────────────────────────
+
+function validateNetworkIaC() {
+  setStatus('Validating Network IaC...');
+
+  const elements = graph.getElements();
+  const links    = graph.getLinks();
+  const nodes = elements.map(el => ({
+    id: el.id,
+    type: el.get('nodeType') || '',
+    label: el.attr('label/text') || el.attr('.label/text') || '',
+    ip: el.get('ipAddress') || '',
+  }));
+  const edges = links.map(l => ({ source: l.getSourceElement()?.id, target: l.getTargetElement()?.id }));
+
+  const types  = nodes.map(n => n.type.toLowerCase());
+  const labels = nodes.map(n => n.label.toLowerCase());
+  const nodeIds = new Set(nodes.map(n => n.id));
+  const connectedIds = new Set();
+  edges.forEach(e => { if(e.source) connectedIds.add(e.source); if(e.target) connectedIds.add(e.target); });
+
+  const checks = [];
+
+  // L1: Labels & types present
+  const unlabelled = nodes.filter(n => !n.label && n.type);
+  if (unlabelled.length) {
+    checks.push({ id:'l1-lbl', layer:1, label:'Unlabelled nodes', status:'warn',
+      message:`${unlabelled.length} node(s) have no label — cannot generate meaningful Terraform resource names`,
+      fix_hint:'Double-click each unlabelled node and give it a hostname or resource name. Terraform resource names derive from node labels.',
+      fix_snippet: null });
+  } else {
+    checks.push({ id:'l1-lbl', layer:1, label:'Node labels', status:'pass', message:`All ${nodes.length} nodes labelled` });
+  }
+
+  // L2: Edge endpoints reference valid nodes
+  const badLinks = edges.filter(e => !nodeIds.has(e.source) || !nodeIds.has(e.target));
+  checks.push({ id:'l2-edges', layer:2, label:'Link validity', status: badLinks.length ? 'fail' : 'pass',
+    message: badLinks.length ? `${badLinks.length} link(s) have missing endpoints — delete and redraw` : `${edges.length} link(s) valid`,
+    fix_hint: badLinks.length ? 'Delete broken links (hover to see red endpoints) and reconnect between valid nodes.' : null });
+
+  // L3: Network-specific policy checks
+
+  // Firewall / Security Group present?
+  const hasFW = types.some(t => t.includes('firewall') || t.includes('fw') || t.includes('asa') || t.includes('palo') || t.includes('sg') || t.includes('acl') || t.includes('security-group') || t.includes('nsg'));
+  if (!hasFW) {
+    checks.push({ id:'l3-fw', layer:3, label:'Firewall / Security Group', status:'warn',
+      message:'No firewall or security group node found',
+      fix_hint:'Add a Firewall or Security Group node between untrusted and trusted zones. Every network boundary requires access control.',
+      fix_snippet:'resource "aws_security_group" "app" {\n  name   = "app-sg"\n  vpc_id = aws_vpc.main.id\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = "tcp"\n    cidr_blocks = ["10.0.0.0/8"]\n  }\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = "-1"\n    cidr_blocks = ["0.0.0.0/0"]\n  }\n}' });
+  } else {
+    checks.push({ id:'l3-fw', layer:3, label:'Firewall / Security Group', status:'pass', message:'Access control node found' });
+  }
+
+  // VPC / Network boundary present?
+  const hasVPC = types.some(t => t.includes('vpc') || t.includes('vnet') || t.includes('vrf') || t.includes('segment') || t.includes('subnet'));
+  if (nodes.length > 3 && !hasVPC) {
+    checks.push({ id:'l3-vpc', layer:3, label:'Network boundary (VPC/Subnet)', status:'warn',
+      message:'No VPC, VNet, or subnet node found — topology has no logical segmentation',
+      fix_hint:'Add a VPC or Subnet node and group related resources inside it. Flat networks violate zero-trust segmentation.',
+      fix_snippet:'resource "aws_vpc" "main" {\n  cidr_block           = "10.0.0.0/16"\n  enable_dns_hostnames = true\n  tags = { Name = "main-vpc" }\n}\nresource "aws_subnet" "private" {\n  vpc_id     = aws_vpc.main.id\n  cidr_block = "10.0.1.0/24"\n  tags = { Name = "private", Tier = "app" }\n}' });
+  } else if (hasVPC) {
+    checks.push({ id:'l3-vpc', layer:3, label:'Network segmentation', status:'pass', message:'VPC / subnet boundary present' });
+  }
+
+  // Any open 0.0.0.0/0 labels?
+  const hasOpenWorld = labels.some(l => l.includes('0.0.0.0/0') || l.includes('any/any') || l.includes('permit any'));
+  if (hasOpenWorld) {
+    checks.push({ id:'l3-open', layer:3, label:'Open internet exposure', status:'fail',
+      message:'Node label contains 0.0.0.0/0 or "any" — unrestricted access detected',
+      fix_hint:'Replace 0.0.0.0/0 with specific CIDR ranges. Exposing all ports to the internet is a STIG CAT I finding (NET0400).',
+      fix_snippet:'# Restrict to your office/VPN CIDR instead:\ningress {\n  from_port   = 443\n  to_port     = 443\n  protocol    = "tcp"\n  cidr_blocks = ["203.0.113.0/24"]  # your known IP range\n}' });
+  }
+
+  // CIDR labels on subnets?
+  const subnetNodes = nodes.filter(n => n.type.toLowerCase().includes('subnet'));
+  const missingCIDR = subnetNodes.filter(n => !n.label.match(/\d+\.\d+\.\d+\.\d+\/\d+/));
+  if (missingCIDR.length) {
+    checks.push({ id:'l3-cidr', layer:3, label:'Subnet CIDR labels', status:'warn',
+      message:`${missingCIDR.length} subnet(s) have no CIDR in their label`,
+      fix_hint:'Label each subnet node with its CIDR block (e.g., "10.0.1.0/24 — App Tier"). Terraform requires explicit CIDR for aws_subnet resources.',
+      fix_snippet:null });
+  }
+
+  // Isolated nodes
+  const isolated = nodes.filter(n => !connectedIds.has(n.id));
+  if (isolated.length > 0) {
+    checks.push({ id:'l3-iso', layer:3, label:'Isolated nodes', status:'warn',
+      message:`${isolated.length} node(s) have no connections: ${isolated.slice(0,3).map(n=>n.label||n.type).join(', ')}`,
+      fix_hint:'Connect every node to the topology. Isolated nodes produce orphaned Terraform resources with no network path.',
+      fix_snippet:null });
+  }
+
+  const passed = checks.filter(c=>c.status==='pass').length;
+  const failed = checks.filter(c=>c.status==='fail').length;
+  const warned = checks.filter(c=>c.status==='warn').length;
+  const gate   = failed === 0 ? 'PASS' : 'FAIL';
+  const gateColor = gate === 'PASS' ? '#1e8449' : '#c0392b';
+  const pct = checks.length > 0 ? Math.round(passed / checks.length * 100) : 100;
+
+  let html = `<div style="text-align:center;margin:8px 0;">
+    <span style="font-size:28px;font-weight:800;color:${gateColor};">${gate}</span>
+    <div style="font-size:11px;color:#4a5568;">${passed} pass, ${failed} fail, ${warned} warn</div>
+  </div>`;
+  // progress bar
+  html += `<div style="height:6px;background:#e0e0e0;border-radius:3px;margin:6px 0 10px;"><div style="height:100%;background:${gateColor};width:${pct}%;border-radius:3px;"></div></div>`;
+
+  const fixable = checks.filter(c => (c.status==='warn'||c.status==='fail') && c.fix_hint);
+  if (fixable.length) {
+    html += `<div style="margin:8px 0;padding:7px 10px;background:#fef9e7;border:1px solid #f39c12;border-radius:6px;display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:11px;font-weight:600;color:#7d6608;">⚠ ${fixable.length} issue(s) have suggested fixes</span>
+      <button onclick="_ndcAutoFixAll()" style="background:#d5f0e0;color:#1e7e34;border:1px solid #1e7e34;border-radius:4px;font-size:11px;padding:2px 8px;cursor:pointer;font-weight:600;">✦ Auto-fix All</button>
+    </div>`;
+  }
+
+  const layerNames = {1:'Layer 1: Syntax', 2:'Layer 2: Schema', 3:'Layer 3: Network Policy'};
+  [1,2,3].forEach(layer => {
+    const lc = checks.filter(c=>c.layer===layer);
+    if (!lc.length) return;
+    html += `<div style="font-size:10px;font-weight:700;color:#4a5568;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.5px;">${layerNames[layer]}</div>`;
+    lc.forEach((c, idx) => {
+      const icons  = {pass:'✓', fail:'✗', warn:'⚠'};
+      const colors = {pass:'#1e8449', fail:'#c0392b', warn:'#b7770d'};
+      const bgs    = {pass:'#f0fff4', fail:'#fff5f5', warn:'#fffbf0'};
+      const rid    = `ndc-vr-${layer}-${idx}`;
+      const needsAction = c.status==='warn'||c.status==='fail';
+      html += `<div id="${rid}" style="margin:3px 0;padding:6px 8px;border-left:3px solid ${colors[c.status]||'#ccc'};background:${bgs[c.status]||'#f8f8f8'};border-radius:0 4px 4px 0;">`;
+      html += `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px;">`;
+      html += `<div style="flex:1;min-width:0;"><span style="color:${colors[c.status]};font-size:13px;margin-right:4px;">${icons[c.status]||'?'}</span><b style="font-size:11px;color:#1a1a2e;">${c.label}</b><div style="font-size:10px;color:#4a5568;margin-top:2px;">${c.message}</div></div>`;
+      if (needsAction) {
+        html += `<div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0;">`;
+        if (c.fix_hint) html += `<button style="background:#dce8fb;color:#1a5276;border:1px solid #aed6f1;border-radius:3px;font-size:10px;padding:2px 7px;cursor:pointer;" onclick="_ndcToggleFix('${rid}')">Fix →</button>`;
+        html += `<button style="background:transparent;color:#4a5568;border:1px solid #c9d3e0;border-radius:3px;font-size:10px;padding:2px 7px;cursor:pointer;" onclick="_ndcDismiss('${rid}')">Dismiss</button>`;
+        html += `</div>`;
+      }
+      html += `</div>`;
+      if (c.fix_hint) {
+        const safeSnip = (c.fix_snippet||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        html += `<div id="${rid}-fix" style="display:none;margin-top:6px;padding:8px;background:#eaf3fb;border-radius:4px;border:1px solid #aed6f1;">
+          <div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:4px;">💡 Suggested Fix</div>
+          <div style="font-size:10px;color:#2c3e50;margin-bottom:6px;">${c.fix_hint}</div>`;
+        if (c.fix_snippet) {
+          html += `<pre style="font-size:9px;background:#d6eaf8;padding:6px;border-radius:3px;white-space:pre-wrap;color:#1a1a2e;margin:0 0 6px;font-family:monospace;">${safeSnip}</pre>`;
+          html += `<button style="background:#1a5276;color:#fff;border:none;border-radius:3px;font-size:10px;padding:2px 8px;cursor:pointer;" onclick="_ndcCopyFix(this,'${rid}')">Copy Snippet</button>`;
+        }
+        html += `</div>`;
+      }
+      html += `</div>`;
+    });
+  });
+
+  html += `<p style="font-size:10px;color:#4a5568;margin-top:8px;">Network IaC validation checks topology structure and maps to Terraform VPC/subnet/SG resources.</p>`;
+  window._ndcLastChecks = checks;
+
+  // Use existing right panel if available, else alert
+  if (typeof openRightPanel === 'function') openRightPanel('IaC Validation — Network', html);
+  else {
+    const p = document.getElementById('pc-config-panel') || document.getElementById('right-panel');
+    if (p) { p.classList.add('open'); const b = p.querySelector('.pc-config-body,.right-panel-body'); if(b) b.innerHTML = html; }
+  }
+  setStatus(gate === 'PASS' ? '✓ Network IaC valid' : '✗ Network IaC issues — see panel');
+}
+
+window._ndcToggleFix = function(rid) { const el=document.getElementById(rid+'-fix'); if(el) el.style.display = el.style.display==='none'?'block':'none'; };
+window._ndcDismiss   = function(rid) { const el=document.getElementById(rid); if(el){el.style.opacity='0.4';el.style.pointerEvents='none';} };
+window._ndcCopyFix   = function(btn, rid) {
+  const pre = document.getElementById(rid+'-fix')?.querySelector('pre');
+  if(!pre) return;
+  navigator.clipboard.writeText(pre.textContent).then(()=>{const o=btn.textContent;btn.textContent='✓ Copied!';setTimeout(()=>{btn.textContent=o;},1500);})
+  .catch(()=>{const ta=document.createElement('textarea');ta.value=pre.textContent;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);btn.textContent='✓ Copied!';setTimeout(()=>{btn.textContent='Copy Snippet';},1500);});
+};
+window._ndcAutoFixAll = function() {
+  const checks = window._ndcLastChecks || [];
+  const fixable = checks.filter(c=>(c.status==='warn'||c.status==='fail')&&c.fix_hint);
+  fixable.forEach((c,idx)=>{ const rid=`ndc-vr-${c.layer}-${checks.filter(x=>x.layer===c.layer).indexOf(c)}`; window._ndcToggleFix(rid); });
+  setStatus(`Showing ${fixable.length} fix snippet(s) — apply to your design, then re-validate.`);
+};
+
+function deployNetworkIaC() {
+  setStatus('Generating Network Terraform bundle...');
+  const elements = graph.getElements();
+  const links    = graph.getLinks();
+  const nodes = elements.map(el => ({
+    type:  el.get('nodeType') || '',
+    label: el.attr('label/text') || el.attr('.label/text') || el.get('nodeType') || 'resource',
+    ip:    el.get('ipAddress') || '',
+  }));
+
+  const tfBlocks = [];
+  const vpcNodes  = nodes.filter(n=>n.type.toLowerCase().includes('vpc')||n.type.toLowerCase().includes('vnet'));
+  const subNets   = nodes.filter(n=>n.type.toLowerCase().includes('subnet'));
+  const fwNodes   = nodes.filter(n=>n.type.toLowerCase().includes('firewall')||n.type.toLowerCase().includes('fw'));
+  const sgNodes   = nodes.filter(n=>n.type.toLowerCase().includes('sg')||n.type.toLowerCase().includes('security-group')||n.type.toLowerCase().includes('nsg'));
+  const routerNd  = nodes.filter(n=>n.type.toLowerCase().includes('router')||n.type.toLowerCase().includes('rtb'));
+
+  const safe = s => (s||'resource').toLowerCase().replace(/[^a-z0-9]/g,'_').replace(/^_+|_+$/g,'');
+
+  vpcNodes.forEach(n  => tfBlocks.push(`resource "aws_vpc" "${safe(n.label)}" {\n  cidr_block           = "${n.ip||'10.0.0.0/16'}"\n  enable_dns_hostnames = true\n  tags = { Name = "${n.label}" }\n}`));
+  subNets.forEach(n   => tfBlocks.push(`resource "aws_subnet" "${safe(n.label)}" {\n  vpc_id     = aws_vpc.${safe(vpcNodes[0]?.label||'main')}.id\n  cidr_block = "${n.ip||'10.0.1.0/24'}"\n  tags = { Name = "${n.label}" }\n}`));
+  sgNodes.forEach(n   => tfBlocks.push(`resource "aws_security_group" "${safe(n.label)}" {\n  name   = "${n.label}"\n  vpc_id = aws_vpc.${safe(vpcNodes[0]?.label||'main')}.id\n  egress { from_port = 0; to_port = 0; protocol = "-1"; cidr_blocks = ["0.0.0.0/0"] }\n  tags = { Name = "${n.label}" }\n}`));
+  routerNd.forEach(n  => tfBlocks.push(`resource "aws_route_table" "${safe(n.label)}" {\n  vpc_id = aws_vpc.${safe(vpcNodes[0]?.label||'main')}.id\n  tags = { Name = "${n.label}" }\n}`));
+
+  const tfContent = tfBlocks.length > 0
+    ? `# Generated by ICDEV™ Network Design Canvas\n# Review and customise before applying\n\n` + tfBlocks.join('\n\n')
+    : `# No mappable IaC nodes found.\n# Add VPC, Subnet, Security Group, or Router nodes to generate Terraform.`;
+
+  const files = [
+    { name: 'main.tf',      content: tfContent },
+    { name: 'variables.tf', content: 'variable "region" {\n  description = "AWS region"\n  default     = "us-east-1"\n}\n' },
+    { name: 'outputs.tf',   content: vpcNodes.map(n=>`output "${safe(n.label)}_id" {\n  value = aws_vpc.${safe(n.label)}.id\n}`).join('\n') || '# No outputs generated' },
+    { name: 'providers.tf', content: 'terraform {\n  required_providers {\n    aws = { source = "hashicorp/aws", version = "~> 5.0" }\n  }\n}\nprovider "aws" {\n  region = var.region\n}\n' },
+  ];
+
+  let html = `<div style="text-align:center;padding:10px 0;">
+    <div style="font-size:24px;color:#1e8449;">📦</div>
+    <div style="color:#1e8449;font-weight:700;font-size:14px;">Network Terraform Bundle Ready</div>
+    <div style="font-size:11px;color:#4a5568;margin-top:4px;">${nodes.length} nodes → ${tfBlocks.length} resource(s)</div>
+  </div>`;
+  html += `<div style="font-size:10px;font-weight:700;color:#4a5568;margin:8px 0 4px;text-transform:uppercase;">Generated Files</div>`;
+  files.forEach(f => {
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #e8ecf1;">
+      <span style="font-size:11px;font-family:monospace;color:#1a1a2e;">${f.name}</span>
+      <button style="background:#dce8fb;color:#1a5276;border:1px solid #aed6f1;border-radius:3px;font-size:10px;padding:1px 7px;cursor:pointer;"
+        onclick="_ndcPreviewFile(this,'${f.name}')">Preview</button>
+    </div>`;
+  });
+  html += `<div id="ndc-file-preview" style="margin-top:8px;display:none;">
+    <div id="ndc-preview-name" style="font-size:10px;font-weight:700;color:#4a5568;margin-bottom:4px;"></div>
+    <pre id="ndc-preview-content" style="font-size:9px;background:#f4f6f9;padding:8px;border-radius:4px;white-space:pre-wrap;color:#1a1a2e;max-height:200px;overflow-y:auto;font-family:monospace;border:1px solid #c9d3e0;"></pre>
+    <button style="background:#1a5276;color:#fff;border:none;border-radius:3px;font-size:10px;padding:3px 10px;cursor:pointer;margin-top:4px;" onclick="_ndcCopyPreview()">Copy</button>
+  </div>`;
+  html += `<button onclick="_ndcDownloadBundle()" style="width:100%;margin-top:12px;background:#1e8449;color:#fff;border:none;border-radius:4px;padding:7px;cursor:pointer;font-size:12px;font-weight:600;">⬇ Download .tf Files</button>`;
+  html += `<p style="font-size:10px;color:#4a5568;margin-top:8px;">Generated Terraform targets AWS. Adapt provider block for Azure/GCP as needed.</p>`;
+
+  window._ndcBundleFiles = files;
+  if (typeof openRightPanel === 'function') openRightPanel('Deploy IaC — Network', html);
+  setStatus('✓ Network Terraform bundle generated');
+}
+
+window._ndcPreviewFile = function(btn, fname) {
+  const files = window._ndcBundleFiles || [];
+  const f = files.find(x=>x.name===fname);
+  if (!f) return;
+  const preview = document.getElementById('ndc-file-preview');
+  const nameEl  = document.getElementById('ndc-preview-name');
+  const contEl  = document.getElementById('ndc-preview-content');
+  if (!preview||!contEl) return;
+  nameEl.textContent = fname;
+  contEl.textContent = f.content;
+  preview.style.display = 'block';
+};
+window._ndcCopyPreview = function() {
+  const el = document.getElementById('ndc-preview-content');
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).catch(()=>{
+    const ta=document.createElement('textarea');ta.value=el.textContent;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+  });
+};
+window._ndcDownloadBundle = function() {
+  const files = window._ndcBundleFiles || [];
+  files.forEach(f => {
+    const blob = new Blob([f.content], {type:'text/plain'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = f.name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+};
 
 /* ── PatternAdvisor ──────────────────────────────────────────────────────────── */
 class PatternAdvisor {

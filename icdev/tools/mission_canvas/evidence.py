@@ -6,11 +6,11 @@ and retrieve provenance records for mission artifacts.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import Optional
 
-logger = logging.getLogger("icdev.mission_canvas.evidence")
+logger = get_logger("icdev.mission_canvas.evidence")
 
 
 def record_evidence(

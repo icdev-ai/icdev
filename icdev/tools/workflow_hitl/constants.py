@@ -76,3 +76,13 @@ IMPROVEMENT_TAGS = [
     "missing_tests", "scope_creep", "incomplete_spec", "unclear_requirements",
     "missing_docs", "security_gap", "performance_issue", "naming_violation",
 ]
+
+# Ontology mappings for the Knowledge Graph ontology bridge
+WORKFLOW_HITL_ONTOLOGY_MAP: dict[str, str] = {
+    "approval_gate":       "https://icdev.dev/ontology/pipeline#ApprovalGate",
+    "review_stage":        "https://icdev.dev/ontology/pipeline#ReviewStage",
+    "human_task":          "https://icdev.dev/ontology/pipeline#HumanTask",
+    "automated_step":      "https://icdev.dev/ontology/pipeline#AutomatedStep",
+    "feedback_loop":       "https://icdev.dev/ontology/pipeline#FeedbackLoop",
+    "compliance_checkpoint": "https://icdev.dev/ontology/compliance#ComplianceCheckpoint",
+}

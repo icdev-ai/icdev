@@ -2558,6 +2558,32 @@ def create_data_canvas_blueprint():
             governance_score=governance_score,
         )
 
+    @bp.route("/products")
+    @dc_login_required
+    def dc_products():
+        from tools.data_canvas.data_mesh import list_products, list_domains
+        domain_id = request.args.get("domain_id") or None
+        products = list_products(domain_id=domain_id)
+        domains = list_domains()
+        return render_template(
+            "data_canvas/products.html",
+            products=products,
+            domains=domains,
+        )
+
+    @bp.route("/contracts")
+    @dc_login_required
+    def dc_contracts():
+        from tools.data_canvas.data_mesh import list_contracts, list_products
+        product_id = request.args.get("product_id") or None
+        contracts = list_contracts(product_id=product_id)
+        products = list_products()
+        return render_template(
+            "data_canvas/contracts.html",
+            contracts=contracts,
+            products=products,
+        )
+
     @bp.route("/api/dm/policies", methods=["GET"])
     @dc_login_required
     def dc_api_dm_policies_list():
@@ -2629,6 +2655,49 @@ def create_data_canvas_blueprint():
         conn.close()
         return jsonify({"deleted": True})
 
+    # ── Contracts API ──────────────────────────────────────────────────────────
+    @bp.route("/api/dm/contracts", methods=["GET"])
+    @dc_login_required
+    def dc_api_dm_contracts_list():
+        from tools.data_canvas.data_mesh import list_contracts
+        product_id = request.args.get("product_id") or None
+        return jsonify(list_contracts(product_id=product_id))
+
+    @bp.route("/api/dm/contracts", methods=["POST"])
+    @dc_login_required
+    def dc_api_dm_contracts_create():
+        import uuid as _uuid
+        data = request.get_json(force=True, silent=True) or {}
+        if not data.get("title"):
+            return jsonify({"error": "title required"}), 400
+        contract_id = str(_uuid.uuid4())
+        now = now_isoformat()
+        row = {
+            "id": contract_id,
+            "product_id": data.get("product_id") or None,
+            "title": data["title"],
+            "version": data.get("version", "1.0.0"),
+            "schema_json": json.dumps(data.get("schema", {})),
+            "sla_json": json.dumps(data.get("sla", {})),
+            "quality_rules_json": json.dumps(data.get("quality_rules", [])),
+            "status": data.get("status", "draft"),
+            "classification": data.get("classification", "CUI // SP-CTI"),
+            "created_at": now,
+            "updated_at": now,
+        }
+        conn = get_connection()
+        conn.execute(
+            """INSERT INTO dm_contracts
+               (id, product_id, title, version, schema_json, sla_json,
+                quality_rules_json, status, classification, created_at, updated_at)
+               VALUES (:id, :product_id, :title, :version, :schema_json, :sla_json,
+               :quality_rules_json, :status, :classification, :created_at, :updated_at)""",
+            row,
+        )
+        conn.commit()
+        conn.close()
+        return jsonify(row), 201
+
     @bp.route("/api/dm/governance/check", methods=["POST"])
     @dc_login_required
     def dc_api_dm_governance_check():
@@ -2679,6 +2748,260 @@ def create_data_canvas_blueprint():
         ).fetchall()
         conn.close()
         return jsonify([dict(r) for r in rows])
+
+    # ══════════════════════════════════════════════════════════════════════
+    # DATA MESH — CONTROL PLANE (MESH HUB)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/mesh")
+    @dc_login_required
+    def dc_mesh():
+        return render_template("data_canvas/mesh.html")
+
+    @bp.route("/api/dm/summary")
+    @dc_login_required
+    def dc_api_dm_summary():
+        conn = get_connection()
+        try:
+            domain_total = conn.execute(
+                "SELECT COUNT(*) FROM dm_domains WHERE status='active'"
+            ).fetchone()[0]
+            domain_mature = conn.execute(
+                "SELECT COUNT(*) FROM dm_domains WHERE status='active' AND maturity_level > 0"
+            ).fetchone()[0]
+            domain_score = round(domain_mature / domain_total * 100) if domain_total else 0
+
+            product_total = conn.execute(
+                "SELECT COUNT(*) FROM dm_data_products"
+            ).fetchone()[0]
+            product_published = conn.execute(
+                "SELECT COUNT(*) FROM dm_data_products WHERE status='published'"
+            ).fetchone()[0]
+            product_score = round(product_published / product_total * 100) if product_total else 0
+
+            contract_active = conn.execute(
+                "SELECT COUNT(*) FROM dm_contracts WHERE status='active'"
+            ).fetchone()[0]
+            products_with_contracts = conn.execute(
+                "SELECT COUNT(DISTINCT product_id) FROM dm_contracts WHERE status='active'"
+            ).fetchone()[0]
+            contract_score = (
+                round(products_with_contracts / product_total * 100) if product_total else 0
+            )
+
+            gov_total = conn.execute(
+                "SELECT COUNT(*) FROM dm_governance_policies"
+            ).fetchone()[0]
+            gov_active = conn.execute(
+                "SELECT COUNT(*) FROM dm_governance_policies WHERE status='active'"
+            ).fetchone()[0]
+            gov_score = round(gov_active / gov_total * 100) if gov_total else 0
+
+            overall_score = round((domain_score + product_score + contract_score + gov_score) / 4)
+
+            recent_products = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT id, name, status, domain_id, created_at "
+                    "FROM dm_data_products ORDER BY created_at DESC LIMIT 10"
+                ).fetchall()
+            ]
+            recent_contracts = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT c.id, c.name AS title, c.status, c.created_at, "
+                    "p.name AS product_name, p.domain_id "
+                    "FROM dm_contracts c "
+                    "LEFT JOIN dm_data_products p ON p.id = c.product_id "
+                    "ORDER BY c.created_at DESC LIMIT 10"
+                ).fetchall()
+            ]
+        finally:
+            conn.close()
+
+        def _slabel(s):
+            if s >= 70:
+                return "Trusted"
+            if s >= 40:
+                return "Emerging"
+            return "At Risk"
+
+        pillar_list = [
+            {
+                "key": "domain_ownership",
+                "label": "Domain Ownership",
+                "score": domain_score,
+                "count": domain_total,
+                "count_label": f"{domain_total} domain{'s' if domain_total != 1 else ''}",
+                "link": "/data/domains",
+                "score_label": _slabel(domain_score),
+            },
+            {
+                "key": "data_products",
+                "label": "Data Products",
+                "score": product_score,
+                "count": product_published,
+                "count_label": f"{product_published} published",
+                "link": "/data/products",
+                "score_label": _slabel(product_score),
+            },
+            {
+                "key": "data_contracts",
+                "label": "Data Contracts",
+                "score": contract_score,
+                "count": contract_active,
+                "count_label": f"{contract_active} active",
+                "link": "/data/contracts",
+                "score_label": _slabel(contract_score),
+            },
+            {
+                "key": "federated_governance",
+                "label": "Federated Governance",
+                "score": gov_score,
+                "count": gov_active,
+                "count_label": "Active" if gov_active > 0 else "None",
+                "link": "/data/governance",
+                "score_label": _slabel(gov_score),
+            },
+        ]
+        return jsonify({
+            "overall_score": overall_score,
+            "domain_count": domain_total,
+            "product_count": product_total,
+            "contract_count": contract_active,
+            "governance_score": gov_score,
+            "pillar_scores": {p["key"]: p for p in pillar_list},
+            "recent_products": recent_products,
+            "recent_contracts": recent_contracts,
+        })
+
+    # ══════════════════════════════════════════════════════════════════════
+    # DATA MESH — DOMAINS PAGE
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/domains")
+    @dc_login_required
+    def dm_domains_page():
+        """Data Mesh domain registry page."""
+        from tools.data_canvas.constants import DM_DOMAIN_MATURITY_LEVELS
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM dm_domains WHERE status='active' ORDER BY name"
+        ).fetchall()
+        domains = [row_to_dict(r) for r in rows]
+        conn.close()
+        maturity_map = {m["level"]: m["label"] for m in DM_DOMAIN_MATURITY_LEVELS}
+        return render_template(
+            "data_canvas/domains.html",
+            domains=domains,
+            maturity_levels=DM_DOMAIN_MATURITY_LEVELS,
+            maturity_map=maturity_map,
+        )
+
+    @bp.route("/api/domains", methods=["GET"])
+    @dc_login_required
+    def dm_api_list_domains():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM dm_domains WHERE status='active' ORDER BY name"
+        ).fetchall()
+        domains = [row_to_dict(r) for r in rows]
+        conn.close()
+        return jsonify(domains)
+
+    @bp.route("/api/domains", methods=["POST"])
+    @dc_login_required
+    def dm_api_create_domain():
+        from tools.data_canvas.constants import DM_DOMAIN_MATURITY_LEVELS
+        import uuid as _uuid2
+        import datetime as _dt
+        data = request.get_json(force=True, silent=True) or {}
+        name = (data.get("name") or "").strip()[:200]
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        domain_id = str(_uuid2.uuid4())
+        now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        maturity_level = int(data.get("maturity_level", 1))
+        maturity_label = next(
+            (m["label"] for m in DM_DOMAIN_MATURITY_LEVELS if m["level"] == maturity_level),
+            "Defined",
+        )
+        base_row = {
+            "id": domain_id,
+            "name": name,
+            "description": (data.get("description") or "")[:500],
+            "owner": (data.get("owner_team") or data.get("owner") or "")[:200],
+            "owner_team": (data.get("owner_team") or "")[:200],
+            "owner_email": (data.get("owner_email") or "")[:200],
+            "status": "active",
+            "maturity_level": maturity_level,
+            "classification": data.get("classification", "CUI // SP-CTI"),
+            "tags_json": "[]",
+            "created_at": now,
+            "updated_at": now,
+        }
+        conn = get_connection()
+        existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(dm_domains)").fetchall()}
+        fixed_cols = ["id", "name", "description", "owner", "status", "maturity_level", "classification", "tags_json", "created_at", "updated_at"]
+        extra_cols = [c for c in ("owner_team", "owner_email") if c in existing_cols]
+        cols = fixed_cols + extra_cols
+        placeholders = ", ".join(f":{c}" for c in cols)
+        conn.execute(
+            f"INSERT INTO dm_domains ({', '.join(cols)}) VALUES ({placeholders})",
+            {c: base_row.get(c, "") for c in cols},
+        )
+        try:
+            conn.execute(
+                "INSERT INTO dm_audit (domain_id, product_id, user, action, detail) VALUES (?, ?, ?, ?, ?)",
+                (domain_id, "", session.get("user_id", "system"), "domain.create", name),
+            )
+        except Exception:
+            pass
+        conn.commit()
+        conn.close()
+        result = {c: base_row.get(c, "") for c in cols}
+        result["maturity_label"] = maturity_label
+        result["product_count"] = 0
+        result["contract_count"] = 0
+        result["policy_count"] = 0
+        return jsonify(result), 201
+
+    @bp.route("/api/domains/<domain_id>", methods=["GET"])
+    @dc_login_required
+    def dm_api_get_domain(domain_id):
+        from tools.data_canvas.constants import DM_DOMAIN_MATURITY_LEVELS
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM dm_domains WHERE id=?", (domain_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+        domain = row_to_dict(row)
+        product_count = conn.execute(
+            "SELECT COUNT(*) FROM dm_data_products WHERE domain_id=?", (domain_id,)
+        ).fetchone()[0]
+        contract_count = conn.execute(
+            "SELECT COUNT(*) FROM dm_contracts c "
+            "JOIN dm_data_products p ON c.product_id=p.id "
+            "WHERE p.domain_id=?",
+            (domain_id,),
+        ).fetchone()[0]
+        policy_count = 0
+        try:
+            policy_count = conn.execute(
+                "SELECT COUNT(*) FROM dm_opa_policies WHERE domain_id=?", (domain_id,)
+            ).fetchone()[0]
+        except Exception:
+            pass
+        conn.close()
+        maturity_level = domain.get("maturity_level", 0) or 0
+        domain["maturity_label"] = next(
+            (m["label"] for m in DM_DOMAIN_MATURITY_LEVELS if m["level"] == maturity_level),
+            "Initial",
+        )
+        domain["product_count"] = product_count
+        domain["contract_count"] = contract_count
+        domain["policy_count"] = policy_count
+        return jsonify(domain)
 
     @bp.route("/api/ai-trace")
     @dc_login_required

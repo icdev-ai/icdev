@@ -275,7 +275,7 @@ def _clamp(v: float, lo: float = 0.0, hi: float = 10.0) -> float:
 
 
 def _item_hash(text: str, tag: str) -> str:
-    return hashlib.sha1(f"{tag}:{text[:200]}".encode()).hexdigest()
+    return hashlib.sha1(f"{tag}:{text[:200]}".encode(), usedforsecurity=False).hexdigest()  # nosec: B324
 
 
 def _snippet(text: str, match: re.Match, window: int = 100) -> str:

@@ -17,3 +17,20 @@
 | Attack Path Twin (BAS Replay) | tools/security_canvas/attack_path_twin.py | SDC Attack Path Twin — BAS-style replay engine over the formal attack graph. `build_attack_graph()` converts raw SDC graph_data; `replay_attack_paths()` runs Dijkstra min-cost path enumeration across classification-layered nodes + TTP-annotated edges; `query_attack_paths()` provides IQE-compatible predicate filtering. Pure deterministic; no Flask/LLM. | `build_attack_graph`, `replay_attack_paths`, `query_attack_paths` | Graph / paths / filtered paths |
 | Attack Graph DB | tools/security_canvas/attack_graph_db.py | Append-only CRUD layer for `attack_graph_nodes` and `attack_graph_edges` tables — 6 functions: `create_node`, `create_edge`, `get_nodes`, `get_edges`, `get_graph`, `get_graph_summary`; supports SQLite (dev/air-gap) and PostgreSQL (prod) via `get_connection()` | Function calls (library) | Node/edge records; graph summary dict |
 
+## Security Framework (Phase 74 — sec-fnd)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Security Context | tools/security/security_context.py | Thread-local SecurityContext dataclass: user_id, role, clearance_level, compartments, impact_level, tenant_id, classification, mtls_cn, auth_method. Flask `g.security_context` integration; contextvars for async. | `--whoami --json` | JSON |
+| ABAC Engine | tools/security/abac_engine.py | XACML-style ABAC engine with PIP (attribute lookup), PDP (policy decision), and PEP (enforcement). JSON policies from `args/security_config.yaml`; operators: >=, <, contains_any, in_range, in. 60s PDP cache. | `--review --json` | JSON |
+| Classification Enforcer | tools/security/classification_enforcer.py | Bell-LaPadula MAC enforcer: simple security property (no read-up) and *-Property (no write-down). Compartment strict-subset checks. Decorators: `@require_clearance(min_level)`, `@require_compartment(compartment)`. | `--check --json` | JSON |
+| Row Security | tools/security/row_security.py | Row-Level Security manager: PG RLS policy generation + SQLite fallback with SQL predicate injection (classification + tenant_id). Integrated into `StorageCursor.execute()` for auto-filtering. | `--test --table <name> --json` | JSON |
+| Column Security | tools/security/column_security.py | Column-Level Security: PG `GRANT SELECT(cols)` and masking views; SQLite application-level `mask_columns()` via `args/security_config.yaml` `_COLUMN_POLICIES`. | `--mask --table <name> --json` | JSON |
+| Field Security | tools/security/field_security.py | Field-Level Security for API responses: `filter_response_fields()` strips or redacts fields based on `_FIELD_POLICIES`. Nested dict/list traversal; Flask `after_request` integration. | `--filter --schema <name> --json` | JSON |
+| Encryption at Rest | tools/security/encryption_at_rest.py | Per-classification encryption using HKDF-SHA256 column-specific keys from master keys. Optional HSM via PKCS#11. Key rotation with audit logging. | `--rotate --classification <level> --json` | JSON |
+| mTLS Integration | tools/security/mtls_integration.py | mTLS identity resolver: cert CN → SecurityContext via dashboard user lookup. CRL/OCSP revocation checks. SSL mode upgrades for IL5+. | `--verify --json` | JSON |
+| Security Middleware | tools/security/middleware.py | Flask `init_security()` registering `before_request` (auth extraction, context propagation, PG `SET` vars) and `after_request` (field filtering, `X-Classification-Ceiling` header). | `--init-app --json` | JSON |
+| Security Middleware (alias) | tools/security/security_middleware.py | Thin re-export of `tools.security.middleware` for manifest compatibility. | — | — |
+| Audit Posture | tools/security/audit_posture.py | Security posture auditor: checks all framework layers (context, ABAC, MAC, RLS, column, field, encryption, mTLS, middleware) and reports health. | `--json` | JSON |
+| Security Config | args/security_config.yaml | Central ABAC, column, field, clearance matrix, and compartment (COI/LAC/ECI) registry. | YAML | Policies |
+
+

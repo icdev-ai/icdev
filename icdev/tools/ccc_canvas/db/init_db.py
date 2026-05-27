@@ -21,8 +21,8 @@ _CCC_BACKEND = os.environ.get(
 def get_connection():
     if _CCC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _pg
-            return _pg(db_path=os.environ.get("CCC_PG_DATABASE", "ccc_canvas"))
+            from tools.db.storage import get_canvas_connection
+            return get_canvas_connection("CCC_PG_DATABASE")
         except Exception:
             pass
     import sqlite3
@@ -141,6 +141,19 @@ CREATE TABLE IF NOT EXISTS ccc_audit (
     classification  TEXT DEFAULT 'CUI // SP-CTI',
     ts              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS ccc_xc_order_events (
+    id              SERIAL PRIMARY KEY,
+    xc_id           INTEGER NOT NULL REFERENCES ccc_cross_connects(id) ON DELETE CASCADE,
+    event_type      TEXT NOT NULL DEFAULT '',
+    old_status      TEXT DEFAULT '',
+    new_status      TEXT DEFAULT '',
+    note            TEXT DEFAULT '',
+    actor           TEXT DEFAULT 'system',
+    carrier_ref     TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    ts              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 SCHEMA_SQLITE = SCHEMA_PG.replace("SERIAL PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT") \
@@ -156,6 +169,23 @@ def _try_exec(conn, sql_pg: str, sql_sq: str, params: tuple = ()) -> None:
         conn.execute(sql_sq, params)
 
 
+_CCC_MIGRATIONS = [
+    # (pg_sql, sqlite_sql) — add new columns to ccc_cross_connects for order workflow
+    ("ALTER TABLE ccc_cross_connects ADD COLUMN IF NOT EXISTS order_id TEXT DEFAULT ''",
+     "ALTER TABLE ccc_cross_connects ADD COLUMN order_id TEXT DEFAULT ''"),
+    ("ALTER TABLE ccc_cross_connects ADD COLUMN IF NOT EXISTS order_status TEXT DEFAULT 'not_ordered'",
+     "ALTER TABLE ccc_cross_connects ADD COLUMN order_status TEXT DEFAULT 'not_ordered'"),
+    ("ALTER TABLE ccc_cross_connects ADD COLUMN IF NOT EXISTS estimated_delivery TEXT DEFAULT ''",
+     "ALTER TABLE ccc_cross_connects ADD COLUMN estimated_delivery TEXT DEFAULT ''"),
+    ("ALTER TABLE ccc_cross_connects ADD COLUMN IF NOT EXISTS ordered_by TEXT DEFAULT ''",
+     "ALTER TABLE ccc_cross_connects ADD COLUMN ordered_by TEXT DEFAULT ''"),
+    ("ALTER TABLE ccc_cross_connects ADD COLUMN IF NOT EXISTS carrier_ticket_id TEXT DEFAULT ''",
+     "ALTER TABLE ccc_cross_connects ADD COLUMN carrier_ticket_id TEXT DEFAULT ''"),
+    ("ALTER TABLE ccc_cross_connects ADD COLUMN IF NOT EXISTS partner_id INTEGER",
+     "ALTER TABLE ccc_cross_connects ADD COLUMN partner_id INTEGER"),
+]
+
+
 def init_db() -> None:
     conn = get_connection()
     schema = SCHEMA_PG if _CCC_BACKEND == "postgresql" else SCHEMA_SQLITE
@@ -165,6 +195,17 @@ def init_db() -> None:
             if stmt:
                 conn.execute(stmt)
         conn.commit()
+        # Column migrations for ccc_cross_connects order workflow fields
+        for pg_sql, sq_sql in _CCC_MIGRATIONS:
+            try:
+                conn.execute(pg_sql)
+                conn.commit()
+            except Exception:
+                try:
+                    conn.execute(sq_sql)
+                    conn.commit()
+                except Exception:
+                    pass  # column already exists
         print(f"[init_db] CCC schema ready ({_CCC_BACKEND})")
     finally:
         conn.close()

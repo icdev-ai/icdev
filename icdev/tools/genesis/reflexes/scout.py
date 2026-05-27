@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Genesis Scout Reflex — monitor competitor/adjacent GitHub repos.
 
@@ -8,9 +10,9 @@ context/genesis/competitors.yaml.  Generates intel briefs as markdown.
 Uses only GitHub's public API (no auth token required for basic info).
 Scanner-tier only (zero Claude tokens).  Air-gap safe.
 """
+IMPLEMENTATION_STATUS = "full"
 
 import json
-import logging
 import os
 import sys
 from datetime import datetime, timezone
@@ -24,7 +26,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.security.injection_scanner import scan_text  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _utcnow_iso() -> str:

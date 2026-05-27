@@ -11,6 +11,7 @@ All mining is deterministic — zero LLM calls, scanner-tier.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -21,7 +22,7 @@ from typing import Any
 from tools.db.storage import get_connection
 from tools.oracle.base_lens import BaseLens, OraclePrediction
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Minimum number of times a pattern must appear to be reported
 _MIN_PATTERN_FREQ = 3

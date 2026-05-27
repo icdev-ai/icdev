@@ -35,8 +35,8 @@ Typical usage
                 ...
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import random
 import time
 from typing import Any, Iterable
@@ -44,7 +44,7 @@ from typing import Any, Iterable
 import requests
 from requests.auth import AuthBase, HTTPBasicAuth
 
-logger = logging.getLogger("icdev.sharepoint.client")
+logger = get_logger("icdev.sharepoint.client")
 
 
 # ---------------------------------------------------------------------------

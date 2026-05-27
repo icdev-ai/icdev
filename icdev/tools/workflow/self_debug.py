@@ -13,10 +13,10 @@ Public entry point: ``check_and_diagnose(task_id, reason, cwd)``.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
-import logging
 import re
 import subprocess
 import uuid
@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 KANBAN_DIR = BASE_DIR / ".tmp" / "kanban"
@@ -213,8 +213,13 @@ _DIAGNOSIS_SCHEMA_HINT = """Return a JSON object with these keys only:
 No prose outside the JSON. No markdown fences."""
 
 
-def diagnose(snap: Dict[str, Any]) -> Dict[str, Any]:
-    """LLM RCA; falls back to heuristic when no LLM is available."""
+def diagnose(snap: Dict[str, Any], chain_mode: str = "") -> Dict[str, Any]:
+    """LLM RCA; falls back to heuristic when no LLM is available.
+
+    Args:
+        snap: Failure snapshot dict.
+        chain_mode: Optional chain mode — "cot" for step-by-step reasoning.
+    """
     try:
         from tools.llm.router import LLMRouter, LLMUnavailableError
         from tools.llm.provider import LLMRequest
@@ -238,6 +243,7 @@ def diagnose(snap: Dict[str, Any]) -> Dict[str, Any]:
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=800, temperature=0.2, effort="medium",
                 skip_injection_scan=True,
+                chain_mode=chain_mode,
             ),
         )
         text = resp.content.strip()

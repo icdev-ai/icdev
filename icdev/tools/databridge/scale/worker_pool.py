@@ -6,14 +6,14 @@ configurable max_workers and max_concurrent_syncs enforcement via Semaphore.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import threading
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable, Dict, Optional
 
-logger = logging.getLogger("databridge.scale.worker_pool")
+logger = get_logger("databridge.scale.worker_pool")
 
 
 class ScaleWorkerPool:

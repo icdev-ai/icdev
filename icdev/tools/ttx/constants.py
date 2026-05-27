@@ -65,3 +65,13 @@ TOOL_ENDPOINTS: dict[str, str] = {
     "aimc.adapt_recommend":     "/ai-ml/api/adapt/recommend",
     "aimc.deploy_plan":         "/ai-ml/api/deploy/plan",
 }
+
+# Ontology mappings for the Knowledge Graph ontology bridge
+TTX_ONTOLOGY_MAP: dict[str, str] = {
+    "inject":          "https://icdev.dev/ontology/mission#ExerciseInject",
+    "decision_point":  "https://icdev.dev/ontology/mission#DecisionPoint",
+    "action":          "https://icdev.dev/ontology/mission#CourseOfAction",
+    "after_action":    "https://icdev.dev/ontology/mission#AfterActionReport",
+    "lesson_learned":  "https://icdev.dev/ontology/mission#LessonLearned",
+    "threat_scenario": "https://icdev.dev/ontology/security#ThreatScenario",
+}

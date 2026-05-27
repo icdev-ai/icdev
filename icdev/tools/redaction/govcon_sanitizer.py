@@ -27,10 +27,10 @@ CLI:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
-import logging
 import re
 import sys
 from datetime import datetime, timezone
@@ -42,7 +42,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.redaction.anonymizer import RedactionAnonymizer  # noqa: E402
 
-logger = logging.getLogger("icdev.redaction.govcon_sanitizer")
+logger = get_logger("icdev.redaction.govcon_sanitizer")
 
 
 def _load_govcon_config() -> Dict[str, Any]:

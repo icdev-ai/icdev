@@ -7,13 +7,13 @@ auth credentials via a pluggable resolver chain.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import os
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-logger = logging.getLogger("databridge.connection_manager")
+logger = get_logger("databridge.connection_manager")
 
 # ---------------------------------------------------------------------------
 # Errors

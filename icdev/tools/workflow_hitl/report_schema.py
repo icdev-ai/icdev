@@ -34,7 +34,7 @@ def get_sections(report_type: str) -> List[ReportSection]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM wf_report_section_defs WHERE report_type=? ORDER BY sort_order",
+            "SELECT * FROM wf_report_section_defs WHERE report_type=%s ORDER BY sort_order",
             (report_type,),
         ).fetchall()
         return [
@@ -81,7 +81,7 @@ def create_custom_report_type(
                 """INSERT OR IGNORE INTO wf_report_section_defs
                    (id, report_type, section_key, section_name, description,
                     sort_order, required, source_hints, min_chunks, max_chunks, max_words)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,?,?,?,?,?,?,?,?,?,%s)""",
                 (
                     f"csd-{report_type[:6]}-{i:02d}",
                     report_type,

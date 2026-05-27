@@ -17,6 +17,7 @@ Usage
   python tools/strategos/cisa_kev_importer.py --sync --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -34,7 +35,7 @@ if str(ROOT) not in sys.path:
 
 from tools.db.storage import get_connection, is_pg  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 DOWNLOAD_TIMEOUT = 60  # seconds

@@ -70,9 +70,9 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Cascade Bridge | tools\simulation\cascade_bridge.py | Auto-registered: simulation/cascade_bridge.py | --json | JSON |
+| Cascade Bridge | tools\simulation\cascade_bridge.py | BFS cascade through simulation KG; traces multi-level impacts across architecture, compliance, supply_chain, schedule, cost, risk dimensions. | --project-id (--project alias), --trigger, --node, --depth, --width, --gate, --json | JSON cascade result |
 | Query Parser | tools\simulation\query_parser.py | Auto-registered: simulation/query_parser.py | --json | JSON |
-| Risk Monitor | tools\simulation\risk_monitor.py | Auto-registered: simulation/risk_monitor.py | --json | JSON |
+| Risk Monitor | tools\simulation\risk_monitor.py | Live composite + CPARS risk scorer using weighted formulas. On-demand or periodic daemon mode. | --project-id (--project alias), --contract, --gate, --persist, --json | JSON risk scores |
 
 
 
@@ -118,7 +118,7 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Kanban Scheduler | tools\genesis\kanban_scheduler.py | Auto-registered: genesis/kanban_scheduler.py | --json | JSON |
+| Kanban Scheduler | tools\genesis\kanban_scheduler.py | Long-running Kanban reflex scheduler. Startup-recovery resets interrupted tasks. Single-instance lockfile guard. | --interval N, --once, --json | JSON status (with --once --json) |
 | Add Hpc To Aiml | tools\network\add_hpc_to_aiml.py | Auto-registered: network/add_hpc_to_aiml.py | --json | JSON |
 | Ato Generator | tools\network\ato_generator.py | Auto-registered: network/ato_generator.py | --json | JSON |
 | Fix Template Zones | tools\network\fix_template_zones.py | Auto-registered: network/fix_template_zones.py | --json | JSON |

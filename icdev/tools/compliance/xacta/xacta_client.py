@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Xacta 360 REST API client for CSSP/ATO integration.
 
@@ -14,7 +16,6 @@ Usage:
 """
 
 import json
-import logging
 import time
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
@@ -37,7 +38,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 DEFAULTS_PATH = BASE_DIR / "args" / "project_defaults.yaml"
 
-logger = logging.getLogger("icdev.xacta")
+logger = get_logger("icdev.xacta")
 
 
 def _load_xacta_config():

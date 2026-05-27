@@ -229,6 +229,10 @@ class PMESIIPTCompositor:
                     row = conn.execute(sql).fetchone()
                     return float(row[0]) if row and row[0] is not None else default
                 except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
                     return default
 
             # Military — ORBAT unit count normalised to 1 000 as saturation

@@ -11,11 +11,11 @@ Implements the contract documented in
 Phase 3 clean-room rewrite).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import importlib
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -51,7 +51,7 @@ except ImportError:  # pragma: no cover - shim path
             self.errors = errors or []
 
 
-_logger = logging.getLogger(__name__)
+_logger = get_logger(__name__)
 
 
 # ────────────────────────────────────────────────────────────────────────────

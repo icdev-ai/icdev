@@ -105,6 +105,7 @@ CUI_PORTION_MARKING = CUI_CONFIG.get("portion_marking", "(CUI)")
 
 # Server
 PORT = int(os.environ.get("ICDEV_DASHBOARD_PORT", "5050"))
+HOST = os.environ.get("ICDEV_DASHBOARD_HOST", "0.0.0.0")
 DEBUG = os.environ.get("ICDEV_DASHBOARD_DEBUG", "false").lower() in ("1", "true", "yes")
 
 # Monitoring thresholds (from monitoring_config.yaml)

@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Tech Radar engine (D352 pattern).
 
@@ -27,7 +29,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ── Scoring constants ─────────────────────────────────────────────────────────
 

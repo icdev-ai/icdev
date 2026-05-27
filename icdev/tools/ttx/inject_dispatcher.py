@@ -2,16 +2,16 @@
 """TTX Engine — inject dispatch for live (timed) and async (sequential) modes."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from tools.db.storage import get_connection
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def _now() -> str:

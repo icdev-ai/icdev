@@ -15,6 +15,7 @@ Designed to run every 4h after osint_harvester.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -30,7 +31,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection, is_pg  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _TOP_N = 20
 

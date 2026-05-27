@@ -15,9 +15,9 @@ Each get_*_card() function queries the relevant DB(s) and returns a dict::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -35,7 +35,7 @@ from tools.canvas_compliance.constants import (
     IDC_DRIFT_GREEN, IDC_DRIFT_YELLOW,
 )
 
-logger = logging.getLogger("icdev.canvas_compliance")
+logger = get_logger("icdev.canvas_compliance")
 
 _BASE = Path(__file__).resolve().parent.parent.parent
 _DATA = _BASE / "data"

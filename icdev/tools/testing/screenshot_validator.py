@@ -29,11 +29,11 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import base64
 import json
-import logging
 import re
 import sys
 import time
@@ -48,7 +48,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.testing.screenshot_validator")
+logger = get_logger("icdev.testing.screenshot_validator")
 
 # Supported image formats and their media types
 IMAGE_MEDIA_TYPES = {

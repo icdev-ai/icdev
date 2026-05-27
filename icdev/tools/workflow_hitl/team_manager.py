@@ -24,7 +24,7 @@ def create_team(
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO wf_teams (id, name, description, canvas_type, created_by, created_at) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO wf_teams (id, name, description, canvas_type, created_by, created_at) VALUES (%s,%s,%s,%s,%s,%s)",
             (team_id, name, description, canvas_type, created_by, _now()),
         )
         try:
@@ -39,12 +39,12 @@ def create_team(
 def get_team(team_id: str) -> dict | None:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM wf_teams WHERE id=?", (team_id,)).fetchone()
+        row = conn.execute("SELECT * FROM wf_teams WHERE id=%s", (team_id,)).fetchone()
         if not row:
             return None
         team = dict(row)
         members = conn.execute(
-            "SELECT * FROM wf_team_members WHERE team_id=? ORDER BY created_at",
+            "SELECT * FROM wf_team_members WHERE team_id=%s ORDER BY created_at",
             (team_id,),
         ).fetchall()
         team["members"] = [dict(m) for m in members]
@@ -58,7 +58,7 @@ def list_teams(canvas_type: str | None = None) -> list:
     try:
         if canvas_type:
             rows = conn.execute(
-                "SELECT * FROM wf_teams WHERE canvas_type=? OR canvas_type IS NULL ORDER BY name",
+                "SELECT * FROM wf_teams WHERE canvas_type=%s OR canvas_type IS NULL ORDER BY name",
                 (canvas_type,),
             ).fetchall()
         else:
@@ -67,7 +67,7 @@ def list_teams(canvas_type: str | None = None) -> list:
         for r in rows:
             t = dict(r)
             t["member_count"] = conn.execute(
-                "SELECT COUNT(*) FROM wf_team_members WHERE team_id=?", (t["id"],)
+                "SELECT COUNT(*) FROM wf_team_members WHERE team_id=%s", (t["id"],)
             ).fetchone()[0]
             teams.append(t)
         return teams
@@ -82,7 +82,7 @@ def add_member(team_id: str, user_id: str, role_label: str) -> str:
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO wf_team_members (id, team_id, user_id, role_label, created_at) VALUES (?,?,?,?,?)",
+            "INSERT OR IGNORE INTO wf_team_members (id, team_id, user_id, role_label, created_at) VALUES (%s,%s,%s,%s,%s)",
             (member_id, team_id, user_id, role_label, _now()),
         )
         try:
@@ -97,7 +97,7 @@ def add_member(team_id: str, user_id: str, role_label: str) -> str:
 def remove_member(team_id: str, user_id: str) -> bool:
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM wf_team_members WHERE team_id=? AND user_id=?", (team_id, user_id))
+        conn.execute("DELETE FROM wf_team_members WHERE team_id=%s AND user_id=%s", (team_id, user_id))
         try:
             conn.commit()
         except Exception:
@@ -111,7 +111,7 @@ def get_members_by_role(team_id: str, role_label: str) -> list:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM wf_team_members WHERE team_id=? AND role_label=?",
+            "SELECT * FROM wf_team_members WHERE team_id=%s AND role_label=%s",
             (team_id, role_label),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -133,7 +133,7 @@ def assign_team(
         conn.execute(
             """INSERT OR IGNORE INTO wf_team_assignments
                (id, team_id, template_id, scope_type, scope_id, created_at)
-               VALUES (?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s)""",
             (assign_id, team_id, template_id, scope_type, scope_id, _now()),
         )
         try:
@@ -149,7 +149,7 @@ def list_assignments(team_id: str) -> list:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM wf_team_assignments WHERE team_id=? ORDER BY created_at",
+            "SELECT * FROM wf_team_assignments WHERE team_id=%s ORDER BY created_at",
             (team_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -169,7 +169,7 @@ def resolve_team(task_id: str) -> dict | None:
         row = conn.execute(
             """SELECT ta.*, t.* FROM wf_team_assignments ta
                JOIN wf_teams t ON t.id = ta.team_id
-               WHERE ta.scope_type='task' AND ta.scope_id=? LIMIT 1""",
+               WHERE ta.scope_type='task' AND ta.scope_id=%s LIMIT 1""",
             (task_id,),
         ).fetchone()
         if row:
@@ -177,7 +177,7 @@ def resolve_team(task_id: str) -> dict | None:
 
         # Try to get project_id from kanban_tasks
         task_row = conn.execute(
-            "SELECT project_id, tags FROM kanban_tasks WHERE id=?", (task_id,)
+            "SELECT project_id, tags FROM kanban_tasks WHERE id=%s", (task_id,)
         ).fetchone()
         if not task_row:
             return None
@@ -187,7 +187,7 @@ def resolve_team(task_id: str) -> dict | None:
             row = conn.execute(
                 """SELECT ta.*, t.* FROM wf_team_assignments ta
                    JOIN wf_teams t ON t.id = ta.team_id
-                   WHERE ta.scope_type='project' AND ta.scope_id=? LIMIT 1""",
+                   WHERE ta.scope_type='project' AND ta.scope_id=%s LIMIT 1""",
                 (task_row[0],),
             ).fetchone()
             if row:
@@ -203,7 +203,7 @@ def resolve_team(task_id: str) -> dict | None:
                     row = conn.execute(
                         """SELECT ta.*, t.* FROM wf_team_assignments ta
                            JOIN wf_teams t ON t.id = ta.team_id
-                           WHERE ta.scope_type='task_group' AND ta.scope_id=? LIMIT 1""",
+                           WHERE ta.scope_type='task_group' AND ta.scope_id=%s LIMIT 1""",
                         (tag,),
                     ).fetchone()
                     if row:

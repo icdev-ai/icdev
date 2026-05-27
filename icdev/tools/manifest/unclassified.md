@@ -13,3 +13,7 @@
 | Auto-added package_registry.py | tools/installer/package_registry.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added frontline_importer.py | tools/frontline_importer.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added war_endurance.py | tools/simulation/war_endurance.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added seed_wex_kanban.py | tools/studio/seed_wex_kanban.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added lineage_scanner.py | tools/data/lineage_scanner.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added terraform_executor.py | tools/data/terraform_executor.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added constants.py | tools/infra_canvas/constants.py | (auto-added by remediation; update description) | --json | stdout |

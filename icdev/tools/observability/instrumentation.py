@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Auto-instrumentation decorator for ICDEV™ observability (D280).
 
@@ -26,11 +28,10 @@ Usage:
 import functools
 import hashlib
 import json
-import logging
 from typing import Any, Callable, Dict, Optional
 
 
-logger = logging.getLogger("icdev.observability.instrumentation")
+logger = get_logger("icdev.observability.instrumentation")
 
 
 def traced(

@@ -1,4 +1,5 @@
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """ICDEV™ end-to-end test orchestrator.
 
 Drives the full ICDEV test gauntlet for one project: syntax → quality
@@ -15,6 +16,7 @@ the original (`[r for r in all_results if r.test_type == "security"]`
 was discarded).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -61,7 +63,7 @@ _SANDBOX_FILE_LIMIT: int = 15
 
 _PY_COMPILE_FILE_LIMIT: int = 50
 
-_module_logger = logging.getLogger(__name__)
+_module_logger = get_logger(__name__)
 
 
 def _logger_for(logger: Optional[logging.Logger]) -> logging.Logger:

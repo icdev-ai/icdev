@@ -8,13 +8,13 @@ Target dossier: rdoss-903cbd6858e5 (Server Migration Analysis)
 Target session: rsess-1e2fb0fe6c96
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import Optional
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("icdev.migration_canvas.dossier_advisor")
+logger = get_logger("icdev.migration_canvas.dossier_advisor")
 
 TARGET_DOSSIER_ID = "rdoss-903cbd6858e5"
 TARGET_SESSION_ID = "rsess-1e2fb0fe6c96"

@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Token usage, cost tracking, and budget enforcement per agent/project/task.
 
@@ -13,14 +15,13 @@ Budget enforcement (inspired by Paperclip AI's per-agent budget model):
 
 import argparse
 import json
-import logging
 import sqlite3
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
-logger = logging.getLogger("icdev.agent.token_tracker")
+logger = get_logger("icdev.agent.token_tracker")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

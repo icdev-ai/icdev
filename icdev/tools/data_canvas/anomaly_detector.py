@@ -7,13 +7,18 @@ Graceful fallback to rule-based heuristics when LLM is unavailable.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 
-logger = logging.getLogger("icdev.data_canvas.anomaly_detector")
+logger = get_logger("icdev.data_canvas.anomaly_detector")
+
+try:
+    from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
+except Exception:
+    def _record_decision(**_kw): pass  # type: ignore[assignment]
 
 _PII_NAMES = {"email", "ssn", "phone", "dob", "zip", "phone_number", "social_security",
               "date_of_birth", "zipcode", "postal_code", "mobile", "cell", "fax"}
@@ -31,75 +36,61 @@ _RISK_ORDER = {"high": 3, "medium": 2, "low": 1, "none": 0}
 
 # ── Rule-based fallback ───────────────────────────────────────────────────────
 
+def _finding(col: str, severity: str, ftype: str, desc: str) -> dict:
+    return {"column": col, "severity": severity, "finding_type": ftype, "description": desc}
+
+
+def _check_null_rate(col_name: str, stats: dict) -> list[dict]:
+    null_pct = float(stats.get("null_pct", 0) or 0)
+    if null_pct > 40:
+        return [_finding(col_name, "high", "high_null_rate", f"Column has {null_pct:.1f}% null values (threshold: >40%).")]
+    if null_pct > 20:
+        return [_finding(col_name, "medium", "high_null_rate", f"Column has {null_pct:.1f}% null values (threshold: >20%).")]
+    return []
+
+
+def _check_cardinality(col_name: str, stats: dict) -> list[dict]:
+    dc = stats.get("distinct_count")
+    if dc is not None and int(dc) == 0:
+        return [_finding(col_name, "high", "zero_cardinality", "Column has zero distinct values — all rows are null or identical.")]
+    return []
+
+
+def _check_pii(col_name: str) -> list[dict]:
+    col_lower = col_name.lower().replace("-", "_")
+    if any(pii in col_lower for pii in _PII_NAMES):
+        return [_finding(col_name, "medium", "potential_pii", f"Column name '{col_name}' suggests potential PII data.")]
+    return []
+
+
+def _check_outlier_range(col_name: str, stats: dict) -> list[dict]:
+    col_min, col_max = stats.get("min"), stats.get("max")
+    top_values = stats.get("top_values") or []
+    if col_min is None or col_max is None or not top_values:
+        return []
+    try:
+        mn, mx = float(col_min), float(col_max)
+        tv_nums = [float(v) for v in top_values if v is not None]
+        if tv_nums:
+            tv_min, tv_max = min(tv_nums), max(tv_nums)
+            spread = mx - mn
+            if spread > 0 and ((tv_min - mn) / spread > 0.5 or (mx - tv_max) / spread > 0.5):
+                return [_finding(col_name, "medium", "outlier_range",
+                    f"Column range [{mn}, {mx}] extends far beyond most common values [{tv_min}, {tv_max}] — possible outliers.")]
+    except (TypeError, ValueError):
+        pass
+    return []
+
+
 def _rule_based_findings(profile_dict: dict) -> list[dict]:
     findings = []
     for col_name, stats in profile_dict.items():
         if not isinstance(stats, dict):
             continue
-
-        null_pct = float(stats.get("null_pct", 0) or 0)
-        distinct_count = stats.get("distinct_count")
-        col_lower = col_name.lower().replace("-", "_")
-
-        # High null rate
-        if null_pct > 40:
-            findings.append({
-                "column": col_name,
-                "severity": "high",
-                "finding_type": "high_null_rate",
-                "description": f"Column has {null_pct:.1f}% null values (threshold: >40%).",
-            })
-        elif null_pct > 20:
-            findings.append({
-                "column": col_name,
-                "severity": "medium",
-                "finding_type": "high_null_rate",
-                "description": f"Column has {null_pct:.1f}% null values (threshold: >20%).",
-            })
-
-        # Zero cardinality
-        if distinct_count is not None and int(distinct_count) == 0:
-            findings.append({
-                "column": col_name,
-                "severity": "high",
-                "finding_type": "zero_cardinality",
-                "description": "Column has zero distinct values — all rows are null or identical.",
-            })
-
-        # Potential PII
-        if any(pii in col_lower for pii in _PII_NAMES):
-            findings.append({
-                "column": col_name,
-                "severity": "medium",
-                "finding_type": "potential_pii",
-                "description": f"Column name '{col_name}' suggests potential PII data.",
-            })
-
-        # Outlier min/max vs distribution
-        col_min = stats.get("min")
-        col_max = stats.get("max")
-        top_values = stats.get("top_values") or []
-        if col_min is not None and col_max is not None and top_values:
-            try:
-                mn, mx = float(col_min), float(col_max)
-                tv_nums = [float(v) for v in top_values if v is not None]
-                if tv_nums:
-                    tv_min, tv_max = min(tv_nums), max(tv_nums)
-                    spread = mx - mn
-                    if spread > 0:
-                        if (tv_min - mn) / spread > 0.5 or (mx - tv_max) / spread > 0.5:
-                            findings.append({
-                                "column": col_name,
-                                "severity": "medium",
-                                "finding_type": "outlier_range",
-                                "description": (
-                                    f"Column range [{mn}, {mx}] extends far beyond most common values "
-                                    f"[{tv_min}, {tv_max}] — possible outliers."
-                                ),
-                            })
-            except (TypeError, ValueError):
-                pass
-
+        findings.extend(_check_null_rate(col_name, stats))
+        findings.extend(_check_cardinality(col_name, stats))
+        findings.extend(_check_pii(col_name))
+        findings.extend(_check_outlier_range(col_name, stats))
     return findings
 
 
@@ -149,6 +140,7 @@ def _parse_llm_response(raw: str) -> list[dict]:
     if not raw:
         return []
     text = raw.strip()
+    # Strip markdown code fences
     if text.startswith("```"):
         lines = text.splitlines()
         text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
@@ -175,6 +167,7 @@ def detect_anomalies(
     profile_dict: dict,
     conn_params: dict | None = None,
     classification: str = "CUI",
+    chain_mode: str = "",
 ) -> dict:
     """Detect anomalies in column-level profile statistics.
 
@@ -183,6 +176,8 @@ def detect_anomalies(
             null_pct, distinct_count, min, max, top_values, inferred_type.
         conn_params: Unused (reserved for future DB-backed enrichment).
         classification: ATO classification marking applied to the result.
+        chain_mode: Optional chain mode — "cot" for step-by-step reasoning,
+            "cod" for debate-based evaluation.
 
     Returns:
         {
@@ -210,33 +205,46 @@ def detect_anomalies(
                 max_tokens=1024,
                 classification=classification,
                 skip_injection_scan=True,
+                chain_mode=chain_mode,
             )
 
             def _invoke():
                 return router.invoke("code_generation", llm_request)
 
-            with ThreadPoolExecutor(max_workers=1) as ex:
-                future = ex.submit(_invoke)
-                try:
-                    response = future.result(timeout=30)
-                    parsed = _parse_llm_response(response.content or "")
-                    if parsed:
-                        findings = parsed
-                        llm_used = True
-                except FuturesTimeoutError:
-                    logger.info("LLM timeout (30s) for anomaly detection — using rule-based fallback")
+            ex = ThreadPoolExecutor(max_workers=1)
+            future = ex.submit(_invoke)
+            try:
+                response = future.result(timeout=30)
+                parsed = _parse_llm_response(response.content or "")
+                if parsed:
+                    findings = parsed
+                    llm_used = True
+            except FuturesTimeoutError:
+                logger.info("LLM timeout (30s) for anomaly detection — using rule-based fallback")
+            finally:
+                ex.shutdown(wait=False)
     except Exception as exc:
         logger.info("LLM unavailable for anomaly detection (%s) — using rule-based fallback", exc)
 
     if not llm_used:
         findings = _rule_based_findings(profile_dict)
 
-    return {
+    result = {
         "findings": findings,
         "overall_risk": _compute_overall_risk(findings),
         "classification": classification,
         "analyzed_at": analyzed_at,
     }
+    _record_decision(
+        canvas_type="ddc",
+        record_id=profile_dict.get("dataset_id") or profile_dict.get("design_id"),
+        decision_type="anomaly",
+        decision=f"{len(findings)} anomaly finding(s), overall_risk={result['overall_risk']}",
+        rationale="LLM-assisted" if llm_used else "Rule-based",
+        model_used=None,
+        classification=classification,
+    )
+    return result
 
 
 # ── Persistence helpers ───────────────────────────────────────────────────────

@@ -1462,16 +1462,7 @@ def executor_chain_setting():
     try:
         _update_env_file("ICDEV_KANBAN_EXECUTOR_CHAIN", chain_str)
         os.environ["ICDEV_KANBAN_EXECUTOR_CHAIN"] = chain_str
-        primary = chain_list[0]
-        conn = get_connection()
-        conn.execute(
-            "UPDATE kanban_tasks SET executor_type = ?, updated_at = datetime('now')"
-            " WHERE status != 'done'",
-            (primary,),
-        )
-        updated = conn.execute("SELECT changes()").fetchone()[0]
-        conn.commit()
-        return jsonify({"status": "updated", "chain": chain_list, "tasks_resynced": updated})
+        return jsonify({"status": "updated", "chain": chain_list})
     except Exception as exc:
         return jsonify({"error": str(exc)[:200]}), 500
 

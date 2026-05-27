@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 """Child App Generator - generates mini-ICDEV™ clone applications from blueprints.
 
 This is the core engine for ICDEV™ Phase 19 agentic app generation. Every child
@@ -36,7 +38,7 @@ try:
 except ImportError:
     DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-logger = logging.getLogger("icdev.child_app_generator")
+logger = get_logger("icdev.child_app_generator")
 
 
 # Sister module imports (graceful fallback)
@@ -186,6 +188,7 @@ DIRECTORY_TREE = [
     "tools/cli",
     "tools/dx",  # D-CHILD-9: fundamental infra + LLM-agnostic companion
     "args",
+    "args/ontology",
     "context/agentic",
     "context/compliance",
     "context/languages",
@@ -305,6 +308,32 @@ def _apply_adaptations(content: str, adaptations: List[str], blueprint: dict) ->
         elif adaptation == "impact_level_update":
             impact = blueprint.get("impact_level", "IL4")
             content = re.sub(r"\bIL[2456]\b", impact, content)
+
+        elif adaptation == "security_policy_update":
+            # Adjust default classification and required markings to child level
+            child_class = blueprint.get("classification", "CUI")
+            if child_class == "PUBLIC":
+                content = re.sub(r"^default_classification:.*$", "default_classification: PUBLIC", content, flags=re.MULTILINE)
+                content = re.sub(r'^  header: ".*"$', '  header: ""', content, flags=re.MULTILINE)
+                content = re.sub(r'^  footer: ".*"$', '  footer: ""', content, flags=re.MULTILINE)
+            elif child_class == "SECRET":
+                content = re.sub(r"^default_classification:.*$", "default_classification: SECRET", content, flags=re.MULTILINE)
+                content = re.sub(r'^  header: ".*"$', '  header: "SECRET // NOFORN"', content, flags=re.MULTILINE)
+                content = re.sub(r'^  footer: ".*"$', '  footer: "SECRET // NOFORN"', content, flags=re.MULTILINE)
+            # Disable high-assurance frameworks for non-CUI/SECRET child apps
+            if child_class == "PUBLIC":
+                content = re.sub(r"^  fedramp: true$", "  fedramp: false", content, flags=re.MULTILINE)
+                content = re.sub(r"^  cmmc: true$", "  cmmc: false", content, flags=re.MULTILINE)
+
+        elif adaptation == "clearance_ceiling":
+            ceiling = blueprint.get("clearance_ceiling", blueprint.get("classification", "CUI"))
+            content = re.sub(r"^clearance_ceiling:.*$", f"clearance_ceiling: {ceiling}", content, flags=re.MULTILINE)
+            # Also cap any embedded user clearance levels in the file
+            allowed = {"PUBLIC": ["PUBLIC"], "CUI": ["PUBLIC", "CUI"], "SECRET": ["PUBLIC", "CUI", "SECRET"]}
+            levels = allowed.get(ceiling, allowed.get("CUI"))
+            if levels:
+                yaml_levels = "\n  - ".join([""] + levels)
+                content = re.sub(r"clearance_levels:\n(  - \w+\n?)*", f"clearance_levels:{yaml_levels}\n", content, flags=re.MULTILINE)
 
         # Other adaptations: endpoint_remap, agent_filter, goal_filter,
         # selective_copy, tls_cert_path, threshold_adjust are handled
@@ -495,6 +524,11 @@ def step_01_create_directory_tree(child_root: Path, blueprint: dict) -> dict:
         f"LLM_TWO_TIER_ENABLED=true\n"
         f"LLM_CONFIDENCE_THRESHOLD=0.85\n"
         f"\n"
+        f"# === Chain of Thought / Chain of Debate ===\n"
+        f"# Set true to enable multiplayer AI-vs-AI debate mode (CoD) and step-by-step reasoning (CoT).\n"
+        f"# Requires tools/llm/chain_orchestrator.py and tools/llm/chain_prompts.py (auto-copied).\n"
+        f"ICDEV_COD_ENABLED=false\n"
+        f"\n"
         f"# === RAG ===\n"
         f"RAG_ENABLED=true\n"
         f"RAG_EMBEDDING_MODEL=nomic-embed-text\n"
@@ -521,6 +555,7 @@ def step_01_create_directory_tree(child_root: Path, blueprint: dict) -> dict:
         f"OLLAMA_MODEL=qwen3.5:latest\n"
         f"LLM_TWO_TIER_ENABLED=true\n"
         f"LLM_CONFIDENCE_THRESHOLD=0.85\n"
+        f"ICDEV_COD_ENABLED=false\n"
         f"RAG_ENABLED=true\n"
         f"RAG_EMBEDDING_MODEL=nomic-embed-text\n"
         f"LOG_LEVEL=INFO\n",
@@ -848,7 +883,7 @@ def _generate_mcp_stubs(mcp_dir: Path, agents: list, app_name: str, blueprint: d
             f"import sys\n"
             f"import logging\n"
             f"\n"
-            f'logger = logging.getLogger("{app_name}.mcp.{server_name}")\n'
+            f'logger = get_logger("{app_name}.mcp.{server_name}")\n'
             f"\n"
             f"\n"
             f"def handle_request(request: dict) -> dict:\n"
@@ -974,17 +1009,16 @@ def _generate_dashboard_stub(child_root: Path, blueprint: dict) -> bool:
             '            "<p>Compliance status placeholder.</p>")\n'
         )
 
-    # Security page — only if security capability enabled
-    if capabilities.get("security", False):
-        nav_links.append('"<a href=\\"/security\\">Security</a>"')
-        page_functions.append(
-            '    @app.route("/security")\n'
-            "    def security_page():\n"
-            "        # TODO: Add security scan results from DB\n"
-            '        return _render("Security",\n'
-            '            "<h2>Security</h2>"\n'
-            '            "<p>Security scan placeholder.</p>")\n'
-        )
+    # D-EPSEC-7: Security page — always present (security is always-on)
+    nav_links.append('"<a href=\\"/security\\">Security</a>"')
+    page_functions.append(
+        '    @app.route("/security")\n'
+        "    def security_page():\n"
+        "        # TODO: Add security scan results from DB\n"
+        '        return _render("Security",\n'
+        '            "<h2>Security</h2>"\n'
+        '            "<p>Security scan placeholder.</p>")\n'
+    )
 
     # API health endpoint — always present
     page_functions.append(
@@ -1046,6 +1080,13 @@ def _generate_dashboard_stub(child_root: Path, blueprint: dict) -> bool:
         f"def create_app() -> Flask:\n"
         f'    """Create and configure the Flask application."""\n'
         f"    app = Flask(__name__)\n"
+        f"\n"
+        f"    # D-EPSEC-7: Initialize security middleware\n"
+        f"    try:\n"
+        f"        from tools.security.middleware import init_security\n"
+        f"        init_security(app, classification='{classification}')\n"
+        f"    except ImportError:\n"
+        f"        pass\n"
         f"\n"
     )
 
@@ -1217,6 +1258,23 @@ def _copy_full_dashboard(
         content = app_src.read_text(encoding="utf-8", errors="replace")
         content = _strip_govcon_from_dashboard(content)
         content = _apply_adaptations(content, ["app_name_replace", "db_rename"], blueprint)
+        # D-EPSEC-7: Inject security middleware init into create_app()
+        classification = blueprint.get("classification", "CUI")
+        sec_block = (
+            "\n    # D-EPSEC-7: Initialize security middleware\n"
+            "    try:\n"
+            "        from tools.security.middleware import init_security\n"
+            f"        init_security(app, classification='{classification}')\n"
+            "    except ImportError:\n"
+            "        pass\n"
+        )
+        content = re.sub(
+            r"(    app = Flask\(.*\)\n)",
+            rf"\1{sec_block}",
+            content,
+            count=1,
+            flags=re.DOTALL,
+        )
         (dash_dst / "app.py").write_text(content, encoding="utf-8")
         copied += 1
 
@@ -1562,6 +1620,225 @@ def step_06_goals_and_hardprompts(child_root: Path, blueprint: dict, icdev_root:
 
 
 # ============================================================
+# ONTOLOGY SCAFFOLD HELPERS (onto-eco-05)
+# ============================================================
+
+
+def _generate_ontology_scaffold(child_root: Path, blueprint: dict, icdev_root: Path) -> dict:
+    """Generate ontology scaffold for child app.
+
+    Creates:
+      - args/ontology/app.ttl — child ontology with owl:imports of parent
+      - args/ontology/app_config.yaml — lists parent ontologies + domain classes
+      - args/ontology/catalog.yaml — local catalog for validation
+
+    Security: child app inherits parent classification tags from ontology.
+    """
+    app_name = blueprint["app_name"]
+    classification = blueprint.get("classification", "CUI")
+    domain = blueprint.get("domain", "")
+    ontology_dir = child_root / "args" / "ontology"
+    ontology_dir.mkdir(parents=True, exist_ok=True)
+
+    # Determine parent ontology path (relative to child)
+    parent_ontology = "../../args/ontology/icdev_core.ttl"
+
+    # Build domain-specific classes from blueprint
+    domain_classes = blueprint.get("ontology_domain_classes", [])
+    if domain and not domain_classes:
+        # Auto-generate a default domain class if domain is set
+        domain_classes = [f"{domain}:{domain.capitalize()}Record"]
+
+    domain_class_turtle = ""
+    for dc in domain_classes:
+        prefix, cls = dc.split(":") if ":" in dc else (domain or "app", dc)
+        domain_class_turtle += (
+            f"\n{prefix}:{cls} rdf:type owl:Class ;\n"
+            f'    rdfs:label "{cls}" ;\n'
+            f'    rdfs:comment "Domain-specific class for {app_name}." ;\n'
+            f"    rdfs:subClassOf icdev:Artifact .\n"
+        )
+
+    # Generate app.ttl
+    app_ttl = f"""@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix icdev: <https://icdev.dev/ontology/core#> .
+@prefix app: <https://icdev.dev/ontology/apps/{app_name}#> .
+
+<{app_name}> rdf:type owl:Ontology ;
+    owl:imports <{parent_ontology}> ;
+    owl:versionInfo "1.0.0" ;
+    rdfs:label "{app_name} Ontology" ;
+    rdfs:comment "Child app ontology extending ICDEV core." .
+
+# Security classification inherited from parent ontology
+app:hasClassification rdf:type owl:ObjectProperty ;
+    rdfs:domain app:{app_name.replace("-", "_").title()}Project ;
+    rdfs:range icdev:ClassificationLevel ;
+    rdfs:label "has classification" ;
+    rdfs:comment "Inherited classification: {classification}." .
+
+app:{app_name.replace("-", "_").title()}Project rdf:type owl:Class ;
+    rdfs:label "{app_name.title()} Project" ;
+    rdfs:comment "Root project class for {app_name}." ;
+    rdfs:subClassOf icdev:Project ;
+    app:hasClassification icdev:{classification.replace(" ", "_").replace("//", "_")} .
+{domain_class_turtle}
+"""
+    (ontology_dir / "app.ttl").write_text(app_ttl, encoding="utf-8")
+
+    # Generate app_config.yaml
+    app_config_yaml = f"""# Ontology Configuration — {app_name}
+# Auto-generated by child_app_generator.py (onto-eco-05)
+
+parent_ontologies:
+  - path: {parent_ontology}
+    namespace: https://icdev.dev/ontology/core#
+    description: ICDEV Core Ontology
+
+domain_classes:
+{chr(10).join('  - "' + dc + '"' for dc in domain_classes)}
+
+classification_inheritance:
+  enabled: true
+  source: parent_ontology
+  child_classification: {classification}
+
+validation:
+  validate_on_scaffold: true
+  require_parent_import: true
+"""
+    (ontology_dir / "app_config.yaml").write_text(app_config_yaml, encoding="utf-8")
+
+    # Generate catalog.yaml for local ontology indexing
+    catalog_yaml = f"""# Ontology Catalog — {app_name}
+# Maps local and imported ontologies for validation and lookup.
+
+catalog:
+  - uri: https://icdev.dev/ontology/apps/{app_name}
+    path: app.ttl
+    role: primary
+
+  - uri: https://icdev.dev/ontology/core
+    path: {parent_ontology}
+    role: imported
+
+classification_tags:
+  - {classification}
+"""
+    (ontology_dir / "catalog.yaml").write_text(catalog_yaml, encoding="utf-8")
+
+    logger.info(
+        "Ontology scaffold: app.ttl + app_config.yaml + catalog.yaml for %s (%d domain classes)",
+        app_name,
+        len(domain_classes),
+    )
+    return {
+        "ontology_dir": str(ontology_dir.relative_to(child_root)),
+        "domain_classes": domain_classes,
+        "classification": classification,
+    }
+
+
+def _validate_child_ontology(child_root: Path, blueprint: dict, icdev_root: Path) -> dict:
+    """Validate child app ontology against parent ontology on scaffold.
+
+    Checks:
+      - app.ttl exists and is parseable (basic syntax)
+      - owl:imports points to a parent ontology that exists
+      - classification tag is consistent with blueprint
+      - Domain classes are well-formed
+    """
+    ontology_dir = child_root / "args" / "ontology"
+    app_ttl = ontology_dir / "app.ttl"
+    app_config = ontology_dir / "app_config.yaml"
+    errors = []
+    warnings = []
+
+    if not app_ttl.exists():
+        errors.append("app.ttl missing")
+        return {"valid": False, "errors": errors, "warnings": warnings}
+
+    ttl_content = app_ttl.read_text(encoding="utf-8")
+
+    # Check for owl:imports
+    if "owl:imports" not in ttl_content:
+        errors.append("app.ttl missing owl:imports (parent ontology link)")
+    else:
+        # Verify parent ontology file exists (in parent project)
+        parent_ttl = icdev_root / "args" / "ontology" / "icdev_core.ttl"
+        if not parent_ttl.exists():
+            warnings.append(f"Parent ontology not found at {parent_ttl}")
+
+    # Check classification consistency
+    expected_class = blueprint.get("classification", "CUI")
+    if expected_class not in ttl_content:
+        warnings.append(f"Classification '{expected_class}' not found in app.ttl")
+
+    # Check domain classes
+    for dc in blueprint.get("ontology_domain_classes", []):
+        if dc not in ttl_content:
+            warnings.append(f"Domain class '{dc}' not found in app.ttl")
+
+    # Check app_config.yaml
+    if not app_config.exists():
+        errors.append("app_config.yaml missing")
+    else:
+        cfg_content = app_config.read_text(encoding="utf-8")
+        if "parent_ontologies:" not in cfg_content:
+            errors.append("app_config.yaml missing parent_ontologies section")
+        if "validate_on_scaffold: true" not in cfg_content:
+            warnings.append("app_config.yaml has validation disabled")
+
+    valid = len(errors) == 0
+    logger.info(
+        "Ontology validation for %s: %s (%d errors, %d warnings)",
+        blueprint["app_name"],
+        "PASS" if valid else "FAIL",
+        len(errors),
+        len(warnings),
+    )
+    return {"valid": valid, "errors": errors, "warnings": warnings}
+
+
+def _inherit_ontology_security_tags(blueprint: dict, icdev_root: Path) -> dict:
+    """Read parent ontology classification tags and merge into blueprint security.
+
+    Returns updated blueprint snippet with inherited tags.
+    """
+    parent_ttl = icdev_root / "args" / "ontology" / "icdev_core.ttl"
+    inherited_tags = []
+
+    if parent_ttl.exists():
+        content = parent_ttl.read_text(encoding="utf-8")
+        # Extract classification levels defined in parent ontology
+        for line in content.splitlines():
+            if "icdev:" in line and "rdf:type icdev:ClassificationLevel" in line:
+                # e.g. "icdev:CUI rdf:type icdev:ClassificationLevel ;"
+                parts = line.split()
+                if len(parts) >= 1 and parts[0].startswith("icdev:"):
+                    tag = parts[0].replace("icdev:", "")
+                    if tag and tag not in inherited_tags:
+                        inherited_tags.append(tag)
+
+    child_class = blueprint.get("classification", "CUI")
+    if child_class not in inherited_tags and child_class:
+        inherited_tags.append(child_class)
+
+    logger.info(
+        "Ontology security tags inherited for %s: %s",
+        blueprint["app_name"],
+        inherited_tags,
+    )
+    return {
+        "inherited_tags": inherited_tags,
+        "effective_classification": child_class,
+    }
+
+
+# ============================================================
 # STEP 7: Args + Context
 # ============================================================
 
@@ -1582,6 +1859,7 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
         # D-EPSEC-7: Security config always copied (not conditional on compliance)
         ("args/security_gates.yaml", []),
         ("args/endpoint_security_config.yaml", []),
+        ("args/security_config.yaml", ["security_policy_update", "clearance_ceiling"]),
         ("args/code_pattern_config.yaml", []),
     ]
     if capabilities.get("compliance"):
@@ -1742,8 +2020,22 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
 
         logger.info("Step 7: MOSA inheritance applied (DoD MOSA enabled)")
 
-    logger.info("Step 7: Copied %d args/context files", copied)
-    return {"files_copied": copied}
+    # ── ONTO: Child app ontology inheritance (onto-eco-05) ──
+    ontology_result = _generate_ontology_scaffold(child_root, blueprint, icdev_root)
+    validation_result = _validate_child_ontology(child_root, blueprint, icdev_root)
+    security_tags = _inherit_ontology_security_tags(blueprint, icdev_root)
+
+    # Merge inherited ontology tags into blueprint for downstream steps
+    blueprint["_ontology_inherited_tags"] = security_tags.get("inherited_tags", [])
+    blueprint["_ontology_validation"] = validation_result
+
+    logger.info("Step 7: Copied %d args/context files + ontology scaffold", copied)
+    return {
+        "files_copied": copied,
+        "ontology": ontology_result,
+        "ontology_validation": validation_result,
+        "security_tags": security_tags,
+    }
 
 
 # ============================================================
@@ -1787,7 +2079,7 @@ from urllib.request import Request, urlopen
 PARENT_URL = os.environ.get("ICDEV_PARENT_CALLBACK_URL", "{default_url}")
 AUTH_METHOD = "{auth_method}"
 
-logger = logging.getLogger("{app_name}.a2a_callback")
+logger = get_logger("{app_name}.a2a_callback")
 
 
 def call_parent(method: str, params: dict = None, timeout: int = 30) -> dict:
@@ -2327,6 +2619,10 @@ def _adapt_pre_tool_use_for_child(content: str, blueprint: dict) -> str:
         if enabled and cap_name in CAPABILITY_TABLE_MAP:
             child_tables.update(CAPABILITY_TABLE_MAP[cap_name].keys())
 
+    # D-EPSEC-7: Security is always-on — always include security framework tables
+    if "security" in CAPABILITY_TABLE_MAP:
+        child_tables.update(CAPABILITY_TABLE_MAP["security"].keys())
+
     # Find the APPEND_ONLY_TABLES set in the hook and filter it
     # Pattern: APPEND_ONLY_TABLES = { ... }
     import re as _re
@@ -2759,6 +3055,26 @@ def step_12_audit_and_registration(child_root: Path, blueprint: dict, db_path: P
     except Exception as e:
         logger.warning("Step 12: Failed to register in DB: %s", e)
 
+    # Register blockchain provenance for child app blueprint
+    try:
+        from tools.provenance.registry import register_citation
+        from tools.blockchain.chain_anchor import ChainAnchor
+
+        if blueprint_hash:
+            reg_id = register_citation(
+                citation_type="sbom",
+                source_table="child_app_registry",
+                source_record_id=f"child-app-{app_name}",
+                source_hash=blueprint_hash,
+                source_doc=f"Child app: {app_name}",
+                project_id=blueprint.get("fitness_scorecard", {}).get("project_id", ""),
+            )
+            if reg_id:
+                ChainAnchor().anchor_provenance([reg_id])
+                logger.info("Step 12: Child app provenance anchored: %s", reg_id)
+    except Exception as e:
+        logger.warning("Step 12: Provenance registration skipped: %s", e)
+
     # Phase 36 integration: write genome manifest to child directory
     genome_version = None
     try:
@@ -3172,6 +3488,11 @@ def generate_child_app(
     child_root = Path(project_path) / name
     icdev_root = icdev_root or BASE_DIR
     db_path = db_path or DB_PATH
+
+    # D-EPSEC-7: Normalize blueprint — security is always-on for child apps
+    if "capabilities" not in blueprint:
+        blueprint["capabilities"] = {}
+    blueprint["capabilities"]["security"] = True
 
     logger.info("Generating child app '%s' at %s", name, child_root)
     start_time = datetime.now(tz=timezone.utc)

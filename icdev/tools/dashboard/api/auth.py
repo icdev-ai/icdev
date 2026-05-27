@@ -93,8 +93,8 @@ submit on POST/PUT/PATCH/DELETE (C3) applied by a blueprint-level before_request
 hook registered inside register_api_blueprints().
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -106,7 +106,7 @@ import jwt  # PyJWT
 from flask import Blueprint, g, jsonify, request
 from urllib.parse import urlsplit
 
-logger = logging.getLogger("icdev.dashboard.api.auth")
+logger = get_logger("icdev.dashboard.api.auth")
 
 # ---------------------------------------------------------------------------
 # Configuration

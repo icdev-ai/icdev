@@ -28,6 +28,7 @@ Return value:
 See docs/features/internal-awareness-engine.md §Phase 5 for the full plan.
 """
 from __future__ import annotations
+IMPLEMENTATION_STATUS = "full"
 
 import json
 import sys

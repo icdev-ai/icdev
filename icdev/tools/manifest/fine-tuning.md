@@ -28,4 +28,8 @@
 | OpenAI Provider | tools/finetune/openai_provider.py | OpenAI fine-tuning provider using /v1/fine_tuning/jobs API with long-running poll pattern | (library) | OpenAIFineTuneProvider |
 | Bedrock Provider | tools/finetune/bedrock_provider.py | AWS Bedrock fine-tuning provider using create_model_customization_job API; enforces CUI boundary constraints on cloud training | (library) | BedrockFineTuneProvider |
 | Evaluator | tools/finetune/evaluator.py | Automated model evaluator with BLEU, ROUGE-L, and perplexity scoring (pure Python, air-gap safe); optional LLM-as-judge | --evaluate, --model-version-id, --get, --eval-id, --list, --json | Evaluation scores |
+| GovCon Pair Generator | tools/finetune/govcon_pair_generator.py | Deterministic Q&A pair templates for GovCon proposal sections; 3 pairs/section, no LLM call | (library) | list[{system_prompt, user_input, expected_output}] |
+| GovCon FT Pipeline | tools/finetune/govcon_ft_pipeline.py | Local QLoRA fine-tuning on GovCon proposals (Qwen2.5-1.5B + 4-bit bitsandbytes); saves LoRA adapter | --dataset, --model-path, --output, --epochs, --dry-run, --json | Adapter + eval_metrics.json |
+| Bedrock FT Pipeline | tools/finetune/bedrock_ft_pipeline.py | AWS Bedrock model customization; exports ft_dataset_examples as JSONL, uploads to S3, creates job, polls | --dataset, --base-model, --s3-bucket, --dry-run, --json | {status, job_arn, model_arn} |
+| Model Weights Packager | tools/finetune/package_model_weights.py | Packages HuggingFace weights as pip wheel for air-gapped internal mirrors | --model, --output, --dry-run, --json | .whl file in dist/ |
 

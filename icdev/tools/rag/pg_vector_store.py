@@ -162,24 +162,25 @@ class PgVectorStore(VectorStoreProvider):
         try:
             # Build filter clause
             where_parts = ["embedding_vec IS NOT NULL"]
-            params = [vec_str, vec_str]  # Two refs: SELECT and ORDER BY
+            filter_params: list = []
 
             if filters:
                 if filters.get("source_type"):
                     where_parts.append("source_type = ?")
-                    params.append(filters["source_type"])
+                    filter_params.append(filters["source_type"])
                 if filters.get("tier"):
                     where_parts.append("tier = ?")
-                    params.append(filters["tier"])
+                    filter_params.append(filters["tier"])
                 if filters.get("project_id"):
                     where_parts.append("project_id = ?")
-                    params.append(filters["project_id"])
+                    filter_params.append(filters["project_id"])
                 if filters.get("tenant_id"):
                     where_parts.append("tenant_id = ?")
-                    params.append(filters["tenant_id"])
+                    filter_params.append(filters["tenant_id"])
 
             where_clause = " AND ".join(where_parts)
-            params.append(top_k)
+            # Params order must match SQL placeholders: SELECT vec, WHERE filters, ORDER BY vec, LIMIT
+            params = [vec_str] + filter_params + [vec_str, top_k]
 
             # pgvector cosine distance: 1 - (a <=> b) = cosine similarity
             # <=> is cosine distance (0 = identical, 2 = opposite)
@@ -242,19 +243,20 @@ class PgVectorStore(VectorStoreProvider):
         try:
             # Build filter
             where_parts = ["embedding_vec IS NOT NULL"]
-            params = [vec_str, vec_str]
+            filter_params: list = []
 
             if filters:
                 if filters.get("source_type"):
                     where_parts.append("source_type = ?")
-                    params.append(filters["source_type"])
+                    filter_params.append(filters["source_type"])
                 if filters.get("tier"):
                     where_parts.append("tier = ?")
-                    params.append(filters["tier"])
+                    filter_params.append(filters["tier"])
 
             where_clause = " AND ".join(where_parts)
             # query_text used 3x in FTS CTEs, rrf_k 2x, top_k 1x
-            params.extend([query_text, query_text, query_text, rrf_k, rrf_k, top_k])
+            # Params order: SELECT vec, WHERE filters, ORDER BY vec, FTS x3, rrf_k x2, LIMIT
+            params = [vec_str] + filter_params + [vec_str, query_text, query_text, query_text, rrf_k, rrf_k, top_k]
 
             # Hybrid RRF query — vector + FTS in single pass
             rows = conn.execute(

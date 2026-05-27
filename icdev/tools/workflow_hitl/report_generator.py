@@ -5,9 +5,9 @@ Orchestrates: style guide resolution → section routing → LLM synthesis (or
 assembled fallback) → Jinja2 HTML rendering → citation population.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -18,7 +18,7 @@ from tools.db.storage import get_connection
 from tools.workflow_hitl.report_schema import ReportSection, get_sections
 from tools.workflow_hitl.section_router import SectionRouter, RoutedChunk, SectionRouteResult
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _TEMPLATE_DIR = Path("context/workflow_report_templates")
 _DEFAULT_MAX_WORDS = 800
@@ -42,7 +42,7 @@ def generate_report(
             """INSERT INTO wf_generated_reports
                (id, instance_id, report_type, style_guide_id, status,
                 generated_by, generated_at, updated_at)
-               VALUES (?,?,?,?,'generating',?,?,?)""",
+               VALUES (%s,?,?,?,'generating',?,?,%s)""",
             (report_id, instance_id, report_type, style_guide_id,
              generated_by, now, now),
         )
@@ -77,7 +77,7 @@ def get_report(report_id: str) -> Optional[dict]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM wf_generated_reports WHERE id=?", (report_id,)
+            "SELECT * FROM wf_generated_reports WHERE id=%s", (report_id,)
         ).fetchone()
         if not row:
             return None
@@ -97,7 +97,7 @@ def list_reports(instance_id: Optional[str] = None) -> list[dict]:
     try:
         if instance_id:
             rows = conn.execute(
-                "SELECT * FROM wf_generated_reports WHERE instance_id=? ORDER BY generated_at DESC",
+                "SELECT * FROM wf_generated_reports WHERE instance_id=%s ORDER BY generated_at DESC",
                 (instance_id,),
             ).fetchall()
         else:
@@ -285,14 +285,14 @@ def _resolve_style_guide(
     try:
         if style_guide_id:
             row = conn.execute(
-                "SELECT guide_yaml FROM wg_style_guides WHERE id=?", (style_guide_id,)
+                "SELECT guide_yaml FROM wg_style_guides WHERE id=%s", (style_guide_id,)
             ).fetchone()
             if row:
                 guide_yaml = row[0]
         elif project_id:
             row = conn.execute(
                 """SELECT guide_yaml FROM wg_style_guides
-                   WHERE scope='project' AND scope_id=? AND is_active=1
+                   WHERE scope='project' AND scope_id=%s AND is_active=1
                    ORDER BY created_at DESC LIMIT 1""",
                 (project_id,),
             ).fetchone()
@@ -372,7 +372,7 @@ def _load_instance(instance_id: str) -> Optional[dict]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM wf_instances WHERE id=?", (instance_id,)
+            "SELECT * FROM wf_instances WHERE id=%s", (instance_id,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -390,7 +390,7 @@ def _get_applicable_template_ids(instance_id: str, instance: dict) -> list[str]:
     try:
         # From workflow template stages
         tmpl_row = conn.execute(
-            "SELECT stages_json FROM wf_templates WHERE id=?", (instance.get("template_id", ""),)
+            "SELECT stages_json FROM wf_templates WHERE id=%s", (instance.get("template_id", ""),)
         ).fetchone()
         if tmpl_row:
             try:
@@ -407,7 +407,7 @@ def _get_applicable_template_ids(instance_id: str, instance: dict) -> list[str]:
             rows = conn.execute(
                 """SELECT id FROM wf_document_templates
                    WHERE is_ai_reference=1
-                   AND (canvas_type=? OR canvas_type IS NULL)""",
+                   AND (canvas_type=%s OR canvas_type IS NULL)""",
                 (canvas_type,),
             ).fetchall()
         else:
@@ -429,7 +429,7 @@ def _store_section_chunks(report_id: str, route_result: SectionRouteResult) -> N
             conn.execute(
                 """INSERT OR IGNORE INTO wf_report_section_chunks
                    (id, report_id, section_key, chunk_id, relevance_score, rank, created_at)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   VALUES (%s,?,?,?,?,?,%s)""",
                 (f"wrsc-{uuid.uuid4().hex[:12]}", report_id,
                  route_result.section_key, chunk.chunk_id,
                  chunk.relevance_score, chunk.rank, now),
@@ -475,9 +475,9 @@ def _update_report(
     conn = get_connection()
     try:
         conn.execute(
-            """UPDATE wf_generated_reports SET status=?, content_html=?, content_json=?,
-               word_count=?, section_count=?, citation_count=?, error_message=?, updated_at=?
-               WHERE id=?""",
+            """UPDATE wf_generated_reports SET status=%s, content_html=%s, content_json=%s,
+               word_count=%s, section_count=%s, citation_count=%s, error_message=%s, updated_at=%s
+               WHERE id=%s""",
             (status, content_html, content_json, word_count, section_count,
              citation_count, error_message, now, report_id),
         )

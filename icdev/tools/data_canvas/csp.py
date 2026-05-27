@@ -140,7 +140,7 @@ def _sync_azure(domain_ids: list) -> tuple:
         endpoint = os.environ.get("AZURE_PURVIEW_ENDPOINT", "")
         if not endpoint:
             return 0, ["AZURE_PURVIEW_ENDPOINT not set"]
-        client = PurviewCatalogClient(endpoint=endpoint, credential=credential)
+        PurviewCatalogClient(endpoint=endpoint, credential=credential)
         targets = domain_ids or ["default"]
         return len(targets), []
     except Exception as exc:
@@ -150,7 +150,7 @@ def _sync_azure(domain_ids: list) -> tuple:
 def _sync_gcp(domain_ids: list) -> tuple:
     try:
         from google.cloud import dataplex_v1
-        client = dataplex_v1.DataplexServiceClient()
+        dataplex_v1.DataplexServiceClient()
         targets = domain_ids or ["default"]
         return len(targets), []
     except Exception as exc:

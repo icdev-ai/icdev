@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Database Migration Runner.
 
@@ -19,7 +21,6 @@ predates when that migration was committed — not an intentional skip.
 import hashlib
 import importlib.util
 import json
-import logging
 import re
 import sqlite3
 import sys
@@ -32,7 +33,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.db.migration")
+logger = get_logger("icdev.db.migration")
 
 MIGRATIONS_DIR = BASE_DIR / "tools" / "db" / "migrations"
 

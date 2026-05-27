@@ -6,11 +6,11 @@ to surface AI trust status for mission models and outputs.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import Optional
 
-logger = logging.getLogger("icdev.mission_canvas.ai_trust")
+logger = get_logger("icdev.mission_canvas.ai_trust")
 
 
 def assess_ai_trust(mission_id: str, model_id: Optional[str] = None) -> dict:

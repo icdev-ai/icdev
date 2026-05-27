@@ -151,3 +151,78 @@ promotion_filters:
 module_import_suppressions:
   - tools/db/migrate_alphadesk.py          # child app (AlphaDesk → FathomDesk); not in ICDEV core
   - tools/scripts/schedule_alphadesk_news_plan.py  # stale auto-added script; child app artifact
+
+# --------------------------------------------------------------------------
+# Network Migration Canvas (NMCE) — added 2026-05-08
+# Monitored routes, modules, and DB tables for health/drift/gap probes.
+# --------------------------------------------------------------------------
+nmce:
+  monitored_routes:
+    - /migration-canvas/network-migration/
+    - /migration-canvas/api/network-migration/inventory
+    - /migration-canvas/api/network-migration/import/topologies
+    - /migration-canvas/api/network-migration/import/csv
+    - /migration-canvas/api/network-migration/import/netbox
+    - /migration-canvas/api/network-migration/import/topology
+  monitored_modules:
+    - tools.migration_canvas.network_migration
+    - tools.migration_canvas.blueprint
+    - tools.migration_canvas.db.init_db
+    - tools.network.device_manager
+    - tools.network.netbox_client
+    - tools.genesis.reflexes.migration_canvas
+  monitored_db_tables:
+    - mc_net_sessions
+    - mc_net_port_map
+    - mc_net_compat_checks
+    - mc_net_test_cases
+    - mc_net_cutover_steps
+    - mc_net_erb_metadata
+    - mc_net_ai_sessions
+    - mc_net_protocol_plans
+    - mc_net_parallel_timelines
+    - ni_devices
+    - ni_device_configs
+
+# --------------------------------------------------------------------------
+# GovChain periodic anchor reflex (govchain_anchor.py)
+# --------------------------------------------------------------------------
+# Runs chain_anchor --periodic on a 30-minute cadence. Set enabled: false
+# to suppress the reflex entirely (e.g., for environments without a Fabric
+# peer). In air-gap mode the reflex still queues to govchain_pending_operations.
+govchain:
+  enabled: true
+  interval_minutes: 30       # How often the anchor reflex fires
+  max_batch_size: 100        # Passed to ChainAnchor.anchor_audit_batch limit
+  alert_on_pending_above: 500  # Log a warning when queue depth exceeds this
+
+# --------------------------------------------------------------------------
+# Data Design Canvas (DDC) + Data Mesh -- added 2026-05-26
+# Monitored routes, modules, and DB tables for health/drift/gap probes.
+# --------------------------------------------------------------------------
+data_canvas:
+  monitored_routes:
+    - /data/mesh
+    - /api/dm/summary
+    - /api/dm/domains
+    - /api/dm/products
+    - /api/dm/contracts
+    - /api/dm/policies
+    - /api/dm/governance/evaluate
+    - /api/dm/governance/federation
+  monitored_modules:
+    - tools.data_canvas.data_mesh.domain_manager
+    - tools.data_canvas.data_mesh.product_registry
+    - tools.data_canvas.data_mesh.contract_engine
+    - tools.data_canvas.data_mesh.governance_engine
+    - tools.data_canvas.sync.datahub_sync
+  monitored_db_tables:
+    - dm_domains
+    - dm_products
+    - dm_contracts
+    - dm_ports
+    - dm_policies
+    - dm_ownership
+    - dm_lineage
+    - dm_metrics
+    - dm_events

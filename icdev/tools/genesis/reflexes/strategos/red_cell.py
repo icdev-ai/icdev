@@ -15,10 +15,10 @@ Tables:  sg_coa_options, sg_red_cell_assessments, sg_sio_assessments.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
-import logging
 import math
 import sys
 from datetime import datetime, timezone
@@ -31,7 +31,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection, is_pg  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _VULN_THRESHOLD = 7.0
 _NATO_RELIABILITY = "B/2"   # usually reliable / probably true

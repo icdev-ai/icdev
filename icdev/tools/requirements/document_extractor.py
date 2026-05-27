@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -41,7 +43,6 @@ import argparse
 import base64
 import hashlib
 import json
-import logging
 import os
 import re
 import sys
@@ -56,7 +57,7 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
-logger = logging.getLogger("icdev.requirements.document_extractor")
+logger = get_logger("icdev.requirements.document_extractor")
 
 # Image extensions supported for direct upload
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".bmp"}
@@ -74,10 +75,22 @@ except ImportError:
 
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
-    path = db_path or DB_PATH
-    if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = get_connection(db_path=str(path))
+    import os
+    if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+        conn = get_connection()
+    else:
+        path = db_path or DB_PATH
+        if not path.exists():
+            raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+        conn = get_connection(db_path=str(path))
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+    try:
+        conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
+    except Exception:
+        pass
     return conn
 
 

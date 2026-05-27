@@ -6,15 +6,15 @@ Feature flag: ICDEV_MISSION_CANVAS_ENABLED.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import os
 from functools import wraps
 from pathlib import Path
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session
 
-logger = logging.getLogger("icdev.mission_canvas")
+logger = get_logger("icdev.mission_canvas")
 
 _MC_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _MC_DIR.parent.parent.parent
@@ -182,9 +182,13 @@ def create_mission_canvas_blueprint():
     def api_ai_trust():
         mission_id = request.args.get("mission_id", "")
         model_id = request.args.get("model_id")
+        use_cot = request.args.get("use_cot", "").lower() in ("true", "1", "yes")
+        chain_mode = "cot" if use_cot else ""
         from tools.mission_canvas.ai_trust import assess_ai_trust
 
-        return jsonify(assess_ai_trust(mission_id, model_id))
+        result = assess_ai_trust(mission_id, model_id)
+        result["chain_mode"] = chain_mode
+        return jsonify(result)
 
     @bp.route("/api/narrative", methods=["POST"])
     @mc_login_required

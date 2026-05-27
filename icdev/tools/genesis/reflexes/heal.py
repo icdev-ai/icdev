@@ -30,6 +30,22 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
+# Heal constitution — loaded once per process; None if file is absent/unreadable
+_HEAL_CONSTITUTION: dict | None = None
+
+
+def _load_constitution() -> dict:
+    global _HEAL_CONSTITUTION
+    if _HEAL_CONSTITUTION is not None:
+        return _HEAL_CONSTITUTION
+    constitution_path = BASE_DIR / "args" / "heal_constitution.yaml"
+    try:
+        import yaml
+        _HEAL_CONSTITUTION = yaml.safe_load(constitution_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        _HEAL_CONSTITUTION = {}
+    return _HEAL_CONSTITUTION
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -49,6 +65,8 @@ BUILTIN_ACTIONS = {
     "reset_circuit_breaker",
     "reinit_db_table",
 }
+
+IMPLEMENTATION_STATUS = "full"
 
 
 def _action_regenerate_artifact(params: Dict) -> Tuple[bool, str]:
@@ -184,6 +202,83 @@ ACTION_HANDLERS = {
     "reset_circuit_breaker": _action_reset_circuit_breaker,
     "reinit_db_table": _action_reinit_db_table,
 }
+
+# ---------------------------------------------------------------------------
+# Constitution enforcement
+# ---------------------------------------------------------------------------
+
+_CB_RESETS_TODAY: dict[str, int] = {}  # date → count; reset per process per UTC day
+
+
+def _cb_reset_count_today() -> int:
+    today = _utcnow().date().isoformat()
+    return _CB_RESETS_TODAY.get(today, 0)
+
+
+def _cb_reset_increment() -> None:
+    today = _utcnow().date().isoformat()
+    _CB_RESETS_TODAY[today] = _CB_RESETS_TODAY.get(today, 0) + 1
+
+
+def _check_constitution(pattern: Dict, false_heal_rate: float = 0.0) -> Tuple[bool, str]:
+    """Return (allowed, reason). Enforces heal_constitution.yaml rules.
+
+    Returns (False, reason) to block; (True, "") to allow.
+    """
+    constitution = _load_constitution()
+    if not constitution:
+        return True, ""
+
+    resolution_type = pattern.get("resolution_type", "")
+
+    # Hard-blocked types
+    blocked = constitution.get("blocked_types", [])
+    if resolution_type in blocked:
+        return False, f"resolution_type '{resolution_type}' is unconditionally blocked by constitution"
+
+    confidence = float(pattern.get("confidence", 0.0))
+    rules = constitution.get("rules", [])
+
+    for rule in rules:
+        applies_to = rule.get("applies_to", "")
+        applies_types = rule.get("applies_to_types", [])
+
+        # Determine whether rule applies to this action
+        if applies_types and resolution_type not in applies_types:
+            continue
+        if applies_to not in ("", "all") and applies_to != resolution_type:
+            continue
+
+        on_violation = rule.get("on_violation", "block")
+
+        # Confidence floor check
+        min_conf = rule.get("min_confidence")
+        if min_conf is not None and confidence < min_conf:
+            return False, (
+                f"constitution rule '{rule['name']}': confidence {confidence:.3f} "
+                f"< required {min_conf} for '{resolution_type}'"
+            )
+
+        # False-heal ceiling check
+        max_fhr = rule.get("max_false_heal_rate")
+        if max_fhr is not None and false_heal_rate > max_fhr:
+            return False, (
+                f"constitution rule '{rule['name']}': false_heal_rate {false_heal_rate:.3f} "
+                f"> ceiling {max_fhr} — auto-healing suspended"
+            )
+
+        # Per-day cap check (circuit_breaker only for now)
+        max_day = rule.get("max_per_day")
+        if max_day is not None and resolution_type == "reset_circuit_breaker":
+            if _cb_reset_count_today() >= max_day:
+                if on_violation == "hold":
+                    return False, (
+                        f"constitution rule '{rule['name']}': daily cap {max_day} reached "
+                        f"for '{resolution_type}' — holding until tomorrow"
+                    )
+                return False, f"constitution rule '{rule['name']}': daily cap {max_day} reached"
+
+    return True, ""
 
 # ---------------------------------------------------------------------------
 # Failure detection and pattern matching
@@ -448,6 +543,8 @@ def _apply_remediation(pattern: Dict, failure: Dict) -> Tuple[bool, str]:
     try:
         success, message = handler(params)
         print(f"  Heal: {'SUCCESS' if success else 'FAILED'} — {message[:100]}")
+        if success and action_name == "reset_circuit_breaker":
+            _cb_reset_increment()
         return success, message
     except Exception as e:
         msg = f"Handler exception: {e}"
@@ -459,6 +556,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Heal Reflex."""
     confidence_threshold = config.get("confidence_threshold", 0.7)
     max_heals = config.get("max_auto_heals_per_hour", 5)
+
+    # Read current false-heal rate for constitution enforcement
+    false_heal_rate = 0.0
+    try:
+        from tools.genesis.harness.eval_harness import compute_metrics as _compute_metrics
+        false_heal_rate = _compute_metrics("heal", window_days=30).get("false_heal_rate", 0.0)
+    except Exception:
+        pass
 
     # Get recent failures
     failures = _get_recent_failures(lookback_hours=6)
@@ -490,6 +595,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             continue
 
         if match.get("confidence", 0) < confidence_threshold:
+            continue
+
+        # Constitution enforcement
+        allowed, block_reason = _check_constitution(match, false_heal_rate)
+        if not allowed:
+            matches.append({
+                "failure_id": failure.get("id"),
+                "pattern": match.get("pattern_name"),
+                "status": "constitution_blocked",
+                "reason": block_reason,
+            })
             continue
 
         if healed >= max_heals:

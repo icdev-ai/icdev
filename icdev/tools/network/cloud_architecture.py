@@ -47,24 +47,44 @@ _DX_TYPES = {
     "az-er",
     "az-er-global",
     "gcp-ic",
+    "gcp-ic-partner",
     "oci-fc",
+    "oci-fc-vc",
     "ibm-dl",
+    "ibm-dl-ded",
+    "ibm-dl-con",
+    "megaport-mcr",
+    "equinix-fabric",
 }
 
 _VPN_TYPES = {
     "aws-vpn",
+    "aws-vpn-ha",
+    "aws-vgw",
     "az-vpn-gw",
+    "az-lng",
     "gcp-vpn",
+    "gcp-ha-vpn",
+    "gcp-classic-vpn",
+    "oci-ipsec",
     "ibm-vpn",
 }
 
 _TRANSIT_HUB_TYPES = {
     "aws-tgw",
+    "aws-tgw-rt",
     "aws-cloudwan",
     "az-vwan",
+    "az-route-server",
     "gcp-ncc",
+    "gcp-ncc-spoke",
     "oci-drg",
     "ibm-tg",
+}
+
+_SCCA_BCAP_TYPES = {
+    "dod-bcap",
+    "dod-niprnet-onramp",
 }
 
 _FIREWALL_TYPES = {

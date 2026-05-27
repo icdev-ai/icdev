@@ -48,7 +48,10 @@ def compute_content_hash(content: str) -> str:
     return hashlib.sha256(_normalize(content).encode("utf-8")).hexdigest()
 
 
-def write_to_db(content, entry_type, importance, user_id=None, tenant_id=None, source="manual"):
+def write_to_db(
+    content, entry_type, importance, user_id=None, tenant_id=None, source="manual",
+    classification="CUI", compartment=""
+):
     """Write memory entry with SHA-256 dedup upsert (D179).
 
     Normalizes content before hashing so case/whitespace variants deduplicate.
@@ -84,9 +87,9 @@ def write_to_db(content, entry_type, importance, user_id=None, tenant_id=None, s
         return {"id": existing[0], "status": "duplicate_merged", "fingerprint": fingerprint}
 
     c.execute(
-        "INSERT INTO memory_entries (content, type, importance, content_hash, user_id, tenant_id, source, decay_weight) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (content, entry_type, importance, fingerprint, user_id, tenant_id, source, 1.0),
+        "INSERT INTO memory_entries (content, type, importance, content_hash, user_id, tenant_id, source, decay_weight, classification, compartment) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (content, entry_type, importance, fingerprint, user_id, tenant_id, source, 1.0, classification, compartment),
     )
     conn.commit()
     entry_id = c.lastrowid
@@ -207,6 +210,16 @@ def main():
         default="manual",
         help="Capture source (D181)",
     )
+    parser.add_argument(
+        "--classification",
+        default="CUI",
+        help="Data classification (PUBLIC, CUI, SECRET, TOP SECRET, TOP SECRET//SCI)",
+    )
+    parser.add_argument(
+        "--compartment",
+        default="",
+        help="Compartment / SCI tag (comma-separated for multiple)",
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
@@ -225,6 +238,8 @@ def main():
             user_id=args.user_id,
             tenant_id=args.tenant_id,
             source=args.source,
+            classification=args.classification,
+            compartment=args.compartment,
         )
         if args.json:
             print(
@@ -248,6 +263,8 @@ def main():
             user_id=args.user_id,
             tenant_id=args.tenant_id,
             source=args.source,
+            classification=args.classification,
+            compartment=args.compartment,
         )
         if args.json:
             print(

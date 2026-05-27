@@ -5,10 +5,10 @@
 ## Application Modernization (Phase 19 — 7Rs Migration)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Legacy Analyzer | tools/modernization/legacy_analyzer.py | Static analysis engine (AST for Python, regex for Java/C#) — components, dependencies, APIs, frameworks, complexity | --register/--analyze, --project-id, --app-id, --source-path, --json | Analysis summary |
+| Legacy Analyzer [DEPRECATED] | tools/modernization/legacy_analyzer.py | Static analysis engine (AST for Python, regex for Java/C#) — components, dependencies, APIs, frameworks, complexity | --register/--analyze, --project-id, --app-id, --source-path, --json | Analysis summary |
 | Architecture Extractor | tools/modernization/architecture_extractor.py | Reverse-engineer architecture — call graph, component diagram, data flow, service boundaries | --app-id, --extract, --json | Architecture summary |
 | Doc Generator | tools/modernization/doc_generator.py | Generate CUI-marked docs from analysis — API docs, data dictionary, component docs, dependency map | --app-id, --output-dir, --type, --json | File paths |
-| 7R Assessor | tools/modernization/seven_r_assessor.py | Score all 7 Rs with weighted decision matrix, recommend strategy | --project-id, --app-id, --matrix, --weights, --json | Scored matrix |
+| 7R Assessor [DEPRECATED] | tools/modernization/seven_r_assessor.py | Score all 7 Rs with weighted decision matrix, recommend strategy | --project-id, --app-id, --matrix, --weights, --json | Scored matrix |
 | Version Migrator | tools/modernization/version_migrator.py | Transform legacy code to newer versions (Python 2→3, Java 8→17, .NET FW→.NET 8) | --source, --output, --language, --from, --to, --validate | Transformation summary |
 | Framework Migrator | tools/modernization/framework_migrator.py | Transform frameworks (Struts→Spring, EJB→Spring, WCF→ASP.NET Core, WebForms→Razor, Django/Flask upgrades) | --source, --output, --from, --to, --report | Transformation summary |
 | Monolith Decomposer | tools/modernization/monolith_decomposer.py | Bounded context detection, service boundary suggestion, decomposition planning | --app-id, --detect-contexts, --suggest-boundaries, --create-plan, --json | Plan + tasks |

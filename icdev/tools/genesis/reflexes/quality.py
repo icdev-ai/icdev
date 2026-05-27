@@ -13,15 +13,15 @@ Scanner-tier only (qwen3.5 / zero Claude tokens).
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 ICDEV_ROOT = Path(__file__).resolve().parents[3]
 GENESIS_DB = ICDEV_ROOT / "data" / "genesis_quality.db"

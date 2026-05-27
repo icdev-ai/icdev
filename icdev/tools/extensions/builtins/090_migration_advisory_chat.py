@@ -16,10 +16,10 @@ Exports:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 
-logger = logging.getLogger("icdev.extensions.migration_advisory_chat")
+logger = get_logger("icdev.extensions.migration_advisory_chat")
 
 EXTENSION_HOOKS = {
     "chat_message_after": {

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """STIG checklist auto-generation and assessment tool.
 Loads STIG template, performs automated checks where possible,
 stores results in stig_findings table, evaluates security gates,

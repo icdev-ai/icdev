@@ -11,9 +11,9 @@
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import ast
-import logging
 import re
 import subprocess
 import sys
@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-logger = logging.getLogger("databridge.forge.static_validator")
+logger = get_logger("databridge.forge.static_validator")
 
 # Abstract methods that MUST be implemented (full ABC)
 _REQUIRED_ABSTRACT_METHODS = {

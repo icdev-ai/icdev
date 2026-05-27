@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -23,7 +25,6 @@ Supported models:
 """
 
 import json
-import logging
 import os
 import time
 from typing import Any, Dict, Iterator, List
@@ -34,7 +35,7 @@ from tools.llm.provider import (
     LLMResponse,
 )
 
-logger = logging.getLogger("icdev.llm.vertex_ai")
+logger = get_logger("icdev.llm.vertex_ai")
 
 try:
     from google.cloud import aiplatform

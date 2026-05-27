@@ -7,16 +7,16 @@ Air-gap safe: stdlib only (urllib, xml.etree, html.parser, json).
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
-logger = logging.getLogger("databridge.forge.spec_parser")
+logger = get_logger("databridge.forge.spec_parser")
 
 
 @dataclass

@@ -427,6 +427,115 @@ def delete_job(job_id: str, db_path=None) -> Dict:
 # =========================================================================
 # SYNC EXECUTION
 # =========================================================================
+def _scan_both_sides(job, config, job_id, db_path):
+    """Scan source and dest directories; return (src_manifest, dst_manifest, src_cached, dst_cached)."""
+    src_provider = _get_provider(job["source_provider"])
+    dst_provider = _get_provider(job["dest_provider"])
+
+    conn = _get_db(db_path)
+    try:
+        src_cached = _load_cached_state(conn, job_id, "source")
+        dst_cached = _load_cached_state(conn, job_id, "dest")
+    finally:
+        conn.close()
+
+    fast_skip = config.get("detection", {}).get("fast_skip_mtime", True)
+    ignore_file = job.get("ignore_file", ".syncignore")
+
+    src_manifest = scan_directory(
+        src_provider, job["source_path"], ignore_file=ignore_file,
+        cached_state=src_cached, fast_skip_mtime=fast_skip,
+    )
+    dst_manifest = scan_directory(
+        dst_provider, job["dest_path"], ignore_file=ignore_file,
+        cached_state=dst_cached, fast_skip_mtime=fast_skip,
+    )
+
+    conn = _get_db(db_path)
+    try:
+        _log_sync_event(conn, job_id, "scan_completed")
+        conn.execute("UPDATE sync_jobs SET status='syncing', updated_at=? WHERE id=?", (_now(), job_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return src_manifest, dst_manifest, src_cached, dst_cached, src_provider, dst_provider
+
+
+def _build_actions(job, src_manifest, dst_manifest, src_cached, dst_cached):
+    """Detect changes and resolve conflicts; return (actions, summary)."""
+    delete_orphans = bool(job.get("delete_orphans", 0))
+    mode = job["sync_mode"]
+
+    if mode == "bidirectional":
+        actions = detect_changes_bidirectional(src_manifest, dst_manifest, src_cached, dst_cached)
+    elif mode == "pull":
+        actions = detect_changes_push(dst_manifest, src_manifest, delete_orphans)
+        for a in actions:
+            a["direction"] = "dest_to_source"
+    else:
+        actions = detect_changes_push(src_manifest, dst_manifest, delete_orphans)
+
+    actions = resolve_conflicts(actions, job["conflict_strategy"])
+    return actions, summarize_actions(actions)
+
+
+def _snapshot_before_transfer(job, job_id, actions, versioning_cfg, db_path):
+    """Snapshot dest files before overwrite if versioning is enabled."""
+    if not versioning_cfg.get("enabled", True):
+        return
+    if job["dest_provider"] != "local":
+        return
+    versioner = FileVersioner(
+        db_path=str(db_path or DB_PATH),
+        max_versions=versioning_cfg.get("max_versions_per_file", 10),
+        versions_dir_name=versioning_cfg.get("versions_dir", ".versions"),
+    )
+    for act in actions:
+        if act["action"] == "update" and act.get("direction", "source_to_dest") == "source_to_dest":
+            versioner.snapshot_before_overwrite(job_id, job["dest_path"], act["relative_path"])
+
+
+def _tally_and_persist(job, job_id, results, src_manifest, dst_manifest, t0, db_path):
+    """Log transfer results, save state, update job stats; return result dict."""
+    synced = sum(1 for r in results if r.success and r.action in ("copy", "update"))
+    skipped = sum(1 for r in results if r.action == "skip")
+    errored = sum(1 for r in results if not r.success)
+    total_bytes = sum(r.bytes_transferred for r in results)
+    elapsed_ms = int((time.monotonic() - t0) * 1000)
+    status = "completed" if errored == 0 else "failed"
+
+    conn = _get_db(db_path)
+    try:
+        for r in results:
+            _log_sync_event(
+                conn, job_id, r.action, r.relative_path,
+                bytes_transferred=r.bytes_transferred, duration_ms=r.duration_ms,
+                error_detail=r.error if not r.success else None,
+            )
+        _save_state(conn, job_id, src_manifest, "source")
+        _save_state(conn, job_id, dst_manifest, "dest")
+        conn.execute(
+            """UPDATE sync_jobs SET status=?, last_run_at=?, files_synced=?,
+               files_skipped=?, bytes_transferred=?, error_message=?, updated_at=?
+               WHERE id=?""",
+            (status, _now(), synced, skipped, total_bytes,
+             f"{errored} errors" if errored else None, _now(), job_id),
+        )
+        if status == "completed":
+            conn.execute("UPDATE sync_jobs SET last_success_at=? WHERE id=?", (_now(), job_id))
+        _log_sync_event(
+            conn, job_id,
+            "sync_completed" if status == "completed" else "sync_failed",
+            duration_ms=elapsed_ms,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return status, synced, skipped, errored, total_bytes, elapsed_ms
+
+
 def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
     """Run a sync job.
 
@@ -453,18 +562,14 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
     if job["status"] == "paused":
         return {"status": "error", "error": "Job is paused. Resume first."}
 
-    # FIM pre-check (if enabled)
     fim_cfg = config.get("fim", {})
     if fim_cfg.get("enabled", False):
         fim_result = check_fim(job_id, db_path)
         if fim_result.get("mismatches", 0) > 0:
-            _audit(
-                "filesync.fim_pre_sync_alert",
-                f"FIM: {fim_result['mismatches']} changes detected before sync",
-                {"job_id": job_id},
-            )
+            _audit("filesync.fim_pre_sync_alert",
+                   f"FIM: {fim_result['mismatches']} changes detected before sync",
+                   {"job_id": job_id})
 
-    # Update status
     conn = _get_db(db_path)
     try:
         conn.execute("UPDATE sync_jobs SET status='scanning', updated_at=? WHERE id=?", (_now(), job_id))
@@ -478,61 +583,10 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
     _audit("filesync.sync_started", f"Sync started for '{job['name']}'", {"job_id": job_id, "dry_run": dry_run})
 
     try:
-        # Get providers
-        src_provider = _get_provider(job["source_provider"])
-        dst_provider = _get_provider(job["dest_provider"])
+        src_manifest, dst_manifest, src_cached, dst_cached, src_provider, dst_provider = \
+            _scan_both_sides(job, config, job_id, db_path)
 
-        # Load cached state for fast-skip
-        conn = _get_db(db_path)
-        try:
-            src_cached = _load_cached_state(conn, job_id, "source")
-            dst_cached = _load_cached_state(conn, job_id, "dest")
-        finally:
-            conn.close()
-
-        fast_skip = config.get("detection", {}).get("fast_skip_mtime", True)
-        ignore_file = job.get("ignore_file", ".syncignore")
-
-        # Scan source
-        src_manifest = scan_directory(
-            src_provider,
-            job["source_path"],
-            ignore_file=ignore_file,
-            cached_state=src_cached,
-            fast_skip_mtime=fast_skip,
-        )
-
-        # Scan destination
-        dst_manifest = scan_directory(
-            dst_provider, job["dest_path"], ignore_file=ignore_file, cached_state=dst_cached, fast_skip_mtime=fast_skip
-        )
-
-        conn = _get_db(db_path)
-        try:
-            _log_sync_event(conn, job_id, "scan_completed")
-            conn.execute("UPDATE sync_jobs SET status='syncing', updated_at=? WHERE id=?", (_now(), job_id))
-            conn.commit()
-        finally:
-            conn.close()
-
-        # Detect changes
-        delete_orphans = bool(job.get("delete_orphans", 0))
-        mode = job["sync_mode"]
-
-        if mode == "bidirectional":
-            actions = detect_changes_bidirectional(src_manifest, dst_manifest, src_cached, dst_cached)
-        elif mode == "pull":
-            actions = detect_changes_push(dst_manifest, src_manifest, delete_orphans)
-            # Swap direction for pull
-            for a in actions:
-                a["direction"] = "dest_to_source"
-        else:  # push (default)
-            actions = detect_changes_push(src_manifest, dst_manifest, delete_orphans)
-
-        # Resolve conflicts
-        actions = resolve_conflicts(actions, job["conflict_strategy"])
-
-        summary = summarize_actions(actions)
+        actions, summary = _build_actions(job, src_manifest, dst_manifest, src_cached, dst_cached)
 
         if dry_run:
             conn = _get_db(db_path)
@@ -541,39 +595,10 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
                 conn.commit()
             finally:
                 conn.close()
-            return {
-                "status": "dry_run",
-                "job_id": job_id,
-                "summary": summary,
-                "actions": actions,
-            }
+            return {"status": "dry_run", "job_id": job_id, "summary": summary, "actions": actions}
 
-        # Version control — snapshot files before overwrite (D-SYNC-16)
-        versioning_cfg = config.get("versioning", {})
-        versioning_enabled = versioning_cfg.get("enabled", True)
-        max_versions = versioning_cfg.get("max_versions_per_file", 10)
-        if versioning_enabled and job["dest_provider"] == "local":
-            versioner = FileVersioner(
-                db_path=str(db_path or DB_PATH),
-                max_versions=max_versions,
-                versions_dir_name=versioning_cfg.get("versions_dir", ".versions"),
-            )
-            update_actions = [
-                a
-                for a in actions
-                if a["action"] == "update" and a.get("direction", "source_to_dest") == "source_to_dest"
-            ]
-            for act in update_actions:
-                versioner.snapshot_before_overwrite(job_id, job["dest_path"], act["relative_path"])
+        _snapshot_before_transfer(job, job_id, actions, config.get("versioning", {}), db_path)
 
-        # Execute transfers
-        verify = config.get("transfer", {}).get("verify_after_transfer", True)
-        bw_limit = job.get("bandwidth_limit_kbps", 0)
-        workers = job.get("max_workers", 4)
-        compression = config.get("transfer", {}).get("compression", "none")
-        compression_level = config.get("transfer", {}).get("compression_level", 6)
-
-        # Progress tracking
         progress_cfg = config.get("progress", {})
         progress_enabled = progress_cfg.get("enabled", True)
         progress_interval = progress_cfg.get("log_interval_files", 10)
@@ -584,117 +609,46 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
             _progress_count[0] += 1
             if progress_enabled and _progress_count[0] % progress_interval == 0:
                 pct = int((_progress_count[0] / max(_total_actions, 1)) * 100)
-                _audit(
-                    "filesync.progress",
-                    f"Sync progress: {_progress_count[0]}/{_total_actions} files ({pct}%)",
-                    {"job_id": job_id, "completed": _progress_count[0], "total": _total_actions, "pct": pct},
-                )
+                _audit("filesync.progress",
+                       f"Sync progress: {_progress_count[0]}/{_total_actions} files ({pct}%)",
+                       {"job_id": job_id, "completed": _progress_count[0],
+                        "total": _total_actions, "pct": pct})
 
+        transfer_cfg = config.get("transfer", {})
         results = execute_actions(
-            actions,
-            src_provider,
-            job["source_path"],
-            dst_provider,
-            job["dest_path"],
-            max_workers=workers,
-            verify=verify,
-            bandwidth_limit_kbps=bw_limit,
+            actions, src_provider, job["source_path"], dst_provider, job["dest_path"],
+            max_workers=job.get("max_workers", 4),
+            verify=transfer_cfg.get("verify_after_transfer", True),
+            bandwidth_limit_kbps=job.get("bandwidth_limit_kbps", 0),
             progress_callback=_on_progress if progress_enabled else None,
-            compression=compression,
-            compression_level=compression_level,
+            compression=transfer_cfg.get("compression", "none"),
+            compression_level=transfer_cfg.get("compression_level", 6),
         )
 
-        # Tally results
-        synced = sum(1 for r in results if r.success and r.action in ("copy", "update"))
-        skipped = sum(1 for r in results if r.action == "skip")
-        errored = sum(1 for r in results if not r.success)
-        total_bytes = sum(r.bytes_transferred for r in results)
-        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        status, synced, skipped, errored, total_bytes, elapsed_ms = \
+            _tally_and_persist(job, job_id, results, src_manifest, dst_manifest, t0, db_path)
 
-        # Log results
-        conn = _get_db(db_path)
-        try:
-            for r in results:
-                _log_sync_event(
-                    conn,
-                    job_id,
-                    r.action,
-                    r.relative_path,
-                    bytes_transferred=r.bytes_transferred,
-                    duration_ms=r.duration_ms,
-                    error_detail=r.error if not r.success else None,
-                )
-
-            # Save updated state
-            _save_state(conn, job_id, src_manifest, "source")
-            _save_state(conn, job_id, dst_manifest, "dest")
-
-            # Update job stats
-            status = "completed" if errored == 0 else "failed"
-            conn.execute(
-                """UPDATE sync_jobs SET status=?, last_run_at=?, files_synced=?,
-                   files_skipped=?, bytes_transferred=?, error_message=?, updated_at=?
-                   WHERE id=?""",
-                (
-                    status,
-                    _now(),
-                    synced,
-                    skipped,
-                    total_bytes,
-                    f"{errored} errors" if errored else None,
-                    _now(),
-                    job_id,
-                ),
-            )
-            if status == "completed":
-                conn.execute("UPDATE sync_jobs SET last_success_at=? WHERE id=?", (_now(), job_id))
-
-            _log_sync_event(
-                conn, job_id, "sync_completed" if status == "completed" else "sync_failed", duration_ms=elapsed_ms
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-        _audit(
-            "filesync.sync_completed",
-            f"Sync completed for '{job['name']}'",
-            {
-                "job_id": job_id,
-                "synced": synced,
-                "skipped": skipped,
-                "errors": errored,
-                "bytes": total_bytes,
-                "ms": elapsed_ms,
-            },
-        )
+        _audit("filesync.sync_completed", f"Sync completed for '{job['name']}'",
+               {"job_id": job_id, "synced": synced, "skipped": skipped,
+                "errors": errored, "bytes": total_bytes, "ms": elapsed_ms})
 
         return {
-            "status": status,
-            "job_id": job_id,
-            "files_synced": synced,
-            "files_skipped": skipped,
-            "files_errored": errored,
-            "bytes_transferred": total_bytes,
-            "duration_ms": elapsed_ms,
-            "summary": summary,
+            "status": status, "job_id": job_id,
+            "files_synced": synced, "files_skipped": skipped, "files_errored": errored,
+            "bytes_transferred": total_bytes, "duration_ms": elapsed_ms, "summary": summary,
         }
 
     except Exception as e:
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         conn = _get_db(db_path)
         try:
-            conn.execute(
-                "UPDATE sync_jobs SET status='failed', error_message=?, updated_at=? WHERE id=?",
-                (str(e), _now(), job_id),
-            )
+            conn.execute("UPDATE sync_jobs SET status='failed', error_message=?, updated_at=? WHERE id=?",
+                         (str(e), _now(), job_id))
             _log_sync_event(conn, job_id, "sync_failed", error_detail=str(e), duration_ms=elapsed_ms)
             conn.commit()
         finally:
             conn.close()
-
         _audit("filesync.sync_failed", f"Sync failed for '{job['name']}'", {"job_id": job_id, "error": str(e)})
-
         return {"status": "error", "job_id": job_id, "error": str(e), "duration_ms": elapsed_ms}
 
 

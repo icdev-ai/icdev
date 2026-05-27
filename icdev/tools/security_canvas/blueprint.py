@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """ICDEV™ Security Design Canvas — Flask Blueprint integration.
 
@@ -13,7 +15,6 @@ Usage in ICDEV dashboard app.py:
 """
 
 import json
-import logging
 import os
 import uuid as _uuid
 from datetime import datetime, timezone
@@ -30,7 +31,7 @@ from flask import (
     session,
 )
 
-logger = logging.getLogger("icdev.security_canvas")
+logger = get_logger("icdev.security_canvas")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _SC_DIR = Path(__file__).resolve().parent
@@ -91,6 +92,7 @@ from tools.security_canvas.sops import (  # noqa: E402
     reject_sop,
     seed_sops,
 )
+from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
 
 def create_security_blueprint():
@@ -333,6 +335,15 @@ def create_security_blueprint():
                 ),
             )
         _audit("CREATE", "design", design_id, name)
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+            _eb_publish("sdc", "sdc.topology.saved", {
+                "design_id": design_id,
+                "classification": data.get("classification", "CUI"),
+                "graph_changed": True,
+            }, target_canvas="aadc")
+        except Exception:
+            pass
         return jsonify({"id": design_id, "name": name}), 201
 
     @bp.route("/api/designs/<design_id>", methods=["GET"])
@@ -373,6 +384,15 @@ def create_security_blueprint():
                 params,
             )
         _audit("UPDATE", "design", design_id, json.dumps(list(data.keys())))
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+            _eb_publish("sdc", "sdc.topology.saved", {
+                "design_id": design_id,
+                "classification": data.get("classification", "CUI"),
+                "graph_changed": "graph_json" in data,
+            }, target_canvas="aadc")
+        except Exception:
+            pass
         # Trigger security agent on design save
         try:
             from tools.security_canvas.agent import auto_assess
@@ -385,6 +405,17 @@ def create_security_blueprint():
             from tools.canvas.kg_builder import rebuild_canvas_kg
 
             rebuild_canvas_kg("sdc", design_id)
+        except Exception:
+            pass
+        # Blockchain provenance
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="sdc",
+                design_id=design_id,
+                graph_json=data.get("graph_json", {}),
+                project_id=data.get("project_id", ""),
+            )
         except Exception:
             pass
         return jsonify({"id": design_id, "updated_at": now})
@@ -495,11 +526,31 @@ def create_security_blueprint():
                 ),
             )
         _audit("ASSESS", "design", design_id, f"score={result.get('risk_score', 0)}")
+        record_canvas_decision(
+            canvas_type="sdc",
+            record_id=design_id,
+            decision_type="threat_assessment",
+            decision=f"Grade {result.get('posture_grade','?')} — {result.get('total_threats',0)} threats, risk={result.get('risk_score',0)}",
+            rationale=f"Controls mapped: {result.get('total_controls',0)}",
+            model_used=None,
+            confidence=None,
+        )
 
         # Generate remediation plan from assessment
         plan = generate_remediation_plan(result, graph)
         result["assessment_id"] = assess_id
         result["remediation_plan"] = plan
+        # Blockchain provenance for assessment
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="sdc",
+                design_id=design_id,
+                assessment_data=result,
+                project_id="",
+            )
+        except Exception:
+            pass
         return jsonify(result)
 
     @bp.route("/api/designs/<design_id>/risk-score", methods=["GET"])
@@ -1818,7 +1869,23 @@ def create_security_blueprint():
             graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
         except Exception:
             return jsonify({"error": "Bad graph data"}), 500
+        data = request.get_json(force=True, silent=True) or {}
+        use_cot = data.get("use_cot", False)
+        chain_mode = "cot" if use_cot else ""
         result = llm_identify_threats(graph)
+        result["chain_mode"] = chain_mode
+        if isinstance(result, dict) and result.get("threats"):
+            _threats = result["threats"]
+            _summary = f"{len(_threats)} LLM-identified threat(s)" if isinstance(_threats, list) else str(_threats)[:300]
+            record_canvas_decision(
+                canvas_type="sdc",
+                record_id=design_id,
+                decision_type="threat_assessment",
+                decision=_summary,
+                rationale=result.get("reasoning") or result.get("rationale", ""),
+                model_used=result.get("model"),
+                confidence=result.get("confidence"),
+            )
         return jsonify(result)
 
     # ====================================================================
@@ -1936,6 +2003,21 @@ def create_security_blueprint():
         )
         return jsonify(result), 200
 
+    @bp.route("/api/twin/<design_id>/simulate-cot", methods=["POST"])
+    @sc_login_required
+    def sc_api_twin_simulate_cot(design_id):
+        from tools.security_canvas.twin import simulate_delta
+        data = request.get_json(silent=True) or {}
+        result = simulate_delta(
+            design_id,
+            delta_graph=data.get("delta_graph", {}),
+            entry_point=data.get("entry_point"),
+            target_goal=data.get("target_goal"),
+            baseline_snap_id=data.get("baseline_snap_id"),
+            use_cot=True,
+        )
+        return jsonify(result), 200
+
     @bp.route("/api/twin/<design_id>/attack-paths/snapshot", methods=["POST"])
     @sc_login_required
     def sc_api_attack_snapshot(design_id):
@@ -1981,5 +2063,178 @@ def create_security_blueprint():
             return jsonify({"error": "message is required"}), 400
         result = security_chat_to_delta(message, data.get("graph_json"))
         return jsonify(result), (500 if "error" in result else 200)
+
+    @bp.route("/api/iqe-query", methods=["POST"])
+    @sc_login_required
+    def sc_api_iqe_query():
+        """IQE structured query — translate NL to IQE and execute against SDC attack graph."""
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import IQESyntaxError, parse
+        from tools.iqe.executor import execute_query
+        import tools.iqe.adapters.security  # noqa: F401 — registers attack.* collections
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        collections = ["attack.nodes", "attack.edges", "attack.paths"]
+        translation = nl_to_iqe(question, collections)
+        iqe_str = translation.get("iqe", "")
+        explanation = translation.get("explanation", "")
+
+        if not data.get("execute", True):
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+        try:
+            ast = parse(iqe_str)
+            rows = execute_query(ast, None)
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                            "results": rows, "row_count": len(rows)}), 200
+        except IQESyntaxError as exc:
+            return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+        except Exception as exc:
+            logger.warning("SDC IQE query error: %s", exc)
+            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+    @bp.route("/api/ai-trace")
+    @sc_login_required
+    def sc_api_ai_trace():
+        """Return recent AI decisions made by SDC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='sdc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='sdc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "sdc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    # ── SDC Demo Runner ───────────────────────────────────────────────────────
+
+    @bp.route("/demo")
+    @sc_login_required
+    def sc_demo_page():
+        """SDC Demo Runner — 3-scenario executive/customer/prospect demo."""
+        return render_template("security_canvas/demo.html", page_title="SDC Demo Runner")
+
+    @bp.route("/api/sdc-demo-run", methods=["POST"])
+    @sc_login_required
+    def sc_api_sdc_demo_run():
+        """Run one or more SDC demo scenarios and return JSON result."""
+        data = request.get_json(silent=True) or {}
+        scenarios = data.get("scenarios") or None
+        audience = data.get("audience", "exec")
+        simulate = bool(data.get("simulate", False))
+        try:
+            from tools.sdc.demo_runner import run_sdc_demo
+            result = run_sdc_demo(scenarios=scenarios, audience=audience, simulate=simulate)
+            return jsonify({"ok": True, **result})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/compliance-timeline/<design_id>")
+    @sc_login_required
+    def sc_api_compliance_timeline(design_id):
+        """Return before/after compliance timeline for a design."""
+        try:
+            import sqlite3 as _sq
+            _db = Path(__file__).resolve().parents[2] / "data" / "security_canvas.db"
+            conn = _sq.connect(str(_db))
+            conn.row_factory = _sq.Row
+            rows = conn.execute(
+                "SELECT * FROM sdc_compliance_timeline WHERE design_id=? ORDER BY snapshot_label",
+                (design_id,),
+            ).fetchall()
+            conn.close()
+            return jsonify({"ok": True, "design_id": design_id, "snapshots": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/roi/<design_id>")
+    @sc_login_required
+    def sc_api_roi(design_id):
+        """Return ROI metrics for a design."""
+        try:
+            from tools.sdc.roi_calculator import compute_roi
+            result = compute_roi(design_id)
+            return jsonify({"ok": True, **result})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/isso-approve", methods=["POST"])
+    @sc_login_required
+    def sc_api_isso_approve():
+        """Simulate ISSO approval — writes real sc_audit record."""
+        data = request.get_json(silent=True) or {}
+        step_run_id = data.get("step_run_id", "demo-run-step-04")
+        approver = data.get("approver", "isso-demo@agency.gov")
+        reason = data.get("reason", "demo-auto-approve")
+        try:
+            from tools.sdc.isso_gate import approve_demo
+            result = approve_demo(step_run_id, approver=approver, reason=reason)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/attack-ttp-coverage/<design_id>")
+    @sc_login_required
+    def sc_api_attack_ttp_coverage(design_id):
+        """Return MITRE ATT&CK tactic/technique coverage for a design's attack snapshots."""
+        import sqlite3 as _sq
+        import json as _json
+        _db = Path(__file__).resolve().parents[2] / "data" / "security_canvas.db"
+        try:
+            conn = _sq.connect(str(_db))
+            conn.row_factory = _sq.Row
+            snaps = conn.execute(
+                "SELECT nodes_json FROM sdc_attack_snapshots WHERE component_id=?",
+                (design_id,),
+            ).fetchall()
+            conn.close()
+
+            # Aggregate TTP IDs from node data across all snapshots
+            tactic_map: dict = {
+                "Initial Access":       [],
+                "Credential Access":    [],
+                "Privilege Escalation": [],
+                "Lateral Movement":     [],
+                "Exfiltration":         [],
+                "Impact":               [],
+            }
+            _TACTIC_LOOKUP = {
+                "T1190": "Initial Access", "T1566": "Initial Access", "T1078": "Initial Access",
+                "T1552": "Credential Access", "T1539": "Credential Access", "T1110": "Credential Access",
+                "T1068": "Privilege Escalation", "T1548": "Privilege Escalation", "T1611": "Privilege Escalation",
+                "T1557": "Lateral Movement", "T1563": "Lateral Movement",
+                "T1071": "Exfiltration", "T1530": "Exfiltration", "T1020": "Exfiltration",
+                "T1499": "Impact", "T1485": "Impact", "T1498": "Impact",
+            }
+            seen: set = set()
+            for snap in snaps:
+                nodes = _json.loads(snap["nodes_json"] or "[]")
+                for node in nodes:
+                    ttp = node.get("ttp")
+                    if ttp and ttp not in seen:
+                        seen.add(ttp)
+                        tactic = _TACTIC_LOOKUP.get(ttp, "Initial Access")
+                        if ttp not in tactic_map[tactic]:
+                            tactic_map[tactic].append(ttp)
+
+            return jsonify({"ok": True, "design_id": design_id, "tactics": tactic_map, "ttps": list(seen)})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     return bp

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Genesis Research Reflex — scrape NIST/CISA/DoD feeds, GitHub trending.
 
@@ -11,7 +13,6 @@ Scanner-tier only (zero Claude tokens).  Air-gap safe (graceful degradation).
 
 import hashlib
 import json
-import logging
 import os
 import sys
 import xml.etree.ElementTree as ET
@@ -27,7 +28,9 @@ sys.path.insert(0, str(BASE_DIR))
 from tools.db.storage import get_connection  # noqa: E402
 from tools.security.injection_scanner import scan_text  # noqa: E402
 
-logger = logging.getLogger(__name__)
+IMPLEMENTATION_STATUS = "full"
+
+logger = get_logger(__name__)
 
 
 def _utcnow_iso() -> str:

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """IAM Provider — cloud-agnostic identity and access management.
 
@@ -15,9 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import logging
 
-logger = logging.getLogger("icdev.cloud.iam")
+logger = get_logger("icdev.cloud.iam")
 
 
 class IAMProvider(ABC):

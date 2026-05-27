@@ -1,18 +1,18 @@
 # CUI // SP-CTI
 """External step lifecycle — create, send, poll, mark_complete."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import hmac
 import json
-import logging
 import os
 import uuid
 from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _now() -> str:
@@ -40,7 +40,7 @@ def create(
             """INSERT INTO wf_external_steps
                (id, instance_id, stage_name, step_type, external_system, webhook_token,
                 status, payload_json, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,?,?,?,?,?,?,?,?,%s)""",
             (step_id, instance_id, stage_name, step_type,
              stage_config.get("system"), token, "pending", payload, _now(), _now()),
         )
@@ -58,7 +58,7 @@ def send(step_id: str) -> str | None:
     """Dispatch the external step to the right adapter. Returns external_ref."""
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM wf_external_steps WHERE id=?", (step_id,)).fetchone()
+        row = conn.execute("SELECT * FROM wf_external_steps WHERE id=%s", (step_id,)).fetchone()
         if not row:
             return None
         step = dict(row)
@@ -80,7 +80,7 @@ def send(step_id: str) -> str | None:
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE wf_instances SET status='waiting_external', updated_at=? WHERE id=?",
+            "UPDATE wf_instances SET status='waiting_external', updated_at=%s WHERE id=%s",
             (_now(), step["instance_id"]),
         )
         try:
@@ -97,7 +97,7 @@ def mark_complete(step_id: str, completed_by: str) -> bool:
     """Mark an external step as completed and advance the workflow instance."""
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM wf_external_steps WHERE id=?", (step_id,)).fetchone()
+        row = conn.execute("SELECT * FROM wf_external_steps WHERE id=%s", (step_id,)).fetchone()
         if not row:
             return False
         step = dict(row)
@@ -111,7 +111,7 @@ def mark_complete(step_id: str, completed_by: str) -> bool:
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE wf_instances SET status='active', updated_at=? WHERE id=?",
+            "UPDATE wf_instances SET status='active', updated_at=%s WHERE id=%s",
             (_now(), instance_id),
         )
         try:
@@ -194,11 +194,11 @@ def _update_step(step_id: str, **kwargs):
     if not kwargs:
         return
     kwargs["updated_at"] = _now()
-    set_clause = ", ".join(f"{k}=?" for k in kwargs)
+    set_clause = ", ".join(f"{k}=%s" for k in kwargs)
     vals = list(kwargs.values()) + [step_id]
     conn = get_connection()
     try:
-        conn.execute(f"UPDATE wf_external_steps SET {set_clause} WHERE id=?", vals)
+        conn.execute(f"UPDATE wf_external_steps SET {set_clause} WHERE id=%s", vals)
         try:
             conn.commit()
         except Exception:

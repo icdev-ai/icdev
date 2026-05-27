@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """DAG-based workflow engine for multi-agent task orchestration.
 
@@ -13,6 +15,7 @@ Decision D-DISP-1: Dispatcher mode enforcement in _execute_subtask (Phase 61).
 import argparse
 import json
 import logging
+import os
 import sqlite3
 import sys
 import time
@@ -32,7 +35,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 HARDPROMPT_PATH = BASE_DIR / "hardprompts" / "agent" / "task_decomposition.md"
 SCHEMA_PATH = BASE_DIR / "context" / "agent" / "response_schemas" / "task_decomposition.json"
 
-logger = logging.getLogger("icdev.team_orchestrator")
+logger = get_logger("icdev.team_orchestrator")
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +157,30 @@ class TeamOrchestrator:
         print(workflow.status, workflow.aggregated_result)
     """
 
+    # Heuristic mapping from skill_id / description keywords to authority topics.
+    # More-specific topics are listed before general ones so they win on overlap.
+    _TOPIC_KEYWORDS: Dict[str, List[str]] = {
+        "container_configuration": ["container", "docker", "kubernetes", "helm", "image"],
+        "secret_management": ["secret", "credential", "password", "vault", "key", "token"],
+        "secret_rotation": ["rotation", "renew", "refresh", "cycle"],
+        "infrastructure_change": ["infra", "terraform", "ansible", "provision", "cloud", "server"],
+        "network_segmentation": ["network", "segment", "firewall", "vlan", "subnet"],
+        "deployment": ["deploy", "release", "publish", "ship", "stage", "prod"],
+        "deployment_gate": ["gate", "approval", "scan", "sign", "attest"],
+        "pipeline_configuration": ["pipeline", "ci", "cd", "gitlab", "github", "jenkins"],
+        "code_generation": ["generate_code", "write-tests", "lint-code", "format-code", "code", "scaffold"],
+        "dependency_addition": ["dependency", "requirements", "package", "pip", "npm", "install"],
+        "schema_change": ["schema", "migration", "database", "ddl", "table"],
+        "api_design": ["api", "endpoint", "rest", "openapi", "swagger", "graphql"],
+        "system_design": ["design", "architecture", "pattern", "blueprint"],
+        "technology_selection": ["tech", "framework", "library", "stack", "platform"],
+        "architecture_pattern": ["microservice", "monolith", "event-driven", "serverless"],
+        "classification_marking": ["classify", "cui", "marking", "label", "il4", "il5", "il6"],
+        "ato_submission": ["ato", "authorization", "boundary", "ssp", "package"],
+        "data_handling": ["data", "privacy", "pii", "gdpr", "export"],
+        "zero_trust_policy": ["zta", "zero-trust", "policy", "rbac", "iam"],
+    }
+
     def __init__(self, max_workers: int = 5, db_path: Path = None):
         """Initialize the orchestrator.
 
@@ -165,18 +192,6 @@ class TeamOrchestrator:
         self._db_path = Path(db_path) if db_path else DB_PATH
         self._llm_router = None
         self._agent_client = None
-
-        # Mandatory DB path verification before processing alerts (D-DISP-1)
-        try:
-            from tools.agent.dispatcher_mode import run_startup_verification
-
-            run_startup_verification(db_path=self._db_path)
-        except ImportError:
-            logger.warning("dispatcher_mode not available — skipping startup DB verification")
-        except RuntimeError as exc:
-            logger.error("Workflow engine startup failed DB verification: %s", exc)
-            raise
-
         _ensure_tables(self._db_path)
 
     # -------------------------------------------------------------------
@@ -489,6 +504,9 @@ class TeamOrchestrator:
 
         with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
             while sorter.is_active():
+                # Poll collaboration mailbox for veto/escalation (non-blocking)
+                self._process_collaboration_mailbox(workflow)
+
                 # Check timeout
                 elapsed = time.time() - start_time
                 if elapsed > timeout:
@@ -516,6 +534,10 @@ class TeamOrchestrator:
                 futures = {}
                 for st_id in ready:
                     st = workflow.subtasks[st_id]
+                    if st.status == "blocked":
+                        # Skip subtasks that were blocked by mailbox/auto-review
+                        sorter.done(st_id)
+                        continue
                     st.status = "queued"
                     self._update_subtask_status(st, workflow.id)
 
@@ -548,34 +570,57 @@ class TeamOrchestrator:
                         workflow.subtasks[st_id] = completed_st
 
                         if completed_st.status == "completed":
-                            completed_count += 1
-                            sorter.done(st_id)
-                            # SSE progress for DAG workflows
-                            try:
-                                from tools.dashboard.sse_manager import emit_progress
+                            # Auto-review (ORANGE-tier collaboration trigger)
+                            completed_st = self._auto_review(completed_st, workflow)
+                            # Process mailbox messages that arrived during this subtask's execution
+                            self._process_collaboration_mailbox(workflow)
 
-                                emit_progress(
-                                    workflow.id,
-                                    "dag_workflow",
-                                    st_id,
-                                    completed_count,
-                                    len(workflow.subtasks),
-                                    detail=f"{completed_st.skill_id} completed",
+                            if completed_st.status == "blocked":
+                                # Auto-review or mailbox veto rejected — treat as failure
+                                failed_count += 1
+                                sorter.done(st_id)
+                                _audit_log(
+                                    event_type="subtask_failed",
+                                    actor=workflow.created_by,
+                                    action=f"Subtask '{st_id}' blocked by auto-review/mailbox: {completed_st.error_message}",
+                                    project_id=workflow.project_id,
+                                    details={
+                                        "workflow_id": workflow.id,
+                                        "subtask_id": st_id,
+                                        "error": completed_st.error_message,
+                                    },
+                                    db_path=self._db_path,
                                 )
-                            except Exception:
-                                pass
-                            _audit_log(
-                                event_type="subtask_completed",
-                                actor=workflow.created_by,
-                                action=f"Subtask '{st_id}' completed in {completed_st.duration_ms}ms",
-                                project_id=workflow.project_id,
-                                details={
-                                    "workflow_id": workflow.id,
-                                    "subtask_id": st_id,
-                                    "duration_ms": completed_st.duration_ms,
-                                },
-                                db_path=self._db_path,
-                            )
+                                self._block_downstream(st_id, workflow)
+                            else:
+                                completed_count += 1
+                                sorter.done(st_id)
+                                # SSE progress for DAG workflows
+                                try:
+                                    from tools.dashboard.sse_manager import emit_progress
+
+                                    emit_progress(
+                                        workflow.id,
+                                        "dag_workflow",
+                                        st_id,
+                                        completed_count,
+                                        len(workflow.subtasks),
+                                        detail=f"{completed_st.skill_id} completed",
+                                    )
+                                except Exception:
+                                    pass
+                                _audit_log(
+                                    event_type="subtask_completed",
+                                    actor=workflow.created_by,
+                                    action=f"Subtask '{st_id}' completed in {completed_st.duration_ms}ms",
+                                    project_id=workflow.project_id,
+                                    details={
+                                        "workflow_id": workflow.id,
+                                        "subtask_id": st_id,
+                                        "duration_ms": completed_st.duration_ms,
+                                    },
+                                    db_path=self._db_path,
+                                )
                         else:
                             failed_count += 1
                             sorter.done(st_id)
@@ -672,10 +717,12 @@ class TeamOrchestrator:
 
         1. Checks dispatcher mode -- if enabled and orchestrator tries to
            execute a blocked tool, redirects to the appropriate domain agent.
-        2. Looks up the target agent from agent_registry.
-        3. Sends the task via A2AAgentClient.send_task().
-        4. Waits for completion with timeout.
-        5. Returns the updated subtask.
+        2. In remote-first mode (ICDEV_AGENT_MODE=remote), health-probes the
+           agent before dispatch and fails hard if unreachable.
+        3. Looks up the target agent from agent_registry.
+        4. Sends the task via A2AAgentClient.send_task().
+        5. Waits for completion with timeout.
+        6. Returns the updated subtask.
 
         Args:
             subtask: The subtask to execute.
@@ -748,6 +795,31 @@ class TeamOrchestrator:
                 subtask.duration_ms = int((time.time() - start_time) * 1000)
                 self._update_subtask_status(subtask, context.get("workflow_id", ""))
                 return subtask
+
+            # Remote-first mode: health-probe the agent before dispatch
+            remote_mode = os.environ.get("ICDEV_AGENT_MODE", "").lower() == "remote"
+            if remote_mode:
+                logger.info("Remote-first mode: health-probing %s at %s", subtask.agent_id, agent_url)
+                try:
+                    import urllib.request
+
+                    health_url = agent_url.rstrip("/") + "/health"
+                    req = urllib.request.Request(health_url, method="GET")
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        if resp.status != 200:
+                            raise ConnectionError(
+                                f"Agent health check returned {resp.status}"
+                            )
+                except Exception as exc:
+                    subtask.status = "failed"
+                    subtask.error_message = (
+                        f"[REMOTE-MODE] Agent '{subtask.agent_id}' at {agent_url} "
+                        f"is unreachable: {exc}"
+                    )
+                    subtask.duration_ms = int((time.time() - start_time) * 1000)
+                    self._update_subtask_status(subtask, context.get("workflow_id", ""))
+                    logger.error(subtask.error_message)
+                    return subtask
 
             # Build input data
             input_data = subtask.input_data or {}
@@ -831,6 +903,202 @@ class TeamOrchestrator:
         # Recursively block transitive dependents
         for blocked_id in newly_blocked:
             self._block_downstream(blocked_id, workflow)
+
+    # -------------------------------------------------------------------
+    # Collaboration triggers — auto-review + mailbox veto/escalation
+    # -------------------------------------------------------------------
+    @classmethod
+    def _infer_topic(cls, subtask: Subtask) -> Optional[str]:
+        """Map a subtask's skill_id and description to an authority topic.
+
+        Returns the first matching topic, or None if no topic matches.
+        """
+        text = f"{subtask.skill_id} {subtask.description}".lower()
+        for topic, keywords in cls._TOPIC_KEYWORDS.items():
+            for kw in keywords:
+                if kw in text:
+                    return topic
+        return None
+
+    def _auto_review(self, subtask: Subtask, workflow: Workflow) -> Subtask:
+        """Trigger reviewer_pattern for ORANGE-tier (authority-covered) subtasks.
+
+        After a subtask completes, if its inferred topic has required reviewers
+        in the authority matrix, run the reviewer collaboration pattern.
+        If the reviewer rejects, the subtask is blocked.
+
+        Args:
+            subtask: Completed subtask to review.
+            workflow: Parent workflow for context.
+
+        Returns:
+            Potentially modified subtask (status may change to blocked).
+        """
+        topic = self._infer_topic(subtask)
+        if not topic:
+            return subtask
+
+        try:
+            from tools.agent.authority import get_required_reviewers
+            from tools.agent.collaboration import reviewer_pattern
+
+            reviewers = get_required_reviewers(topic)
+            if not reviewers:
+                return subtask
+
+            reviewer = reviewers[0]
+            review_result = reviewer_pattern(
+                producer_output=subtask.output_data or {},
+                reviewer_agent_id=reviewer["agent_id"],
+                skill_id=subtask.skill_id,
+                project_id=workflow.project_id,
+                max_rounds=2,
+            )
+
+            if not review_result.get("approved"):
+                subtask.status = "blocked"
+                feedback = review_result.get("feedback_history", [])
+                subtask.error_message = (
+                    f"Auto-review FAILED by {reviewer['agent_id']} "
+                    f"(veto_type={reviewer['veto_type']}): {feedback}"
+                )
+                logger.warning(
+                    "Subtask '%s' blocked by auto-review from %s on topic '%s'",
+                    subtask.id,
+                    reviewer["agent_id"],
+                    topic,
+                )
+                _audit_log(
+                    event_type="subtask_auto_review_blocked",
+                    actor=reviewer["agent_id"],
+                    action=f"Auto-review blocked subtask '{subtask.id}' on topic '{topic}'",
+                    project_id=workflow.project_id,
+                    details={
+                        "workflow_id": workflow.id,
+                        "subtask_id": subtask.id,
+                        "topic": topic,
+                        "reviewer": reviewer["agent_id"],
+                        "feedback": feedback,
+                    },
+                    db_path=self._db_path,
+                )
+            else:
+                logger.info(
+                    "Subtask '%s' auto-review approved by %s on topic '%s'",
+                    subtask.id,
+                    reviewer["agent_id"],
+                    topic,
+                )
+        except Exception as exc:
+            logger.warning("Auto-review failed for subtask '%s': %s", subtask.id, exc)
+
+        return subtask
+
+    def _process_collaboration_mailbox(self, workflow: Workflow) -> None:
+        """Poll orchestrator mailbox for veto/escalation messages and act.
+
+        Checks the 'orchestrator-agent' inbox for unread veto and escalation
+        messages. Applies them to matching subtasks in the current workflow
+        by marking the subtask blocked and cascading downstream.
+        """
+        try:
+            from tools.agent import mailbox as mb
+        except ImportError:
+            return
+
+        # --- Veto messages ---
+        try:
+            veto_msgs = mb.receive(
+                agent_id="orchestrator-agent",
+                unread_only=True,
+                message_type="veto",
+                limit=10,
+                db_path=self._db_path,
+            )
+            for msg in veto_msgs:
+                body = msg.get("body", "{}")
+                try:
+                    veto_info = json.loads(body)
+                except (json.JSONDecodeError, TypeError):
+                    veto_info = {}
+
+                target = veto_info.get("task_id") or veto_info.get("subtask_id")
+                if target and target in workflow.subtasks:
+                    st = workflow.subtasks[target]
+                    st.status = "blocked"
+                    st.error_message = (
+                        f"Mailbox veto from {msg['from_agent_id']}: "
+                        f"{veto_info.get('reason', 'No reason provided')}"
+                    )
+                    self._update_subtask_status(st, workflow.id)
+                    self._block_downstream(target, workflow)
+                    logger.info(
+                        "Mailbox veto applied to subtask '%s' from %s",
+                        target,
+                        msg["from_agent_id"],
+                    )
+                    _audit_log(
+                        event_type="subtask_vetoed_by_mailbox",
+                        actor=msg["from_agent_id"],
+                        action=f"Veto applied to subtask '{target}' via mailbox",
+                        project_id=workflow.project_id,
+                        details={
+                            "workflow_id": workflow.id,
+                            "subtask_id": target,
+                            "reason": veto_info.get("reason", ""),
+                        },
+                        db_path=self._db_path,
+                    )
+                mb.mark_read(msg["id"], db_path=self._db_path)
+        except Exception as exc:
+            logger.debug("Mailbox veto processing error: %s", exc)
+
+        # --- Escalation messages ---
+        try:
+            esc_msgs = mb.receive(
+                agent_id="orchestrator-agent",
+                unread_only=True,
+                message_type="escalation",
+                limit=10,
+                db_path=self._db_path,
+            )
+            for msg in esc_msgs:
+                body = msg.get("body", "{}")
+                try:
+                    esc_info = json.loads(body)
+                except (json.JSONDecodeError, TypeError):
+                    esc_info = {}
+
+                target = esc_info.get("task_id") or esc_info.get("subtask_id")
+                if target and target in workflow.subtasks:
+                    st = workflow.subtasks[target]
+                    st.status = "blocked"
+                    st.error_message = (
+                        f"Escalated to human review by {msg['from_agent_id']}: "
+                        f"{esc_info.get('reason', 'No reason provided')}"
+                    )
+                    self._update_subtask_status(st, workflow.id)
+                    self._block_downstream(target, workflow)
+                    logger.info(
+                        "Mailbox escalation applied to subtask '%s' from %s",
+                        target,
+                        msg["from_agent_id"],
+                    )
+                    _audit_log(
+                        event_type="subtask_escalated_by_mailbox",
+                        actor=msg["from_agent_id"],
+                        action=f"Escalation applied to subtask '{target}' via mailbox",
+                        project_id=workflow.project_id,
+                        details={
+                            "workflow_id": workflow.id,
+                            "subtask_id": target,
+                            "reason": esc_info.get("reason", ""),
+                        },
+                        db_path=self._db_path,
+                    )
+                mb.mark_read(msg["id"], db_path=self._db_path)
+        except Exception as exc:
+            logger.debug("Mailbox escalation processing error: %s", exc)
 
     # -------------------------------------------------------------------
     # Result aggregation

@@ -20,6 +20,7 @@ Tier changes are logged at INFO level.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -30,7 +31,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # OSINT tiers
 TIER_INTERNET = "INTERNET"

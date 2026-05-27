@@ -18,10 +18,10 @@ CLI:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
-import logging
 import re
 import sys
 from datetime import datetime, timezone
@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.redaction.detector")
+logger = get_logger("icdev.redaction.detector")
 
 # ---------------------------------------------------------------------------
 # Configuration loader

@@ -16,6 +16,57 @@ def _row_to_dict(row):
     return dict(row) if hasattr(row, "keys") else {}
 
 
+def _normalize_sop_step(step: dict) -> dict:
+    """Normalize any SOP step schema variant to a canonical dict.
+
+    Three schemas exist in ndc_sops.steps:
+      A) {number, action, verify, rollback, time_est}           — most seed_sops SOPs
+      B) {order, action, verify, rollback, estimated_time_min}  — E2E test SOPs
+      C) {number, title, actions:[{label,command}],             — DoD/cloud SOPs
+          verification:[{command,expected_output}], time_est}
+
+    Returns: {number, text, verify, time_est, rollback}
+    """
+    # Step number
+    number = step.get("number") or step.get("order") or ""
+
+    # Action text: Schema A/B → 'action' string; Schema C → 'title' string or first action label
+    text = step.get("action") or step.get("title") or ""
+    if not text:
+        actions = step.get("actions") or []
+        parts = []
+        for a in actions:
+            if isinstance(a, dict):
+                parts.append(a.get("label") or a.get("command") or "")
+            elif isinstance(a, str):
+                parts.append(a)
+        text = "; ".join(p for p in parts if p)
+
+    # Verification text: Schema A/B → 'verify' string; Schema C → verification[0].expected_output
+    verify = step.get("verify") or ""
+    if not verify:
+        verif = step.get("verification") or []
+        if isinstance(verif, list) and verif:
+            first = verif[0]
+            verify = (first.get("expected_output") or first.get("expected_result") or "") \
+                if isinstance(first, dict) else str(first)
+        elif isinstance(verif, str):
+            verify = verif
+
+    # Time estimate
+    time_est = step.get("time_est") or step.get("estimated_time_min") or ""
+    if isinstance(time_est, (int, float)):
+        time_est = f"{int(time_est)}m"
+
+    return {
+        "number": number,
+        "text": str(text),
+        "verify": str(verify),
+        "time_est": str(time_est),
+        "rollback": str(step.get("rollback") or ""),
+    }
+
+
 def _audit(action, entity_type="", entity_id="", detail="", classification="CUI"):
     """Append-only audit log entry for NDC operations.
 

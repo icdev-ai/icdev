@@ -14,10 +14,10 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
-import logging
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -28,7 +28,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.rag.quality_feedback_loop")
+logger = get_logger("icdev.rag.quality_feedback_loop")
 
 
 # ---------------------------------------------------------------------------

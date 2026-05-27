@@ -197,12 +197,23 @@ def finalize_plan(
         conn.close()
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    """Add column to table if missing."""
+    try:
+        cols = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        if not any(c[1] == column for c in cols):
+            conn.execute(ddl)
+    except Exception:
+        pass
+
+
 def add_acceptance_criterion(
     loop_id: str,
     given_text: str,
     when_text: str,
     then_text: str,
     bdd_story_id: str = "",
+    cot_config: Optional[Dict[str, Any]] = None,
     db_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Add a Given/When/Then acceptance criterion to a loop.
@@ -226,12 +237,18 @@ def add_acceptance_criterion(
 
         crit_id = _gen_id("wac")
         now = now_iso()
+        _ensure_column(
+            conn,
+            "workflow_acceptance_criteria",
+            "cot_config",
+            "ALTER TABLE workflow_acceptance_criteria ADD COLUMN cot_config TEXT",
+        )
         conn.execute(
             """INSERT INTO workflow_acceptance_criteria
                (id, loop_id, criterion_number, given_text, when_text, then_text,
-                bdd_story_id, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
-            (crit_id, loop_id, max_num + 1, given_text, when_text, then_text, bdd_story_id or None, now),
+                bdd_story_id, status, cot_config, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+            (crit_id, loop_id, max_num + 1, given_text, when_text, then_text, bdd_story_id or None, json.dumps(cot_config) if cot_config else None, now),
         )
         conn.commit()
         return {
@@ -240,6 +257,7 @@ def add_acceptance_criterion(
             "criterion_number": max_num + 1,
             "status": "pending",
             "bdd_story_id": bdd_story_id or None,
+            "cot_config": cot_config,
         }
     finally:
         conn.close()
@@ -379,6 +397,30 @@ def close_loop(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
         ).fetchone()
         if require_unify and not recon:
             return {"error": "Reconciliation required before closing. Run reconciler first."}
+
+        # CoT evidence gate: if any criterion has cot_config, all criteria must have CoT evidence
+        criteria = conn.execute(
+            "SELECT id, status, evidence, cot_config FROM workflow_acceptance_criteria WHERE loop_id = ?",
+            (loop_id,),
+        ).fetchall()
+        cot_required = False
+        for c in criteria:
+            if c.get("cot_config"):
+                cot_required = True
+                break
+        if cot_required:
+            missing_cot = [
+                c["id"] for c in criteria
+                if c["status"] in ("pass", "fail")
+                and not (c.get("evidence") or "").strip().startswith("{\"cot_trace\"")
+            ]
+            if missing_cot:
+                return {
+                    "error": (
+                        f"CoT evidence required for {len(missing_cot)} criterion(s). "
+                        f"Missing: {', '.join(missing_cot)}"
+                    ),
+                }
 
         now = now_iso()
         conn.execute(
@@ -560,6 +602,7 @@ def main() -> None:
     parser.add_argument("--status-filter", type=str, default="")
     parser.add_argument("--created-by", type=str, default="")
     parser.add_argument("--bdd-story-id", type=str, default="", help="Link to safe_decomposition BDD story")
+    parser.add_argument("--cot-config", type=str, default="", help="JSON cot_config dict for acceptance criterion")
 
     args = parser.parse_args()
 
@@ -570,8 +613,9 @@ def main() -> None:
             boundaries = json.loads(args.boundaries) if args.boundaries else None
             result = finalize_plan(args.loop_id, args.summary, args.task_count, boundaries, args.db_path)
         elif args.add_criteria:
+            cot_config = json.loads(args.cot_config) if args.cot_config else None
             result = add_acceptance_criterion(
-                args.loop_id, args.given, args.when, args.then, args.bdd_story_id, args.db_path
+                args.loop_id, args.given, args.when, args.then, args.bdd_story_id, cot_config, args.db_path
             )
         elif args.start_apply:
             result = start_apply(args.loop_id, args.db_path)

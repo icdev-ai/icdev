@@ -427,7 +427,10 @@ def list_drafts(opp_id):
         rows = conn.execute(query, params).fetchall()
         drafts = [dict(r) for r in rows]
 
-        # Enrich with shall statement text
+        # Enrich with shall statement text and composite quality_score
+        import json as _json
+        from tools.govcon.response_drafter import _compute_quality_score
+
         for d in drafts:
             if d.get("shall_statement_id"):
                 shall = conn.execute(
@@ -437,6 +440,17 @@ def list_drafts(opp_id):
                 if shall:
                     d["shall_text"] = shall["statement_text"]
                     d["domain"] = shall["domain_category"]
+
+            meta = {}
+            try:
+                meta = _json.loads(d.get("metadata") or "{}")
+            except (ValueError, TypeError):
+                pass
+            confidence = float(d.get("confidence_score") or 0.0)
+            best_coverage = float(meta.get("best_coverage", 0.0))
+            d["quality_score"] = _compute_quality_score(confidence, best_coverage)
+            if not d.get("domain"):
+                d["domain"] = d.get("domain_category") or ""
 
         return jsonify({"drafts": drafts, "total": len(drafts)})
     finally:

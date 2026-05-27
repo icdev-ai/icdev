@@ -280,7 +280,7 @@ function initCanvas() {
     model: graph,
     width: 5000, height: 5000,
     gridSize: 10,
-    drawGrid: { name: 'dot', args: { color: 'rgba(255,255,255,0.06)' } },
+    drawGrid: { name: 'dot', args: { color: 'rgba(0,0,0,0.12)' } },
     background: { color: 'transparent' },
     defaultLink: () => new joint.shapes.standard.Link({
       attrs: { line: { stroke: '#e94560', strokeWidth: 2, targetMarker: { type: 'classic', fill: '#e94560', size: 6 } } }
@@ -308,19 +308,57 @@ function initCanvas() {
     });
   }
 
-  let isPanning = false, panStart = {}, scrollStart = {};
+  let isPanning = false, panStart = {}, translateStart = {};
   const canvasArea = document.querySelector('.pc-canvas-area');
+
+  // Drag-to-pan using paper.translate() — works at any scroll position
   paper.on('blank:pointerdown', (evt) => {
     isPanning = true;
     panStart = { x: evt.clientX, y: evt.clientY };
-    scrollStart = { x: canvasArea.scrollLeft, y: canvasArea.scrollTop };
+    translateStart = paper.translate();
+    canvasArea.classList.add('is-panning');
   });
   document.addEventListener('mousemove', (evt) => {
     if (!isPanning) return;
-    canvasArea.scrollLeft = scrollStart.x - (evt.clientX - panStart.x);
-    canvasArea.scrollTop = scrollStart.y - (evt.clientY - panStart.y);
+    paper.translate(
+      translateStart.tx + (evt.clientX - panStart.x),
+      translateStart.ty + (evt.clientY - panStart.y)
+    );
   });
-  document.addEventListener('mouseup', () => { isPanning = false; });
+  document.addEventListener('mouseup', () => {
+    if (!isPanning) return;
+    isPanning = false;
+    canvasArea.classList.remove('is-panning');
+  });
+
+  // Mouse-wheel zoom centered on cursor — uses translate to keep point under cursor fixed
+  canvasArea.addEventListener('wheel', (evt) => {
+    evt.preventDefault();
+    const s0 = paper.scale().sx;
+    const factor = evt.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const s1 = Math.max(0.08, Math.min(4, s0 * factor));
+    if (Math.abs(s1 - s0) < 0.001) return;
+    const t0 = paper.translate();
+    const areaRect = canvasArea.getBoundingClientRect();
+    const mx = evt.clientX - areaRect.left;
+    const my = evt.clientY - areaRect.top;
+    // Keep the paper-space point under the cursor fixed: mx = px*s + tx → tx = mx - px*s
+    const newTx = mx - (mx - t0.tx) * s1 / s0;
+    const newTy = my - (my - t0.ty) * s1 / s0;
+    paper.scale(s1, s1);
+    paper.translate(newTx, newTy);
+    _updateZoomLabel(s1);
+  }, { passive: false });
+
+  // Keyboard shortcuts: +/= zoom in, - zoom out, 0 reset, f fit
+  document.addEventListener('keydown', (evt) => {
+    const tag = (evt.target || {}).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (evt.key === '+' || evt.key === '=') { zoomIn(); evt.preventDefault(); }
+    else if (evt.key === '-') { zoomOut(); evt.preventDefault(); }
+    else if (evt.key === '0') { zoomReset(); evt.preventDefault(); }
+    else if (evt.key === 'f' || evt.key === 'F') { zoomFit(); evt.preventDefault(); }
+  });
 
   graph.on('change add remove', () => markDirty());
 }
@@ -381,7 +419,7 @@ function createLink(srcId, tgtId, label, linkId) {
     source: { id: srcId },
     target: { id: tgtId },
     attrs: { line: { stroke: '#e94560', strokeWidth: 2, targetMarker: { type: 'classic', fill: '#e94560', size: 6 } } },
-    labels: label ? [{ attrs: { text: { text: label, fill: '#7a8cb0', fontSize: 9 } }, position: 0.5 }] : [],
+    labels: label ? [{ attrs: { text: { text: label, fill: '#374151', fontSize: 9 } }, position: 0.5 }] : [],
   });
   graph.addCell(link);
   return link;
@@ -397,15 +435,43 @@ function onDragStart(event) {
   }
 }
 
+function _findFreePosition(x, y, w, h) {
+  const PAD = 15;
+  const occupied = graph.getElements().map(el => {
+    const p = el.position(), s = el.size();
+    return { x: p.x - PAD, y: p.y - PAD, x2: p.x + s.width + PAD, y2: p.y + s.height + PAD };
+  });
+  const overlaps = (cx, cy) => occupied.some(b => cx < b.x2 && cx + w > b.x && cy < b.y2 && cy + h > b.y);
+  if (!overlaps(x, y)) return { x, y };
+  const STEP = Math.max(w, h) + PAD;
+  for (let ring = 1; ring <= 12; ring++) {
+    const candidates = [];
+    for (let i = -ring; i <= ring; i++) {
+      candidates.push({ x: x + i * STEP, y: y - ring * STEP });
+      candidates.push({ x: x + i * STEP, y: y + ring * STEP });
+    }
+    for (let j = -ring + 1; j < ring; j++) {
+      candidates.push({ x: x - ring * STEP, y: y + j * STEP });
+      candidates.push({ x: x + ring * STEP, y: y + j * STEP });
+    }
+    for (const c of candidates) {
+      if (c.x >= 0 && c.y >= 0 && !overlaps(c.x, c.y)) return c;
+    }
+  }
+  return { x: x + Math.random() * 60, y: y + Math.random() * 60 };
+}
+
 function onDrop(event) {
   event.preventDefault();
   const type = event.dataTransfer.getData('text/plain');
   if (!type) return;
   const rect = document.getElementById('pc-canvas-container').getBoundingClientRect();
-  const x = Math.round((event.clientX - rect.left) / 10) * 10;
-  const y = Math.round((event.clientY - rect.top) / 10) * 10;
+  const t = paper.translate(), s = paper.scale();
+  const rawX = Math.round(((event.clientX - rect.left - t.tx) / s.sx) / 10) * 10;
+  const rawY = Math.round(((event.clientY - rect.top  - t.ty) / s.sy) / 10) * 10;
+  const pos = _findFreePosition(rawX, rawY, 110, 60);
   pushUndo();
-  const node = createNode(type, x, y);
+  const node = createNode(type, pos.x, pos.y);
   selectCell(node);
   markDirty();
   updateStatus(`Added: ${getStyle(type).label}`);
@@ -531,6 +597,39 @@ function _showSdcToast(sdc, source) {
   setTimeout(() => { if (toast.parentElement) toast.remove(); }, 8000);
 }
 
+function _resolveNodeOverlaps(g, padding) {
+  padding = padding == null ? 20 : padding;
+  const els = g.getElements();
+  if (els.length < 2) return;
+  for (let iter = 0; iter < 80; iter++) {
+    let moved = false;
+    for (let i = 0; i < els.length; i++) {
+      for (let j = i + 1; j < els.length; j++) {
+        const a = els[i], b = els[j];
+        const ap = a.position(), as_ = a.size();
+        const bp = b.position(), bs = b.size();
+        const p2 = padding / 2;
+        const ax1 = ap.x - p2, ay1 = ap.y - p2, ax2 = ap.x + as_.width + p2, ay2 = ap.y + as_.height + p2;
+        const bx1 = bp.x - p2, by1 = bp.y - p2, bx2 = bp.x + bs.width + p2, by2 = bp.y + bs.height + p2;
+        if (ax2 <= bx1 || bx2 <= ax1 || ay2 <= by1 || by2 <= ay1) continue;
+        let dx = (bx1 + bx2) / 2 - (ax1 + ax2) / 2;
+        let dy = (by1 + by2) / 2 - (ay1 + ay2) / 2;
+        if (dx === 0 && dy === 0) { dx = 1; dy = 0; }
+        const ovX = (ax2 - ax1) / 2 + (bx2 - bx1) / 2 - Math.abs(dx);
+        const ovY = (ay2 - ay1) / 2 + (by2 - by1) / 2 - Math.abs(dy);
+        if (ovX <= 0 || ovY <= 0) continue;
+        let px = 0, py = 0;
+        if (ovX <= ovY) { px = (ovX / 2 + 0.5) * (dx >= 0 ? 1 : -1); }
+        else            { py = (ovY / 2 + 0.5) * (dy >= 0 ? 1 : -1); }
+        a.position(ap.x - px, ap.y - py);
+        b.position(bp.x + px, bp.y + py);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
 function loadGraph(graphJson) {
   const data = typeof graphJson === 'string' ? JSON.parse(graphJson) : graphJson;
   graph.clear();
@@ -555,14 +654,43 @@ function loadGraph(graphJson) {
   if (dropped > 0) {
     console.warn('loadGraph: dropped ' + dropped + ' edge(s) referencing missing nodes');
   }
+  _resolveNodeOverlaps(graph, 20);
 }
 
 // ── Zoom ────────────────────────────────────────────────────────────────────
 
-function zoomIn()  { const s = paper.scale(); paper.scale(s.sx * 1.2, s.sy * 1.2); }
-function zoomOut() { const s = paper.scale(); paper.scale(s.sx / 1.2, s.sy / 1.2); }
-function zoomFit() { paper.scaleContentToFit({ padding: 40, maxScale: 2 }); }
-function zoomReset(){ paper.scale(1, 1); paper.translate(0, 0); }
+function _updateZoomLabel(s) {
+  const el = document.getElementById('pc-zoom-label');
+  if (el) el.textContent = Math.round((s !== undefined ? s : paper.scale().sx) * 100) + '%';
+}
+
+function _zoomAroundCenter(newScale) {
+  const canvasArea = document.querySelector('.pc-canvas-area');
+  const s0 = paper.scale().sx;
+  const cx = canvasArea.clientWidth  / 2;
+  const cy = canvasArea.clientHeight / 2;
+  const newScrollX = (canvasArea.scrollLeft + cx) * newScale / s0 - cx;
+  const newScrollY = (canvasArea.scrollTop  + cy) * newScale / s0 - cy;
+  paper.scale(newScale, newScale);
+  canvasArea.scrollLeft = newScrollX;
+  canvasArea.scrollTop  = newScrollY;
+  _updateZoomLabel(newScale);
+}
+
+function zoomIn()   { _zoomAroundCenter(Math.min(4,   paper.scale().sx * 1.2)); }
+function zoomOut()  { _zoomAroundCenter(Math.max(0.08, paper.scale().sx / 1.2)); }
+function zoomFit() {
+  const area = document.querySelector('.pc-canvas-area');
+  const w = area ? area.clientWidth  : 1200;
+  const h = area ? area.clientHeight : 800;
+  paper.scaleContentToFit({
+    fittingBBox: { x: 0, y: 0, width: w, height: h },
+    padding: 60,
+    maxScale: 1,   // never zoom in past 100% — only zoom out to fit
+  });
+  _updateZoomLabel();
+}
+function zoomReset(){ paper.scale(1, 1); paper.translate(0, 0); _updateZoomLabel(1); }
 
 // ── Right Panel (Properties / Analysis) ─────────────────────────────────────
 
@@ -1113,39 +1241,138 @@ function validateIaC() {
     .then(r => r.json())
     .then(data => {
       if (data.error) { alert(data.error); return; }
-      const v = data.validation || {};
-      const s = v.summary || {};
-      let html = _section('IaC Validation Results');
-      const gateColor = v.gate === 'pass' ? '#27ae60' : '#e74c3c';
-      html += `<div style="text-align:center;margin:8px 0;"><span style="font-size:28px;font-weight:800;color:${gateColor};">${(v.gate || '?').toUpperCase()}</span><div style="font-size:11px;color:#7a8cb0;">Gate: ${s.passed || 0} pass, ${s.failed || 0} fail, ${s.warned || 0} warn</div></div>`;
-      html += _bar(s.total > 0 ? (s.passed / s.total * 100) : 0, gateColor);
-
-      // Results by layer
-      const layers = {1: 'Syntax', 2: 'Schema', 3: 'Policy', 4: 'Plan', 5: 'Deploy Test'};
-      for (let layer = 1; layer <= (v.layers_run || 3); layer++) {
-        const layerResults = (v.results || []).filter(r => r.layer === layer);
-        if (!layerResults.length) continue;
-        html += _section('Layer ' + layer + ': ' + (layers[layer] || ''));
-        layerResults.forEach(r => {
-          const icons = {pass: '&#10003;', fail: '&#10007;', warn: '&#9888;', skip: '&#8594;'};
-          const colors = {pass: '#27ae60', fail: '#e74c3c', warn: '#f39c12', skip: '#7a8cb0'};
-          html += `<div style="margin:3px 0;padding:4px 8px;border-left:3px solid ${colors[r.status]};background:#0f2040;border-radius:0 4px 4px 0;">`;
-          html += `<span style="color:${colors[r.status]}">${icons[r.status]}</span> `;
-          html += `<b style="font-size:11px;">${r.check}</b>`;
-          if (r.file) html += ` <span style="color:#5a6e8c;font-size:10px;">(${r.file})</span>`;
-          html += `<div style="font-size:10px;color:#7a8cb0;">${r.message}</div>`;
-          if (r.details && r.details.length) {
-            r.details.forEach(d => { html += `<div style="font-size:9px;color:#5a6e8c;margin-left:16px;">- ${d}</div>`; });
-          }
-          html += '</div>';
-        });
-      }
-      html += `<p style="font-size:10px;color:#5a6e8c;margin-top:8px;">Layers 1-3 run offline (air-gap safe). Layer 4+ requires terraform binary or cloud credentials.</p>`;
-      openRightPanel('IaC Validation', html);
-      updateStatus('Validation: ' + v.gate);
+      window._lastValidationData = data;
+      _renderValidation(data);
+      updateStatus('Validation: ' + (data.validation || {}).gate);
     })
     .catch(err => { updateStatus('Validation failed'); alert(err); });
 }
+
+function _renderValidation(data) {
+  const v = data.validation || {};
+  const s = v.summary || {};
+  let html = _section('IaC Validation Results');
+  const gateColor = v.gate === 'pass' ? '#1e8449' : '#c0392b';
+  html += `<div style="text-align:center;margin:8px 0;">
+    <span style="font-size:28px;font-weight:800;color:${gateColor};">${(v.gate || '?').toUpperCase()}</span>
+    <div style="font-size:11px;color:#4a5568;">Gate: ${s.passed||0} pass, ${s.failed||0} fail, ${s.warned||0} warn</div>
+  </div>`;
+  html += _bar(s.total > 0 ? (s.passed / s.total * 100) : 0, gateColor);
+
+  // Auto-fix banner
+  const fixable = (v.results || []).filter(r => (r.status === 'warn' || r.status === 'fail') && r.fix_hint);
+  if (fixable.length > 0) {
+    html += `<div style="margin:8px 0;padding:7px 10px;background:#fef9e7;border:1px solid #f39c12;border-radius:6px;display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:11px;font-weight:600;color:#7d6608;">⚠ ${fixable.length} issue(s) have suggested fix${fixable.length > 1 ? 'es' : ''}</span>
+      <button class="tb-btn" style="background:#d5f0e0;color:#1e7e34;border-color:#1e7e34;font-size:11px;padding:2px 8px;font-weight:600;" onclick="autoFixAllWarnings()">✦ Auto-fix All</button>
+    </div>`;
+  }
+
+  const layers = {1: 'Syntax', 2: 'Schema', 3: 'Policy', 4: 'Plan', 5: 'Deploy Test'};
+  for (let layer = 1; layer <= (v.layers_run || 3); layer++) {
+    const layerResults = (v.results || []).filter(r => r.layer === layer);
+    if (!layerResults.length) continue;
+    html += _section('Layer ' + layer + ': ' + (layers[layer] || ''));
+    layerResults.forEach((r, idx) => {
+      const icons  = {pass:'✓', fail:'✗', warn:'⚠', skip:'→'};
+      const colors = {pass:'#1e8449', fail:'#c0392b', warn:'#b7770d', skip:'#4a5568'};
+      const bgs    = {pass:'#f0fff4', fail:'#fff5f5', warn:'#fffbf0', skip:'#f8f8f8'};
+      const rid = `vr-${layer}-${idx}`;
+      const needsAction = r.status === 'warn' || r.status === 'fail';
+
+      html += `<div id="${rid}" style="margin:3px 0;padding:6px 8px;border-left:3px solid ${colors[r.status]};background:${bgs[r.status]};border-radius:0 4px 4px 0;">`;
+      html += `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px;">`;
+      html += `<div style="flex:1;min-width:0;">
+        <span style="color:${colors[r.status]};font-size:13px;margin-right:4px;">${icons[r.status]}</span>
+        <b style="font-size:11px;color:#1a1a2e;">${r.check}</b>`;
+      if (r.file) html += ` <span style="color:#4a5568;font-size:10px;">(${r.file})</span>`;
+      html += `<div style="font-size:10px;color:#4a5568;margin-top:2px;">${r.message}</div>`;
+      if (r.details && r.details.length) {
+        r.details.forEach(d => { html += `<div style="font-size:9px;color:#4a5568;margin-left:12px;">— ${d}</div>`; });
+      }
+      html += `</div>`;
+      if (needsAction) {
+        html += `<div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0;">`;
+        if (r.fix_hint) html += `<button class="tb-btn" style="font-size:10px;padding:2px 7px;background:#dce8fb;color:#1a5276;border-color:#aed6f1;" onclick="_toggleFix('${rid}')">Fix →</button>`;
+        html += `<button class="tb-btn" style="font-size:10px;padding:2px 7px;color:#4a5568;" onclick="_dismissItem('${rid}')">Dismiss</button>`;
+        html += `</div>`;
+      }
+      html += `</div>`;
+
+      // Fix card (hidden by default)
+      if (r.fix_hint) {
+        const safeSnippet = (r.fix_snippet || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        html += `<div id="${rid}-fix" style="display:none;margin-top:6px;padding:8px;background:#eaf3fb;border-radius:4px;border:1px solid #aed6f1;">`;
+        html += `<div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:4px;">💡 Suggested Fix</div>`;
+        html += `<div style="font-size:10px;color:#2c3e50;margin-bottom:6px;">${r.fix_hint}</div>`;
+        if (r.fix_snippet) {
+          html += `<pre style="font-size:9px;background:#d6eaf8;padding:6px;border-radius:3px;white-space:pre-wrap;color:#1a1a2e;margin:0 0 6px;font-family:var(--pc-mono);">${safeSnippet}</pre>`;
+          html += `<button class="tb-btn" style="font-size:10px;padding:2px 8px;background:#1a5276;color:#fff;" onclick="_copyFix(this,'${rid}')">Copy Snippet</button>`;
+        }
+        html += `</div>`;
+      }
+      html += `</div>`;
+    });
+  }
+  html += `<p style="font-size:10px;color:#4a5568;margin-top:8px;">Layers 1-3 run offline (air-gap safe). Layer 4+ requires terraform binary or cloud credentials.</p>`;
+  openRightPanel('IaC Validation', html);
+}
+
+window._toggleFix = function(rid) {
+  const el = document.getElementById(rid + '-fix');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+};
+
+window._dismissItem = function(rid) {
+  const el = document.getElementById(rid);
+  if (el) { el.style.opacity = '0.4'; el.style.pointerEvents = 'none'; }
+};
+
+window._copyFix = function(btn, rid) {
+  const fixDiv = document.getElementById(rid + '-fix');
+  if (!fixDiv) return;
+  const pre = fixDiv.querySelector('pre');
+  if (!pre) return;
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  }).catch(() => {
+    // Fallback for browsers that block clipboard
+    const ta = document.createElement('textarea');
+    ta.value = pre.textContent;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = 'Copy Snippet'; }, 1500);
+  });
+};
+
+window.autoFixAllWarnings = function() {
+  const data = window._lastValidationData;
+  if (!data) return;
+  const v = data.validation || {};
+  const fixable = (v.results || []).filter(r => (r.status === 'warn' || r.status === 'fail') && r.fix_hint);
+  if (!fixable.length) return;
+  updateStatus(`Applying ${fixable.length} fix(es)...`);
+  fetch(`/devops/api/validate/${pipelineId}/fix`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fixes: fixable.map(r => ({ check: r.check, file: r.file, fix_action: r.fix_action || r.check })) }),
+  })
+    .then(r => r.json())
+    .then(result => {
+      if (result.error) { alert(result.error); return; }
+      const n = result.fixed || 0;
+      updateStatus(`Applied ${n} fix(es) — re-validating...`);
+      window._lastValidationData = result;
+      _renderValidation(result);
+      updateStatus('Validation: ' + (result.validation || {}).gate);
+    })
+    .catch(err => { updateStatus('Auto-fix failed'); console.error(err); });
+};
 
 // ── Deploy IaC Bundle ────────────────────────────────────────────────────────
 
@@ -1239,6 +1466,7 @@ function runAnalysis(type) {
       else if (type === 'cost') html = _renderCost(r);
       else if (type === 'execution_time') html = _renderExecTime(r);
       else if (type === 'antipatterns') html = _renderAntipatterns(r);
+      else if (type === 'governance') html = _renderPDCGovernance(r);
       else html = '<pre style="font-size:11px;white-space:pre-wrap;">' + JSON.stringify(r, null, 2) + '</pre>';
       const titles = {
         security_coverage: 'OWASP Top 10 Coverage',
@@ -1247,6 +1475,7 @@ function runAnalysis(type) {
         cost: 'Cost Estimate',
         execution_time: 'Execution Time',
         antipatterns: 'Anti-Pattern Detection',
+        governance: 'Pipeline Governance',
       };
       openRightPanel(titles[type] || type, html);
       updateStatus('Analysis complete');
@@ -1502,6 +1731,39 @@ function _renderAntipatterns(r) {
       html += '</div>';
     });
   });
+  return html;
+}
+
+function _renderPDCGovernance(r) {
+  const score = r.score || 0;
+  const grade = r.grade || '?';
+  const maturity = r.maturity || {};
+  const cats = r.categories || {};
+  const recs = r.recommendations || [];
+  const sColor = score >= 80 ? '#27ae60' : score >= 60 ? '#f39c12' : '#e74c3c';
+
+  let html = `<div style="background:#0f2040;border-radius:8px;padding:12px;margin-bottom:12px;text-align:center;">
+    <div style="font-size:38px;font-weight:700;color:${sColor};">${score}</div>
+    <div style="font-size:11px;color:#7a8cb0;">Pipeline Governance Score / 100 · Grade <strong style="color:${sColor};">${grade}</strong></div>
+  </div>`;
+  html += _bar(score, sColor);
+  html += `<div style="background:#16213e;border:1px solid #9b59b644;border-radius:6px;padding:8px 12px;margin-bottom:12px;">
+    <div style="font-size:12px;font-weight:700;color:#9b59b6;">Level ${maturity.level||1} — ${maturity.label||''}</div>
+    <div style="font-size:10px;color:#5a6e8c;">${maturity.description||''}</div>
+  </div>`;
+  html += `<div style="font-size:11px;font-weight:700;color:#7a8cb0;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Pillars (${r.passed_checks}/${r.total_checks} passed)</div>`;
+  Object.entries(cats).forEach(([pillar, c]) => {
+    const pct = c.pct || 0;
+    const pColor = pct >= 80 ? '#27ae60' : pct >= 50 ? '#f39c12' : '#e74c3c';
+    html += `<div style="margin-bottom:7px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:#eaeaea;">${pillar}</span><span style="color:${pColor};font-weight:600;">${pct}% (${c.passed}/${c.total})</span></div>${_bar(pct, pColor)}</div>`;
+  });
+  if (recs.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#7a8cb0;text-transform:uppercase;letter-spacing:.5px;margin:10px 0 6px;">Top Recommendations</div>`;
+    recs.slice(0, 6).forEach(rec => {
+      const bColor = rec.priority === 'CAT1' ? '#e74c3c' : rec.priority === 'CAT2' ? '#f39c12' : '#7a8cb0';
+      html += `<div style="padding:5px 8px;border-left:3px solid ${bColor};background:#0d1b2a;border-radius:0 4px 4px 0;margin-bottom:4px;font-size:11px;color:#eaeaea;">${rec.title}</div>`;
+    });
+  }
   return html;
 }
 

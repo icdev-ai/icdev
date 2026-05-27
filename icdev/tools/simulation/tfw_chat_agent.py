@@ -19,6 +19,11 @@ Slash commands dispatched here:
   /diff         → Diff current topology vs baseline / previous REFINE state
   /spec         → Structured spec from REFINE session (delegates to spec_generator)
   /audit        → AUDIT mode: scan topology → surface findings → add to POAM
+  /refactor     → Generate Python snippets to convert Java/legacy modules (CAM)
+  /components   → Map AWS components to application features (CAM)
+  /deprecated   → Identify EOL/legacy libraries to replace (CAM)
+  /status       → Simulate migration readiness DRYRUN check (CAM)
+  /coa          → Cloud Optimization Advice for a topic or component (CAM)
 
 session.canvas_type is always auto-injected from the session DB record; callers
 only need to pass session_id.
@@ -29,15 +34,15 @@ Public surface:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.tfw_chat_agent")
+logger = get_logger("icdev.tfw_chat_agent")
 
 # ---------------------------------------------------------------------------
 # Canvas-specific command visibility
@@ -45,43 +50,46 @@ logger = logging.getLogger("icdev.tfw_chat_agent")
 # ---------------------------------------------------------------------------
 
 CANVAS_SLASH_COMMANDS: dict[str, list[str]] = {
+    "cam": [
+        "/coa", "/deprecated", "/refactor", "/status", "/analyze", "/components",
+    ],
     "ndc": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/ppsm", "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "sdc": [
-        "/explain", "/troubleshoot", "/audit",
+        "/explain", "/troubleshoot", "/audit", "/analyze",
         "/api-surface", "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "eda": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/event-catalog", "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "ddc": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "pdc": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "bdc": [
-        "/explain", "/troubleshoot", "/audit",
+        "/explain", "/troubleshoot", "/audit", "/analyze",
         "/ppsm", "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "odc": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "idc": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/ppsm", "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
 }
 
 # Fallback for unknown canvas types
 _DEFAULT_COMMANDS = [
-    "/explain", "/troubleshoot", "/audit",
+    "/explain", "/troubleshoot", "/audit", "/analyze",
     "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
 ]
 
@@ -506,6 +514,263 @@ def _handle_audit(session_id: str, canvas_type: str, args_text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 # Maps command prefix → handler function
+def _handle_analyze(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """Fetch a URL and return a canvas-aware LLM analysis."""
+    url = args_text.strip()
+    if not url:
+        return {
+            "reply": (
+                "**Usage:** `/analyze <url>`\n\n"
+                "Examples:\n"
+                "- `/analyze https://github.com/org/repo/tree/main/src`\n"
+                "- `/analyze https://docs.example.com/architecture`\n\n"
+                "Paste a GitHub repo, directory, file, or any web page — "
+                "I'll fetch it and produce a structured analysis tuned to the current canvas."
+            ),
+            "mode": "analyze",
+        }
+    if not url.startswith("http"):
+        return {
+            "reply": f"**Invalid URL:** `{url}` — must start with `http://` or `https://`",
+            "mode": "analyze",
+        }
+    try:
+        from tools.chat_router.url_analyzer import analyze
+        result = analyze(url, canvas_type)
+        return {"reply": result["reply"], "mode": "analyze"}
+    except Exception as exc:
+        return {"reply": f"[Analyze error: {exc}]", "mode": "error"}
+
+
+def _llm_call(system_prompt: str, user_content: str) -> str | None:
+    """Invoke LLM via router (provider-agnostic). Returns text or None on failure."""
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+        )
+        resp = router.invoke("chat_response", req)
+        return (resp.content or "").strip() if resp else None
+    except Exception as exc:
+        logger.warning("LLM call failed: %s", exc)
+        return None
+
+
+def _resolve_arg_with_url(arg: str) -> tuple[str, str]:
+    """If *arg* is a URL, fetch its content and return (label, context_block).
+
+    Returns (arg, "") when *arg* is not a URL — callers treat blank context as
+    name-only mode.
+    """
+    if not arg.startswith("http://") and not arg.startswith("https://"):
+        return arg, ""
+    try:
+        from tools.chat_router.url_analyzer import fetch_content
+        content, _ = fetch_content(arg)
+        block = f"\n\n--- URL CONTENT: {arg} ---\n{content[:4000]}\n--- END ---"
+        return arg, block
+    except Exception as exc:
+        logger.warning("URL fetch failed for %s: %s", arg, exc)
+        return arg, f"\n\n[Could not fetch URL: {exc}]"
+
+
+def _handle_refactor(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """Generate Python conversion snippets for a Java/legacy module or URL."""
+    module = args_text.strip()
+    if not module:
+        return {
+            "reply": (
+                "**Usage:** `/refactor <module | url>`\n\n"
+                "Examples:\n"
+                "- `/refactor AuthService` — Java auth service → Python equivalent\n"
+                "- `/refactor DataAccessLayer` — JDBC/Hibernate → SQLAlchemy\n"
+                "- `/refactor https://github.com/org/repo` — fetch repo and generate conversion plan\n\n"
+                "Provide a module name or a URL and I'll generate idiomatic Python "
+                "conversion snippets with migration notes."
+            ),
+            "mode": "refactor",
+        }
+
+    label, url_ctx = _resolve_arg_with_url(module)
+    system = (
+        "You are a senior migration architect specializing in Java-to-Python modernization for AWS cloud deployments. "
+        "Produce concise, idiomatic Python 3.12 code snippets for the requested module conversion. "
+        "Include: (1) equivalent Python class/function, (2) key library mappings (e.g. JDBC→SQLAlchemy, "
+        "Spring→FastAPI, EhCache→redis-py), (3) gotchas or behavioral differences to watch. "
+        "Format with markdown code fences."
+    )
+    user = f"Generate Python conversion snippets for: **{label}**{url_ctx}"
+    reply = _llm_call(system, user)
+    if not reply:
+        reply = (
+            "LLM unavailable. Common Java→Python mappings:\n"
+            "- `Spring @Service` → `class MyService:` with dependency injection via constructor\n"
+            "- `JDBC/Hibernate` → `SQLAlchemy` ORM or `asyncpg` for async\n"
+            "- `EhCache` → `redis-py` with `@lru_cache` for in-process caching\n"
+            "- `Log4j` → `logging` stdlib + `structlog` for structured output\n"
+            "- `JUnit` → `pytest` with fixtures"
+        )
+    return {"reply": f"**[REFACTOR — {label}]**\n\n{reply}", "mode": "refactor"}
+
+
+def _handle_components(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """List AWS components mapped to application features or a URL."""
+    feature = args_text.strip()
+    if not feature:
+        return {
+            "reply": (
+                "**Usage:** `/components <feature | url>`\n\n"
+                "Examples:\n"
+                "- `/components authentication` — IAM, Cognito, WAF mappings\n"
+                "- `/components caching` — ElastiCache, DAX, CloudFront\n"
+                "- `/components https://github.com/org/repo` — infer component map from repo\n\n"
+                "Describe a feature, function, or paste a URL and I'll map it to the optimal AWS component stack."
+            ),
+            "mode": "components",
+        }
+
+    label, url_ctx = _resolve_arg_with_url(feature)
+    system = (
+        "You are an AWS solutions architect. For the requested feature or codebase, produce a structured table "
+        "mapping application functions to AWS components. Include: Component, Purpose, Tier "
+        "(Compute/Storage/Network/Security/AI-ML), and Migration Notes. "
+        "Focus on GovCloud-compatible services. Use markdown tables."
+    )
+    user = f"Map AWS components for: **{label}**{url_ctx}"
+    reply = _llm_call(system, user)
+    if not reply:
+        reply = (
+            "LLM unavailable. Core AWS component patterns:\n\n"
+            "| Component | Purpose | Tier |\n|-----------|---------|------|\n"
+            "| EKS | Container orchestration | Compute |\n"
+            "| ElastiCache | Distributed caching | Storage |\n"
+            "| Bedrock | Foundation model inference | AI/ML |\n"
+            "| RDS Aurora | Relational DB | Storage |\n"
+            "| API Gateway | REST/WebSocket routing | Network |\n"
+            "| WAF + Shield | DDoS / OWASP protection | Security |"
+        )
+    return {"reply": f"**[COMPONENTS — {label}]**\n\n{reply}", "mode": "components"}
+
+
+def _handle_deprecated(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """Identify legacy/deprecated libraries in a codebase name or URL."""
+    arg = args_text.strip()
+    label, url_ctx = _resolve_arg_with_url(arg) if arg else ("the current codebase", "")
+    system = (
+        "You are a modernization engineer performing a dependency audit. "
+        "For the provided codebase or tech stack, identify: (1) EOL/deprecated libraries, "
+        "(2) security-risky packages (known CVEs or unmaintained), "
+        "(3) recommended replacements with migration effort estimate (Low/Medium/High). "
+        "Format as a markdown table: Library | Status | Replacement | Effort | Notes."
+    )
+    user = f"Identify deprecated or legacy libraries in: **{label}**{url_ctx}"
+    reply = _llm_call(system, user)
+    if not reply:
+        reply = (
+            "LLM unavailable. Common deprecated patterns:\n\n"
+            "| Library | Status | Replacement | Effort |\n|---------|--------|-------------|--------|\n"
+            "| Log4j 1.x | EOL + CVEs | Log4j 2.x / Logback | Low |\n"
+            "| Spring 4.x | EOL | Spring Boot 3.x | Medium |\n"
+            "| Java 8 / 11 | Nearing EOL | Java 21 LTS | Medium |\n"
+            "| EhCache 2.x | EOL | Caffeine / Redis | Low |\n"
+            "| Struts 2 | CVE history | Spring MVC / Quarkus | High |"
+        )
+    return {"reply": f"**[DEPRECATED — {label}]**\n\n{reply}", "mode": "deprecated"}
+
+
+def _handle_status(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """Simulate migration readiness checks (DRYRUN) for a component or URL."""
+    component = args_text.strip()
+    if not component:
+        return {
+            "reply": (
+                "**Usage:** `/status <component | url>`\n\n"
+                "Examples:\n"
+                "- `/status AuthService` — readiness check for auth module\n"
+                "- `/status database` — DB migration readiness\n"
+                "- `/status https://github.com/org/repo` — readiness check from live repo\n"
+                "- `/status all` — full system migration readiness scan\n\n"
+                "Runs a simulated DRYRUN migration readiness check."
+            ),
+            "mode": "status",
+        }
+
+    label, url_ctx = _resolve_arg_with_url(component)
+    system = (
+        "You are a migration readiness assessor running a DRYRUN check. "
+        "Produce a structured readiness report for the named component. Include: "
+        "(1) Readiness Score 0–100, (2) Go/No-Go verdict, (3) Blocker items (must fix before migration), "
+        "(4) Warning items (fix after migration), (5) Passing checks. "
+        "Format with clear headers and color-coded status (✅ Pass / ⚠️ Warn / ❌ Block). "
+        "Label the report clearly as DRYRUN — SIMULATED."
+    )
+    user = f"Run a DRYRUN migration readiness check for: **{label}**{url_ctx}"
+    reply = _llm_call(system, user)
+    if not reply:
+        import random
+        score = random.randint(55, 85)
+        reply = (
+            f"> ⚠️ **DRYRUN — SIMULATED** (LLM unavailable)\n\n"
+            f"**Readiness Score:** {score}/100 — {'🟡 Conditional Go' if score < 75 else '🟢 Go'}\n\n"
+            "✅ Source code compiles without errors\n"
+            "✅ Unit test coverage ≥ 60%\n"
+            "⚠️ Integration tests not yet migrated\n"
+            "⚠️ Secrets still in environment variables (move to Secrets Manager)\n"
+            "❌ Database schema migration not validated in target environment\n\n"
+            "*Tip: pass a GitHub URL to enrich this check with actual source data.*"
+        )
+    return {"reply": f"**[STATUS — DRYRUN: {label}]**\n\n{reply}", "mode": "status"}
+
+
+def _handle_coa(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """Get Cloud Optimization Advice for a topic, component, or URL."""
+    topic = args_text.strip()
+    if not topic:
+        return {
+            "reply": (
+                "**Usage:** `/coa <topic | url>`\n\n"
+                "Examples:\n"
+                "- `/coa latency` — reduce API response time\n"
+                "- `/coa cost` — optimize AWS spend\n"
+                "- `/coa https://github.com/org/repo` — optimization advice from live codebase\n"
+                "- `/coa cold-start` — Lambda/EKS startup optimization\n\n"
+                "Describe a concern or paste a URL for specific, actionable Cloud Optimization Advice."
+            ),
+            "mode": "coa",
+        }
+
+    label, url_ctx = _resolve_arg_with_url(topic)
+    system = (
+        "You are a cloud performance and cost optimization expert specializing in AWS GovCloud. "
+        "For the given topic or codebase, provide specific Cloud Optimization Advice (COA). Structure as: "
+        "(1) Problem Analysis — root causes to investigate, "
+        "(2) Quick Wins — changes achievable in < 1 sprint, "
+        "(3) Strategic Changes — architectural improvements for long-term gain, "
+        "(4) Expected Impact — latency reduction %, cost savings estimate, or throughput gain. "
+        "Be specific: name AWS services, configuration flags, and numeric thresholds."
+    )
+    user = f"Provide Cloud Optimization Advice for: **{label}**{url_ctx}"
+    reply = _llm_call(system, user)
+    if not reply:
+        reply = (
+            "LLM unavailable. General optimization patterns:\n\n"
+            "**Quick Wins:**\n"
+            "- Enable ElastiCache in front of RDS for read-heavy queries (↓ latency ~60–80%)\n"
+            "- Right-size EC2/EKS nodes with Compute Optimizer recommendations\n"
+            "- Add CloudFront CDN for static assets and API responses\n\n"
+            "**Strategic Changes:**\n"
+            "- Migrate hot-path endpoints to Lambda@Edge for sub-10ms global response\n"
+            "- Adopt DynamoDB for session/state storage instead of RDS\n"
+            "- Enable Graviton3 instances for 20–40% cost reduction on compute"
+        )
+    return {"reply": f"**[COA — {label}]**\n\n{reply}", "mode": "coa"}
+
+
 _COMMAND_HANDLERS: dict[str, Any] = {
     "/ppsm": _handle_ppsm,
     "/api-surface": _handle_ppsm,
@@ -519,6 +784,12 @@ _COMMAND_HANDLERS: dict[str, Any] = {
     "/diff": _handle_diff,
     "/spec": _handle_spec,
     "/audit": _handle_audit,
+    "/analyze": _handle_analyze,
+    "/refactor": _handle_refactor,
+    "/components": _handle_components,
+    "/deprecated": _handle_deprecated,
+    "/status": _handle_status,
+    "/coa": _handle_coa,
 }
 
 

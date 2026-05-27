@@ -38,6 +38,7 @@ categories:
   admin:          {label: "Admin",          severity_default: "warning"}
   gamification:   {label: "Gamification",   severity_default: "info"}
   governance:     {label: "Governance",     severity_default: "warning"}
+  transfer:       {label: "Data Transfer",  severity_default: "warning"}
 
 # Table registry — order matters (defines default presentation order).
 tables:
@@ -205,3 +206,18 @@ tables:
       action: hook_name
       detail: summary
     nist_controls: [AU-2, AU-9, AU-12]
+
+  cross_agency_transfers:
+    label: "Cross-agency data transfers"
+    category: transfer
+    description: >-
+      Append-only audit trail for all cross-agency data transfer events —
+      initiated, completed, failed, and rejected. Dual-written to audit_trail
+      for AU-2 completeness. Classification markings (CUI/SECRET/TOP_SECRET)
+      recorded per transfer with configurable retention (AU-11).
+    columns:
+      timestamp: occurred_at
+      user_id: actor
+      action: event_type
+      detail: details
+    nist_controls: [AU-2, AU-3, AU-9, AU-11, AU-12]

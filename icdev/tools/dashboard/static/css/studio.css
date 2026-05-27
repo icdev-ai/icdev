@@ -1043,14 +1043,103 @@
   background: var(--studio-bg-card);
 }
 
+/* Chat panel open — 3rd grid column slides in */
+.wf-studio--chat-open {
+  grid-template-columns: 280px 1fr 340px;
+}
+.wf-studio--palette-collapsed.wf-studio--chat-open {
+  grid-template-columns: 40px 1fr 340px;
+}
+
+/* Chat panel — hidden by default, shown when parent has wf-studio--chat-open */
+#wf-chat-panel {
+  display: none;
+  grid-column: 3;
+  grid-row: 2;
+  flex-direction: column;
+  background: var(--studio-bg-elevated, #1e2030);
+  border-left: 1px solid var(--studio-border, #2d3047);
+  overflow: hidden;
+  width: 340px;
+}
+
+.wf-studio--chat-open #wf-chat-panel {
+  display: flex;
+}
+
+/* Run progress bar spans all columns inside toolbar (not a grid row) */
+#wf-run-bar {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 16px;
+  border-top: 1px solid var(--studio-border, #2d3047);
+  background: var(--studio-bg-elevated, #1e2030);
+  font-size: 0.8rem;
+}
+#wf-run-bar.wf-run-bar--visible {
+  display: flex;
+}
+
 .wf-studio__toolbar {
   grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  background: var(--studio-bg-elevated);
+  border-bottom: 1px solid var(--studio-border);
+}
+
+.wf-studio__toolbar-row {
   display: flex;
   align-items: center;
   gap: var(--studio-space-3);
   padding: var(--studio-space-2) var(--studio-space-4);
-  background: var(--studio-bg-elevated);
-  border-bottom: 1px solid var(--studio-border);
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Ensure toolbar primary actions never get clipped */
+.wf-studio__toolbar-row #wf-chat-toggle-btn,
+.wf-studio__toolbar-row #wf-run-btn,
+.wf-studio__toolbar-row .studio-btn--primary {
+  flex-shrink: 0;
+}
+
+/* ── ⋯ More dropdown ─────────────────────────────────────────────────────── */
+.wf-more-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.wf-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--studio-bg-elevated, #1e2030);
+  border: 1px solid var(--studio-border, #2d3047);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 160px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+  z-index: 9999;
+}
+.wf-more-menu[hidden] { display: none; }
+.wf-more-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  color: var(--studio-text, #e2e8f0);
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wf-more-menu button:hover {
+  background: rgba(99,102,241,0.15);
 }
 
 .wf-studio__palette {
@@ -1241,19 +1330,31 @@
 /* Canvas */
 .wf-canvas {
   position: relative;
-  overflow: auto;
+  overflow: hidden;
   background-color: #ffffff;
   background-image:
     linear-gradient(rgba(0,0,0,0.07) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0,0,0,0.07) 1px, transparent 1px);
   background-size: 24px 24px;
-  cursor: crosshair;
+  cursor: grab;
+  user-select: none;
+}
+.wf-canvas.is-panning { cursor: grabbing; }
+
+/* World — single transform target for pan + zoom */
+#wf-world {
+  position: absolute;
+  top: 0; left: 0;
+  width: 6000px; height: 6000px;
+  transform-origin: 0 0;
 }
 
 .wf-canvas__svg {
   position: absolute;
   top: 0;
   left: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
   z-index: 1;
   overflow: visible;

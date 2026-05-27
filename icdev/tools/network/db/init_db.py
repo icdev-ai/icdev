@@ -734,6 +734,43 @@ CREATE TABLE IF NOT EXISTS nc_peering_sessions (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ── Partner Registry ──────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_partners (
+    id               TEXT PRIMARY KEY,
+    name             TEXT NOT NULL,
+    partner_type     TEXT NOT NULL DEFAULT 'isp'
+                         CHECK(partner_type IN ('isp','carrier','cloud','content','enterprise','ix')),
+    asn              INTEGER,
+    noc_email        TEXT DEFAULT '',
+    noc_phone        TEXT DEFAULT '',
+    legal_entity     TEXT DEFAULT '',
+    contract_manager TEXT DEFAULT '',
+    status           TEXT NOT NULL DEFAULT 'active'
+                         CHECK(status IN ('active','suspended','terminated')),
+    notes            TEXT DEFAULT '',
+    classification   TEXT DEFAULT 'CUI',
+    created_at       TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_nc_partners_status ON nc_partners(status);
+CREATE INDEX IF NOT EXISTS idx_nc_partners_asn    ON nc_partners(asn);
+
+-- ── Agreement Amendments (APPEND-ONLY) ────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_agreement_amendments (
+    id               TEXT PRIMARY KEY,
+    agreement_id     TEXT NOT NULL REFERENCES nc_peering_agreements(id) ON DELETE CASCADE,
+    amendment_number INTEGER NOT NULL DEFAULT 1,
+    changes_json     TEXT NOT NULL DEFAULT '{}',
+    amended_by       TEXT NOT NULL DEFAULT '',
+    reason           TEXT DEFAULT '',
+    effective_date   TEXT DEFAULT '',
+    classification   TEXT DEFAULT 'CUI',
+    created_at       TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_nc_agreement_amendments_agreement ON nc_agreement_amendments(agreement_id);
+
 CREATE TABLE IF NOT EXISTS nc_peering_traffic (
     id              TEXT PRIMARY KEY,
     session_id      TEXT REFERENCES nc_peering_sessions(id) ON DELETE CASCADE,
@@ -1186,7 +1223,21 @@ CREATE TABLE IF NOT EXISTS nc_migration_phases (
     maintenance_window TEXT,
     dependencies TEXT DEFAULT '[]',       -- JSON array of predecessor phase IDs
     status      TEXT DEFAULT 'planned',   -- planned, in_progress, completed, rolled_back
+    classification TEXT DEFAULT 'CUI'
+        CHECK(classification IN ('PUBLIC','CUI','SECRET','TS')),
+    impact_level TEXT DEFAULT 'IL4'
+        CHECK(impact_level IN ('IL2','IL4','IL5','IL6')),
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Topology Snapshots (captured when a migration phase completes)
+CREATE TABLE IF NOT EXISTS nc_topology_snapshots (
+    id         TEXT PRIMARY KEY,
+    topo_id    TEXT NOT NULL REFERENCES topologies(id),
+    phase_id   TEXT REFERENCES nc_migration_phases(id),
+    label      TEXT,
+    graph_json TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
 );
 
 -- Capacity Growth Projections
@@ -1624,6 +1675,22 @@ CREATE TABLE IF NOT EXISTS ndc_sop_approval_log (
 );
 CREATE INDEX IF NOT EXISTS idx_ndc_sop_log_sop ON ndc_sop_approval_log(sop_id);
 
+-- ── Cloud Connectivity Patterns Reference ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_connectivity_patterns (
+    id          TEXT PRIMARY KEY,
+    csp_pair    TEXT NOT NULL,
+    pattern_key TEXT NOT NULL,
+    label       TEXT NOT NULL,
+    description TEXT,
+    resiliency  TEXT DEFAULT 'high',
+    cost_tier   TEXT DEFAULT 'medium',
+    use_cases   TEXT DEFAULT '[]',
+    node_types  TEXT DEFAULT '[]',
+    sop_refs    TEXT DEFAULT '[]',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_cp_csp ON nc_connectivity_patterns(csp_pair);
+
 -- ── Traffic Flow Walkthroughs (DoD BCAP path analysis) ───────────────────────
 CREATE TABLE IF NOT EXISTS nc_traffic_flows (
     id                  TEXT PRIMARY KEY,
@@ -1639,6 +1706,7 @@ CREATE TABLE IF NOT EXISTS nc_traffic_flows (
     classification      TEXT DEFAULT 'NIPR' CHECK(classification IN
                             ('NIPR','SIPR','IL2','IL4','IL5','IL6')),
     path_nodes          TEXT DEFAULT '[]',
+    phase_id            TEXT REFERENCES nc_migration_phases(id),
     created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -1747,6 +1815,81 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_ncmsg_ctx  ON chat_messages(context_id);
 CREATE INDEX IF NOT EXISTS idx_ncmsg_turn ON chat_messages(context_id, turn_number);
+
+-- Subnet Calculator: history of CIDR calculations, deduped per project
+CREATE TABLE IF NOT EXISTS nc_subnet_calc_history (
+    id            TEXT PRIMARY KEY,
+    project_id    TEXT NOT NULL REFERENCES nc_projects(id) ON DELETE CASCADE,
+    cidr          TEXT NOT NULL,
+    network_addr  TEXT,
+    broadcast     TEXT,
+    first_host    TEXT,
+    last_host     TEXT,
+    total_hosts   INTEGER,
+    usable_hosts  INTEGER,
+    prefix_len    INTEGER,
+    subnet_mask   TEXT,
+    wildcard_mask TEXT,
+    address_family TEXT DEFAULT 'ipv4',
+    ip_class      TEXT,
+    notes         TEXT,
+    created_at    TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(cidr, project_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nc_subnet_calc_proj ON nc_subnet_calc_history(project_id);
+
+-- Migration Phase Info Box Overrides (user-editable overrides for computed values)
+CREATE TABLE IF NOT EXISTS nc_phase_infoboxes (
+    id          TEXT PRIMARY KEY,
+    topo_id     TEXT NOT NULL,
+    phase_key   TEXT NOT NULL,       -- 'current', 'phase-1', 'phase-2', 'final'
+    box_id      TEXT NOT NULL,       -- 'device-inventory', 'link-utilization', etc.
+    override_json TEXT DEFAULT '{}', -- JSON: {rows: [{label, value, status}], color, title}
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(topo_id, phase_key, box_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nc_phase_infoboxes_topo ON nc_phase_infoboxes(topo_id);
+
+-- Consolidation Analysis Results (cached per topology)
+CREATE TABLE IF NOT EXISTS nc_consolidation_analysis (
+    id                   TEXT PRIMARY KEY,
+    topo_id              TEXT NOT NULL UNIQUE,
+    current_device_count INTEGER DEFAULT 0,
+    final_device_count   INTEGER DEFAULT 0,
+    devices_removed      INTEGER DEFAULT 0,
+    rack_units_freed     INTEGER DEFAULT 0,
+    power_saved_watts    INTEGER DEFAULT 0,
+    capex_delta          REAL DEFAULT 0,
+    opex_annual_delta    REAL DEFAULT 0,
+    tco_3yr_delta        REAL DEFAULT 0,
+    bw_increase_pct      REAL DEFAULT 0,
+    spof_count_before    INTEGER DEFAULT 0,
+    spof_count_after     INTEGER DEFAULT 0,
+    stig_compliance_before REAL DEFAULT 0,
+    stig_compliance_after  REAL DEFAULT 0,
+    analysis_json        TEXT DEFAULT '{}',  -- full analysis dict
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_consolidation_topo ON nc_consolidation_analysis(topo_id);
+
+-- Migration Hub: join table linking documents/runbooks/SOPs to specific phases
+CREATE TABLE IF NOT EXISTS nc_phase_documents (
+    id              TEXT PRIMARY KEY,
+    phase_id        TEXT REFERENCES nc_migration_phases(id) ON DELETE CASCADE,
+    project_id      TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    doc_source      TEXT NOT NULL
+        CHECK(doc_source IN ('document','runbook','sop','external')),
+    doc_id          TEXT NOT NULL,   -- FK into nc_documents / ndc_runbooks / ndc_sops
+    doc_title       TEXT,
+    doc_type        TEXT,            -- mirrors type from source table for quick display
+    relevance_note  TEXT,            -- why this doc is relevant to this phase
+    display_order   INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_phase_docs_phase ON nc_phase_documents(phase_id);
+CREATE INDEX IF NOT EXISTS idx_nc_phase_docs_project ON nc_phase_documents(project_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -10854,12 +10997,668 @@ TEMPLATES = [
             }
         ),
     },
+    # ── JWICS / C2S / C2E Templates ─────────────────────────────────────────────
+
+    # A1 — DoD Agency → JWICS Connection
+    {
+        "id": "tpl-jwics-agency-connect",
+        "name": "DoD Agency → JWICS Connection",
+        "category": "DoD Secret | JWICS",
+        "description": (
+            "Reference design for a DoD agency connecting to the Joint Worldwide Intelligence "
+            "Communications System (JWICS). Shows the complete path from SCIF workstation through "
+            "NSA Type 1 encryption (KG-250A/TACLANE), agency JWICS gateway, JWICS backbone, "
+            "DIA hub router, and classified services (DNS, mail relay, application server). "
+            "Based on DISA JWICS connection requirements and DIA network standards. IL6/SECRET."
+        ),
+        "tags": json.dumps(["jwics", "secret", "il6", "type1", "scif", "dia", "agency-connect", "ospf", "dod"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("scif-ws",    "SCIF Workstation",         "endpoint-pc",   60,  300, {"config": {"classification": "SECRET", "cac_required": "yes", "hbss_enabled": "yes", "notes": "CAC + PIN required. No removable media. SCIF physical security enforced."}}),
+                    _node("t1-enc",     "Type 1 Encryptor (KG-250A)", "fips-140-l3", 240, 300, {"config": {"classification": "SECRET", "device": "KG-250A / TACLANE Flex", "key_fill": "KYK-13 Simple Key Loader", "notes": "NSA Type 1 HAIPE-compliant. Key material loaded via fill device. Alarm monitored by DISA NOC."}}),
+                    _node("jwics-gw",   "Agency JWICS Gateway",     "router",        420, 300, {"config": {"classification": "SECRET", "routing_protocol": "OSPF Area 0", "stig_baseline": "DISA Network STIG V3R9", "notes": "Agency-managed DISA-approved router. OSPF adjacency to DIA hub."}}),
+                    _node("jwics-bb",   "JWICS Backbone",           "cloud",         600, 300, {"config": {"classification": "SECRET", "managed_by": "DIA / DISA", "circuit_type": "T3/DS3 or OC-3", "notes": "DIA-managed classified backbone. Physically separated from NIPRNet."}}),
+                    _node("dia-hub",    "DIA Hub Router",           "router",        780, 300, {"config": {"classification": "SECRET", "asn": "JWICS-AS", "routing_protocol": "OSPF Area 0", "notes": "DIA hub — distributes classified routes across JWICS backbone."}}),
+                    _node("jwics-dns",  "JWICS DNS Resolver",       "dod-jwics-dns", 970, 140, {"config": {"classification": "SECRET", "zones": "*.jwics.gov, *.dia.smil.mil", "dnssec": "yes", "notes": "DIA-managed recursive resolver. No Internet DNS. DNSSEC with NSS PKI keys."}}),
+                    _node("jwics-mail", "JWICS Mail Relay",         "server",        970, 300, {"config": {"classification": "SECRET", "smime_required": "yes", "hbss_scan": "yes", "notes": "HBSS content scan at each relay hop. S/MIME with NSS PKI cert mandatory. No Internet relay path."}}),
+                    _node("app-srv",    "Application Server",       "server",        970, 460, {"config": {"classification": "SECRET", "pki_cert": "NSS CA", "hbss_enabled": "yes", "acas_scanned": "yes"}}),
+                    _node("acas-hbss",  "ACAS / HBSS Scanner",     "siem",          780, 480, {"config": {"classification": "SECRET", "purpose": "Vulnerability scanning (ACAS/Nessus) and host-based IDS (HBSS/McAfee ePO)", "scan_frequency": "continuous"}}),
+                ],
+                "edges": [
+                    _edge("scif-ws",   "t1-enc",    "SCIF LAN (FIPS 140-2)",    ""),
+                    _edge("t1-enc",    "jwics-gw",  "Encrypted Circuit",        "Type 1 AES-256 HAIPE"),
+                    _edge("jwics-gw",  "jwics-bb",  "T3/DS3 Circuit",           "OSPF Area 0"),
+                    _edge("jwics-bb",  "dia-hub",   "JWICS Backbone",           "OSPF"),
+                    _edge("dia-hub",   "jwics-dns", "DNS Query",                "UDP/53 DNSSEC"),
+                    _edge("dia-hub",   "jwics-mail","SMTP Relay",               "SMTP/S 587"),
+                    _edge("dia-hub",   "app-srv",   "Application Traffic",      "HTTPS/443"),
+                    _edge("t1-enc",    "acas-hbss", "ACAS Probe",               ""),
+                    _edge("app-srv",   "jwics-dns", "Reverse DNS",              "UDP/53"),
+                    _edge("app-srv",   "acas-hbss", "HBSS Agent",               ""),
+                ],
+            }
+        ),
+    },
+    # A2 — DoD Agency → C2S (AWS Secret Region)
+    {
+        "id": "tpl-c2s-agency-connect",
+        "name": "DoD Agency → C2S (AWS Secret Region)",
+        "category": "DoD Secret | C2S",
+        "description": (
+            "Reference design for a DoD agency connecting to AWS C2S (Commercial Cloud Services — "
+            "AWS Secret Region, us-gov-secret-1) via JWICS and DISA Secret Cloud Access Point (CAP). "
+            "Shows SCIF workstation through Type 1 encryption, JWICS backbone, Secret BCAP/CAP, "
+            "ClassifiedConnect 10G circuit, C2S Transit Gateway, mission and management VPCs. "
+            "All traffic stays within the classified enclave — no Internet path. IL6/SECRET."
+        ),
+        "tags": json.dumps(["c2s", "aws", "secret", "il6", "jwics", "classifiedconnect", "disa-cap", "tgw", "dod"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("scif-ws2",      "SCIF Workstation",             "endpoint-pc",      60,  310, {"config": {"classification": "SECRET", "cac_required": "yes"}}),
+                    _node("t1-enc2",       "Type 1 Encryptor (TACLANE)",   "fips-140-l3",      240, 310, {"config": {"classification": "SECRET", "device": "TACLANE Flex / KG-250A"}}),
+                    _node("jwics-gw2",     "Agency JWICS Gateway",         "router",           420, 310, {"config": {"classification": "SECRET", "routing_protocol": "OSPF Area 0"}}),
+                    _node("jwics-bb2",     "JWICS Backbone",               "cloud",            600, 310, {"config": {"classification": "SECRET", "managed_by": "DIA / DISA"}}),
+                    _node("secret-cap",    "DISA Secret BCAP/CAP",         "firewall",         780, 310, {"config": {"classification": "SECRET", "function": "SCCA boundary inspection at SECRET level", "vdss": "yes", "vdms": "yes", "tccm": "yes", "notes": "Applies full SCCA FRD inspection chain: VDSS → VDMS → TCCM at SECRET classification."}}),
+                    _node("c2s-cc",        "C2S ClassifiedConnect",        "aws-dx",           960, 310, {"config": {"classification": "SECRET", "bandwidth": "10G", "bfd_enabled": True, "notes": "ClassifiedConnect = AWS Direct Connect variant for Secret Region. LOA-CFA from AWS Secret team."}}),
+                    _node("c2s-tgw2",      "C2S Transit Gateway",          "aws-tgw",         1130, 310, {"config": {"classification": "SECRET", "region": "us-gov-secret-1", "route_tables": "mission, mgmt, shared-svc", "bgp_propagation": True}}),
+                    _node("c2s-vpc-m",     "C2S Mission VPC",              "aws-vpc",         1310, 180, {"config": {"classification": "SECRET", "cidr": "10.200.0.0/16", "flow_logs": True, "guardduty": True}}),
+                    _node("c2s-vpc-mgmt",  "C2S Mgmt VPC",                 "aws-vpc",         1310, 440, {"config": {"classification": "SECRET", "cidr": "10.201.0.0/16", "purpose": "ACAS, HBSS ePO, patch mgmt, syslog"}}),
+                    _node("c2s-guardduty", "C2S GuardDuty / CloudTrail",   "server",          1130, 530, {"config": {"classification": "SECRET", "services": "GuardDuty, CloudTrail, Security Hub, Config"}}),
+                ],
+                "edges": [
+                    _edge("scif-ws2",    "t1-enc2",       "SCIF LAN",                "FIPS 140-2"),
+                    _edge("t1-enc2",     "jwics-gw2",     "Encrypted",               "Type 1 AES-256"),
+                    _edge("jwics-gw2",   "jwics-bb2",     "T3/DS3 Circuit",          "OSPF Area 0"),
+                    _edge("jwics-bb2",   "secret-cap",    "JWICS Circuit",           "BGP"),
+                    _edge("secret-cap",  "c2s-cc",        "SCCA Boundary",           ""),
+                    _edge("c2s-cc",      "c2s-tgw2",      "ClassifiedConnect 10G",   "BGP eBGP MD5"),
+                    _edge("c2s-tgw2",    "c2s-vpc-m",     "Mission VPC Attachment",  ""),
+                    _edge("c2s-tgw2",    "c2s-vpc-mgmt",  "Mgmt VPC Attachment",     ""),
+                    _edge("c2s-vpc-m",   "c2s-guardduty", "Flow Logs / Findings",    ""),
+                    _edge("c2s-vpc-mgmt","c2s-guardduty", "CloudTrail",              ""),
+                ],
+            }
+        ),
+    },
+    # A3 — DoD Agency → C2E (Azure Government Secret)
+    {
+        "id": "tpl-c2e-agency-connect",
+        "name": "DoD Agency → C2E (Azure Government Secret)",
+        "category": "DoD Secret | C2E",
+        "description": (
+            "Reference design for a DoD agency connecting to Azure C2E (Commercial Cloud Enterprise — "
+            "Azure Government Secret) via JWICS and DISA Secret Cloud Access Point. "
+            "Shows SCIF workstation through Type 1 encryption, JWICS backbone, Secret BCAP/CAP, "
+            "C2E ExpressRoute circuit, ER Gateway, Hub VNet with Azure Firewall Premium, and spoke "
+            "workload VNet with Azure Private DNS. IL6/SECRET."
+        ),
+        "tags": json.dumps(["c2e", "azure", "secret", "il6", "jwics", "expressroute", "disa-cap", "vnet", "dod"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("scif-ws3",    "SCIF Workstation",               "endpoint-pc",   60,  310, {"config": {"classification": "SECRET", "cac_required": "yes"}}),
+                    _node("t1-enc3",     "Type 1 Encryptor (KG-250A)",     "fips-140-l3",   240, 310, {"config": {"classification": "SECRET", "device": "KG-250A / TACLANE Flex"}}),
+                    _node("jwics-gw3",   "Agency JWICS Gateway",           "router",        420, 310, {"config": {"classification": "SECRET", "routing_protocol": "OSPF Area 0"}}),
+                    _node("jwics-bb3",   "JWICS Backbone",                 "cloud",         600, 310, {"config": {"classification": "SECRET", "managed_by": "DIA / DISA"}}),
+                    _node("secret-cap3", "DISA Secret BCAP/CAP",           "firewall",      780, 310, {"config": {"classification": "SECRET", "function": "SCCA inspection at SECRET; VDSS+VDMS+TCCM"}}),
+                    _node("c2e-er",      "C2E ExpressRoute Circuit",       "server",        960, 310, {"config": {"classification": "SECRET", "bandwidth": "10G", "provider": "DISA / AT&T", "bgp_md5": True, "notes": "NSA Type 1 applied on physical layer. Primary + secondary paths (active/active)."}}),
+                    _node("c2e-ergw",    "C2E ER Gateway",                 "server",       1130, 310, {"config": {"classification": "SECRET", "sku": "ErGw3AZ (Ultra Performance)", "fastpath": True, "region": "usgovsecret"}}),
+                    _node("c2e-hub",     "C2E Hub VNet",                   "server",       1310, 180, {"config": {"classification": "SECRET", "cidr": "10.210.0.0/16", "azure_firewall": "Premium IDPS", "defender": True}}),
+                    _node("c2e-spoke",   "C2E Spoke VNet (Workload)",      "server",       1310, 440, {"config": {"classification": "SECRET", "cidr": "10.211.0.0/24", "peered_to": "c2e-hub"}}),
+                    _node("c2e-dns",     "C2E Private DNS Zone",           "server",       1130, 530, {"config": {"classification": "SECRET", "zones": ".c2e.microsoft.com, agency.secret.gov", "private_resolver": True, "disa_forwarder": ".smil.mil"}}),
+                    _node("c2e-keyvault","C2E Key Vault (HSM)",            "server",       1310, 310, {"config": {"classification": "SECRET", "sku": "Premium (HSM-backed)", "fips": "FIPS 140-3 Level 3"}}),
+                ],
+                "edges": [
+                    _edge("scif-ws3",    "t1-enc3",      "SCIF LAN",                "FIPS 140-2"),
+                    _edge("t1-enc3",     "jwics-gw3",    "Encrypted",               "Type 1 AES-256"),
+                    _edge("jwics-gw3",   "jwics-bb3",    "T3/DS3",                  "OSPF Area 0"),
+                    _edge("jwics-bb3",   "secret-cap3",  "JWICS Circuit",           "BGP"),
+                    _edge("secret-cap3", "c2e-er",       "SCCA Boundary",           ""),
+                    _edge("c2e-er",      "c2e-ergw",     "ExpressRoute 10G",        "BGP eBGP MD5"),
+                    _edge("c2e-ergw",    "c2e-hub",      "VNet Gateway",            ""),
+                    _edge("c2e-hub",     "c2e-spoke",    "VNet Peering",            ""),
+                    _edge("c2e-hub",     "c2e-dns",      "Private DNS",             ""),
+                    _edge("c2e-spoke",   "c2e-keyvault", "PrivateLink",             ""),
+                    _edge("c2e-dns",     "secret-cap3",  "DISA DNS Forward",        "UDP/53"),
+                ],
+            }
+        ),
+    },
+    # B — DISA Full Network Panorama
+    {
+        "id": "tpl-disa-full-panorama",
+        "name": "DISA Full Network Panorama (NIPR + JWICS + C2S + C2E)",
+        "category": "DoD | DISA Full Topology",
+        "description": (
+            "Complete DISA network panorama showing all three classification tiers in one diagram: "
+            "NIPR (unclassified), JWICS (SECRET), and classified commercial cloud (C2S/C2E). "
+            "Three-row layout — NIPR/IL4 cloud on top, DISN shared infrastructure in the middle, "
+            "JWICS/SECRET cloud on the bottom. Cross-Domain Solution (CDS) bridges the middle "
+            "and secret rows. Use this for executive briefings, ATO boundary documentation, "
+            "and understanding the full DISA cloud connectivity model. IL6/SECRET (highest tier shown)."
+        ),
+        "tags": json.dumps(["panorama", "nipr", "jwics", "c2s", "c2e", "bcap", "scca", "disn", "full-topology", "disa", "cds", "dod"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    # ── Row 1: NIPR / Unclassified (y=80) ───────────────────────────────────
+                    _node("nipr-ws",     "Agency NIPR\nWorkstation",      "endpoint-pc",      60,   80),
+                    _node("nipr-onramp", "NIPRNet\nOn-ramp",              "router",           230,  80, {"config": {"managed_by": "DISA"}}),
+                    _node("bcap-fw-p",   "DISA BCAP\nFirewall",           "firewall",         400,  80, {"config": {"classification": "CUI", "scca_component": "BCAP"}}),
+                    _node("vdss-p",      "VDSS Stack\n(IDS/WAF/TLS)",     "server",           570,  80, {"config": {"classification": "CUI", "scca_component": "VDSS", "tls_inspection": True}}),
+                    _node("vdms-p",      "VDMS Stack\n(ACAS/HBSS/Patch)","server",           740,  80, {"config": {"classification": "CUI", "scca_component": "VDMS"}}),
+                    _node("tccm-p",      "TCCM\n(IAM/CAC Gate)",         "server",           910,  80, {"config": {"classification": "CUI", "scca_component": "TCCM"}}),
+                    _node("aws-gov-il4", "AWS GovCloud\nIL4",             "cloud",           1090,  30, {"config": {"classification": "CUI", "il": "IL4", "region": "us-gov-east-1"}}),
+                    _node("az-gov-il4",  "Azure Gov\nIL4",                "cloud",           1090, 130, {"config": {"classification": "CUI", "il": "IL4", "region": "usgovvirginia"}}),
+                    # ── Row 2: DISN Shared Infrastructure (y=310) ────────────────────────────
+                    _node("disn-bb",     "DISN Backbone\n(DISA-managed)", "router",           430, 310, {"config": {"classification": "CUI", "managed_by": "DISA"}}),
+                    _node("disn-ntp",    "DISN NTP\nStratum 1",           "server",           600, 310),
+                    _node("disa-siem",   "DISA SIEM\n(Splunk/ArcSight)",  "siem",             770, 310, {"config": {"classification": "CUI", "purpose": "Centralized log aggregation both NIPR and JWICS feeds"}}),
+                    _node("disa-acas",   "DISA ACAS\n(Nessus SC)",        "server",           940, 310, {"config": {"classification": "CUI", "purpose": "Vulnerability scanning across NIPR and SECRET enclaves"}}),
+                    # ── Cross-Domain Solution (bridges rows 2 and 3) ─────────────────────────
+                    _node("cds-p",       "Cross-Domain\nSolution (CDS)",  "fips-140-l3",      250, 470, {"config": {"classification": "SECRET", "device": "Forcepoint / Owl / Everfox", "fips": "FIPS 140-3 L3", "direction": "NIPR→SIPR/JWICS (allowlist)", "notes": "NSA-evaluated. All data flow hardware-enforced. No bidirectional unless dual-CDS."}}),
+                    # ── Row 3: SECRET / JWICS (y=600) ────────────────────────────────────────
+                    _node("scif-ws-p",   "SCIF Workstation",              "endpoint-pc",      60,  600, {"config": {"classification": "SECRET", "cac_required": "yes"}}),
+                    _node("t1-enc-p",    "Type 1 Encryptor\n(KG-250A)",   "fips-140-l3",      230, 600, {"config": {"classification": "SECRET", "device": "KG-250A / TACLANE Flex"}}),
+                    _node("jwics-bb-p",  "JWICS Backbone\n(DIA)",         "cloud",            410, 600, {"config": {"classification": "SECRET", "managed_by": "DIA"}}),
+                    _node("dia-hub-p",   "DIA Hub\nRouter",               "router",           580, 600, {"config": {"classification": "SECRET", "routing": "OSPF Area 0"}}),
+                    _node("secret-cap-p","DISA Secret\nBCAP/CAP",         "firewall",         760, 600, {"config": {"classification": "SECRET", "scca_applied": "yes"}}),
+                    _node("c2s-p",       "C2S\n(AWS Secret us-gov-secret-1)", "cloud",       950, 540, {"config": {"classification": "SECRET", "il": "IL6", "region": "us-gov-secret-1"}}),
+                    _node("c2e-p",       "C2E\n(Azure Gov Secret)",       "cloud",            950, 660, {"config": {"classification": "SECRET", "il": "IL6", "region": "usgovsecret"}}),
+                ],
+                "edges": [
+                    # Row 1: NIPR flow
+                    _edge("nipr-ws",     "nipr-onramp",  "NIPRNet",             ""),
+                    _edge("nipr-onramp", "bcap-fw-p",    "DISN On-ramp",        ""),
+                    _edge("bcap-fw-p",   "vdss-p",       "Inspection Chain",    ""),
+                    _edge("vdss-p",      "vdms-p",       "VDSS→VDMS",     ""),
+                    _edge("vdms-p",      "tccm-p",       "TCCM Cred Check",     ""),
+                    _edge("tccm-p",      "aws-gov-il4",  "DX/10G",              "BGP"),
+                    _edge("tccm-p",      "az-gov-il4",   "ExpressRoute 10G",    "BGP"),
+                    # Row 2: DISN shared
+                    _edge("nipr-onramp", "disn-bb",      "DISN Routing",        "OSPF"),
+                    _edge("disn-bb",     "disn-ntp",     "NTP Sync",            "NTP/123"),
+                    _edge("disn-bb",     "disa-siem",    "Syslog",              "syslog-TLS"),
+                    _edge("disn-bb",     "disa-acas",    "Scan Traffic",        ""),
+                    _edge("vdss-p",      "disa-siem",    "Alert Feed",          ""),
+                    _edge("secret-cap-p","disa-siem",    "Secret Syslog",       "syslog-TLS"),
+                    # CDS bridge
+                    _edge("disn-bb",     "cds-p",        "NIPR→CDS",      ""),
+                    _edge("cds-p",       "jwics-bb-p",   "CDS→JWICS",     "Filtered"),
+                    # Row 3: SECRET flow
+                    _edge("scif-ws-p",   "t1-enc-p",     "SCIF LAN",            ""),
+                    _edge("t1-enc-p",    "jwics-bb-p",   "Type 1 Encrypted",    "HAIPE"),
+                    _edge("jwics-bb-p",  "dia-hub-p",    "JWICS Backbone",      "OSPF"),
+                    _edge("dia-hub-p",   "secret-cap-p", "Secret SCCA Boundary",""),
+                    _edge("secret-cap-p","c2s-p",        "ClassifiedConnect 10G","BGP"),
+                    _edge("secret-cap-p","c2e-p",        "ExpressRoute 10G",    "BGP"),
+                ],
+                "_annotationLegend": [
+                    {"legend_id": "tier-nipr",   "label": "NIPR / CUI Tier (IL2–IL5)",     "color": "#2ecc71", "nodes": ["nipr-ws","nipr-onramp","bcap-fw-p","vdss-p","vdms-p","tccm-p","aws-gov-il4","az-gov-il4"]},
+                    {"legend_id": "tier-disn",   "label": "DISN Shared Infrastructure",         "color": "#3498db", "nodes": ["disn-bb","disn-ntp","disa-siem","disa-acas"]},
+                    {"legend_id": "tier-secret", "label": "SECRET Tier (IL6 / JWICS + C2S/C2E)","color": "#e74c3c", "nodes": ["scif-ws-p","t1-enc-p","jwics-bb-p","dia-hub-p","secret-cap-p","c2s-p","c2e-p"]},
+                    {"legend_id": "tier-cds",    "label": "Cross-Domain Boundary",              "color": "#f39c12", "nodes": ["cds-p"]},
+                ],
+            }
+        ),
+    },
+    # S1 — DNS Traffic Flow: JWICS + C2S/C2E Split-Horizon
+    {
+        "id": "tpl-dns-flow-jwics",
+        "name": "DNS Traffic Flow — JWICS + C2S/C2E Split-Horizon",
+        "category": "Traffic Flow | DNS",
+        "description": (
+            "Scenario diagram illustrating split-horizon DNS across three security domains: "
+            "NIPR (Internet DNS), JWICS (DIA-managed classified DNS), and C2S (Route 53 PHZ). "
+            "Color-coded paths show what is reachable, what is blocked, and where conditional "
+            "forwarding applies. Use for troubleshooting DNS, application onboarding, and "
+            "explaining classified DNS isolation to new team members. IL6/SECRET."
+        ),
+        "tags": json.dumps(["dns", "traffic-flow", "jwics", "c2s", "c2e", "split-horizon", "dnssec", "scenario", "dod"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    # Row 1: NIPR DNS path (y=80)
+                    _node("nipr-user",     "NIPR User\n(Workstation)",     "endpoint-pc",  80,  80),
+                    _node("nipr-stub",     "Stub Resolver\n(OS)",          "server",       280,  80),
+                    _node("nipr-rec",      "NIPR Recursive\nResolver",     "server",       480,  80, {"config": {"resolver": "DISA NIPR resolver or ISP", "zones": "*.mil, *.gov + Internet"}}),
+                    _node("inet-root",     "Internet\nRoot DNS",           "cloud",        700,  80, {"config": {"notes": "Available from NIPR. NOT accessible from JWICS or C2S."}}),
+                    # Row 2: JWICS DNS path (y=280)
+                    _node("scif-user",     "SCIF User\n(JWICS)",           "endpoint-pc",  80,  280, {"config": {"classification": "SECRET"}}),
+                    _node("jwics-stub-d",  "Stub Resolver\n(JWICS OS)",    "server",       280, 280, {"config": {"classification": "SECRET", "notes": "Configured to query JWICS resolver only. No Internet DNS entries."}}),
+                    _node("jwics-rec",     "JWICS Recursive\nResolver",    "dod-jwics-dns", 480, 280, {"config": {"classification": "SECRET", "managed_by": "DIA", "zones": "*.jwics.gov, *.dia.smil.mil, *.smil.mil", "dnssec": "yes"}}),
+                    _node("dia-auth",      "DIA Authoritative\nDNS",       "dod-jwics-dns", 700, 280, {"config": {"classification": "SECRET", "authoritative_for": "*.jwics.gov, *.dia.smil.mil", "dnssec_signed": "yes"}}),
+                    # Row 3: C2S DNS path (y=480)
+                    _node("c2s-ec2-d",     "C2S Application\n(EC2)",       "server",       80,  480, {"config": {"classification": "SECRET", "region": "us-gov-secret-1"}}),
+                    _node("r53-resolver",  "Route 53\nResolver (169.254.169.253)", "server",280, 480, {"config": {"classification": "SECRET", "notes": "VPC+2 address. Evaluates PHZ rules first."}}),
+                    _node("r53-phz",       "Route 53 PHZ\n(.c2s.ic.gov)",  "server",       480, 480, {"config": {"classification": "SECRET", "zone": ".c2s.ic.gov", "notes": "Private Hosted Zone — C2S-internal records only."}}),
+                    _node("disa-dns-fwd",  "DISA DNS\n(via ClassifiedConnect)", "server",  700, 480, {"config": {"classification": "SECRET", "path": "Resolver Rule forward to DISA DNS — NOT Internet", "resolves": "*.smil.mil, *.dia.mil"}}),
+                    # Blocked path marker (visual only)
+                    _node("blocked-path",  "⛔ BLOCKED\n(No Cross-Domain DNS)", "server", 480, 390, {"config": {"notes": "JWICS resolver cannot forward to NIPRNet/Internet. CDS required.", "stig": "SC-3, SC-7"}}),
+                ],
+                "edges": [
+                    # NIPR path
+                    _edge("nipr-user",    "nipr-stub",    "query",               "UDP/53"),
+                    _edge("nipr-stub",    "nipr-rec",     "forward",             "UDP/53"),
+                    _edge("nipr-rec",     "inet-root",    "Internet recursive",  "UDP/53 DNSSEC"),
+                    # JWICS path
+                    _edge("scif-user",    "jwics-stub-d", "JWICS query",         "UDP/53"),
+                    _edge("jwics-stub-d", "jwics-rec",    "forward",             "UDP/53"),
+                    _edge("jwics-rec",    "dia-auth",     "authoritative lookup","UDP/53 DNSSEC"),
+                    # C2S path
+                    _edge("c2s-ec2-d",   "r53-resolver", "169.254.169.253:53",  "UDP/53"),
+                    _edge("r53-resolver", "r53-phz",      "PHZ match",           ""),
+                    _edge("r53-resolver", "disa-dns-fwd", "Resolver Rule forward","UDP/53"),
+                    # Blocked indicator
+                    _edge("jwics-rec",    "blocked-path", "BLOCKED — no cross-domain", ""),
+                    _edge("nipr-rec",     "blocked-path", "BLOCKED — no classified",   ""),
+                ],
+                "_annotationLegend": [
+                    {"legend_id": "dns-nipr",   "label": "NIPR Internet DNS path",     "color": "#95a5a6", "nodes": ["nipr-user","nipr-stub","nipr-rec","inet-root"]},
+                    {"legend_id": "dns-jwics",  "label": "JWICS Classified DNS path",  "color": "#2980b9", "nodes": ["scif-user","jwics-stub-d","jwics-rec","dia-auth"]},
+                    {"legend_id": "dns-c2s",    "label": "C2S Private DNS path",       "color": "#e67e22", "nodes": ["c2s-ec2-d","r53-resolver","r53-phz","disa-dns-fwd"]},
+                    {"legend_id": "dns-block",  "label": "Blocked Cross-Domain paths", "color": "#e74c3c", "nodes": ["blocked-path"]},
+                ],
+            }
+        ),
+    },
+    # S2 — Email Traffic Flow: JWICS + C2S/C2E
+    {
+        "id": "tpl-email-flow-jwics",
+        "name": "Email Traffic Flow — JWICS + C2S/C2E (S/MIME + PKI)",
+        "category": "Traffic Flow | Email",
+        "description": (
+            "Scenario diagram showing classified email flow on JWICS from SCIF sender to recipient, "
+            "including S/MIME signing, NSS PKI certificate lookup, agency SMTP relay, HBSS content "
+            "scan, DIA JWICS relay, and final delivery. Also shows C2S and C2E email paths through "
+            "DISA Email Gateway. Use for application onboarding, troubleshooting email delivery, "
+            "and explaining PKI requirements to new engineers. IL6/SECRET."
+        ),
+        "tags": json.dumps(["email", "smtp", "smime", "pki", "nss", "hbss", "traffic-flow", "jwics", "c2s", "scenario", "dod"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("sender-ws",    "Sender\n(SCIF Workstation)",    "endpoint-pc",  60,  300, {"config": {"classification": "SECRET", "email_client": "Outlook/Thunderbird + S/MIME plugin"}}),
+                    _node("nss-pki",      "NSS PKI\n(DoD CA Hierarchy)",   "server",       280, 130, {"config": {"classification": "SECRET", "ca": "NSS Root CA → DoD CA-59 / DoD EMAIL CA-59", "protocol": "LDAP/636 (LDAPS)", "notes": "Cert lookup and CRL/OCSP validation. Cert must include email EKU."}}),
+                    _node("smime-sign",   "S/MIME\nSigning",               "fips-140-l3",  280, 300, {"config": {"classification": "SECRET", "alg": "RSA-2048 / ECC-P384", "notes": "Message signed with sender private key + NSS PKI cert. Encrypt with recipient public key."}}),
+                    _node("agency-relay", "Agency\nSMTP Relay",            "server",       480, 300, {"config": {"classification": "SECRET", "port": "587 STARTTLS", "auth": "CAC + LDAP", "notes": "Agency-managed relay. Routes based on recipient MX via JWICS DNS."}}),
+                    _node("hbss-scan1",   "HBSS Content\nScan (Agency)",   "siem",         480, 470, {"config": {"classification": "SECRET", "component": "HBSS DLPe + ePO", "notes": "Content scan before forwarding to JWICS gateway. Rejects classified spill triggers."}}),
+                    _node("jwics-gw-mail","JWICS Email\nGateway",          "server",       680, 300, {"config": {"classification": "SECRET", "smime_enforcement": "yes", "notes": "Validates S/MIME cert chain against NSS PKI. Rejects unsigned mail."}}),
+                    _node("dia-relay",    "DIA JWICS\nMail Relay",         "server",       880, 300, {"config": {"classification": "SECRET", "notes": "Central DIA relay hub. Routes .dia.smil.mil and other JWICS domains."}}),
+                    _node("hbss-scan2",   "HBSS Content\nScan (DIA)",      "siem",         880, 470, {"config": {"classification": "SECRET", "notes": "Second HBSS scan at DIA relay hop. Policy: keyword filter + attachment type check."}}),
+                    _node("rcpt-relay",   "Recipient Agency\nSMTP Relay",  "server",      1080, 300, {"config": {"classification": "SECRET"}}),
+                    _node("rcpt-ws",      "Recipient\n(SCIF Workstation)",  "endpoint-pc", 1280, 300, {"config": {"classification": "SECRET", "notes": "Verifies S/MIME signature against NSS PKI. Decrypts with own private key."}}),
+                    # C2S path indicator
+                    _node("c2s-ses",      "C2S SES\n(internal endpoint)",  "server",       680, 550, {"config": {"classification": "SECRET", "notes": "Internal SES VPC endpoint (us-gov-secret-1). NOT public SES. Routes to DISA gateway."}}),
+                    _node("disa-email-gw","DISA Email\nGateway (C2S)",     "server",       880, 550, {"config": {"classification": "SECRET", "notes": "DISA Email Gateway in C2S. Stamps classification header. Routes to JWICS relay."}}),
+                ],
+                "edges": [
+                    _edge("sender-ws",    "nss-pki",       "Cert/CRL lookup",     "LDAPS/636"),
+                    _edge("sender-ws",    "smime-sign",    "compose + sign",      "S/MIME"),
+                    _edge("smime-sign",   "agency-relay",  "submit",              "SMTP 587 STARTTLS"),
+                    _edge("agency-relay", "hbss-scan1",    "content scan",        ""),
+                    _edge("hbss-scan1",   "jwics-gw-mail", "cleared",             "SMTP"),
+                    _edge("jwics-gw-mail","dia-relay",     "relay",               "SMTP/S"),
+                    _edge("dia-relay",    "hbss-scan2",    "HBSS scan",           ""),
+                    _edge("hbss-scan2",   "rcpt-relay",    "forward",             "SMTP"),
+                    _edge("rcpt-relay",   "rcpt-ws",       "deliver",             "IMAP/993"),
+                    # C2S path
+                    _edge("c2s-ses",      "disa-email-gw", "outbound mail",       "SMTP"),
+                    _edge("disa-email-gw","dia-relay",     "to JWICS relay",      "SMTP/S"),
+                ],
+                "_annotationLegend": [
+                    {"legend_id": "email-jwics", "label": "JWICS Email path",         "color": "#2980b9", "nodes": ["sender-ws","smime-sign","agency-relay","hbss-scan1","jwics-gw-mail","dia-relay","hbss-scan2","rcpt-relay","rcpt-ws"]},
+                    {"legend_id": "email-pki",   "label": "NSS PKI / S/MIME",         "color": "#8e44ad", "nodes": ["nss-pki","smime-sign"]},
+                    {"legend_id": "email-c2s",   "label": "C2S Application Email",    "color": "#e67e22", "nodes": ["c2s-ses","disa-email-gw"]},
+                ],
+            }
+        ),
+    },
+    # S3 — JWICS Troubleshooting Topology
+    {
+        "id": "tpl-troubleshooting-jwics",
+        "name": "JWICS Troubleshooting Topology",
+        "category": "Scenario | Troubleshooting",
+        "description": (
+            "JWICS troubleshooting diagram with annotated failure zones, monitoring hooks, "
+            "and diagnostic command references at each hop. Four failure zones: "
+            "Zone 1 (Type 1 crypto sync), Zone 2 (BGP/routing), Zone 3 (DNS resolution), "
+            "Zone 4 (email relay). Includes SNMP, syslog, and ACAS monitoring paths. "
+            "Use during incident response, NOC escalation, and training exercises. IL6/SECRET."
+        ),
+        "tags": json.dumps(["troubleshooting", "jwics", "c2s", "c2e", "bgp", "dns", "type1", "scenario", "noc", "dod"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    # Main path
+                    _node("ts-scif",    "SCIF Workstation",           "endpoint-pc",  60,  260, {"config": {"classification": "SECRET", "check": "ping <jwics-gw-ip> — if fails: check CAC auth, HBSS agent, SCIF LAN cable"}}),
+                    _node("ts-t1",      "Type 1 Encryptor\n(Zone 1)",  "fips-140-l3", 240, 260, {"config": {"classification": "SECRET", "failure_zone": "Zone 1: Crypto Sync", "alarms": "Red LED = key expiry or sync loss; call DISA NOC 1-800-FOR-DISA", "cmds": "Check alarm panel. Reload key via KYK-13. Verify BIT (Built-In-Test) passes.", "stig": "SC-8"}}),
+                    _node("ts-gw",      "JWICS Gateway\n(Zone 2)",     "router",      420, 260, {"config": {"classification": "SECRET", "failure_zone": "Zone 2: BGP/Routing", "cmds": "show ospf neighbor; show ip route; ping <dia-hub-ip> source <loopback>", "escalate": "If OSPF down >5min: call DISA NOC + DIA NOC"}}),
+                    _node("ts-bb",      "JWICS Backbone",              "cloud",       600, 260, {"config": {"classification": "SECRET", "notes": "If backbone outage: DISA NOC incident # required. Check DIA NOC status page."}}),
+                    _node("ts-dia",     "DIA Hub Router",              "router",      780, 260, {"config": {"classification": "SECRET", "cmds": "show ospf database; traceroute <app-ip>; debug ospf events"}}),
+                    _node("ts-dns",     "JWICS DNS\n(Zone 3)",         "server",      970, 100, {"config": {"classification": "SECRET", "failure_zone": "Zone 3: DNS Resolution", "cmds": "dig @<resolver-ip> hostname.jwics.gov; dig @<resolver-ip> +dnssec; check /var/log/named/", "escalate": "If zone missing: contact DIA DNS team (dia-dns@dia.smil.mil)"}}),
+                    _node("ts-mail",    "JWICS Mail\n(Zone 4)",        "server",      970, 260, {"config": {"classification": "SECRET", "failure_zone": "Zone 4: Email Relay", "cmds": "telnet <relay-ip> 587; openssl s_client -connect <relay>:587; check HBSS DLPe policy logs", "escalate": "If cert expired: emergency re-cert via NSS PKI; contact DIA PKI team"}}),
+                    _node("ts-app",     "Application\nServer",         "server",      970, 420, {"config": {"classification": "SECRET", "cmds": "curl -v https://<app>:443; check HBSS agent status; check ACAS scan results"}}),
+                    # Monitoring infrastructure
+                    _node("ts-snmp",    "SNMP Trap\nCollector",        "siem",        580, 470, {"config": {"classification": "SECRET", "protocol": "SNMP v3 (authPriv)", "traps": "BGP neighbor down, interface down, CPU/memory threshold"}}),
+                    _node("ts-syslog",  "Syslog / SIEM",               "server",      580, 600, {"config": {"classification": "SECRET", "protocol": "syslog-TLS/6514", "retention": "1 year (NIST AU-11)"}}),
+                    _node("ts-acas",    "ACAS Scanner\n(Nessus SC)",   "server",      780, 500, {"config": {"classification": "SECRET", "scan_frequency": "continuous", "reports_to": "DISA ACAS console"}}),
+                    _node("ts-noc",     "DISA/DIA NOC\n1-800-FOR-DISA","server",      200, 500, {"config": {"notes": "24/7 NOC. Escalation tiers: Agency NOC → DISA NOC → DIA NOC → NSA CSS"}}),
+                ],
+                "edges": [
+                    # Main path
+                    _edge("ts-scif",  "ts-t1",    "SCIF LAN",             ""),
+                    _edge("ts-t1",    "ts-gw",    "Encrypted Circuit",    "Type 1 AES-256"),
+                    _edge("ts-gw",    "ts-bb",    "T3/DS3",               "OSPF Area 0"),
+                    _edge("ts-bb",    "ts-dia",   "JWICS Backbone",       "OSPF"),
+                    _edge("ts-dia",   "ts-dns",   "DNS",                  "UDP/53"),
+                    _edge("ts-dia",   "ts-mail",  "SMTP",                 "SMTP/S"),
+                    _edge("ts-dia",   "ts-app",   "Application",          "HTTPS/443"),
+                    # Monitoring hooks
+                    _edge("ts-t1",    "ts-syslog","Alarm/Syslog",         "syslog-TLS"),
+                    _edge("ts-gw",    "ts-snmp",  "SNMP trap",            "SNMP v3"),
+                    _edge("ts-gw",    "ts-syslog","Syslog",               "syslog-TLS"),
+                    _edge("ts-dia",   "ts-snmp",  "SNMP",                 "SNMP v3"),
+                    _edge("ts-dia",   "ts-acas",  "ACAS scan",            ""),
+                    _edge("ts-app",   "ts-acas",  "Vulnerability scan",   ""),
+                    _edge("ts-snmp",  "ts-syslog","SNMP to SIEM",         ""),
+                    # NOC escalation
+                    _edge("ts-noc",   "ts-t1",    "key resync assist",    ""),
+                    _edge("ts-noc",   "ts-gw",    "routing triage",       ""),
+                ],
+                "_annotationLegend": [
+                    {"legend_id": "zone1", "label": "Zone 1: Type 1 Crypto Failure", "color": "#e74c3c", "nodes": ["ts-t1"]},
+                    {"legend_id": "zone2", "label": "Zone 2: BGP / Routing Failure",  "color": "#e67e22", "nodes": ["ts-gw"]},
+                    {"legend_id": "zone3", "label": "Zone 3: DNS Resolution Failure", "color": "#f39c12", "nodes": ["ts-dns"]},
+                    {"legend_id": "zone4", "label": "Zone 4: Email Relay Failure",    "color": "#9b59b6", "nodes": ["ts-mail"]},
+                    {"legend_id": "monitoring", "label": "Monitoring / SIEM path",   "color": "#27ae60", "nodes": ["ts-snmp","ts-syslog","ts-acas"]},
+                ],
+            }
+        ),
+    },
+    # S4 — New Application Onboarding (JWICS / C2S / C2E)
+    {
+        "id": "tpl-onboarding-new-app-jwics",
+        "name": "New Application Onboarding — JWICS / C2S / C2E",
+        "category": "Scenario | Onboarding",
+        "description": (
+            "Step-by-step onboarding diagram for adding a new application to JWICS, C2S, or C2E. "
+            "Five phases color-coded: Phase 1 (ATO/ISSO registration), Phase 2 (DNS record), "
+            "Phase 3 (Firewall ACL), Phase 4 (PKI certificate), Phase 5 (smoke test + validation). "
+            "Each node shows the specific action, responsible team, NIST control, and command. "
+            "Use as a visual checklist for new application deployments. IL6/SECRET."
+        ),
+        "tags": json.dumps(["onboarding", "new-app", "jwics", "c2s", "c2e", "ato", "dns", "pki", "firewall", "scenario", "dod"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    # Infrastructure
+                    _node("ob-scif",   "SCIF Workstation\n(End User)",    "endpoint-pc",  60,  350, {"config": {"classification": "SECRET"}}),
+                    _node("ob-t1",     "Type 1\nEncryptor",               "fips-140-l3",  230, 350, {"config": {"classification": "SECRET"}}),
+                    _node("ob-gw",     "JWICS\nGateway",                  "router",       400, 350, {"config": {"classification": "SECRET"}}),
+                    _node("ob-bb",     "JWICS\nBackbone",                 "cloud",        570, 350, {"config": {"classification": "SECRET"}}),
+                    _node("ob-app",    "New Application\nHost",           "server",       820, 350, {"config": {"classification": "SECRET", "phase": "Phase 5 — Smoke Test", "action": "Verify HTTPS/443 reachable. Check HBSS agent installed. Confirm ACAS scan clean.", "nist": "CA-7, SI-3, RA-5"}}),
+                    # Phase nodes
+                    _node("ob-ato",    "Ph1: ATO\nRegistration",          "server",       400, 130, {"config": {"phase": "Phase 1 — ATO / ISSO", "action": "Submit system registration to eMASS or xACTA. Obtain ATO from DAA/AO. Register in DISA Asset Management.", "team": "ISSO + AO", "nist": "CA-1, CA-2, CA-9", "time_est": "4-12 weeks"}}),
+                    _node("ob-dns",    "Ph2: DNS\nRecord Request",        "server",       570, 130, {"config": {"phase": "Phase 2 — DNS Record", "action": "Email dia-dns@dia.smil.mil: request A/AAAA record + PTR. Provide zone name, IP, TTL, SOA. Wait 1-3 business days.", "team": "DIA DNS Admins", "nist": "CM-7, CM-8", "cmd": "dig @<jwics-resolver> <hostname> to verify after creation"}}),
+                    _node("ob-fw",     "Ph3: Firewall\nACL Request",      "firewall",     730, 130, {"config": {"phase": "Phase 3 — Firewall Rule", "action": "Submit DISA firewall change request (ITCS ticket). Specify src/dst IP, ports, protocol, justification + ATO reference.", "team": "DISA NOC Firewall Team", "nist": "SC-7, CM-5", "time_est": "1-5 business days"}}),
+                    _node("ob-pki",    "Ph4: PKI\nCertificate",           "fips-140-l3",  570, 550, {"config": {"phase": "Phase 4 — NSS PKI Cert", "action": "Submit CSR to NSS PKI (DoD CA). Use server cert template. Install signed cert + DoD CA chain. Configure TLS 1.2+ FIPS cipher suite.", "team": "DoD PKI Office / NSS CA", "nist": "IA-5(2), SC-8, SC-8(1)", "cmd": "openssl verify -CAfile dod-ca-chain.pem server.crt"}}),
+                    _node("ob-hbss",   "Ph5: HBSS\nAgent Deploy",        "siem",         820, 550, {"config": {"phase": "Phase 5 — HBSS + ACAS", "action": "Install HBSS McAfee ePO agent. Register with DISA ACAS Nessus SC scanner. Run initial scan; remediate all CAT1 STIGs before go-live.", "team": "HBSS Admins + ISSO", "nist": "SI-3, SI-4, RA-5", "cmd": "nessuscli scan --policy DISA-STIG"}}),
+                    _node("ob-syslog", "Ph5: Syslog\nSIEM",              "server",      1020, 350, {"config": {"phase": "Phase 5 — Audit Logging", "action": "Configure rsyslog/syslog-ng to forward to DISA SIEM (syslog-TLS port 6514). Verify log receipt. Set retention = 1 year.", "team": "ISSO + DISA SIEM Team", "nist": "AU-2, AU-9, AU-11"}}),
+                ],
+                "edges": [
+                    _edge("ob-scif", "ob-t1",     "SCIF LAN",          ""),
+                    _edge("ob-t1",   "ob-gw",     "Encrypted",         "Type 1"),
+                    _edge("ob-gw",   "ob-bb",     "JWICS",             "OSPF"),
+                    _edge("ob-bb",   "ob-app",    "Application path",  "HTTPS/443"),
+                    # Phase wires
+                    _edge("ob-ato",  "ob-app",    "ATO grants access", ""),
+                    _edge("ob-dns",  "ob-app",    "DNS name created",  ""),
+                    _edge("ob-fw",   "ob-gw",     "ACL rule added",    ""),
+                    _edge("ob-pki",  "ob-app",    "Cert installed",    ""),
+                    _edge("ob-hbss", "ob-app",    "HBSS agent live",   ""),
+                    _edge("ob-app",  "ob-syslog", "Audit logs",        "syslog-TLS/6514"),
+                ],
+                "_annotationLegend": [
+                    {"legend_id": "ph1", "label": "Phase 1: ATO / ISSO Registration",   "color": "#e74c3c", "nodes": ["ob-ato"]},
+                    {"legend_id": "ph2", "label": "Phase 2: DNS Record Creation",        "color": "#3498db", "nodes": ["ob-dns"]},
+                    {"legend_id": "ph3", "label": "Phase 3: Firewall ACL",               "color": "#e67e22", "nodes": ["ob-fw"]},
+                    {"legend_id": "ph4", "label": "Phase 4: PKI Certificate",            "color": "#9b59b6", "nodes": ["ob-pki"]},
+                    {"legend_id": "ph5", "label": "Phase 5: Smoke Test + Validation",    "color": "#27ae60", "nodes": ["ob-app","ob-hbss","ob-syslog"]},
+                ],
+            }
+        ),
+    },
+    # S5 — C2S + C2E Full Architecture (Dual-Cloud Secret)
+    {
+        "id": "tpl-c2s-c2e-full-architecture",
+        "name": "C2S + C2E Full Architecture (Dual-Cloud SECRET)",
+        "category": "DoD Secret | Multi-Cloud",
+        "description": (
+            "Side-by-side architecture showing C2S (AWS Secret Region) and C2E (Azure Government Secret) "
+            "both hanging off the same DISA Secret BCAP/CAP, fed by JWICS backbone. "
+            "Shows cross-cloud peering path via DISA backbone (not Internet), centralized SIEM "
+            "and compliance logging, and the full security stack for each CSP. "
+            "Use for multi-cloud ATO planning, capacity decisions, and explaining classified cloud "
+            "options to mission owners. IL6/SECRET."
+        ),
+        "tags": json.dumps(["c2s", "c2e", "dual-cloud", "secret", "il6", "jwics", "disa-cap", "multi-csp", "aws", "azure", "dod"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    # JWICS / DISA center
+                    _node("dc-jwics",   "JWICS Backbone",               "cloud",      180, 350, {"config": {"classification": "SECRET", "managed_by": "DIA"}}),
+                    _node("dc-cap",     "DISA Secret BCAP/CAP",         "firewall",   400, 350, {"config": {"classification": "SECRET", "vdss": "yes", "vdms": "yes", "tccm": "yes", "notes": "Applies SCCA inspection chain at SECRET level to both C2S and C2E traffic."}}),
+                    _node("dc-siem",    "DISA SIEM\n(Splunk/ArcSight)", "siem",       400, 130, {"config": {"classification": "SECRET", "feeds": "CloudTrail (C2S) + Azure Monitor (C2E) + JWICS syslog"}}),
+                    _node("dc-acas",    "DISA ACAS\n(Nessus SC)",       "server",     400, 570, {"config": {"classification": "SECRET", "purpose": "Cross-cloud vulnerability scanning"}}),
+                    # C2S branch (AWS)
+                    _node("dc-c2s-dx",  "C2S ClassifiedConnect",        "aws-dx",     640, 180, {"config": {"classification": "SECRET", "bandwidth": "10G", "bfd": True}}),
+                    _node("dc-c2s-tgw", "C2S Transit Gateway",          "aws-tgw",    840, 180, {"config": {"classification": "SECRET", "region": "us-gov-secret-1"}}),
+                    _node("dc-c2s-vm",  "C2S Mission VPC",              "aws-vpc",   1060, 100, {"config": {"classification": "SECRET", "cidr": "10.200.0.0/16"}}),
+                    _node("dc-c2s-mg",  "C2S Mgmt VPC",                 "aws-vpc",   1060, 260, {"config": {"classification": "SECRET", "cidr": "10.201.0.0/16", "purpose": "HBSS ePO, ACAS, patch"}}),
+                    _node("dc-c2s-ct",  "C2S CloudTrail\n+ GuardDuty",  "server",     840, 320, {"config": {"classification": "SECRET", "exports_to": "DISA SIEM via ClassifiedConnect"}}),
+                    # C2E branch (Azure)
+                    _node("dc-c2e-er",  "C2E ExpressRoute",             "server",     640, 520, {"config": {"classification": "SECRET", "bandwidth": "10G", "bgp_md5": True}}),
+                    _node("dc-c2e-ergw","C2E ER Gateway",               "server",     840, 520, {"config": {"classification": "SECRET", "sku": "ErGw3AZ"}}),
+                    _node("dc-c2e-hub", "C2E Hub VNet\n(Firewall Premium)","server",1060, 430, {"config": {"classification": "SECRET", "cidr": "10.210.0.0/16", "azure_fw": "Premium IDPS"}}),
+                    _node("dc-c2e-spk", "C2E Spoke VNet\n(Workload)",   "server",    1060, 620, {"config": {"classification": "SECRET", "cidr": "10.211.0.0/24"}}),
+                    _node("dc-c2e-def", "C2E Defender\n+ Azure Monitor","server",     840, 680, {"config": {"classification": "SECRET", "exports_to": "DISA SIEM via ExpressRoute"}}),
+                ],
+                "edges": [
+                    # JWICS to DISA CAP
+                    _edge("dc-jwics",  "dc-cap",     "JWICS Circuit",            "BGP"),
+                    # DISA CAP to C2S
+                    _edge("dc-cap",    "dc-c2s-dx",  "ClassifiedConnect 10G",   "BGP eBGP MD5"),
+                    _edge("dc-c2s-dx", "dc-c2s-tgw", "TGW Attachment",          "BGP"),
+                    _edge("dc-c2s-tgw","dc-c2s-vm",  "Mission VPC",             ""),
+                    _edge("dc-c2s-tgw","dc-c2s-mg",  "Mgmt VPC",                ""),
+                    _edge("dc-c2s-tgw","dc-c2s-ct",  "CloudTrail Events",       ""),
+                    # DISA CAP to C2E
+                    _edge("dc-cap",    "dc-c2e-er",  "ExpressRoute 10G",        "BGP eBGP MD5"),
+                    _edge("dc-c2e-er", "dc-c2e-ergw","ER Gateway",              "BGP"),
+                    _edge("dc-c2e-ergw","dc-c2e-hub","Hub VNet",                ""),
+                    _edge("dc-c2e-hub","dc-c2e-spk", "VNet Peering",            ""),
+                    _edge("dc-c2e-hub","dc-c2e-def", "Azure Monitor",           ""),
+                    # Logging to DISA SIEM
+                    _edge("dc-c2s-ct", "dc-siem",    "CloudTrail/GD Findings",  "TLS"),
+                    _edge("dc-c2e-def","dc-siem",    "Defender/Monitor Alerts", "TLS"),
+                    # ACAS scanning
+                    _edge("dc-acas",   "dc-c2s-mg",  "Nessus scan",             ""),
+                    _edge("dc-acas",   "dc-c2e-spk", "Nessus scan",             ""),
+                ],
+                "_annotationLegend": [
+                    {"legend_id": "dc-shared", "label": "DISA Shared (JWICS + CAP + Logging)", "color": "#2c3e50", "nodes": ["dc-jwics","dc-cap","dc-siem","dc-acas"]},
+                    {"legend_id": "dc-c2s",    "label": "C2S (AWS Secret Region)",              "color": "#e67e22", "nodes": ["dc-c2s-dx","dc-c2s-tgw","dc-c2s-vm","dc-c2s-mg","dc-c2s-ct"]},
+                    {"legend_id": "dc-c2e",    "label": "C2E (Azure Government Secret)",        "color": "#2980b9", "nodes": ["dc-c2e-er","dc-c2e-ergw","dc-c2e-hub","dc-c2e-spk","dc-c2e-def"]},
+                ],
+            }
+        ),
+    },
 ]
 
 
 # ── Enclave-in-a-Box snippet seeds ────────────────────────────────────────────
 
 ENCLAVE_SNIPPETS = [
+    # ── JWICS / C2S / C2E Enclave Snippets ─────────────────────────────────────
+
+    # JWICS Enclave Starter
+    {
+        "id": "snip-jwics-enclave",
+        "name": "JWICS Enclave Starter",
+        "category": "Enclave",
+        "description": (
+            "Minimal JWICS SECRET enclave: SCIF LAN switch, Type 1 encryptor (KG-250A), "
+            "JWICS gateway router, classified DNS resolver, JWICS mail relay, and ACAS/HBSS server. "
+            "All STIG CAT I controls pre-populated. DNSSEC and S/MIME required. IL6/SECRET."
+        ),
+        "classification_level": "SECRET",
+        "impact_level": "IL6",
+        "stig_controls": json.dumps([
+            "SC-8", "SC-8(1)", "SC-28", "AU-2", "AU-9",
+            "IA-2", "IA-5(2)", "CA-3", "SI-3", "AC-17", "CM-7",
+        ]),
+        "tags": json.dumps(["jwics", "secret", "il6", "scif", "type1", "dia", "hbss", "dns", "mail"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("jw-sw",   "SCIF LAN Switch",       "switch-l2",   100, 200, {"config": {"classification": "SECRET", "stig_baseline": "DISA Layer 2 Switch STIG V2R4", "vlan_isolation": "yes", "notes": "SCIF physical boundary. No wireless ports. All ports CAC-authenticated."}}),
+                    _node("jw-t1",   "Type 1 Encryptor\n(KG-250A)", "fips-140-l3", 300, 200, {"config": {"classification": "SECRET", "device": "KG-250A / TACLANE Flex", "fips": "FIPS 140-3 Level 3", "key_fill": "KYK-13 Simple Key Loader", "key_rotation": "annually or on compromise", "notes": "NSA Type 1 HAIPE. Alarm annunciation to DISA NOC."}}),
+                    _node("jw-rtr",  "JWICS Gateway\nRouter", "router",      500, 200, {"config": {"classification": "SECRET", "stig_baseline": "DISA Network STIG V3R9", "routing_protocol": "OSPF Area 0", "auth": "CAC + TACACS+", "notes": "Agency-managed. DISA-approved platform. OSPF adjacency to DIA hub router."}}),
+                    _node("jw-dns",  "JWICS DNS\nResolver",   "server",      300, 380, {"config": {"classification": "SECRET", "software": "BIND 9 (DISA-hardened)", "stig_baseline": "DISA DNS STIG V2R5", "dnssec": "yes", "zones": "*.jwics.gov, *.dia.smil.mil", "forwarders": "DIA authoritative only", "notes": "No Internet forwarders. DNSSEC mandatory."}}),
+                    _node("jw-mail", "JWICS Mail\nRelay",     "server",      500, 380, {"config": {"classification": "SECRET", "protocol": "SMTP/S (STARTTLS)", "smime_required": "yes", "hbss_scan": "yes", "pki": "NSS PKI (DoD CA)", "notes": "S/MIME with NSS cert mandatory. HBSS DLPe content scan at relay."}}),
+                    _node("jw-acas", "ACAS / HBSS\n(ePO)",   "siem",        700, 290, {"config": {"classification": "SECRET", "components": "HBSS McAfee ePO + Nessus SC (ACAS)", "scan_frequency": "continuous", "reports_to": "DISA ACAS console + SIEM", "notes": "HBSS mandatory for all IL6 hosts. ACAS scans weekly minimum."}}),
+                ],
+                "edges": [
+                    _edge("jw-sw",   "jw-t1",   "SCIF LAN (1GbE)",   ""),
+                    _edge("jw-t1",   "jw-rtr",  "Type 1 Encrypted",  "HAIPE AES-256"),
+                    _edge("jw-rtr",  "jw-dns",  "DNS Query",         "UDP/53 DNSSEC"),
+                    _edge("jw-rtr",  "jw-mail", "SMTP Relay",        "SMTP/S 587"),
+                    _edge("jw-dns",  "jw-acas", "HBSS Agent",        ""),
+                    _edge("jw-mail", "jw-acas", "HBSS Scan",         ""),
+                    _edge("jw-rtr",  "jw-acas", "ACAS Probe",        ""),
+                ],
+            }
+        ),
+    },
+    # C2S Compartment Starter (AWS Secret Region)
+    {
+        "id": "snip-c2s-compartment",
+        "name": "C2S Compartment Starter (AWS Secret Region)",
+        "category": "Cloud",
+        "description": (
+            "Minimal C2S (AWS Secret Region) compartment: ClassifiedConnect circuit, Transit Gateway, "
+            "mission VPC, management VPC, Route 53 Private Hosted Zone, and CloudTrail/GuardDuty. "
+            "All IL6 STIG controls pre-populated. No Internet path. IL6/SECRET."
+        ),
+        "classification_level": "SECRET",
+        "impact_level": "IL6",
+        "stig_controls": json.dumps([
+            "AU-2", "AU-9", "AC-4", "SC-7", "SC-8", "SI-4", "CM-6", "IA-2(1)", "IA-2(2)", "RA-5",
+        ]),
+        "tags": json.dumps(["c2s", "aws", "secret", "il6", "cloud", "classifiedconnect", "tgw", "vpc", "guardduty"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("cs-cc",   "C2S ClassifiedConnect",   "aws-dx",    100, 200, {"config": {"classification": "SECRET", "bandwidth": "10G", "bfd_enabled": True, "notes": "AWS ClassifiedConnect = Direct Connect for Secret Region. LOA-CFA from AWS Secret team."}}),
+                    _node("cs-tgw",  "C2S Transit Gateway",     "aws-tgw",   300, 200, {"config": {"classification": "SECRET", "region": "us-gov-secret-1", "route_tables": "mission, mgmt, shared-svc", "bgp_propagation": True}}),
+                    _node("cs-vm",   "C2S Mission VPC",         "aws-vpc",   500, 100, {"config": {"classification": "SECRET", "cidr": "10.200.0.0/16", "flow_logs_enabled": True, "guardduty": True, "notes": "Workload VPC. Flow Logs and GuardDuty mandatory for IL6."}}),
+                    _node("cs-mg",   "C2S Mgmt VPC",            "aws-vpc",   500, 300, {"config": {"classification": "SECRET", "cidr": "10.201.0.0/16", "purpose": "ACAS Nessus SC, HBSS ePO, patch management, syslog forwarding"}}),
+                    _node("cs-phz",  "C2S Route 53 PHZ\n(.c2s.ic.gov)", "server", 700, 200, {"config": {"classification": "SECRET", "zone": ".c2s.ic.gov", "dnssec": "yes", "forwarder": ".smil.mil → DISA DNS via ClassifiedConnect"}}),
+                    _node("cs-ct",   "CloudTrail\n+ GuardDuty\n+ Security Hub", "server", 300, 380, {"config": {"classification": "SECRET", "exports_to": "DISA SIEM via ClassifiedConnect", "trail_type": "multi-region (Secret)", "notes": "CloudTrail must be enabled in all regions. GuardDuty Malware Protection enabled."}}),
+                ],
+                "edges": [
+                    _edge("cs-cc",  "cs-tgw",  "ClassifiedConnect 10G", "BGP eBGP MD5"),
+                    _edge("cs-tgw", "cs-vm",   "Mission VPC Attachment",""),
+                    _edge("cs-tgw", "cs-mg",   "Mgmt VPC Attachment",   ""),
+                    _edge("cs-vm",  "cs-phz",  "Route 53 Resolver",     "UDP/53"),
+                    _edge("cs-mg",  "cs-phz",  "DNS Query",             "UDP/53"),
+                    _edge("cs-vm",  "cs-ct",   "Flow Logs / Events",    ""),
+                    _edge("cs-mg",  "cs-ct",   "CloudTrail",            ""),
+                    _edge("cs-ct",  "cs-cc",   "SIEM Export",           "TLS"),
+                ],
+            }
+        ),
+    },
+    # C2E Cloud Enclave Starter (Azure Government Secret)
+    {
+        "id": "snip-c2e-cloud-enclave",
+        "name": "C2E Enclave Starter (Azure Government Secret)",
+        "category": "Cloud",
+        "description": (
+            "Minimal C2E (Azure Government Secret) enclave: ExpressRoute circuit, ER Gateway, "
+            "Hub VNet with Azure Firewall Premium, Spoke VNet for workloads, Azure Private DNS Zone, "
+            "Microsoft Defender for Cloud, and HSM-backed Key Vault. IL6/SECRET."
+        ),
+        "classification_level": "SECRET",
+        "impact_level": "IL6",
+        "stig_controls": json.dumps([
+            "AU-2", "AU-9", "AC-4", "SC-7", "SC-8", "SI-4", "CM-6", "IA-2(1)", "IA-2(2)", "RA-5",
+        ]),
+        "tags": json.dumps(["c2e", "azure", "secret", "il6", "cloud", "expressroute", "vnet", "defender", "keyvault"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("ce-er",    "C2E ExpressRoute\nCircuit",         "server",   100, 200, {"config": {"classification": "SECRET", "bandwidth": "10G", "bgp_md5": True, "primary_secondary": "active/active", "notes": "NSA Type 1 on physical layer. Primary + diverse secondary paths required."}}),
+                    _node("ce-ergw",  "C2E ER Gateway\n(ErGw3AZ)",         "server",   300, 200, {"config": {"classification": "SECRET", "sku": "ErGw3AZ (Ultra Performance)", "fastpath": True, "region": "usgovsecret"}}),
+                    _node("ce-hub",   "C2E Hub VNet\n(Azure FW Premium)",  "server",   500, 100, {"config": {"classification": "SECRET", "cidr": "10.210.0.0/16", "azure_firewall_sku": "Premium (IDPS)", "forced_tunnel": True, "notes": "All spoke VNet traffic routes through Hub FW for inspection."}}),
+                    _node("ce-spk",   "C2E Spoke VNet\n(Workload)",        "server",   500, 300, {"config": {"classification": "SECRET", "cidr": "10.211.0.0/24", "peered_to": "Hub VNet", "route_table": "UDR → Azure FW"}}),
+                    _node("ce-dns",   "C2E Private\nDNS Zone",             "server",   700, 200, {"config": {"classification": "SECRET", "zones": ".c2e.microsoft.com + agency.secret.gov", "private_resolver": True, "conditional_fwd": ".smil.mil → DISA DNS via ExpressRoute"}}),
+                    _node("ce-def",   "Defender for Cloud\n+ Azure Monitor","server",  300, 380, {"config": {"classification": "SECRET", "exports_to": "DISA SIEM via ExpressRoute", "workspaces": "Log Analytics (Government Secret)"}}),
+                    _node("ce-kv",    "Key Vault\n(Premium HSM)",          "server",   700, 380, {"config": {"classification": "SECRET", "sku": "Premium", "fips": "FIPS 140-3 Level 3", "purge_protection": True, "notes": "All secrets, keys, certs stored in HSM-backed Key Vault. RBAC only (no Vault Access Policies)."}}),
+                ],
+                "edges": [
+                    _edge("ce-er",   "ce-ergw",  "ExpressRoute 10G",  "BGP eBGP MD5"),
+                    _edge("ce-ergw", "ce-hub",   "Hub VNet Gateway",  ""),
+                    _edge("ce-hub",  "ce-spk",   "VNet Peering",      ""),
+                    _edge("ce-hub",  "ce-dns",   "Private DNS",       ""),
+                    _edge("ce-spk",  "ce-dns",   "DNS Query",         "UDP/53"),
+                    _edge("ce-hub",  "ce-def",   "Azure Monitor",     ""),
+                    _edge("ce-spk",  "ce-kv",    "PrivateLink",       ""),
+                    _edge("ce-def",  "ce-er",    "SIEM Export",       "TLS"),
+                ],
+            }
+        ),
+    },
+    # Cross-Domain Solution Boundary (HIGH-to-LOW)
+    {
+        "id": "snip-cds-boundary",
+        "name": "Cross-Domain Solution Boundary (HIGH-to-LOW)",
+        "category": "Cross-Domain",
+        "description": (
+            "Cross-Domain Solution (CDS) boundary snippet for HIGH-to-LOW data transfer "
+            "(e.g., SIPR/JWICS → NIPRNet). Shows HIGH-side firewall, CDS appliance "
+            "(Forcepoint / Owl Cyber Defense / Everfox), LOW-side firewall, audit log server, "
+            "and CDS policy engine. Allowlist-only, hardware-enforced. NSA-evaluated. IL6/SECRET."
+        ),
+        "classification_level": "SECRET",
+        "impact_level": "IL6",
+        "stig_controls": json.dumps([
+            "SC-8", "SC-10", "AC-4", "AC-4(1)", "AU-9", "CA-3(5)", "SI-3", "CM-7",
+        ]),
+        "tags": json.dumps(["cds", "cross-domain", "secret", "nipr", "jwics", "sipr", "guard", "il6", "allowlist"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("cds-h-fw",  "HIGH-Side Firewall\n(SECRET)",    "firewall",   100, 200, {"config": {"classification": "SECRET", "zone": "HIGH (SIPR/JWICS)", "stig_baseline": "DISA Network STIG V3R9", "default_deny": True}}),
+                    _node("cds-dev",   "CDS Appliance\n(Guard)",          "fips-140-l3",300, 200, {"config": {"classification": "SECRET→CUI", "device": "Forcepoint TGS / Owl OPDS / Everfox HVT", "fips": "FIPS 140-3 Level 3", "evaluation": "NSA CSFC / CC EAL4+", "direction": "HIGH→LOW only (one-way guard)", "filter_policy": "allowlist: approved content types only", "notes": "Hardware-enforced data flow. No bidirectional unless dual-CDS pair."}}),
+                    _node("cds-l-fw",  "LOW-Side Firewall\n(CUI/NIPR)",  "firewall",   500, 200, {"config": {"classification": "CUI", "zone": "LOW (NIPRNet/CUI)", "stig_baseline": "DISA Network STIG V3R9"}}),
+                    _node("cds-audit", "CDS Audit Log\nServer",           "server",     300, 380, {"config": {"classification": "SECRET", "retention": "7 years (NIST AU-11)", "immutable": True, "stig": "AU-2, AU-9", "notes": "Append-only audit log of all CDS transfer events. Tamper-evident storage."}}),
+                    _node("cds-policy","CDS Policy Engine\n(Content Filter)", "server", 500, 380, {"config": {"classification": "SECRET", "policy_type": "allowlist (file type + keyword + size)", "review_cycle": "annual", "approval": "AO + DISA CDS PMO"}}),
+                ],
+                "edges": [
+                    _edge("cds-h-fw",  "cds-dev",    "HIGH traffic",      ""),
+                    _edge("cds-dev",   "cds-l-fw",   "Filtered/Approved", "allowlist-only"),
+                    _edge("cds-dev",   "cds-audit",  "Audit event",       "syslog-TLS"),
+                    _edge("cds-dev",   "cds-policy", "Content check",     ""),
+                    _edge("cds-policy","cds-dev",    "Policy enforce",    ""),
+                ],
+            }
+        ),
+    },
+
     # 1 ─ SIPR Enclave Starter
     {
         "id": "snip-sipr-enclave",
@@ -13201,6 +14000,23 @@ def init_db():
             ("nc_security_domain_policies", "routing_policy", "TEXT DEFAULT '{}'"),
             ("nc_security_domain_policies", "vpn_policy", "TEXT DEFAULT '{}'"),
             ("nc_security_domain_policies", "updated_at", "TEXT DEFAULT CURRENT_TIMESTAMP"),
+            # Connectivity: csp column on ndc_sops for SOP library CSP filter
+            ("ndc_sops", "csp", "TEXT DEFAULT 'multi'"),
+            # NDC↔Migration integration: phase lifecycle metadata
+            ("nc_migration_phases", "classification", "TEXT DEFAULT 'CUI'"),
+            ("nc_migration_phases", "impact_level", "TEXT DEFAULT 'IL4'"),
+            ("nc_migration_phases", "properties_json", "TEXT DEFAULT '{}'"),
+            # NDC↔Migration integration: traffic flow ↔ phase link
+            ("nc_traffic_flows", "phase_id", "TEXT"),
+            # Partner registry: add partner_id + approval columns to nc_peering_agreements
+            ("nc_peering_agreements", "partner_id", "TEXT"),
+            ("nc_peering_agreements", "approver_name", "TEXT DEFAULT ''"),
+            ("nc_peering_agreements", "approver_role", "TEXT DEFAULT ''"),
+            ("nc_peering_agreements", "approved_at", "TEXT DEFAULT ''"),
+            # NDC AI-assisted migration: COA selection + feedback
+            ("nc_projects", "selected_coa", "INTEGER DEFAULT 0"),
+            ("nc_projects", "coa_feedback", "TEXT DEFAULT ''"),
+            ("nc_projects", "coa_json", "TEXT DEFAULT '{}'"),
         ]
         for table, col, coltype in _migrations:
             try:
@@ -14200,6 +15016,31 @@ def init_db():
                 )
             conn.commit()
             print(f"[init_db] Seeded {len(_sops)} NDC SOPs.")
+
+        # ── Auto-seed full SOP library if approved count is low ────────────
+        approved_count = conn.execute(
+            "SELECT COUNT(*) FROM ndc_sops WHERE status='approved'"
+        ).fetchone()[0]
+        if approved_count < 20:
+            try:
+                from tools.network.seed_sops import seed as _seed_sops
+                result = _seed_sops(status="approved")
+                if result["seeded"] > 0:
+                    print(f"[init_db] Auto-seeded {result['seeded']} approved SOPs via seed_sops.")
+            except Exception as _e:
+                print(f"[init_db] seed_sops auto-seed skipped: {_e}")
+
+        # ── Auto-seed demo migration projects if none exist ────────────────
+        migration_count = conn.execute(
+            "SELECT COUNT(*) FROM nc_migration_phases"
+        ).fetchone()[0]
+        if migration_count == 0:
+            try:
+                from tools.network.seed_migration_demo import seed_demo_migrations
+                seed_demo_migrations()
+                print("[init_db] Auto-seeded demo migration projects.")
+            except Exception as _e:
+                print(f"[init_db] demo migration seed skipped: {_e}")
 
         conn.execute(
             "INSERT INTO nc_audit (action, entity_type, details) VALUES (?,?,?)",

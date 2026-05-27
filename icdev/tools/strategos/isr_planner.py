@@ -8,14 +8,14 @@ Gap Analysis: requirements with no assigned asset, overdue windows, coverage ove
 Doctrinal basis: FM 3-55 / JP 2-01 — Intelligence Collection Planning.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.isr_planner")
+logger = get_logger("icdev.strategos.isr_planner")
 
 COLLECTION_TYPES = ["IMINT", "SIGINT", "HUMINT", "OSINT", "MASINT", "mixed"]
 ASSET_TYPES = ["UAV", "satellite", "SIGINT_aircraft", "HUMINT_asset", "surface", "cyber"]

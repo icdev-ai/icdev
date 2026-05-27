@@ -215,7 +215,14 @@ ACTOR_PATTERNS: list[re.Pattern] = [
 
 
 def _get_connection(db_path=None):
-    conn = get_connection(db_path=str(db_path))
+    if db_path is not None:
+        conn = get_connection(db_path=str(db_path))
+    else:
+        conn = get_connection()
+    try:
+        conn.set_security_context(None)  # rls-bypass: intake uses session_id as auth token
+    except Exception:
+        pass
     return conn
 
 

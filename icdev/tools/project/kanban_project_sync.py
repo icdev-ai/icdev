@@ -29,17 +29,17 @@ API hook (called automatically after every POST /api/kanban/tasks):
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
-import logging
 import os
 import re
 import tempfile
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _PROJECTS_YAML = Path(__file__).resolve().parent.parent.parent / "args" / "projects.yaml"
 

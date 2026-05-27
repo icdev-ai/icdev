@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """IBM watsonx.ai LLM Provider (D238).
 
@@ -8,7 +10,6 @@ Uses ibm-watsonx-ai SDK with graceful degradation (D73).
 Government deployment: watsonx on AWS GovCloud or IBM Cloud for Government (IC4G).
 """
 
-import logging
 import os
 import sys
 from pathlib import Path
@@ -20,7 +21,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse  # noqa: E402
 
-logger = logging.getLogger("icdev.llm.ibm_watsonx")
+logger = get_logger("icdev.llm.ibm_watsonx")
 
 # Graceful SDK import (D73)
 try:

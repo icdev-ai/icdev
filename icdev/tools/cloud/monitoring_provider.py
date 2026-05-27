@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Monitoring Provider — cloud-agnostic monitoring and logging.
 
@@ -8,7 +10,6 @@ Each implementation ~40-60 lines with try/except ImportError.
 """
 
 import json
-import logging
 import os
 from tools.db.storage import get_connection
 from abc import ABC, abstractmethod
@@ -16,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-logger = logging.getLogger("icdev.cloud.monitoring")
+logger = get_logger("icdev.cloud.monitoring")
 
 
 class MonitoringProvider(ABC):

@@ -187,6 +187,152 @@ CREATE INDEX IF NOT EXISTS idx_mc_runbooks_design ON mc_runbooks(design_id);
 CREATE INDEX IF NOT EXISTS idx_mc_runbooks_trigger ON mc_runbooks(trigger_event);
 CREATE INDEX IF NOT EXISTS idx_mc_oracle_design ON mc_oracle_predictions(design_id);
 CREATE INDEX IF NOT EXISTS idx_mc_oracle_severity ON mc_oracle_predictions(severity);
+
+CREATE TABLE IF NOT EXISTS mc_inventory_imports (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL,
+    format              TEXT NOT NULL CHECK(format IN ('csv','json','aws_hub','azure_migrate','manual')),
+    filename            TEXT,
+    row_count           INTEGER DEFAULT 0,
+    parsed_servers_json TEXT DEFAULT '[]',
+    status              TEXT NOT NULL CHECK(status IN ('pending','parsed','error')) DEFAULT 'pending',
+    error_msg           TEXT,
+    imported_at         TEXT NOT NULL,
+    classification      TEXT DEFAULT 'CUI'
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS idx_mc_inv_session ON mc_inventory_imports(session_id);
+"""
+
+
+# ── Application Migration Schema ─────────────────────────────────────────────
+
+APP_MIGRATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS mc_app_inventory (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT REFERENCES mc_srv_sessions(id),
+    name                TEXT NOT NULL,
+    version             TEXT,
+    language            TEXT,
+    framework           TEXT,
+    app_type            TEXT CHECK(app_type IN ('web','api','batch','database','middleware','desktop','mobile','iot','saas')),
+    owner               TEXT,
+    team                TEXT,
+    criticality         TEXT CHECK(criticality IN ('mission_critical','high','medium','low')),
+    environment         TEXT CHECK(environment IN ('production','staging','development')),
+    stig_category       TEXT CHECK(stig_category IN ('cat1','cat2','cat3','na')),
+    license_type        TEXT,
+    license_expiry      TEXT,
+    source_repo         TEXT,
+    artifact_url        TEXT,
+    dependencies_json   TEXT DEFAULT '[]',
+    migration_strategy  TEXT CHECK(migration_strategy IN ('rehost','replatform','refactor','rearchitect','repurchase','retire','retain')),
+    migration_status    TEXT DEFAULT 'pending',
+    notes               TEXT,
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_app_inv_session    ON mc_app_inventory(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_app_inv_criticality ON mc_app_inventory(criticality);
+
+CREATE TABLE IF NOT EXISTS mc_app_server_bindings (
+    id          TEXT PRIMARY KEY,
+    app_id      TEXT NOT NULL REFERENCES mc_app_inventory(id) ON DELETE CASCADE,
+    server_id   TEXT NOT NULL REFERENCES mc_srv_inventory(id) ON DELETE CASCADE,
+    role        TEXT CHECK(role IN ('primary','replica','standby','worker','scheduler')),
+    port        INTEGER,
+    protocol    TEXT,
+    notes       TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(app_id, server_id, role)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_app_srv_app    ON mc_app_server_bindings(app_id);
+CREATE INDEX IF NOT EXISTS idx_mc_app_srv_server ON mc_app_server_bindings(server_id);
+
+CREATE TABLE IF NOT EXISTS mc_app_data_sources (
+    id                      TEXT PRIMARY KEY,
+    app_id                  TEXT REFERENCES mc_app_inventory(id) ON DELETE CASCADE,
+    source_type             TEXT CHECK(source_type IN ('postgresql','mysql','oracle','mssql','mongodb','redis','elasticsearch','s3','sftp','api')),
+    host                    TEXT,
+    port                    INTEGER,
+    database_name           TEXT,
+    schema_version          TEXT,
+    estimated_size_gb       REAL,
+    replication_lag_seconds INTEGER,
+    migration_method        TEXT CHECK(migration_method IN ('dump_restore','cdc','replication','manual')),
+    migration_status        TEXT DEFAULT 'pending',
+    notes                   TEXT,
+    created_at              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mc_app_dependencies (
+    id              TEXT PRIMARY KEY,
+    source_app_id   TEXT REFERENCES mc_app_inventory(id) ON DELETE CASCADE,
+    target_app_id   TEXT REFERENCES mc_app_inventory(id),
+    target_server_id TEXT REFERENCES mc_srv_inventory(id),
+    target_service  TEXT CHECK(target_service IN ('database','cache','message_queue','api','auth','storage','cdn','monitor')),
+    dep_type        TEXT CHECK(dep_type IN ('hard','soft','optional')),
+    protocol        TEXT,
+    port            INTEGER,
+    latency_sla_ms  INTEGER,
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    CHECK(target_app_id IS NOT NULL OR target_server_id IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_app_dep_source ON mc_app_dependencies(source_app_id);
+CREATE INDEX IF NOT EXISTS idx_mc_app_dep_target ON mc_app_dependencies(target_app_id);
+
+CREATE TABLE IF NOT EXISTS mc_app_migration_steps (
+    id              TEXT PRIMARY KEY,
+    app_id          TEXT REFERENCES mc_app_inventory(id) ON DELETE CASCADE,
+    step_order      INTEGER,
+    phase           TEXT CHECK(phase IN ('pre','cutover','post','rollback')),
+    action          TEXT,
+    command         TEXT,
+    expected_output TEXT,
+    timeout_seconds INTEGER,
+    status          TEXT DEFAULT 'pending',
+    executed_at     TEXT,
+    result          TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_app_steps_app   ON mc_app_migration_steps(app_id);
+CREATE INDEX IF NOT EXISTS idx_mc_app_steps_phase ON mc_app_migration_steps(phase);
+
+CREATE TABLE IF NOT EXISTS mc_data_migration (
+    id                          TEXT PRIMARY KEY,
+    session_id                  TEXT,
+    app_id                      TEXT REFERENCES mc_app_inventory(id),
+    source_type                 TEXT CHECK(source_type IN ('postgresql','mysql','oracle','mssql','mongodb','redis','files','s3')),
+    source_host                 TEXT,
+    source_db                   TEXT,
+    source_schema               TEXT,
+    target_type                 TEXT,
+    target_host                 TEXT,
+    target_db                   TEXT,
+    target_schema               TEXT,
+    migration_method            TEXT CHECK(migration_method IN ('dump_restore','cdc','pgloader','mysqldump','mongodump','rsync','aws_dms')),
+    estimated_size_gb           REAL,
+    estimated_duration_minutes  INTEGER,
+    validation_query            TEXT,
+    validation_status           TEXT DEFAULT 'pending',
+    cutover_type                TEXT CHECK(cutover_type IN ('offline','online_with_cdc','snapshot')),
+    rollback_procedure          TEXT,
+    status                      TEXT DEFAULT 'planned',
+    started_at                  TEXT,
+    completed_at                TEXT,
+    notes                       TEXT,
+    classification              TEXT DEFAULT 'CUI',
+    created_at                  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_data_mig_app ON mc_data_migration(app_id);
+CREATE INDEX IF NOT EXISTS idx_mc_data_mig_status ON mc_data_migration(status);
 """
 
 
@@ -309,6 +455,47 @@ CREATE INDEX IF NOT EXISTS idx_mc_net_tests_session ON mc_net_test_cases(session
 CREATE INDEX IF NOT EXISTS idx_mc_net_tests_phase ON mc_net_test_cases(phase);
 CREATE INDEX IF NOT EXISTS idx_mc_net_cutover_session ON mc_net_cutover_steps(session_id);
 CREATE INDEX IF NOT EXISTS idx_mc_net_erb_session ON mc_net_erb_metadata(session_id);
+
+CREATE TABLE IF NOT EXISTS mc_net_ai_sessions (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    role        TEXT NOT NULL DEFAULT 'engineer',
+    message     TEXT NOT NULL,
+    model_used  TEXT DEFAULT '',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_ai_session ON mc_net_ai_sessions(session_id);
+
+CREATE TABLE IF NOT EXISTS mc_net_protocol_plans (
+    id                    TEXT PRIMARY KEY,
+    session_id            TEXT NOT NULL,
+    protocol              TEXT NOT NULL,
+    src_config_json       TEXT DEFAULT '{}',
+    tgt_config_json       TEXT DEFAULT '{}',
+    migration_steps_json  TEXT DEFAULT '[]',
+    risk_level            TEXT DEFAULT 'medium',
+    ai_notes              TEXT DEFAULT '',
+    status                TEXT DEFAULT 'draft',
+    created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(session_id, protocol)
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_proto_session ON mc_net_protocol_plans(session_id);
+
+CREATE TABLE IF NOT EXISTS mc_net_parallel_timelines (
+    id                   TEXT PRIMARY KEY,
+    session_id           TEXT NOT NULL,
+    milestone_name       TEXT NOT NULL,
+    description          TEXT DEFAULT '',
+    days_before_cutover  INTEGER DEFAULT 0,
+    phase                TEXT NOT NULL DEFAULT 'pre_migration',
+    owner                TEXT DEFAULT '',
+    duration_hours       INTEGER DEFAULT 1,
+    status               TEXT DEFAULT 'planned',
+    notes                TEXT DEFAULT '',
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_timeline_session ON mc_net_parallel_timelines(session_id);
 """
 
 
@@ -321,6 +508,609 @@ def _migrate_network_tables(conn):
         conn.commit()
     except Exception:
         pass  # column already exists
+
+
+# ── Server Migration Schema ──────────────────────────────────────────────────
+
+SERVER_MIGRATION_SCHEMA = """
+-- Cloud / on-prem instance catalog (seeded at init; refreshed from APIs when online)
+CREATE TABLE IF NOT EXISTS mc_cloud_instances (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider             TEXT NOT NULL,
+    instance_type        TEXT NOT NULL,
+    family               TEXT NOT NULL DEFAULT '',
+    vcpus                INTEGER NOT NULL DEFAULT 0,
+    ram_gb               REAL NOT NULL DEFAULT 0,
+    local_storage_gb     REAL DEFAULT 0,
+    storage_type         TEXT DEFAULT '',
+    network_gbps         REAL DEFAULT 0,
+    premium_disk_opt     INTEGER DEFAULT 0,
+    cost_tier            TEXT DEFAULT 'medium',
+    govcloud             INTEGER DEFAULT 0,
+    il_support           TEXT DEFAULT '[]',
+    use_case_tags        TEXT DEFAULT '[]',
+    eol_status           TEXT DEFAULT 'active',
+    compliance_certs     TEXT DEFAULT '{}',
+    source               TEXT DEFAULT 'seed',
+    last_refreshed_at    TEXT DEFAULT NULL,
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_mc_cloud_instances ON mc_cloud_instances(provider, instance_type);
+CREATE INDEX IF NOT EXISTS idx_mc_cloud_instances_provider ON mc_cloud_instances(provider);
+CREATE INDEX IF NOT EXISTS idx_mc_cloud_instances_family ON mc_cloud_instances(family);
+CREATE INDEX IF NOT EXISTS idx_mc_cloud_instances_vcpus ON mc_cloud_instances(vcpus);
+CREATE INDEX IF NOT EXISTS idx_mc_cloud_instances_ram ON mc_cloud_instances(ram_gb);
+
+-- Server migration session header
+CREATE TABLE IF NOT EXISTS mc_srv_sessions (
+    id                  TEXT PRIMARY KEY,
+    design_id           TEXT REFERENCES migration_designs(id),
+    migration_type      TEXT NOT NULL DEFAULT 'p2v_cloud',
+    src_hostname        TEXT DEFAULT '',
+    src_ip              TEXT DEFAULT '',
+    src_os              TEXT DEFAULT '',
+    src_os_version      TEXT DEFAULT '',
+    src_hypervisor      TEXT DEFAULT '',
+    src_datacenter      TEXT DEFAULT '',
+    tgt_platform        TEXT NOT NULL DEFAULT '',
+    tgt_region          TEXT DEFAULT '',
+    tgt_account_id      TEXT DEFAULT '',
+    tgt_instance_id     INTEGER REFERENCES mc_cloud_instances(id),
+    readiness_score     REAL DEFAULT 0,
+    status              TEXT DEFAULT 'in_progress',
+    notes               TEXT DEFAULT '',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_sessions_status ON mc_srv_sessions(status);
+
+-- Source server hardware inventory
+CREATE TABLE IF NOT EXISTS mc_srv_inventory (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    vcpus               INTEGER DEFAULT 0,
+    ram_gb              REAL DEFAULT 0,
+    disk_count          INTEGER DEFAULT 0,
+    total_disk_gb       REAL DEFAULT 0,
+    disk_type           TEXT DEFAULT '',
+    nic_count           INTEGER DEFAULT 0,
+    primary_nic_gbps    REAL DEFAULT 0,
+    os_family           TEXT DEFAULT '',
+    os_name             TEXT DEFAULT '',
+    os_arch             TEXT DEFAULT '',
+    bios_type           TEXT DEFAULT '',
+    virtualization_ext  INTEGER DEFAULT 0,
+    raw_export_json     TEXT DEFAULT '{}',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_inventory_session ON mc_srv_inventory(session_id);
+
+-- Installed services / roles on source server
+CREATE TABLE IF NOT EXISTS mc_srv_services (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    service_name        TEXT NOT NULL,
+    service_role        TEXT DEFAULT '',
+    port                INTEGER DEFAULT 0,
+    protocol            TEXT DEFAULT 'tcp',
+    status              TEXT DEFAULT 'running',
+    auto_detected       INTEGER DEFAULT 0,
+    notes               TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_services_session ON mc_srv_services(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_services_role ON mc_srv_services(service_role);
+
+-- Historical performance metrics (manual or imported)
+CREATE TABLE IF NOT EXISTS mc_srv_performance (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    cpu_avg_pct         REAL DEFAULT 0,
+    cpu_peak_pct        REAL DEFAULT 0,
+    ram_avg_pct         REAL DEFAULT 0,
+    ram_peak_pct        REAL DEFAULT 0,
+    disk_iops_avg       REAL DEFAULT 0,
+    disk_iops_peak      REAL DEFAULT 0,
+    net_mbps_avg        REAL DEFAULT 0,
+    net_mbps_peak       REAL DEFAULT 0,
+    sample_period_days  INTEGER DEFAULT 30,
+    source              TEXT DEFAULT 'manual',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_perf_session ON mc_srv_performance(session_id);
+
+-- CAT1/CAT2/CAT3 compatibility check results
+CREATE TABLE IF NOT EXISTS mc_srv_compat_checks (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    category            TEXT NOT NULL DEFAULT 'compute',
+    check_name          TEXT NOT NULL,
+    expected            TEXT DEFAULT '',
+    actual              TEXT DEFAULT '',
+    severity            TEXT DEFAULT 'cat2',
+    status              TEXT DEFAULT 'pending',
+    override_reason     TEXT DEFAULT '',
+    auto_detected       INTEGER DEFAULT 1,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_compat_session ON mc_srv_compat_checks(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_compat_sev ON mc_srv_compat_checks(severity);
+
+-- Rightsizing recommendations (top-3, rank 1 = best fit)
+CREATE TABLE IF NOT EXISTS mc_srv_rightsizing (
+    id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id                 TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    recommended_instance_id    INTEGER REFERENCES mc_cloud_instances(id),
+    rank                       INTEGER DEFAULT 1,
+    cost_tier                  TEXT DEFAULT 'medium',
+    rationale                  TEXT DEFAULT '',
+    vcpu_req                   REAL DEFAULT 0,
+    ram_req_gb                 REAL DEFAULT 0,
+    disk_req_gb                REAL DEFAULT 0,
+    iops_req                   REAL DEFAULT 0,
+    net_req_mbps               REAL DEFAULT 0,
+    headroom_factor            REAL DEFAULT 1.2,
+    created_at                 TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_rightsizing_session ON mc_srv_rightsizing(session_id);
+
+-- Inter-server dependencies
+CREATE TABLE IF NOT EXISTS mc_srv_dependencies (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    dep_hostname        TEXT NOT NULL,
+    dep_ip              TEXT DEFAULT '',
+    dep_role            TEXT DEFAULT '',
+    dep_type            TEXT DEFAULT 'inbound',
+    dep_port            INTEGER DEFAULT 0,
+    dep_protocol        TEXT DEFAULT 'tcp',
+    criticality         TEXT DEFAULT 'medium',
+    migration_order     INTEGER DEFAULT 0,
+    notes               TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_deps_session ON mc_srv_dependencies(session_id);
+
+-- NIC-to-NIC mapping
+CREATE TABLE IF NOT EXISTS mc_srv_nic_map (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    src_nic             TEXT NOT NULL,
+    src_speed_gbps      REAL DEFAULT 0,
+    src_mac             TEXT DEFAULT '',
+    src_vlan            TEXT DEFAULT '',
+    src_ip              TEXT DEFAULT '',
+    src_subnet          TEXT DEFAULT '',
+    src_description     TEXT DEFAULT '',
+    tgt_nic             TEXT DEFAULT '',
+    tgt_speed_gbps      REAL DEFAULT 0,
+    tgt_vlan            TEXT DEFAULT '',
+    tgt_ip              TEXT DEFAULT '',
+    ip_change           INTEGER DEFAULT 0,
+    requires_dhcp       INTEGER DEFAULT 0,
+    notes               TEXT DEFAULT '',
+    status              TEXT DEFAULT 'pending',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_nic_session ON mc_srv_nic_map(session_id);
+
+-- Disk/volume mapping
+CREATE TABLE IF NOT EXISTS mc_srv_storage_map (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    src_disk            TEXT NOT NULL,
+    src_size_gb         REAL DEFAULT 0,
+    src_type            TEXT DEFAULT '',
+    src_mount           TEXT DEFAULT '',
+    src_filesystem      TEXT DEFAULT '',
+    src_used_gb         REAL DEFAULT 0,
+    tgt_volume          TEXT DEFAULT '',
+    tgt_size_gb         REAL DEFAULT 0,
+    tgt_type            TEXT DEFAULT '',
+    tgt_iops_provisioned INTEGER DEFAULT 0,
+    size_increase_pct   REAL DEFAULT 0,
+    notes               TEXT DEFAULT '',
+    status              TEXT DEFAULT 'pending',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_storage_session ON mc_srv_storage_map(session_id);
+
+-- Ordered cutover steps (drag-reorderable)
+CREATE TABLE IF NOT EXISTS mc_srv_cutover_steps (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    phase               TEXT NOT NULL DEFAULT 'cutover',
+    seq_no              INTEGER DEFAULT 0,
+    description         TEXT DEFAULT '',
+    action              TEXT DEFAULT '',
+    verify_action       TEXT DEFAULT '',
+    rollback_action     TEXT DEFAULT '',
+    owner               TEXT DEFAULT '',
+    duration_min        INTEGER DEFAULT 5,
+    executed_at         TEXT DEFAULT '',
+    status              TEXT DEFAULT 'pending',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_cutover_session ON mc_srv_cutover_steps(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_cutover_phase ON mc_srv_cutover_steps(phase);
+
+-- Pre/mid/post migration test cases
+CREATE TABLE IF NOT EXISTS mc_srv_test_cases (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    phase               TEXT NOT NULL DEFAULT 'post',
+    seq_no              INTEGER DEFAULT 0,
+    test_name           TEXT NOT NULL,
+    procedure           TEXT DEFAULT '',
+    expected_result     TEXT DEFAULT '',
+    actual_result       TEXT DEFAULT '',
+    passed              INTEGER DEFAULT NULL,
+    notes               TEXT DEFAULT '',
+    executed_at         TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_tests_session ON mc_srv_test_cases(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_tests_phase ON mc_srv_test_cases(phase);
+
+-- ERB/CCB change request metadata
+CREATE TABLE IF NOT EXISTS mc_srv_erb_metadata (
+    id                      TEXT PRIMARY KEY,
+    session_id              TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    change_type             TEXT DEFAULT 'server_migration',
+    risk_tier               TEXT DEFAULT 'medium',
+    business_justification  TEXT DEFAULT '',
+    technical_summary       TEXT DEFAULT '',
+    impact_summary          TEXT DEFAULT '',
+    rollback_plan           TEXT DEFAULT '',
+    mw_start                TEXT DEFAULT '',
+    mw_end                  TEXT DEFAULT '',
+    go_nogo_criteria        TEXT DEFAULT '{}',
+    requestor               TEXT DEFAULT '',
+    approver                TEXT DEFAULT '',
+    approval_status         TEXT DEFAULT 'draft',
+    created_at              TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_erb_session ON mc_srv_erb_metadata(session_id);
+"""
+
+# ── Wave + Dependency Schema ─────────────────────────────────────────────────
+
+WAVE_DEP_SCHEMA = """
+CREATE TABLE IF NOT EXISTS mc_migration_waves (
+    id               TEXT PRIMARY KEY,
+    session_id       TEXT NOT NULL,
+    wave_number      INTEGER NOT NULL,
+    name             TEXT NOT NULL,
+    cutover_date     TEXT,
+    status           TEXT CHECK(status IN ('planned','in_progress','complete','blocked')) DEFAULT 'planned',
+    server_ids_json  TEXT DEFAULT '[]',
+    notes            TEXT,
+    created_at       TEXT NOT NULL,
+    classification   TEXT DEFAULT 'CUI',
+    app_count        INTEGER DEFAULT 0,
+    app_names        TEXT DEFAULT '[]'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_waves_num ON mc_migration_waves(session_id, wave_number);
+
+CREATE TABLE IF NOT EXISTS mc_server_dependencies (
+    id               TEXT PRIMARY KEY,
+    session_id       TEXT NOT NULL,
+    source_server_id TEXT NOT NULL,
+    target_server_id TEXT NOT NULL,
+    dep_type         TEXT CHECK(dep_type IN ('network','application','database','auth','storage')) DEFAULT 'network',
+    direction        TEXT CHECK(direction IN ('inbound','outbound','bidirectional')) DEFAULT 'bidirectional',
+    notes            TEXT,
+    created_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mc_deps_session ON mc_server_dependencies(session_id);
+
+CREATE TABLE IF NOT EXISTS mc_compliance_checks (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT,
+    design_id       TEXT,
+    il_level        TEXT NOT NULL,
+    target_env      TEXT NOT NULL,
+    migration_type  TEXT,
+    status          TEXT CHECK(status IN ('pass','warn','block')) DEFAULT 'pass',
+    findings_json   TEXT DEFAULT '[]',
+    frameworks_json TEXT DEFAULT '[]',
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_cc_session ON mc_compliance_checks(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_cc_design  ON mc_compliance_checks(design_id);
+"""
+
+
+def _migrate_server_tables(conn):
+    """Idempotently add server migration tables to existing DBs."""
+    conn.executescript(SERVER_MIGRATION_SCHEMA)
+    # Column additions for tables that may already exist from a prior init
+    _add_col_if_missing = [
+        ("mc_srv_sessions", "notes",      "TEXT DEFAULT ''"),
+        ("mc_srv_sessions", "src_os_version", "TEXT DEFAULT ''"),
+        ("mc_srv_sessions", "src_datacenter",  "TEXT DEFAULT ''"),
+        ("mc_srv_sessions", "tgt_account_id",  "TEXT DEFAULT ''"),
+    ]
+    for tbl, col, typedef in _add_col_if_missing:
+        existing = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+        if col not in existing:
+            try:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typedef}")
+            except Exception:
+                pass  # PG / already-exists race — safe to ignore
+
+
+def _migrate_wave_dep_tables(conn):
+    """Idempotently add wave-planning and server-dependency tables to existing DBs."""
+    conn.executescript(WAVE_DEP_SCHEMA)
+
+
+# ── Gap-Fill Schema (migration 084) ─────────────────────────────────────────
+
+GAP_FILL_SCHEMA = """
+-- Hypervisor pull sessions (VMware/Hyper-V/Nutanix live import)
+CREATE TABLE IF NOT EXISTS mc_srv_hypervisor_sessions (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    adapter_type    TEXT NOT NULL CHECK(adapter_type IN ('vmware','hyperv','nutanix')),
+    host            TEXT NOT NULL,
+    datacenter      TEXT DEFAULT '',
+    cluster         TEXT DEFAULT '',
+    pulled_at       TEXT NOT NULL,
+    vm_count        INTEGER DEFAULT 0,
+    status          TEXT DEFAULT 'ok',
+    error_msg       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_hvsess_session ON mc_srv_hypervisor_sessions(session_id);
+
+-- Post-migration server validation results
+CREATE TABLE IF NOT EXISTS mc_srv_post_migration_tests (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    run_at      TEXT NOT NULL,
+    check_type  TEXT NOT NULL,
+    target      TEXT NOT NULL,
+    status      TEXT NOT NULL CHECK(status IN ('pass','fail','skip','error')),
+    detail      TEXT,
+    elapsed_ms  INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_pmtest_session ON mc_srv_post_migration_tests(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_pmtest_status ON mc_srv_post_migration_tests(status);
+
+-- Vendor EOL database cache (network migration)
+CREATE TABLE IF NOT EXISTS mc_net_eol_data (
+    id            TEXT PRIMARY KEY,
+    vendor        TEXT NOT NULL,
+    model_pattern TEXT NOT NULL,
+    eol_date      TEXT,
+    eos_date      TEXT,
+    eosm_date     TEXT,
+    source        TEXT DEFAULT 'static_seed',
+    synced_at     TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_mc_net_eol ON mc_net_eol_data(vendor, model_pattern);
+CREATE INDEX IF NOT EXISTS idx_mc_net_eol_vendor ON mc_net_eol_data(vendor);
+
+-- Post-migration network config validation results
+CREATE TABLE IF NOT EXISTS mc_net_config_validation (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL,
+    device_id           TEXT,
+    run_at              TEXT NOT NULL,
+    diff_summary        TEXT DEFAULT '{}',
+    completeness_score  REAL DEFAULT 0,
+    status              TEXT DEFAULT 'pending'
+        CHECK(status IN ('pass','partial','fail','pending'))
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_cfgval_session ON mc_net_config_validation(session_id);
+"""
+
+_GAP_FILL_ALTER = [
+    # Advanced cloud pricing columns
+    ("mc_cloud_instances", "pricing_model",     "TEXT DEFAULT 'on_demand'"),
+    ("mc_cloud_instances", "spot_price",        "REAL"),
+    ("mc_cloud_instances", "reserved_1yr_price","REAL"),
+    ("mc_cloud_instances", "reserved_3yr_price","REAL"),
+    ("mc_cloud_instances", "savings_plan_price","REAL"),
+    ("mc_cloud_instances", "interruption_rate", "TEXT DEFAULT ''"),
+    # Advanced protocol planning variants
+    ("mc_net_protocol_plans", "variant",        "TEXT DEFAULT 'standard'"),
+    ("mc_net_protocol_plans", "advanced_config","TEXT DEFAULT '{}'"),
+]
+
+
+def _migrate_gap_fill_tables(conn):
+    """Idempotently add gap-fill tables and columns (migration 084)."""
+    conn.executescript(GAP_FILL_SCHEMA)
+    existing_cols: dict[str, list[str]] = {}
+    for tbl, col, typedef in _GAP_FILL_ALTER:
+        if tbl not in existing_cols:
+            existing_cols[tbl] = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+        if col not in existing_cols[tbl]:
+            try:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typedef}")
+                existing_cols[tbl].append(col)
+            except Exception:
+                pass
+
+
+# ── Cloud Instance Seed Data ─────────────────────────────────────────────────
+
+_CLOUD_INSTANCE_SEED = [
+    # ── AWS EC2 ──────────────────────────────────────────────────────────────
+    # t3 — burstable general purpose
+    ("aws","t3.nano","t3",2,0.5,0,"EBS-only",5,0,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.micro","t3",2,1,0,"EBS-only",5,0,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.small","t3",2,2,0,"EBS-only",5,0,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.medium","t3",2,4,0,"EBS-only",5,1,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.large","t3",2,8,0,"EBS-only",5,1,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.xlarge","t3",4,16,0,"EBS-only",5,1,"medium",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.2xlarge","t3",8,32,0,"EBS-only",5,1,"medium",1,'["2","4","5"]','["burstable","general"]'),
+    # m6i — general purpose
+    ("aws","m6i.large","m6i",2,8,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("aws","m6i.xlarge","m6i",4,16,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("aws","m6i.2xlarge","m6i",8,32,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("aws","m6i.4xlarge","m6i",16,64,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("aws","m6i.8xlarge","m6i",32,128,0,"EBS-only",12.5,1,"high",1,'["2","4","5"]','["general"]'),
+    ("aws","m6i.16xlarge","m6i",64,256,0,"EBS-only",25,1,"high",1,'["2","4","5"]','["general"]'),
+    # c6i — compute optimized
+    ("aws","c6i.large","c6i",2,4,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("aws","c6i.xlarge","c6i",4,8,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("aws","c6i.2xlarge","c6i",8,16,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("aws","c6i.4xlarge","c6i",16,32,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("aws","c6i.8xlarge","c6i",32,64,0,"EBS-only",12.5,1,"high",1,'["2","4","5"]','["compute"]'),
+    ("aws","c6i.16xlarge","c6i",64,128,0,"EBS-only",25,1,"high",1,'["2","4","5"]','["compute"]'),
+    # r6i — memory optimized
+    ("aws","r6i.large","r6i",2,16,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("aws","r6i.xlarge","r6i",4,32,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("aws","r6i.2xlarge","r6i",8,64,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("aws","r6i.4xlarge","r6i",16,128,0,"EBS-only",12.5,1,"high",1,'["2","4","5"]','["memory"]'),
+    ("aws","r6i.8xlarge","r6i",32,256,0,"EBS-only",12.5,1,"high",1,'["2","4","5"]','["memory"]'),
+    ("aws","r6i.16xlarge","r6i",64,512,0,"EBS-only",25,1,"very_high",1,'["2","4","5"]','["memory"]'),
+    # i3 — storage optimized NVMe
+    ("aws","i3.large","i3",2,15.25,475,"NVMe",10,1,"medium",1,'["2","4","5"]','["storage"]'),
+    ("aws","i3.xlarge","i3",4,30.5,950,"NVMe",10,1,"medium",1,'["2","4","5"]','["storage"]'),
+    ("aws","i3.2xlarge","i3",8,61,1900,"NVMe",10,1,"medium",1,'["2","4","5"]','["storage"]'),
+    ("aws","i3.4xlarge","i3",16,122,3800,"NVMe",10,1,"high",1,'["2","4","5"]','["storage"]'),
+    ("aws","i3.8xlarge","i3",32,244,6400,"NVMe",10,1,"high",1,'["2","4","5"]','["storage"]'),
+    ("aws","i3.16xlarge","i3",64,488,12800,"NVMe",25,1,"very_high",1,'["2","4","5"]','["storage"]'),
+    # p3 — GPU
+    ("aws","p3.2xlarge","p3",8,61,0,"EBS-only",10,1,"very_high",0,'["2"]','["gpu"]'),
+    ("aws","p3.8xlarge","p3",32,244,0,"EBS-only",10,1,"very_high",0,'["2"]','["gpu"]'),
+    # ── Azure VMs ─────────────────────────────────────────────────────────────
+    # B — burstable
+    ("azure","Standard_B2s","B",2,4,0,"SSD",0.8,1,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("azure","Standard_B2ms","B",2,8,0,"SSD",0.8,1,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("azure","Standard_B4ms","B",4,16,0,"SSD",0.8,1,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("azure","Standard_B8ms","B",8,32,0,"SSD",0.8,1,"medium",1,'["2","4","5"]','["burstable","general"]'),
+    # D_v5 — general purpose
+    ("azure","Standard_D2s_v5","D_v5",2,8,0,"SSD",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("azure","Standard_D4s_v5","D_v5",4,16,0,"SSD",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("azure","Standard_D8s_v5","D_v5",8,32,0,"SSD",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("azure","Standard_D16s_v5","D_v5",16,64,0,"SSD",12.5,1,"high",1,'["2","4","5"]','["general"]'),
+    ("azure","Standard_D32s_v5","D_v5",32,128,0,"SSD",16,1,"high",1,'["2","4","5"]','["general"]'),
+    # F_v2 — compute optimized
+    ("azure","Standard_F2s_v2","F_v2",2,4,0,"SSD",5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("azure","Standard_F4s_v2","F_v2",4,8,0,"SSD",5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("azure","Standard_F8s_v2","F_v2",8,16,0,"SSD",5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("azure","Standard_F16s_v2","F_v2",16,32,0,"SSD",5,1,"high",1,'["2","4","5"]','["compute"]'),
+    ("azure","Standard_F32s_v2","F_v2",32,64,0,"SSD",16,1,"high",1,'["2","4","5"]','["compute"]'),
+    # E_v5 — memory optimized
+    ("azure","Standard_E2s_v5","E_v5",2,16,0,"SSD",3,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("azure","Standard_E4s_v5","E_v5",4,32,0,"SSD",6.25,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("azure","Standard_E8s_v5","E_v5",8,64,0,"SSD",6.25,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("azure","Standard_E16s_v5","E_v5",16,128,0,"SSD",6.25,1,"high",1,'["2","4","5"]','["memory"]'),
+    ("azure","Standard_E32s_v5","E_v5",32,256,0,"SSD",16,1,"high",1,'["2","4","5"]','["memory"]'),
+    # L_v3 — storage optimized NVMe
+    ("azure","Standard_L8s_v3","L_v3",8,64,1920,"NVMe",12.5,1,"high",1,'["2","4","5"]','["storage"]'),
+    ("azure","Standard_L16s_v3","L_v3",16,128,3840,"NVMe",12.5,1,"high",1,'["2","4","5"]','["storage"]'),
+    ("azure","Standard_L32s_v3","L_v3",32,256,7680,"NVMe",16,1,"very_high",1,'["2","4","5"]','["storage"]'),
+    ("azure","Standard_L64s_v3","L_v3",64,512,15360,"NVMe",16,1,"very_high",1,'["2","4","5"]','["storage"]'),
+    # NC_v3 — GPU
+    ("azure","Standard_NC6s_v3","NC_v3",6,112,736,"SSD",24,1,"very_high",0,'["2"]','["gpu"]'),
+    ("azure","Standard_NC12s_v3","NC_v3",12,224,1474,"SSD",24,1,"very_high",0,'["2"]','["gpu"]'),
+    # ── GCP Compute ───────────────────────────────────────────────────────────
+    # e2 — general purpose
+    ("gcp","e2-micro","e2",2,1,0,"SSD",1,0,"low",0,'["2"]','["burstable","general"]'),
+    ("gcp","e2-small","e2",2,2,0,"SSD",1,0,"low",0,'["2"]','["burstable","general"]'),
+    ("gcp","e2-medium","e2",2,4,0,"SSD",2,0,"low",0,'["2"]','["burstable","general"]'),
+    ("gcp","e2-standard-4","e2",4,16,0,"SSD",10,0,"medium",0,'["2"]','["general"]'),
+    ("gcp","e2-standard-8","e2",8,32,0,"SSD",16,0,"medium",0,'["2"]','["general"]'),
+    # n2 — general purpose (newer)
+    ("gcp","n2-standard-2","n2",2,8,0,"SSD",10,0,"medium",0,'["2"]','["general"]'),
+    ("gcp","n2-standard-4","n2",4,16,0,"SSD",10,0,"medium",0,'["2"]','["general"]'),
+    ("gcp","n2-standard-8","n2",8,32,0,"SSD",16,0,"medium",0,'["2"]','["general"]'),
+    ("gcp","n2-standard-16","n2",16,64,0,"SSD",32,0,"high",0,'["2"]','["general"]'),
+    ("gcp","n2-standard-32","n2",32,128,0,"SSD",32,0,"high",0,'["2"]','["general"]'),
+    # c2 — compute optimized
+    ("gcp","c2-standard-4","c2",4,16,0,"SSD",10,0,"medium",0,'["2"]','["compute"]'),
+    ("gcp","c2-standard-8","c2",8,32,0,"SSD",16,0,"medium",0,'["2"]','["compute"]'),
+    ("gcp","c2-standard-16","c2",16,64,0,"SSD",32,0,"high",0,'["2"]','["compute"]'),
+    ("gcp","c2-standard-30","c2",30,120,0,"SSD",32,0,"high",0,'["2"]','["compute"]'),
+    # m1 — memory optimized
+    ("gcp","m1-megamem-96","m1",96,1433.6,0,"SSD",32,0,"very_high",0,'["2"]','["memory"]'),
+    ("gcp","m1-ultramem-40","m1",40,961,0,"SSD",32,0,"very_high",0,'["2"]','["memory"]'),
+    # a2 — GPU
+    ("gcp","a2-highgpu-1g","a2",12,85,0,"SSD",24,0,"very_high",0,'["2"]','["gpu"]'),
+    ("gcp","a2-highgpu-2g","a2",24,170,0,"SSD",24,0,"very_high",0,'["2"]','["gpu"]'),
+    # ── OCI Compute ───────────────────────────────────────────────────────────
+    ("oci","VM.Standard.E4.Flex.1","VM.Standard.E4.Flex",1,8,0,"Block",1,0,"low",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard.E4.Flex.2","VM.Standard.E4.Flex",2,16,0,"Block",2,0,"low",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard.E4.Flex.4","VM.Standard.E4.Flex",4,32,0,"Block",4,0,"medium",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard.E4.Flex.8","VM.Standard.E4.Flex",8,64,0,"Block",8,0,"medium",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard.E4.Flex.16","VM.Standard.E4.Flex",16,128,0,"Block",16,0,"high",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard3.Flex.2","VM.Standard3.Flex",2,16,0,"Block",2,0,"low",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard3.Flex.4","VM.Standard3.Flex",4,32,0,"Block",4,0,"medium",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard3.Flex.8","VM.Standard3.Flex",8,64,0,"Block",8,0,"medium",1,'["2","4","5"]','["general"]'),
+    ("oci","BM.Standard.E4.128","BM.Standard.E4",128,2048,0,"NVMe",64,0,"very_high",1,'["2","4","5"]','["memory","compute"]'),
+    ("oci","VM.GPU3.1","VM.GPU3",6,90,0,"Block",16,0,"very_high",0,'["2"]','["gpu"]'),
+    # ── IBM Cloud ─────────────────────────────────────────────────────────────
+    ("ibm","bx2-2x8","bx2",2,8,0,"Block",4,0,"low",1,'["2","4"]','["general"]'),
+    ("ibm","bx2-4x16","bx2",4,16,0,"Block",8,0,"low",1,'["2","4"]','["general"]'),
+    ("ibm","bx2-8x32","bx2",8,32,0,"Block",16,0,"medium",1,'["2","4"]','["general"]'),
+    ("ibm","mx2-8x64","mx2",8,64,0,"Block",16,0,"medium",1,'["2","4"]','["memory"]'),
+    ("ibm","mx2-16x128","mx2",16,128,0,"Block",16,0,"high",1,'["2","4"]','["memory"]'),
+    ("ibm","cx2-4x8","cx2",4,8,0,"Block",8,0,"medium",1,'["2","4"]','["compute"]'),
+    ("ibm","cx2-8x16","cx2",8,16,0,"Block",16,0,"medium",1,'["2","4"]','["compute"]'),
+    ("ibm","cx2-16x32","cx2",16,32,0,"Block",16,0,"high",1,'["2","4"]','["compute"]'),
+    ("ibm","ox2-16x128","ox2",16,128,0,"Block",16,0,"high",1,'["2","4"]','["memory","compute"]'),
+    ("ibm","gx2-8x64x1v100","gx2",8,64,0,"Block",16,0,"very_high",0,'["2"]','["gpu"]'),
+    # ── On-prem hypervisor templates ──────────────────────────────────────────
+]
+
+# On-prem hypervisor standard templates (7 sizes × 5 providers)
+_ONPREM_PROVIDERS = ["vmware", "hyperv", "kvm", "nutanix", "proxmox"]
+_ONPREM_SIZES = [
+    ("xs",  1,  1,  0, "SSD", 1),
+    ("sm",  2,  4,  0, "SSD", 1),
+    ("md",  4,  8,  0, "SSD", 2),
+    ("lg",  8,  16, 0, "SSD", 4),
+    ("xl",  16, 32, 0, "SSD", 10),
+    ("2xl", 32, 64, 0, "SSD", 10),
+    ("4xl", 64, 128,0, "SSD", 25),
+]
+_ONPREM_LABELS = {"vmware": "VMware vSphere", "hyperv": "Hyper-V", "kvm": "KVM", "nutanix": "Nutanix AHV", "proxmox": "Proxmox VE"}
+
+for _prov in _ONPREM_PROVIDERS:
+    for _sz, _vcpu, _ram, _disk, _st, _net in _ONPREM_SIZES:
+        _CLOUD_INSTANCE_SEED.append((
+            _prov, f"{_prov}_{_sz}", _prov, _vcpu, _ram, _disk, _st, _net, 0,
+            "low", 0, '[]', '["general"]',
+        ))
+
+
+def _migrate_app_tables(conn):
+    """Idempotently add application migration tables to existing DBs."""
+    conn.executescript(APP_MIGRATION_SCHEMA)
+
+
+def _seed_cloud_instances(conn):
+    """Seed mc_cloud_instances with ~150 pre-built rows (air-gap baseline).
+
+    Uses INSERT OR IGNORE so existing rows (source='api') are never overwritten.
+    """
+    sql = (
+        "INSERT OR IGNORE INTO mc_cloud_instances "
+        "(provider, instance_type, family, vcpus, ram_gb, local_storage_gb, "
+        "storage_type, network_gbps, premium_disk_opt, cost_tier, govcloud, "
+        "il_support, use_case_tags, source) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'seed')"
+    )
+    for row in _CLOUD_INSTANCE_SEED:
+        try:
+            conn.execute(sql, row)
+        except Exception:
+            pass
+    conn.commit()
 
 
 # ── Seed Templates ──────────────────────────────────────────────────────────
@@ -850,11 +1640,158 @@ SEED_SOPS = [
 ]
 
 
+# ── Cloud Application Migration (CAM) Schema ────────────────────────────────
+
+CAM_SCHEMA = """
+-- CAM Project coordinator: links cross-canvas designs + tracks migration projects
+CREATE TABLE IF NOT EXISTS mc_projects (
+    id                TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    description       TEXT DEFAULT '',
+    customer          TEXT DEFAULT '',
+    owner             TEXT DEFAULT '',
+    status            TEXT DEFAULT 'draft'
+        CHECK(status IN ('draft','in_review','approved','active','complete','archived')),
+    classification    TEXT DEFAULT 'CUI'
+        CHECK(classification IN ('PUBLIC','CUI','SECRET','TS')),
+    impact_level      TEXT DEFAULT 'IL4'
+        CHECK(impact_level IN ('IL2','IL4','IL5','IL6')),
+    mc_session_id     TEXT REFERENCES mc_srv_sessions(id),
+    ddc_design_id     TEXT,      -- pointer → data_canvas.db data_designs.id
+    idc_design_id     TEXT,      -- pointer → infra_canvas.db infra_designs.id
+    ndc_topology_id   TEXT,      -- pointer → network_canvas.db topologies.id
+    source_stack_json TEXT DEFAULT '[]',  -- [{tech, version, platform}, ...]
+    target_stack_json TEXT DEFAULT '[]',  -- [{tech, aws_service, strategy_7r}, ...]
+    notes             TEXT DEFAULT '',
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Migration phases per project (mirrors nc_migration_phases in NDC)
+CREATE TABLE IF NOT EXISTS mc_project_phases (
+    id                  TEXT PRIMARY KEY,
+    project_id          TEXT NOT NULL REFERENCES mc_projects(id) ON DELETE CASCADE,
+    phase_num           INTEGER NOT NULL,
+    title               TEXT NOT NULL,
+    description         TEXT DEFAULT '',
+    wave_num            INTEGER DEFAULT 1,
+    duration_days       INTEGER DEFAULT 0,
+    maintenance_window  TEXT DEFAULT '',
+    rollback_criteria   TEXT DEFAULT '',
+    depends_on_phase_id TEXT,    -- predecessor phase for dependency tracking
+    status              TEXT DEFAULT 'planned'
+        CHECK(status IN ('planned','in_progress','completed','rolled_back')),
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_proj_phases_project ON mc_project_phases(project_id);
+CREATE INDEX IF NOT EXISTS idx_mc_proj_phases_status  ON mc_project_phases(status);
+
+-- Phase → SOP links (mirrors nc_phase_documents in NDC)
+CREATE TABLE IF NOT EXISTS mc_project_phase_sops (
+    id              TEXT PRIMARY KEY,
+    phase_id        TEXT NOT NULL REFERENCES mc_project_phases(id) ON DELETE CASCADE,
+    project_id      TEXT NOT NULL REFERENCES mc_projects(id) ON DELETE CASCADE,
+    sop_source      TEXT NOT NULL DEFAULT 'mc'
+        CHECK(sop_source IN ('mc','ddc','idc','ndc')),
+    sop_id          TEXT NOT NULL,  -- FK into sop_source canvas's sop table
+    sop_title       TEXT DEFAULT '',
+    relevance_note  TEXT DEFAULT '',
+    display_order   INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(phase_id, sop_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mc_phase_sops_phase   ON mc_project_phase_sops(phase_id);
+CREATE INDEX IF NOT EXISTS idx_mc_phase_sops_project ON mc_project_phase_sops(project_id);
+
+-- AI modernization opportunities per component
+CREATE TABLE IF NOT EXISTS mc_ai_opportunities (
+    id                TEXT PRIMARY KEY,
+    project_id        TEXT NOT NULL REFERENCES mc_projects(id) ON DELETE CASCADE,
+    app_id            TEXT REFERENCES mc_app_inventory(id),
+    component_name    TEXT NOT NULL,
+    opportunity_title TEXT NOT NULL,
+    aws_ai_service    TEXT NOT NULL,  -- e.g. 'bedrock-kb','pgvector','semantic-cache'
+    benefit_category  TEXT DEFAULT 'efficiency'
+        CHECK(benefit_category IN ('search','nlq','pipeline','caching','ux','analytics','security','efficiency')),
+    effort_days       INTEGER DEFAULT 0,
+    status            TEXT DEFAULT 'identified'
+        CHECK(status IN ('identified','scoped','in_progress','complete','deferred')),
+    notes             TEXT DEFAULT '',
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_ai_opps_project   ON mc_ai_opportunities(project_id);
+CREATE INDEX IF NOT EXISTS idx_mc_ai_opps_component ON mc_ai_opportunities(component_name);
+
+-- Code refactoring jobs generated by cam_refactor_engine.py
+CREATE TABLE IF NOT EXISTS mc_refactor_jobs (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT NOT NULL REFERENCES mc_projects(id) ON DELETE CASCADE,
+    app_id          TEXT REFERENCES mc_app_inventory(id),
+    component_name  TEXT NOT NULL,
+    refactor_type   TEXT NOT NULL
+        CHECK(refactor_type IN (
+            'version_upgrade',
+            'framework_migration',
+            'db_ddl_generation',
+            'code_scaffold',
+            'language_translation',
+            'ai_integration'
+        )),
+    source_tech     TEXT DEFAULT '',
+    target_tech     TEXT DEFAULT '',
+    source_language TEXT DEFAULT '',
+    target_language TEXT DEFAULT '',
+    source_path     TEXT DEFAULT '',
+    output_path     TEXT DEFAULT '',
+    params_json     TEXT DEFAULT '{}',
+    status          TEXT DEFAULT 'queued'
+        CHECK(status IN ('queued','running','completed','failed','skipped')),
+    result_summary  TEXT DEFAULT '',
+    artifacts_json  TEXT DEFAULT '[]',
+    error_message   TEXT DEFAULT '',
+    triggered_by    TEXT DEFAULT 'auto',
+    phase_id        TEXT REFERENCES mc_project_phases(id),
+    ai_opp_id       TEXT REFERENCES mc_ai_opportunities(id),
+    started_at      TEXT,
+    completed_at    TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_refactor_project ON mc_refactor_jobs(project_id);
+CREATE INDEX IF NOT EXISTS idx_mc_refactor_status  ON mc_refactor_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_mc_refactor_type    ON mc_refactor_jobs(refactor_type);
+"""
+
+
+def _migrate_cam_tables(conn):
+    """Idempotently add CAM project/phase/SOP/AI-opportunity tables."""
+    conn.executescript(CAM_SCHEMA)
+    # Auto-seed demo project if none exist
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM mc_projects").fetchone()[0]
+        if count == 0:
+            try:
+                from tools.migration_canvas.cam_seed_demo import seed as _seed_cam
+                _seed_cam()
+            except Exception as _e:
+                import logging as _log
+                _log.getLogger(__name__).info("CAM demo seed skipped: %s", _e)
+    except Exception:
+        pass  # table may not exist yet if schema apply failed
+
+
 def init_db():
-    """Create tables and seed templates, snippets, runbooks, and SOPs."""
+    """Create tables and seed templates, snippets, runbooks, SOPs, and cloud instances."""
     with get_connection() as conn:
         conn.executescript(SCHEMA)
         _migrate_network_tables(conn)
+        _migrate_server_tables(conn)
+        _migrate_wave_dep_tables(conn)
+        _migrate_gap_fill_tables(conn)
+        _migrate_app_tables(conn)
+        _migrate_cam_tables(conn)
+        _seed_cloud_instances(conn)
 
         # Seed templates
         for tpl in SEED_TEMPLATES:

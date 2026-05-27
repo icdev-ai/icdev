@@ -1456,6 +1456,244 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
             },
         ],
     },
+    # ── 17. Telecom & ISP ──────────────────────────────────────
+    "telecom": {
+        "label": "Telecom & ISP",
+        "icon": "satellite",
+        "color": "telecom",
+        "tools": [
+            {
+                "id": "network_topology_mapper",
+                "name": "Network Topology Map",
+                "tool": "tools/telecom/network_topology_mapper.py",
+                "description": "Discover and render ISP/carrier topology (BGP, OSPF, IS-IS)",
+            },
+            {
+                "id": "bgp_route_analyzer",
+                "name": "BGP Route Analyze",
+                "tool": "tools/telecom/bgp_route_analyzer.py",
+                "description": "Parse BGP table, detect anomalies, path-prepend analysis",
+            },
+            {
+                "id": "ipam_allocator",
+                "name": "IPAM Allocate",
+                "tool": "tools/telecom/ipam_allocator.py",
+                "description": "IP address block allocation and ARIN/RIPE registry lookup",
+            },
+            {
+                "id": "asn_tracker",
+                "name": "ASN Tracker",
+                "tool": "tools/telecom/asn_tracker.py",
+                "description": "Autonomous System Number inventory and peering policy tracking",
+            },
+            {
+                "id": "dns_whois_lookup",
+                "name": "DNS / WHOIS Lookup",
+                "tool": "tools/telecom/dns_whois_lookup.py",
+                "description": "Bulk DNS record resolution and WHOIS enrichment",
+            },
+            {
+                "id": "bandwidth_profiler",
+                "name": "Bandwidth Profile",
+                "tool": "tools/telecom/bandwidth_profiler.py",
+                "description": "QoS / traffic-shaping profile generation and validation",
+            },
+            {
+                "id": "sip_voip_validator",
+                "name": "SIP/VoIP Validate",
+                "tool": "tools/telecom/sip_voip_validator.py",
+                "description": "SIP trunk config and RTP media path validation",
+            },
+            {
+                "id": "mpls_sdwan_template",
+                "name": "MPLS / SD-WAN Template",
+                "tool": "tools/telecom/mpls_sdwan_template.py",
+                "description": "Generate MPLS/SD-WAN provisioning templates for CPE and PE routers",
+            },
+            {
+                "id": "snmp_monitor_config",
+                "name": "SNMP Monitor Config",
+                "tool": "tools/telecom/snmp_monitor_config.py",
+                "description": "SNMP MIB walk, trap receiver config, device health polling setup",
+            },
+            {
+                "id": "latency_jitter_test",
+                "name": "Latency / Jitter Test",
+                "tool": "tools/telecom/latency_jitter_test.py",
+                "description": "ICMP/TCP ping battery, jitter, and packet-loss measurement",
+            },
+            {
+                "id": "cdn_config_generator",
+                "name": "CDN Config Generate",
+                "tool": "tools/telecom/cdn_config_generator.py",
+                "description": "CDN origin policy and cache-control rule generation",
+            },
+            {
+                "id": "fcc_compliance_check",
+                "name": "FCC Compliance Check",
+                "tool": "tools/telecom/fcc_compliance_check.py",
+                "description": "FCC Part 47, CPNI, and CALEA readiness gate",
+            },
+            {
+                "id": "calea_intercept_audit",
+                "name": "CALEA Intercept Audit",
+                "tool": "tools/telecom/calea_intercept_audit.py",
+                "description": "Lawful intercept capability audit per 47 U.S.C. §1002",
+            },
+            {
+                "id": "5g_network_planner",
+                "name": "5G Network Plan",
+                "tool": "tools/telecom/5g_network_planner.py",
+                "description": "5G NR cell-site capacity and coverage planning",
+            },
+            {
+                "id": "noc_runbook_generator",
+                "name": "NOC Runbook Generate",
+                "tool": "tools/telecom/noc_runbook_generator.py",
+                "description": "Auto-generate Tier-1/2/3 NOC runbooks from topology data",
+            },
+            {
+                "id": "telecom_sbom",
+                "name": "Telecom SBOM",
+                "tool": "tools/telecom/telecom_sbom.py",
+                "description": "Firmware/software BOM for CPE, routers, and managed switches",
+            },
+            {
+                "id": "ss7_hardening_audit",
+                "name": "SS7 Hardening Audit",
+                "tool": "tools/telecom/ss7_hardening_audit.py",
+                "description": "SS7/Diameter/SCTP protocol security audit and hardening guide",
+            },
+            {
+                "id": "isp_peering_analyzer",
+                "name": "ISP Peering Analyze",
+                "tool": "tools/telecom/isp_peering_analyzer.py",
+                "description": "Peering policy analysis and Internet Exchange route audit",
+            },
+            # ── Routing ──
+            {
+                "id": "router_config_generator",
+                "name": "Router Config Generate",
+                "tool": "tools/telecom/router_config_generator.py",
+                "description": "Baseline router configuration generation (Cisco IOS, Junos, Arista EOS)",
+            },
+            {
+                "id": "route_table_auditor",
+                "name": "Route Table Audit",
+                "tool": "tools/telecom/route_table_auditor.py",
+                "description": "Audit routing tables for anomalies, duplicate routes, and black holes",
+            },
+            # ── Switching ──
+            {
+                "id": "switch_config_generator",
+                "name": "Switch Config Generate",
+                "tool": "tools/telecom/switch_config_generator.py",
+                "description": "L2/L3 switch configurations — VLANs, STP, LACP, port-security",
+            },
+            {
+                "id": "vlan_topology_mapper",
+                "name": "VLAN Topology Map",
+                "tool": "tools/telecom/vlan_topology_mapper.py",
+                "description": "Map VLAN propagation across switch fabric with STP root analysis",
+            },
+            # ── Routing Protocols ──
+            {
+                "id": "ospf_area_designer",
+                "name": "OSPF Area Design",
+                "tool": "tools/telecom/ospf_area_designer.py",
+                "description": "OSPF area/LSA design, summarization, stub/NSSA configuration",
+            },
+            {
+                "id": "isis_topology_designer",
+                "name": "IS-IS Topology Design",
+                "tool": "tools/telecom/isis_topology_designer.py",
+                "description": "IS-IS Level 1/2 topology design and route leaking policy",
+            },
+            {
+                "id": "bgp_policy_generator",
+                "name": "BGP Policy Generate",
+                "tool": "tools/telecom/bgp_policy_generator.py",
+                "description": "BGP route-policy, prefix-list, and community generation for eBGP/iBGP",
+            },
+            # ── Installation ──
+            {
+                "id": "device_install_workflow",
+                "name": "Device Install Workflow",
+                "tool": "tools/telecom/device_install_workflow.py",
+                "description": "Step-by-step installation workflow for CPE, edge routers, and switches",
+            },
+            {
+                "id": "rack_unit_planner",
+                "name": "Rack Unit Plan",
+                "tool": "tools/telecom/rack_unit_planner.py",
+                "description": "Data center rack layout, power draw, and cooling calculation",
+            },
+            # ── Replacement / Upgrade (EOL) ──
+            {
+                "id": "eol_asset_scanner",
+                "name": "EOL Asset Scan",
+                "tool": "tools/telecom/eol_asset_scanner.py",
+                "description": "Identify end-of-life/end-of-support network equipment and firmware",
+            },
+            {
+                "id": "upgrade_migration_planner",
+                "name": "Upgrade Migration Plan",
+                "tool": "tools/telecom/upgrade_migration_planner.py",
+                "description": "Change-window planning and rollback procedures for EOL replacements",
+            },
+            {
+                "id": "device_replacement_runbook",
+                "name": "Device Replacement Runbook",
+                "tool": "tools/telecom/device_replacement_runbook.py",
+                "description": "Auto-generate device replacement runbook with pre/post validation steps",
+            },
+            # ── Fiber Optics ──
+            {
+                "id": "fiber_plant_designer",
+                "name": "Fiber Plant Design",
+                "tool": "tools/telecom/fiber_plant_designer.py",
+                "description": "Outside plant (OSP) fiber route design, conduit fill, and bill of materials",
+            },
+            {
+                "id": "otdr_trace_analyzer",
+                "name": "OTDR Trace Analyze",
+                "tool": "tools/telecom/otdr_trace_analyzer.py",
+                "description": "Parse OTDR trace files, detect splice loss, reflections, and fiber breaks",
+            },
+            {
+                "id": "optical_link_budget",
+                "name": "Optical Link Budget",
+                "tool": "tools/telecom/optical_link_budget.py",
+                "description": "End-to-end optical power budget calculation for DWDM/CWDM/dark-fiber spans",
+            },
+            # ── Crypto KG (COMSEC Key Management) ──
+            {
+                "id": "comsec_kg_configurator",
+                "name": "COMSEC KG Configure",
+                "tool": "tools/telecom/comsec_kg_configurator.py",
+                "description": "NSA Type 1 KG device config and key-fill planning (KG-175 TACLANE, KG-250)",
+            },
+            {
+                "id": "crypto_key_lifecycle",
+                "name": "Crypto Key Lifecycle",
+                "tool": "tools/telecom/crypto_key_lifecycle.py",
+                "description": "Key generation, OTAR scheduling, distribution tracking, and destruction audit",
+            },
+            # ── Peering Agreements ──
+            {
+                "id": "peering_agreement_generator",
+                "name": "Peering Agreement Draft",
+                "tool": "tools/telecom/peering_agreement_generator.py",
+                "description": "Draft settlement-free or paid peering agreement templates with NOC contacts",
+            },
+            {
+                "id": "peering_registry_sync",
+                "name": "Peering Registry Sync",
+                "tool": "tools/telecom/peering_registry_sync.py",
+                "description": "Sync peering policies with PeeringDB and Euro-IX MLPA registry",
+            },
+        ],
+    },
 }
 
 
@@ -1528,6 +1766,31 @@ def create_workflow(
         )
         conn.commit()
         return {"status": "ok", "workflow_id": wf_id}
+    finally:
+        conn.close()
+
+
+def save_workflow(
+    workflow_id: str,
+    name: str,
+    template_yaml: str,
+    *,
+    category: str = "general",
+    description: str = "",
+    created_by: str = "studio",
+) -> None:
+    """Persist a workflow with a caller-supplied workflow_id."""
+    now = _now_iso()
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO studio_workflows
+               (workflow_id, name, description, template_yaml, category,
+                created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (workflow_id, name, description, template_yaml, category, created_by, now, now),
+        )
+        conn.commit()
     finally:
         conn.close()
 

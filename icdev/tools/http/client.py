@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Central HTTP client with mTLS, CA bundle, proxy, retry, and redirect support.
+"""Central HTTP client with mTLS, CA bundle, and proxy support.
 
 All outbound HTTPS calls (LLM providers, SAM.gov, Ollama, marketplace, etc.)
 should go through `get_session()` or `request()` so operators can harden the
@@ -24,7 +24,7 @@ Env vars (all optional, override yaml where noted):
 
 Usage:
 
-    from icdev.tools.http.client import get_session, request
+    from tools.http.client import get_session, request
 
     # Option 1 — one-shot
     r = request("GET", "https://api.example.gov/v1/opps", timeout=10)
@@ -61,8 +61,7 @@ except ImportError:
 # ── YAML config loading ───────────────────────────────────────────────────────
 
 _HTTP_CONFIG: dict | None = None
-# icdev/tools/http/client.py → parents[3] = project root
-_ARGS_FILE = pathlib.Path(__file__).resolve().parents[3] / "args" / "http_client.yaml"
+_ARGS_FILE = pathlib.Path(__file__).resolve().parents[2] / "args" / "http_client.yaml"
 
 
 def _load_config() -> dict:
@@ -79,9 +78,7 @@ def _load_config() -> dict:
 def _cfg(section: str, key: str, default: float) -> float:
     cfg = _load_config()
     try:
-        if section:
-            return float(cfg.get(section, {}).get(key, default))
-        return float(cfg.get(key, default))
+        return float(cfg.get(section, {}).get(key, default))
     except (TypeError, ValueError):
         return default
 

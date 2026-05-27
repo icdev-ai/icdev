@@ -14,6 +14,7 @@ and community cluster IDs from greedy modularity communities.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
@@ -22,6 +23,8 @@ import pathlib
 import re
 import time
 from typing import Any
+
+_log = get_logger(__name__)
 
 from .constants import (
     CLUSTER_COLORS,
@@ -526,6 +529,110 @@ def build_graph(
             "cluster_count": len(cluster_ids),
             "build_ms": round((time.time() - t0) * 1000),
             "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Graceful-degradation helpers for the search endpoint
+# ---------------------------------------------------------------------------
+
+_BACKLOG_DIR = _ROOT / ".tmp" / "backlog"
+
+
+def _save_partial_to_backlog(
+    nodes: list[dict],
+    edges: list[dict],
+    error: str,
+    search: str | None,
+) -> None:
+    """Persist partial search results to .tmp/backlog/ for audit/recovery. Best-effort."""
+    try:
+        _BACKLOG_DIR.mkdir(parents=True, exist_ok=True)
+        ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        out = {
+            "saved_at": ts,
+            "search": search,
+            "error": error,
+            "partial_nodes": len(nodes),
+            "partial_edges": len(edges),
+            "nodes": nodes,
+            "edges": edges,
+        }
+        (_BACKLOG_DIR / f"sg-search-{ts}.json").write_text(
+            json.dumps(out, ensure_ascii=False), encoding="utf-8"
+        )
+    except Exception:
+        pass
+
+
+def build_search_fallback(
+    search: str,
+    sources: list[str] | None = None,
+    error: str = "",
+) -> dict[str, Any]:
+    """
+    Fallback used when build_graph() raises mid-run during a search request.
+
+    Loads each source independently (skipping any that fail), applies the
+    BM25/substring search filter, saves partial results to .tmp/backlog/, and
+    returns a valid JSON-serialisable response with partial=True so callers can
+    detect the degraded result.
+    """
+    t0 = time.time()
+    all_nodes: list[dict] = []
+    all_edges: list[dict] = []
+    source_counts: dict[str, int] = {}
+    failed_sources: list[str] = []
+
+    loaders = {
+        "awareness_kg": _load_awareness_kg,
+        "canvas_kg":    _load_canvas_kg,
+        "kanban_deps":  _load_kanban_deps,
+        "goals":        _load_goals,
+        "migrations":   _load_migrations,
+        "codebase":     _load_codebase_structure,
+    }
+    active = sources or list(loaders.keys())
+    for src in active:
+        if src not in loaders:
+            continue
+        try:
+            ns, es = loaders[src]()
+            source_counts[src] = len(ns)
+            all_nodes.extend(ns)
+            all_edges.extend(es)
+        except Exception as src_exc:
+            _log.warning("system-graph fallback: source %r failed: %s", src, src_exc)
+            failed_sources.append(src)
+            source_counts[src] = 0
+
+    all_nodes = _deduplicate(all_nodes)
+
+    # Substring match (same predicate as the main build path)
+    q = search.lower()
+    matched_nodes = [
+        n for n in all_nodes
+        if q in n["label"].lower() or q in n["type"].lower()
+    ]
+    valid_ids = {n["id"] for n in matched_nodes}
+    matched_edges = _filter_edges(all_edges, valid_ids)
+
+    _save_partial_to_backlog(matched_nodes, matched_edges, error, search)
+
+    return {
+        "nodes": matched_nodes,
+        "edges": matched_edges,
+        "stats": {
+            "source_counts": source_counts,
+            "total_nodes": len(matched_nodes),
+            "total_edges": len(matched_edges),
+            "cluster_count": 0,
+            "build_ms": round((time.time() - t0) * 1000),
+            "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "partial": True,
+            "failed_sources": failed_sources,
+            "error": error,
         },
     }
 

@@ -12,6 +12,27 @@ from typing import Any, Dict, Iterator, List, Optional
 
 
 # ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+class LLMRateLimitError(RuntimeError):
+    """Raised when an LLM provider rejects a request due to rate or token limits.
+
+    Subclasses ``RuntimeError`` so existing ``except RuntimeError`` blocks
+    keep working. Callers that want to react specifically to rate-limit
+    exhaustion should catch this class and degrade to an alternative provider.
+
+    Attributes:
+        provider: Provider name that returned the rate limit.
+        model_id: Model ID that was rate-limited.
+    """
+
+    def __init__(self, message: str, *, provider: str = "", model_id: str = ""):
+        super().__init__(message)
+        self.provider = provider
+        self.model_id = model_id
+
+
+# ---------------------------------------------------------------------------
 # Vendor-agnostic request / response
 # ---------------------------------------------------------------------------
 @dataclass
@@ -28,6 +49,11 @@ class LLMRequest:
     stop_sequences: Optional[List[str]] = None
     effort: str = "medium"  # low, medium, high, max
     skip_injection_scan: bool = False  # True for trusted internal pipeline calls
+    # Cache control
+    cache_control: str = ""  # "ephemeral" | "" — hints provider to KV-cache this prefix
+    # Chain orchestration fields
+    chain_mode: str = ""  # "cot" or "cod" or ""
+    chain_config: Dict[str, Any] = field(default_factory=dict)
     # Tracking metadata
     agent_id: str = ""
     project_id: str = ""
@@ -46,6 +72,8 @@ class LLMResponse:
     input_tokens: int = 0
     output_tokens: int = 0
     thinking_tokens: int = 0  # 0 for non-Anthropic
+    cache_creation_input_tokens: int = 0  # D-CACHE-10: Anthropic prompt cache write cost
+    cache_read_input_tokens: int = 0      # D-CACHE-10: Anthropic prompt cache read savings
     duration_ms: int = 0
     stop_reason: str = ""
     classification: str = "CUI"

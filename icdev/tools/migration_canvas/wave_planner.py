@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Wave Planner — server migration wave grouping and dependency visualization.
 
@@ -10,9 +12,8 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-import logging
 
-logger = logging.getLogger("icdev.wave_planner")
+logger = get_logger("icdev.wave_planner")
 
 WAVE_STATUSES = ("planned", "in_progress", "complete", "blocked")
 DEP_TYPES = ("network", "application", "database", "auth", "storage")
@@ -49,6 +50,9 @@ def get_waves(session_id: str) -> list[dict]:
         for r in rows:
             d = dict(zip(cols, r))
             d["server_ids"] = json.loads(d.get("server_ids_json") or "[]")
+            app_names = json.loads(d.get("app_names") or "[]")
+            d["app_names"] = app_names
+            d["app_count"] = d.get("app_count") or len(app_names)
             result.append(d)
         return result
     finally:
@@ -83,6 +87,14 @@ def upsert_wave(session_id: str, wave_data: dict) -> dict:
     else:
         server_ids_json = server_ids
 
+    app_names = wave_data.get("app_names", [])
+    if isinstance(app_names, list):
+        app_names_json = json.dumps(app_names)
+    else:
+        app_names_json = app_names
+        app_names = json.loads(app_names_json or "[]")
+    app_count = wave_data.get("app_count", len(app_names))
+
     conn = _conn()
     try:
         existing = conn.execute(
@@ -94,7 +106,7 @@ def upsert_wave(session_id: str, wave_data: dict) -> dict:
             conn.execute(
                 """UPDATE mc_migration_waves SET
                    wave_number=?, name=?, cutover_date=?, status=?,
-                   server_ids_json=?, notes=?
+                   server_ids_json=?, notes=?, app_names=?, app_count=?
                    WHERE id=? AND session_id=?""",
                 (
                     wave_data.get("wave_number", 1),
@@ -103,6 +115,8 @@ def upsert_wave(session_id: str, wave_data: dict) -> dict:
                     wave_data.get("status", "planned"),
                     server_ids_json,
                     wave_data.get("notes"),
+                    app_names_json,
+                    app_count,
                     wave_id, session_id,
                 ),
             )
@@ -110,8 +124,9 @@ def upsert_wave(session_id: str, wave_data: dict) -> dict:
             conn.execute(
                 """INSERT INTO mc_migration_waves
                    (id, session_id, wave_number, name, cutover_date, status,
-                    server_ids_json, notes, created_at, classification)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    server_ids_json, notes, created_at, classification,
+                    app_names, app_count)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     wave_id, session_id,
                     wave_data.get("wave_number", 1),
@@ -122,6 +137,8 @@ def upsert_wave(session_id: str, wave_data: dict) -> dict:
                     wave_data.get("notes"),
                     now,
                     wave_data.get("classification", "CUI"),
+                    app_names_json,
+                    app_count,
                 ),
             )
         conn.commit()
@@ -131,6 +148,8 @@ def upsert_wave(session_id: str, wave_data: dict) -> dict:
     wave_data["id"] = wave_id
     wave_data["session_id"] = session_id
     wave_data["created_at"] = now
+    wave_data["app_names"] = app_names
+    wave_data["app_count"] = app_count
     return wave_data
 
 
@@ -239,10 +258,39 @@ def auto_assign_waves(session_id: str) -> dict:
     created_waves = []
     assignments: dict[str, list[str]] = {}
     for tpl in _DEFAULT_WAVES:
-        wave_data = {**tpl, "server_ids": buckets[tpl["wave_number"]]}
+        wave_server_ids = buckets[tpl["wave_number"]]
+        wave_data = {**tpl, "server_ids": wave_server_ids}
         w = upsert_wave(session_id, wave_data)
         created_waves.append(w)
-        assignments[w["id"]] = buckets[tpl["wave_number"]]
+        assignments[w["id"]] = wave_server_ids
+
+    # Populate app_names and app_count for each wave from server bindings
+    conn = _conn()
+    try:
+        for w in created_waves:
+            wave_server_ids = assignments[w["id"]]
+            if not wave_server_ids:
+                w["app_names"] = []
+                w["app_count"] = 0
+                continue
+            placeholders = ",".join("?" * len(wave_server_ids))
+            rows = conn.execute(
+                f"SELECT DISTINCT b.app_id, a.name FROM mc_app_server_bindings b"  # nosec B608
+                f" JOIN mc_app_inventory a ON a.id = b.app_id"
+                f" WHERE b.server_id IN ({placeholders})",
+                wave_server_ids,
+            ).fetchall()
+            app_names = [r[1] for r in rows]
+            app_count = len(app_names)
+            conn.execute(
+                "UPDATE mc_migration_waves SET app_names=?, app_count=? WHERE id=?",
+                (json.dumps(app_names), app_count, w["id"]),
+            )
+            w["app_names"] = app_names
+            w["app_count"] = app_count
+        conn.commit()
+    finally:
+        conn.close()
 
     return {
         "ok": True,

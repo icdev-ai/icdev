@@ -61,3 +61,106 @@
 | Config | args/migration_intelligence_config.yaml | Air-gap gates, scoring weights, scan intervals, EOL thresholds, strategy templates, roadmap wave config | (config file) | read by migration_manager |
 | Genesis Reflex | tools/genesis/reflexes/migration_intel.py | Autonomous 24h Genesis reflex — runs full MI pipeline; air-gap safe | config, trust | run(config, trust) |
 
+## Hypervisor Adapters (Gap Fill — 2026-05-09)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Adapter Dispatcher | tools/migration_canvas/adapters/__init__.py | Unified `pull_inventory()` dispatcher across vmware/hyperv/nutanix; returns canonical `{ok, adapter, host, vms, vm_count, error}` | adapter_type, host, user, password, kwargs | dict |
+| VMware vSphere Adapter | tools/migration_canvas/adapters/vmware_adapter.py | Pull live VM inventory from vSphere REST API (`/rest/vcenter/vm`); session-based auth via stdlib urllib; graceful offline fallback (socket pre-check); maps to canonical inventory schema | host, user, password, datacenter? | list[dict] |
+| Hyper-V Adapter | tools/migration_canvas/adapters/hyperv_adapter.py | Pull live VM inventory via PowerShell subprocess (`Get-VM`); local and remote (WinRM) modes; no pywin32 dep; air-gap safe | host, user, password | list[dict] |
+| Nutanix Prism Adapter | tools/migration_canvas/adapters/nutanix_adapter.py | Pull live VM inventory from Nutanix Prism REST API v2 (`/api/nutanix/v2.0/vms/`); paginated; Basic auth; port 9440 pre-check | host, user, password, cluster? | list[dict] |
+
+**New DB Table:** `mc_srv_hypervisor_sessions` — records each pull attempt (adapter, host, vm_count, status, error).
+
+**New Routes (in blueprint.py):**
+- `POST /api/srv/<session_id>/hypervisor-pull` — pull live inventory from hypervisor, upsert to mc_srv_inventory
+- `GET /api/srv/<session_id>/hypervisor-sessions` — list prior hypervisor pull records
+
+## Cloud Application Migration (CAM) — K8s → AWS + AI Modernization
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| CAM Constants | tools/migration_canvas/cam_constants.py | Config-driven constants: SERVICE_MAPPINGS from service_mappings.yaml, CANVAS_SOP_TABLES/ID/STEPS column maps, AI_SERVICE_LABELS, status enums | (library) | SERVICE_MAPPINGS, CANVAS_SOP_TABLES, AI_SERVICE_LABELS, etc. |
+| CAM Engine | tools/migration_canvas/cam_engine.py | Project loader: get_projects(), get_project_detail(), _find_sop(), _load_sop_steps(), get_canvas_links(); cross-canvas SOP resolution via mc→idc→ddc→ndc | project_id, conn | project dict with phases, linked_sops (normalized), components, ai_opportunities, canvas_links |
+| CAM SOP Seeder | tools/migration_canvas/cam_seed_sops.py | Discovers context/migration/sop_catalog/*.json; routes each to mc_sops/ddc_sops/idc_sops/ndc_sops per sop_target_canvas; INSERT OR IGNORE; CLI: --reset, --json | (standalone) | {total, by_canvas} |
+| CAM Demo Seeder | tools/migration_canvas/cam_seed_demo.py | Seeds Analytics Platform K8s→AWS demo project: mc_projects, phases, SOP links, app_inventory, data_migration, wave_plans, ai_opportunities; also seeds DDC/IDC/NDC designs | --project, --reset, --json | {project_id, phases, sop_links, ai_opportunities, app_components, ddc/idc/ndc IDs} |
+| CAM Refactor Engine | tools/migration_canvas/cam_refactor_engine.py | Bridges CAM pipeline with code transformation toolchain: reads refactor_rules.yaml, dispatches jobs to db_migration_planner / framework_migrator / version_migrator / translation_manager / scaffold generators; stores results in mc_refactor_jobs with per-artifact paths | --project, --component, --dry-run, --list-jobs, --run-job, --json | {total, completed, failed, jobs[]} with artifacts_json per job |
+| COA Engine | tools/migration_canvas/coa_engine.py | Generates Courses of Action with pros/cons for any source technology; reads service_mappings.yaml + refactor_rules.yaml; get_coas(tech, cloud), get_deprecation_status(tech), format_coa_markdown(coas), get_all_coas_for_stack(components) | tech, cloud='aws' | list[coa_dict] with pros[], cons[], effort_days, risk, tools[], ai_opportunities[], canvas_hints{} |
+| Migration Chat Advisor | tools/migration_canvas/migration_chat_advisor.py | Slash-command processor + intent detector for cam canvas: /coa, /deprecated, /refactor, /status, /components, /analyze; get_migration_advisory() for chat_message_after hook; LLM-enhanced with migration system prompt | content, session_id, canvas_type | {reply, mode, coa_cards?, deprecation?, jobs?, findings?} |
+
+**New DB Tables (5):** `mc_projects`, `mc_project_phases`, `mc_project_phase_sops`, `mc_ai_opportunities`, `mc_refactor_jobs`.
+
+**Canvas Extensions:** `dd_migration_jobs` added to DDC, `idc_migration_baselines` added to IDC.
+
+**New Routes (in blueprint.py):**
+- `GET /migration-canvas/projects` → cam_projects.html
+- `GET /migration-canvas/projects/<project_id>` → cam_project_detail.html (includes Refactoring section)
+- `GET /migration-canvas/api/projects` → JSON list
+- `GET /migration-canvas/api/projects/<project_id>` → JSON detail
+- `GET /migration-canvas/api/projects/<id>/refactor-jobs` → list all refactor jobs
+- `POST /migration-canvas/api/projects/<id>/refactor` → dispatch + run jobs `{component_name?, run?, dry_run?}`
+- `GET /migration-canvas/api/projects/<id>/refactor-jobs/<job_id>` → job detail + artifacts
+- `POST /migration-canvas/api/projects/<id>/refactor-jobs/<job_id>/run` → execute single queued job
+
+**Config files:**
+- `context/migration/service_mappings.yaml` — 10 source-tech → AWS/Azure/GCP service mappings
+- `context/migration/refactor_rules.yaml` — dispatch rules: (tech, strategy_7r, language, framework) → refactor job type(s)
+- `context/migration/sop_catalog/*.json` — 17 SOP definitions (auto-discovered by seed)
+- `context/migration/projects/analytics-k8s-aws.yaml` — demo project definition
+
+## EOL Sync (Gap Fill — 2026-05-09)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| EOL Sync | tools/migration_canvas/eol_sync.py | Vendor EOL/EOS date lookup and auto-sync; 101-entry static YAML seed (`args/eol_data.yaml`) + best-effort Cisco API live sync; 5-match-strategy lookup (exact/prefix/substring/regex/fuzzy); `flag_eol_devices()` annotates inventory | vendors?, force? | sync results dict |
+| EOL Data Seed | args/eol_data.yaml | 101 static EOL entries for Cisco, Juniper, Arista, Palo Alto, Fortinet, Check Point, Extreme/Brocade, F5, Nokia — offline fallback for eol_sync | (config file) | loaded by eol_sync |
+
+**New DB Table:** `mc_net_eol_data` — vendor, model_pattern, eol_date, eos_date, eosm_date, source, synced_at.
+
+**New Routes:**
+- `POST /api/net/eol-sync` — trigger EOL database sync
+- `GET /api/net/eol/<session_id>/flags` — flagged devices in a session
+
+## Vendor Migration Paths (Gap Fill — 2026-05-09)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Vendor Migration Paths | tools/migration_canvas/vendor_migration_paths.py | YAML-driven catalog of 15 source→target migration playbooks (e.g. Cisco ASA→Fortinet, Nexus→Arista); `get_migration_path()`, `list_compatible_targets()`, `get_migration_checklist()`; lazy-loaded `_CACHE` | source_vendor, source_family, target_vendor | dict\|list |
+| Migration Paths Config | args/vendor_migration_paths.yaml | 15 migration paths with phases, protocol_notes, gotchas, complexity, estimated_hours; YAML-driven — add new paths without code changes | (config file) | loaded by vendor_migration_paths |
+
+**New Routes:**
+- `GET /api/net/migration-paths` — list all paths (summary only)
+- `GET /api/net/migration-paths/<source_vendor>/<source_family>` — get target options or specific path
+
+## Post-Migration Validation (Gap Fill — 2026-05-09)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Post-Migration Validator (Server) | tools/migration_canvas/post_migration_validator.py | 6 validation checks: TCP connectivity, SSL cert expiry, HTTP service health, DNS resolution, disk space (via SSH), process running (via SSH); `run_validation_suite()` dispatches all checks and writes results | session_id, targets: list[{type, ...}] | {suite_id, session_id, summary, results, pass_count, fail_count} |
+| Network Config Validator | tools/migration_canvas/network_config_validator.py | Section-based config diff (interfaces, routing, BGP, OSPF, ACL, VLAN, MPLS, NTP, logging); weighted completeness score (interfaces=30%, routing+BGP=30%, etc.); `validate_migration_completeness()` writes to mc_net_config_validation | session_id \| source/target config strings + vendor | diff dict with {added, removed, changed, unchanged, completeness_score} |
+
+**New DB Tables:**
+- `mc_srv_post_migration_tests` — per-check results (check_type, target, status, detail, elapsed_ms)
+- `mc_net_config_validation` — per-session config diff summary (diff_summary, completeness_score, status)
+
+**New Routes:**
+- `POST /api/srv/<session_id>/validate` — run post-migration checks
+- `GET /api/srv/<session_id>/validation-runs` — list prior validation runs
+- `POST /api/net/<session_id>/validate-config` — run config diff vs source
+- `GET /api/net/<session_id>/validation` — fetch latest config validation result
+
+## Advanced Cloud Pricing + Protocol Plans (Gap Fill — 2026-05-09)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| `get_cloud_instances_advanced` | tools/migration_canvas/server_migration.py | Extended catalog query supporting spot/reserved_1yr/reserved_3yr/savings_plan pricing models; ranks by price for selected model; new columns on mc_cloud_instances | provider, filters, pricing_model, vcpu_min, ram_min | list[dict] |
+| `import_from_hypervisor` | tools/migration_canvas/server_migration.py | Pull live VM inventory from hypervisor (via adapters), record session to mc_srv_hypervisor_sessions, upsert VMs to mc_srv_inventory | session_id, adapter_type, host, user, password, datacenter?, cluster? | {ok, session_id, vm_count, adapter, status} |
+| Advanced Protocol Plans | tools/migration_canvas/network_migration.py | `plan_protocol_migration()` extended with variant overrides; BGP variants: multipath/route_reflector/graceful_restart; OSPF variants: multi_area/stub_nssa/virtual_link; MPLS variants: vrf_lite/segment_routing/evpn_vxlan; new SD-WAN 8-step plan | session_id, variant_overrides? | protocols dict with variant + advanced_config per plan |
+
+**New Columns on Existing Tables:**
+- `mc_cloud_instances`: pricing_model, spot_price, reserved_1yr_price, reserved_3yr_price, savings_plan_price, interruption_rate
+- `mc_net_protocol_plans`: variant, advanced_config
+
+**New Route:**
+- `GET /api/srv/cloud-catalog/advanced` — filtered advanced cloud catalog with pricing model selection
+

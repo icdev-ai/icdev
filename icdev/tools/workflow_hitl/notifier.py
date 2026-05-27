@@ -1,10 +1,10 @@
 # CUI // SP-CTI
 """HITL Workflow notifications — wraps tools/notifications/gateway.py."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _gateway():
@@ -46,12 +46,12 @@ def send_kickback_notice(instance_id: str, reason: str, submitted_by: str):
     from tools.db.storage import get_connection
     conn = get_connection()
     try:
-        inst = conn.execute("SELECT * FROM wf_instances WHERE id=?", (instance_id,)).fetchone()
+        inst = conn.execute("SELECT * FROM wf_instances WHERE id=%s", (instance_id,)).fetchone()
         if not inst:
             return
         inst = dict(inst)
         approval = conn.execute(
-            "SELECT * FROM wf_approvals WHERE instance_id=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM wf_approvals WHERE instance_id=%s ORDER BY created_at DESC LIMIT 1",
             (instance_id,),
         ).fetchone()
         team_id = approval["team_id"] if approval else inst.get("team_id")
@@ -97,7 +97,7 @@ def send_escalation(instance_id: str, reason: str):
     conn = get_connection()
     try:
         approval = conn.execute(
-            "SELECT * FROM wf_approvals WHERE instance_id=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM wf_approvals WHERE instance_id=%s ORDER BY created_at DESC LIMIT 1",
             (instance_id,),
         ).fetchone()
         team_id = approval["team_id"] if approval else None

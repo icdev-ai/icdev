@@ -10,6 +10,7 @@ Schedule: nightly 01:00
 Risk tier: orange
 ADRs: D-AR-1 through D-AR-10
 """
+IMPLEMENTATION_STATUS = "full"
 
 import json
 import uuid

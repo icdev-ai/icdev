@@ -27,8 +27,8 @@ trust_mode: full
 # Reflexes only run within this window. Outside it, is_due() returns false.
 # Interval/continuous reflexes (research, ingest, heal) are also gated.
 active_hours:
-  enabled: true
-  start_hour: 9    # 9 AM local
+  enabled: false   # Time gate disabled — running until BACKLOG clears (17 AAC tasks). Re-enable at 09:00 tomorrow.
+  start_hour: 9    # restore to 9 AM once backlog is done
   end_hour: 23     # 11 PM local
   timezone: "America/New_York"
 
@@ -335,6 +335,19 @@ reflexes:
     max_auto_heals_per_hour: 5
     cooldown_minutes: 10
 
+  log_triage:
+    enabled: true
+    risk_tier: green
+    schedule: "every 30m"
+    interval_seconds: 1800
+    description: "Read .logs/build.ndjson tail, deduplicate failure signatures, create Kanban tasks for unseen failures. Fully autonomous — no LLM required."
+    success_metric:
+      name: tasks_created
+      threshold: 0
+      operator: gte
+    tail_lines: 500           # NDJSON lines to read per cycle
+    build_log: .logs/build.ndjson
+
   failure_triage:
     enabled: true
     risk_tier: yellow
@@ -349,6 +362,18 @@ reflexes:
     apply: true              # ask for patch generation; actual apply still needs env flag
     cooldown_minutes: 10     # min gap between consecutive cycles
     max_applies_per_hour: 5  # matches CLAUDE.md self-healing cap
+
+  e2e_runner:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 02:00"
+    interval_seconds: 86400  # 24 hours
+    description: "Create a nightly Playwright E2E Kanban task (task_type=test); Kanban scheduler picks it up and dispatches to Claude CLI"
+    interval_hours: 24
+    success_metric:
+      name: tasks_created
+      threshold: 0
+      operator: gte
 
   kanban:
     enabled: true
@@ -629,6 +654,35 @@ reflexes:
     excluded_agents:
       - risk
       - execution
+
+  # ── Network Migration Canvas Health Monitor (NMCE — 2026-05-08) ──────────
+
+  migration_canvas:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval_seconds: 86400   # Daily — sessions and EOL dates change slowly
+    cooldown_minutes: 360     # 6h minimum gap — no rapid re-fire
+    description: "Detect stale migration sessions (>7d no progress), EOL devices with no active migration (<90d to EOL), and protocol plans stuck in draft (>14d). Promotes findings to kanban at >= 0.70 confidence."
+    promotion_threshold: 0.70
+    success_metric:
+      name: findings
+      threshold: 0
+      operator: gte  # 0 = all migrations healthy, >0 = issues surfaced
+
+  academy_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600   # 6h — curriculum doesn't change faster than this
+    cooldown_minutes: 360     # 6h minimum gap — match COOLDOWN_HOURS in reflex
+    description: "Phase 1: Convert proven_pattern GKPs (confidence >= 0.70) into fa_missions draft scaffolds for human review. Phase 2: Run LensStalenesssDetector and promote stale-content predictions (>= 0.70) to Kanban as 'suggested' tasks."
+    promotion_threshold: 0.70
+    max_drafts: 5             # Max new draft missions per run
+    success_metric:
+      name: actions_taken
+      threshold: 0
+      operator: gte  # 0 = nothing to do (healthy), > 0 = drafts or tasks created
 
 # ── Promoter Configuration ───────────────────────────────────────────────────
 

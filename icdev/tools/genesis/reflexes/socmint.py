@@ -5,6 +5,7 @@ Wraps tools.strategos.socmint_harvester.run() and surfaces inserted_count
 as the primary metric. Air-gap safe: returns success=False with a clear
 error when the harvester module is unavailable (e.g. pre-sgx-socmint-03).
 """
+IMPLEMENTATION_STATUS = "full"
 
 from typing import Any, Dict
 

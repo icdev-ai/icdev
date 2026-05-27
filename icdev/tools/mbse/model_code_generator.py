@@ -1,3 +1,4 @@
+
 # [TEMPLATE: CUI // SP-CTI]
 """Model Code Generator -- generate code scaffolding from SysML model elements.
 
@@ -441,7 +442,7 @@ def _generate_python_module(activity: dict, actions: list) -> str:
     lines.append("import logging")
     lines.append("from typing import Any, Dict, Optional")
     lines.append("")
-    lines.append("logger = logging.getLogger(__name__)")
+    lines.append("logger = get_logger(__name__)")
     lines.append("")
 
     # Generate a function stub for each action

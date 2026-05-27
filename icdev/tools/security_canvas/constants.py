@@ -1017,3 +1017,44 @@ COMPLIANCE_CROSSWALK = {
     "SI-4": {"fedramp": "SI-4", "cmmc": "SI.L2-3.14.6", "description": "System Monitoring"},
     "SI-7": {"fedramp": "SI-7", "cmmc": "SI.L2-3.14.4", "description": "Software Integrity Verification"},
 }
+
+_S = "https://icdev.dev/ontology/security#"
+
+SECURITY_ONTOLOGY_MAP: dict[str, str] = {
+    # Assets
+    "asset-server":             f"{_S}Asset.Server",
+    "asset-database":           f"{_S}Asset.Database",
+    "asset-client":             f"{_S}Asset.Client",
+    "asset-storage":            f"{_S}Asset.Storage",
+    "asset-network":            f"{_S}Asset.Network",
+    "asset-container":          f"{_S}Asset.Container",
+    "asset-lambda":             f"{_S}Asset.Lambda",
+    "asset-registry":           f"{_S}Asset.Registry",
+    "asset-vdi-host":           f"{_S}Asset.VDIHost",
+    "asset-thin-client":        f"{_S}Asset.ThinClient",
+    "asset-profile-store":      f"{_S}Asset.ProfileStore",
+    # Controls
+    "ctrl-firewall":            f"{_S}Control.Firewall",
+    "ctrl-idp":                 f"{_S}Control.IDP",
+    "ctrl-kms":                 f"{_S}Control.KMS",
+    "ctrl-siem":                f"{_S}Control.SIEM",
+    "ctrl-ids":                 f"{_S}Control.IDS",
+    "ctrl-pam":                 f"{_S}Control.PAM",
+    "ctrl-scanner":             f"{_S}Control.Scanner",
+    "ctrl-encryption":          f"{_S}Control.Encryption",
+    "ctrl-session-policy":      f"{_S}Control.SessionPolicy",
+    "ctrl-vdi-gateway":         f"{_S}Control.VDIGateway",
+    "ctrl-image-hardening":     f"{_S}Control.ImageHardening",
+    # Threats
+    "threat-actor":             f"{_S}Threat.Actor",
+    "threat-malware":           f"{_S}Threat.Malware",
+    "threat-phishing":          f"{_S}Threat.Phishing",
+    "threat-exploit":           f"{_S}Threat.Exploit",
+    "threat-dos":               f"{_S}Threat.DoS",
+    "threat-supply":            f"{_S}Threat.SupplyChain",
+    "threat-insider":           f"{_S}Threat.Insider",
+    "threat-session-hijack":    f"{_S}Threat.SessionHijack",
+    "threat-clipboard-exfil":   f"{_S}Threat.ClipboardExfil",
+    "threat-gpu-escape":        f"{_S}Threat.GPUEscape",
+    "threat-profile-tampering": f"{_S}Threat.ProfileTampering",
+}

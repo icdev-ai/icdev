@@ -1,11 +1,11 @@
 # CUI // SP-CTI
 """Child app template inheritance — child app inherits parent canvas's wf_template."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import os
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def get_inherited_template(child_app_id: str, canvas_type: str | None = None) -> dict | None:

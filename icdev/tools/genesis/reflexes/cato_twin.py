@@ -19,11 +19,12 @@ Reflex contract:
   - Must be idempotent — running twice in a 6h window is safe (snapshot IDs differ)
   - Must not raise — catches all exceptions per project, logs, continues
 """
+IMPLEMENTATION_STATUS = "full"
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,7 +36,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 6
 

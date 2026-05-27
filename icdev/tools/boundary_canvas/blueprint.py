@@ -13,9 +13,9 @@ Usage in ICDEV dashboard app.py:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 import uuid as _uuid
 from functools import wraps
@@ -31,7 +31,7 @@ from flask import (
     session,
 )
 
-logger = logging.getLogger("icdev.boundary_canvas")
+logger = get_logger("icdev.boundary_canvas")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _BDC_DIR = Path(__file__).resolve().parent
@@ -69,6 +69,7 @@ from tools.boundary_canvas.boundary_engine import (  # noqa: E402
     generate_pps_matrix,
     detect_boundary_gaps,
 )
+from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
 
 def create_boundary_blueprint():
@@ -396,12 +397,32 @@ def create_boundary_blueprint():
             on_bdc_design_saved(design_id)
         except Exception:
             pass
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+            _eb_publish("bdc", "bdc.design.saved", {
+                "design_id": design_id,
+                "classification": data.get("classification", "CUI"),
+                "graph_changed": "graph_json" in data,
+            }, target_canvas="odc")
+        except Exception:
+            pass
 
         # Incremental KG update: re-extract only if graph_json changed
         try:
             from tools.canvas.kg_builder import rebuild_canvas_kg
 
             rebuild_canvas_kg("bdc", design_id)
+        except Exception:
+            pass
+        # Blockchain provenance
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="bdc",
+                design_id=design_id,
+                graph_json=data.get("graph_json", {}),
+                project_id=data.get("project_id", ""),
+            )
         except Exception:
             pass
 
@@ -422,6 +443,19 @@ def create_boundary_blueprint():
         _audit(design_id, "DELETE", "")
         return jsonify({"deleted": design_id})
 
+    @bp.route("/api/designs", methods=["DELETE"])
+    @bdc_login_required
+    def bdc_api_delete_all_designs():
+        """Delete all boundary designs and their related records."""
+        child_tables = ("bd_isa_tracker", "bd_assessments", "bd_versions")
+        with get_connection() as conn:
+            ids = [r[0] for r in conn.execute("SELECT id FROM boundary_designs").fetchall()]
+            for did in ids:
+                for table in child_tables:
+                    conn.execute(f"DELETE FROM {table} WHERE design_id=?", (did,))  # nosec B608
+                conn.execute("DELETE FROM boundary_designs WHERE id=?", (did,))
+        return jsonify({"deleted": len(ids)})
+
     # ====================================================================
     # API ROUTES — Assessment
     # ====================================================================
@@ -431,6 +465,8 @@ def create_boundary_blueprint():
     def bdc_api_assess(design_id):
         """Run a full boundary compliance assessment on a design."""
         data = request.get_json(force=True, silent=True) or {}
+        use_cod = data.get("use_cod", False)
+        chain_mode = "cod" if use_cod else ""
         with get_connection() as conn:
             row = conn.execute(
                 "SELECT graph_json FROM boundary_designs WHERE id=?",
@@ -479,11 +515,32 @@ def create_boundary_blueprint():
             )
 
         _audit(design_id, "ASSESS", f"score={result.get('score', 0)} grade={result.get('grade')}")
+        record_canvas_decision(
+            canvas_type="bdc",
+            record_id=design_id,
+            decision_type="boundary_impact",
+            decision=f"Grade {result.get('grade','?')} — CAT1={result.get('cat1_findings',0)} CAT2={result.get('cat2_findings',0)} CAT3={result.get('cat3_findings',0)}",
+            rationale=f"Score: {result.get('score', 0)}",
+            model_used=None,
+            confidence=None,
+        )
 
         # Add gap analysis
         gaps = detect_boundary_gaps(result)
         result["assessment_id"] = assess_id
         result["gap_analysis"] = gaps
+        result["chain_mode"] = chain_mode
+        # Blockchain provenance for assessment
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="bdc",
+                design_id=design_id,
+                assessment_data=result,
+                project_id="",
+            )
+        except Exception:
+            pass
         return jsonify(result)
 
     # ====================================================================
@@ -1691,6 +1748,21 @@ def create_boundary_blueprint():
         _audit(design_id, "twin_simulate", f"verdict={result.get('rating')}")
         return jsonify(result), 200
 
+    @bp.route("/api/twin/<design_id>/simulate-cod", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_twin_simulate_cod(design_id):
+        from tools.boundary_canvas.twin import simulate_delta
+        data = request.get_json(silent=True) or {}
+        result = simulate_delta(
+            design_id,
+            delta=data.get("delta", []),
+            framework_id=data.get("framework_id", "FedRAMP Moderate"),
+            baseline_snap_id=data.get("baseline_snap_id"),
+            use_cod=True,
+        )
+        _audit(design_id, "twin_simulate_cod", f"verdict={result.get('rating')}")
+        return jsonify(result), 200
+
     @bp.route("/api/twin/<design_id>/crosswalk-drift", methods=["GET"])
     @bdc_login_required
     def bdc_api_twin_crosswalk(design_id):
@@ -1732,5 +1804,174 @@ def create_boundary_blueprint():
             return jsonify({"error": "message is required"}), 400
         result = boundary_chat_to_delta(message, data.get("graph_json"))
         return jsonify(result), (500 if "error" in result else 200)
+
+    @bp.route("/api/iqe-query", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_iqe_query():
+        """IQE structured query — translate NL to IQE and execute against BDC boundary data."""
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import IQESyntaxError, parse
+        from tools.iqe.executor import execute_query
+        import tools.iqe.adapters.bdc  # noqa: F401 — registers bdc.* collections
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        collections = ["bdc.designs", "bdc.assessments", "bdc.isas", "bdc.alerts"]
+        translation = nl_to_iqe(question, collections)
+        iqe_str = translation.get("iqe", "")
+        explanation = translation.get("explanation", "")
+
+        if not data.get("execute", True):
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+        try:
+            ast = parse(iqe_str)
+            rows = execute_query(ast, None)
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                            "results": rows, "row_count": len(rows)}), 200
+        except IQESyntaxError as exc:
+            return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+        except Exception as exc:
+            logger.warning("BDC IQE query error: %s", exc)
+            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+    @bp.route("/api/ai-trace")
+    @bdc_login_required
+    def bdc_api_ai_trace():
+        """Return recent AI decisions made by BDC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='bdc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='bdc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "bdc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    def _compute_boundary_governance(graph_data: dict) -> dict:
+        """Boundary governance check — Zero Trust / NIST 800-207 / FIPS 140-3 aligned."""
+        from datetime import datetime, timezone as _tz
+        nodes = graph_data.get("nodes", [])
+        types = [n.get("type", "").lower() for n in nodes]
+        labels = [str(n.get("label", "")).lower() for n in nodes]
+
+        def _any(*pfx): return any(any(t.startswith(p) for p in pfx) for t in types)
+        def _lbl(*kws): return any(kw in l for l in labels for kw in kws)
+
+        CHECKS = [
+            ("Zero Trust Architecture Defined",    "Zero Trust",        "CAT1", _any("sys-","isa-") or _lbl("zero trust","zt","zta")),
+            ("Encryption Zones Defined",            "Encryption Zones",  "CAT1", _any("bnd-enc","bnd-fips") or _lbl("encrypt zone","fips","tls zone","cipher")),
+            ("FIPS 140-2/3 Encryption",             "Encryption Zones",  "CAT1", _lbl("fips","nss","cryptographic module")),
+            ("Access Control Boundaries",           "Access Boundaries", "CAT1", _any("bnd-","sys-iam") or _lbl("access boundary","acl","rbac","least privilege")),
+            ("Network Segmentation Boundaries",     "Access Boundaries", "CAT2", _lbl("dmz","segment","perimeter","trust boundary","isolat")),
+            ("API Gateway / Service Mesh Control",  "Access Boundaries", "CAT2", _any("sys-apigw","sys-mesh") or _lbl("api gateway","service mesh","istio","kong","apigee")),
+            ("Mutual TLS (mTLS) Enforcement",       "Encryption Zones",  "CAT2", _lbl("mtls","mutual tls","client cert","bilateral tls")),
+            ("PKI / Certificate Management",        "Encryption Zones",  "CAT2", _lbl("pki","certificate authority","ca","x.509","cert manager")),
+            ("Identity Federation",                 "Zero Trust",        "CAT2", _lbl("saml","oidc","oauth","federation","sso","identity provider")),
+            ("Continuous Verification",             "Zero Trust",        "CAT2", _lbl("continuous verif","posture","mfa","adaptive auth","risk-based")),
+            ("Audit Logging Boundary",              "Audit & Logging",   "CAT1", _any("sys-log","sys-siem") or _lbl("audit log","siem","log boundary","cloud trail")),
+            ("Real-time Threat Detection",          "Audit & Logging",   "CAT2", _lbl("threat detect","ids","ips","intrusion","guard duty","defender","sentinel")),
+            ("ISA / System Interconnect Docs",      "Compliance",        "CAT2", _any("isa-") or _lbl("isa","ato","interconnect agreement","mou","system boundary")),
+            ("DoD IL / FedRAMP Boundary Marked",    "Compliance",        "CAT1", _lbl("fedramp","dod","il4","il5","il6","cmmc","stig")),
+            ("Data Classification Labels",          "Compliance",        "CAT2", _lbl("cui","secret","classified","marking","classification")),
+            ("Supply Chain Risk Controls",          "Compliance",        "CAT3", _lbl("supply chain","sbom","third party","vendor risk","scrm")),
+            ("Boundary Monitoring & Alerting",      "Audit & Logging",   "CAT2", _lbl("alert","monitor","soc","noc","watchdog","heartbeat")),
+            ("Microsegmentation",                   "Access Boundaries", "CAT3", _lbl("microsegment","workload isolation","pod security","namespace")),
+        ]
+
+        PILLARS = ["Zero Trust", "Encryption Zones", "Access Boundaries", "Audit & Logging", "Compliance"]
+        WEIGHTS = {"CAT1": 3, "CAT2": 2, "CAT3": 1}
+        MATURITY = [
+            (0,  "L1 — Initial",    "Ad-hoc boundaries, no formal controls."),
+            (30, "L2 — Developing", "Some boundary controls but inconsistent."),
+            (55, "L3 — Defined",    "Structured boundaries with documented controls."),
+            (70, "L4 — Managed",    "Monitored boundaries with automated enforcement."),
+            (85, "L5 — Optimised",  "Continuous verification and adaptive trust."),
+        ]
+
+        check_results, total_w, passed_w = [], 0, 0
+        cats = {p: {"passed": 0, "total": 0, "pct": 0} for p in PILLARS}
+        for title, pillar, sev, passed in CHECKS:
+            w = WEIGHTS[sev]
+            total_w += w
+            status = "pass" if passed else "fail"
+            if passed:
+                passed_w += w
+            cats.setdefault(pillar, {"passed": 0, "total": 0, "pct": 0})
+            cats[pillar]["total"] += 1
+            if passed:
+                cats[pillar]["passed"] += 1
+            check_results.append({"title": title, "pillar": pillar, "severity": sev,
+                                   "status": status, "weight": w, "detail": ""})
+        for c in cats.values():
+            c["pct"] = round(c["passed"] / c["total"] * 100) if c["total"] else 0
+
+        score = round(passed_w / total_w * 100) if total_w else 0
+        grade = "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
+        mat_level = sum(1 for t, *_ in MATURITY if score >= t)
+        mat_label, mat_desc = MATURITY[mat_level - 1][1], MATURITY[mat_level - 1][2]
+
+        recs = [{"title": c["title"], "pillar": c["pillar"], "priority": c["severity"]}
+                for c in check_results if c["status"] == "fail"]
+        recs.sort(key=lambda r: {"CAT1": 0, "CAT2": 1, "CAT3": 2}[r["priority"]])
+        return {
+            "score": score, "grade": grade,
+            "maturity": {"level": mat_level, "label": mat_label.split(" — ")[1], "description": mat_desc},
+            "checks": check_results, "categories": cats, "recommendations": recs,
+            "total_checks": len(CHECKS), "passed_checks": sum(1 for c in check_results if c["status"] == "pass"),
+            "assessed_at": datetime.now(_tz.utc).isoformat(),
+        }
+
+    @bp.route("/api/designs/<design_id>/governance", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_governance(design_id):
+        """Run boundary governance framework check."""
+        import uuid as _uuid_mod
+        conn = get_connection()
+        row = conn.execute("SELECT graph_json FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph_data = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
+        except (json.JSONDecodeError, TypeError):
+            conn.close()
+            return jsonify({"error": "Invalid graph data"}), 400
+
+        result = _compute_boundary_governance(graph_data)
+
+        assess_id = str(_uuid_mod.uuid4())
+        conn.execute(
+            "INSERT INTO bd_assessments "
+            "(id, design_id, assessment_type, findings_json, score, grade, "
+            "cat1_findings, cat2_findings, cat3_findings, nist_coverage_json, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (assess_id, design_id, "governance",
+             json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
+                         for c in result["checks"]]),
+             result["score"], result["grade"],
+             sum(1 for c in result["checks"] if c["severity"] == "CAT1" and c["status"] == "fail"),
+             sum(1 for c in result["checks"] if c["severity"] == "CAT2" and c["status"] == "fail"),
+             sum(1 for c in result["checks"] if c["severity"] == "CAT3" and c["status"] == "fail"),
+             "{}", now_isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify(result)
 
     return bp

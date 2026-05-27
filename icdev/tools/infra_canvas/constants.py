@@ -1347,11 +1347,65 @@ CSP_EQUIVALENCE = {
         "oci": "oci-genai",
         "ibm": "ibm-watsonx",
     },
-    "cspm": {
-        "aws": "aws-securityhub",
-        "azure": "az-defender",
-        "gcp": "gcp-scc",
-        "oci": "oci-cspm",
-        "ibm": "ibm-scc",
-    },
 }
+
+# ── Ontology Mapping (infra->ICDEV infrastructure ontology) ──────────────────
+INFRA_ONTOLOGY_MAP: dict[str, str] = {
+    # Compute
+    "aws-ec2":          "https://icdev.dev/ontology/infrastructure#ComputeService.EC2",
+    "aws-ec2-asg":      "https://icdev.dev/ontology/infrastructure#ComputeService.AutoScaling",
+    "aws-ec2-spot":     "https://icdev.dev/ontology/infrastructure#ComputeService.Spot",
+    "aws-ec2-dedicated":"https://icdev.dev/ontology/infrastructure#ComputeService.DedicatedHost",
+    "az-vm":            "https://icdev.dev/ontology/infrastructure#ComputeService.VirtualMachine",
+    "az-vmss":          "https://icdev.dev/ontology/infrastructure#ComputeService.VMScaleSet",
+    "gcp-gce":          "https://icdev.dev/ontology/infrastructure#ComputeService.ComputeEngine",
+    "gcp-mig":          "https://icdev.dev/ontology/infrastructure#ComputeService.InstanceGroup",
+    "oci-compute":      "https://icdev.dev/ontology/infrastructure#ComputeService.Compute",
+    "ibm-vsi":          "https://icdev.dev/ontology/infrastructure#ComputeService.VirtualServer",
+    "op-server":        "https://icdev.dev/ontology/infrastructure#ComputeService.PhysicalServer",
+    "op-vm":            "https://icdev.dev/ontology/infrastructure#ComputeService.OnPremVM",
+    # Containers
+    "aws-eks":          "https://icdev.dev/ontology/infrastructure#ContainerService.EKS",
+    "aws-ecs":          "https://icdev.dev/ontology/infrastructure#ContainerService.ECS",
+    "aws-fargate":      "https://icdev.dev/ontology/infrastructure#ContainerService.Fargate",
+    "az-aks":           "https://icdev.dev/ontology/infrastructure#ContainerService.AKS",
+    "gcp-gke":          "https://icdev.dev/ontology/infrastructure#ContainerService.GKE",
+    "oci-oke":          "https://icdev.dev/ontology/infrastructure#ContainerService.OKE",
+    "ibm-iks":          "https://icdev.dev/ontology/infrastructure#ContainerService.IKS",
+    "op-k8s":           "https://icdev.dev/ontology/infrastructure#ContainerService.Kubernetes",
+    # Storage
+    "aws-s3":           "https://icdev.dev/ontology/infrastructure#ObjectStorage.S3",
+    "aws-ebs":          "https://icdev.dev/ontology/infrastructure#BlockStorage.EBS",
+    "az-blob":          "https://icdev.dev/ontology/infrastructure#ObjectStorage.Blob",
+    "gcp-gcs":          "https://icdev.dev/ontology/infrastructure#ObjectStorage.CloudStorage",
+    "oci-os":           "https://icdev.dev/ontology/infrastructure#ObjectStorage.ObjectStorage",
+    # Database
+    "aws-rds":          "https://icdev.dev/ontology/infrastructure#DatabaseService.RDS",
+    "aws-dynamodb":     "https://icdev.dev/ontology/infrastructure#DatabaseService.DynamoDB",
+    "az-sql":           "https://icdev.dev/ontology/infrastructure#DatabaseService.SQLDatabase",
+    "gcp-cloudsql":     "https://icdev.dev/ontology/infrastructure#DatabaseService.CloudSQL",
+    # Serverless
+    "aws-lambda":       "https://icdev.dev/ontology/infrastructure#ServerlessFunction.Lambda",
+    "az-functions":     "https://icdev.dev/ontology/infrastructure#ServerlessFunction.Functions",
+    "gcp-functions":    "https://icdev.dev/ontology/infrastructure#ServerlessFunction.CloudFunctions",
+    # AI/ML
+    "aws-sagemaker":    "https://icdev.dev/ontology/infrastructure#AIMLService.SageMaker",
+    "az-ml":            "https://icdev.dev/ontology/infrastructure#AIMLService.MachineLearning",
+    "gcp-vertex":       "https://icdev.dev/ontology/infrastructure#AIMLService.VertexAI",
+    # Security
+    "aws-iam":          "https://icdev.dev/ontology/infrastructure#IdentityService.IAM",
+    "aws-kms":          "https://icdev.dev/ontology/infrastructure#KeyManagementService.KMS",
+    "az-keyvault":      "https://icdev.dev/ontology/infrastructure#KeyManagementService.KeyVault",
+    # Load Balancer
+    "aws-elb":          "https://icdev.dev/ontology/infrastructure#LoadBalancer.ELB",
+    "aws-alb":          "https://icdev.dev/ontology/infrastructure#LoadBalancer.ALB",
+    "az-appgw":         "https://icdev.dev/ontology/infrastructure#LoadBalancer.AppGateway",
+    # IaC
+    "iac-terraform":    "https://icdev.dev/ontology/infrastructure#IaCTool.Terraform",
+    "iac-ansible":      "https://icdev.dev/ontology/infrastructure#IaCTool.Ansible",
+    "iac-helm":         "https://icdev.dev/ontology/infrastructure#IaCTool.Helm",
+    # Digital Twin
+    "twin-iac":         "https://icdev.dev/ontology/infrastructure#DigitalTwin.IaCTwin",
+    "twin-drift":       "https://icdev.dev/ontology/infrastructure#DigitalTwin.DriftDetector",
+}
+

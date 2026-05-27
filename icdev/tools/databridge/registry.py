@@ -8,13 +8,13 @@ Provides:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional, Type
 
-logger = logging.getLogger("databridge.registry")
+logger = get_logger("databridge.registry")
 
 DB_PATH = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
 

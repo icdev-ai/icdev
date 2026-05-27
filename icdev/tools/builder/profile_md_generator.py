@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """PROFILE.md Generator — human-readable narrative from resolved dev profiles.
 
@@ -28,13 +30,12 @@ Classification: CUI // SP-CTI
 import argparse
 import hashlib
 import json
-import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-logger = logging.getLogger("icdev.profile_md_generator")
+logger = get_logger("icdev.profile_md_generator")
 
 try:
     from jinja2 import Environment, BaseLoader

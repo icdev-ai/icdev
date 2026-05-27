@@ -5,6 +5,7 @@
 
 ## Index
 
+- [LLM Chain Orchestration (CoT / CoD)](manifest/llm-chain-orchestration.md)
 - [AIS Vessel Data Importer](manifest/ais-importer.md)
 - [Network Design Canvas + IQE (ICDEV Query Engine)](manifest/network-iqe.md)
 - [Memory System](manifest/memory-system.md)
@@ -30,6 +31,7 @@
 - [eMASS Integration](manifest/emass-integration.md)
 - [Builder (TDD)](manifest/builder.md)
 - [Security Scanning](manifest/security-scanning.md)
+- [Showcase](manifest/showcase.md)
 - [Deploy](manifest/deploy.md)
 - [Infrastructure](manifest/infrastructure.md)
 - [Knowledge & Self-Healing](manifest/knowledge-self-healing.md)
@@ -75,6 +77,9 @@
 - [Remote Command Gateway (Phase 28 — D133-D140)](manifest/remote-command-gateway.md)
 - [Innovation Adaptation (Phase 44 — D257-D279)](manifest/innovation-adaptation.md)
 - [Observability, Traceability & Explainable AI (Phase 46)](manifest/observability-traceability-explainable-ai.md)
+- [Ontology](manifest/ontology.md)
+- [Provenance](manifest/provenance.md)
+- [Blockchain / GovChain (D-GC-1 through D-GC-11)](manifest/blockchain.md)
 - [Code Intelligence (Phase 52 — D331-D337)](manifest/code-intelligence.md)
 - [AI Governance Integration (Phase 50)](manifest/ai-governance-integration.md)
 - [FedRAMP 20x KSI + OWASP ASI (Phase 53)](manifest/fedramp-20x-ksi-owasp-asi.md)
@@ -107,7 +112,6 @@
 - [LLM Provider SDK](manifest/llm-provider-sdk.md)
 - [Playground](manifest/playground.md)
 - [Proposal Genesis CRM](manifest/proposal-genesis-crm.md)
-- [Mission Canvas — Program Command Center](manifest/mission-canvas.md)
 - [RAG Subsystem (Additional)](manifest/rag-subsystem.md)
 - [Codebase Assistant (Phase 69)](manifest/codebase-assistant.md)
 - [Requirements (Additional)](manifest/requirements.md)
@@ -136,8 +140,10 @@
 - [SaaS (Additional)](manifest/saas.md)
 - [Scout](manifest/scout.md)
 - [FathomDesk Trading Engine](manifest/fathomdesk-trading-engine.md)
+- [IL5 Data Ingestion & SLA Enforcement](manifest/il5-data-ingestion.md)
 - [Auto-Registered (Coherence Fix)](manifest/auto-registered.md)
 - [Air-Gap Mode (OPT-51/OPT-61)](manifest/air-gap-mode.md)
+- [AI/ML Model Canvas (AIMC)](manifest/aiml-canvas.md)
 - [Design Canvases (7-Canvas Suite)](manifest/design-canvases.md)
 - [Migration Canvas](manifest/migration-canvas.md)
 - [Canvas Auto-Remediation](manifest/canvas-auto-remediation.md)
@@ -156,467 +162,143 @@
 - [Strategos — DIB Supply Chain & Strategy Intelligence](manifest/strategos.md)
 - [Strategos Chat — Floating Analyst Chat Panel](manifest/strategos-chat.md)
 - [TTX Engine — Tabletop Exercise (AI GameDay)](manifest/ttx.md)
+- [Unclassified (auto-added)](manifest/unclassified.md)
+- [DDC Data Science — Explore, Query Sandbox, Quality Rules](manifest/ddc-data-science.md)
+- [Data Mesh (dm-*)](manifest/data-mesh.md) — Data Mesh: Domains, Products, Contracts, Governance, CSP (9 tables, 6 modules, 6 pages)
+- [System Graph — Federated Sigma.js Graph](manifest/system-graph.md)
+- [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
+- [AI Augmentation Canvas (AAC)](manifest/ai-augmentation-canvas.md)
 
 
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-
 | Pdf Import | tools\network\pdf_import.py | Auto-registered: network/pdf_import.py | --json | JSON |
 | Snapshot Builder | tools\trading\market_intel\snapshot_builder.py | Auto-registered: market_intel/snapshot_builder.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Schedule Enterprise Frontend Plan | tools\scripts\schedule_enterprise_frontend_plan.py | Auto-registered: scripts/schedule_enterprise_frontend_plan.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Schedule Fathomdesk News Plan | tools\scripts\schedule_fathomdesk_news_plan.py | Auto-registered: scripts/schedule_fathomdesk_news_plan.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Wheel Vendor | tools\airgap\wheel_vendor.py | Auto-registered: airgap/wheel_vendor.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Self Debug | tools\workflow\self_debug.py | Auto-registered: workflow/self_debug.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Rss Ingestor | tools\trading\news\rss_ingestor.py | Auto-registered: news/rss_ingestor.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Scenario Matcher | tools\trading\news\scenario_matcher.py | Auto-registered: news/scenario_matcher.py | --json | JSON |
-- [Unclassified (auto-added)](manifest/unclassified.md)
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | News Reasoner | tools\trading\news\news_reasoner.py | Auto-registered: news/news_reasoner.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Crisis Fingerprints | tools\trading\market_intel\crisis_fingerprints.py | Auto-registered: market_intel/crisis_fingerprints.py | --json | JSON |
 | Cross Asset Divergence | tools\trading\market_intel\cross_asset_divergence.py | Auto-registered: market_intel/cross_asset_divergence.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Lens News Intelligence | tools\trading\oracle\lens_news_intelligence.py | Auto-registered: oracle/lens_news_intelligence.py | --json | JSON |
 | Lens Portfolio Stress | tools\trading\oracle\lens_portfolio_stress.py | Auto-registered: oracle/lens_portfolio_stress.py | --json | JSON |
 | Lens Regime Trajectory | tools\trading\oracle\lens_regime_trajectory.py | Auto-registered: oracle/lens_regime_trajectory.py | --json | JSON |
 | Lens Signal Convergence | tools\trading\oracle\lens_signal_convergence.py | Auto-registered: oracle/lens_signal_convergence.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Pulumi | tools\infra_canvas\emitters\pulumi.py | Auto-registered: emitters/pulumi.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Aws Rgt | tools\infra_canvas\importers\aws_rgt.py | Auto-registered: importers/aws_rgt.py | --json | JSON |
 | Pulumi State | tools\infra_canvas\importers\pulumi_state.py | Auto-registered: importers/pulumi_state.py | --json | JSON |
 | Tf State | tools\infra_canvas\importers\tf_state.py | Auto-registered: importers/tf_state.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Mitre Loader | tools\observability_canvas\mitre_loader.py | Auto-registered: observability_canvas/mitre_loader.py | --json | JSON |
 | Premerge Runner | tools\pipeline\premerge_runner.py | Auto-registered: pipeline/premerge_runner.py | --json | JSON |
 | Path Enumerator | tools\security_canvas\path_enumerator.py | Auto-registered: security_canvas/path_enumerator.py | --json | JSON |
 | Attackpath | tools\security_canvas\attackpath.py | Auto-registered: security_canvas/attackpath.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Schedule Phase 7 6 Ai Options Plan | tools\scripts\schedule_phase_7_6_ai_options_plan.py | Auto-registered: scripts/schedule_phase_7_6_ai_options_plan.py | --json | JSON |
 | Intent Parser | tools\trading\options\intent_parser.py | Auto-registered: options/intent_parser.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Canvas Ask | tools\knowledge_graph\canvas_ask.py | Auto-registered: knowledge_graph/canvas_ask.py | --json | JSON |
 | Proposal Builder | tools\trading\options\proposal_builder.py | Auto-registered: options/proposal_builder.py | --json | JSON |
 | Strategy Selector | tools\trading\options\strategy_selector.py | Auto-registered: options/strategy_selector.py | --json | JSON |
 | Strike Picker | tools\trading\options\strike_picker.py | Auto-registered: options/strike_picker.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Coach Engine | tools\trading\options\coach_engine.py | Auto-registered: options/coach_engine.py | --json | JSON |
 | Coach Llm | tools\trading\options\coach_llm.py | Auto-registered: options/coach_llm.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Schedule Phase 7 7 Prob Compare Plan | tools\scripts\schedule_phase_7_7_prob_compare_plan.py | Auto-registered: scripts/schedule_phase_7_7_prob_compare_plan.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Schedule Phase 7 8 Greeks Share Plan | tools\scripts\schedule_phase_7_8_greeks_share_plan.py | Auto-registered: scripts/schedule_phase_7_8_greeks_share_plan.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Portfolio Greeks | tools\trading\options\portfolio_greeks.py | Auto-registered: options/portfolio_greeks.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Schedule Phase 7 10 Traps Plan | tools\scripts\schedule_phase_7_10_traps_plan.py | Auto-registered: scripts/schedule_phase_7_10_traps_plan.py | --json | JSON |
 | Schedule Phase 7 11 News 2 Plan | tools\scripts\schedule_phase_7_11_news_2_plan.py | Auto-registered: scripts/schedule_phase_7_11_news_2_plan.py | --json | JSON |
 | Schedule Phase 7 9 Ta Foundation Plan | tools\scripts\schedule_phase_7_9_ta_foundation_plan.py | Auto-registered: scripts/schedule_phase_7_9_ta_foundation_plan.py | --json | JSON |
 | Swings | tools\trading\ta\swings.py | Auto-registered: ta/swings.py | --json | JSON |
 | Volume Profile | tools\trading\ta\volume_profile.py | Auto-registered: ta/volume_profile.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Triple | tools\trading\ta\patterns\triple.py | Auto-registered: patterns/triple.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Wedge | tools\trading\ta\patterns\wedge.py | Auto-registered: patterns/wedge.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Support Resistance | tools\trading\ta\support_resistance.py | Auto-registered: ta/support_resistance.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Combo Analyzer | tools\trading\options\combo_analyzer.py | Auto-registered: options/combo_analyzer.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Auto Trade Options | tools\trading\options\auto_trade_options.py | Auto-registered: options/auto_trade_options.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Alphadesk Trap Scenarios | tools\genesis\reflexes\alphadesk_trap_scenarios.py | Auto-registered: reflexes/alphadesk_trap_scenarios.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Git Utils | tools\workflow\git_utils.py | Auto-registered: workflow/git_utils.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Twin Chat | tools\twin_chat.py | Auto-registered: tools/twin_chat.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Bond Etf Data | tools\trading\data\bond_etf_data.py | Auto-registered: data/bond_etf_data.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Seed Dt Competitors | tools\creative\seed_dt_competitors.py | Auto-registered: creative/seed_dt_competitors.py | --json | JSON |
 | Cross Asset Rotation | tools\trading\market_intel\cross_asset_rotation.py | Auto-registered: market_intel/cross_asset_rotation.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Nl To Iqe | tools\iqe\nl_to_iqe.py | Auto-registered: iqe/nl_to_iqe.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Traffic Flow | tools\network\traffic_flow.py | Auto-registered: network/traffic_flow.py | --json | JSON |
 | Narrative Generator | tools\network\narrative_generator.py | TFW Narrative Generator — wraps `TrafficFlowEngine` walkthrough steps with per-persona LLM narratives (seceng, neteng, cloudarch, compofficer, appdev, missionowner, ciso) and deterministic `detail_json` enrichment (CSP detection, multi-CSP inter-hop, classification overlay, NIST 800-53/FedRAMP control pre-population). Public API: `generate_for_persona(step, node, persona_id, flow, classification, prev_node, llm_client, use_llm) -> {"narrative": str, "detail_json": dict}` and `generate_all(flow_id, conn, personas, classification, use_llm) -> {"steps": [...], "summary": {...}}`. Falls back to `NARRATIVE_TEMPLATES` then generic text when LLM unavailable. CLI: `--flow-id <uuid> [--classification NIPR\|IL4\|IL5\|IL6\|SIPR] [--personas <id>...] [--no-llm] --json`. Full API reference: [manifest/network-iqe.md](manifest/network-iqe.md#tfw-narrative-generator--detailed-analysis) | `--flow-id <uuid> [--classification NIPR] [--personas seceng compofficer] [--no-llm] --json` | JSON `{steps, summary}` |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Canvas Registry | tools\canvas\canvas_registry.py | Auto-registered: canvas/canvas_registry.py | --json | JSON |
 | Tfw Chat Schema | tools\simulation\tfw_chat_schema.py | Auto-registered: simulation/tfw_chat_schema.py | --json | JSON |
 | Mermaid Parser | tools\simulation\parsers\mermaid_parser.py | Auto-registered: parsers/mermaid_parser.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Genesis Daemon | tools\trading\options\genesis_daemon.py | Auto-registered: options/genesis_daemon.py | --json | JSON |
 | Oracle Engine | tools\trading\options\oracle_engine.py | Auto-registered: options/oracle_engine.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Tfw Chat Agent | tools\simulation\tfw_chat_agent.py | Auto-registered: simulation/tfw_chat_agent.py | --json | JSON |
 | Oracle Notify | tools\trading\options\oracle_notify.py | Auto-registered: options/oracle_notify.py | --json | JSON |
 | Dfd Generator | tools\simulation\artifacts\dfd_generator.py | Auto-registered: artifacts/dfd_generator.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Event Bus | tools\canvas\event_bus.py | Auto-registered: canvas/event_bus.py | --json | JSON |
 | Broker Adapter | tools\fathomdesk\broker_adapter.py | Auto-registered: fathomdesk/broker_adapter.py | --json | JSON |
 | Fathomdesk Trap Sweep | tools\genesis\reflexes\fathomdesk_trap_sweep.py | Auto-registered: reflexes/fathomdesk_trap_sweep.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Event Bus | tools\canvas\event_bus.py | Auto-registered: canvas/event_bus.py | --json | JSON |
-| Broker Adapter | tools\fathomdesk\broker_adapter.py | Auto-registered: fathomdesk/broker_adapter.py | --json | JSON |
-| Fathomdesk Trap Sweep | tools\genesis\reflexes\fathomdesk_trap_sweep.py | Auto-registered: reflexes/fathomdesk_trap_sweep.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Isa Expiry | tools\boundary_canvas\isa_expiry.py | Auto-registered: boundary_canvas/isa_expiry.py | --json | JSON |
 | Bdc Isa Expiry | tools\genesis\reflexes\bdc_isa_expiry.py | Auto-registered: reflexes/bdc_isa_expiry.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Mitre Ingestor | tools\observability\mitre_ingestor.py | Auto-registered: observability/mitre_ingestor.py | --json | JSON |
 | Bus Subscriber | tools\security_canvas\bus_subscriber.py | Auto-registered: security_canvas/bus_subscriber.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Network Migration | tools\migration_canvas\network_migration.py | Auto-registered: migration_canvas/network_migration.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Goal Manager | tools\migration_intelligence\goal_manager.py | Auto-registered: migration_intelligence/goal_manager.py | --json | JSON |
 | Migration Manager | tools\migration_intelligence\migration_manager.py | Auto-registered: migration_intelligence/migration_manager.py | --json | JSON |
 | Opportunity Scanner | tools\migration_intelligence\opportunity_scanner.py | Auto-registered: migration_intelligence/opportunity_scanner.py | --json | JSON |
 | Strategy Generator | tools\migration_intelligence\strategy_generator.py | Auto-registered: migration_intelligence/strategy_generator.py | --json | JSON |
 | Migration Intel | tools\genesis\reflexes\migration_intel.py | Auto-registered: reflexes/migration_intel.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Fathomdesk Openbb Refresh | tools\genesis\reflexes\fathomdesk_openbb_refresh.py | Auto-registered: reflexes/fathomdesk_openbb_refresh.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Data Gateway | tools\fathomdesk\data_gateway.py | Auto-registered: fathomdesk/data_gateway.py | --json | JSON |
 | Reflex Observer | tools\monitoring\reflex_observer.py | Auto-registered: monitoring/reflex_observer.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Backtester | tools\fathomdesk\backtester.py | Auto-registered: fathomdesk/backtester.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Setup Wizard | tools\rag\setup_wizard.py | Auto-registered: rag/setup_wizard.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Pir Manager | tools\intelligence\pir_manager.py | Auto-registered: intelligence/pir_manager.py | --json | JSON |
 | Baseline Importer | tools\sg\baseline_importer.py | Auto-registered: sg/baseline_importer.py | --json | JSON |
 | War Endurance | tools\simulation\war_endurance.py | Auto-registered: simulation/war_endurance.py | --json | JSON |
 | Cta Positioning | tools\trading\market_intel\cta_positioning.py | Auto-registered: market_intel/cta_positioning.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Reflex Registry | tools\genesis\reflex_registry.py | Auto-registered: genesis/reflex_registry.py | --json | JSON |
 | Interdiction Ranker | tools\strategos\interdiction_ranker.py | Auto-registered: strategos/interdiction_ranker.py | --json | JSON |
 | Temporal Correlator | tools\strategos\temporal_correlator.py | Auto-registered: strategos/temporal_correlator.py | --json | JSON |
 | OSINT Harvester | tools\genesis\reflexes\strategos\osint_harvester.py | STRATEGOS reflex — background OSINT collection every 4h from RSS/ACLED/Telegram/file-inbox into sg_raw_signals; max 200 signals/run, sha256 dedup | --json | JSON {success, metric_value, details} |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Brief Generator | tools\intelligence\brief_generator.py | Auto-registered: intelligence/brief_generator.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Signal Scout | tools\genesis\reflexes\strategos\signal_scout.py | Auto-registered: strategos/signal_scout.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Reverse Cascade Inference | tools\strategos\reverse_cascade_inference.py | Auto-registered: strategos/reverse_cascade_inference.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Signal Pricer | tools\intelligence\signal_pricer.py | Auto-registered: intelligence/signal_pricer.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Ais Connector | tools\databridge\connectors\ais_connector.py | Auto-registered: connectors/ais_connector.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Osint Prestage | tools\strategos\osint_prestage.py | Auto-registered: strategos/osint_prestage.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Put Call Sentiment | tools\trading\analysis\confluence_pillars\put_call_sentiment.py | Auto-registered: confluence_pillars/put_call_sentiment.py | --json | JSON |
 | Fathomdesk Pc Ratio | tools\genesis\reflexes\fathomdesk_pc_ratio.py | Auto-registered: reflexes/fathomdesk_pc_ratio.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Signal Tuner | tools\fathomdesk\signal_tuner.py | Auto-registered: fathomdesk/signal_tuner.py | --json | JSON |
 | Signal Generator | tools\fathomdesk\signal_generator.py | FathomDesk threshold-gated signal filter — loads `args/signal_thresholds.yaml` (min_confidence, min_score, max_signals, per-category biases) and returns only signals that pass all gates. Public API: `generate(signals, thresholds=None) -> list[dict]`, `load_thresholds(path=None) -> dict`. | `generate(signals=[...])` | filtered signal list |
 | Ew Monitor | tools\strategos\ew_monitor.py | Auto-registered: strategos/ew_monitor.py | --json | JSON |
 | Iw Engine | tools\strategos\iw_engine.py | Auto-registered: strategos/iw_engine.py | --json | JSON |
 | Ooda | tools\strategos\ooda.py | Auto-registered: strategos/ooda.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Dib Mapper | tools\strategos\dib_mapper.py | Auto-registered: strategos/dib_mapper.py | --json | JSON |
 | Information Scorer | tools\intelligence\war_readiness\information_scorer.py | Auto-registered: war_readiness/information_scorer.py | --json | JSON |
 | Pattern Learner | tools\genesis\reflexes\strategos\pattern_learner.py | Auto-registered: strategos/pattern_learner.py | --json | JSON |
 | Red Cell | tools\genesis\reflexes\strategos\red_cell.py | Auto-registered: strategos/red_cell.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Engine Registry | tools\product_intel\engine_registry.py | Auto-registered: product_intel/engine_registry.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Transcript Ingestor | tools\voc\transcript_ingestor.py | Auto-registered: voc/transcript_ingestor.py | --json | JSON |
 | Voc Engine | tools\voc\voc_engine.py | Auto-registered: voc/voc_engine.py | --json | JSON |
 | Win Loss Engine | tools\win_loss\win_loss_engine.py | Auto-registered: win_loss/win_loss_engine.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Doctrine Corpus | tools\strategos\doctrine_corpus.py | Auto-registered: strategos/doctrine_corpus.py | --json | JSON |
 | War Council | tools\strategos\war_council.py | Auto-registered: strategos/war_council.py | --json | JSON |
 | War Council Generator | tools\strategos\war_council_generator.py | Auto-registered: strategos/war_council_generator.py | --json | JSON |
 | Rare Earth Cascade | tools\supply_chain\rare_earth_cascade.py | Auto-registered: supply_chain/rare_earth_cascade.py | --json | JSON |
 | Semiconductor Chain | tools\supply_chain\semiconductor_chain.py | Auto-registered: supply_chain/semiconductor_chain.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Verify Manifest | tools\verify_manifest.py | Auto-registered: tools/verify_manifest.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Check Manifest Coverage | tools\check_manifest_coverage.py | Auto-registered: tools/check_manifest_coverage.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Research Bridge | tools\strategos\research_bridge.py | Auto-registered: strategos/research_bridge.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Darkweb | tools\strategos\darkweb.py | Auto-registered: strategos/darkweb.py | --json | JSON |
 | Darkweb Monitor | tools\strategos\darkweb_monitor.py | Auto-registered: strategos/darkweb_monitor.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Seed Fdt Amendment | tools\kanban\seed_fdt_amendment.py | Auto-registered: kanban/seed_fdt_amendment.py | --json | JSON |
 | Seed Fdt Tradingagents | tools\kanban\seed_fdt_tradingagents.py | Auto-registered: kanban/seed_fdt_tradingagents.py | --json | JSON |
 | Eo Importer | tools\strategos\eo_importer.py | Auto-registered: strategos/eo_importer.py | --json | JSON |
 | Rf Attribution | tools\strategos\rf_attribution.py | Auto-registered: strategos/rf_attribution.py | --json | JSON |
 | Socmint | tools\genesis\reflexes\socmint.py | Auto-registered: reflexes/socmint.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Analyst Panel | tools\fathomdesk\analyst_panel.py | Auto-registered: fathomdesk/analyst_panel.py | --json | JSON |
 | Base Analyst | tools\fathomdesk\agents\base_analyst.py | Auto-registered: agents/base_analyst.py | --json | JSON |
 | Research Manager | tools\fathomdesk\agents\research_manager.py | Auto-registered: agents/research_manager.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Adsb Importer | tools\strategos\adsb_importer.py | Auto-registered: strategos/adsb_importer.py | --json | JSON |
 | Ground Vehicle Importer | tools\strategos\ground_vehicle_importer.py | Auto-registered: strategos/ground_vehicle_importer.py | --json | JSON |
 | Tle Importer | tools\strategos\tle_importer.py | Auto-registered: strategos/tle_importer.py | --json | JSON |
@@ -626,23 +308,8 @@
 | Wargame Turn Engine | tools\strategos\wargame_turn_engine.py | Auto-registered: strategos/wargame_turn_engine.py | --json | JSON |
 | Template Linter | tools\studio\template_linter.py | Auto-registered: studio/template_linter.py | --json | JSON |
 | Seed Icdev Templates | tools\workflow_hitl\seed_icdev_templates.py | Auto-registered: workflow_hitl/seed_icdev_templates.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Explain Translator | tools\aisg\explain_translator.py | Auto-registered: aisg/explain_translator.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Roi Tracker | tools\aisg\roi_tracker.py | Auto-registered: aisg/roi_tracker.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Export Pdf | tools\agentic_ai_canvas\export_pdf.py | Auto-registered: agentic_ai_canvas/export_pdf.py | --json | JSON |
 | Version Diff | tools\agentic_ai_canvas\version_diff.py | Auto-registered: agentic_ai_canvas/version_diff.py | --json | JSON |
 | Autotune | tools\aisg\autotune.py | Auto-registered: aisg/autotune.py | --json | JSON |
@@ -665,11 +332,527 @@
 | Persona Generator | tools\ttx\persona_generator.py | Auto-registered: ttx/persona_generator.py | --json | JSON |
 | Scenario Loader | tools\ttx\scenario_loader.py | Auto-registered: ttx/scenario_loader.py | --json | JSON |
 | Session Manager | tools\ttx\session_manager.py | TTX Engine — session lifecycle CRUD. Create/get/list/update ttx_sessions rows; generates a random join_code; enforces SESSION_STATES enum on state transitions. Public API: `create_session(scenario_slug, session_mode, facilitator_name, duration_minutes, max_teams, config)`, `get_session(session_id)`, `get_session_by_code(join_code)`, `list_sessions(state)`, `update_session_state(session_id, new_state)`. | imported by TTX blueprint | dict \| list[dict] |
+| Migrate To Vault | tools\trading\credentials\migrate_to_vault.py | Auto-registered: credentials/migrate_to_vault.py | --json | JSON |
+| Certificates | tools\trading\lessons\certificates.py | Auto-registered: lessons/certificates.py | --json | JSON |
+| Bootstrap Hmm | tools\trading\ml\bootstrap_hmm.py | Auto-registered: ml/bootstrap_hmm.py | --json | JSON |
+| Cmmi L3 Assessor | tools\compliance\cmmi_l3_assessor.py | Auto-registered: compliance/cmmi_l3_assessor.py | --json | JSON |
+| Connectivity Ref | tools\network\connectivity_ref.py | Auto-registered: network/connectivity_ref.py | --json | JSON |
+| Forge Academy Oracle | tools\genesis\reflexes\forge_academy_oracle.py | Auto-registered: reflexes/forge_academy_oracle.py | --json | JSON |
+| Cost Estimator | tools\agentic_ai_canvas\cost_estimator.py | Auto-registered: agentic_ai_canvas/cost_estimator.py | --json | JSON |
+| Data Profiler | tools\data_canvas\data_profiler.py | Auto-registered: data_canvas/data_profiler.py | --json | JSON |
+| Quality Engine | tools\data_canvas\quality_engine.py | Auto-registered: data_canvas/quality_engine.py | --json | JSON |
+| Acled Importer | tools\strategos\acled_importer.py | Auto-registered: strategos/acled_importer.py | --json | JSON |
+| Economic Importer | tools\strategos\economic_importer.py | Auto-registered: strategos/economic_importer.py | --json | JSON |
+| Historical Baselines | tools\strategos\historical_baselines.py | Auto-registered: strategos/historical_baselines.py | --json | JSON |
+| Iw Bayesian | tools\strategos\iw_bayesian.py | Auto-registered: strategos/iw_bayesian.py | --json | JSON |
+| Iw Pattern Matcher | tools\strategos\iw_pattern_matcher.py | Auto-registered: strategos/iw_pattern_matcher.py | --json | JSON |
+| Iw Scorers | tools\strategos\iw_scorers.py | Auto-registered: strategos/iw_scorers.py | --json | JSON |
+| Oryx Importer | tools\strategos\oryx_importer.py | Auto-registered: strategos/oryx_importer.py | --json | JSON |
+| Dossier Advisor | tools\migration_canvas\dossier_advisor.py | Auto-registered: migration_canvas/dossier_advisor.py | --json | JSON |
+| Wave Planner | tools\migration_canvas\wave_planner.py | Auto-registered: migration_canvas/wave_planner.py | --json | JSON |
+| Code Lens | tools\analysis\code_lens.py | Auto-registered: analysis/code_lens.py | --json | JSON |
+| Anomaly Detector | tools\data_canvas\anomaly_detector.py | Auto-registered: data_canvas/anomaly_detector.py | --json | JSON |
+| Freshness Guardian | tools\data_canvas\freshness_guardian.py | Auto-registered: data_canvas/freshness_guardian.py | --json | JSON |
+| Pii Scanner | tools\data_canvas\pii_scanner.py | Auto-registered: data_canvas/pii_scanner.py | --json | JSON |
+| Inventory Scanner | tools\migration_canvas\inventory_scanner.py | Auto-registered: migration_canvas/inventory_scanner.py | --json | JSON |
+| Canvas Bridge | tools\agentic_ai_canvas\canvas_bridge.py | Auto-registered: agentic_ai_canvas/canvas_bridge.py | --json | JSON |
+| Seed Ddc Datasci | tools\kanban\seed_ddc_datasci.py | Auto-registered: kanban/seed_ddc_datasci.py | --json | JSON |
+| Seed M03 M05 | tools\kanban\seed_m03_m05.py | Auto-registered: kanban/seed_m03_m05.py | --json | JSON |
+| Seed Mce Kanban | tools\kanban\seed_mce_kanban.py | Auto-registered: kanban/seed_mce_kanban.py | --json | JSON |
+| Seed Nmce Kanban | tools\kanban\seed_nmce_kanban.py | Auto-registered: kanban/seed_nmce_kanban.py | --json | JSON |
+| Seed Remaining Tasks | tools\kanban\seed_remaining_tasks.py | Auto-registered: kanban/seed_remaining_tasks.py | --json | JSON |
+| Validate Secops03 | tools\testing\validate_secops03.py | Auto-registered: testing/validate_secops03.py | --json | JSON |
+| Sim Cipher Forge | tools\ttx\scenarios\sim_cipher_forge.py | Auto-registered: scenarios/sim_cipher_forge.py | --json | JSON |
+| Sim Forge Ascent | tools\ttx\scenarios\sim_forge_ascent.py | Auto-registered: scenarios/sim_forge_ascent.py | --json | JSON |
+| Sim Hunt The Fleet | tools\ttx\scenarios\sim_hunt_the_fleet.py | Auto-registered: scenarios/sim_hunt_the_fleet.py | --json | JSON |
+| Sim Lifecycle E2E | tools\ttx\scenarios\sim_lifecycle_e2e.py | Auto-registered: scenarios/sim_lifecycle_e2e.py | --json | JSON |
+| Sim Meridian | tools\ttx\scenarios\sim_meridian.py | Auto-registered: scenarios/sim_meridian.py | --json | JSON |
+| Solarwinds Connector | tools\databridge\connectors\solarwinds_connector.py | Auto-registered: connectors/solarwinds_connector.py | --json | JSON |
+| Librenms Connector | tools\databridge\connectors\librenms_connector.py | Auto-registered: connectors/librenms_connector.py | --json | JSON |
+| Riverbed Netim Connector | tools\databridge\connectors\riverbed_netim_connector.py | Auto-registered: connectors/riverbed_netim_connector.py | --json | JSON |
+| Riverbed Netim Adapter | tools\network\adapters\riverbed_netim_adapter.py | Auto-registered: adapters/riverbed_netim_adapter.py | --json | JSON |
+| Splunk Adapter | tools\network\adapters\splunk_adapter.py | Auto-registered: adapters/splunk_adapter.py | --json | JSON |
+| Splunk Connector | tools\databridge\connectors\splunk_connector.py | Auto-registered: connectors/splunk_connector.py | --json | JSON |
 
 
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Migrate To Vault | tools\trading\credentials\migrate_to_vault.py | Auto-registered: credentials/migrate_to_vault.py | --json | JSON |
-| Certificates | tools\trading\lessons\certificates.py | Auto-registered: lessons/certificates.py | --json | JSON |
-| Bootstrap Hmm | tools\trading\ml\bootstrap_hmm.py | Auto-registered: ml/bootstrap_hmm.py | --json | JSON |
+| Idc Cloud Drift | tools\genesis\reflexes\idc_cloud_drift.py | Auto-registered: reflexes/idc_cloud_drift.py | --json | JSON |
+| Mdc Cutover Countdown | tools\genesis\reflexes\mdc_cutover_countdown.py | Auto-registered: reflexes/mdc_cutover_countdown.py | --json | JSON |
+| Ndc Topology Drift | tools\genesis\reflexes\ndc_topology_drift.py | Auto-registered: reflexes/ndc_topology_drift.py | --json | JSON |
+| Pdc Pipeline Stale | tools\genesis\reflexes\pdc_pipeline_stale.py | Auto-registered: reflexes/pdc_pipeline_stale.py | --json | JSON |
+| Qdc Gate Breach | tools\genesis\reflexes\qdc_gate_breach.py | Auto-registered: reflexes/qdc_gate_breach.py | --json | JSON |
+| Sdc Control Expiry | tools\genesis\reflexes\sdc_control_expiry.py | Auto-registered: reflexes/sdc_control_expiry.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Aadc Aimc Appmigration | tools\kanban\seed_aadc_aimc_appmigration.py | Auto-registered: kanban/seed_aadc_aimc_appmigration.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Adapter Registry | tools\ops_hub\adapter_registry.py | Auto-registered: ops_hub/adapter_registry.py | --json | JSON |
+| Aiops Engine | tools\ops_hub\aiops_engine.py | Auto-registered: ops_hub/aiops_engine.py | --json | JSON |
+| Llmops Engine | tools\ops_hub\llmops_engine.py | Auto-registered: ops_hub/llmops_engine.py | --json | JSON |
+| Mlops Engine | tools\ops_hub\mlops_engine.py | Auto-registered: ops_hub/mlops_engine.py | --json | JSON |
+| Ops Aggregator | tools\ops_hub\ops_aggregator.py | Auto-registered: ops_hub/ops_aggregator.py | --json | JSON |
+| Azureml Adapter | tools\ops_hub\adapters\azureml_adapter.py | Auto-registered: adapters/azureml_adapter.py | --json | JSON |
+| Bedrock Guardrails Adapter | tools\ops_hub\adapters\bedrock_guardrails_adapter.py | Auto-registered: adapters/bedrock_guardrails_adapter.py | --json | JSON |
+| Cloudwatch Adapter | tools\ops_hub\adapters\cloudwatch_adapter.py | Auto-registered: adapters/cloudwatch_adapter.py | --json | JSON |
+| Dvc Adapter | tools\ops_hub\adapters\dvc_adapter.py | Auto-registered: adapters/dvc_adapter.py | --json | JSON |
+| Evidently Adapter | tools\ops_hub\adapters\evidently_adapter.py | Auto-registered: adapters/evidently_adapter.py | --json | JSON |
+| Langfuse Adapter | tools\ops_hub\adapters\langfuse_adapter.py | Auto-registered: adapters/langfuse_adapter.py | --json | JSON |
+| Mlflow Adapter | tools\ops_hub\adapters\mlflow_adapter.py | Auto-registered: adapters/mlflow_adapter.py | --json | JSON |
+| Onnx Adapter | tools\ops_hub\adapters\onnx_adapter.py | Auto-registered: adapters/onnx_adapter.py | --json | JSON |
+| Prometheus Adapter | tools\ops_hub\adapters\prometheus_adapter.py | Auto-registered: adapters/prometheus_adapter.py | --json | JSON |
+| Sagemaker Adapter | tools\ops_hub\adapters\sagemaker_adapter.py | Auto-registered: adapters/sagemaker_adapter.py | --json | JSON |
+| Vertexai Adapter | tools\ops_hub\adapters\vertexai_adapter.py | Auto-registered: adapters/vertexai_adapter.py | --json | JSON |
+| Ohc | tools\iqe\adapters\ohc.py | Auto-registered: adapters/ohc.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Modernization Bridge | tools\aiml_canvas\modernization_bridge.py | Auto-registered: aiml_canvas/modernization_bridge.py | --json | JSON |
+| Seed Ohc Kanban | tools\kanban\seed_ohc_kanban.py | Auto-registered: kanban/seed_ohc_kanban.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Ops Config Generator | tools\agentic_ai_canvas\ops_config_generator.py | Auto-registered: agentic_ai_canvas/ops_config_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Academy Reflex | tools\genesis\reflexes\academy_reflex.py | Auto-registered: reflexes/academy_reflex.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Migration Executor | tools\govlift\migration_executor.py | Auto-registered: govlift/migration_executor.py | --json | JSON |
+| Workload Scanner | tools\govlift\workload_scanner.py | Auto-registered: govlift/workload_scanner.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Audit Engine | tools\govlift\audit_engine.py | Auto-registered: govlift/audit_engine.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Migration Demo | tools\network\seed_migration_demo.py | Auto-registered: network/seed_migration_demo.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Fix Py39 Annotations | tools\compat\fix_py39_annotations.py | Auto-registered: compat/fix_py39_annotations.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Ddx Extensions | tools\kanban\seed_ddx_extensions.py | Auto-registered: kanban/seed_ddx_extensions.py | --json | JSON |
+| Mcp Debug Wrapper | tools\mcp\mcp_debug_wrapper.py | Auto-registered: mcp/mcp_debug_wrapper.py | --json | JSON |
+| Commander Dashboard | tools\strategos\commander_dashboard.py | Auto-registered: strategos/commander_dashboard.py | --json | JSON |
+| Trap Db | tools\trading\ta\trap_db.py | Auto-registered: ta/trap_db.py | --json | JSON |
+| 090 Migration Advisory Chat | tools\extensions\builtins\090_migration_advisory_chat.py | Auto-registered: builtins/090_migration_advisory_chat.py | --json | JSON |
+| 021 Sg Sigint Events | tools\db\migrations\021_sg_sigint_events.py | Auto-registered: migrations/021_sg_sigint_events.py | --json | JSON |
+| 022 Sg Eo Signals | tools\db\migrations\022_sg_eo_signals.py | Auto-registered: migrations/022_sg_eo_signals.py | --json | JSON |
+| 023 Sg Socmint Signals | tools\db\migrations\023_sg_socmint_signals.py | Auto-registered: migrations/023_sg_socmint_signals.py | --json | JSON |
+| Seed Sgx Osint Epics | tools\db\seeds\seed_sgx_osint_epics.py | Auto-registered: seeds/seed_sgx_osint_epics.py | --json | JSON |
+| Seed Sg Cyber Ext | tools\db\seeds\seed_sg_cyber_ext.py | Auto-registered: seeds/seed_sg_cyber_ext.py | --json | JSON |
+| Seed Sg Theaters | tools\db\seeds\seed_sg_theaters.py | Auto-registered: seeds/seed_sg_theaters.py | --json | JSON |
+| Seed Sg Twin | tools\db\seeds\seed_sg_twin.py | Auto-registered: seeds/seed_sg_twin.py | --json | JSON |
+| Seed Supply Kg Edges | tools\db\seeds\seed_supply_kg_edges.py | Auto-registered: seeds/seed_supply_kg_edges.py | --json | JSON |
+| Seed Wfs Decomp | tools\db\seeds\seed_wfs_decomp.py | Auto-registered: seeds/seed_wfs_decomp.py | --json | JSON |
+| Seed Wfs Plan | tools\db\seeds\seed_wfs_plan.py | Auto-registered: seeds/seed_wfs_plan.py | --json | JSON |
+| Seed Wne Plan | tools\db\seeds\seed_wne_plan.py | Auto-registered: seeds/seed_wne_plan.py | --json | JSON |
+| Seed Wne Writeguard | tools\db\seeds\seed_wne_writeguard.py | Auto-registered: seeds/seed_wne_writeguard.py | --json | JSON |
+| Safety Monitor | tools\dashboard\api\safety_monitor.py | Auto-registered: api/safety_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Intent Classifier | tools\chat_router\intent_classifier.py | Auto-registered: chat_router/intent_classifier.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Url Analyzer | tools\chat_router\url_analyzer.py | Auto-registered: chat_router/url_analyzer.py | --json | JSON |
+| Seed Wex Kanban | tools\studio\seed_wex_kanban.py | Auto-registered: studio/seed_wex_kanban.py | --json | JSON |
+| Seed Wex Pg | tools\studio\seed_wex_pg.py | Auto-registered: studio/seed_wex_pg.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Pytest Plugins | tools\pytest_plugins.py | Auto-registered: tools/pytest_plugins.py | --json | JSON |
+| Compliance Checker | tools\aadc\compliance_checker.py | Auto-registered: aadc/compliance_checker.py | --json | JSON |
+| Governance Scanner | tools\aadc\governance_scanner.py | Auto-registered: aadc/governance_scanner.py | --json | JSON |
+| Deployment Checker | tools\aimc\deployment_checker.py | Auto-registered: aimc/deployment_checker.py | --json | JSON |
+| Model Scanner | tools\aimc\model_scanner.py | Auto-registered: aimc/model_scanner.py | --json | JSON |
+| Game Pack | tools\ai_game_engine\game_pack.py | Auto-registered: ai_game_engine/game_pack.py | --json | JSON |
+| Game Session | tools\ai_game_engine\game_session.py | Auto-registered: ai_game_engine/game_session.py | --json | JSON |
+| Round Runner | tools\ai_game_engine\round_runner.py | Auto-registered: ai_game_engine/round_runner.py | --json | JSON |
+| Boundary Scanner | tools\bdc\boundary_scanner.py | Auto-registered: bdc/boundary_scanner.py | --json | JSON |
+| Isa Checker | tools\bdc\isa_checker.py | Auto-registered: bdc/isa_checker.py | --json | JSON |
+| Blockchain Config | tools\blockchain\blockchain_config.py | Auto-registered: blockchain/blockchain_config.py | --json | JSON |
+| Chain Anchor | tools\blockchain\chain_anchor.py | Auto-registered: blockchain/chain_anchor.py | --json | JSON |
+| Channel Manager | tools\blockchain\channel_manager.py | Auto-registered: blockchain/channel_manager.py | --json | JSON |
+| Provenance Verifier | tools\blockchain\provenance_verifier.py | Auto-registered: blockchain/provenance_verifier.py | --json | JSON |
+| Zk Prover | tools\blockchain\zk_prover.py | Auto-registered: blockchain/zk_prover.py | --json | JSON |
+| Attestation Signer | tools\crypto\attestation_signer.py | Auto-registered: crypto/attestation_signer.py | --json | JSON |
+| Key Manager | tools\crypto\key_manager.py | Auto-registered: crypto/key_manager.py | --json | JSON |
+| Merkle Tree | tools\crypto\merkle_tree.py | Auto-registered: crypto/merkle_tree.py | --json | JSON |
+| Ansible Executor | tools\data\ansible_executor.py | Auto-registered: data/ansible_executor.py | --json | JSON |
+| Aws Config Executor | tools\data\aws_config_executor.py | Auto-registered: data/aws_config_executor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Canvas Reader | tools\data\canvas_reader.py | Auto-registered: data/canvas_reader.py | --json | JSON |
+| Lineage Scanner | tools\data\lineage_scanner.py | Auto-registered: data/lineage_scanner.py | --json | JSON |
+| Migration Reporter | tools\data\migration_reporter.py | Auto-registered: data/migration_reporter.py | --json | JSON |
+| Schema Checker | tools\data\schema_checker.py | Auto-registered: data/schema_checker.py | --json | JSON |
+| Terraform Apply | tools\data\terraform_apply.py | Auto-registered: data/terraform_apply.py | --json | JSON |
+| Terraform Destroy | tools\data\terraform_destroy.py | Auto-registered: data/terraform_destroy.py | --json | JSON |
+| Terraform Executor | tools\data\terraform_executor.py | Auto-registered: data/terraform_executor.py | --json | JSON |
+| Validation Runner | tools\data\validation_runner.py | Auto-registered: data/validation_runner.py | --json | JSON |
+| Hardening Checker | tools\idc\hardening_checker.py | Auto-registered: idc/hardening_checker.py | --json | JSON |
+| Infra Scanner | tools\idc\infra_scanner.py | Auto-registered: idc/infra_scanner.py | --json | JSON |
+| Readiness Checker | tools\mdc\readiness_checker.py | Auto-registered: mdc/readiness_checker.py | --json | JSON |
+| Discovery Scanner | tools\migration\discovery_scanner.py | Auto-registered: migration/discovery_scanner.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Config Checker | tools\ndc\config_checker.py | Auto-registered: ndc/config_checker.py | --json | JSON |
+| Gns3 Topology Builder | tools\ndc\gns3_topology_builder.py | Auto-registered: ndc/gns3_topology_builder.py | --json | JSON |
+| Gns3 Topology Probe | tools\ndc\gns3_topology_probe.py | Auto-registered: ndc/gns3_topology_probe.py | --json | JSON |
+| Topology Scanner | tools\ndc\topology_scanner.py | Auto-registered: ndc/topology_scanner.py | --json | JSON |
+| Ztp Config Generator | tools\ndc\ztp_config_generator.py | Auto-registered: ndc/ztp_config_generator.py | --json | JSON |
+| Ztp Console Push | tools\ndc\ztp_console_push.py | Auto-registered: ndc/ztp_console_push.py | --json | JSON |
+| Gns3 Image Downloader | tools\network\gns3_image_downloader.py | Auto-registered: network/gns3_image_downloader.py | --json | JSON |
+| Coverage Scanner | tools\odc\coverage_scanner.py | Auto-registered: odc/coverage_scanner.py | --json | JSON |
+| Gap Checker | tools\odc\gap_checker.py | Auto-registered: odc/gap_checker.py | --json | JSON |
+| Ops Scanner | tools\ohc\ops_scanner.py | Auto-registered: ohc/ops_scanner.py | --json | JSON |
+| Runbook Checker | tools\ohc\runbook_checker.py | Auto-registered: ohc/runbook_checker.py | --json | JSON |
+| Antipattern Checker | tools\pdc\antipattern_checker.py | Auto-registered: pdc/antipattern_checker.py | --json | JSON |
+| Pipeline Scanner | tools\pdc\pipeline_scanner.py | Auto-registered: pdc/pipeline_scanner.py | --json | JSON |
+| Gate Checker | tools\qdc\gate_checker.py | Auto-registered: qdc/gate_checker.py | --json | JSON |
+| Quality Scanner | tools\qdc\quality_scanner.py | Auto-registered: qdc/quality_scanner.py | --json | JSON |
+| Threat Scanner | tools\sdc\threat_scanner.py | Auto-registered: sdc/threat_scanner.py | --json | JSON |
+| Feature Flags | tools\databridge\feature_flags.py | Auto-registered: databridge/feature_flags.py | --json | JSON |
+| Localstack Provisioner | tools\data_canvas\localstack_provisioner.py | Auto-registered: data_canvas/localstack_provisioner.py | --json | JSON |
+| Base Agent | tools\gameday\base_agent.py | Auto-registered: gameday/base_agent.py | --json | JSON |
+| Game Master | tools\gameday\game_master.py | Auto-registered: gameday/game_master.py | --json | JSON |
+| Judge Agent | tools\gameday\judge_agent.py | Auto-registered: gameday/judge_agent.py | --json | JSON |
+| Leaderboard Engine | tools\gameday\leaderboard_engine.py | Auto-registered: gameday/leaderboard_engine.py | --json | JSON |
+| Ops Bridge | tools\gameday\ops_bridge.py | Auto-registered: gameday/ops_bridge.py | --json | JSON |
+| Round Manager | tools\gameday\round_manager.py | Auto-registered: gameday/round_manager.py | --json | JSON |
+| Scenario Enhancer | tools\gameday\scenario_enhancer.py | Auto-registered: gameday/scenario_enhancer.py | --json | JSON |
+| Team Runner | tools\gameday\team_runner.py | Auto-registered: gameday/team_runner.py | --json | JSON |
+| Auto Wave Planner | tools\govlift\auto_wave_planner.py | Auto-registered: govlift/auto_wave_planner.py | --json | JSON |
+| Map Assessor | tools\govlift\map_assessor.py | Auto-registered: govlift/map_assessor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Scenario Registry | tools\ai_game_engine\scenario_registry.py | Auto-registered: ai_game_engine/scenario_registry.py | --json | JSON |
+| Ontology Bridge | tools\canvas\ontology_bridge.py | Auto-registered: canvas/ontology_bridge.py | --json | JSON |
+| Performance Benchmark | tools\govlift\performance_benchmark.py | Auto-registered: govlift/performance_benchmark.py | --json | JSON |
+| Rollback Engine | tools\govlift\rollback_engine.py | Auto-registered: govlift/rollback_engine.py | --json | JSON |
+| Dr Failover | tools\infra\dr_failover.py | Auto-registered: infra/dr_failover.py | --json | JSON |
+| Dr Generator | tools\infra\dr_generator.py | Auto-registered: infra/dr_generator.py | --json | JSON |
+| Seed Cot Cod | tools\kanban\seed_cot_cod.py | Auto-registered: kanban/seed_cot_cod.py | --json | JSON |
+| Seed Llm Cache | tools\kanban\seed_llm_cache.py | Auto-registered: kanban/seed_llm_cache.py | --json | JSON |
+| Seed Ontology | tools\kanban\seed_ontology.py | Auto-registered: kanban/seed_ontology.py | --json | JSON |
+| Seed Security Framework | tools\kanban\seed_security_framework.py | Auto-registered: kanban/seed_security_framework.py | --json | JSON |
+| Seed Showcase | tools\kanban\seed_showcase.py | Auto-registered: kanban/seed_showcase.py | --json | JSON |
+| Response Cache | tools\llm\response_cache.py | Auto-registered: llm/response_cache.py | --json | JSON |
+| Response Cache Test | tools\llm\response_cache_test.py | Auto-registered: llm/response_cache_test.py | --json | JSON |
+| Sla Enforcer | tools\migration_intelligence\sla_enforcer.py | Auto-registered: migration_intelligence/sla_enforcer.py | --json | JSON |
+| Agentic Netops | tools\ndc\agentic_netops.py | Auto-registered: ndc/agentic_netops.py | --json | JSON |
+| Dod Lab Api | tools\ndc\dod_lab_api.py | Auto-registered: ndc/dod_lab_api.py | --json | JSON |
+| Dod Lab Demo Runner | tools\ndc\dod_lab_demo_runner.py | Auto-registered: ndc/dod_lab_demo_runner.py | --json | JSON |
+| Dod Lab Synthetic Data | tools\ndc\dod_lab_synthetic_data.py | Auto-registered: ndc/dod_lab_synthetic_data.py | --json | JSON |
+| Gns3 Backup | tools\ndc\gns3_backup.py | Auto-registered: ndc/gns3_backup.py | --json | JSON |
+| Gns3 Dod Topology Builder | tools\ndc\gns3_dod_topology_builder.py | Auto-registered: ndc/gns3_dod_topology_builder.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Ai Trust | tools\mission_canvas\ai_trust.py | Auto-registered: mission_canvas/ai_trust.py | --json | JSON |
+| Cicd Bridge | tools\mission_canvas\cicd_bridge.py | Auto-registered: mission_canvas/cicd_bridge.py | --json | JSON |
+| Security Posture | tools\mission_canvas\security_posture.py | Auto-registered: mission_canvas/security_posture.py | --json | JSON |
+| Gns3 Traffic Engine | tools\ndc\gns3_traffic_engine.py | Auto-registered: ndc/gns3_traffic_engine.py | --json | JSON |
+| Ztp Dod Config Generator | tools\ndc\ztp_dod_config_generator.py | Auto-registered: ndc/ztp_dod_config_generator.py | --json | JSON |
+| Enclave Scanner | tools\network\enclave_scanner.py | Auto-registered: network/enclave_scanner.py | --json | JSON |
+| Nipr Constraint Validator | tools\network\nipr_constraint_validator.py | Auto-registered: network/nipr_constraint_validator.py | --json | JSON |
+| Schema Extractor | tools\ontology\schema_extractor.py | Auto-registered: ontology/schema_extractor.py | --json | JSON |
+| Localstack Ecr | tools\pipeline\localstack_ecr.py | Auto-registered: pipeline/localstack_ecr.py | --json | JSON |
+| Timeline Loader | tools\project\timeline_loader.py | Auto-registered: project/timeline_loader.py | --json | JSON |
+| Backfill Registry | tools\provenance\backfill_registry.py | Auto-registered: provenance/backfill_registry.py | --json | JSON |
+| Budget Validator | tools\requirements\budget_validator.py | Auto-registered: requirements/budget_validator.py | --json | JSON |
+| Decompose Backlog | tools\scripts\decompose_backlog.py | Auto-registered: scripts/decompose_backlog.py | --json | JSON |
+| Cui Crypto | tools\security\cui_crypto.py | Auto-registered: security/cui_crypto.py | --json | JSON |
+| Gns3 Sim | tools\security_canvas\gns3_sim.py | Auto-registered: security_canvas/gns3_sim.py | --json | JSON |
+| E2E Migration Intel | tools\testing\e2e_migration_intel.py | Auto-registered: testing/e2e_migration_intel.py | --json | JSON |
+| Team Composition | tools\workforce\team_composition.py | Auto-registered: workforce/team_composition.py | --json | JSON |
+| Gns3 Sim | tools\studio\executors\gns3_sim.py | Auto-registered: executors/gns3_sim.py | --json | JSON |
+| Aadc Topology | tools\studio\sim\aadc_topology.py | Auto-registered: sim/aadc_topology.py | --json | JSON |
+| Aimc Topology | tools\studio\sim\aimc_topology.py | Auto-registered: sim/aimc_topology.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Base Topology | tools\studio\sim\base_topology.py | Auto-registered: sim/base_topology.py | --json | JSON |
+| Bdc Topology | tools\studio\sim\bdc_topology.py | Auto-registered: sim/bdc_topology.py | --json | JSON |
+| Canvas Traffic Engine | tools\studio\sim\canvas_traffic_engine.py | Auto-registered: sim/canvas_traffic_engine.py | --json | JSON |
+| Ddc Topology | tools\studio\sim\ddc_topology.py | Auto-registered: sim/ddc_topology.py | --json | JSON |
+| Idc Topology | tools\studio\sim\idc_topology.py | Auto-registered: sim/idc_topology.py | --json | JSON |
+| Mdc Topology | tools\studio\sim\mdc_topology.py | Auto-registered: sim/mdc_topology.py | --json | JSON |
+| Odc Topology | tools\studio\sim\odc_topology.py | Auto-registered: sim/odc_topology.py | --json | JSON |
+| Pdc Topology | tools\studio\sim\pdc_topology.py | Auto-registered: sim/pdc_topology.py | --json | JSON |
+| Qdc Topology | tools\studio\sim\qdc_topology.py | Auto-registered: sim/qdc_topology.py | --json | JSON |
+| Sdc Topology | tools\studio\sim\sdc_topology.py | Auto-registered: sim/sdc_topology.py | --json | JSON |
+| Sim Hub | tools\studio\sim\sim_hub.py | Auto-registered: sim/sim_hub.py | --json | JSON |
+| Training Exporter | tools\studio\sim\training_exporter.py | Auto-registered: sim/training_exporter.py | --json | JSON |
+| Studio Sim | tools\iqe\adapters\studio_sim.py | Auto-registered: adapters/studio_sim.py | --json | JSON |
+| Localstack Adapter | tools\infra_canvas\adapters\localstack_adapter.py | Auto-registered: adapters/localstack_adapter.py | --json | JSON |
+| Gameday Orchestrator | tools\genesis\reflexes\gameday_orchestrator.py | Auto-registered: reflexes/gameday_orchestrator.py | --json | JSON |
+| Sim Training Export | tools\genesis\reflexes\sim_training_export.py | Auto-registered: reflexes/sim_training_export.py | --json | JSON |
+| Aws Controltower Connector | tools\databridge\connectors\aws_controltower_connector.py | Auto-registered: connectors/aws_controltower_connector.py | --json | JSON |
+| Gns3 Connector | tools\databridge\connectors\gns3_connector.py | Auto-registered: connectors/gns3_connector.py | --json | JSON |
+| Localstack Connector | tools\databridge\connectors\localstack_connector.py | Auto-registered: connectors/localstack_connector.py | --json | JSON |
+| Servicenow Itsm Connector | tools\databridge\connectors\servicenow_itsm_connector.py | Auto-registered: connectors/servicenow_itsm_connector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Chain Orchestrator | tools\llm\chain_orchestrator.py | Auto-registered: llm/chain_orchestrator.py | --json | JSON |
+| Chain Prompts | tools\llm\chain_prompts.py | Auto-registered: llm/chain_prompts.py | --json | JSON |
+| Tenable Connector | tools\databridge\connectors\tenable_connector.py | Auto-registered: connectors/tenable_connector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Multi Persona Panel | tools\requirements\multi_persona_panel.py | Auto-registered: requirements/multi_persona_panel.py | --json | JSON |
+| Govchain Anchor | tools\genesis\reflexes\govchain_anchor.py | Auto-registered: reflexes/govchain_anchor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Il5 Display Service | tools\il5\il5_display_service.py | Auto-registered: il5/il5_display_service.py | --json | JSON |
+| Il5 Ingestion Service | tools\il5\il5_ingestion_service.py | Auto-registered: il5/il5_ingestion_service.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Generate Compliance Report | tools\generate_compliance_report.py | Auto-registered: tools/generate_compliance_report.py | --json | JSON |
+| Dti Calculator | tools\dat\dti_calculator.py | Auto-registered: dat/dti_calculator.py | --json | JSON |
+| Jise Portal | tools\intelligence\jise_portal.py | Auto-registered: intelligence/jise_portal.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Siem Alert Forwarder | tools\siem_alert_forwarder.py | Auto-registered: tools/siem_alert_forwarder.py | --json | JSON |
+| Pir Alert Generator | tools\intelligence\pir_alert_generator.py | Auto-registered: intelligence/pir_alert_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Module Budget Tracker | tools\budget\module_budget_tracker.py | Auto-registered: budget/module_budget_tracker.py | --json | JSON |
+| Osint Privacy Sanitizer | tools\strategos\osint_privacy_sanitizer.py | Auto-registered: strategos/osint_privacy_sanitizer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Module Budget Tracker | tools\budget\module_budget_tracker.py | Auto-registered: budget/module_budget_tracker.py | --json | JSON |
+| Osint Privacy Sanitizer | tools\strategos\osint_privacy_sanitizer.py | Auto-registered: strategos/osint_privacy_sanitizer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Data Validator | tools\data_validator.py | Auto-registered: tools/data_validator.py | --json | JSON |
+| Predictive Analysis | tools\strategos\predictive_analysis.py | Auto-registered: strategos/predictive_analysis.py | --json | JSON |
+| Osint Normalizer | tools\threat_analysis\osint_normalizer.py | Auto-registered: threat_analysis/osint_normalizer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Deploy Staging | tools\il5\deploy_staging.py | Auto-registered: il5/deploy_staging.py | --json | JSON |
+| Async Alert Writer | tools\monitor\async_alert_writer.py | Auto-registered: monitor/async_alert_writer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Build Logger | tools\logging\build_logger.py | Auto-registered: logging/build_logger.py | --json | JSON |
+| Icdev Logger | tools\logging\icdev_logger.py | Auto-registered: logging/icdev_logger.py | --json | JSON |
+| Generate Exec Deck | tools\presentations\generate_exec_deck.py | Auto-registered: presentations/generate_exec_deck.py | --json | JSON |
+| Generate Exec Doc | tools\presentations\generate_exec_doc.py | Auto-registered: presentations/generate_exec_doc.py | --json | JSON |
+| Feature Task Template | tools\testing\feature_task_template.py | Auto-registered: testing/feature_task_template.py | --json | JSON |
+| Pre Commit Check | tools\testing\pre_commit_check.py | Auto-registered: testing/pre_commit_check.py | --json | JSON |
+| Route Smoke | tools\testing\route_smoke.py | Auto-registered: testing/route_smoke.py | --json | JSON |
+| Seed Gcpl Kanban | tools\testing\seed_gcpl_kanban.py | Auto-registered: testing/seed_gcpl_kanban.py | --json | JSON |
+| Seed Logging Kanban | tools\testing\seed_logging_kanban.py | Auto-registered: testing/seed_logging_kanban.py | --json | JSON |
+| Seed Playwright Kanban | tools\testing\seed_playwright_kanban.py | Auto-registered: testing/seed_playwright_kanban.py | --json | JSON |
+| Log Triage | tools\genesis\reflexes\log_triage.py | Auto-registered: reflexes/log_triage.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Telco Rfp Adapter | tools\govcon\telco_rfp_adapter.py | Auto-registered: govcon/telco_rfp_adapter.py | --json | JSON |
+| Fcc Compliance | tools\network\fcc_compliance.py | Auto-registered: network/fcc_compliance.py | --json | JSON |
+| Transit Pricing Benchmark | tools\pmc_canvas\transit_pricing_benchmark.py | Auto-registered: pmc_canvas/transit_pricing_benchmark.py | --json | JSON |
+| Bgp Route Monitor | tools\genesis\reflexes\bgp_route_monitor.py | Auto-registered: reflexes/bgp_route_monitor.py | --json | JSON |
+| Nocc Alarm Triage | tools\genesis\reflexes\nocc_alarm_triage.py | Auto-registered: reflexes/nocc_alarm_triage.py | --json | JSON |
+| Nocc Sla Watcher | tools\genesis\reflexes\nocc_sla_watcher.py | Auto-registered: reflexes/nocc_sla_watcher.py | --json | JSON |
+| Peering Health Monitor | tools\genesis\reflexes\peering_health_monitor.py | Auto-registered: reflexes/peering_health_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Test Gcpl Disc 10 | tools\testing\test_gcpl_disc_10.py | Auto-registered: testing/test_gcpl_disc_10.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Test Gcpl Ext 06 | tools\testing\test_gcpl_ext_06.py | Auto-registered: testing/test_gcpl_ext_06.py | --json | JSON |
+| Test Gcpl Map 02 | tools\testing\test_gcpl_map_02.py | Auto-registered: testing/test_gcpl_map_02.py | --json | JSON |
+| Circuit Capacity Monitor | tools\genesis\reflexes\circuit_capacity_monitor.py | Auto-registered: reflexes/circuit_capacity_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Opportunity Scorer | tools\ai_augmentation\opportunity_scorer.py | Auto-registered: ai_augmentation/opportunity_scorer.py | --json | JSON |
+| Pattern Classifier | tools\ai_augmentation\pattern_classifier.py | Auto-registered: ai_augmentation/pattern_classifier.py | --json | JSON |
+| Roadmap Generator | tools\ai_augmentation\roadmap_generator.py | Auto-registered: ai_augmentation/roadmap_generator.py | --json | JSON |
+| Bgp Hijack Detector | tools\dsoc_canvas\bgp_hijack_detector.py | Auto-registered: dsoc_canvas/bgp_hijack_detector.py | --json | JSON |
+| Bgpq4 Wrapper | tools\pmc_canvas\bgpq4_wrapper.py | Auto-registered: pmc_canvas/bgpq4_wrapper.py | --json | JSON |
+| Ai Augmentation | tools\iqe\adapters\ai_augmentation.py | Auto-registered: adapters/ai_augmentation.py | --json | JSON |
+| Bgp Alerter Ingest | tools\genesis\reflexes\bgp_alerter_ingest.py | Auto-registered: reflexes/bgp_alerter_ingest.py | --json | JSON |
+| Peering Manager Connector | tools\databridge\connectors\peering_manager_connector.py | Auto-registered: connectors/peering_manager_connector.py | --json | JSON |
+| Pmacct Connector | tools\databridge\connectors\pmacct_connector.py | Auto-registered: connectors/pmacct_connector.py | --json | JSON |
+| Routinator Connector | tools\databridge\connectors\routinator_connector.py | Auto-registered: connectors/routinator_connector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Xc Order Manager | tools\ccc_canvas\xc_order_manager.py | Auto-registered: ccc_canvas/xc_order_manager.py | --json | JSON |
+| Agreement Lifecycle | tools\network\agreement_lifecycle.py | Auto-registered: network/agreement_lifecycle.py | --json | JSON |
+| Partner Registry | tools\network\partner_registry.py | Auto-registered: network/partner_registry.py | --json | JSON |
+| Peering Agreement Renewal | tools\genesis\reflexes\peering_agreement_renewal.py | Auto-registered: reflexes/peering_agreement_renewal.py | --json | JSON |
+| Xc Order Poller | tools\genesis\reflexes\xc_order_poller.py | Auto-registered: reflexes/xc_order_poller.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Append Only Audit | tools\ai_augmentation\agent_readiness\pillars\append_only_audit.py | Auto-registered: pillars/append_only_audit.py | --json | JSON |
+| Il Classification | tools\ai_augmentation\agent_readiness\pillars\il_classification.py | Auto-registered: pillars/il_classification.py | --json | JSON |
+| Nist Controls | tools\ai_augmentation\agent_readiness\pillars\nist_controls.py | Auto-registered: pillars/nist_controls.py | --json | JSON |
+| Stig Compliance | tools\ai_augmentation\agent_readiness\pillars\stig_compliance.py | Auto-registered: pillars/stig_compliance.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Synthetic Network Generator | tools\ndc\synthetic_network_generator.py | Auto-registered: ndc/synthetic_network_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Eol Scanner | tools\ndc\eol_scanner.py | Auto-registered: ndc/eol_scanner.py | --json | JSON |
+| Replacement Recommender | tools\ndc\replacement_recommender.py | Auto-registered: ndc/replacement_recommender.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Config Alignment Analyzer | tools\ndc\config_alignment_analyzer.py | Auto-registered: ndc/config_alignment_analyzer.py | --json | JSON |
+| Migration Document Generator | tools\ndc\migration_document_generator.py | Auto-registered: ndc/migration_document_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Cloud Topology Overlay | tools\ndc\cloud_topology_overlay.py | Auto-registered: ndc/cloud_topology_overlay.py | --json | JSON |
+| Executive Summary Generator | tools\ndc\executive_summary_generator.py | Auto-registered: ndc/executive_summary_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Config Translator | tools\ndc\config_translator.py | Auto-registered: ndc/config_translator.py | --json | JSON |
+| Port Mapping Generator | tools\ndc\port_mapping_generator.py | Auto-registered: ndc/port_mapping_generator.py | --json | JSON |
+| Seed Dewie Demo | tools\ndc\seed_dewie_demo.py | Auto-registered: ndc/seed_dewie_demo.py | --json | JSON |
+| Isso Gate | tools\sdc\isso_gate.py | Auto-registered: sdc/isso_gate.py | --json | JSON |
+| Sdc Demo | tools\iqe\adapters\sdc_demo.py | Auto-registered: adapters/sdc_demo.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Version Anomaly Detector | tools\ai_augmentation\version_anomaly_detector.py | Auto-registered: ai_augmentation/version_anomaly_detector.py | --json | JSON |
+| Migrate To Icdev Logger | tools\refactor\migrate_to_icdev_logger.py | Auto-registered: refactor/migrate_to_icdev_logger.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Runbook Engine | tools\govlift\runbook_engine.py | Auto-registered: govlift/runbook_engine.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Agent Entrypoint | tools\a2a\agent_entrypoint.py | Auto-registered: a2a/agent_entrypoint.py | --json | JSON |
+| Provision Dev Certs | tools\a2a\provision_dev_certs.py | Auto-registered: a2a/provision_dev_certs.py | --json | JSON |
+| Signal Ingester | tools\ai_augmentation\signal_ingester.py | Auto-registered: ai_augmentation/signal_ingester.py | --json | JSON |
+| Agentic Runner | tools\anvil\agentic_runner.py | Auto-registered: anvil/agentic_runner.py | --json | JSON |
+| Eval Harness | tools\genesis\harness\eval_harness.py | Auto-registered: harness/eval_harness.py | --json | JSON |
+| Heuristic Writer | tools\genesis\harness\heuristic_writer.py | Auto-registered: harness/heuristic_writer.py | --json | JSON |
+| Llm Triage | tools\genesis\harness\llm_triage.py | Auto-registered: harness/llm_triage.py | --json | JSON |
+| Meta Harness | tools\genesis\harness\meta_harness.py | Auto-registered: harness/meta_harness.py | --json | JSON |
+| Iceberg | tools\data_canvas\exporters\iceberg.py | Auto-registered: exporters/iceberg.py | --json | JSON |
+| Lake Zones | tools\data_canvas\exporters\lake_zones.py | Auto-registered: exporters/lake_zones.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Data Mesh | tools\data_canvas\data_mesh.py | Auto-registered: data_canvas/data_mesh.py | --json | JSON |

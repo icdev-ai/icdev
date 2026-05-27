@@ -240,6 +240,72 @@ def scan_migration_designs(db_path: str | None = None) -> dict[str, Any]:
 
 
 # =========================================================================
+# ACTIVE NETWORK MIGRATIONS SCANNER (NMCE → MI bridge)
+# =========================================================================
+
+def scan_active_network_migrations(db_path: str | None = None) -> dict[str, Any]:
+    """Scan mc_net_sessions for active network migrations and surface as MI opportunities.
+
+    Bridges the Network Migration Canvas (NMCE) into the Migration Intelligence
+    pipeline so that active device-level migrations appear as trackable opportunities
+    alongside canvas-level migration designs.
+    """
+    mc = _get_mc_conn()
+    if not mc:
+        return {"opportunities": [], "count": 0, "error": "migration_canvas.db not found"}
+
+    results: dict[str, Any] = {"opportunities": [], "count": 0, "canvas": "nmce"}
+    try:
+        rows = mc.execute(
+            """SELECT id, src_model, tgt_model, src_device_name, status,
+                      config_parsed, created_at, updated_at
+               FROM mc_net_sessions
+               WHERE status IN ('draft', 'in_progress')
+               ORDER BY updated_at DESC LIMIT 100"""
+        ).fetchall()
+    except Exception as exc:
+        mc.close()
+        return {"opportunities": [], "count": 0, "error": str(exc)}
+    finally:
+        mc.close()
+
+    mi = _get_mi_conn(db_path)
+    try:
+        for r in rows:
+            src = r["src_model"] or "unknown device"
+            tgt = r["tgt_model"] or "TBD"
+            device_name = r["src_device_name"] or src
+            opp_id = f"opp-nmce-{uuid.uuid4().hex[:8]}"
+            title = f"Network Migration: {src} → {tgt} [{r['status']}]"
+            desc = (
+                f"Active network migration session {r['id']} — "
+                f"{device_name} ({src}) to {tgt}. "
+                f"Config parsed: {'yes' if r['config_parsed'] else 'no'}. "
+                f"Started: {r['created_at']}."
+            )
+            _upsert_opportunity(mi, {
+                "id": opp_id,
+                "title": title,
+                "description": desc,
+                "opportunity_type": "technology_refresh",
+                "source_canvas": "nmce",
+                "source_entity_id": r["id"],
+                "source_entity_name": device_name,
+                "current_platform": src,
+                "business_value_score": 0.6,
+                "composite_score": 0.55,
+                "priority": "high" if r["status"] == "in_progress" else "medium",
+                "status": "in_progress" if r["status"] == "in_progress" else "identified",
+            })
+            results["opportunities"].append({"id": opp_id, "session": r["id"], "src": src, "tgt": tgt})
+            results["count"] += 1
+    finally:
+        mi.close()
+
+    return results
+
+
+# =========================================================================
 # FULL SCAN
 # =========================================================================
 
@@ -257,7 +323,7 @@ def run_full_scan(config: dict | None = None, db_path: str | None = None) -> dic
             """INSERT INTO mi_scans
                (id, scan_type, airgap_mode, canvases_scanned, status, started_at)
                VALUES (?,?,?,?,?,?)""",
-            (scan_id, "full", int(_AIRGAP), json.dumps(["ndc", "mdc"]), "running", started_at),
+            (scan_id, "full", int(_AIRGAP), json.dumps(["ndc", "mdc", "nmce"]), "running", started_at),
         )
         mi.commit()
     finally:
@@ -273,6 +339,7 @@ def run_full_scan(config: dict | None = None, db_path: str | None = None) -> dic
     results["sub_scans"]["hardware_eol"] = scan_hardware_eol(horizon_days=horizon_days, db_path=db_path)
     results["sub_scans"]["network_topology"] = scan_network_topology(db_path=db_path)
     results["sub_scans"]["migration_designs"] = scan_migration_designs(db_path=db_path)
+    results["sub_scans"]["active_network_migrations"] = scan_active_network_migrations(db_path=db_path)
 
     total_found = sum(s.get("count", 0) for s in results["sub_scans"].values())
     completed_at = _now()
@@ -284,7 +351,7 @@ def run_full_scan(config: dict | None = None, db_path: str | None = None) -> dic
                SET status='completed', opportunities_found=?, opportunities_new=?,
                    canvases_scanned=?, completed_at=?
                WHERE id=?""",
-            (total_found, total_found, json.dumps(["ndc", "mdc"]), completed_at, scan_id),
+            (total_found, total_found, json.dumps(["ndc", "mdc", "nmce"]), completed_at, scan_id),
         )
         mi.commit()
     finally:

@@ -12,14 +12,14 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import Any, Dict, List, Optional
 
 from tools.network.netbox_client import NetBoxClient
 from tools.network.nms_adapter import NMSAdapter, NMSAdapterRegistry
 
-logger = logging.getLogger("icdev.network.adapters.netbox")
+logger = get_logger("icdev.network.adapters.netbox")
 
 
 class NetBoxAdapter(NMSAdapter):

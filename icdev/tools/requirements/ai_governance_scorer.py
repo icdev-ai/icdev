@@ -21,6 +21,7 @@ Usage:
     result = score_ai_governance_readiness(project_id, conn=conn)
 """
 
+import json
 import sqlite3
 from tools.db.storage import get_connection
 from pathlib import Path
@@ -52,12 +53,59 @@ def _load_gov_config() -> dict:
     return dict(DEFAULT_WEIGHTS)
 
 
-def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    """Check if a table exists in the database."""
-    row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
-        (table_name,),
-    ).fetchone()
+_AI_KEYWORDS = {
+    "ai", "artificial intelligence", "machine learning", "ml", "deep learning",
+    "neural network", "llm", "large language model", "generative ai", "genai",
+    "model inference", "algorithmic decision", "predictive model", "classification model",
+    "recommendation engine", "natural language processing", "computer vision",
+}
+
+
+def _project_mentions_ai(project_id: str, conn) -> bool:
+    """Scan project requirements and session context for AI/ML keywords."""
+    # Check requirements text for any session linked to this project
+    rows = conn.execute(
+        "SELECT raw_text FROM intake_requirements WHERE session_id IN ("
+        "SELECT id FROM intake_sessions WHERE project_id = ?)"
+        ,(project_id,),
+    ).fetchall()
+    all_text = " ".join((r[0] if isinstance(r, (tuple, list)) else r.get("raw_text", "")) for r in rows).lower()
+    if any(kw in all_text for kw in _AI_KEYWORDS):
+        return True
+
+    # Check session context_summary
+    ctx_rows = conn.execute(
+        "SELECT context_summary FROM intake_sessions WHERE project_id = ?", (project_id,)
+    ).fetchall()
+    for row in ctx_rows:
+        ctx = row[0] if isinstance(row, (tuple, list)) else row.get("context_summary", "")
+        if ctx:
+            try:
+                parsed = json.loads(ctx)
+                goal = (parsed.get("goal") or "").lower()
+                if any(kw in goal for kw in _AI_KEYWORDS):
+                    return True
+            except (ValueError, TypeError):
+                pass
+            if any(kw in ctx.lower() for kw in _AI_KEYWORDS):
+                return True
+    return False
+
+
+def _table_exists(conn, table_name: str) -> bool:
+    """Check if a table exists in the database (SQLite or PostgreSQL)."""
+    import os
+    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "").lower()
+    if backend == "postgresql":
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_name = %s",
+            (table_name,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        ).fetchone()
     return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
 
 
@@ -72,6 +120,18 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
         db_path or (BASE_DIR / "data" / "icdev.db")
         conn = get_connection()
         close_conn = True
+
+    # Check if AI/ML is relevant to this project
+    ai_relevant = _project_mentions_ai(project_id, conn)
+    if not ai_relevant:
+        return {
+            "score": 1.0,
+            "components": {},
+            "gaps": [],
+            "gap_count": 0,
+            "project_id": project_id,
+            "note": "AI governance not applicable — no AI/ML detected in project scope",
+        }
 
     weights = _load_gov_config()
     components = {}

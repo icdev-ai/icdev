@@ -2558,6 +2558,32 @@ def create_data_canvas_blueprint():
             governance_score=governance_score,
         )
 
+    @bp.route("/products")
+    @dc_login_required
+    def dc_products():
+        from tools.data_canvas.data_mesh import list_products, list_domains
+        domain_id = request.args.get("domain_id") or None
+        products = list_products(domain_id=domain_id)
+        domains = list_domains()
+        return render_template(
+            "data_canvas/products.html",
+            products=products,
+            domains=domains,
+        )
+
+    @bp.route("/contracts")
+    @dc_login_required
+    def dc_contracts():
+        from tools.data_canvas.data_mesh import list_contracts, list_products
+        product_id = request.args.get("product_id") or None
+        contracts = list_contracts(product_id=product_id)
+        products = list_products()
+        return render_template(
+            "data_canvas/contracts.html",
+            contracts=contracts,
+            products=products,
+        )
+
     @bp.route("/api/dm/policies", methods=["GET"])
     @dc_login_required
     def dc_api_dm_policies_list():
@@ -2628,6 +2654,49 @@ def create_data_canvas_blueprint():
         conn.commit()
         conn.close()
         return jsonify({"deleted": True})
+
+    # ── Contracts API ──────────────────────────────────────────────────────────
+    @bp.route("/api/dm/contracts", methods=["GET"])
+    @dc_login_required
+    def dc_api_dm_contracts_list():
+        from tools.data_canvas.data_mesh import list_contracts
+        product_id = request.args.get("product_id") or None
+        return jsonify(list_contracts(product_id=product_id))
+
+    @bp.route("/api/dm/contracts", methods=["POST"])
+    @dc_login_required
+    def dc_api_dm_contracts_create():
+        import uuid as _uuid
+        data = request.get_json(force=True, silent=True) or {}
+        if not data.get("title"):
+            return jsonify({"error": "title required"}), 400
+        contract_id = str(_uuid.uuid4())
+        now = now_isoformat()
+        row = {
+            "id": contract_id,
+            "product_id": data.get("product_id") or None,
+            "title": data["title"],
+            "version": data.get("version", "1.0.0"),
+            "schema_json": json.dumps(data.get("schema", {})),
+            "sla_json": json.dumps(data.get("sla", {})),
+            "quality_rules_json": json.dumps(data.get("quality_rules", [])),
+            "status": data.get("status", "draft"),
+            "classification": data.get("classification", "CUI // SP-CTI"),
+            "created_at": now,
+            "updated_at": now,
+        }
+        conn = get_connection()
+        conn.execute(
+            """INSERT INTO dm_contracts
+               (id, product_id, title, version, schema_json, sla_json,
+                quality_rules_json, status, classification, created_at, updated_at)
+               VALUES (:id, :product_id, :title, :version, :schema_json, :sla_json,
+               :quality_rules_json, :status, :classification, :created_at, :updated_at)""",
+            row,
+        )
+        conn.commit()
+        conn.close()
+        return jsonify(row), 201
 
     @bp.route("/api/dm/governance/check", methods=["POST"])
     @dc_login_required

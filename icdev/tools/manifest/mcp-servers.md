@@ -20,6 +20,11 @@
 | MCP Gateway Server | tools/mcp/gateway_server.py | Remote Command Gateway MCP server (5 tools: bind_user, list_bindings, revoke, send_command, status) | stdio | JSON-RPC responses |
 
 
+## MCP Security
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| MCP Scanner | tools/mcp/mcp_scanner.py | Scans MCP server configs for vulnerability patterns (unauthenticated_transport, no_tls, wildcard_tool_names, missing_classification, privilege_escalation). `scan_mcp_servers(config_path=None) -> dict`. CLI: `--config PATH --json` | args/mcp_config.yaml or .mcp.json | JSON findings report |
+
 ## MCP Servers (Additional)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|

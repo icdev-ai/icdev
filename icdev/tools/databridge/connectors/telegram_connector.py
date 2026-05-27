@@ -15,9 +15,9 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 import sys
 from pathlib import Path
@@ -39,7 +39,7 @@ from tools.databridge.connectors.saas_base import (  # noqa: E402
 )
 from tools.databridge.registry import register_connector  # noqa: E402
 
-logger = logging.getLogger("databridge.telegram")
+logger = get_logger("databridge.telegram")
 
 # Offset tracking for getUpdates polling
 _OFFSET_FILE = BASE_DIR / ".tmp" / "telegram_offset.txt"

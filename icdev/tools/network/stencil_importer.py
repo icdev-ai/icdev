@@ -14,11 +14,11 @@ URL allowlist: only cisco.com, juniper.net, awsstatic.com, aws.amazon.com,
 arch-center.azureedge.net, learn.microsoft.com.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import base64
 import io
 import json
-import logging
 import re
 import uuid
 import zipfile
@@ -30,7 +30,7 @@ from urllib.request import Request, urlopen  # nosec B310
 
 from tools.network.db.init_db import get_connection
 
-logger = logging.getLogger("icdev.network.stencil_importer")
+logger = get_logger("icdev.network.stencil_importer")
 
 _VISIO_NS = "http://schemas.microsoft.com/office/visio/2012/main"
 _REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"

@@ -1,5 +1,6 @@
 # CUI // SP-CTI — ICDEV Network Canvas Auto-Discovery
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 # Classification: CUI — Controlled Unclassified Information
 """ICDEV™ Network Canvas — Live Network Auto-Discovery Agent.
@@ -28,14 +29,13 @@ Usage:
 import argparse
 import ipaddress
 import json
-import logging
 import subprocess
 import sys
 import uuid as _uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.network.discovery")
+logger = get_logger("icdev.network.discovery")
 
 # ── Optional dependency probes ────────────────────────────────────────────────
 

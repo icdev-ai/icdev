@@ -12,13 +12,13 @@ CUI // SP-CTI
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _ROOT = Path(__file__).resolve().parents[2]
 _RUBRIC_DIR = _ROOT / "context" / "writeguard" / "rubrics"

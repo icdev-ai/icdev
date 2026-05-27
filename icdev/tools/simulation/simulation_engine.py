@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """RICOAS Digital Program Twin — 6-dimension what-if simulation engine.
 
 Coordinates architecture, compliance, supply chain, schedule, cost, and risk
@@ -859,6 +860,44 @@ def create_scenario(project_id, scenario_name, scenario_type, modifications, bas
         conn.close()
 
 
+def _check_module_budget(operation_count=1):
+    """Check predictive_analysis module budget before running simulation."""
+    try:
+        from tools.budget.module_budget_tracker import check_module_budget, ModuleBudgetExceededError
+
+        status = check_module_budget(
+            "predictive_analysis",
+            function="simulation_run",
+            estimated_operations=operation_count,
+        )
+        if status["action"] == "block":
+            raise ModuleBudgetExceededError("predictive_analysis", status)
+    except ImportError:
+        pass
+    except ModuleBudgetExceededError:
+        raise
+    except Exception as exc:
+        print(f"Warning: module budget check failed: {exc}", file=sys.stderr)
+
+
+def _record_module_usage(cost_usd=0.0, tokens=0, operations=0):
+    """Record predictive_analysis module usage after simulation."""
+    try:
+        from tools.budget.module_budget_tracker import record_module_usage
+
+        record_module_usage(
+            "predictive_analysis",
+            cost_usd=cost_usd,
+            tokens=tokens,
+            operations=operations,
+            function="simulation_run",
+        )
+    except ImportError:
+        pass
+    except Exception as exc:
+        print(f"Warning: module usage recording failed: {exc}", file=sys.stderr)
+
+
 def run_simulation(scenario_id, dimensions=None, db_path=None):
     """Execute a simulation across specified dimensions.
 
@@ -873,6 +912,8 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
     """
     if dimensions is None or dimensions == ["all"] or dimensions == "all":
         dimensions = list(ALL_DIMENSIONS)
+
+    _check_module_budget(operation_count=len(dimensions))
 
     conn = _get_connection(db_path)
     try:
@@ -952,6 +993,8 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
             f"Simulation completed for scenario {scenario_id}",
             {"scenario_id": scenario_id, "dimensions": dimensions, "overall_impact": overall_impact},
         )
+
+        _record_module_usage(operations=len(dimensions))
 
         return {
             "scenario_id": scenario_id,

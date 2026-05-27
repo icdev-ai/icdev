@@ -1,40 +1,33 @@
 # CUI // SP-CTI
-"""ICDEV™ Network Canvas — SolarWinds Orion NMS Adapter (stub).
+"""ICDEV™ Network Canvas — SolarWinds Orion NMS Adapter.
 
-Reference implementation for SolarWinds Orion Platform integration.
-SolarWinds uses the SWIS (SolarWinds Information Service) REST API.
-
-SolarWinds SWIS API docs: https://github.com/solarwinds/OrionSDK
+Thin shim delegating to ``SolarWindsConnector`` (DataBridge SaaSBaseConnector).
+All HTTP/SWQL logic lives in tools/databridge/connectors/solarwinds_connector.py.
 
 Usage::
 
     from tools.network.nms_adapter import NMSAdapterRegistry
-    adapter = NMSAdapterRegistry.get("solarwinds", url="https://orion", username="admin", password="...")
+    adapter = NMSAdapterRegistry.get(
+        "solarwinds",
+        url="https://orion-host:17778",
+        username="admin",
+        password="secret",
+    )
     devices = adapter.pull_devices()
-
-Implementation guide:
-    1. SolarWinds uses SWQL (SolarWinds Query Language) via REST
-    2. Auth: Basic auth or certificate-based
-    3. Endpoint: POST https://{host}:17778/SolarWinds/InformationService/v3/Json/Query
-    4. Body: {"query": "SELECT ... FROM Orion.Nodes"}
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from tools.databridge.connector import ConnectorRequest
+from tools.databridge.connectors.solarwinds_connector import SolarWindsConnector
 from tools.network.nms_adapter import NMSAdapter, NMSAdapterRegistry
 
 
 class SolarWindsAdapter(NMSAdapter):
-    """SolarWinds Orion adapter — stub for reference.
-
-    SWQL queries for each pull method:
-        pull_devices:    SELECT NodeID, Caption, Vendor, MachineType, IPAddress FROM Orion.Nodes
-        pull_configs:    SELECT NodeID, Config FROM NCM.ConfigArchive
-        pull_interfaces: SELECT InterfaceID, Caption, Speed, Status FROM Orion.NPM.Interfaces
-        pull_stats:      SELECT NodeID, AvgResponseTime, AvgLoad FROM Orion.Nodes
-    """
+    """SolarWinds Orion adapter — backed by DataBridge SolarWindsConnector."""
 
     def __init__(
         self,
@@ -44,60 +37,127 @@ class SolarWindsAdapter(NMSAdapter):
         verify_ssl: bool = True,
         **kwargs: Any,
     ) -> None:
-        self._url = url.rstrip("/")
-        self._username = username
-        self._password = password
-        self._verify_ssl = verify_ssl
+        self._connector = SolarWindsConnector()
+        self._connector.connect({
+            "base_url": url,
+            "username": username,
+            "password": password,
+            "verify_ssl": verify_ssl,
+        })
+
+    # -- NMS interface ---------------------------------------------------------
 
     def test_connection(self) -> Dict[str, Any]:
-        # POST /SolarWinds/InformationService/v3/Json/Query
-        # Body: {"query": "SELECT TOP 1 NodeID FROM Orion.Nodes"}
-        raise NotImplementedError(
-            "SolarWinds adapter: implement test_connection() — "
-            "POST SWQL query 'SELECT TOP 1 NodeID FROM Orion.Nodes'"
-        )
+        return self._connector.health_check()
 
     def pull_devices(self, site: Optional[str] = None) -> List[Dict[str, Any]]:
-        raise NotImplementedError(
-            "SolarWinds adapter: implement pull_devices() — "
-            "SWQL: SELECT NodeID, Caption, Vendor, MachineType, IPAddress "
-            "FROM Orion.Nodes"
-        )
+        filters = {"Location": site} if site else {}
+        resp = self._connector.read(ConnectorRequest(table_name="devices", filters=filters))
+        if resp.status != "ok":
+            raise RuntimeError(f"SolarWinds pull_devices failed: {resp.errors}")
+        return [_normalize_device(row) for row in (resp.data or [])]
 
     def pull_configs(
         self, device_filter: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
-        # Requires SolarWinds NCM (Network Configuration Manager)
-        raise NotImplementedError(
-            "SolarWinds adapter: implement pull_configs() — "
-            "SWQL: SELECT NodeID, Config FROM NCM.ConfigArchive "
-            "(requires NCM license)"
-        )
+        resp = self._connector.read(ConnectorRequest(table_name="configs", filters=device_filter or {}))
+        if resp.status != "ok":
+            raise RuntimeError(f"SolarWinds pull_configs failed: {resp.errors}")
+        return [_normalize_config(row) for row in (resp.data or [])]
 
     def pull_interfaces(
         self, device_filter: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
-        raise NotImplementedError(
-            "SolarWinds adapter: implement pull_interfaces() — "
-            "SWQL: SELECT InterfaceID, Caption, Speed, Status "
-            "FROM Orion.NPM.Interfaces"
-        )
+        resp = self._connector.read(ConnectorRequest(table_name="interfaces", filters=device_filter or {}))
+        if resp.status != "ok":
+            raise RuntimeError(f"SolarWinds pull_interfaces failed: {resp.errors}")
+        return [_normalize_interface(row) for row in (resp.data or [])]
 
     def pull_stats(
         self, device_filter: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
-        raise NotImplementedError(
-            "SolarWinds adapter: implement pull_stats() — "
-            "SWQL: SELECT NodeID, AvgResponseTime, PercentLoss, AvgLoad "
-            "FROM Orion.Nodes"
-        )
+        resp = self._connector.read(ConnectorRequest(table_name="stats", filters=device_filter or {}))
+        if resp.status != "ok":
+            raise RuntimeError(f"SolarWinds pull_stats failed: {resp.errors}")
+        return [_normalize_stat(row) for row in (resp.data or [])]
 
     def pull_topology(self) -> Dict[str, Any]:
-        # SolarWinds Network Topology Poller discovers L2/L3 links
-        raise NotImplementedError(
-            "SolarWinds adapter: implement pull_topology() — "
-            "SWQL: SELECT ... FROM Orion.NodeConnections"
-        )
+        resp = self._connector.read(ConnectorRequest(table_name="topology"))
+        if resp.status != "ok":
+            raise RuntimeError(f"SolarWinds pull_topology failed: {resp.errors}")
+        rows = resp.data or []
+        nodes = [{"id": str(r.get("NodeID", "")), "label": r.get("Caption", "")} for r in rows]
+        edges = [
+            {"source": str(r.get("NodeID", "")), "target": str(r.get("Layer2NeighborID", ""))}
+            for r in rows if r.get("Layer2NeighborID")
+        ]
+        return {"nodes": nodes, "edges": edges}
+
+
+# -- Normalization helpers ---------------------------------------------------
+
+def _normalize_device(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "name": row.get("Caption", row.get("SysName", "")),
+        "device_type": row.get("MachineType", ""),
+        "vendor": row.get("Vendor", row.get("HardwareManufacturer", "")),
+        "model": row.get("MachineType", ""),
+        "serial": "",
+        "firmware_version": "",
+        "site": row.get("Location", ""),
+        "rack": "",
+        "ip_address": row.get("IPAddress", ""),
+        "status": "active" if row.get("Status") == 1 else "inactive",
+        "role": "",
+        "_raw": row,
+    }
+
+
+def _normalize_config(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "hostname": row.get("Caption", ""),
+        "device_ip": "",
+        "config_type": row.get("ConfigType", "running"),
+        "config_text": row.get("Config", ""),
+        "collected_at": datetime.now(timezone.utc).isoformat(),
+        "_raw": row,
+    }
+
+
+def _normalize_interface(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "device_name": str(row.get("NodeID", "")),
+        "name": row.get("Caption", ""),
+        "type": "",
+        "speed": row.get("Speed", row.get("IfSpeed", 0)),
+        "mtu": 0,
+        "enabled": row.get("AdminStatus", 1) == 1,
+        "ip_address": row.get("IPAddress", ""),
+        "mac_address": "",
+        "description": "",
+        "vlan_id": None,
+        "_raw": row,
+    }
+
+
+def _normalize_stat(row: Dict[str, Any]) -> Dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    stats = []
+    for metric_name, metric_key, unit in [
+        ("response_time_ms", "AvgResponseTime", "ms"),
+        ("cpu_load_pct", "CPULoad", "%"),
+        ("mem_used_pct", "PercentMemoryUsed", "%"),
+        ("packet_loss_pct", "PercentLoss", "%"),
+    ]:
+        if metric_key in row:
+            stats.append({
+                "device_name": row.get("Caption", str(row.get("NodeID", ""))),
+                "metric_name": metric_name,
+                "metric_value": row.get(metric_key),
+                "unit": unit,
+                "timestamp": row.get("DateTime", now),
+            })
+    return stats[0] if len(stats) == 1 else (stats or {"device_name": "", "metric_name": "", "metric_value": None, "unit": "", "timestamp": now})
 
 
 NMSAdapterRegistry.register("solarwinds", SolarWindsAdapter)

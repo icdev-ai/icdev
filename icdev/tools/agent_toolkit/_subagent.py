@@ -12,11 +12,11 @@ then terminate. No shared memory with the parent. This is deliberate —
 parallel subagent runs don't race on shared state.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import time
 
-logger = logging.getLogger("icdev.agent_toolkit.subagent")
+logger = get_logger("icdev.agent_toolkit.subagent")
 
 
 def spawn_subagent(

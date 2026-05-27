@@ -47,6 +47,7 @@ Configuration (env vars or args/openmetadata_config.yaml)
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -65,7 +66,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 # ── Logging ───────────────────────────────────────────────────────────────────
-logger = logging.getLogger("icdev.ddc.openmetadata")
+logger = get_logger("icdev.ddc.openmetadata")
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _CONFIG_PATH = _ROOT / "args" / "openmetadata_config.yaml"
@@ -911,7 +912,7 @@ def _cli() -> None:
     args = parser.parse_args()
 
     if args.verbose:
-        logging.getLogger("icdev.ddc.openmetadata").setLevel(logging.DEBUG)
+        get_logger("icdev.ddc.openmetadata").setLevel(logging.DEBUG)
 
     syncer = DDCOpenMetadataSync(dry_run=args.dry_run)
 

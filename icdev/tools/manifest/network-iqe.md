@@ -4,6 +4,57 @@
 
 ---
 
+## NDC — Migration Phases Engine
+
+| Tool | Path | Purpose |
+|------|------|---------|
+| `compute_infoboxes()` | `tools/network/migration_phases.py` | Compute 8–16 critical info boxes (device inventory, link util, IP/VLAN, redundancy, routing, security, WAN, hardware health, plus phase-specific and final-specific boxes) from a topology graph dict. |
+| `compute_final_infoboxes()` | `tools/network/migration_phases.py` | Final/To-Be panel boxes: all 8 standard + consolidation results, 3yr TCO delta, performance gains, compliance improvement. |
+| `generate_phase_graph()` | `tools/network/migration_phases.py` | Overlay phase changes on current graph — colors nodes: existing=blue, new=green, changing=orange, retiring=red. |
+| `generate_final_graph()` | `tools/network/migration_phases.py` | Apply all phases sequentially → derive Final/To-Be topology. |
+| `run_consolidation_analysis()` | `tools/network/migration_phases.py` | Compute devices removed, rack units freed, power savings, capex/opex/TCO delta, SPOF reduction from current vs final graph. |
+| `save_consolidation()` / `load_consolidation()` | `tools/network/migration_phases.py` | Persist/load consolidation analysis to `nc_consolidation_analysis` DB table. |
+| `export_phase_pdf()` | `tools/network/pdf_export.py` | Multi-page PDF (fpdf2): cover + topology SVG diagram + info boxes + device inventory + port mapping + consolidation. Falls back to print-ready HTML if fpdf2 unavailable. |
+
+**Routes:**
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/network/migration-phases/<topo_id>` | GET | Three-panel view: Current State / Phase N stepper / Final To-Be. Each with SVG diagram + 8+ info boxes + PDF/Visio/Draw.io export. |
+| `/network/api/migration-phases/<topo_id>/data` | GET | Return all phase graphs + info boxes + consolidation JSON. |
+| `/network/api/migration-phases/<topo_id>/export/<phase_key>/<fmt>` | POST | Export one panel as PDF, Visio VSDX, or Draw.io XML. |
+
+**DB Tables:** `nc_phase_infoboxes` (user overrides per box), `nc_consolidation_analysis` (cached analysis per topology).
+
+```bash
+# Access from any topology's action row in /network/
+# Click "MP" button → /network/migration-phases/<topo_id>
+```
+
+---
+
+## NDC — Migration Hub
+
+Hub page aggregating all migration projects, phases, and linked documentation.
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/network/migration-hub` | GET | Hub page: all projects, phase timelines, linked docs, runbook/SOP library sidebar. Filterable by status/doc type. |
+| `/network/api/migration-hub/data` | GET | JSON: all projects + phases (with linked docs) + standalone docs + runbooks + SOPs + topologies. |
+| `/network/api/migration-hub/phase-docs` | POST | Link a document/runbook/SOP to a migration phase. Body: `{phase_id, project_id, doc_source, doc_id, doc_title, doc_type?, relevance_note?}` |
+| `/network/api/migration-hub/phase-docs/<id>` | DELETE | Remove a document link from a migration phase. |
+
+**DB Table:** `nc_phase_documents` — join table: `phase_id → doc_id` with `doc_source` ('document'/'runbook'/'sop'/'external'), `relevance_note`, `display_order`.
+
+**Template:** `tools/dashboard/templates/network/migration_hub.html`
+
+```bash
+# Access from /network/ → "Migration Hub" button in header
+# Direct: http://localhost:5050/network/migration-hub
+```
+
+---
+
 ## NDC — Network Path Analysis
 
 | Tool | Path | Purpose |
@@ -265,3 +316,178 @@ result = import_from_url(
 print(result)
 "
 ```
+
+---
+
+## NDC — SOP Library
+
+| Tool | Path | Purpose |
+|------|------|---------|
+| `seed()` | `tools/network/seed_sops.py` | Seeds 49 approved SOPs into `ndc_sops` (8 categories: physical_connectivity, vpn_configuration, hub_transit, cross_cloud, dod_scca, ipsec_reference, routing_protocols, troubleshooting). Idempotent — deduplicates by title. Calls `init_db()` before seeding. |
+| `get_connectivity_matrix()` | `tools/network/connectivity_ref.py` | Returns full CSP×connection-type reference matrix (AWS/Azure/GCP/OCI/IBM). Each entry includes service name, abbrev, bandwidth, compliance levels (IL4/IL5/FedRAMP), BCAP-compatible flag, MACsec flag, and SOP title list. |
+| `get_onprem_to_csp_patterns()` | `tools/network/connectivity_ref.py` | Returns on-prem→CSP pattern detail (description, pros/cons, diagram, SOP titles, DoD notes) for a given CSP and pattern type (ipsec_vpn, dedicated_private, partner_managed, sdwan_overlay). |
+| `get_csp_to_csp_patterns()` | `tools/network/connectivity_ref.py` | Returns available cloud-to-cloud patterns for a given src/dst CSP pair. Supports IPSec-overlay, SD-WAN, cloud-exchange, and native interconnect. |
+| `get_scca_flow()` | `tools/network/connectivity_ref.py` | Returns ordered SCCA component flow (BCAP→VDSS→VDMS→TCCM) with CSP-specific service mappings and SOP title list. |
+| `seed_patterns()` | `tools/network/connectivity_ref.py` | Seeds `nc_connectivity_patterns` table from `HYBRID_CONNECTIVITY_PATTERNS` constants. Idempotent (INSERT OR IGNORE). 19 rows across 7 pattern types. |
+| `list_sops_by_category()` | `tools/network/connectivity_ref.py` | Proxy for `sops.list_sops()` — returns approved SOPs for a given category with minimal fields (sop_id, title, category, status, version). |
+
+```bash
+# Seed 49 SOPs (idempotent)
+python tools/network/seed_sops.py --json
+python tools/network/seed_sops.py --status approved --json
+
+# Dry-run preview
+python tools/network/seed_sops.py --dry-run --json
+python tools/network/seed_sops.py --dry-run --category dod_scca --json
+
+# Seed connectivity patterns (idempotent, 19 rows)
+python tools/network/connectivity_ref.py --json
+
+# Query matrix
+python -c "
+from tools.network.connectivity_ref import get_connectivity_matrix
+m = get_connectivity_matrix()
+print('CSPs:', list(m.keys()))
+print('AWS DX compliance:', m['aws']['dedicated_private']['compliance_levels'])
+"
+
+# SCCA flow
+python -c "
+from tools.network.connectivity_ref import get_scca_flow
+f = get_scca_flow()
+print('Flow:', f['flow_ascii'])
+print('Components:', [c['key'] for c in f['components']])
+"
+```
+
+### SOP Endpoints (Flask)
+- `GET /network/sops` — SOP Library UI (category/CSP/status filters, expandable step viewer, copy-to-clipboard CLI blocks)
+- `GET /network/api/sops` — JSON list (params: `category`, `status`, `limit`)
+- `GET /network/api/sops/<sop_id>` — Single SOP JSON
+- `GET /network/api/sops/<sop_id>/history` — Approval history JSON
+
+### Connectivity Reference Endpoints (Flask)
+- `GET /network/connectivity` — 4-tab Connectivity Reference UI (Matrix, On-Prem→Cloud, Cloud→Cloud, DoD/SCCA)
+- `GET /network/api/connectivity/matrix` — Full CSP×type matrix JSON
+- `GET /network/api/connectivity/onprem-pattern?csp=<csp>&type=<type>` — Single on-prem→CSP pattern JSON
+- `GET /network/api/connectivity/c2c-patterns?src=<csp>&dst=<csp>` — C2C pattern list JSON
+
+---
+
+## NDC — Analysis Routes (Gap Fill — 2026-05-09)
+
+Replaced 231-byte stub `tools/network/routes/analysis.py` with 5 full route implementations.
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/topologies/<topo_id>/analysis/summary` | GET | Aggregate counts: devices, links, open findings, compliance score, EOL device count |
+| `/api/topologies/<topo_id>/analysis/topology-health` | GET | 5-dimension health score: compliance (25%), security (25%), eol (20%), redundancy (20%), capacity (10%) |
+| `/api/topologies/<topo_id>/analysis/risk-matrix` | GET | Likelihood × impact matrix from nc_compliance_findings; grouped by severity (cat1/cat2/cat3) |
+| `/api/topologies/<topo_id>/analysis/trend` | GET | Compliance score over time from nc_versions snapshot history |
+| `/api/topologies/<topo_id>/analysis/export` | GET | Full analysis JSON or PDF summary (delegates to pdf_export.py); `?format=pdf` |
+
+**Reads from:** `nc_compliance_findings`, `nc_objects`, `nc_circuits`, `nc_intent_validations`, `nc_versions`.
+
+---
+
+## NDC — Governance Routes (Gap Fill — 2026-05-09)
+
+Replaced 231-byte stub `tools/network/routes/governance.py` with 5 full route implementations.
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/topologies/<topo_id>/governance/change-requests` | GET, POST | List (with optional `?status=` filter) or create change requests; `POST` body: `{title, change_type, risk_level?, description?, items[]}` |
+| `/api/topologies/<topo_id>/governance/change-requests/<cr_id>` | GET, PATCH, DELETE | Fetch full CR + line items; update status/risk/approval fields; delete |
+| `/api/topologies/<topo_id>/governance/intent-policies` | GET, POST | List or create intent policies; `POST` body: `{name, description?, rule: {type, ...}, severity?}` |
+| `/api/topologies/<topo_id>/governance/intent-policies/<policy_id>/validate` | POST | Evaluate intent rule against topology; writes result to `nc_intent_validations`; rule types: `no_single_points_of_failure`, `no_open_cat1_findings`, `all_devices_managed` |
+| `/api/governance/dashboard` | GET | Cross-topology summary: open CRs by topology, failed intent policies, pending approvals |
+
+**Reads/Writes:** `nc_change_requests`, `nc_change_request_items`, `nc_intent_policies`, `nc_intent_validations`.
+
+**`_evaluate_intent_rule()` supported types:**
+- `no_single_points_of_failure` — delegates to `tools.network.twin.blast_radius()` if available
+- `no_open_cat1_findings` — counts open CAT1 rows in nc_compliance_findings
+- `all_devices_managed` — counts unmanaged=0 devices in nc_objects
+
+---
+
+## IQE Full Ecosystem Integration (2026-05-09)
+
+IQE is now wired across all 9 canvases + ICDEV core. Every canvas has a `POST /api/iqe-query` route and an embedded widget. A global dispatch route accepts any canvas name.
+
+### New Adapters
+
+| Adapter | Path | Collections |
+|---------|------|-------------|
+| BDC | `tools/iqe/adapters/bdc.py` | `bdc.designs`, `bdc.assessments`, `bdc.isas`, `bdc.alerts` |
+| MC (Migration) | `tools/iqe/adapters/mc.py` | `mc.designs`, `mc.waves`, `mc.assessments` |
+| AADC (Agentic AI) | `tools/iqe/adapters/aadc.py` | `aadc.designs`, `aadc.assessments`, `aadc.artifacts` |
+| AIMC (AI/ML) | `tools/iqe/adapters/aimc.py` | `aimc.designs`, `aimc.nodes`, `aimc.assessments`, `aimc.artifacts` |
+| Core Kanban | `tools/iqe/adapters/core_kanban.py` | `kanban.tasks`, `kanban.epics` |
+| Core Agents/Projects | `tools/iqe/adapters/core_agents.py` | `agents.registry`, `projects.list` |
+
+NDC adapter (`tools/iqe/adapters/ndc.py`) now registers all 13 `network.*` collections on the module-level executor (in addition to the class-based `NDCAdapter` pattern) so the dispatch route can use it.
+
+### Per-Canvas Routes
+
+| Canvas | Route | Blueprint |
+|--------|-------|-----------|
+| SDC | `POST /security/api/iqe-query` | `tools/security_canvas/blueprint.py` |
+| PDC | `POST /devops/api/iqe-query` | `tools/pipeline/blueprint.py` |
+| DDC | `POST /data/api/iqe-query` | `tools/data_canvas/blueprint.py` |
+| IDC | `POST /infra/api/iqe-query` | `tools/infra_canvas/blueprint.py` |
+| ODC | `POST /observability/api/iqe-query` | `tools/observability_canvas/blueprint.py` |
+| BDC | `POST /boundary/api/iqe-query` | `tools/boundary_canvas/blueprint.py` |
+| MC | `POST /migration-canvas/api/iqe-query` | `tools/migration_canvas/blueprint.py` |
+| AADC | `POST /agentic-ai/api/iqe-query` | `tools/agentic_ai_canvas/blueprint.py` |
+| AIMC | `POST /ai-ml/api/iqe-query` | `tools/aiml_canvas/blueprint.py` |
+| Compliance | `POST /api/compliance/iqe-query` | `tools/dashboard/api/compliance.py` |
+| Kanban | `POST /api/kanban/iqe-query` | `tools/dashboard/api/kanban.py` |
+| Agents/Projects | `POST /api/core/iqe-query` | `tools/dashboard/app.py` |
+
+**Route contract (all canvases):**
+```
+POST /api/iqe-query (or per-canvas path above)
+Body:    {"question": "natural language question", "execute": true}
+Returns: {"ok": true, "iqe": "...", "explanation": "...", "results": [...], "row_count": N}
+Error:   {"error": "...", "iqe": "..."}  HTTP 500
+```
+
+### Global Dispatch Route
+
+`POST /api/iqe/dispatch` — canvas-aware dispatcher in `tools/dashboard/app.py`.
+
+```json
+{"question": "show all attack paths", "canvas": "sdc"}
+```
+
+Valid `canvas` values: `ndc`, `sdc`, `pdc`, `ddc`, `idc`, `odc`, `bdc`, `mc`, `aadc`, `aimc`, `compliance`, `kanban`, `agents`, `projects`.
+
+### Shared Widget
+
+`tools/dashboard/templates/includes/iqe_query_widget.html` — reusable Jinja2 partial included in every canvas template.
+
+Include with:
+```jinja
+{% set iqe_canvas = "sdc" %}
+{% set iqe_api_route = "/security/api/iqe-query" %}
+{% set iqe_title = "Query Security Data" %}
+{% set iqe_examples = [{"label": "...", "query": "..."}] %}
+{% include "includes/iqe_query_widget.html" %}
+```
+
+### Global Mini-bar
+
+`tools/dashboard/templates/base.html` — collapsible bottom drawer available on every dashboard page.
+
+- Toggle: `Ctrl+Shift+Q`
+- Auto-detects current canvas from `window.location.pathname`
+- Dispatches to `POST /api/iqe/dispatch`
+
+### Seed Queries
+
+| Directory | Files | Canvas |
+|-----------|-------|--------|
+| `context/iqe/queries/migration/` | 5 | MC |
+| `context/iqe/queries/aadc/` | 5 | AADC |
+| `context/iqe/queries/aimc/` | 3 | AIMC |

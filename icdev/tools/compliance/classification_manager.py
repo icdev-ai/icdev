@@ -634,6 +634,80 @@ def get_portion_marking(classification: str = "CUI") -> str:
     return _PORTION_MARKS.get(classification.upper(), "(CUI)")
 
 
+# Classification badge colors (PUBLIC=green, CUI=blue, SECRET=orange, TS=red, TS//SCI=purple)
+_CLASSIFICATION_COLORS = {
+    "PUBLIC": ("#16a34a", "#dcfce7", "#bbf7d0"),          # green
+    "CUI": ("#2563eb", "#dbeafe", "#bfdbfe"),             # blue
+    "SECRET": ("#ea580c", "#ffedd5", "#fed7aa"),          # orange
+    "TOP SECRET": ("#dc2626", "#fee2e2", "#fecaca"),     # red
+    "TOP SECRET//SCI": ("#9333ea", "#f3e8ff", "#e9d5ff"), # purple
+}
+
+
+def get_classification_badge_color(classification: str = "CUI") -> Dict[str, str]:
+    """Return CSS-friendly color tuple for a classification badge.
+
+    Returns:
+        Dict with ``fg`` (foreground), ``bg`` (background), ``border``.
+    """
+    cls = classification.upper()
+    fg, bg, border = _CLASSIFICATION_COLORS.get(cls, _CLASSIFICATION_COLORS["CUI"])
+    return {"fg": fg, "bg": bg, "border": border}
+
+
+def get_clearance_order(classification: str) -> int:
+    """Return numeric clearance order for comparison (higher = more sensitive)."""
+    return {
+        "PUBLIC": 0,
+        "CUI": 1,
+        "SECRET": 2,
+        "TOP SECRET": 3,
+        "TOP SECRET//SCI": 4,
+    }.get(classification.upper(), 1)
+
+
+def is_readonly_for_user(design_classification: str, user_clearance: Optional[str] = None) -> bool:
+    """Return True if user lacks write clearance for the design classification.
+
+    Implements the *-Property (no write-down): a user can only write to
+    designs at or above their own clearance level.
+
+    If *user_clearance* is None, returns False (assumed writable).
+    """
+    if user_clearance is None:
+        return False
+    return get_clearance_order(user_clearance) < get_clearance_order(design_classification)
+
+
+def get_required_clearance(design_classification: str) -> str:
+    """Return the minimum user clearance required to write a design."""
+    return design_classification.upper()
+
+
+def get_classification_banner_text(
+    classification: str = "CUI",
+    compartments: Optional[List[str]] = None,
+    user_clearance: Optional[str] = None,
+) -> str:
+    """Return a single-line banner text string for a design.
+
+    Args:
+        classification: Design classification.
+        compartments: Optional list of compartment tags.
+        user_clearance: Optional user clearance for read-only suffix.
+
+    Returns:
+        Banner text such as ``CUI // HCS`` or ``SECRET // NOFORN (READ-ONLY)``.
+    """
+    cls = classification.upper()
+    parts = [cls]
+    if compartments:
+        parts.append(" // " + " / ".join(compartments))
+    if is_readonly_for_user(cls, user_clearance):
+        parts.append(" (READ-ONLY)")
+    return " ".join(parts)
+
+
 def get_required_baseline(il_level: str) -> Dict:
     """Return the compliance baseline requirements for an impact level.
 

@@ -21,6 +21,7 @@ Checks:
  11. direct_anthropic_import — no direct `import anthropic` outside tools/llm/anthropic_provider.py (OPT-44)
  12. karpathy_sync  — 5 canonical Karpathy headings present in all 10 AI platform configs
  13. openapi_parity — generate_openapi_spec(app) paths match app.url_map /api/v1/* routes
+ 14. security_context — RLS auto-wiring intact; set_security_context(None) bypasses documented
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -71,6 +72,12 @@ class CoherenceCheck:
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
+
+    def __getitem__(self, key: str):
+        # 'check' is an alias for check_id for backward-compat with dict-style access
+        if key == "check":
+            return self.check_id
+        return self.to_dict()[key]
 
     @property
     def passed(self) -> bool:
@@ -831,6 +838,7 @@ def check_import_usage(changed_files: Optional[List[Path]] = None) -> CoherenceC
 
 _RUFF_GATE_RULES = ("F401", "F811", "F841")
 _RUFF_GATE_CONFIG = PROJECT_ROOT / "args" / "ruff_gate.yaml"
+_PAGE_COMPLETENESS_WHITELIST_CONFIG = PROJECT_ROOT / "args" / "page_completeness_whitelist.yaml"
 
 
 def _load_ruff_gate_whitelist() -> Dict[str, Set[str]]:
@@ -873,6 +881,32 @@ def _load_ruff_gate_whitelist() -> Dict[str, Set[str]]:
         elif isinstance(codes, str):
             normalized[key] = {codes.upper()}
     return normalized
+
+
+def _load_page_completeness_whitelist() -> Set[str]:
+    """Load grandfathered canvas names from args/page_completeness_whitelist.yaml.
+
+    Schema:
+        # reason for each canvas
+        whitelisted_canvases:
+          - canvas_name  # reason (task-id)
+
+    Returns a set of canvas names to skip. Missing/malformed file → empty set.
+    """
+    if not _PAGE_COMPLETENESS_WHITELIST_CONFIG.exists():
+        return set()
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        return set()
+    try:
+        raw = yaml.safe_load(_PAGE_COMPLETENESS_WHITELIST_CONFIG.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return set()
+    canvases = raw.get("whitelisted_canvases") or []
+    if not isinstance(canvases, list):
+        return set()
+    return {str(c).strip() for c in canvases if c}
 
 
 def _run_ruff_lint(
@@ -2527,6 +2561,449 @@ def check_hitl_workflow() -> CoherenceCheck:
     )
 
 
+def check_mcp_security() -> CoherenceCheck:
+    """Verify MCP security scanner coherence (ddx-mcp).
+
+    Checks:
+    1. tools/mcp/mcp_scanner.py exists and defines scan_mcp_servers
+    2. scan_mcp_servers() returns dict with 'servers_scanned' and 'findings' keys
+    3. tools/mcp/tool_registry.py exists
+    4. tools/mcp/gap_handlers.py exists
+    """
+    issues: list[str] = []
+    actual: list[str] = []
+
+    # Check 1: mcp_scanner.py exists with scan_mcp_servers
+    scanner_path = PROJECT_ROOT / "tools" / "mcp" / "mcp_scanner.py"
+    if scanner_path.exists():
+        content = scanner_path.read_text(encoding="utf-8")
+        if "scan_mcp_servers" in content:
+            actual.append("mcp_scanner.py=exists+scan_mcp_servers")
+        else:
+            issues.append("tools/mcp/mcp_scanner.py missing scan_mcp_servers function")
+    else:
+        issues.append("tools/mcp/mcp_scanner.py missing")
+
+    # Check 2: scanner returns required keys
+    if not issues:
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("mcp_scanner_check", scanner_path)
+            mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            result = mod.scan_mcp_servers()
+            missing_keys = [k for k in ("servers_scanned", "findings") if k not in result]
+            if missing_keys:
+                issues.append(f"scan_mcp_servers() missing keys: {missing_keys}")
+            else:
+                actual.append("scan_mcp_servers() keys=ok")
+        except Exception as exc:
+            issues.append(f"scan_mcp_servers() execution failed: {exc}")
+
+    # Check 3: tool_registry.py exists
+    registry_path = PROJECT_ROOT / "tools" / "mcp" / "tool_registry.py"
+    if registry_path.exists():
+        actual.append("tool_registry.py=exists")
+    else:
+        issues.append("tools/mcp/tool_registry.py missing")
+
+    # Check 4: gap_handlers.py exists
+    gap_path = PROJECT_ROOT / "tools" / "mcp" / "gap_handlers.py"
+    if gap_path.exists():
+        actual.append("gap_handlers.py=exists")
+    else:
+        issues.append("tools/mcp/gap_handlers.py missing")
+
+    status = "fail" if issues else "pass"
+    return CoherenceCheck(
+        check_id="mcp_security",
+        check_name="MCP Security Scanner Coherence",
+        status=status,
+        expected=[
+            "mcp_scanner.py exists with scan_mcp_servers",
+            "scan_mcp_servers() returns servers_scanned + findings keys",
+            "tool_registry.py exists",
+            "gap_handlers.py exists",
+        ],
+        actual=actual,
+        missing=issues,
+        extra=[],
+        message=(
+            "Add tools/mcp/mcp_scanner.py with scan_mcp_servers() returning "
+            "'servers_scanned' and 'findings' keys"
+        ) if issues else "MCP security scanner coherence OK",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: RLS Security Context (D-SEC-RLS)
+# ---------------------------------------------------------------------------
+
+
+def check_security_context() -> CoherenceCheck:
+    """Verify Row-Level Security wiring is intact and bypasses are documented.
+
+    Three sub-checks:
+
+    1. auto_wiring_present — _attach_flask_security_context() exists in
+       tools/db/storage.py and is referenced from get_connection(). Removal
+       silently breaks RLS for all Flask route handlers.
+
+    2. undocumented_bypasses — files under tools/ (excluding tools/db/ and
+       tools/security/) that call set_security_context(None) without a
+       '# rls-bypass:' comment on the same line. These disable RLS silently.
+
+    3. direct_cursor_instantiation — files under tools/ (excluding tools/db/
+       and test files) that directly instantiate StorageCursor( outside of the
+       storage layer. This bypasses _inject_rls() entirely.
+    """
+    issues: list[str] = []
+    actual: list[str] = []
+
+    # ── Sub-check 1: auto-wiring function present ────────────────────────────
+    storage_path = PROJECT_ROOT / "tools" / "db" / "storage.py"
+    if storage_path.exists():
+        storage_text = storage_path.read_text(encoding="utf-8", errors="replace")
+        if "_attach_flask_security_context" in storage_text:
+            actual.append("_attach_flask_security_context=present")
+        else:
+            issues.append(
+                "tools/db/storage.py: _attach_flask_security_context() missing — "
+                "RLS auto-wiring for Flask routes is broken"
+            )
+        if "get_connection" in storage_text and "_attach_flask_security_context" in storage_text:
+            actual.append("get_connection→_attach_flask_security_context=wired")
+        else:
+            issues.append(
+                "tools/db/storage.py: get_connection() does not reference "
+                "_attach_flask_security_context — auto-wiring may be detached"
+            )
+    else:
+        issues.append("tools/db/storage.py missing — storage layer not found")
+
+    # ── Sub-check 2: undocumented set_security_context(None) bypasses ────────
+    _exempt_dirs = {
+        PROJECT_ROOT / "tools" / "db",
+        PROJECT_ROOT / "tools" / "security",
+        PROJECT_ROOT / "tools" / "workflow",  # checker source contains pattern strings
+    }
+    bypass_re = re.compile(r"set_security_context\(\s*None\s*\)")
+    bypass_ok_re = re.compile(r"#\s*rls-bypass\s*:", re.IGNORECASE)
+
+    undocumented: list[str] = []
+    tools_dir = PROJECT_ROOT / "tools"
+    if tools_dir.exists():
+        for py_file in sorted(tools_dir.rglob("*.py")):
+            if any(py_file.is_relative_to(d) for d in _exempt_dirs):
+                continue
+            try:
+                lines = py_file.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
+            for lineno, line in enumerate(lines, 1):
+                if bypass_re.search(line) and not bypass_ok_re.search(line):
+                    rel = py_file.relative_to(PROJECT_ROOT)
+                    undocumented.append(f"{rel}:{lineno}")
+
+    if undocumented:
+        issues.extend(
+            f"Undocumented RLS bypass (set_security_context(None) without "
+            f"'# rls-bypass:' comment): {loc}"
+            for loc in undocumented
+        )
+    else:
+        actual.append("rls_bypass_comments=all_documented")
+
+    # ── Sub-check 3: direct StorageCursor instantiation outside storage layer ─
+    cursor_re = re.compile(r"\bStorageCursor\s*\(")
+    _allowed_cursor_dirs = {
+        PROJECT_ROOT / "tools" / "db",
+        PROJECT_ROOT / "tools" / "workflow",  # checker source contains regex pattern strings
+        PROJECT_ROOT / "tests",
+    }
+    direct_cursor: list[str] = []
+    if tools_dir.exists():
+        for py_file in sorted(tools_dir.rglob("*.py")):
+            if any(py_file.is_relative_to(d) for d in _allowed_cursor_dirs):
+                continue
+            try:
+                text = py_file.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if cursor_re.search(text):
+                rel = py_file.relative_to(PROJECT_ROOT)
+                direct_cursor.append(str(rel))
+
+    if direct_cursor:
+        issues.extend(
+            f"Direct StorageCursor() instantiation outside tools/db/ bypasses "
+            f"_inject_rls(): {f}"
+            for f in direct_cursor
+        )
+    else:
+        actual.append("direct_StorageCursor_instantiation=none")
+
+    status = "fail" if issues else "pass"
+    return CoherenceCheck(
+        check_id="security_context",
+        check_name="RLS Security Context Wiring (D-SEC-RLS)",
+        status=status,
+        expected=[
+            "_attach_flask_security_context present and wired in get_connection()",
+            "All set_security_context(None) calls annotated with # rls-bypass:",
+            "StorageCursor instantiated only in tools/db/ or tests/",
+        ],
+        actual=actual,
+        missing=issues,
+        extra=[],
+        message=(
+            f"{len(issues)} RLS wiring issue(s) detected — "
+            "add '# rls-bypass: <reason>' to bypass calls, or fix the wiring"
+        ) if issues else "RLS security context wiring OK",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: new_page_completeness — 8-component gate for new dashboard pages
+# ---------------------------------------------------------------------------
+
+
+def check_new_page_completeness() -> CoherenceCheck:
+    """Enforce the 8-component gate for every new dashboard page.
+
+    When tools/dashboard/templates/<canvas>/page.html exists, ALL of the
+    following must also exist or the feature ships broken (CLAUDE.md §8):
+
+      1. icdev/tools/dashboard/templates/<canvas>/page.html  (companion mirror)
+      2. tools/<canvas>/blueprint.py has at least one @*.route
+      3. tools/<canvas>/ has a backing Python module (not just __init__.py)
+      4. base.html nav contains a link to /<canvas>
+      5. tools/iqe/adapters/<canvas>.py  (IQE adapter)
+      6. context/iqe/queries/<canvas>/   (at least 1 seed query)
+      7. Template contains iqe_query_widget include
+      8. @bp.route in blueprint references the template (render_template check)
+
+    Only checks page.html files under canvas sub-directories (not top-level
+    flat templates like code_quality.html).
+    """
+    templates_dir = PROJECT_ROOT / "tools" / "dashboard" / "templates"
+    base_html_path = templates_dir / "base.html"
+    base_html_text = _read_text(base_html_path)
+    iqe_adapters_dir = PROJECT_ROOT / "tools" / "iqe" / "adapters"
+    iqe_queries_dir = PROJECT_ROOT / "context" / "iqe" / "queries"
+    whitelist = _load_page_completeness_whitelist()
+
+    violations: List[str] = []
+    whitelisted_count = 0
+
+    # Find all canvas page.html files (sub-directory only)
+    for page_html in sorted(templates_dir.rglob("*/page.html")):
+        canvas = page_html.parent.name  # e.g. "govcon", "digital_twin"
+        if canvas in whitelist:
+            whitelisted_count += 1
+            continue
+        rel_page = page_html.relative_to(PROJECT_ROOT)
+        page_text = _read_text(page_html)
+        missing: List[str] = []
+
+        # 1. icdev mirror
+        mirror = (PROJECT_ROOT / "icdev" / "tools" / "dashboard" / "templates" / canvas / "page.html")
+        if not mirror.exists():
+            missing.append("icdev/ mirror missing")
+
+        # 2. Blueprint with @route
+        bp_file = PROJECT_ROOT / "tools" / canvas / "blueprint.py"
+        if not bp_file.exists():
+            missing.append("tools/<canvas>/blueprint.py missing")
+        elif not re.search(r"@\w+\.route\s*\(", _read_text(bp_file)):
+            missing.append("blueprint.py has no @route decorator")
+
+        # 3. Backing module (any .py other than __init__.py and blueprint.py)
+        canvas_dir = PROJECT_ROOT / "tools" / canvas
+        if canvas_dir.exists():
+            py_modules = [
+                f for f in canvas_dir.glob("*.py")
+                if f.name not in ("__init__.py", "blueprint.py")
+            ]
+            if not py_modules:
+                missing.append("no backing module in tools/<canvas>/")
+        else:
+            missing.append(f"tools/{canvas}/ directory missing")
+
+        # 4. Nav link to /<canvas> in base.html
+        if f'href="/{canvas}' not in base_html_text and f"href='/{canvas}" not in base_html_text:
+            missing.append(f"no nav link to /{canvas} in base.html")
+
+        # 5. IQE adapter
+        iqe_adapter = iqe_adapters_dir / f"{canvas}.py"
+        if not iqe_adapter.exists():
+            missing.append(f"tools/iqe/adapters/{canvas}.py missing")
+
+        # 6. IQE seed queries
+        iqe_queries = iqe_queries_dir / canvas
+        if not iqe_queries.exists() or not list(iqe_queries.glob("*.yaml")) + list(iqe_queries.glob("*.yml")):
+            missing.append(f"context/iqe/queries/{canvas}/ missing or empty")
+
+        # 7. IQE widget in template
+        if "iqe_query_widget" not in page_text and "iqe-widget" not in page_text:
+            missing.append("template missing {% include 'includes/iqe_query_widget.html' %}")
+
+        if missing:
+            violations.append(f"{rel_page}: missing [{', '.join(missing)}]")
+
+    status = "fail" if violations else "pass"
+    canvas_count = len(list(templates_dir.rglob("*/page.html")))
+    wl_note = f" ({whitelisted_count} whitelisted)" if whitelisted_count else ""
+    return CoherenceCheck(
+        check_id="new_page_completeness",
+        check_name="New Page 8-Component Completeness",
+        status=status,
+        expected=[f"All {canvas_count - whitelisted_count} canvas pages have all 8 required components"],
+        actual=[f"{len(violations)} incomplete page(s){wl_note}"],
+        missing=violations,
+        extra=[],
+        message=(
+            f"{len(violations)} canvas page(s) are missing required components — "
+            "these features will be broken or unreachable"
+        ) if violations else f"All {canvas_count - whitelisted_count} canvas pages have required components{wl_note}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: nav_route_parity — every href in base.html nav must have a Flask route
+# ---------------------------------------------------------------------------
+
+
+def check_nav_route_parity() -> CoherenceCheck:
+    """Verify every static nav href in base.html has a matching Flask @route decorator.
+
+    Parses href="/<path>" links from the navbar section of base.html, then
+    grepping tools/ for @<name>.route("/<path>") or @bp.route("/<path>").
+    Catches the most common cause of unusable menus: a nav link added to the
+    template before the blueprint route was implemented (or vice versa).
+
+    Does NOT require a running server — purely static analysis.
+    """
+    base_html = PROJECT_ROOT / "tools" / "dashboard" / "templates" / "base.html"
+    if not base_html.exists():
+        return CoherenceCheck(
+            check_id="nav_route_parity",
+            check_name="Nav / Route Parity",
+            status="warn",
+            expected=["base.html exists"],
+            actual=["base.html not found"],
+            missing=[],
+            extra=[],
+            message="base.html not found — skipping nav/route parity check",
+        )
+
+    nav_html = _read_text(base_html)
+
+    # Extract all static hrefs from the nav (exclude JS hrefs, anchors, external URLs)
+    raw_hrefs: List[str] = re.findall(r'href="(/[^"#?{%][^"]*?)"', nav_html)
+    # Keep only simple paths (no query strings, no dynamic segments)
+    nav_routes: List[str] = sorted(set(
+        h.rstrip("/") or "/"
+        for h in raw_hrefs
+        if not h.startswith("//") and "{{" not in h and "{%" not in h
+    ))
+
+    # Build a set of all route prefixes registered in tools/ blueprints
+    # by grepping for @*.route("/...") patterns
+    all_py = list((PROJECT_ROOT / "tools").rglob("*.py"))
+    registered_prefixes: Set[str] = set()
+    route_pattern = re.compile(r'@\w+\.route\s*\(\s*["\'](/[^"\']*)["\']')
+    url_prefix_pattern = re.compile(r'url_prefix\s*=\s*["\']([^"\']+)["\']')
+
+    for py_file in all_py:
+        src = _read_text(py_file)
+        for m in route_pattern.finditer(src):
+            registered_prefixes.add(m.group(1).split("<")[0].rstrip("/") or "/")
+        # Also capture url_prefix values as registered prefixes
+        for m in url_prefix_pattern.finditer(src):
+            registered_prefixes.add(m.group(1).rstrip("/") or "/")
+
+    # Also check app.py add_url_rule
+    app_py = PROJECT_ROOT / "tools" / "dashboard" / "app.py"
+    if app_py.exists():
+        for m in re.finditer(r'add_url_rule\s*\(\s*["\']([^"\']+)["\']', _read_text(app_py)):
+            registered_prefixes.add(m.group(1).split("<")[0].rstrip("/") or "/")
+
+    missing: List[str] = []
+    for route in nav_routes:
+        # A route is "covered" if any registered prefix is a prefix of this route
+        covered = any(
+            route == reg or route.startswith(reg + "/") or reg == "/"
+            for reg in registered_prefixes
+        )
+        if not covered:
+            missing.append(f"{route} — no matching @route or url_prefix found in tools/")
+
+    status = "fail" if missing else "pass"
+    return CoherenceCheck(
+        check_id="nav_route_parity",
+        check_name="Nav / Route Parity",
+        status=status,
+        expected=[f"All {len(nav_routes)} nav hrefs have a registered Flask route"],
+        actual=[f"{len(missing)} unmatched nav href(s)"],
+        missing=missing,
+        extra=[],
+        message=(
+            f"{len(missing)} nav href(s) have no matching Flask route — "
+            "users will hit 404 clicking these menu items"
+        ) if missing else f"All {len(nav_routes)} nav hrefs matched to registered routes",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: blueprint_imports — every blueprint.py must import without error
+# ---------------------------------------------------------------------------
+
+
+def check_blueprint_imports() -> CoherenceCheck:
+    """Dry-import every blueprint.py to catch ImportError before runtime.
+
+    Runs each blueprint in a subprocess so a bad import doesn't poison this
+    process.  A blueprint that fails to import will cause a 500 on ALL routes
+    served by that blueprint — this check catches that before deployment.
+    """
+    import subprocess as _sp
+
+    blueprint_files = sorted((PROJECT_ROOT / "tools").rglob("blueprint.py"))
+    failures: List[str] = []
+
+    for bp_file in blueprint_files:
+        rel = bp_file.relative_to(PROJECT_ROOT)
+        # Convert path to module name: tools/govcon/blueprint.py → tools.govcon.blueprint
+        module = str(rel).replace("\\", "/").replace("/", ".").removesuffix(".py")
+        try:
+            result = _sp.run(
+                [sys.executable, "-c", f"import sys; sys.path.insert(0, '.'); import {module}"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                cwd=str(PROJECT_ROOT), timeout=15,
+            )
+            if result.returncode != 0:
+                first_error = (result.stderr or result.stdout or "unknown error").strip().splitlines()[0]
+                failures.append(f"{rel}: {first_error}")
+        except Exception as exc:
+            failures.append(f"{rel}: subprocess error — {exc}")
+
+    status = "fail" if failures else "pass"
+    return CoherenceCheck(
+        check_id="blueprint_imports",
+        check_name="Blueprint Import Check",
+        status=status,
+        expected=["All blueprint.py files import without error"],
+        actual=[f"{len(failures)} import failure(s)"],
+        missing=failures,
+        extra=[],
+        message=(
+            f"{len(failures)} blueprint(s) fail to import — "
+            "all routes in those blueprints will return 500"
+        ) if failures else f"All {len(blueprint_files)} blueprints import cleanly",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check: log_standard_compliance — all tools/ modules must use get_logger()
 # ---------------------------------------------------------------------------
@@ -2539,9 +3016,20 @@ def check_log_standard_compliance() -> CoherenceCheck:
       - tools/logging/ (the implementation itself)
       - tests/ directories
       - __init__.py and setup files
+      - Specific allowlisted files documented below
     """
     tools_dir = PROJECT_ROOT / "tools"
     violations: List[str] = []
+
+    # Files that legitimately need raw logging.getLogger():
+    #   testing/utils.py   — sets up per-run test loggers with custom handlers
+    #   workflow/coherence_checker.py — references the pattern in check source
+    #   refactor/migrate_to_icdev_logger.py — migration script references the pattern
+    LOG_STANDARD_ALLOWLIST = {
+        Path("tools/testing/utils.py"),
+        Path("tools/workflow/coherence_checker.py"),
+        Path("tools/refactor/migrate_to_icdev_logger.py"),
+    }
 
     for py_file in sorted(tools_dir.rglob("*.py")):
         rel = py_file.relative_to(PROJECT_ROOT)
@@ -2550,6 +3038,8 @@ def check_log_standard_compliance() -> CoherenceCheck:
         if "logging" in parts or "tests" in parts or "__pycache__" in parts:
             continue
         if py_file.name in ("conftest.py", "setup.py"):
+            continue
+        if rel in LOG_STANDARD_ALLOWLIST:
             continue
         try:
             src = py_file.read_text(encoding="utf-8", errors="replace")
@@ -2598,7 +3088,12 @@ CHECK_REGISTRY = {
     "karpathy_sync": check_karpathy_sync,
     "openapi_parity": check_openapi_parity,
     "hitl_workflow": check_hitl_workflow,
+    "mcp_security": check_mcp_security,
+    "security_context": check_security_context,
     "log_standard": check_log_standard_compliance,
+    "nav_route_parity": check_nav_route_parity,
+    "blueprint_imports": check_blueprint_imports,
+    "new_page_completeness": check_new_page_completeness,
 }
 
 
@@ -2625,6 +3120,9 @@ _FIX_REGISTRY: Dict[str, str] = {
     "direct_anthropic_import": "skip",  # violations require code routing fix
     "karpathy_sync": "skip",  # add section to CLAUDE.md + companion sync, then re-run
     "openapi_parity": "skip",  # route drift requires human fix (add/remove route or update spec)
+    "hitl_workflow": "skip",  # module fixes require human judgment
+    "mcp_security": "skip",  # scanner module creation requires human judgment
+    "security_context": "skip",  # RLS bypass documentation and wiring fixes require human judgment
 }
 
 

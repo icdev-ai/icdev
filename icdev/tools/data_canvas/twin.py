@@ -83,3 +83,132 @@ def quality_gate(design_id: str, schema_changes: list, baseline_snap_id: str | N
                                "title": "Column removal may break referential integrity",
                                "recommendation": "Verify no foreign keys or views reference this column"})
     return {"violations": violations, "gate": "fail" if violations else "pass"}
+
+
+def simulate_dm_change(
+    design_id: str,
+    change_type: str,
+    payload: dict,
+    classification: str = "CUI",
+) -> dict:
+    """Analyze downstream impact of a Data Mesh structural change.
+
+    change_type: domain_merge | contract_version | port_schema | product_deprecate
+    """
+    import uuid as _uuid
+    sim_id = str(_uuid.uuid4())
+    impacts: list[dict] = []
+    verdict = "pass"
+
+    try:
+        from tools.data_canvas.db.init_db import get_connection as _gc
+        conn = _gc()
+
+        if change_type == "domain_merge":
+            src = payload.get("source_domain_id", "")
+            prods = conn.execute(
+                "SELECT COUNT(*) FROM dm_products WHERE domain_id=?", (src,)
+            ).fetchone()[0]
+            contracts = conn.execute(
+                "SELECT COUNT(*) FROM dm_contracts c "
+                "JOIN dm_products p ON c.product_id=p.id WHERE p.domain_id=?", (src,)
+            ).fetchone()[0]
+            policies = conn.execute(
+                "SELECT COUNT(*) FROM dm_policies WHERE domain_id=?", (src,)
+            ).fetchone()[0]
+            if prods:
+                impacts.append({"severity": "medium", "id": src,
+                                "title": f"{prods} product(s) re-parented to target domain",
+                                "recommendation": "Notify product owners; update domain-scoped IQE queries."})
+            if contracts:
+                impacts.append({"severity": "medium", "id": src,
+                                "title": f"{contracts} contract(s) inherit new domain governance",
+                                "recommendation": "Re-evaluate OPA policies in target domain before merge."})
+            if policies:
+                impacts.append({"severity": "low", "id": src,
+                                "title": f"{policies} source-domain policies will be archived",
+                                "recommendation": "Review for conflicts with target-domain policy set."})
+            verdict = "warn" if impacts else "pass"
+
+        elif change_type == "contract_version":
+            contract_id = payload.get("contract_id", "")
+            new_ver = payload.get("new_version", "")
+            schema_diff = payload.get("schema_diff", [])
+            breaking = [d for d in schema_diff if d.get("change") in
+                        ("remove_field", "rename_field", "change_type", "tighten_constraint")]
+            consumers = conn.execute(
+                "SELECT COUNT(*) FROM dm_ports p "
+                "JOIN dm_contracts c ON p.product_id=c.product_id "
+                "WHERE c.id=? AND p.port_type='input'", (contract_id,)
+            ).fetchone()[0]
+            if breaking:
+                impacts.append({"severity": "high", "id": contract_id,
+                                "title": f"{len(breaking)} breaking field change(s) in contract {new_ver}",
+                                "recommendation": "Pin consumers to prior version before releasing."})
+                verdict = "fail"
+            if consumers:
+                impacts.append({"severity": "medium", "id": contract_id,
+                                "title": f"{consumers} input port(s) must be re-validated",
+                                "recommendation": "Run contract validation on consumer ports before activating."})
+                if verdict == "pass":
+                    verdict = "warn"
+
+        elif change_type == "port_schema":
+            port_id = payload.get("port_id", "")
+            product_id = payload.get("product_id", "")
+            schema_diff = payload.get("schema_diff", [])
+            breaking = [d for d in schema_diff if d.get("change") in
+                        ("remove_field", "rename_field", "change_type")]
+            active_contracts = conn.execute(
+                "SELECT COUNT(*) FROM dm_contracts WHERE product_id=? AND status='active'",
+                (product_id,)
+            ).fetchone()[0]
+            if breaking and active_contracts:
+                impacts.append({"severity": "high", "id": port_id,
+                                "title": f"Port schema change breaks {active_contracts} active contract(s)",
+                                "recommendation": "Deprecate contracts and issue new versions first."})
+                verdict = "fail"
+            elif breaking:
+                impacts.append({"severity": "medium", "id": port_id,
+                                "title": f"{len(breaking)} breaking field change(s) on output port",
+                                "recommendation": "Ensure no un-contracted consumers exist."})
+                verdict = "warn"
+
+        elif change_type == "product_deprecate":
+            product_id = payload.get("product_id", "")
+            active_contracts = conn.execute(
+                "SELECT COUNT(*) FROM dm_contracts WHERE product_id=? AND status='active'",
+                (product_id,)
+            ).fetchone()[0]
+            ports = conn.execute(
+                "SELECT COUNT(*) FROM dm_ports WHERE product_id=?", (product_id,)
+            ).fetchone()[0]
+            if active_contracts:
+                impacts.append({"severity": "high", "id": product_id,
+                                "title": f"Deprecating product with {active_contracts} active contract(s)",
+                                "recommendation": "Migrate or deprecate contracts first."})
+                verdict = "fail"
+            if ports:
+                impacts.append({"severity": "medium", "id": product_id,
+                                "title": f"{ports} port(s) will become unreachable",
+                                "recommendation": "Notify port consumers and set deprecation timeline."})
+                if verdict == "pass":
+                    verdict = "warn"
+
+        conn.close()
+    except Exception as exc:
+        impacts.append({"severity": "unknown", "id": "db_error",
+                        "title": f"DB error during simulation: {exc}",
+                        "recommendation": "Ensure dm_* tables are initialized."})
+        verdict = "error"
+
+    coverage_score = max(0.3, 1.0 - len([i for i in impacts if i["severity"] == "high"]) * 0.2)
+    return {
+        "simulation_id": sim_id,
+        "design_id": design_id,
+        "change_type": change_type,
+        "verdict": verdict,
+        "coverage_score": round(coverage_score, 3),
+        "impact_count": len(impacts),
+        "downstream_impacts": impacts,
+    }

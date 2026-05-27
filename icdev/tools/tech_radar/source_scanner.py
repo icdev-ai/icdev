@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Tech Radar source scanner (D352 pattern).
 
@@ -25,7 +27,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _HTTP_TIMEOUT = 10  # seconds; kept short for air-gap safety
 

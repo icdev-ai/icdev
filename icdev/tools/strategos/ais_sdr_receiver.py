@@ -1,5 +1,6 @@
 """AIS live feed receiver — SDR hardware (Mode A) or AISHub UDP (Mode B)."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -21,7 +22,7 @@ except ImportError:
 
 from tools.db.storage import get_connection
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 HAVE_SDR_HARDWARE: bool = os.getenv("HAVE_SDR_HARDWARE", "false").lower() in ("1", "true", "yes")
 AIS_UDP_HOST: str = os.getenv("AIS_UDP_HOST", "0.0.0.0")  # nosec B104 — intentional broadcast listen, overridable via env

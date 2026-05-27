@@ -17,6 +17,28 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Overridable in tests via monkeypatch
 DB_PATH = None
 
+_CLASSIFICATION_ORDER = {
+    "PUBLIC": 0,
+    "CUI": 1,
+    "SECRET": 2,
+    "TOP SECRET": 3,
+    "TOP SECRET//SCI": 4,
+}
+
+
+def _classification_level(label: str) -> int:
+    return _CLASSIFICATION_ORDER.get((label or "CUI").upper().strip(), 1)
+
+
+def _compartments_allowed(entry_compartments: str, user_compartments: list[str] | None) -> bool:
+    if not entry_compartments or entry_compartments.strip() == "":
+        return True
+    if user_compartments is None:
+        return False
+    entry_set = {c.strip().upper() for c in entry_compartments.split(",") if c.strip()}
+    user_set = {c.strip().upper() for c in user_compartments if c.strip()}
+    return entry_set <= user_set
+
 
 def _connect():
     if DB_PATH is not None:
@@ -24,11 +46,11 @@ def _connect():
     return get_connection()
 
 
-def get_all_entries(user_id=None, tenant_id=None):
+def get_all_entries(user_id=None, tenant_id=None, clearance=None, compartments=None):
     conn = _connect()
     c = conn.cursor()
 
-    sql = "SELECT id, content, type, importance, embedding, created_at FROM memory_entries WHERE 1=1"
+    sql = "SELECT id, content, type, importance, embedding, created_at, classification, compartment FROM memory_entries WHERE 1=1"
     params = []
 
     if user_id:
@@ -41,6 +63,18 @@ def get_all_entries(user_id=None, tenant_id=None):
     c.execute(sql, params)
     rows = c.fetchall()
     conn.close()
+
+    # Security-context filtering
+    if clearance is not None:
+        user_level = _classification_level(clearance)
+        filtered = []
+        for row in rows:
+            entry_class = row[6] if len(row) > 6 else "CUI"
+            entry_compartment = row[7] if len(row) > 7 else ""
+            if _classification_level(entry_class) <= user_level and _compartments_allowed(entry_compartment, compartments):
+                filtered.append(row)
+        rows = filtered
+
     return rows
 
 
@@ -136,9 +170,10 @@ def semantic_search(query, entries):
 
 
 def hybrid_rank(
-    entries, bm25_scores, semantic_scores, bm25_weight, semantic_weight, time_decay_enabled=False, decay_config=None
+    entries, bm25_scores, semantic_scores, bm25_weight, semantic_weight,
+    time_decay_enabled=False, decay_config=None, classification_penalty=False
 ):
-    """Combine BM25 and semantic scores, with optional time-decay (D147)."""
+    """Combine BM25 and semantic scores, with optional time-decay (D147) and classification penalty."""
     results = []
     for i, entry in enumerate(entries):
         bm25_s = bm25_scores[i] if bm25_scores else 0.0
@@ -150,7 +185,7 @@ def hybrid_rank(
         else:
             combined = (bm25_weight * bm25_s) + (semantic_weight * sem_s)
 
-        id_, content, type_, importance, _, created_at = entry
+        id_, content, type_, importance, _, created_at, classification, compartment = entry
 
         # D147: Apply time-decay reranking when enabled
         if time_decay_enabled:
@@ -166,6 +201,12 @@ def hybrid_rank(
                 )
             except (ImportError, Exception):
                 pass  # Fall through to original combined score
+
+        # sec-eco-06: downgrade higher-classification entries to avoid leakage via ranking
+        if classification_penalty:
+            level = _classification_level(classification)
+            penalty = max(0.1, 1.0 - (level * 0.15))
+            combined *= penalty
 
         results.append((combined, id_, content, type_, importance, created_at))
 
@@ -258,12 +299,31 @@ def main():
     parser.add_argument("--user-id", help="Filter by user ID (D180)")
     parser.add_argument("--tenant-id", help="Filter by tenant ID (D180)")
     parser.add_argument(
+        "--clearance",
+        default=None,
+        help="User security clearance for classification filtering",
+    )
+    parser.add_argument(
+        "--compartments",
+        default=None,
+        help="Comma-separated list of user compartments",
+    )
+    parser.add_argument(
         "--summarize", action="store_true", help="Synthesize top results into narrative summary via scanner-tier LLM"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
-    entries = get_all_entries(user_id=args.user_id, tenant_id=args.tenant_id)
+    comps = None
+    if args.compartments:
+        comps = [c.strip() for c in args.compartments.split(",") if c.strip()]
+
+    entries = get_all_entries(
+        user_id=args.user_id,
+        tenant_id=args.tenant_id,
+        clearance=args.clearance,
+        compartments=comps,
+    )
     if not entries:
         if args.json:
             print(json.dumps({"classification": "CUI // SP-CTI", "count": 0, "entries": []}))
@@ -296,6 +356,7 @@ def main():
         args.semantic_weight,
         time_decay_enabled=args.time_decay,
         decay_config=decay_config,
+        classification_penalty=args.clearance is not None,
     )
 
     # Log access

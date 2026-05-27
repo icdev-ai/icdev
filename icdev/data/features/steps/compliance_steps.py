@@ -9,6 +9,42 @@ import sys
 from behave import given, then, when
 
 
+_COMPLIANCE_INFRA_ARTIFACTS = [
+    '.env.example',
+    'requirements.txt',
+    'tools/testing/health_check.py',
+    'tools/ci/pipeline_config_generator.py',
+    'args/cicd_config.yaml',
+    'tools/devsecops/pipeline_security_generator.py',
+    'args/security_gates.yaml',
+    'tools/compliance/classification_manager.py',
+    'tools/compliance/control_mapper.py',
+    'tools/compliance/ssp_generator.py',
+    'args/compliance_config.yaml',
+]
+
+
+@given('the system is deployed within the authorized environment')
+def step_system_in_authorized_env(context):
+    context.project_root = os.getcwd()
+    assert os.path.isdir(context.project_root), (
+        f"Project root not found: {context.project_root}"
+    )
+
+
+@when(
+    'Infrastructure and platform enablement for compliance capabilities. '
+    'Covers environment setup, CI/CD pipeline configuration, security '
+    'hardening, and compliance scaffolding required to support 2 compliance '
+    'requirement(s).'
+)
+def step_compliance_enablement(context):
+    context.missing = [
+        a for a in _COMPLIANCE_INFRA_ARTIFACTS
+        if not os.path.exists(os.path.join(context.project_root, a))
+    ]
+
+
 @given('a project with Python source files')
 def step_project_with_python(context):
     """Set project directory with Python files."""
@@ -304,5 +340,155 @@ class _StubResult:
         self.stderr = msg
 
 
-def _make_stub_result(msg):
-    return _StubResult(msg)
+# ---------------------------------------------------------------------------
+# Threat-level threshold / PIR alert automation
+# ---------------------------------------------------------------------------
+
+@when('Generate Priority Intelligence Requirements (PIR) alerts when indicator scores exceed operator-defined baselines')
+def step_generate_pir_alerts_on_threshold_exceeded(context):
+    """Configure a baseline, inject an exceeded score, and auto-generate a PIR."""
+    from icdev.tools.threat_analysis.service import (
+        create_baseline,
+        auto_generate_pir_alert,
+    )
+    from icdev.tools.db.storage import get_connection
+
+    indicator = "compliance_test_anomaly"
+    operator_id = "analyst-test-001"
+    scope = "project"
+    scope_id = "proj-compliance-001"
+    threshold = 25.0
+    severity_band = "high"
+    injected_score = 78.0
+
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM indicator_baselines WHERE indicator_name = ?", (indicator,))
+        conn.execute("DELETE FROM sg_pir_requirements WHERE topic LIKE ?", (f"%{indicator}%",))
+        conn.commit()
+    finally:
+        conn.close()
+
+    baseline = create_baseline(
+        indicator_name=indicator,
+        threshold_score=threshold,
+        scope=scope,
+        scope_id=scope_id,
+        severity_band=severity_band,
+        operator_id=operator_id,
+        rationale="Compliance BDD test baseline",
+    )
+    context.baseline = baseline
+
+    result = auto_generate_pir_alert(
+        indicator_name=indicator,
+        score=injected_score,
+        scope=scope,
+        scope_id=scope_id,
+        operator_id=operator_id,
+    )
+    context.pir_result = result
+
+
+@when('Be logged in the append-only audit trail per NIST AU-2 and AU-9 requirements')
+def step_cross_agency_transfer_audit_logging(context):
+    """Verify cross-agency transfers are logged in append-only audit trail (NIST AU-2, AU-9)."""
+    import uuid as _uuid
+    from icdev.tools.audit.cross_agency_transfer_logger import CrossAgencyTransferLogger
+    from icdev.tools.db.storage import get_connection
+
+    # Ensure table exists (may not be initialised in all environments)
+    conn = get_connection()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS cross_agency_transfers (
+            id                  TEXT PRIMARY KEY,
+            transfer_id         TEXT NOT NULL,
+            event_type          TEXT NOT NULL CHECK(event_type IN (
+                                    'initiated', 'completed', 'failed', 'rejected')),
+            source_agency       TEXT NOT NULL,
+            target_agency       TEXT NOT NULL,
+            data_type           TEXT,
+            data_classification TEXT NOT NULL DEFAULT 'CUI',
+            actor               TEXT NOT NULL DEFAULT '',
+            project_id          TEXT,
+            bytes_transferred   INTEGER,
+            checksum            TEXT,
+            duration_ms         INTEGER,
+            rejection_reason    TEXT,
+            error_code          TEXT,
+            details             TEXT,
+            occurred_at         TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cat_transfer_id ON cross_agency_transfers(transfer_id);
+        CREATE INDEX IF NOT EXISTS idx_cat_occurred_at ON cross_agency_transfers(occurred_at);
+    """)
+    conn.commit()
+
+    logger = CrossAgencyTransferLogger()
+    transfer_id = f"bdd-test-{_uuid.uuid4()}"
+    event_id = logger.log_initiated(
+        transfer_id=transfer_id,
+        source_agency="AGENCY_A",
+        target_agency="AGENCY_B",
+        data_type="intelligence_report",
+        actor="bdd-test-actor",
+        data_classification="CUI",
+    )
+    context.transfer_audit_result = {
+        "transfer_id": transfer_id,
+        "event_id": event_id,
+        "logged": bool(event_id),
+    }
+
+
+@then('the system behaves as specified and the requirement is satisfied')
+def step_system_behaves_as_specified(context):
+    """Unified acceptance check: handles infra missing-artifacts and PIR results."""
+    # Infrastructure / functional / IL5 scenarios
+    if hasattr(context, 'missing') and context.missing:
+        assert False, (
+            f"Artifacts missing: {context.missing}. "
+            "Requirement cannot be satisfied."
+        )
+
+    # PIR / threshold scenarios
+    if hasattr(context, 'pir_result') and context.pir_result is not None:
+        result = context.pir_result
+        assert result["exceeded"] is True, f"Expected score to exceed baseline, got {result}"
+        assert result["pir_generated"] is True, f"Expected PIR to be auto-generated, got {result}"
+        assert result["pir_id"] is not None, "Generated PIR id is missing"
+
+        # Verify the PIR exists in the database
+        from icdev.tools.intelligence.pir_manager import get_pir
+        pir = get_pir(result["pir_id"])
+        assert pir is not None, f"PIR {result['pir_id']} not found in database"
+        assert pir["pir_type"] == "PIR"
+        assert pir["status"] == "active"
+        assert result["indicator_name"] in pir["topic"]
+        assert pir["collection_priority"] <= 2, (
+            f"High-severity baseline should map to priority 1 or 2, got {pir['collection_priority']}"
+        )
+
+    # Cross-agency transfer audit scenarios (NIST AU-2, AU-9)
+    if hasattr(context, 'transfer_audit_result'):
+        result = context.transfer_audit_result
+        assert result["logged"], (
+            f"Cross-agency transfer was not logged in audit trail. "
+            f"transfer_id={result['transfer_id']!r}, event_id={result['event_id']!r}"
+        )
+        from icdev.tools.audit.cross_agency_transfer_logger import query_by_transfer_id
+        events = query_by_transfer_id(result["transfer_id"])
+        assert len(events) >= 1, (
+            f"Expected ≥1 audit event for transfer {result['transfer_id']!r}, got {len(events)}"
+        )
+        assert events[0]["event_type"] == "initiated", (
+            f"Expected event_type='initiated', got {events[0]['event_type']!r}"
+        )
+
+
+@then('no missing compliance artifacts exist')
+def step_no_missing_compliance_artifacts(context):
+    """Verify no compliance infrastructure artifacts are missing."""
+    assert len(context.missing) == 0, (
+        f"Missing compliance artifacts: {context.missing}"
+    )

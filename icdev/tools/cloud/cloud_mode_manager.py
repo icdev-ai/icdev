@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Cloud Mode Manager — orchestrates cloud mode selection and validation (D232).
 
@@ -16,11 +18,10 @@ CLI: --status, --validate, --switch, --check-readiness, --json
 
 import argparse
 import json
-import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
-logger = logging.getLogger("icdev.cloud.mode_manager")
+logger = get_logger("icdev.cloud.mode_manager")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

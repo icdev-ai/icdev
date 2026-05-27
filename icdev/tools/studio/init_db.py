@@ -125,6 +125,38 @@ STUDIO_TABLES: dict[str, str] = {
             completed_at  TEXT
         )
     """,
+    # ── Workflow Runs (APPEND-ONLY — audit trail) ──────────
+    "studio_workflow_runs": """
+        CREATE TABLE IF NOT EXISTS studio_workflow_runs (
+            run_id         TEXT PRIMARY KEY,
+            workflow_id    TEXT NOT NULL,
+            workflow_name  TEXT,
+            status         TEXT DEFAULT 'pending'
+                           CHECK(status IN ('pending','running','success','failed','cancelled','awaiting_approval')),
+            started_at     TEXT DEFAULT (datetime('now')),
+            completed_at   TEXT,
+            triggered_by   TEXT,
+            project_id     TEXT DEFAULT 'default',
+            summary_json   TEXT
+        )
+    """,
+    "studio_workflow_run_steps": """
+        CREATE TABLE IF NOT EXISTS studio_workflow_run_steps (
+            step_run_id  TEXT PRIMARY KEY,
+            run_id       TEXT NOT NULL,
+            step_id      TEXT NOT NULL,
+            step_name    TEXT,
+            tool         TEXT,
+            status       TEXT DEFAULT 'pending'
+                         CHECK(status IN ('pending','running','success','failed','skipped','timeout','awaiting_approval','approved','rejected')),
+            exit_code    INTEGER,
+            stdout       TEXT,
+            stderr       TEXT,
+            duration_ms  INTEGER DEFAULT 0,
+            started_at   TEXT DEFAULT (datetime('now')),
+            completed_at TEXT
+        )
+    """,
     # ── Dashboards ─────────────────────────────────────────
     "studio_dashboards": """
         CREATE TABLE IF NOT EXISTS studio_dashboards (
@@ -141,7 +173,12 @@ STUDIO_TABLES: dict[str, str] = {
 }
 
 # Tables that must NEVER have UPDATE or DELETE operations
-APPEND_ONLY_TABLES = ["studio_case_history", "studio_automation_runs"]
+APPEND_ONLY_TABLES = [
+    "studio_case_history",
+    "studio_automation_runs",
+    "studio_workflow_runs",
+    "studio_workflow_run_steps",
+]
 
 
 def _table_exists(conn, name: str) -> bool:

@@ -12,13 +12,13 @@ considered unbounded (valid but unclassified).
 NIST 800-53: SI-4 (System Monitoring), RA-5 (Vulnerability Monitoring).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.threat_analysis.service")
+logger = get_logger("icdev.threat_analysis.service")
 
 
 # Scope specificity — higher index = more specific
@@ -38,7 +38,7 @@ def _now_utc() -> str:
 
 
 def _get_conn(db_path: str | None = None) -> Any:
-    from icdev.tools.db.storage import get_connection
+    from tools.db.storage import get_connection
     return get_connection(db_path)
 
 
@@ -285,7 +285,7 @@ def auto_generate_pir_alert(
     priority_mapping = {"critical": 1, "high": 2, "medium": 3, "low": 4}
     collection_priority = priority_mapping.get(severity, 3)
 
-    from icdev.tools.intelligence.pir_manager import create_pir
+    from tools.intelligence.pir_manager import create_pir
 
     pir = create_pir(
         pir_type="PIR",
@@ -334,8 +334,9 @@ def list_baselines(
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY indicator_name, scope, created_at DESC"
 
-        rows = conn.execute(sql, params).fetchall()
-        cols = [d[0] for d in conn.execute(sql, params).description]  # type: ignore[arg-type]
+        cursor = conn.execute(sql, params)
+        rows = cursor.fetchall()
+        cols = [d[0] for d in cursor.description]  # type: ignore[arg-type]
         return [dict(zip(cols, r)) for r in rows]
     finally:
         conn.close()

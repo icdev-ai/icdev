@@ -7,9 +7,9 @@ metadata without re-connecting to the source.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import sqlite3
 import uuid
 from tools.db.storage import get_connection
@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger("databridge.schema_engine")
+logger = get_logger("databridge.schema_engine")
 
 DB_PATH = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
 

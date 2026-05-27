@@ -15,7 +15,7 @@ import argparse
 import json
 import sqlite3
 from tools.db.storage import get_connection
-from tools.common.helpers import row_to_dict_json
+from tools.common.helpers import row_to_dict
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -24,10 +24,28 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 AGENT_CARDS_DIR = Path(__file__).resolve().parent / "agent_cards"
 
 
+def _ensure_table(conn: sqlite3.Connection) -> None:
+    """Create the agents table if it does not exist."""
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS agents (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            url TEXT NOT NULL,
+            status TEXT DEFAULT 'active',
+            capabilities TEXT,
+            last_heartbeat TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )"""
+    )
+    conn.commit()
+
+
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
     conn = get_connection(db_path=str(path))
+    _ensure_table(conn)
     return conn
 
 
@@ -73,7 +91,7 @@ def register_agent(
 
         c.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))
         row = c.fetchone()
-        result = row_to_dict_json(row)
+        result = row_to_dict(row)
         print(f"Agent registered: {agent_id} ({name}) at {url}")
         return result
     finally:
@@ -116,7 +134,7 @@ def discover_agents(db_path: Path = None) -> List[dict]:
         c = conn.cursor()
         c.execute("SELECT * FROM agents WHERE status = 'active' ORDER BY name")
         rows = c.fetchall()
-        return [row_to_dict_json(r) for r in rows]
+        return [row_to_dict(r) for r in rows]
     finally:
         conn.close()
 
@@ -135,7 +153,7 @@ def get_agent(agent_id: str, db_path: Path = None) -> Optional[dict]:
         c = conn.cursor()
         c.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))
         row = c.fetchone()
-        return row_to_dict_json(row)
+        return row_to_dict(row)
     finally:
         conn.close()
 
@@ -181,7 +199,7 @@ def find_agent_for_skill(skill_id: str, db_path: Path = None) -> Optional[dict]:
         rows = c.fetchall()
 
         for row in rows:
-            agent = row_to_dict_json(row)
+            agent = row_to_dict(row)
             caps = agent.get("capabilities")
             if isinstance(caps, dict):
                 skills = caps.get("skills", [])
@@ -237,7 +255,7 @@ def discover_agents_healthy(staleness_seconds: int = 120, db_path: Path = None) 
             (staleness_seconds,),
         )
         rows = c.fetchall()
-        return [row_to_dict_json(r) for r in rows]
+        return [row_to_dict(r) for r in rows]
     finally:
         conn.close()
 

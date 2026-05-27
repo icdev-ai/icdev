@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Centralized Amazon Bedrock API wrapper for ICDEV™ multi-agent system.
 
@@ -52,7 +54,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 BEDROCK_MODELS_CONFIG = BASE_DIR / "args" / "bedrock_models.yaml"
 AGENT_CONFIG = BASE_DIR / "args" / "agent_config.yaml"
 
-logger = logging.getLogger("icdev.bedrock_client")
+logger = get_logger("icdev.bedrock_client")
 
 # ---------------------------------------------------------------------------
 # Default model registry — used when args/bedrock_models.yaml is absent

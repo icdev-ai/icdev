@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Collaboration patterns for multi-agent orchestration.
 
@@ -29,7 +31,7 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-logger = logging.getLogger("icdev.collaboration")
+logger = get_logger("icdev.collaboration")
 
 # Graceful LLM import (Enhancement #4 — Bedrock decoupling)
 try:

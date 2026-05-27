@@ -6,9 +6,9 @@ Falls back to Jinja2-only template if LLM unavailable (air-gap safe).
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
-import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -17,7 +17,7 @@ from tools.databridge.forge.base_selector import BaseClassSelection
 from tools.databridge.forge.spec_parser import ForgeApiManifest
 from tools.databridge.forge.templates import TEMPLATE_MAP
 
-logger = logging.getLogger("databridge.forge.code_generator")
+logger = get_logger("databridge.forge.code_generator")
 
 
 def generate_connector_code(

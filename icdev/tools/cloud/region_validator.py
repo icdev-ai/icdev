@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """CSP Region Validator — compliance-driven deployment validation (D234).
 
@@ -11,12 +13,11 @@ CLI: --validate, --eligible, --deployment-check, --json
 
 import argparse
 import json
-import logging
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-logger = logging.getLogger("icdev.cloud.region_validator")
+logger = get_logger("icdev.cloud.region_validator")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CERTS_PATH = BASE_DIR / "context" / "compliance" / "csp_certifications.json"

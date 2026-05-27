@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Native Ollama LLM Provider using the Ollama REST API directly.
 
@@ -11,7 +13,6 @@ native image format: {"role": "user", "content": "text", "images": ["base64"]}.
 """
 
 import json
-import logging
 import time
 from typing import Any, Dict, Iterator, List
 
@@ -21,7 +22,7 @@ from tools.llm.provider import (
     LLMResponse,
 )
 
-logger = logging.getLogger("icdev.llm.ollama")
+logger = get_logger("icdev.llm.ollama")
 
 try:
     import requests
@@ -122,15 +123,22 @@ def _convert_messages_to_ollama(messages: List[Dict[str, Any]], system_prompt: s
 class OllamaProvider(LLMProvider):
     """Native Ollama provider using the Ollama REST API.
 
-    Does NOT use the OpenAI-compatible endpoint (/v1/chat/completions).
-    Instead uses the native /api/chat and /api/tags endpoints directly,
-    which provides access to Ollama-specific features like native
-    multimodal image handling.
+    Works with both local Ollama (http://localhost:11434, no auth) and
+    cloud Ollama endpoints (e.g. https://ollama.com) that require a Bearer
+    token.  Pass api_key or set the env var referenced by api_key_env in
+    the provider config; leave blank for unauthenticated local installs.
     """
 
-    def __init__(self, base_url: str = "http://localhost:11434"):
+    def __init__(self, base_url: str = "http://localhost:11434", api_key: str = ""):
         self._base_url = base_url.rstrip("/")
+        self._api_key = api_key
         self._timeout = 300  # seconds (increased for GPU contention with image gen)
+
+    def _auth_headers(self) -> dict:
+        """Return Authorization header when an API key is configured."""
+        if self._api_key:
+            return {"Authorization": f"Bearer {self._api_key}"}
+        return {}
 
     @property
     def provider_name(self) -> str:
@@ -168,9 +176,10 @@ class OllamaProvider(LLMProvider):
         if options:
             payload["options"] = options
 
-        # Disable thinking mode for qwen3+ models — they burn all num_predict
-        # tokens on reasoning before producing output, causing timeouts
-        if "qwen3" in model_id.lower():
+        # Disable thinking mode when explicitly configured or for qwen3 models.
+        # qwen3 burns all num_predict tokens on reasoning before producing output,
+        # causing timeouts. Configurable via disable_thinking: true in model config.
+        if model_config.get("disable_thinking", False) or "qwen3" in model_id.lower():
             payload["think"] = False
 
         # Structured output via Ollama's format parameter
@@ -182,6 +191,7 @@ class OllamaProvider(LLMProvider):
                 "POST",
                 f"{self._base_url}/api/chat",
                 json=payload,
+                headers=self._auth_headers(),
                 timeout=self._timeout,
             )
             resp_http.raise_for_status()
@@ -272,6 +282,7 @@ class OllamaProvider(LLMProvider):
                 f"{self._base_url}/api/chat",
                 json=payload,
                 stream=True,
+                headers=self._auth_headers(),
                 timeout=self._timeout,
             )
             resp_http.raise_for_status()
@@ -323,6 +334,7 @@ class OllamaProvider(LLMProvider):
             resp = _http_request(
                 "GET",
                 f"{self._base_url}/api/tags",
+                headers=self._auth_headers(),
                 timeout=5,
             )
             resp.raise_for_status()

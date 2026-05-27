@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Redaction Registry — conversation-scoped real<->surrogate mapping.
 
@@ -21,7 +23,6 @@ CLI:
 import argparse
 import hashlib
 import json
-import logging
 import sys
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -33,7 +34,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger("icdev.redaction.registry")
+logger = get_logger("icdev.redaction.registry")
 
 
 # ---------------------------------------------------------------------------

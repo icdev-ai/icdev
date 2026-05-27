@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """OTel Tracer — OpenTelemetry SDK wrapper (D280, D283).
 
@@ -15,13 +17,12 @@ Configuration:
     args/observability_tracing_config.yaml — full config
 """
 
-import logging
 import os
 from typing import Any, Dict, Optional
 
 from tools.observability.tracer import Span, Tracer
 
-logger = logging.getLogger("icdev.observability.otel_tracer")
+logger = get_logger("icdev.observability.otel_tracer")
 
 try:
     from opentelemetry import trace as otel_trace
