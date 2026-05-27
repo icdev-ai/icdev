@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Kanban Scheduler -- standalone process that runs the kanban reflex on a loop.
 
@@ -32,6 +31,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402 — must follow sys.path patch
 
 # Force UTF-8 on both stdout and stderr so emoji/Unicode in task titles never
 # silently kill the logger on Windows (cp1252 streams raise UnicodeEncodeError
