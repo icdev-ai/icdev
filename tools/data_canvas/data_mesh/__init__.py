@@ -31,11 +31,11 @@ def list_contracts(product_id: str | None = None) -> list:
     with _gc() as conn:
         if product_id:
             rows = conn.execute(
-                "SELECT * FROM dm_contracts WHERE product_id=? ORDER BY title",
+                "SELECT * FROM dm_contracts WHERE product_id=? ORDER BY name",
                 (product_id,),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM dm_contracts ORDER BY title").fetchall()
+            rows = conn.execute("SELECT * FROM dm_contracts ORDER BY name").fetchall()
     return [dict(r) for r in rows]
 
 
