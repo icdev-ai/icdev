@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """AWS Bedrock LLM Provider.
 
@@ -7,7 +9,6 @@ structured output, and model fallback with retry/backoff.
 """
 
 import json
-import logging
 import os
 import random
 import time
@@ -21,7 +22,7 @@ from tools.llm.provider import (
     tools_to_anthropic,
 )
 
-logger = logging.getLogger("icdev.llm.bedrock")
+logger = get_logger("icdev.llm.bedrock")
 
 try:
     import boto3
@@ -114,7 +115,18 @@ class BedrockLLMProvider(LLMProvider):
 
         system_parts = [s for s in (request.system_prompt, extracted_system) if s]
         if system_parts:
-            body["system"] = [{"type": "text", "text": "\n\n".join(system_parts)}]
+            system_text = "\n\n".join(system_parts)
+            # D-CACHE-8: Bedrock Anthropic prompt caching
+            if request.cache_control == "ephemeral":
+                body["system"] = [
+                    {
+                        "type": "text",
+                        "text": system_text,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+            else:
+                body["system"] = [{"type": "text", "text": system_text}]
 
         if request.temperature is not None:
             body["temperature"] = request.temperature
@@ -129,6 +141,17 @@ class BedrockLLMProvider(LLMProvider):
                 "type": "enabled",
                 "budget_tokens": self._effort_to_budget(effort, effective_max),
             }
+
+        # D-CACHE-9: Mark last user message with cache_control for Bedrock Anthropic
+        if request.cache_control == "ephemeral" and messages:
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    content = msg.get("content", [])
+                    if isinstance(content, list) and content:
+                        last_block = content[-1]
+                        if isinstance(last_block, dict) and last_block.get("type") == "text":
+                            last_block["cache_control"] = {"type": "ephemeral"}
+                    break
 
         # Tools
         if request.tools:
@@ -154,6 +177,8 @@ class BedrockLLMProvider(LLMProvider):
         usage = response_body.get("usage", {})
         resp.input_tokens = usage.get("input_tokens", 0)
         resp.output_tokens = usage.get("output_tokens", 0)
+        resp.cache_creation_input_tokens = usage.get("cache_creation_input_tokens", 0)
+        resp.cache_read_input_tokens = usage.get("cache_read_input_tokens", 0)
 
         content_blocks = response_body.get("content", [])
         text_parts = []

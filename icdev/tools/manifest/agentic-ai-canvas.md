@@ -44,6 +44,20 @@ AADC → MCP Tool Registry sync — upserts agent/tool nodes from a design into 
 - Syncs node types: `llm`, `llm-local`, `autonomous-agent`, `orchestrator`, `sub-agent`, `researcher-agent`, `writer-agent`, `reviewer-agent`, `mcp-server`, `mcp-gateway`, `tool-chain`, `external-api`
 - Supports both SQLite (`INSERT OR REPLACE`) and PostgreSQL (`ON CONFLICT DO UPDATE`) backends via `get_connection()`
 
+### `tools/db/seeds/seed_ai_canvases_aadc.py`
+Seed 8 DoD/IC synthetic AADC designs with full assessment, threat model, ATO, risk, red team, lifecycle, scorecard, and deploy gate data.
+```bash
+python tools/db/seeds/seed_ai_canvases_aadc.py          # idempotent
+python tools/db/seeds/seed_ai_canvases_aadc.py --reset  # wipe + reseed
+```
+
+### `tools/db/seeds/seed_ai_canvases_all.py`
+Combined orchestrator — seeds all AI canvas DoD/IC demo data (AADC, AIMC, AAC, Observatory, KG).
+```bash
+python tools/db/seeds/seed_ai_canvases_all.py --json        # all 5 steps
+python tools/db/seeds/seed_ai_canvases_all.py --reset-all   # wipe + reseed
+```
+
 ### `tools/agentic_ai_canvas/events.py`
 AADC Activity Feed Emitter — writes one row to `aadc_design_events` on each significant canvas action.
 - `emit_event(design_id, event_type, actor, metadata)` → bool (True on success, False if table missing or write fails — non-fatal)
@@ -121,6 +135,15 @@ Phase 7 — Design Linter / Auto-Recommendation Engine (13 rules).
 Phase 7 — Accreditation Package Builder.
 - `build_accred_zip(design, assessment, risks, threat_model, ato, reg, red_team, exec, oscal)` → ZIP bytes
 - Assembles 8+ JSON artifacts + README cover sheet into a single downloadable ZIP.
+
+### `tools/agentic_ai_canvas/canvas_bridge.py`
+AADC↔AIMC cross-canvas bridge — links AADC agent/model nodes to the AIMC FOUNDATION_MODELS catalog.
+- `get_aimc_catalog()` → full FOUNDATION_MODELS list from `tools.aiml_canvas.constants`
+- `link_model_node(aadc_design_id, aadc_node_id, aimc_model_id, aimc_design_id, notes)` → upsert into `aadc_aimc_model_refs`; returns stored ref dict with model metadata
+- `get_model_refs(aadc_design_id)` → list of refs with joined model metadata and IL status
+- `get_aadc_refs_for_model(aimc_model_id)` → AADC designs that reference a given AIMC model
+- `check_il_compatibility(aadc_design_id, target_il)` → list of IL violation dicts (CAT1); empty = compliant
+- `unlink_model_node(ref_id)` → True if deleted; uses `aadc_aimc_model_refs` table
 
 ### `tools/agentic_ai_canvas/ft_linkage.py`
 Phase 2 — Fine-tuning dashboard linkage.

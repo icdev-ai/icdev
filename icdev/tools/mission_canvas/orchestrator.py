@@ -6,11 +6,11 @@ for mission-specific tasks.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import Optional
 
-logger = logging.getLogger("icdev.mission_canvas.orchestrator")
+logger = get_logger("icdev.mission_canvas.orchestrator")
 
 
 def run_mission_team(

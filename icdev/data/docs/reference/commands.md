@@ -125,6 +125,41 @@ python tools/security/sast_runner.py --project-dir "/path"
 python tools/security/dependency_auditor.py --project-dir "/path"
 python tools/security/secret_detector.py --project-dir "/path"
 python tools/security/container_scanner.py --image "sparkpilot:latest"
+
+# Security Framework (Phase 74 — sec-fnd)
+python tools/security/security_context.py --whoami --json
+python tools/security/abac_engine.py --review --json
+python tools/security/row_security.py --test --table <name> --json
+python tools/security/classification_enforcer.py --check --json
+python tools/security/column_security.py --mask --table <name> --json
+python tools/security/field_security.py --filter --schema <name> --json
+python tools/security/encryption_at_rest.py --rotate --classification TS --json
+python tools/security/mtls_integration.py --verify --json
+python tools/security/security_middleware.py --init-app --json
+python tools/security/audit_posture.py --json
+```
+
+---
+
+## Security Canvas (SDC) — Demo Runner
+```bash
+# Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)
+python tools/sdc/demo_runner.py --audience exec --json
+python tools/sdc/demo_runner.py --audience tech --json
+python tools/sdc/demo_runner.py --audience engineer --json
+
+# Run a specific scenario
+python tools/sdc/demo_runner.py --scenario A --audience exec --json          # Red Team: STRIDE + attack paths
+python tools/sdc/demo_runner.py --scenario B --simulate --json               # 12-Step Workflow + auto-approve ISSO gates
+python tools/sdc/demo_runner.py --scenario C --audience tech --json          # After State: 0 CAT1, IaC, crosswalk
+
+# Write output to file
+python tools/sdc/demo_runner.py --audience exec --json --output demo_result.json
+
+# Seed demo data before first run
+python tools/db/seeds/seed_sdc_demo.py --all
+
+# Dashboard route: http://localhost:5050/security/demo
 ```
 
 ---
@@ -283,6 +318,29 @@ python tools/knowledge_graph/temporal.py --evolution --graph-id <id> --interval 
 python tools/knowledge_graph/temporal.py --recent --days 7 --json
 python tools/knowledge_graph/temporal.py --stale --stale-days 90 --json
 python tools/knowledge_graph/temporal.py --diff --graph-id <id> --date-a 2026-03-01 --date-b 2026-03-15 --json
+```
+
+---
+
+## Ontology Commands
+```bash
+# Extract schema (dry-run)
+python tools/ontology/schema_extractor.py --dry-run --json
+
+# Validate ontology catalog
+python tools/ontology/ontology_catalog.py --validate --json
+
+# Build ontology federation
+python tools/ontology/federation.py --build --json
+
+# Query ontology
+python tools/ontology/ontology_catalog.py --query "AWS VPC" --json
+
+# Export external mappings
+python tools/ontology/external_mappings.py --to stix --json
+
+# Run RAG with ontology-aware code generation
+python tools/llm/router.py --ontology-aware --function code_generation --prompt "..." --json
 ```
 
 ---
@@ -1997,6 +2055,28 @@ python tools/llm/model_monitor.py --gate                                        
 
 ---
 
+## Ops Hub Canvas (OHC) — Phase 71
+
+```bash
+# Adapter health check (all 11 adapters: 6 OSS + 5 CSP)
+python tools/ops_hub/cli.py --health --json
+
+# CI/CD gate — exits 1 if overall ops status is critical
+python tools/ops_hub/cli.py --gate
+
+# Per-adapter status table
+python tools/ops_hub/cli.py --adapters
+
+# Initialise OHC database (creates 7 tables in data/ohc_canvas.db)
+python tools/ops_hub/db/init_db.py
+
+# Apply migration 120
+python tools/db/migrations/120_ops_hub/up.py
+
+# Seed Kanban tasks (48 tasks across 8 epics)
+python _seed_ohc_kanban.py
+```
+
 ## SRE Tools — SLO Manager, Runbook Executor, Incident Commander
 
 ```bash
@@ -2246,4 +2326,289 @@ python tools/data_canvas/sync/openmetadata_sync.py --all --gate --json
 # POST /data/api/sync/datahub        {"design_id": "<id>", "dry_run": false}    # Trigger DataHub sync
 # POST /data/api/sync/openmetadata   {"design_id": "<id>", "dry_run": false}    # Trigger OpenMetadata sync
 # Omit design_id to sync all designs. dry_run=true for validation without writes.
+```
+
+
+---
+
+## Showcase Commands
+```bash
+python tools/showcase/generate_app.py --slug <name> --category <cat>
+python tools/showcase/osint_engine.py --source cve --fetch --json
+python tools/showcase/synthetic_data_engine.py --domain cyber --records 1000
+python tools/showcase/validator.py --app <slug> --json
+```
+
+
+## System Graph Commands
+```bash
+# Federated graph API (6 sources — 3500+ nodes, 1600+ edges)
+# Dashboard page
+open http://localhost:5050/system-graph
+
+# REST API
+GET /api/system-graph/graph                          # Full graph (5-min cache)
+GET /api/system-graph/graph?type=tool                # Filter by node type
+GET /api/system-graph/graph?health=error             # Filter by health
+GET /api/system-graph/graph?q=kanban                 # Full-text search
+GET /api/system-graph/graph?sources=awareness_kg,goals  # Subset of sources
+GET /api/system-graph/node/<node_id>                 # Per-node detail + neighbours
+GET /api/system-graph/node-types                     # Node type + edge type metadata
+
+# Python direct import
+python -c "from tools.system_graph.graph_builder import build_graph; d = build_graph(); print(d['stats'])"
+python -c "from tools.system_graph.graph_builder import get_node_detail; print(get_node_detail('<node_id>'))"
+
+# MCP tools (via unified gateway)
+#   system_graph_get        — full graph with optional filters
+#   system_graph_node_detail — per-node detail
+#   system_graph_stats       — source counts + timing
+```
+
+## STRATEGOS Commands
+```bash
+# Adversarial Data Validation Pipeline (bias / deepfake / manipulation detection)
+python icdev/tools/strategos/adversarial_validator.py --signal '{"id":"s1","source_type":"social_media","content":"..."}' --json
+python icdev/tools/strategos/adversarial_validator.py --signals-file signals.json --json --gate
+python icdev/tools/strategos/adversarial_validator.py --health --json
+
+# Batch validation (Python API)
+python -c "from icdev.tools.strategos.adversarial_validator import validate_signals; print(validate_signals([...]))"
+```
+
+
+## NOC Operations Canvas (NOCC) Commands
+```bash
+# Initialize NOCC database (PostgreSQL default, SQLite fallback)
+python -c "from tools.noc_canvas.db.init_db import init_db; init_db()"
+
+# Dashboard (web UI)
+#   GET /noc                  — NOCC home/overview
+#   GET /noc/alarms           — Alarm board
+#   GET /noc/incidents        — Incident tracker
+#   GET /noc/rfcs             — RFC/Change management
+#   GET /noc/mops             — MOP library
+#   GET /noc/maintenance      — Maintenance windows
+#   GET /noc/sla              — SLA dashboard
+
+# REST API
+# POST /api/noc/alarms                          — Ingest alarm
+# POST /api/noc/alarms/<id>/ack                 — Acknowledge alarm
+# POST /api/noc/alarms/<id>/clear               — Clear alarm
+# GET  /api/noc/incidents                        — List open incidents
+# POST /api/noc/incidents                        — Create incident
+# GET  /api/noc/sla                             — SLA records
+# GET  /api/noc/overview                        — Aggregated status
+# POST /api/noc/mops/generate                   — LLM-generate MOP steps
+# POST /api/noc/iqe-query                       — NL→SQL query
+
+# Python direct import
+python -c "from tools.noc_canvas.alarm_correlator import get_active_alarms; from tools.noc_canvas.db.init_db import get_connection; c = get_connection(); print(get_active_alarms(c))"
+python -c "from tools.noc_canvas.sla_predictor import get_sla_dashboard; from tools.noc_canvas.db.init_db import get_connection; c = get_connection(); import json; print(json.dumps(get_sla_dashboard(c), indent=2, default=str))"
+python -c "from tools.noc_canvas.noc_aggregator import get_noc_overview; from tools.noc_canvas.db.init_db import get_connection; c = get_connection(); import json; print(json.dumps(get_noc_overview(c), indent=2, default=str))"
+
+# Genesis reflexes (run manually or via Genesis daemon)
+python tools/genesis/reflexes/nocc_alarm_triage.py     # 2h cadence: auto-incident from alarm storms
+python tools/genesis/reflexes/nocc_sla_watcher.py      # 4h cadence: SLA breach detection
+python tools/genesis/reflexes/bgp_route_monitor.py     # 1h cadence: BGP session monitoring
+python tools/genesis/reflexes/peering_health_monitor.py  # 6h cadence: PeeringDB re-sync + RPKI re-validate
+
+# Skill
+# /icdev-noc  — NOC operations brief (alarms, incidents, SLA, maintenance, peering)
+```
+
+## Peering Management Canvas (PMC) Commands
+```bash
+# Initialize PMC database (PostgreSQL default, SQLite fallback)
+python -c "from tools.pmc_canvas.db.init_db import init_db; init_db()"
+
+# Dashboard (web UI)
+#   GET /pmc                  — PMC home/overview
+#   GET /pmc/peers            — BGP peer registry
+#   GET /pmc/peers/<id>       — Peer detail + RPKI + config
+#   GET /pmc/ix               — Internet Exchange memberships
+#   GET /pmc/rpki             — RPKI validation dashboard
+#   GET /pmc/policies         — Route policies
+#   GET /pmc/requests         — Peering requests pipeline
+
+# REST API
+# GET  /api/pmc/overview                         — Aggregated metrics
+# POST /api/pmc/peers                            — Add BGP peer
+# GET  /api/pmc/peers/<id>/evaluate              — Run decision engine
+# POST /api/pmc/peers/<id>/validate-rpki         — Validate RPKI
+# GET  /api/pmc/peers/<id>/generate-config       — Generate BGP config
+# GET  /api/pmc/peers/<id>/rpsl                  — Generate RPSL aut-num
+# POST /api/pmc/peers/<id>/sync                  — Sync from PeeringDB
+# GET  /api/pmc/rpki/report                      — Full RPKI validation report
+# POST /api/pmc/iqe-query                        — NL→SQL query
+
+# PeeringDB client
+python -c "from tools.pmc_canvas.peeringdb_client import get_asn_info; import json; print(json.dumps(get_asn_info(13335), indent=2))"
+
+# RPKI validation
+python -c "from tools.pmc_canvas.rpki_validator import validate_prefix; import json; print(json.dumps(validate_prefix('1.1.1.0/24', 13335), indent=2))"
+python -c "from tools.pmc_canvas.rpki_validator import generate_roa_report; print(generate_roa_report(1, [{'prefix':'1.1.1.0/24','origin_asn':13335}]))"
+
+# RPSL generator
+python -c "from tools.pmc_canvas.rpsl_generator import generate_aut_num; print(generate_aut_num(64512, [], []))"
+
+# BGP config generator (all 6 OS types)
+python -c "from tools.pmc_canvas.bgp_config_generator import generate_peer_session; print(generate_peer_session({'asn':13335,'org_name':'Cloudflare'}, 64512, 'ios_xr', '198.51.100.1'))"
+
+# Peering decision engine
+python -c "from tools.pmc_canvas.peering_decision_engine import evaluate_peer; import json; print(json.dumps(evaluate_peer({'asn':13335,'org_name':'Cloudflare','traffic_ratio':0.9,'ipv4_prefix_count':1200,'ipv6_prefix_count':300,'irr_as_set':'AS13335'}, 64512, [], []), indent=2))"
+
+# Transit pricing benchmark
+python tools/pmc_canvas/transit_pricing_benchmark.py --benchmark --region na --json
+python tools/pmc_canvas/transit_pricing_benchmark.py --roi --json
+python tools/pmc_canvas/transit_pricing_benchmark.py --ix --json
+
+# Config
+#   args/pmc_config.yaml  — Decision engine weights, RPKI thresholds, PeeringDB sync cadence
+```
+
+## ISP Carrier Tools Commands
+```bash
+# ISP Capacity Planner
+python -c "from tools.network.isp_capacity_planner import model_traffic_growth; import json; print(json.dumps(model_traffic_growth([100,120,145,180], 12), indent=2))"
+python -c "from tools.network.isp_capacity_planner import dwdm_capacity_analysis; import json; print(json.dumps(dwdm_capacity_analysis(fiber_pairs=4, modulation='400G-DP-16QAM', grid='C-band-50GHz', current_channels_used=60), indent=2))"
+python -c "from tools.network.isp_capacity_planner import dark_fiber_roi; import json; print(json.dumps(dark_fiber_roi(route_km=120, fiber_pairs=4, iru_cost_usd=800000, annual_lease_usd=120000, lease_term_years=20), indent=2))"
+python -c "from tools.network.isp_capacity_planner import capacity_planning_summary; import json; print(json.dumps(capacity_planning_summary('Dallas PoP', [100,120,145,180], 4, '400G-DP-16QAM'), indent=2))"
+
+# FCC Compliance
+python tools/network/fcc_compliance.py --calea --json
+python tools/network/fcc_compliance.py --part36 --json
+python tools/network/fcc_compliance.py --nanp --json
+python tools/network/fcc_compliance.py --e911 --json
+python tools/network/fcc_compliance.py --all --json
+
+# Telco RFP Adapter (E-Rate / BEAD / RDOF)
+python tools/govcon/telco_rfp_adapter.py --form470 --json
+python tools/govcon/telco_rfp_adapter.py --bead --json
+python tools/govcon/telco_rfp_adapter.py --rdof --json
+
+# DataBridge Connectors
+python -c "from tools.databridge.connectors.equinix_ecx_connector import EquinixECXConnector; c = EquinixECXConnector(); print(c.health_check())"
+python -c "from tools.databridge.connectors.megaport_connector import MegaportConnector; c = MegaportConnector(); print(c.health_check())"
+
+# NDC Config Generator — IOS-XR and Nokia SR OS (added as OS types)
+python -c "from tools.network.config_generator import _DEFAULT_OS, _IFACE_GEN; print([k for k in _DEFAULT_OS if 'ios_xr' in _DEFAULT_OS[k] or 'nokia' in _DEFAULT_OS[k]])"
+```
+
+## Circuit & Capacity Canvas (CCC) Commands
+```bash
+# Initialize CCC database (PostgreSQL default, SQLite fallback)
+python tools/ccc_canvas/db/init_db.py
+
+# Circuit aggregator overview
+python -c "from tools.ccc_canvas.circuit_aggregator import get_ccc_overview; import json; print(json.dumps(get_ccc_overview(), indent=2))"
+
+# Capacity analysis — run for all active circuits
+python -c "from tools.ccc_canvas.db.init_db import get_connection; from tools.ccc_canvas.capacity_engine import run_all_circuits; conn=get_connection(); import json; print(json.dumps(run_all_circuits(conn), indent=2))"
+
+# LOA workflow — generate document
+python -c "from tools.ccc_canvas.db.init_db import get_connection; from tools.ccc_canvas.loa_workflow import generate_loa_text; conn=get_connection(); print(generate_loa_text(conn, 1))"
+
+# IQE adapter — query circuits
+python -c "from tools.iqe.adapters.ccc import handle_query; from tools.ccc_canvas.db.init_db import get_connection; conn=get_connection(); import json; print(json.dumps(handle_query(conn, 'show active circuits'), indent=2))"
+
+#   GET /ccc                  — CCC overview
+#   GET /ccc/circuits         — circuit inventory
+#   GET /ccc/cross-connects   — cross-connect list
+#   GET /ccc/loa              — LOA request tracker
+#   GET /ccc/capacity         — capacity planning
+#   GET /ccc/dwdm             — DWDM span inventory
+#   POST /api/ccc/circuits    — add circuit
+#   POST /api/ccc/loa         — create LOA request
+#   GET  /api/ccc/capacity/report — run capacity analysis
+#   POST /api/ccc/iqe-query   — IQE natural-language query
+```
+
+## DDoS & Security Ops Canvas (DSOC) Commands
+```bash
+# Initialize DSOC database (PostgreSQL default, SQLite fallback)
+python tools/dsoc_canvas/db/init_db.py
+
+# DSOC overview — active mitigations, RTBH, scrubbing utilization, threats
+python -c "from tools.dsoc_canvas.db.init_db import get_connection; from tools.dsoc_canvas.dsoc_aggregator import get_dsoc_overview; import json; conn=get_connection(); print(json.dumps(get_dsoc_overview(conn), indent=2))"
+
+# Trigger RTBH blackhole for a prefix (RFC 5635)
+python -c "from tools.dsoc_canvas.db.init_db import get_connection; from tools.dsoc_canvas.rtbh_manager import trigger_rtbh; conn=get_connection(); import json; r=trigger_rtbh(conn,'192.0.2.0/24','volumetric_attack'); conn.commit(); print(json.dumps(r, indent=2))"
+
+# Auto-expire RTBH entries whose timer has elapsed
+python -c "from tools.dsoc_canvas.db.init_db import get_connection; from tools.dsoc_canvas.rtbh_manager import auto_expire_rtbh; conn=get_connection(); n=auto_expire_rtbh(conn); conn.commit(); print(f'Expired: {n}')"
+
+# Generate IOS-XR flowspec config for a rule dict
+python -c "from tools.dsoc_canvas.flowspec_engine import generate_ios_xr_flowspec; r={'rule_name':'block-udp-1900','destination_prefix':'10.0.0.0/8','protocol':'udp','dst_port':'1900','action':'drop','rate_limit_bps':0}; print(generate_ios_xr_flowspec(r))"
+
+# Generate JunOS flowspec config
+python -c "from tools.dsoc_canvas.flowspec_engine import generate_junos_flowspec; r={'rule_name':'block-udp-1900','destination_prefix':'10.0.0.0/8','protocol':'udp','dst_port':'1900','action':'drop'}; print(generate_junos_flowspec(r))"
+
+# IQE adapter — query threats
+python -c "from tools.iqe.adapters.dsoc import handle_query; from tools.dsoc_canvas.db.init_db import get_connection; import json; conn=get_connection(); print(json.dumps(handle_query(conn, 'show high confidence threats'), indent=2))"
+
+# Genesis reflex — circuit capacity monitor (4h cadence)
+python tools/genesis/reflexes/circuit_capacity_monitor.py
+
+# Genesis reflex — NOCC alarm triage (2h cadence)
+python tools/genesis/reflexes/nocc_alarm_triage.py
+
+# Genesis reflex — NOCC SLA watcher (4h cadence)
+python tools/genesis/reflexes/nocc_sla_watcher.py
+
+# Genesis reflex — BGP route monitor (1h cadence)
+python tools/genesis/reflexes/bgp_route_monitor.py
+
+# Genesis reflex — Peering health monitor (6h cadence)
+python tools/genesis/reflexes/peering_health_monitor.py
+
+#   GET /dsoc                 — DSOC overview
+#   GET /dsoc/flowspec        — BGP flowspec rules
+#   GET /dsoc/rtbh            — RTBH blackhole entries
+#   GET /dsoc/scrubbing       — scrubbing center inventory
+#   GET /dsoc/threats         — threat intelligence feed
+#   GET /dsoc/mitigations     — active mitigation tracker
+#   POST /api/dsoc/rtbh       — trigger RTBH for a prefix
+#   POST /api/dsoc/rtbh/<id>/withdraw — withdraw RTBH entry
+#   POST /api/dsoc/flowspec   — create flowspec rule
+#   PUT  /api/dsoc/flowspec/<id>/withdraw — withdraw flowspec rule
+#   POST /api/dsoc/mitigations/<id>/complete — complete mitigation
+#   POST /api/dsoc/iqe-query  — IQE natural-language query
+```
+
+## Phase 4 — Commercial & Regulatory Intelligence Commands
+```bash
+# FCC compliance assessment (CALEA, Part 36, NANP, E-911)
+python tools/network/fcc_compliance.py --calea --json
+python tools/network/fcc_compliance.py --part36 --json
+python tools/network/fcc_compliance.py --nanp --json
+python tools/network/fcc_compliance.py --e911 --json
+python tools/network/fcc_compliance.py --all --json
+
+# FCC compliance via dashboard API
+#   GET /api/network/fcc/calea    — CALEA lawful-intercept checklist
+#   GET /api/network/fcc/part36   — Part 36 separations assessment
+#   GET /api/network/fcc/nanp     — NANP number inventory
+#   GET /api/network/fcc/e911     — E-911 capability check
+#   GET /api/network/fcc/all      — All checks combined
+
+# Telco RFP adapter (E-Rate Form 470, BEAD, RDOF)
+python tools/govcon/telco_rfp_adapter.py --form470 --json
+python tools/govcon/telco_rfp_adapter.py --bead --json
+python tools/govcon/telco_rfp_adapter.py --rdof --json
+
+# Telco RFP via dashboard API
+#   POST /api/govcon/telco/form470  — Parse Form 470 and score bid
+#   GET  /api/govcon/telco/bead     — BEAD compliance matrix
+#   GET  /api/govcon/telco/rdof     — RDOF eligibility scoring
+
+# Transit pricing benchmark (PMC)
+python tools/pmc_canvas/transit_pricing_benchmark.py --benchmark --region na --json
+python tools/pmc_canvas/transit_pricing_benchmark.py --benchmark --region eu --json
+python tools/pmc_canvas/transit_pricing_benchmark.py --roi --json
+
+# Transit pricing via dashboard API
+#   GET  /api/pmc/transit/benchmark?region=na&speed_gbps=10 — Market benchmark
+#   POST /api/pmc/transit/roi — Peering-vs-transit NPV analysis
+#   GET  /pmc/transit         — Transit pricing dashboard page
 ```

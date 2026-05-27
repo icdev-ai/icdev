@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -31,7 +33,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "agentic_fitness.yaml"
 PROMPT_PATH = BASE_DIR / "hardprompts" / "agent" / "fitness_evaluation.md"
 
-logger = logging.getLogger("icdev.agentic_fitness")
+logger = get_logger("icdev.agentic_fitness")
 
 try:
     import yaml
@@ -591,7 +593,7 @@ def main():
     args = parser.parse_args()
 
     if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+        get_logger().setLevel(logging.DEBUG)
 
     scorecard = assess_fitness(
         spec=args.spec,

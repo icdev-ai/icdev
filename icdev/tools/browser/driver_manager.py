@@ -35,6 +35,7 @@ CLI::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -46,7 +47,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.browser.driver_manager")
+logger = get_logger("icdev.browser.driver_manager")
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -262,7 +263,25 @@ def resolve_driver() -> DriverResolution:
             source="vendored",
         )
 
-    # 4. chromedriver on PATH
+    # 4a. Well-known Linux/container Chrome paths (checked before PATH shutil.which
+    #     to pick up headless-chromium in Alpine/Debian containers quickly)
+    if platform.system() == "Linux":
+        for _linux_chrome in (
+            Path("/usr/bin/chromium"),
+            Path("/usr/bin/chromium-browser"),
+            Path("/usr/bin/google-chrome"),
+            Path("/usr/bin/google-chrome-stable"),
+            Path("/usr/bin/chromium-headless"),
+        ):
+            if _linux_chrome.exists():
+                _linux_chromedriver = shutil.which("chromedriver")
+                return DriverResolution(
+                    browser="chrome",
+                    driver_path=_linux_chromedriver,
+                    source="path",
+                )
+
+    # 4b. chromedriver on PATH
     path_chrome = shutil.which("chromedriver")
     if path_chrome:
         return DriverResolution(browser="chrome", driver_path=path_chrome, source="path")

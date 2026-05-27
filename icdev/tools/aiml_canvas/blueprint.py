@@ -39,14 +39,19 @@ Routes:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
+
+try:
+    from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
+except Exception:
+    def _record_decision(**_kw): pass  # type: ignore[assignment]
 
 _AIMC_ENABLED = os.environ.get("ICDEV_AIML_CANVAS_ENABLED", "true").lower() not in ("0", "false", "no")
 
@@ -209,8 +214,20 @@ def create_aiml_blueprint() -> Blueprint | None:
 
     @bp.route("/api/designs/<design_id>/assess", methods=["POST"])
     def api_assess(design_id: str):
+        data = request.get_json(silent=True) or {}
+        use_cot = data.get("use_cot", False)
+        chain_mode = "cot" if use_cot else ""
         try:
             result = eng.run_assessment(design_id)
+            result["chain_mode"] = chain_mode
+            _record_decision(
+                canvas_type="aimc",
+                record_id=design_id,
+                decision_type="risk_score",
+                decision=f"Score={result.get('score', result.get('overall_score', '?'))} Grade={result.get('grade', '?')}",
+                rationale=f"Findings: {len(result.get('findings', []))}",
+                model_used=None,
+            )
             return jsonify(result)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 404
@@ -221,6 +238,14 @@ def create_aiml_blueprint() -> Blueprint | None:
         if not design:
             return jsonify({"error": "not found"}), 404
         result = gov_eng.run_all(design.get("graph", {}), design)
+        _record_decision(
+            canvas_type="aimc",
+            record_id=design_id,
+            decision_type="compliance_finding",
+            decision=f"Gov assessment score={result.get('score','?')}",
+            rationale=f"IL={design.get('il_level','?')}",
+            model_used=None,
+        )
         return jsonify(result)
 
     # ── API: Adaptation Recommendation ───────────────────────────────────────
@@ -410,5 +435,94 @@ def create_aiml_blueprint() -> Blueprint | None:
             return jsonify({"model_id": model_id, "aadc_refs": refs, "count": len(refs)})
         except Exception:
             return jsonify({"model_id": model_id, "aadc_refs": [], "count": 0})
+
+    @bp.route("/api/iqe-query", methods=["POST"])
+    def aimc_api_iqe_query():
+        """IQE structured query — translate NL to IQE and execute against AIMC model data."""
+        import logging as _log
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import IQESyntaxError, parse
+        from tools.iqe.executor import execute_query
+        import tools.iqe.adapters.aimc  # noqa: F401 — registers aimc.* collections
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        collections = ["aimc.designs", "aimc.nodes", "aimc.assessments", "aimc.artifacts"]
+        translation = nl_to_iqe(question, collections)
+        iqe_str = translation.get("iqe", "")
+        explanation = translation.get("explanation", "")
+
+        if not data.get("execute", True):
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+        try:
+            ast = parse(iqe_str)
+            rows = execute_query(ast, None)
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                            "results": rows, "row_count": len(rows)}), 200
+        except IQESyntaxError as exc:
+            return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+        except Exception as exc:
+            _log.getLogger(__name__).warning("AIMC IQE query error: %s", exc)
+            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+    @bp.route("/modernize")
+    def modernize_page():
+        from tools.aiml_canvas.modernization_bridge import (
+            LANGUAGES, ARCHITECTURES, DATA_STATES, USER_GOALS, TEAM_AI_READINESS,
+        )
+        from apps.forge_academy.patterns import INJECTION_PATTERNS
+        return render_template(
+            "aiml_canvas/modernize.html",
+            languages=LANGUAGES,
+            architectures=ARCHITECTURES,
+            data_states=DATA_STATES,
+            user_goals=USER_GOALS,
+            team_readiness_options=TEAM_AI_READINESS,
+            patterns=INJECTION_PATTERNS,
+        )
+
+    @bp.route("/api/modernize/recommend", methods=["POST"])
+    def api_modernize_recommend():
+        data = request.get_json(silent=True) or {}
+        from tools.aiml_canvas.modernization_bridge import recommend_json
+        try:
+            result = recommend_json({
+                "language": data.get("language", ""),
+                "architecture": data.get("architecture", ""),
+                "data_state": data.get("data_state", ""),
+                "goal": data.get("goal", ""),
+                "team_readiness": data.get("team_readiness", ""),
+            })
+            return jsonify({"ok": True, "recommendation": result})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/ai-trace")
+    def aimc_api_ai_trace():
+        """Return recent AI decisions made by AIMC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aimc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aimc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "aimc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     return bp

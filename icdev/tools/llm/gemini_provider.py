@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Google Gemini LLM Provider.
 
@@ -10,7 +12,6 @@ Graceful degradation on missing SDK per D73.
 """
 
 import json
-import logging
 import time
 from typing import Any, Dict, Iterator, List
 
@@ -20,7 +21,7 @@ from tools.llm.provider import (
     LLMResponse,
 )
 
-logger = logging.getLogger("icdev.llm.gemini")
+logger = get_logger("icdev.llm.gemini")
 
 try:
     import google.generativeai as genai

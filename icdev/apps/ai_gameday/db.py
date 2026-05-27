@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS ttx_sessions (
     started_at TEXT,
     ended_at TEXT,
     config_json TEXT DEFAULT '{}',
+    tenant_id TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

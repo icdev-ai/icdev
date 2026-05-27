@@ -8,13 +8,13 @@ hammering the Vault API on every connection open.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import os
 from threading import Lock
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger("databridge.resolvers.vault")
+logger = get_logger("databridge.resolvers.vault")
 
 # ---------------------------------------------------------------------------
 # In-process TTL cache (keyed by secret_ref) — cachetools.TTLCache

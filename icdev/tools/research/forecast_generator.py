@@ -14,9 +14,9 @@ CUI // SP-CTI
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import sqlite3
 import uuid
 from tools.db.storage import get_connection
@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Paths & constants

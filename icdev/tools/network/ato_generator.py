@@ -177,6 +177,178 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ---------------------------------------------------------------------------
+# STIG helpers (extracted from generate_stig_checklist)
+# ---------------------------------------------------------------------------
+
+def _compute_stig_facts(nodes, edges, node_types, adj):
+    """Pre-compute topology characteristics for STIG evaluation."""
+    type_set = set(node_types.values())
+    has_firewall = bool(_FIREWALL_TYPES & type_set)
+    firewall_count = sum(1 for t in type_set if t in _FIREWALL_TYPES)
+    wan_nodes = [n for n in nodes if node_types.get(n["id"]) in _WAN_TYPES]
+    core_types = {"router", "switch-l3", "mpls-pe", "mpls-p", "route-reflector"}
+    dns_types = {"aws-r53", "az-dns", "gcp-dns"}
+    cloud_types = {t for t in type_set if t.startswith(_CLOUD_PREFIXES)}
+    has_oob = any(
+        "oob" in (n.get("label") or "").lower()
+        or "management" in (n.get("label") or "").lower()
+        or n.get("type") in ("siem", "network-tap", "wlc")
+        for n in nodes
+    )
+    insecure_protos = [e for e in edges if (e.get("protocol") or "").lower() in ("telnet", "http", "snmpv1", "snmpv2")]
+    encrypted_wan = (
+        all(
+            any(node_types.get(nb) in _ENCRYPTOR_TYPES for nb in adj.get(wn["id"], set()))
+            or any(
+                (e.get("protocol") or "").lower() in ("ipsec", "ipsec esp", "macsec", "tls", "gre/ipsec")
+                for e in edges
+                if wn["id"] in (e["source"], e["target"])
+            )
+            for wn in wan_nodes
+        )
+        if wan_nodes else True
+    )
+    fips_on_encrypted = (
+        all(
+            any(node_types.get(nid) in _ENCRYPTOR_TYPES for nid in (e["source"], e["target"]))
+            for e in edges
+            if (e.get("protocol") or "").lower() in ("ipsec", "ipsec esp", "macsec", "tls", "gre/ipsec")
+        )
+        if edges else True
+    )
+    core_redundant = all(
+        len(adj.get(n["id"], set())) >= 2
+        for n in nodes
+        if node_types.get(n["id"]) in core_types or "core" in (n.get("label") or "").lower()
+    )
+    dns_count = sum(1 for n in nodes if node_types.get(n["id"]) in dns_types)
+    unlabeled = [n for n in nodes if not n.get("label") or n.get("label", "").startswith("Untitled")]
+    has_type1 = bool({"type1-encryptor", "kg-175d", "kg-175g", "kg-250", "kg-340", "kg-245x", "kg-255"} & type_set)
+    encryptors_match = True
+    for n in nodes:
+        if node_types.get(n["id"], "") in _ENCRYPTOR_TYPES:
+            max_rating = ENCRYPTOR_RATINGS.get(node_types[n["id"]], 0)
+            for e in edges:
+                if n["id"] in (e["source"], e["target"]):
+                    label = (e.get("label") or "").upper()
+                    link_mbps = 1000
+                    if "400G" in label:
+                        link_mbps = 400000
+                    elif "100G" in label:
+                        link_mbps = 100000
+                    elif "40G" in label:
+                        link_mbps = 40000
+                    elif "10G" in label:
+                        link_mbps = 10000
+                    if link_mbps > max_rating > 0:
+                        encryptors_match = False
+    return {
+        "has_firewall": has_firewall, "firewall_count": firewall_count,
+        "wan_nodes": wan_nodes, "core_types": core_types, "dns_types": dns_types,
+        "cloud_types": cloud_types, "has_oob": has_oob,
+        "insecure_protos": insecure_protos, "encrypted_wan": encrypted_wan,
+        "fips_on_encrypted": fips_on_encrypted, "core_redundant": core_redundant,
+        "dns_count": dns_count, "unlabeled": unlabeled,
+        "has_type1": has_type1, "encryptors_match": encryptors_match,
+    }
+
+
+def _evaluate_stig_check(check, item, nodes, node_types, facts, classification, has_as_built_version):
+    """Evaluate a single named STIG check; return (status, comments)."""
+    has_firewall = facts["has_firewall"]
+    firewall_count = facts["firewall_count"]
+    core_types = facts["core_types"]
+
+    if check == "mgmt_encrypted":
+        if facts["insecure_protos"]:
+            protos = ", ".join(set((e.get("protocol") or "").upper() for e in facts["insecure_protos"]))
+            return "Open", f"Insecure management protocols detected: {protos}"
+        return "NotAFinding", "No insecure management protocols (Telnet/HTTP/SNMPv1/v2) found in topology."
+
+    if check == "firewall_at_boundary":
+        if has_firewall:
+            return "NotAFinding", f"{firewall_count} firewall device(s) present in topology."
+        return "Open", "No firewall device found at network boundary."
+
+    if check == "fips_crypto":
+        if facts["fips_on_encrypted"]:
+            return "NotAFinding", "All encrypted links have FIPS-validated crypto devices."
+        return "Open", "Encrypted links found without FIPS 140-2/3 validated crypto modules."
+
+    if check == "core_redundancy":
+        core_count = sum(1 for n in nodes if node_types.get(n["id"]) in core_types)
+        if core_count == 0:
+            return "Not_Applicable", "No core/distribution devices in topology."
+        if facts["core_redundant"]:
+            return "NotAFinding", "All core/distribution devices have 2+ uplinks."
+        return "Open", "One or more core/distribution devices have only a single uplink."
+
+    if check == "oob_mgmt":
+        if facts["has_oob"]:
+            return "NotAFinding", "Out-of-band management network or management device detected."
+        return "Open", "No OOB management network detected in topology."
+
+    if check == "dns_redundancy":
+        dns_count = facts["dns_count"]
+        if dns_count >= 2:
+            return "NotAFinding", f"{dns_count} DNS services found."
+        if dns_count == 0 and len(nodes) <= 3:
+            return "Not_Applicable", "Small topology -- DNS redundancy check not applicable."
+        return "Open", f"Only {dns_count} DNS service(s) found; need at least 2."
+
+    if check == "wan_encrypted":
+        if not facts["wan_nodes"]:
+            return "Not_Applicable", "No WAN links in topology."
+        if facts["encrypted_wan"]:
+            return "NotAFinding", "All WAN links have encryption (IPSec/MACsec/Type 1)."
+        return "Open", "One or more WAN links lack encryption."
+
+    if check == "cloud_isolated":
+        if not facts["cloud_types"]:
+            return "Not_Applicable", "No cloud resources in topology."
+        if has_firewall:
+            return "NotAFinding", "Cloud VPCs have firewall separation from on-premises."
+        return "Open", "Cloud resources present but no firewall isolating from on-prem."
+
+    if check == "segmentation":
+        if len(nodes) <= 5:
+            return "Not_Applicable", "Small topology -- segmentation check not applicable."
+        if firewall_count >= 2:
+            return "NotAFinding", f"{firewall_count} firewalls provide network segmentation."
+        if firewall_count == 1:
+            return "Open", "Only 1 firewall -- insufficient for east-west segmentation."
+        return "Open", "No firewalls for internal segmentation."
+
+    if check == "devices_labeled":
+        unlabeled = facts["unlabeled"]
+        if not unlabeled:
+            return "NotAFinding", "All devices have descriptive labels/hostnames."
+        return "Open", f"{len(unlabeled)} device(s) missing descriptive hostnames."
+
+    if check == "as_built_exists":
+        if has_as_built_version:
+            return "NotAFinding", "As-built version saved in topology history."
+        return "Open", "No as-built version found -- save current topology as 'As-Built'."
+
+    if check == "type1_for_secret":
+        if classification not in ("SECRET", "TOP SECRET"):
+            return "Not_Applicable", f"Classification is {classification} -- Type 1 not required."
+        if facts["has_type1"]:
+            return "NotAFinding", "NSA Type 1 encryptors present for SECRET+ links."
+        return "Open", "SECRET+ classification requires NSA Type 1 encryption."
+
+    if check == "encryptor_speed":
+        enc_count = sum(1 for n in nodes if node_types.get(n["id"]) in _ENCRYPTOR_TYPES)
+        if enc_count == 0:
+            return "Not_Applicable", "No encryption devices in topology."
+        if facts["encryptors_match"]:
+            return "NotAFinding", "All encryptor throughput ratings match link bandwidths."
+        return "Open", "One or more encryptors are under-rated for their link bandwidth."
+
+    return "Not_Reviewed", ""
+
+
 def _classify_node_zone(node: dict) -> str:
     """Return the security zone name for a node based on its type."""
     ntype = node.get("type", "")
@@ -865,86 +1037,17 @@ def generate_stig_checklist(
             edges = [e for e in edges if e["source"] in region_node_ids or e["target"] in region_node_ids]
 
     node_types = {n["id"]: n.get("type", "") for n in nodes}
-    type_set = set(node_types.values())
 
-    # Build adjacency
     adj: dict[str, set[str]] = defaultdict(set)
     for e in edges:
         adj[e["source"]].add(e["target"])
         adj[e["target"]].add(e["source"])
 
-    # Pre-compute topology characteristics
-    has_firewall = bool(_FIREWALL_TYPES & type_set)
-    firewall_count = sum(1 for t in type_set if t in _FIREWALL_TYPES)
-    wan_nodes = [n for n in nodes if node_types.get(n["id"]) in _WAN_TYPES]
-    core_types = {"router", "switch-l3", "mpls-pe", "mpls-p", "route-reflector"}
-    dns_types = {"aws-r53", "az-dns", "gcp-dns"}
-    cloud_types = {t for t in type_set if t.startswith(_CLOUD_PREFIXES)}
-    has_oob = any(
-        "oob" in (n.get("label") or "").lower()
-        or "management" in (n.get("label") or "").lower()
-        or n.get("type") in ("siem", "network-tap", "wlc")
-        for n in nodes
-    )
-    insecure_protos = [e for e in edges if (e.get("protocol") or "").lower() in ("telnet", "http", "snmpv1", "snmpv2")]
-    encrypted_wan = (
-        all(
-            any(node_types.get(nb) in _ENCRYPTOR_TYPES for nb in adj.get(wn["id"], set()))
-            or any(
-                (e.get("protocol") or "").lower() in ("ipsec", "ipsec esp", "macsec", "tls", "gre/ipsec")
-                for e in edges
-                if wn["id"] in (e["source"], e["target"])
-            )
-            for wn in wan_nodes
-        )
-        if wan_nodes
-        else True
-    )
-    fips_on_encrypted = (
-        all(
-            any(node_types.get(nid) in _ENCRYPTOR_TYPES for nid in (e["source"], e["target"]))
-            for e in edges
-            if (e.get("protocol") or "").lower() in ("ipsec", "ipsec esp", "macsec", "tls", "gre/ipsec")
-        )
-        if edges
-        else True
-    )
-    core_redundant = all(
-        len(adj.get(n["id"], set())) >= 2
-        for n in nodes
-        if node_types.get(n["id"]) in core_types or "core" in (n.get("label") or "").lower()
-    )
-    dns_count = sum(1 for n in nodes if node_types.get(n["id"]) in dns_types)
-    unlabeled = [n for n in nodes if not n.get("label") or n.get("label", "").startswith("Untitled")]
-    has_type1 = bool({"type1-encryptor", "kg-175d", "kg-175g", "kg-250", "kg-340", "kg-245x", "kg-255"} & type_set)
-    encryptors_match = True
-    for n in nodes:
-        ntype = node_types.get(n["id"], "")
-        if ntype in _ENCRYPTOR_TYPES:
-            max_rating = ENCRYPTOR_RATINGS.get(ntype, 0)
-            for e in edges:
-                if n["id"] in (e["source"], e["target"]):
-                    label = (e.get("label") or "").upper()
-                    link_mbps = 1000
-                    if "400G" in label:
-                        link_mbps = 400000
-                    elif "100G" in label:
-                        link_mbps = 100000
-                    elif "40G" in label:
-                        link_mbps = 40000
-                    elif "10G" in label:
-                        link_mbps = 10000
-                    if link_mbps > max_rating > 0:
-                        encryptors_match = False
+    facts = _compute_stig_facts(nodes, edges, node_types, adj)
 
-    # Evaluate each STIG check
     checklist: list[dict] = []
     for item in _STIG_CHECKLIST_ITEMS:
-        status = "Not_Reviewed"
-        comments = ""
         check = item["check"]
-
-        # Lambda-check items (newer format: check_id instead of stig_id)
         if callable(check):
             try:
                 passed = check(nodes, edges, node_types)
@@ -957,153 +1060,23 @@ def generate_stig_checklist(
                 "severity": item.get("severity", "CAT2"),
                 "title": item.get("title", ""),
                 "status": status,
-                "comments": comments,
+                "comments": "",
                 "fix_text": item.get("fix", "") if status == "Open" else "",
             })
             continue
 
-        if check == "mgmt_encrypted":
-            if insecure_protos:
-                status = "Open"
-                protos = ", ".join(set((e.get("protocol") or "").upper() for e in insecure_protos))
-                comments = f"Insecure management protocols detected: {protos}"
-            else:
-                status = "NotAFinding"
-                comments = "No insecure management protocols (Telnet/HTTP/SNMPv1/v2) found in topology."
-
-        elif check == "firewall_at_boundary":
-            if has_firewall:
-                status = "NotAFinding"
-                comments = f"{firewall_count} firewall device(s) present in topology."
-            else:
-                status = "Open"
-                comments = "No firewall device found at network boundary."
-
-        elif check == "fips_crypto":
-            if fips_on_encrypted:
-                status = "NotAFinding"
-                comments = "All encrypted links have FIPS-validated crypto devices."
-            else:
-                status = "Open"
-                comments = "Encrypted links found without FIPS 140-2/3 validated crypto modules."
-
-        elif check == "core_redundancy":
-            core_count = sum(1 for n in nodes if node_types.get(n["id"]) in core_types)
-            if core_count == 0:
-                status = "Not_Applicable"
-                comments = "No core/distribution devices in topology."
-            elif core_redundant:
-                status = "NotAFinding"
-                comments = "All core/distribution devices have 2+ uplinks."
-            else:
-                status = "Open"
-                comments = "One or more core/distribution devices have only a single uplink."
-
-        elif check == "oob_mgmt":
-            if has_oob:
-                status = "NotAFinding"
-                comments = "Out-of-band management network or management device detected."
-            else:
-                status = "Open"
-                comments = "No OOB management network detected in topology."
-
-        elif check == "dns_redundancy":
-            if dns_count >= 2:
-                status = "NotAFinding"
-                comments = f"{dns_count} DNS services found."
-            elif dns_count == 0 and len(nodes) <= 3:
-                status = "Not_Applicable"
-                comments = "Small topology -- DNS redundancy check not applicable."
-            else:
-                status = "Open"
-                comments = f"Only {dns_count} DNS service(s) found; need at least 2."
-
-        elif check == "wan_encrypted":
-            if not wan_nodes:
-                status = "Not_Applicable"
-                comments = "No WAN links in topology."
-            elif encrypted_wan:
-                status = "NotAFinding"
-                comments = "All WAN links have encryption (IPSec/MACsec/Type 1)."
-            else:
-                status = "Open"
-                comments = "One or more WAN links lack encryption."
-
-        elif check == "cloud_isolated":
-            if not cloud_types:
-                status = "Not_Applicable"
-                comments = "No cloud resources in topology."
-            elif has_firewall:
-                status = "NotAFinding"
-                comments = "Cloud VPCs have firewall separation from on-premises."
-            else:
-                status = "Open"
-                comments = "Cloud resources present but no firewall isolating from on-prem."
-
-        elif check == "segmentation":
-            if len(nodes) <= 5:
-                status = "Not_Applicable"
-                comments = "Small topology -- segmentation check not applicable."
-            elif firewall_count >= 2:
-                status = "NotAFinding"
-                comments = f"{firewall_count} firewalls provide network segmentation."
-            elif firewall_count == 1:
-                status = "Open"
-                comments = "Only 1 firewall -- insufficient for east-west segmentation."
-            else:
-                status = "Open"
-                comments = "No firewalls for internal segmentation."
-
-        elif check == "devices_labeled":
-            if not unlabeled:
-                status = "NotAFinding"
-                comments = "All devices have descriptive labels/hostnames."
-            else:
-                status = "Open"
-                comments = f"{len(unlabeled)} device(s) missing descriptive hostnames."
-
-        elif check == "as_built_exists":
-            if has_as_built_version:
-                status = "NotAFinding"
-                comments = "As-built version saved in topology history."
-            else:
-                status = "Open"
-                comments = "No as-built version found -- save current topology as 'As-Built'."
-
-        elif check == "type1_for_secret":
-            if classification not in ("SECRET", "TOP SECRET"):
-                status = "Not_Applicable"
-                comments = f"Classification is {classification} -- Type 1 not required."
-            elif has_type1:
-                status = "NotAFinding"
-                comments = "NSA Type 1 encryptors present for SECRET+ links."
-            else:
-                status = "Open"
-                comments = "SECRET+ classification requires NSA Type 1 encryption."
-
-        elif check == "encryptor_speed":
-            enc_count = sum(1 for n in nodes if node_types.get(n["id"]) in _ENCRYPTOR_TYPES)
-            if enc_count == 0:
-                status = "Not_Applicable"
-                comments = "No encryption devices in topology."
-            elif encryptors_match:
-                status = "NotAFinding"
-                comments = "All encryptor throughput ratings match link bandwidths."
-            else:
-                status = "Open"
-                comments = "One or more encryptors are under-rated for their link bandwidth."
-
-        checklist.append(
-            {
-                "stig_id": item["stig_id"],
-                "rule_id": item["rule_id"],
-                "severity": item["severity"],
-                "title": item["title"],
-                "status": status,
-                "comments": comments,
-                "fix_text": item["fix"] if status == "Open" else "",
-            }
+        status, comments = _evaluate_stig_check(
+            check, item, nodes, node_types, facts, classification, has_as_built_version
         )
+        checklist.append({
+            "stig_id": item["stig_id"],
+            "rule_id": item["rule_id"],
+            "severity": item["severity"],
+            "title": item["title"],
+            "status": status,
+            "comments": comments,
+            "fix_text": item["fix"] if status == "Open" else "",
+        })
 
     cat1_open = sum(1 for c in checklist if c["severity"] == "CAT1" and c["status"] == "Open")
     cat2_open = sum(1 for c in checklist if c["severity"] == "CAT2" and c["status"] == "Open")

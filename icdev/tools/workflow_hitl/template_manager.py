@@ -20,7 +20,7 @@ def get_default(canvas_type: str | None = None):
     try:
         if canvas_type:
             row = conn.execute(
-                "SELECT * FROM wf_templates WHERE canvas_type=? AND is_default=1 AND is_system=1 LIMIT 1",
+                "SELECT * FROM wf_templates WHERE canvas_type=%s AND is_default=1 AND is_system=1 LIMIT 1",
                 (canvas_type,),
             ).fetchone()
             if row:
@@ -36,7 +36,7 @@ def get_default(canvas_type: str | None = None):
 def get(template_id: str):
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM wf_templates WHERE id=?", (template_id,)).fetchone()
+        row = conn.execute("SELECT * FROM wf_templates WHERE id=%s", (template_id,)).fetchone()
         return dict(row) if row else None
     finally:
         conn.close()
@@ -47,7 +47,7 @@ def list_templates(canvas_type: str | None = None) -> list:
     try:
         if canvas_type:
             rows = conn.execute(
-                "SELECT * FROM wf_templates WHERE canvas_type=? OR canvas_type IS NULL ORDER BY is_system DESC, name",
+                "SELECT * FROM wf_templates WHERE canvas_type=%s OR canvas_type IS NULL ORDER BY is_system DESC, name",
                 (canvas_type,),
             ).fetchall()
         else:
@@ -76,7 +76,7 @@ def create(
             """INSERT INTO wf_templates
                (id, name, canvas_type, stages_json, roles_json, approval_policy,
                 kickback_limit, is_default, is_system, created_by, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,0,0,?,?,?)""",
+               VALUES (%s,?,?,?,?,?,?,0,0,?,?,%s)""",
             (template_id, name, canvas_type, stages, roles, approval_policy,
              kickback_limit, created_by, now, now),
         )
@@ -100,11 +100,11 @@ def update(template_id: str, **kwargs) -> bool:
     if not updates:
         return False
     updates["updated_at"] = _now()
-    set_clause = ", ".join(f"{k}=?" for k in updates)
+    set_clause = ", ".join(f"{k}=%s" for k in updates)
     vals = list(updates.values()) + [template_id]
     conn = get_connection()
     try:
-        conn.execute(f"UPDATE wf_templates SET {set_clause} WHERE id=?", vals)
+        conn.execute(f"UPDATE wf_templates SET {set_clause} WHERE id=%s", vals)
         try:
             conn.commit()
         except Exception:
@@ -145,7 +145,7 @@ def seed_system_templates():
                 ).fetchone()
             else:
                 existing = conn.execute(
-                    "SELECT id FROM wf_templates WHERE canvas_type=? AND is_system=1 AND is_default=1",
+                    "SELECT id FROM wf_templates WHERE canvas_type=%s AND is_system=1 AND is_default=1",
                     (ct,),
                 ).fetchone()
             if existing:
@@ -168,7 +168,7 @@ def seed_system_templates():
                 """INSERT OR IGNORE INTO wf_templates
                    (id, name, canvas_type, stages_json, roles_json, approval_policy,
                     kickback_limit, is_default, is_system, created_by, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,1,1,'system',?,?)""",
+                   VALUES (%s,?,?,?,?,?,?,1,1,'system',?,%s)""",
                 (tid, f"Default {'Global' if ct is None else ct} Workflow",
                  ct, json.dumps(stages), json.dumps(roles),
                  ApprovalPolicy.ANY_ONE, 3, now, now),

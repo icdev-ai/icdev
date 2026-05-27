@@ -27,16 +27,16 @@ Each device becomes a node; interfaces and routing become node properties
 suitable for the canvas tooltip.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import ipaddress
 import json
-import logging
 import re
 import sys
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Public API ────────────────────────────────────────────────────────
@@ -258,8 +258,7 @@ def _parse_cisco(text: str) -> dict:
     try:
         from ciscoconfparse2 import CiscoConfParse  # type: ignore
     except ImportError:
-        import logging
-        logging.getLogger(__name__).warning(
+        get_logger(__name__).warning(
             "ciscoconfparse2 not installed — Cisco config parsing unavailable. "
             "Install it in an isolated environment if needed."
         )

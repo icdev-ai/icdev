@@ -6,11 +6,11 @@ mission-environment twin snapshot.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import Optional
 
-logger = logging.getLogger("icdev.mission_canvas.twin")
+logger = get_logger("icdev.mission_canvas.twin")
 
 
 def take_mission_twin(mission_id: str, label: Optional[str] = None) -> dict:

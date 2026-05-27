@@ -7,17 +7,17 @@ creative_feature_gaps signals for clusters that exceed auto_signal_threshold.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
-import logging
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _ROOT = Path(__file__).resolve().parents[2]
 _CONFIG_PATH = _ROOT / "args" / "voc_config.yaml"

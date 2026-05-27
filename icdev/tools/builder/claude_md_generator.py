@@ -30,6 +30,7 @@ Classification: CUI // SP-CTI
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -45,7 +46,7 @@ from typing import Any, Dict, List
 # ---------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-logger = logging.getLogger("icdev.claude_md_generator")
+logger = get_logger("icdev.claude_md_generator")
 
 try:
     from jinja2 import Environment, BaseLoader
@@ -1847,7 +1848,7 @@ def main():
     args = parser.parse_args()
 
     if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+        get_logger().setLevel(logging.DEBUG)
 
     # Load blueprint
     try:

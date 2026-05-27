@@ -123,6 +123,21 @@ def gaps_adapter(conn: Any) -> list[dict]:
     ]
 
 
+def ai_decisions_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return AI decision records for ODC from canvas_ai_decisions (main icdev.db)."""
+    try:
+        from tools.db.storage import get_connection as _main_conn  # noqa: PLC0415
+        with _main_conn() as _c:
+            cur = _c.execute(
+                "SELECT * FROM canvas_ai_decisions WHERE canvas_type='odc' ORDER BY created_at DESC"
+            )
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+
+
 register_collection("mitre.techniques", techniques_adapter)
 register_collection("mitre.coverage", coverage_adapter)
 register_collection("mitre.gaps", gaps_adapter)
+register_collection("observability.ai_decisions", ai_decisions_adapter)

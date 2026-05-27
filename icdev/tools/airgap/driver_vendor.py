@@ -45,6 +45,7 @@ touches the network.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
@@ -61,7 +62,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.airgap.driver_vendor")
+logger = get_logger("icdev.airgap.driver_vendor")
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -411,7 +412,7 @@ def fetch_chromedriver(major: Optional[str] = None) -> Dict[str, Any]:
 
 def _detect_chrome_major() -> Optional[str]:
     """Detect installed Google Chrome major version."""
-    for exe in ("google-chrome", "google-chrome-stable", "chrome", "chromium-browser"):
+    for exe in ("google-chrome", "google-chrome-stable", "chrome", "chromium-browser", "chromium"):
         path = shutil.which(exe)
         if path:
             try:
@@ -423,6 +424,26 @@ def _detect_chrome_major() -> Optional[str]:
                     return m.group(1)
             except Exception:
                 pass
+
+    # Linux: explicit filesystem paths for distros that don't put Chrome in PATH
+    if _SYSTEM == "linux":
+        for chrome_path in [
+            Path("/usr/bin/google-chrome"),
+            Path("/usr/bin/google-chrome-stable"),
+            Path("/usr/bin/chromium"),
+            Path("/usr/bin/chromium-browser"),
+            Path("/snap/bin/chromium"),
+        ]:
+            if chrome_path.exists():
+                try:
+                    out = subprocess.check_output(
+                        [str(chrome_path), "--version"], stderr=subprocess.DEVNULL, timeout=5
+                    ).decode("utf-8", errors="replace")
+                    m = re.search(r"(\d+)\.", out)
+                    if m:
+                        return m.group(1)
+                except Exception:
+                    pass
 
     if _IS_WIN:
         for chrome_path in [

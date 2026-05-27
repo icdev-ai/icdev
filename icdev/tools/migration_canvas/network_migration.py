@@ -12,16 +12,21 @@ All hardware specs are read from the DB — nothing is hardcoded here.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.migration_canvas.network_migration")
+logger = get_logger("icdev.migration_canvas.network_migration")
+
+try:
+    from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
+except Exception:
+    def _record_decision(**_kw): pass  # type: ignore[assignment]
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 _MC_DB_PATH = _ICDEV_ROOT / "data" / "migration_canvas.db"
@@ -1813,3 +1818,1331 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
         rebuild_canvas_kg("mdc", design_id)
     except Exception as exc:
         logger.debug("KG update skipped: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# NMCE Phase 2: Inventory, Config Loading, AI, Protocol Planning, Timeline
+# ---------------------------------------------------------------------------
+
+def get_network_inventory(
+    site: str = "",
+    device_type: str = "",
+    vendor: str = "",
+    eol_within_years: int = 0,
+) -> list[dict]:
+    """Return network device inventory from ni_devices in network_canvas.db.
+
+    Falls back to nc_hardware_profiles rows if ni_devices is empty.
+    Annotates each device with has_config (from ni_device_configs) and
+    active_session_id (from mc_net_sessions in migration_canvas.db).
+    """
+    try:
+        with _nc_conn() as nc:
+            rows = nc.execute(
+                "SELECT id, node_id, label, device_type, vendor, model, "
+                "firmware_version, eol_date, eos_date FROM ni_devices WHERE 1=1"
+            ).fetchall()
+    except Exception:
+        rows = []
+
+    if not rows:
+        try:
+            with _nc_conn() as nc:
+                rows = nc.execute(
+                    "SELECT id, '' AS node_id, (vendor||' '||model) AS label, "
+                    "device_type, vendor, model, '' AS firmware_version, "
+                    "eol_date, '' AS eos_date FROM nc_hardware_profiles ORDER BY vendor, model"
+                ).fetchall()
+        except Exception:
+            return []
+
+    # Build set of device_ids that have configs
+    config_ids: set = set()
+    try:
+        with _nc_conn() as nc:
+            for r in nc.execute("SELECT DISTINCT device_id FROM ni_device_configs").fetchall():
+                config_ids.add(r[0])
+    except Exception:
+        pass
+
+    # Build map of model -> active session_id
+    session_map: dict = {}
+    try:
+        with _mc_conn() as mc:
+            for r in mc.execute(
+                "SELECT id, src_model FROM mc_net_sessions WHERE status NOT IN ('complete','archived')"
+            ).fetchall():
+                session_map[r[1]] = r[0]
+    except Exception:
+        pass
+
+    devices = []
+    from datetime import datetime as _dt, timezone as _tz
+    now = _dt.now(_tz.utc)
+    for r in rows:
+        rd = dict(r)
+        eol = rd.get("eol_date", "") or ""
+        has_config = rd["id"] in config_ids
+        active_sid = session_map.get(rd.get("model", ""))
+
+        # EOL filter
+        if eol_within_years and eol:
+            try:
+                eol_dt = _dt.fromisoformat(eol[:10])
+                if (eol_dt - now.replace(tzinfo=None)).days > eol_within_years * 365:
+                    continue
+            except Exception:
+                pass
+
+        # Device type filter
+        if device_type and rd.get("device_type", "") != device_type:
+            continue
+
+        # Vendor filter (case-insensitive substring)
+        if vendor and vendor.lower() not in (rd.get("vendor", "") or "").lower():
+            continue
+
+        # Site filter — ni_devices may not have site; skip if mismatch
+        # (site info lives in topology/nc_device_geo, skip for now)
+
+        devices.append({
+            "id": rd["id"],
+            "node_id": rd.get("node_id", ""),
+            "label": rd.get("label", rd.get("model", "")),
+            "vendor": rd.get("vendor", ""),
+            "model": rd.get("model", ""),
+            "device_type": rd.get("device_type", ""),
+            "firmware_version": rd.get("firmware_version", ""),
+            "eol_date": eol,
+            "eos_date": rd.get("eos_date", "") or "",
+            "has_config": has_config,
+            "config_source": "db" if has_config else "none",
+            "active_session_id": active_sid,
+        })
+
+    # Apply site filter via a no-op here (site not in ni_devices base schema)
+    return devices
+
+
+def load_device_config_from_db(device_id: str) -> str | None:
+    """Fetch the most-recent running/startup config for a device from ni_device_configs.
+
+    Config type priority: running > startup > show_run > any other.
+    Returns the config_text string or None if not found.
+    """
+    try:
+        with _nc_conn() as nc:
+            row = nc.execute(
+                """SELECT config_text FROM ni_device_configs
+                   WHERE device_id=?
+                   ORDER BY CASE config_type
+                     WHEN 'running' THEN 1
+                     WHEN 'startup' THEN 2
+                     WHEN 'show_run' THEN 3
+                     ELSE 4
+                   END, created_at DESC LIMIT 1""",
+                (device_id,),
+            ).fetchone()
+    except Exception:
+        return None
+    return row[0] if row else None
+
+
+def recommend_hardware(
+    device_info: dict,
+    engineer_notes: str = "",
+    session_id: str = "",
+) -> dict:
+    """AI-powered hardware replacement recommendation.
+
+    Fetches valid replacements from nc_hardware_profiles, calls LLMRouter,
+    and falls back to deterministic scoring when LLM is unavailable.
+    """
+    import uuid
+
+    dtype = device_info.get("device_type", "router")
+    try:
+        with _nc_conn() as nc:
+            profiles = [
+                dict(r) for r in nc.execute(
+                    "SELECT id, vendor, model, device_type, throughput_gbps, rack_units, "
+                    "power_typical_w, ports_json, eol_date, tags FROM nc_hardware_profiles "
+                    "WHERE device_type=? ORDER BY throughput_gbps DESC LIMIT 20",
+                    (dtype,),
+                ).fetchall()
+            ]
+    except Exception:
+        profiles = []
+
+    # ── LLM path ──────────────────────────────────────────────────────────
+    prompt = (
+        f"You are a senior network architect. A network device needs replacement.\n\n"
+        f"Current device:\n{json.dumps(device_info, indent=2)}\n\n"
+        f"Engineer notes / constraints:\n{engineer_notes or 'None provided.'}\n\n"
+        f"Available replacement catalog (from our approved hardware list):\n"
+        f"{json.dumps(profiles, indent=2)}\n\n"
+        "Return a JSON object with key \"recommendations\" containing a list of up to 3 objects. "
+        "Each object must have: profile_id (string), rationale (string), "
+        "migration_considerations (string), risk_level (low|medium|high), score (0-100 integer). "
+        "Only recommend from the catalog above. Respond with JSON only — no markdown, no commentary."
+    )
+
+    resp_text = ""
+    model_used = ""
+    try:
+        from tools.llm.router import LLMRouter  # type: ignore
+        from tools.llm.provider import LLMRequest  # type: ignore
+
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are a network architect. Respond with valid JSON only.",
+            effort="high",
+        )
+        resp = router.invoke("recommendation", req)
+        resp_text = resp.content
+        model_used = getattr(resp, "model_id", "") or ""
+        result = json.loads(resp_text)
+    except Exception:
+        # Deterministic fallback: rank by throughput delta + port parity
+        cur_throughput = float(device_info.get("throughput_gbps", 0) or 0)
+        scored = []
+        for p in profiles:
+            pt = float(p.get("throughput_gbps") or 0)
+            delta = abs(pt - cur_throughput)
+            score = max(0, 100 - int(delta / max(cur_throughput, 1) * 50))
+            scored.append({
+                "profile_id": p["id"],
+                "rationale": f"{p['vendor']} {p['model']} — {pt} Gbps throughput, {p.get('rack_units',2)}U",
+                "migration_considerations": "Verify port count and optic compatibility before ordering.",
+                "risk_level": "medium",
+                "score": score,
+            })
+        scored.sort(key=lambda x: -x["score"])
+        result = {"recommendations": scored[:3]}
+
+    # Save to audit trail
+    if session_id:
+        try:
+            with _mc_conn() as mc:
+                mc.execute(
+                    "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (str(uuid.uuid4()), session_id, "assistant",
+                     f"[Hardware recommendation] {resp_text[:1000]}", model_used, _now()),
+                )
+                mc.commit()
+        except Exception:
+            pass
+
+    result.setdefault("recommendations", [])
+    result["model"] = model_used
+    _top = result["recommendations"][0] if result["recommendations"] else {}
+    _record_decision(
+        canvas_type="mc",
+        record_id=session_id,
+        decision_type="readiness_assessment",
+        decision=f"HW replacement top pick: {_top.get('rationale', 'N/A')[:200]}",
+        rationale="LLM-assisted" if model_used else "Rule-based fallback",
+        model_used=model_used or None,
+        confidence=(_top.get("score", 0) / 100.0) if _top.get("score") else None,
+    )
+    return result
+
+
+def ai_assist(session_id: str, engineer_prompt: str) -> dict:
+    """Contextual AI assistant for network migration.
+
+    Loads conversation history and session context, calls LLMRouter,
+    saves both turns to mc_net_ai_sessions.
+    """
+    import uuid
+
+    # Load session context
+    sess: dict = {}
+    history: list[dict] = []
+    try:
+        with _mc_conn() as mc:
+            row = mc.execute(
+                "SELECT src_model, tgt_model, src_device_name, tgt_device_name, "
+                "src_config_raw, status FROM mc_net_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if row:
+                sess = dict(row)
+            history = [
+                dict(r) for r in mc.execute(
+                    "SELECT role, message FROM mc_net_ai_sessions WHERE session_id=? "
+                    "ORDER BY created_at DESC LIMIT 10",
+                    (session_id,),
+                ).fetchall()
+            ]
+    except Exception:
+        pass
+
+    # Build protocol context from parsed config
+    proto_ctx = ""
+    if sess.get("src_config_raw"):
+        try:
+            parsed = parse_source_config(sess["src_config_raw"])
+            parts = []
+            if parsed.get("bgp_neighbors"):
+                parts.append(f"{len(parsed['bgp_neighbors'])} BGP peers")
+            if parsed.get("ospf_areas"):
+                parts.append(f"OSPF areas: {', '.join(parsed['ospf_areas'])}")
+            if parsed.get("l3vpn_vrfs"):
+                parts.append(f"{len(parsed['l3vpn_vrfs'])} L3VPN VRFs")
+            if parsed.get("mpls_interfaces"):
+                parts.append("MPLS enabled")
+            proto_ctx = "; ".join(parts)
+        except Exception:
+            pass
+
+    system_prompt = (
+        "You are ICDEV's network migration AI assistant. "
+        "You help network engineers plan and execute network device hardware migrations.\n\n"
+        f"Current migration session:\n"
+        f"  Source: {sess.get('src_model','unknown')} ({sess.get('src_device_name','')})\n"
+        f"  Target: {sess.get('tgt_model','unknown')} ({sess.get('tgt_device_name','')})\n"
+        f"  Status: {sess.get('status','planning')}\n"
+        + (f"  Protocols: {proto_ctx}\n" if proto_ctx else "")
+        + "\nYou have expertise in Cisco IOS/IOS-XR/NX-OS, Juniper JunOS, Arista EOS migration, "
+        "BGP/OSPF/IS-IS/EIGRP protocol migration, VLAN/STP migration, PortChannel/LAG, "
+        "QoS policy translation, ACL migration, HSRP/VRRP migration, "
+        "cutover planning, and rollback procedures."
+    )
+
+    # Build message list from history (reversed to chronological) + new prompt
+    messages = []
+    for h in reversed(history[:6]):
+        role = h.get("role", "engineer")
+        messages.append({"role": "user" if role == "engineer" else "assistant",
+                         "content": h.get("message", "")})
+    messages.append({"role": "user", "content": engineer_prompt})
+
+    response_text = ""
+    model_used = ""
+    try:
+        from tools.llm.router import LLMRouter  # type: ignore
+        from tools.llm.provider import LLMRequest  # type: ignore
+
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=messages,
+            system_prompt=system_prompt,
+            effort="high",
+        )
+        resp = router.invoke("recommendation", req)
+        response_text = resp.content
+        model_used = getattr(resp, "model_id", "") or ""
+    except Exception as exc:
+        response_text = (
+            f"AI assistance is currently unavailable ({type(exc).__name__}). "
+            "Check your LLM configuration in args/llm_config.yaml."
+        )
+
+    # Save both turns
+    try:
+        with _mc_conn() as mc:
+            mc.execute(
+                "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (str(uuid.uuid4()), session_id, "engineer", engineer_prompt, "", _now()),
+            )
+            mc.execute(
+                "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (str(uuid.uuid4()), session_id, "assistant", response_text, model_used, _now()),
+            )
+            mc.commit()
+    except Exception:
+        pass
+
+    return {"response": response_text, "model": model_used}
+
+
+# ── Protocol-specific step generators ───────────────────────────────────────
+
+def _bgp_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    peers = parsed.get("bgp_neighbors", [])
+    steps = [
+        "Verify BGP ASN is preserved on target device.",
+        "Configure BGP process on target with identical AS and router-ID.",
+        f"Establish {len(peers)} BGP neighbor session(s) in passive/no-export mode on new device.",
+        "Validate prefix counts match source device before cutover.",
+        "Migrate inbound/outbound route-policies — translate syntax if vendor changed.",
+        "Update community/large-community mappings for new platform syntax.",
+        "Drain traffic by raising local-pref or MED on source before cutover.",
+        "After cutover: remove passive mode; monitor prefix table for 15 minutes.",
+    ]
+    if src_vendor != tgt_vendor:
+        steps.insert(4, f"Translate route-policy syntax from {src_vendor} to {tgt_vendor} CLI.")
+    return {"steps": steps, "risk_level": "high", "peer_count": len(peers)}
+
+
+def _ospf_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    areas = parsed.get("ospf_areas", [])
+    steps = [
+        f"Configure OSPF process on target in area(s): {', '.join(areas) or 'backbone'}.",
+        "Enable OSPF interfaces in passive mode on new device (do not advertise yet).",
+        "Verify adjacency forms — check neighbor state reaches FULL.",
+        "Confirm routing table matches source before cutover.",
+        "Raise OSPF cost on source interfaces to drain traffic prior to cutover.",
+        "After cutover: remove passive mode; restore default costs.",
+        "Verify all OSPF neighbors re-form on new device.",
+    ]
+    if src_vendor != tgt_vendor:
+        steps.insert(1, f"Translate OSPF config from {src_vendor} to {tgt_vendor} syntax.")
+    return {"steps": steps, "risk_level": "medium", "area_count": len(areas)}
+
+
+def _vlan_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    steps = [
+        "Pre-configure identical VLAN IDs on target device.",
+        "Set all access/trunk port modes before physical cabling.",
+        "Disable DTP (auto-negotiation) on all trunk links for explicit mode.",
+        "Verify VLAN database consistency across upstream switches.",
+        "Migrate STP root bridge priority if device is root — lower priority on new device first.",
+        "Confirm spanning-tree topology is stable before cutover.",
+    ]
+    return {"steps": steps, "risk_level": "low"}
+
+
+def _lag_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    lag_count = parsed.get("lag_count", 0)
+    steps = [
+        f"Map {lag_count} LAG group(s) — verify LACP mode (active/passive) is consistent.",
+        "Pre-configure port-channel/ae interfaces on target before physical cabling.",
+        "Check LACP system-priority and port-priority alignment with peers.",
+        "Migrate LACP min-links and max-links settings.",
+        "After cabling: verify LAG bundle forms and all member links are up.",
+    ]
+    if src_vendor != tgt_vendor:
+        steps.insert(1, f"Translate port-channel config (ae on Juniper, Po on Cisco) for {tgt_vendor}.")
+    return {"steps": steps, "risk_level": "medium", "lag_count": lag_count}
+
+
+def _mpls_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    ldp = parsed.get("ldp_interfaces", [])
+    rsvp = parsed.get("rsvp_interfaces", [])
+    vrfs = parsed.get("l3vpn_vrfs", [])
+    steps = [
+        "Enable MPLS on all uplink interfaces before cutover.",
+        f"Configure LDP on {len(ldp)} interface(s) — verify label space and hello timers.",
+        "Establish LDP adjacency with all upstream/downstream neighbors.",
+        "Verify label database convergence before traffic shift.",
+        f"Migrate {len(vrfs)} L3VPN VRF(s) — RD, RT, and BGP VPNv4 neighbor config.",
+        "Confirm VRF routing table is complete after cutover.",
+    ]
+    if rsvp:
+        steps.insert(4, f"Re-establish {len(rsvp)} RSVP-TE tunnel(s) on new device.")
+    return {"steps": steps, "risk_level": "high", "ldp_count": len(ldp), "vrf_count": len(vrfs)}
+
+
+def _acl_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    filters = parsed.get("firewall_filters", [])
+    steps = [
+        f"Export {len(filters)} ACL/firewall-filter definition(s) from source config.",
+        "Translate ACL syntax to target platform CLI.",
+        "Apply ACLs/filters to target interfaces before cutover.",
+        "Validate ACL hit counters are incrementing correctly after cutover.",
+        "Remove ACLs from source device after decommission.",
+    ]
+    if src_vendor != tgt_vendor:
+        steps[1] = (
+            f"Translate {src_vendor} firewall-filter/ACL syntax to {tgt_vendor} equivalent "
+            "(e.g., Juniper 'firewall filter' → Cisco 'ip access-list extended')."
+        )
+    return {"steps": steps, "risk_level": "medium", "filter_count": len(filters)}
+
+
+def _bgp_plan_advanced(parsed: dict, src_vendor: str, tgt_vendor: str, variant: str) -> dict:
+    """Advanced BGP migration plans for multipath, route reflectors, and graceful restart."""
+    base = _bgp_plan(parsed, src_vendor, tgt_vendor)
+    if variant == "multipath":
+        base["steps"] += [
+            "Configure BGP multipath (ECMP) — verify max-paths setting matches source.",
+            "Validate ECMP load-balancing hash algorithm is consistent across fabric.",
+            "Test failover: withdraw one path; confirm traffic redistributes within SLA.",
+        ]
+        base["variant"] = "multipath"
+    elif variant == "route_reflector":
+        base["steps"] += [
+            "Configure new device as Route Reflector (RR) client or add as RR peer.",
+            "Verify RR cluster-ID is set to avoid routing loops.",
+            "Confirm all iBGP peers receive full routing table from new RR.",
+        ]
+        base["variant"] = "route_reflector"
+    elif variant == "graceful_restart":
+        base["steps"] += [
+            "Enable BGP Graceful Restart on new device (restart-time 120s, stale-path-time 360s).",
+            "Verify all BGP peers support GR — check capability negotiation.",
+            "Test GR: simulate control-plane restart; confirm forwarding continues during reconvergence.",
+        ]
+        base["variant"] = "graceful_restart"
+    return base
+
+
+def _ospf_plan_advanced(parsed: dict, src_vendor: str, tgt_vendor: str, variant: str) -> dict:
+    """Advanced OSPF migration plans for multi-area, stub, and NSSA."""
+    base = _ospf_plan(parsed, src_vendor, tgt_vendor)
+    areas = parsed.get("ospf_areas", [])
+    if variant == "multi_area":
+        base["steps"] += [
+            f"Configure Area Border Router (ABR) role on new device for areas: {', '.join(areas)}.",
+            "Verify inter-area LSAs are generated correctly after cutover.",
+            "Confirm route summarization at ABR matches source configuration.",
+        ]
+        base["variant"] = "multi_area"
+    elif variant == "stub_nssa":
+        base["steps"] += [
+            "Configure stub or NSSA area flags — ensure all routers in area agree.",
+            "Verify default route injection into stub/NSSA area from ABR.",
+            "For NSSA: confirm NSSA-LSA (Type-7) translation to External-LSA (Type-5) at ABR.",
+        ]
+        base["variant"] = "stub_nssa"
+    elif variant == "virtual_link":
+        base["steps"] += [
+            "Configure OSPF virtual link to connect discontiguous area 0.",
+            "Verify virtual link adjacency reaches FULL state.",
+            "Monitor SPF calculations — virtual link adds latency to reconvergence.",
+        ]
+        base["variant"] = "virtual_link"
+    return base
+
+
+def _mpls_plan_advanced(parsed: dict, src_vendor: str, tgt_vendor: str, variant: str) -> dict:
+    """Advanced MPLS plans: VRF-lite, L3VPN, segment routing, EVPN/VXLAN."""
+    base = _mpls_plan(parsed, src_vendor, tgt_vendor)
+    vrfs = parsed.get("l3vpn_vrfs", [])
+    if variant == "vrf_lite":
+        base["steps"] = [
+            f"Configure {len(vrfs)} VRF(s) with import/export route-targets on new device.",
+            "Assign interfaces to VRFs — verify no interface is in default VRF unintentionally.",
+            "Configure per-VRF BGP peering or static routes for inter-VRF connectivity.",
+            "Validate VRF routing tables are complete after cutover.",
+        ]
+        base["variant"] = "vrf_lite"
+    elif variant == "segment_routing":
+        base["steps"] = [
+            "Enable Segment Routing (SR-MPLS) globally on new device.",
+            "Configure SR global block (SRGB) — ensure no overlap with existing labels.",
+            "Migrate existing RSVP-TE LSPs to SR-TE policies (Traffic Engineering Database sync).",
+            "Enable TI-LFA (Topology-Independent Loop-Free Alternates) for fast reroute.",
+            "Validate end-to-end SR path computation with SR-PCE if present.",
+        ]
+        base["variant"] = "segment_routing"
+    elif variant == "evpn_vxlan":
+        base["steps"] = [
+            "Configure VXLAN VTEP on new device with correct VNI-to-VLAN mappings.",
+            "Enable BGP EVPN address family — configure route-distinguisher and route-targets per VNI.",
+            "Enable MAC mobility timer — verify duplicate MAC detection.",
+            "Configure ARP suppression (proxy ARP via EVPN Type-2 routes).",
+            "Verify BUM traffic (broadcast/unknown-unicast/multicast) replication policy (ingress or underlay multicast).",
+            "Test: ping across VTEPs; verify MAC and IP route type-2 advertisements.",
+        ]
+        base["variant"] = "evpn_vxlan"
+    return base
+
+
+def _sdwan_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    """SD-WAN migration steps (replaces legacy WAN/MPLS)."""
+    return {
+        "steps": [
+            "Deploy SD-WAN controller stack (vManage/vBond/vSmart or equivalent).",
+            "Bootstrap SD-WAN edge device (ZTP or manual) — attach to controller.",
+            "Create device templates to replace per-device legacy router config.",
+            "Migrate routing policies to OMP (Overlay Management Protocol) or equivalent.",
+            "Configure application-aware routing (AAR) policies — define SLA classes for voice/video/data.",
+            "Enable dual-transport (MPLS + DIA) — retain MPLS as backup during transition.",
+            "Validate data-plane IPSec tunnels between all sites.",
+            "Cut over site-by-site; monitor OMP route convergence and failover.",
+        ],
+        "risk_level": "high",
+        "variant": "standard",
+    }
+
+
+def plan_protocol_migration(session_id: str, variant_overrides: dict | None = None) -> dict:
+    """Generate per-protocol migration steps from parsed source config.
+
+    Detects protocols present in the config and generates ordered steps
+    for each. Upserts rows into mc_net_protocol_plans.
+    """
+    import uuid
+
+    with _mc_conn() as mc:
+        sess = dict(mc.execute(
+            "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=?",
+            (session_id,),
+        ).fetchone() or {})
+
+    if not sess.get("src_config_raw"):
+        return {"error": "No config imported yet — complete Step 2 first."}
+
+    parsed = parse_source_config(sess["src_config_raw"])
+    src_vendor = parsed.get("vendor", "")
+
+    # Detect target vendor
+    tgt_vendor = ""
+    try:
+        with _nc_conn() as nc:
+            hw = nc.execute(
+                "SELECT vendor FROM nc_hardware_profiles WHERE model=? LIMIT 1",
+                (sess.get("tgt_model", ""),),
+            ).fetchone()
+            if hw:
+                tgt_vendor = hw[0].lower()
+    except Exception:
+        pass
+
+    plans: dict[str, dict] = {}
+    now = _now()
+
+    overrides = variant_overrides or {}
+
+    protocol_handlers = []
+    if parsed.get("bgp_neighbors"):
+        variant = overrides.get("bgp", "standard")
+        if variant != "standard":
+            protocol_handlers.append(("bgp", lambda p, s, t, v=variant: _bgp_plan_advanced(p, s, t, v)))
+        else:
+            protocol_handlers.append(("bgp", _bgp_plan))
+    if parsed.get("ospf_areas"):
+        variant = overrides.get("ospf", "standard")
+        if variant != "standard":
+            protocol_handlers.append(("ospf", lambda p, s, t, v=variant: _ospf_plan_advanced(p, s, t, v)))
+        else:
+            protocol_handlers.append(("ospf", _ospf_plan))
+    if parsed.get("lag_count", 0):
+        protocol_handlers.append(("lag", _lag_plan))
+    if parsed.get("mpls_interfaces") or parsed.get("ldp_interfaces") or parsed.get("l3vpn_vrfs"):
+        variant = overrides.get("mpls", "standard")
+        if variant != "standard":
+            protocol_handlers.append(("mpls", lambda p, s, t, v=variant: _mpls_plan_advanced(p, s, t, v)))
+        else:
+            protocol_handlers.append(("mpls", _mpls_plan))
+    if overrides.get("sdwan"):
+        protocol_handlers.append(("sdwan", _sdwan_plan))
+    if parsed.get("firewall_filters"):
+        protocol_handlers.append(("acl", _acl_plan))
+    # Always include VLAN
+    protocol_handlers.append(("vlan", _vlan_plan))
+
+    with _mc_conn() as mc:
+        for protocol, handler in protocol_handlers:
+            plan = handler(parsed, src_vendor, tgt_vendor)
+            steps = plan.pop("steps", [])
+            risk = plan.pop("risk_level", "medium")
+            variant_used = plan.pop("variant", overrides.get(protocol, "standard"))
+            adv_cfg = {k: v for k, v in plan.items()}
+            plans[protocol] = {"steps": steps, "risk_level": risk, "variant": variant_used, **adv_cfg}
+
+            mc.execute(
+                "INSERT OR REPLACE INTO mc_net_protocol_plans "
+                "(id, session_id, protocol, migration_steps_json, risk_level, status, "
+                "variant, advanced_config, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), session_id, protocol,
+                 json.dumps(steps), risk, "draft",
+                 variant_used, json.dumps(adv_cfg), now, now),
+            )
+        mc.commit()
+
+    return {"session_id": session_id, "protocols": plans}
+
+
+def build_parallel_timeline(session_id: str) -> list[dict]:
+    """Generate parallel operation milestone timeline for a migration session.
+
+    Returns milestones sorted by days_before_cutover (negative=before cutover).
+    """
+    import uuid
+
+    # Load session data
+    sess: dict = {}
+    port_map: list[dict] = []
+    compat_checks: list[dict] = []
+    has_bgp = has_ospf = has_mpls = False
+
+    try:
+        with _mc_conn() as mc:
+            row = mc.execute(
+                "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=?",
+                (session_id,),
+            ).fetchone()
+            if row:
+                sess = dict(row)
+            port_map = [
+                dict(r) for r in mc.execute(
+                    "SELECT optic_change FROM mc_net_port_map WHERE session_id=?", (session_id,)
+                ).fetchall()
+            ]
+            compat_checks = [
+                dict(r) for r in mc.execute(
+                    "SELECT severity, status FROM mc_net_compat_checks WHERE session_id=?", (session_id,)
+                ).fetchall()
+            ]
+    except Exception:
+        pass
+
+    if sess.get("src_config_raw"):
+        try:
+            parsed = parse_source_config(sess["src_config_raw"])
+            has_bgp = bool(parsed.get("bgp_neighbors"))
+            has_ospf = bool(parsed.get("ospf_areas"))
+            has_mpls = bool(parsed.get("mpls_interfaces") or parsed.get("ldp_interfaces"))
+        except Exception:
+            pass
+
+    optic_changes = sum(1 for r in port_map if r.get("optic_change"))
+    blocker_count = sum(1 for r in compat_checks if r.get("severity") == "blocker" and r.get("status") == "fail")
+
+    base_milestones = [
+        {"milestone_name": "Order and receive target hardware",
+         "days_before_cutover": -30, "phase": "pre_migration", "duration_hours": 1,
+         "description": "Issue PO for replacement hardware. Confirm lead time with vendor."},
+        {"milestone_name": "Rack, stack, and cable new device",
+         "days_before_cutover": -14, "phase": "pre_migration", "duration_hours": 4,
+         "description": "Physical installation, power, out-of-band management cable."},
+        {"milestone_name": "Initial device configuration (hostname, NTP, AAA, SNMP, syslog)",
+         "days_before_cutover": -7, "phase": "pre_migration", "duration_hours": 2,
+         "description": "Base config only — no production routing or interfaces yet."},
+        {"milestone_name": "Load production configuration — interfaces and VLANs",
+         "days_before_cutover": -5, "phase": "parallel_run", "duration_hours": 4,
+         "description": "Apply converted config. Interfaces in shutdown state initially."},
+        {"milestone_name": "Verify routing table convergence on new device",
+         "days_before_cutover": -3, "phase": "parallel_run", "duration_hours": 1,
+         "description": "Confirm route count and next-hops match source before any traffic shift."},
+        {"milestone_name": "Dual-home test traffic — non-production flows only",
+         "days_before_cutover": -2, "phase": "parallel_run", "duration_hours": 4,
+         "description": "Shift low-risk/non-critical traffic to validate path. Monitor for drops."},
+        {"milestone_name": "Final stakeholder notification and change window scheduling",
+         "days_before_cutover": -1, "phase": "pre_migration", "duration_hours": 1,
+         "description": "Notify NOC, network owners, and downstream teams of maintenance window."},
+        {"milestone_name": "Drain traffic from source device",
+         "days_before_cutover": 0, "phase": "cutover", "duration_hours": 1,
+         "description": "Raise OSPF cost or BGP MED on source to redirect traffic to alternate paths."},
+        {"milestone_name": "Cut over production interfaces to new device",
+         "days_before_cutover": 0, "phase": "cutover", "duration_hours": 2,
+         "description": "Execute cutover sequence per plan. Follow runbook step-by-step."},
+        {"milestone_name": "Verify routing, reachability, and critical applications",
+         "days_before_cutover": 0, "phase": "cutover", "duration_hours": 1,
+         "description": "Ping tests, route-table comparison, app team confirmation."},
+        {"milestone_name": "Go/No-go decision — rollback window 2 hours",
+         "days_before_cutover": 0, "phase": "cutover", "duration_hours": 0,
+         "description": "Decision point: if issues, execute rollback within 2h window."},
+        {"milestone_name": "Monitor new device — 24-hour watch period",
+         "days_before_cutover": 1, "phase": "post_migration", "duration_hours": 24,
+         "description": "Continuous monitoring: interface errors, BGP/OSPF flaps, CPU/memory."},
+        {"milestone_name": "Update monitoring systems (SNMP, NetFlow, NMS, syslog)",
+         "days_before_cutover": 1, "phase": "post_migration", "duration_hours": 2,
+         "description": "Update LibreNMS/SolarWinds, NetFlow collector, SIEM syslog source."},
+        {"milestone_name": "Close change request and document lessons learned",
+         "days_before_cutover": 7, "phase": "post_migration", "duration_hours": 2,
+         "description": "Update CMDB, close ServiceNow/JIRA ticket, capture lessons learned."},
+        {"milestone_name": "Decommission source device",
+         "days_before_cutover": 30, "phase": "decommission", "duration_hours": 4,
+         "description": "Remove cables, erase config, update asset inventory and NMS."},
+    ]
+
+    conditional: list[dict] = []
+    if optic_changes:
+        conditional.append({
+            "milestone_name": f"Order replacement optics ({optic_changes} port(s) need new optics)",
+            "days_before_cutover": -21, "phase": "pre_migration", "duration_hours": 1,
+            "description": "Some ports require different SFP/QSFP optics on target hardware.",
+        })
+    if blocker_count:
+        conditional.append({
+            "milestone_name": f"Resolve {blocker_count} compatibility blocker(s) before parallel run",
+            "days_before_cutover": -10, "phase": "pre_migration", "duration_hours": 4,
+            "description": "Compatibility check found blocking issues. Must resolve before continuing.",
+        })
+    if has_ospf:
+        conditional.append({
+            "milestone_name": "Establish OSPF adjacency on new device (passive mode)",
+            "days_before_cutover": -4, "phase": "parallel_run", "duration_hours": 1,
+            "description": "Bring up OSPF in passive mode — neighbor should reach FULL state but not carry traffic.",
+        })
+    if has_bgp:
+        conditional.append({
+            "milestone_name": "Establish BGP sessions on new device (passive/no-export)",
+            "days_before_cutover": -3, "phase": "parallel_run", "duration_hours": 2,
+            "description": "BGP sessions in passive mode. Verify prefix counts match source.",
+        })
+    if has_mpls:
+        conditional.append({
+            "milestone_name": "Verify LDP adjacency and label exchange on new device",
+            "days_before_cutover": -2, "phase": "parallel_run", "duration_hours": 1,
+            "description": "LDP/MPLS must be fully converged before any L3VPN traffic is shifted.",
+        })
+
+    all_milestones = sorted(base_milestones + conditional, key=lambda m: m["days_before_cutover"])
+
+    now = _now()
+    with _mc_conn() as mc:
+        mc.execute("DELETE FROM mc_net_parallel_timelines WHERE session_id=?", (session_id,))
+        for m in all_milestones:
+            mc.execute(
+                "INSERT INTO mc_net_parallel_timelines "
+                "(id, session_id, milestone_name, description, days_before_cutover, "
+                "phase, duration_hours, status, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), session_id,
+                 m["milestone_name"], m.get("description", ""),
+                 m["days_before_cutover"], m["phase"],
+                 m.get("duration_hours", 1), "planned", now),
+            )
+        mc.commit()
+
+    return all_milestones
+
+
+# ---------------------------------------------------------------------------
+# Device ingestion — 3 paths: CSV/JSON bulk, NetBox sync, topology re-import
+
+def _ensure_import_topology(label: str, nc_conn) -> str:
+    """Return existing topology id by label, or create a new one."""
+    import uuid as _uuid
+    row = nc_conn.execute(
+        "SELECT id FROM topologies WHERE name = ? LIMIT 1", (label,)
+    ).fetchone()
+    if row:
+        return row["id"] if hasattr(row, "keys") else row[0]
+    topology_id = "imp-" + str(_uuid.uuid4())[:8]
+    now = _now()
+    nc_conn.execute(
+        "INSERT INTO topologies (id, name, graph_json, classification, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (topology_id, label, "{}", "CUI // SP-CTI", now, now),
+    )
+    nc_conn.commit()
+    return topology_id
+
+
+def list_topologies() -> list[dict]:
+    """Return all topologies from network_canvas.db for the import panel selector."""
+    with _nc_conn() as nc:
+        rows = nc.execute(
+            "SELECT id, name, created_at FROM topologies ORDER BY created_at DESC"
+        ).fetchall()
+    return [{"id": r["id"], "name": r["name"], "created_at": r["created_at"]} for r in rows]
+
+
+def ingest_devices_csv(
+    file_content: bytes | str,
+    topology_id: str | None = None,
+    filename: str = "upload.csv",
+) -> dict:
+    """Import devices from CSV or JSON bytes/string into ni_devices.
+
+    topology_id: existing topology to attach devices to. If None, a dated
+    'Bulk Import YYYY-MM-DD' topology is auto-created.
+    """
+    import os
+
+    with _nc_conn() as nc:
+        if topology_id is None:
+            import datetime as _dt
+            label = "Bulk Import " + _dt.date.today().isoformat()
+            topology_id = _ensure_import_topology(label, nc)
+
+        # Write to temp file so bulk_import_devices can read it
+        suffix = ".json" if filename.lower().endswith(".json") else ".csv"
+        tmp_path = None
+        try:
+            import tempfile as _tmp
+            with _tmp.NamedTemporaryFile(suffix=suffix, delete=False, mode="wb") as f:
+                tmp_path = f.name
+                if isinstance(file_content, str):
+                    f.write(file_content.encode("utf-8"))
+                else:
+                    f.write(file_content)
+            from tools.network.device_manager import bulk_import_devices
+            result = bulk_import_devices(topology_id, tmp_path, conn=nc)
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    return {**result, "topology_id": topology_id}
+
+
+def ingest_devices_netbox(
+    topology_id: str | None = None,
+    test_only: bool = False,
+) -> dict:
+    """Sync devices from NetBox into ni_devices.
+
+    Reads NETBOX_URL and NETBOX_TOKEN from environment.
+    test_only=True: verifies connectivity only, no DB writes.
+    """
+    import os
+    nb_url = os.getenv("NETBOX_URL", "")
+    nb_token = os.getenv("NETBOX_TOKEN", "")
+    if not nb_url or not nb_token:
+        return {"error": "NETBOX_URL and NETBOX_TOKEN must be set in .env"}
+
+    try:
+        from tools.network.netbox_client import NetBoxClient
+        nc_client = NetBoxClient(nb_url, nb_token)
+        conn_info = nc_client.test_connection()
+    except Exception as exc:
+        return {"error": f"NetBox connection failed: {exc}"}
+
+    if test_only:
+        return {"ok": True, "netbox_version": conn_info.get("netbox_version"), "url": nb_url}
+
+    devices = nc_client.get_devices()
+    if not devices:
+        return {"ok": True, "created": 0, "updated": 0, "message": "No devices returned by NetBox"}
+
+    with _nc_conn() as nc:
+        if topology_id is None:
+            import datetime as _dt
+            label = "NetBox Import " + _dt.date.today().isoformat()
+            topology_id = _ensure_import_topology(label, nc)
+
+        from tools.network.device_manager import upsert_device
+        created, updated = 0, 0
+        for dev in devices:
+            node_id = f"nb-{dev['netbox_id']}"
+            result = upsert_device(
+                topology_id, node_id, conn=nc,
+                label=dev.get("label", node_id),
+                device_type=dev.get("type", "unknown"),
+                site=dev.get("site") or None,
+                rack_location=dev.get("rack") or None,
+            )
+            if result["action"] == "created":
+                created += 1
+            else:
+                updated += 1
+
+    return {
+        "ok": True,
+        "created": created,
+        "updated": updated,
+        "total": len(devices),
+        "topology_id": topology_id,
+        "netbox_version": conn_info.get("netbox_version"),
+    }
+
+
+def ingest_devices_topology(src_topology_id: str) -> dict:
+    """Re-ingest all nodes from an existing topology into ni_devices.
+
+    Uses the topology's graph_json nodes and upserts each into ni_devices
+    under the same topology_id (idempotent).
+    """
+    with _nc_conn() as nc:
+        row = nc.execute(
+            "SELECT id, name, graph_json FROM topologies WHERE id = ? LIMIT 1",
+            (src_topology_id,),
+        ).fetchone()
+        if not row:
+            return {"error": f"Topology not found: {src_topology_id}"}
+
+        import json as _json
+        topo_name = row["name"]
+        try:
+            graph = _json.loads(row["graph_json"] or "{}")
+        except Exception:
+            graph = {}
+
+        nodes = graph.get("nodes", [])
+        if not nodes:
+            return {"error": "Topology has no nodes", "topology_id": src_topology_id}
+
+        from tools.network.device_manager import upsert_device
+        created, updated = 0, 0
+        for node in nodes:
+            props = node.get("properties", {})
+            result = upsert_device(
+                src_topology_id,
+                node["id"],
+                conn=nc,
+                label=node.get("label", node["id"]),
+                device_type=node.get("type", "unknown"),
+                vendor=props.get("vendor") or None,
+                model=props.get("model") or None,
+                firmware_version=props.get("firmware_version") or None,
+                site=props.get("site") or None,
+            )
+            if result["action"] == "created":
+                created += 1
+            else:
+                updated += 1
+
+    return {
+        "ok": True,
+        "topology_id": src_topology_id,
+        "topology_name": topo_name,
+        "created": created,
+        "updated": updated,
+        "total": len(nodes),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 3-COA Migration Planning (Phase 4)
+# ---------------------------------------------------------------------------
+
+def generate_coas(
+    src_device: dict[str, Any],
+    tgt_device: dict[str, Any],
+    parsed_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Generate three Courses of Action for a network device migration.
+
+    Returns dict with keys ``coa_1``, ``coa_2``, ``coa_3``.
+    """
+    src_vendor = src_device.get("vendor", "")
+    src_model = src_device.get("model", "")
+    tgt_vendor = tgt_device.get("vendor", "")
+    tgt_model = tgt_device.get("model", "")
+    site = src_device.get("site", "")
+    device_type = src_device.get("device_type", "")
+
+    # Common pre-work across all COAs
+    common_prework = [
+        "Order and rack target hardware",
+        "Apply base config (hostname, Mgmt, AAA, SNMP, NTP)",
+        "Verify out-of-band console + management connectivity",
+    ]
+
+    # COA 1: Rip & Replace
+    coa1 = {
+        "name": "Rip & Replace",
+        "description": "Swap hardware in a single maintenance window. Highest risk, shortest timeline.",
+        "risk_level": "high",
+        "estimated_downtime": "2–4 hours",
+        "duration_days": 1,
+        "phases": [
+            {
+                "phase_no": 1,
+                "name": "Pre-Work",
+                "duration_hours": 8,
+                "actions": common_prework + [
+                    "Load converted production config (interfaces shutdown)",
+                    "Validate config syntax with commit-check / dry-run",
+                ],
+                "validation": "Target config loaded; zero commit errors; all interfaces administratively down.",
+                "rollback": "N/A — pre-work only",
+            },
+            {
+                "phase_no": 2,
+                "name": "Drain & Decomm",
+                "duration_hours": 2,
+                "actions": [
+                    "Drain traffic (raise OSPF cost / BGP MED / route-map local-pref)",
+                    "Power down source device",
+                    "Re-cable all circuits to target device",
+                    "No-shutdown target interfaces",
+                ],
+                "validation": "All BGP/OSPF neighbors Established; ping tests 0% loss; traffic counters incrementing.",
+                "rollback": "Re-cable back to source; restore source config; reverse routing metrics.",
+            },
+            {
+                "phase_no": 3,
+                "name": "Post-Cutover",
+                "duration_hours": 4,
+                "actions": [
+                    "24-hour monitoring watch",
+                    "Update NMS / NetFlow / syslog sources",
+                    "Close change request",
+                ],
+                "validation": "Zero critical alarms; traffic within ±10% of baseline; no CRC errors.",
+                "rollback": "If issues >2h: full rollback to source hardware (source remains racked 30d).",
+            },
+        ],
+    }
+
+    # COA 2: Phased Cutover
+    coa2 = {
+        "name": "Phased Cutover",
+        "description": "Migrate circuits/services in phases over 1–2 weeks. Medium risk, minutes of downtime per phase.",
+        "risk_level": "medium",
+        "estimated_downtime": "5–15 minutes per phase",
+        "duration_days": 14,
+        "phases": [
+            {
+                "phase_no": 1,
+                "name": "Pre-Work & Parallel Build",
+                "duration_hours": 16,
+                "actions": common_prework + [
+                    "Load converted config on target (all interfaces shutdown)",
+                    "Establish routing adjacencies in passive/no-export mode",
+                    "Verify route tables match source",
+                ],
+                "validation": "Route count delta ≤ 1%; all adjacencies in passive FULL/Established.",
+                "rollback": "N/A — target not yet carrying traffic",
+            },
+            {
+                "phase_no": 2,
+                "name": "Phase A — Management & Low-Traffic Circuits",
+                "duration_hours": 4,
+                "actions": [
+                    "Migrate management and test circuits first",
+                    "Monitor for 24h before next phase",
+                ],
+                "validation": "No alarms; ping/SSH stable; syslog clean.",
+                "rollback": "Shutdown target ports; re-enable source ports; restore routing.",
+            },
+            {
+                "phase_no": 3,
+                "name": "Phase B — Core BGP/MPLS Circuits",
+                "duration_hours": 4,
+                "actions": [
+                    "Drain first BGP peer via community/MED",
+                    "Cut over peer to target; verify prefix count",
+                    "Repeat per-peer or per-VRF",
+                ],
+                "validation": "All BGP peers Established; prefix counts stable; no route churn.",
+                "rollback": "Shift peer back to source; restore source interface config.",
+            },
+            {
+                "phase_no": 4,
+                "name": "Phase C — Final Circuits & Decomm",
+                "duration_hours": 4,
+                "actions": [
+                    "Migrate remaining circuits",
+                    "Decommission source device after 48h stability",
+                ],
+                "validation": "All services green; NOC sign-off; zero rollback events in 48h.",
+                "rollback": "Re-enable any source circuits still present; shift traffic back.",
+            },
+        ],
+    }
+
+    # COA 3: Side-by-Side (Safe)
+    coa3 = {
+        "name": "Side-by-Side VLAN",
+        "description": (
+            "Run old and new devices in parallel on the same L2 VLAN domain. "
+            "New device learns routes without carrying production traffic. Gradual shift. Near-zero downtime."
+        ),
+        "risk_level": "low",
+        "estimated_downtime": "Near-zero (sub-second hit during final preference shift)",
+        "duration_days": 21,
+        "phases": [
+            {
+                "phase_no": 1,
+                "name": "Pre-Work & Parallel Wiring",
+                "duration_hours": 12,
+                "actions": common_prework + [
+                    "Physically connect new device alongside old (not inline) — same VLAN trunk",
+                    "Configure identical SVIs on new device with unique but valid IPs in same subnet",
+                    "Configure HSRP/VRRP on both devices with same VIP; new device as standby (lower priority)",
+                ],
+                "validation": "Both devices see HSRP/VRRP hello packets; new device shows Standby state; no IP conflict.",
+                "rollback": "Disconnect new device trunk links; remove SVIs.",
+            },
+            {
+                "phase_no": 2,
+                "name": "Learning & Validation",
+                "duration_hours": 48,
+                "actions": [
+                    "Allow new device to form routing adjacencies (passive/no-export)",
+                    "Mirror production traffic to new device port (SPAN/tap) for validation",
+                    "Run synthetic traffic through new device without affecting production paths",
+                ],
+                "validation": "Route table converged; BGP/OSPF neighbors Established; no drops on mirrored traffic.",
+                "rollback": "Disable routing adjacencies on new device; revert to pure standby.",
+            },
+            {
+                "phase_no": 3,
+                "name": "Gradual Traffic Shift",
+                "duration_hours": 24,
+                "actions": [
+                    "Raise HSRP/VRRP priority on new device to make it Active for one VLAN at a time",
+                    "Or: shift BGP route preference (local-pref / MED) per peer to new device",
+                    "Monitor end-to-end latency and loss for 4h per shift",
+                ],
+                "validation": "Active gateway transitions to new device; ARP/MAC tables update; sub-second hit.",
+                "rollback": "Lower new device HSRP/VRRP priority; traffic immediately returns to old device.",
+            },
+            {
+                "phase_no": 4,
+                "name": "Drain Old & Decomm",
+                "duration_hours": 8,
+                "actions": [
+                    "Once all traffic shifted, set old device SVIs to shutdown",
+                    "Remove old device from routing adjacencies",
+                    "Keep old device racked & powered 30 days for emergency rollback",
+                ],
+                "validation": "All traffic confirmed on new device; zero packets ingress on old device SVIs.",
+                "rollback": "Re-enable old device SVIs; restore HSRP/VRRP priority; traffic returns instantly.",
+            },
+        ],
+    }
+
+    # Attach protocol-specific steps to each COA if config is available
+    if parsed_config:
+        proto_plans = _build_protocol_steps_for_coas(parsed_config, src_vendor, tgt_vendor)
+        for coa in (coa1, coa2, coa3):
+            coa["protocol_steps"] = proto_plans
+
+    return {
+        "classification": "CUI // SP-CTI",
+        "source_device": f"{src_vendor} {src_model}",
+        "target_device": f"{tgt_vendor} {tgt_model}",
+        "site": site,
+        "device_type": device_type,
+        "coa_1": coa1,
+        "coa_2": coa2,
+        "coa_3": coa3,
+        "recommendation": (
+            "COA-3 (Side-by-Side VLAN) recommended for critical production devices "
+            "with low tolerance for downtime. COA-2 (Phased) for moderate risk tolerance. "
+            "COA-1 (Rip & Replace) only when maintenance windows are long and rollback hardware is standby."
+        ),
+    }
+
+
+def _build_protocol_steps_for_coas(parsed: dict[str, Any], src_vendor: str, tgt_vendor: str) -> dict[str, Any]:
+    """Build protocol-specific step lists relevant to all three COAs."""
+    result: dict[str, Any] = {}
+    if parsed.get("bgp_neighbors"):
+        result["bgp"] = _bgp_plan(parsed, src_vendor, tgt_vendor)
+    if parsed.get("ospf_areas"):
+        result["ospf"] = _ospf_plan(parsed, src_vendor, tgt_vendor)
+    if parsed.get("mpls_interfaces") or parsed.get("ldp_interfaces") or parsed.get("l3vpn_vrfs"):
+        result["mpls"] = _mpls_plan(parsed, src_vendor, tgt_vendor)
+    if parsed.get("lag_count", 0):
+        result["lag"] = _lag_plan(parsed, src_vendor, tgt_vendor)
+    if parsed.get("firewall_filters"):
+        result["acl"] = _acl_plan(parsed, src_vendor, tgt_vendor)
+    result["vlan"] = _vlan_plan(parsed, src_vendor, tgt_vendor)
+    return result
+
+
+def generate_phase_diagram(
+    phase_info: dict[str, Any],
+    topology_json: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Generate an SVG + JSON phase diagram for a migration phase.
+
+    Args:
+        phase_info: A phase dict from a COA (must have ``phase_no``, ``name``, ``actions``).
+        topology_json: Optional topology graph_json dict with ``nodes`` and ``edges``.
+
+    Returns:
+        dict with ``svg`` (SVG string), ``json`` (structured diagram data), and ``legend``.
+    """
+    import textwrap
+
+    phase_no = phase_info.get("phase_no", 0)
+    name = phase_info.get("name", "Unknown Phase")
+    _actions = phase_info.get("actions", [])  # noqa: F841
+    validation = phase_info.get("validation", "")
+    rollback = phase_info.get("rollback", "")
+
+    # Node list from topology if provided
+    nodes = []
+    edges = []
+    if topology_json:
+        nodes = topology_json.get("nodes", [])
+        edges = topology_json.get("edges", [])
+
+    # Build simplified JSON diagram structure
+    diagram_json = {
+        "phase": phase_no,
+        "name": name,
+        "nodes": [],
+        "edges": [],
+        "legend": {
+            "blue": "Existing (old) device",
+            "green": "New device",
+            "orange": "Device being changed / cut over",
+            "red": "Device being retired",
+        },
+    }
+
+    # Color-code nodes by phase
+    for node in nodes:
+        node_id = node.get("id", "")
+        node_type = node.get("type", "")
+        color = "blue"
+        if "new" in node_id.lower() or "tgt" in node_id.lower():
+            color = "green"
+        elif "old" in node_id.lower() or "src" in node_id.lower():
+            if phase_no >= 3:
+                color = "red"
+            elif phase_no == 2:
+                color = "orange"
+            else:
+                color = "blue"
+        diagram_json["nodes"].append({
+            "id": node_id,
+            "label": node.get("label", node_id),
+            "type": node_type,
+            "color": color,
+            "x": node.get("x", 0),
+            "y": node.get("y", 0),
+        })
+
+    for edge in edges:
+        diagram_json["edges"].append({
+            "id": edge.get("id", ""),
+            "source": edge.get("source", ""),
+            "target": edge.get("target", ""),
+            "label": edge.get("label", ""),
+            "style": "solid" if phase_no < 3 else "dashed",
+        })
+
+    # Generate a simple SVG representation
+    width, height = 800, 400
+    svg_parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '  <rect width="100%" height="100%" fill="#f8f9fa"/>',
+        f'  <text x="20" y="30" font-size="16" font-weight="bold" fill="#212529">Phase {phase_no}: {name}</text>',
+    ]
+
+    # Draw nodes as simple circles + labels
+    y_offset = 80
+    for i, node in enumerate(diagram_json["nodes"]):
+        x = 100 + (i % 4) * 180
+        y = y_offset + (i // 4) * 100
+        color_map = {"blue": "#0d6efd", "green": "#198754", "orange": "#fd7e14", "red": "#dc3545"}
+        fill = color_map.get(node["color"], "#6c757d")
+        svg_parts.append(f'  <circle cx="{x}" cy="{y}" r="30" fill="{fill}" stroke="#fff" stroke-width="2"/>')
+        svg_parts.append(
+            f'  <text x="{x}" y="{y+5}" text-anchor="middle" font-size="10" fill="#fff">'
+            f'{textwrap.shorten(node["label"], width=12, placeholder="..")}</text>'
+        )
+        # Update JSON with computed positions
+        node["x"] = x
+        node["y"] = y
+
+    # Draw edges as lines
+    node_positions = {n["id"]: (n["x"], n["y"]) for n in diagram_json["nodes"]}
+    for edge in diagram_json["edges"]:
+        src_pos = node_positions.get(edge["source"])
+        tgt_pos = node_positions.get(edge["target"])
+        if src_pos and tgt_pos:
+            style_attr = 'stroke-dasharray="5,5"' if edge.get("style") == "dashed" else ""
+            svg_parts.append(
+                f'  <line x1="{src_pos[0]}" y1="{src_pos[1]}" x2="{tgt_pos[0]}" y2="{tgt_pos[1]}" '
+                f'stroke="#adb5bd" stroke-width="2" {style_attr}/>'
+            )
+
+    # Info box
+    info_y = height - 100
+    svg_parts.append(f'  <rect x="20" y="{info_y}" width="760" height="80" fill="#fff" stroke="#dee2e6" rx="4"/>')
+    svg_parts.append(f'  <text x="30" y="{info_y + 20}" font-size="11" font-weight="bold" fill="#212529">Validation:</text>')
+    svg_parts.append(f'  <text x="30" y="{info_y + 36}" font-size="10" fill="#495057">{textwrap.shorten(validation, width=100)}</text>')
+    svg_parts.append(f'  <text x="30" y="{info_y + 54}" font-size="11" font-weight="bold" fill="#212529">Rollback:</text>')
+    svg_parts.append(f'  <text x="30" y="{info_y + 70}" font-size="10" fill="#495057">{textwrap.shorten(rollback, width=100)}</text>')
+
+    svg_parts.append("</svg>")
+
+    return {
+        "phase": phase_no,
+        "name": name,
+        "svg": "\n".join(svg_parts),
+        "json": diagram_json,
+        "legend": diagram_json["legend"],
+    }

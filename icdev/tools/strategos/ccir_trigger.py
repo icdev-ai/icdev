@@ -11,13 +11,17 @@ Usage:
     print(result["triggered"])
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.ccir_trigger")
+logger = get_logger("icdev.strategos.ccir_trigger")
+
+from tools.strategos.economic_importer import _cusum_alert
+from tools.canvas.event_bus import publish
+from tools.notifications.gateway import NotificationGateway
 
 
 def _now_utc() -> str:
@@ -102,6 +106,26 @@ def _already_triggered_today(conn, ccir_id: str) -> bool:
     return (row[0] if row else 0) > 0
 
 
+def _get_historical_scores(conn, ccir_id: str) -> list[float]:
+    from tools.db.storage import is_pg
+    ph = "%s" if is_pg() else "?"
+    rows = conn.execute(
+        f"SELECT match_score FROM sg_ccir_trigger_events "  # nosec B608
+        f"WHERE ccir_id = {ph} "
+        f"ORDER BY created_at",
+        (ccir_id,),
+    ).fetchall()
+    return [r[0] for r in rows if r[0] is not None]
+
+
+def _validate_baseline(conn, ccir_id: str, new_score: float) -> bool:
+    """Return True if new_score deviates significantly from historical baseline."""
+    scores = _get_historical_scores(conn, ccir_id)
+    if len(scores) < 3:
+        return True  # No baseline established yet
+    return _cusum_alert(scores, new_score)
+
+
 def evaluate_ccirs(lookback_hours: int = 12, threshold: float = 0.15) -> dict[str, Any]:
     """Evaluate all active CCIRs against recent signals.
 
@@ -131,6 +155,7 @@ def evaluate_ccirs(lookback_hours: int = 12, threshold: float = 0.15) -> dict[st
                     best_signal = sig
 
             if best_score >= threshold and best_signal:
+                baseline_valid = _validate_baseline(conn, ccir["id"], best_score)
                 event_id = str(uuid.uuid4())
                 now = _now_utc()
                 conn.execute(
@@ -153,7 +178,47 @@ def evaluate_ccirs(lookback_hours: int = 12, threshold: float = 0.15) -> dict[st
                     "signal_source": best_signal["source"],
                     "signal_snippet": best_signal["text"][:200],
                     "event_id": event_id,
+                    "baseline_valid": baseline_valid,
                 })
+
+                if baseline_valid:
+                    try:
+                        publish(
+                            "strategos",
+                            "pir.baseline.validated",
+                            {
+                                "ccir_id": ccir["id"],
+                                "topic": ccir["topic"],
+                                "match_score": round(best_score, 4),
+                                "signal_source": best_signal["source"],
+                                "signal_snippet": best_signal["text"][:200],
+                                "event_id": event_id,
+                            },
+                            target_canvas="commander",
+                            security_context={
+                                "clearance": "CUI",
+                                "compartment": None,
+                                "tenant_id": None,
+                            },
+                        )
+                    except Exception:
+                        logger.debug("Event bus publish failed for PIR alert", exc_info=True)
+
+                    try:
+                        gateway = NotificationGateway()
+                        gateway.send(
+                            event_type="pir_alert",
+                            severity="critical",
+                            title=f"PIR baseline threshold crossed: {ccir['topic']}",
+                            body=(
+                                f"CCIR {ccir['id']} triggered with match score {round(best_score, 4)}. "
+                                f"Source: {best_signal['source']}. "
+                                f"Snippet: {best_signal['text'][:200]}"
+                            ),
+                            metadata={"ccir_id": ccir["id"], "event_id": event_id},
+                        )
+                    except Exception:
+                        logger.debug("Notification gateway send failed for PIR alert", exc_info=True)
 
         conn.commit()
         return {

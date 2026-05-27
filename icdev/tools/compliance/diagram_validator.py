@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -53,7 +55,6 @@ Usage:
 
 import argparse
 import json
-import logging
 import sys
 import time
 from pathlib import Path
@@ -66,7 +67,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.compliance.diagram_validator")
+logger = get_logger("icdev.compliance.diagram_validator")
 
 # ---------------------------------------------------------------------------
 # Graceful imports for optional dependencies

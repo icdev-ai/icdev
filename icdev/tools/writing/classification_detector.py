@@ -22,13 +22,13 @@ CUI // SP-CTI
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, List
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _ROOT = Path(__file__).resolve().parents[2]
 _CONFIG_PATH = _ROOT / "args" / "writeguard_classification.yaml"

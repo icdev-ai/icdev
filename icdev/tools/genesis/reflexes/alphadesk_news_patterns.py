@@ -7,6 +7,7 @@ to GKP artifacts for kanban suggestion.
 
 GREEN tier (read+write patterns, no LLM).  Air-gap safe.
 """
+IMPLEMENTATION_STATUS = "full"
 
 from __future__ import annotations
 

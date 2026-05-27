@@ -7,26 +7,32 @@ and caches results.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import copy
 import json
-import logging
 import os
 import re
 import time
 from datetime import datetime, timezone
-from icdev.tools.db.storage import get_connection
+from tools.db.storage import get_connection
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 try:
     import yaml
 except ImportError:
     yaml = None
 
-from icdev.tools.llm.provider import LLMProvider, LLMRequest, LLMResponse, EmbeddingProvider
+from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse, EmbeddingProvider
 
-logger = logging.getLogger("icdev.llm.router")
+try:
+    from tools.llm.response_cache import LLMResponseCache, canonical_key
+except ImportError:
+    LLMResponseCache = None
+    canonical_key = None
+
+logger = get_logger("icdev.llm.router")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
@@ -85,6 +91,14 @@ class LLMRouter:
     # RL router singleton (shared across all LLMRouter instances in process)
     _rl_router_instance = None
 
+    # Response cache singleton (D-CACHE-1)
+    _response_cache_instance: Optional["LLMResponseCache"] = None
+
+    # Degraded tier2 models — circuit-breaker for rate-limited models (D-AUTO-DEGRADE)
+    _degraded_tier2_models: set = set()
+    _degraded_tier2_probed_at: Dict[str, float] = {}
+    _DEGRADATION_PROBE_INTERVAL_SECONDS: float = 300.0  # 5 minutes
+
     def __init__(self, config_path=None):
         self._config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
         self._config: Dict = {}
@@ -95,6 +109,7 @@ class LLMRouter:
         self._cache_ttl: float = 1800.0
 
         self._load_config()
+        self._load_degraded_tier2_state()
 
     # -------------------------------------------------------------------
     # Dual-model mode (RTX 4060 Ti 8GB VRAM — 2 models resident)
@@ -185,9 +200,113 @@ class LLMRouter:
                 len(self._config.get("models", {})),
                 len(self._config.get("routing", {})),
             )
+            self._register_discovered_models()
         except Exception as exc:
             logger.error("Failed to load LLM config: %s", exc)
             self._config = {}
+
+    # -------------------------------------------------------------------
+    # Tier2 auto-degradation helpers (D-AUTO-DEGRADE)
+    # -------------------------------------------------------------------
+    def _degrade_tier2_model(self, model_name: str, resume_at: float = 0.0) -> None:
+        """Mark a tier2 model as degraded and persist the state.
+
+        Args:
+            model_name: Model to degrade.
+            resume_at: Optional Unix timestamp when the model is expected to recover
+                (parsed from provider error message). If 0, default probe interval is used.
+        """
+        LLMRouter._degraded_tier2_models.add(model_name)
+        LLMRouter._degraded_tier2_probed_at[model_name] = resume_at if resume_at else time.time()
+        logger.warning(
+            "Tier2 model degraded: %s (rate limit detected, resume_at=%s)",
+            model_name,
+            datetime.fromtimestamp(resume_at, tz=timezone.utc).isoformat() if resume_at else "default",
+        )
+        self._persist_degraded_tier2_state()
+
+    def _recover_tier2_model(self, model_name: str) -> None:
+        """Clear degradation for a recovered tier2 model."""
+        LLMRouter._degraded_tier2_models.discard(model_name)
+        LLMRouter._degraded_tier2_probed_at.pop(model_name, None)
+        logger.info("Tier2 model recovered: %s", model_name)
+        self._persist_degraded_tier2_state()
+
+    def _is_tier2_degraded(self, model_name: str) -> bool:
+        """Check if a tier2 model is currently degraded."""
+        return model_name in LLMRouter._degraded_tier2_models
+
+    def _should_probe_degraded(self, model_name: str) -> bool:
+        """Check if enough time has passed since last probe (or resume_at) to try again."""
+        last_probe = LLMRouter._degraded_tier2_probed_at.get(model_name, 0.0)
+        # If resume_at was parsed from error message, use it directly
+        if last_probe > time.time():
+            return False
+        return (time.time() - last_probe) >= self._DEGRADATION_PROBE_INTERVAL_SECONDS
+
+    def _get_degraded_tier2_fallback(self, cfg: dict) -> str:
+        """Return the fallback model to use when tier2 is degraded.
+
+        Prefers the configured tier1_model, falling back to qwen3-local or kimi-cloud.
+        """
+        tier1 = _expand_env(cfg.get("tier1_model", "qwen3-local"))
+        return tier1
+
+    def _probe_degraded_tier2(self, model_name: str) -> bool:
+        """Attempt a lightweight probe of a degraded tier2 model.
+
+        Returns True if the model responds successfully, False otherwise.
+        """
+        LLMRouter._degraded_tier2_probed_at[model_name] = time.time()
+        model_cfg = self._get_model_config(model_name)
+        if not model_cfg:
+            return False
+        provider_name = model_cfg.get("provider", "")
+        provider = self._get_provider(provider_name)
+        if provider is None:
+            return False
+        model_id = model_cfg.get("model_id", "")
+        try:
+            # Minimal request — hard 8-second timeout
+            resp = provider.invoke(
+                LLMRequest(messages=[{"role": "user", "content": "ping"}]),
+                model_id,
+                model_cfg,
+            )
+            return bool(resp.content) or bool(resp.stop_reason)
+        except Exception:
+            return False
+
+    def _persist_degraded_tier2_state(self) -> None:
+        """Persist degraded tier2 state to a lightweight JSON file."""
+        try:
+            state_path = BASE_DIR / "data" / "llm_degraded_tier2.json"
+            state = {
+                "degraded": sorted(list(LLMRouter._degraded_tier2_models)),
+                "probed_at": {k: v for k, v in LLMRouter._degraded_tier2_probed_at.items()},
+            }
+            with open(state_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+        except Exception:
+            pass  # Best-effort persistence
+
+    def _load_degraded_tier2_state(self) -> None:
+        """Load degraded tier2 state from persistent JSON file."""
+        try:
+            state_path = BASE_DIR / "data" / "llm_degraded_tier2.json"
+            if state_path.exists():
+                with open(state_path, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                LLMRouter._degraded_tier2_models = set(state.get("degraded", []))
+                LLMRouter._degraded_tier2_probed_at = state.get("probed_at", {})
+                if LLMRouter._degraded_tier2_models:
+                    logger.info(
+                        "Loaded %d degraded tier2 models from state: %s",
+                        len(LLMRouter._degraded_tier2_models),
+                        sorted(list(LLMRouter._degraded_tier2_models)),
+                    )
+        except Exception:
+            pass
 
     # -------------------------------------------------------------------
     # No-LLM mode (deterministic-only environments)
@@ -320,7 +439,11 @@ class LLMRouter:
                 from tools.llm.ollama_provider import OllamaProvider
 
                 base_url = _expand_env(provider_cfg.get("base_url", "http://localhost:11434"))
-                instance = OllamaProvider(base_url=base_url)
+                api_key_env = provider_cfg.get("api_key_env", "")
+                api_key = _expand_env(provider_cfg.get("api_key", ""))
+                if not api_key and api_key_env:
+                    api_key = os.getenv(api_key_env, "")
+                instance = OllamaProvider(base_url=base_url, api_key=api_key)
 
             elif ptype == "gemini":
                 from tools.llm.gemini_provider import GeminiProvider
@@ -911,8 +1034,14 @@ class LLMRouter:
                         pass
 
             # Prepend to system prompt
+            # D-CACHE-RAG-1: Insert cache breakpoint marker between injected context and
+            # the original system prompt so AnthropicLLMProvider can split the system
+            # into separate blocks with cache_control breakpoints on the static portion.
+            separator = ""
+            if request.cache_control == "ephemeral" and (request.system_prompt or "").strip():
+                separator = "\n<!-- cache_breakpoint -->\n"
             req = copy.copy(request)
-            req.system_prompt = context_block + citation_block + (request.system_prompt or "")
+            req.system_prompt = context_block + citation_block + separator + (request.system_prompt or "")
             logger.debug(
                 "RAG augment: injected %d chunks (%d chars, citations=%s) for %s",
                 len(context_parts),
@@ -1051,6 +1180,118 @@ class LLMRouter:
             )
             return None
 
+    # -------------------------------------------------------------------
+    # Response cache helpers (D-CACHE-1)
+    # -------------------------------------------------------------------
+
+    def _get_response_cache(self) -> Optional["LLMResponseCache"]:
+        """Return the singleton LLMResponseCache (lazy-init)."""
+        if LLMResponseCache is None:
+            return None
+        if self._response_cache_instance is None:
+            try:
+                self._response_cache_instance = LLMResponseCache()
+            except Exception as exc:
+                logger.warning("Response cache unavailable: %s", exc)
+                return None
+        return self._response_cache_instance
+
+    def _cache_lookup(self, function: str, request: LLMRequest, model_id: str) -> Optional[LLMResponse]:
+        """Check response cache before invoking a provider.
+
+        Returns cached LLMResponse on hit, None on miss.
+        Skips cache for excluded functions or when cache is disabled.
+        """
+        cache = self._get_response_cache()
+        if cache is None:
+            return None
+
+        rcfg = self._config.get("response_cache", {})
+        if not rcfg.get("enabled", False):
+            return None
+
+        excluded = rcfg.get("excluded_functions", [])
+        if function in excluded:
+            return None
+
+        try:
+            key = canonical_key(function, model_id, request)
+        except Exception as exc:
+            logger.debug("Cache key computation failed: %s", exc)
+            return None
+
+        try:
+            hit = cache.get(key)
+            if hit is not None:
+                logger.debug("Cache hit for %s/%s (key=%s...)", function, model_id, key[:16])
+            return hit
+        except Exception as exc:
+            logger.debug("Cache lookup failed (non-blocking): %s", exc)
+            return None
+
+    def _cache_store(
+        self,
+        function: str,
+        request: LLMRequest,
+        response: LLMResponse,
+        model_id: str,
+    ) -> None:
+        """Store a successful response in the cache.
+
+        Skips if function is excluded, cache disabled, or response indicates error.
+        Respects per-function and per-canvas TTL overrides.
+        """
+        cache = self._get_response_cache()
+        if cache is None:
+            return
+
+        rcfg = self._config.get("response_cache", {})
+        if not rcfg.get("enabled", False):
+            return
+
+        excluded = rcfg.get("excluded_functions", [])
+        if function in excluded:
+            return
+
+        if response.stop_reason and response.stop_reason.lower() in ("error", "tool_use"):
+            return
+
+        ttl = rcfg.get("ttl_seconds", 3600)
+        per_fn = rcfg.get("per_function", {}).get(function, {})
+        if per_fn:
+            ttl = per_fn.get("ttl_seconds", ttl)
+
+        canvas_prefix = function.split("_")[0] if "_" in function else ""
+        per_canvas = rcfg.get("per_canvas", {}).get(canvas_prefix, {})
+        if per_canvas:
+            ttl = per_canvas.get("ttl_seconds", ttl)
+
+        try:
+            key = canonical_key(function, model_id, request)
+            cache.set(key, response, ttl_seconds=ttl, function=function)
+            logger.debug("Cache store for %s/%s (ttl=%ds)", function, model_id, ttl)
+        except Exception as exc:
+            logger.debug("Cache store failed (non-blocking): %s", exc)
+
+    def _apply_context_cache(self, function: str, request: LLMRequest) -> None:
+        """Set request.cache_control for functions/canvases configured for context caching.
+
+        Context caching (provider-level KV prefix reuse) is additive to response caching.
+        """
+        rcfg = self._config.get("response_cache", {})
+        if not rcfg.get("enabled", False):
+            return
+
+        canvas_prefix = function.split("_")[0] if "_" in function else ""
+        per_canvas = rcfg.get("per_canvas", {}).get(canvas_prefix, {})
+        if per_canvas.get("context_cache", False):
+            request.cache_control = "ephemeral"
+            return
+
+        per_fn = rcfg.get("per_function", {}).get(function, {})
+        if per_fn.get("context_cache", False):
+            request.cache_control = "ephemeral"
+
     def _maybe_invoke_two_tier(self, function: str, request: LLMRequest) -> Optional[LLMResponse]:
         """Apply two-tier routing if function is configured for it.
 
@@ -1061,6 +1302,10 @@ class LLMRouter:
           planner_functions  → Claude directly (no qwen3 pre-step)
           worker_functions   → qwen3 compact draft → Claude review
           scanner_functions  → qwen3 only (no review)
+
+        D-AUTO-DEGRADE: When tier2 (Claude) hits rate limits, it is degraded
+        and the fallback tier1 model is used instead. Recovery probes run
+        every 5 minutes to detect when Anthropic is available again.
         """
         cfg = self._config.get("two_tier", {})
         # Allow env var override: LLM_TWO_TIER_ENABLED=false disables two-tier
@@ -1076,6 +1321,29 @@ class LLMRouter:
         workers = cfg.get("worker_functions", [])
         scanners = cfg.get("scanner_functions", [])
 
+        # D-AUTO-DEGRADE: If tier2 is degraded, use tier1 as fallback
+        effective_tier2 = tier2
+        if self._is_tier2_degraded(tier2):
+            if self._should_probe_degraded(tier2):
+                if self._probe_degraded_tier2(tier2):
+                    self._recover_tier2_model(tier2)
+                else:
+                    effective_tier2 = self._get_degraded_tier2_fallback(cfg)
+                    logger.warning(
+                        "Two-tier: tier2 %s is degraded, falling back to %s for %s",
+                        tier2,
+                        effective_tier2,
+                        function,
+                    )
+            else:
+                effective_tier2 = self._get_degraded_tier2_fallback(cfg)
+                logger.debug(
+                    "Two-tier: tier2 %s still degraded, using %s for %s",
+                    tier2,
+                    effective_tier2,
+                    function,
+                )
+
         # Dual-model mode: swap tier1 for smaller model to fit 2 models in VRAM
         if self.is_dual_model_active(cfg):
             dm = cfg.get("dual_model", {})
@@ -1085,9 +1353,26 @@ class LLMRouter:
                 logger.debug("Dual-model active: tier1 swapped to %s", tier1)
 
         if function in planners:
-            # Claude plans directly
-            logger.debug("Two-tier: %s → planner (Claude direct)", function)
-            result = self._invoke_model_direct(tier2, request)
+            # Claude plans directly (or degraded fallback)
+            logger.debug("Two-tier: %s → planner (%s direct)", function, effective_tier2)
+            try:
+                result = self._invoke_model_direct(effective_tier2, request)
+            except Exception as exc:
+                # D-AUTO-DEGRADE: Detect rate limit during invocation
+                if self._is_rate_limit_error(exc):
+                    resume_at = self._parse_reset_time_from_error(exc)
+                    self._degrade_tier2_model(effective_tier2, resume_at=resume_at)
+                    fallback = self._get_degraded_tier2_fallback(cfg)
+                    logger.warning(
+                        "Two-tier: planner %s rate-limited for %s, falling back to %s (resume_at=%s)",
+                        effective_tier2,
+                        function,
+                        fallback,
+                        datetime.fromtimestamp(resume_at, tz=timezone.utc).isoformat() if resume_at else "default",
+                    )
+                    result = self._invoke_model_direct(fallback, request)
+                else:
+                    raise
             if result is not None:
                 return result
             # Fall through to chain on failure
@@ -1106,9 +1391,10 @@ class LLMRouter:
             if ft_override:
                 # Fine-tuned model replaces qwen3 as drafter
                 logger.debug(
-                    "Two-tier: %s → worker (fine-tuned %s draft → Claude review)",
+                    "Two-tier: %s → worker (fine-tuned %s draft → %s review)",
                     function,
                     ft_override,
+                    effective_tier2,
                 )
                 draft = self._invoke_finetuned_model(
                     ft_override,
@@ -1116,12 +1402,27 @@ class LLMRouter:
                 )
             else:
                 # Default: qwen3 drafts
-                logger.debug("Two-tier: %s → worker (qwen3 draft → Claude review)", function)
+                logger.debug("Two-tier: %s → worker (qwen3 draft → %s review)", function, effective_tier2)
                 draft = self._invoke_model_direct(tier1, self._draft_request(augmented))
 
             if draft is not None:
                 review_req = self._review_request(request, draft, function)
-                reviewed = self._invoke_model_direct(tier2, review_req)
+                try:
+                    reviewed = self._invoke_model_direct(effective_tier2, review_req)
+                except Exception as exc:
+                    # D-AUTO-DEGRADE: Detect rate limit during review
+                    if self._is_rate_limit_error(exc):
+                        resume_at = self._parse_reset_time_from_error(exc)
+                        self._degrade_tier2_model(effective_tier2, resume_at=resume_at)
+                        logger.warning(
+                            "Two-tier: review %s rate-limited for %s, returning draft (resume_at=%s)",
+                            effective_tier2,
+                            function,
+                            datetime.fromtimestamp(resume_at, tz=timezone.utc).isoformat() if resume_at else "default",
+                        )
+                        return draft
+                    else:
+                        raise
                 if reviewed is not None:
                     # Store draft on response for audit/observability
                     reviewed.draft_content = draft.content  # type: ignore[attr-defined]
@@ -1148,6 +1449,73 @@ class LLMRouter:
             # Fall through to chain on failure
 
         return None  # Not in two_tier config or model unavailable → use chain
+
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        """Check if an exception is a rate-limit error."""
+        exc_str = str(exc).lower()
+        if "llmratelimit" in type(exc).__name__.lower() or "rate limit" in exc_str:
+            return True
+        if any(pattern in exc_str for pattern in (
+            "429", "too many requests", "token limit", "quota exceeded",
+            "usage limit", "capacity", "please try again", "exceeded",
+        )):
+            return True
+        return False
+
+    @staticmethod
+    def _parse_reset_time_from_error(exc: Exception) -> float:
+        """Parse a reset/resume time from an Anthropic rate-limit error message.
+
+        Returns Unix timestamp (float) if a reset time is found, otherwise 0.0.
+        """
+        import re
+        from datetime import datetime, timezone
+
+        text = str(exc)
+        now = datetime.now(timezone.utc)
+
+        # Pattern 1: "resets 7am (America/New_York)" or "resets at 7am"
+        m = re.search(r'resets\s+(?:at\s+)?(\d{1,2}:\d{2}\s*(?:am|pm))', text, re.IGNORECASE)
+        if m:
+            time_str = m.group(1).strip()
+            # Try to parse with timezone context — assume today, use UTC if no tz
+            try:
+                # Use dateparser if available; otherwise simple parse
+                try:
+                    import dateparser
+                    dt = dateparser.parse(time_str, settings={'RELATIVE_BASE': now.replace(tzinfo=None)})
+                    if dt:
+                        return dt.replace(tzinfo=timezone.utc).timestamp()
+                except ImportError:
+                    pass
+                # Simple fallback: parse "7:00am" as today's time in UTC
+                fmt = "%I:%M%p" if ":" in time_str else "%I%p"
+                parsed = datetime.strptime(time_str.replace(":", "").replace(" ", ""), fmt)
+                resume = now.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
+                if resume <= now:
+                    resume = resume.replace(day=resume.day + 1)  # Next day if already passed
+                return resume.timestamp()
+            except Exception:
+                pass
+
+        # Pattern 2: "try again in 5 minutes" or "retry after 5 minutes"
+        m = re.search(r'(?:try again|retry after|wait)\s+(?:in\s+)?(\d+)\s*minute', text, re.IGNORECASE)
+        if m:
+            minutes = int(m.group(1))
+            return (now.replace(minute=now.minute + minutes)).timestamp()
+
+        # Pattern 3: ISO timestamp in error body (some APIs embed JSON)
+        m = re.search(r'"retry_after"\s*:\s*"([^"]+)"', text)
+        if m:
+            try:
+                from datetime import datetime as _dt
+                dt = _dt.fromisoformat(m.group(1).replace("Z", "+00:00"))
+                return dt.timestamp()
+            except Exception:
+                pass
+
+        return 0.0
 
     def invoke(self, function: str, request: LLMRequest) -> LLMResponse:
         """Resolve provider for function and invoke with fallback.
@@ -1199,6 +1567,48 @@ class LLMRouter:
             except Exception as exc:
                 logger.debug("Budget check failed (non-blocking): %s", exc)
 
+        # Module-level budget enforcement for generative_intelligence and predictive_analysis
+        try:
+            from tools.budget.module_budget_tracker import (
+                PREDICTIVE_ANALYSIS_FUNCTIONS,
+                check_module_budget,
+                ModuleBudgetExceededError,
+            )
+
+            _estimated_tokens = sum(
+                len(m.get("content", "")) for m in (request.messages or []) if isinstance(m, dict)
+            ) // 4  # rough token estimate for pre-check
+
+            mod_budget = check_module_budget(
+                "generative_intelligence",
+                function=function,
+                estimated_cost_usd=0.0,  # actual cost recorded post-invoke
+                estimated_tokens=_estimated_tokens,
+            )
+            if mod_budget["action"] == "block":
+                raise ModuleBudgetExceededError("generative_intelligence", mod_budget)
+            if mod_budget["action"] == "warn":
+                logger.warning("Module budget warning: %s", mod_budget["message"])
+
+            # Also enforce predictive_analysis budget when invoking simulation functions
+            if function in PREDICTIVE_ANALYSIS_FUNCTIONS:
+                pa_budget = check_module_budget(
+                    "predictive_analysis",
+                    function=function,
+                    estimated_cost_usd=0.0,
+                    estimated_tokens=_estimated_tokens,
+                )
+                if pa_budget["action"] == "block":
+                    raise ModuleBudgetExceededError("predictive_analysis", pa_budget)
+                if pa_budget["action"] == "warn":
+                    logger.warning("Predictive analysis budget warning: %s", pa_budget["message"])
+        except ImportError:
+            pass
+        except ModuleBudgetExceededError:
+            raise
+        except Exception as exc:
+            logger.debug("Module budget check failed (non-blocking): %s", exc)
+
         # Scan for prompt injection before invoking (D217)
         # Skip for trusted internal pipeline calls (e.g. Pulse draft with topic seeds)
         if not request.skip_injection_scan:
@@ -1213,14 +1623,35 @@ class LLMRouter:
         # Applies to ALL modules. Skips for local-only routing if configured.
         _redaction_session = self._pre_invoke_redaction(function, request)
 
+        # D-CACHE-2: Apply context cache hints before routing
+        self._apply_context_cache(function, request)
+
         # Apply configured effort if not set on request
         if not request.effort or request.effort == "medium":
             request.effort = self.get_effort(function)
 
+        # D-CACHE-3: Response cache lookup (before provider selection)
+        chain = self._get_chain_for_function(function)
+        if chain:
+            first_model = chain[0]
+            model_cfg_for_key = self._get_model_config(first_model) or {}
+            model_id_for_key = model_cfg_for_key.get("model_id", first_model)
+            cached = self._cache_lookup(function, request, model_id_for_key)
+            if cached is not None:
+                return cached
+
         # Two-tier routing: qwen3 worker → Claude planner/reviewer
         two_tier_result = self._maybe_invoke_two_tier(function, request)
         if two_tier_result is not None:
+            # D-CACHE-4: Store two-tier results too
+            self._cache_store(function, request, two_tier_result, two_tier_result.model_id)
             return two_tier_result
+
+        # Chain of Thought / Chain of Debate mode switch
+        if request.chain_mode == "cot":
+            return self.invoke_chain_of_thought(function, request)
+        if request.chain_mode == "cod":
+            return self.invoke_chain_of_debate(function, request)
 
         chain = self._get_chain_for_function(function)
         # RL routing: reorder chain by learned Q-values (epsilon-greedy)
@@ -1261,14 +1692,12 @@ class LLMRouter:
                 )
 
             try:
-                import time as _time
-
-                _start = _time.time()
+                _start = time.time()
                 # Stamp route-level config onto request so providers can read flags like disable_thinking
                 route_cfg = self._config.get("routing", {}).get(function, {})
                 request._route_config = route_cfg
                 response = provider.invoke(request, model_id, model_cfg)
-                _latency = int((_time.time() - _start) * 1000)
+                _latency = int((time.time() - _start) * 1000)
 
                 if span:
                     span.set_attribute("gen_ai.response.model", getattr(response, "model_id", model_id))
@@ -1292,6 +1721,43 @@ class LLMRouter:
                     )
                 except Exception:
                     pass  # Best-effort — never block on telemetry
+
+                # Record module-level budget usage for generative_intelligence
+                try:
+                    from tools.budget.module_budget_tracker import (
+                        PREDICTIVE_ANALYSIS_FUNCTIONS,
+                        record_module_usage,
+                    )
+
+                    _resp_cost = getattr(response, "cost_usd", 0.0) or 0.0
+                    _resp_tokens = (getattr(response, "input_tokens", 0) or 0) + (
+                        getattr(response, "output_tokens", 0) or 0
+                    )
+
+                    record_module_usage(
+                        "generative_intelligence",
+                        cost_usd=_resp_cost,
+                        tokens=_resp_tokens,
+                        function=function,
+                        project_id=getattr(request, "project_id", None),
+                        model_id=getattr(response, "model_id", model_id),
+                    )
+
+                    # Also record predictive_analysis usage for simulation functions
+                    if function in PREDICTIVE_ANALYSIS_FUNCTIONS:
+                        record_module_usage(
+                            "predictive_analysis",
+                            cost_usd=_resp_cost,
+                            tokens=_resp_tokens,
+                            function=function,
+                            project_id=getattr(request, "project_id", None),
+                            model_id=getattr(response, "model_id", model_id),
+                        )
+                except Exception:
+                    pass  # Best-effort — never block on budget recording
+
+                # D-CACHE-5: Store successful response in cache
+                self._cache_store(function, request, response, model_id)
 
                 # D-RDT-2: Post-invoke de-anonymization — restore originals
                 response = self._post_invoke_deanonymize(response, _redaction_session)
@@ -1332,6 +1798,103 @@ class LLMRouter:
             chain=chain,
             no_llm_mode=False,
         )
+
+    def invoke_chain_of_thought(self, function: str, request: LLMRequest) -> LLMResponse:
+        """Invoke Chain of Thought via ChainOrchestrator.
+
+        Reads chain_orchestration.cot config and delegates to the orchestrator.
+        Returns an LLMResponse with aggregated metadata.
+        """
+        try:
+            from tools.llm.chain_orchestrator import ChainOrchestrator
+        except ImportError as exc:
+            raise LLMUnavailableError(
+                f"ChainOrchestrator not available: {exc}",
+                function=function,
+                no_llm_mode=False,
+            ) from exc
+
+        orchestrator = ChainOrchestrator(router=self)
+        result = orchestrator.invoke_chain_of_thought(function, request)
+
+        # Aggregate into LLMResponse
+        response = LLMResponse(
+            content=result.content,
+            model_id=",".join(result.models_used),
+            provider="chain_orchestrator",
+            input_tokens=result.total_input_tokens,
+            output_tokens=result.total_output_tokens,
+            duration_ms=result.total_duration_ms,
+            stop_reason=result.stop_reason,
+            classification=request.classification,
+        )
+        # Attach chain metadata for downstream consumers
+        response.chain_trace_id = result.trace_id  # type: ignore[attr-defined]
+        response.chain_mode = result.chain_mode  # type: ignore[attr-defined]
+        response.chain_rounds = result.rounds  # type: ignore[attr-defined]
+        response.chain_confidence = result.confidence  # type: ignore[attr-defined]
+
+        # Log aggregated telemetry
+        try:
+            self._log_telemetry(
+                function=function,
+                request=request,
+                response=response,
+                model_id=",".join(result.models_used),
+                provider_name="chain_orchestrator",
+                latency_ms=result.total_duration_ms,
+            )
+        except Exception:
+            pass
+
+        return response
+
+    def invoke_chain_of_debate(self, function: str, request: LLMRequest) -> LLMResponse:
+        """Invoke Chain of Debate via ChainOrchestrator.
+
+        Reads chain_orchestration.cod config and delegates to the orchestrator.
+        Returns an LLMResponse with aggregated metadata.
+        """
+        try:
+            from tools.llm.chain_orchestrator import ChainOrchestrator
+        except ImportError as exc:
+            raise LLMUnavailableError(
+                f"ChainOrchestrator not available: {exc}",
+                function=function,
+                no_llm_mode=False,
+            ) from exc
+
+        orchestrator = ChainOrchestrator(router=self)
+        result = orchestrator.invoke_chain_of_debate(function, request)
+
+        response = LLMResponse(
+            content=result.content,
+            model_id=",".join(result.models_used),
+            provider="chain_orchestrator",
+            input_tokens=result.total_input_tokens,
+            output_tokens=result.total_output_tokens,
+            duration_ms=result.total_duration_ms,
+            stop_reason=result.stop_reason,
+            classification=request.classification,
+        )
+        response.chain_trace_id = result.trace_id  # type: ignore[attr-defined]
+        response.chain_mode = result.chain_mode  # type: ignore[attr-defined]
+        response.chain_rounds = result.rounds  # type: ignore[attr-defined]
+        response.chain_confidence = result.confidence  # type: ignore[attr-defined]
+
+        try:
+            self._log_telemetry(
+                function=function,
+                request=request,
+                response=response,
+                model_id=",".join(result.models_used),
+                provider_name="chain_orchestrator",
+                latency_ms=result.total_duration_ms,
+            )
+        except Exception:
+            pass
+
+        return response
 
     def invoke_streaming(self, function: str, request: LLMRequest):
         """Resolve provider and invoke with streaming + fallback."""
@@ -1581,3 +2144,272 @@ class LLMRouter:
             if mid:
                 result[mid] = cfg.get("pricing", {})
         return result
+
+    # -------------------------------------------------------------------
+    # Task-category capability catalog (task_categories: in llm_config.yaml)
+    # -------------------------------------------------------------------
+
+    def get_models_for_category(self, category: str) -> List[str]:
+        """Return ordered list of logical model names for a task category.
+
+        Reads task_categories.<category>.preferred from llm_config.yaml and
+        filters to models that exist in the models: registry (including any
+        auto-discovered ones). Returns [] if category is unknown.
+
+        Args:
+            category: One of 'coding', 'reasoning', 'writing', 'vision',
+                      'summarization', 'long_context', 'structured_output', 'agentic'.
+        """
+        cats = self._config.get("task_categories", {})
+        preferred = cats.get(category, {}).get("preferred", [])
+        known = set(self._config.get("models", {}).keys())
+        return [m for m in preferred if m in known]
+
+    # -------------------------------------------------------------------
+    # CoT/CoD role routing — public, chain-aware, with fallback + RL
+    # -------------------------------------------------------------------
+
+    def invoke_for_role(
+        self,
+        role_key: str,
+        function: str,
+        request: "LLMRequest",
+    ) -> "LLMResponse":
+        """Invoke an LLM for a CoT/CoD role via the full fallback chain.
+
+        Unlike _invoke_model_direct(), this method:
+        - Checks availability cache per model before attempting
+        - Applies RL reranking to the chain
+        - Walks the entire fallback chain before giving up
+        - Records outcomes for RL learning
+        - Logs telemetry under the originating function name
+        - Raises LLMUnavailableError (not returns None) on total failure
+
+        Args:
+            role_key: Routing chain key from llm_config.yaml routing: section,
+                      e.g. 'cot_reasoner', 'cot_critic', 'cod_judge'.
+            function: ICDEV™ function name, used for telemetry grouping.
+            request:  LLMRequest to invoke.
+        """
+        chain = self._get_chain_for_function(role_key)
+        if not chain:
+            raise LLMUnavailableError(
+                f"No routing chain defined for role '{role_key}'. "
+                f"Add '{role_key}:' under routing: in llm_config.yaml.",
+                function=role_key,
+                chain=[],
+            )
+
+        try:
+            chain = self._get_rl_router().rank_models(role_key, chain)
+        except Exception:
+            pass  # RL ranking is best-effort
+
+        last_error: Optional[Exception] = None
+
+        for model_name in chain:
+            model_cfg = self._get_model_config(model_name)
+            if not model_cfg:
+                continue
+            if not self._check_model_available(model_name):
+                continue
+            provider_name = model_cfg.get("provider", "")
+            provider = self._get_provider(provider_name)
+            if provider is None:
+                continue
+            model_id = model_cfg.get("model_id", "")
+            try:
+                _start = time.time()
+                response = provider.invoke(request, model_id, model_cfg)
+                _latency = int((time.time() - _start) * 1000)
+                try:
+                    self._get_rl_router().record_outcome(role_key, model_name, success=True, latency_ms=_latency)
+                except Exception:
+                    pass
+                try:
+                    self._log_telemetry(function, request, response, model_id, provider_name, _latency)
+                except Exception:
+                    pass
+                return response
+            except Exception as exc:
+                logger.warning(
+                    "invoke_for_role: %s via %s/%s failed for %s: %s — trying next",
+                    role_key, provider_name, model_id, function, exc,
+                )
+                self._availability_cache[model_name] = False
+                try:
+                    self._get_rl_router().record_outcome(role_key, model_name, success=False)
+                except Exception:
+                    pass
+                last_error = exc
+                continue
+
+        raise LLMUnavailableError(
+            f"All models in role chain '{role_key}' failed for function '{function}'. "
+            f"Last error: {last_error}",
+            function=function,
+            chain=chain,
+        )
+
+    def get_diverse_models(self, role_key: str, count: int) -> List[str]:
+        """Return up to `count` distinct available models, maximizing provider diversity.
+
+        Used by ChainOrchestrator to assign one unique model per CoD debater slot
+        so debates involve genuinely different model perspectives.
+
+        First pass: picks models from distinct provider families (ollama, anthropic,
+        openai, google, etc.). Second pass: fills remaining slots with any remaining
+        available model not already selected. Falls back gracefully when fewer models
+        are available than requested.
+
+        Args:
+            role_key: Routing chain key (e.g. 'cod_debater_pool').
+            count:    Number of distinct models to return (one per debater slot).
+
+        Returns:
+            List of logical model names, len <= count. Empty if chain is undefined.
+        """
+        chain = self._get_chain_for_function(role_key)
+        if not chain:
+            return []
+        try:
+            chain = self._get_rl_router().rank_models(role_key, chain)
+        except Exception:
+            pass
+
+        selected: List[str] = []
+        used_providers: set = set()
+
+        # First pass: one model per provider family
+        for model_name in chain:
+            if len(selected) >= count:
+                break
+            model_cfg = self._get_model_config(model_name)
+            if not model_cfg:
+                continue
+            if not self._check_model_available(model_name):
+                continue
+            provider = model_cfg.get("provider", "unknown")
+            if provider not in used_providers:
+                selected.append(model_name)
+                used_providers.add(provider)
+
+        # Second pass: fill remaining slots with any available model not yet chosen
+        if len(selected) < count:
+            for model_name in chain:
+                if len(selected) >= count:
+                    break
+                if model_name not in selected:
+                    model_cfg = self._get_model_config(model_name)
+                    if model_cfg and self._check_model_available(model_name):
+                        selected.append(model_name)
+
+        return selected
+
+    # -------------------------------------------------------------------
+    # Ollama model auto-discovery (startup + periodic refresh)
+    # -------------------------------------------------------------------
+
+    def discover_ollama_models(self, force_refresh: bool = False) -> List[str]:
+        """Query Ollama /api/tags and return model names not in models: registry.
+
+        Probes each provider in settings.ollama_discovery.probe_providers.
+        Results are cached for refresh_interval_seconds. Returns raw Ollama
+        model names (e.g. 'phi4-mini:latest') so the caller can register them.
+
+        This is read-only — it does NOT modify llm_config.yaml.
+
+        Args:
+            force_refresh: If True, bypass the process-level cache.
+
+        Returns:
+            List of raw model names found in Ollama but absent from models: registry.
+        """
+        disc_cfg = self._config.get("settings", {}).get("ollama_discovery", {})
+        if not disc_cfg.get("enabled", True):
+            return []
+
+        now = time.time()
+        refresh_interval = float(disc_cfg.get("refresh_interval_seconds", 3600))
+        cached = getattr(self, "_ollama_discovery_cache", None)
+        cached_time = getattr(self, "_ollama_discovery_cache_time", 0.0)
+        if not force_refresh and cached is not None and (now - cached_time) < refresh_interval:
+            return cached
+
+        known_base_names: set = {
+            cfg.get("model_id", "").lower().split(":")[0]
+            for cfg in self._config.get("models", {}).values()
+            if cfg.get("provider", "").startswith("ollama") or cfg.get("provider", "") == "ollama"
+        }
+
+        probe_providers = disc_cfg.get("probe_providers", ["ollama"])
+        new_models: List[str] = []
+
+        for pname in probe_providers:
+            pcfg = self._config.get("providers", {}).get(pname, {})
+            raw_url = pcfg.get("base_url", "http://localhost:11434")
+            base_url = _expand_env(raw_url).rstrip("/")
+            try:
+                import urllib.request as _urllib_req
+                import json as _json
+                req = _urllib_req.Request(f"{base_url}/api/tags", method="GET")
+                api_key_env = pcfg.get("api_key_env", "")
+                if api_key_env:
+                    ak = os.getenv(api_key_env, "")
+                    if ak:
+                        req.add_header("Authorization", f"Bearer {ak}")
+                with _urllib_req.urlopen(req, timeout=5) as resp:
+                    data = _json.loads(resp.read())
+                for model in data.get("models", []):
+                    raw_name = model.get("name", "").lower().strip()
+                    base_name = raw_name.split(":")[0]
+                    if base_name not in known_base_names and raw_name not in new_models:
+                        new_models.append(raw_name)
+            except Exception as exc:
+                logger.debug("Ollama discovery probe failed for %s at %s: %s", pname, base_url, exc)
+
+        setattr(self, "_ollama_discovery_cache", new_models)
+        setattr(self, "_ollama_discovery_cache_time", now)
+
+        if new_models:
+            logger.info("Ollama discovery: %d new model(s) found: %s", len(new_models), new_models)
+        return new_models
+
+    def _register_discovered_models(self) -> None:
+        """Register newly discovered Ollama models in the in-memory config.
+
+        Called once at the end of _load_config(). Queries /api/tags, finds
+        models not in the models: registry, and adds synthetic entries with
+        default capabilities. In-memory only — does not write llm_config.yaml.
+        """
+        disc_cfg = self._config.get("settings", {}).get("ollama_discovery", {})
+        if not disc_cfg.get("enabled", True):
+            return
+
+        default_caps = disc_cfg.get("default_capabilities", ["summarization", "writing"])
+        try:
+            new_names = self.discover_ollama_models(force_refresh=True)
+        except Exception as exc:
+            logger.debug("Ollama model registration skipped: %s", exc)
+            return
+
+        for raw_name in new_names:
+            # Derive a safe logical name from the raw model name
+            logical = raw_name.replace(":", "-").replace("/", "-").replace(".", "-")
+            if logical in self._config.get("models", {}):
+                continue
+            self._config.setdefault("models", {})[logical] = {
+                "provider": "ollama",
+                "model_id": raw_name,
+                "max_output_tokens": 4096,
+                "supports_thinking": False,
+                "supports_tools": False,
+                "supports_structured_output": False,
+                "_auto_discovered": True,
+                "_default_capabilities": default_caps,
+                "pricing": {"input_per_1k": 0.0, "output_per_1k": 0.0},
+            }
+            logger.info(
+                "Auto-registered Ollama model: %s → logical '%s' (caps: %s)",
+                raw_name, logical, default_caps,
+            )

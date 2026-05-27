@@ -23,4 +23,7 @@
 | Talent Intelligence | tools/govcon/talent_intelligence.py | Talent pipeline intelligence for proposals | --json | Talent data |
 | Teaming Hub | tools/govcon/teaming_hub.py | Teaming partner discovery and management | --json | Partner data |
 | Win Theme Manager | tools/govcon/win_theme_manager.py | Win theme and discriminator management | --json | Theme data |
+| Synthetic Proposal Generator | tools/govcon/synthetic_proposal_generator.py | 50 fictional GovCon proposals (5 archetypes × 10); seed=42; no real data | (library) generate(count, seed) | list[{opportunity, volumes, sections}] |
+| Demo Ingest Orchestrator | tools/govcon/demo_ingest.py | Seed DB + RAG index + KG bridge + 450 FT Q&A pairs + optional fine-tuning | --run/--dry-run, --train, --json | Pipeline results |
+| Seed GovCon Proposals | tools/db/seeds/seed_govcon_proposals.py | Seeds 50 proposals + 150 volumes + 150 sections; idempotent via created_by=synthetic_demo | --dry-run, --json | Inserted counts |
 

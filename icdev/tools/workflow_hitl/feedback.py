@@ -1,19 +1,28 @@
 # CUI // SP-CTI
 """Structured feedback capture for HITL approval gates."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+_DECISION_TO_STATUS = {
+    "approve": "approved",
+    "kickback": "kickback",
+    "conditional": "conditional",
+    "escalate": "escalated",
+    "skip": "skipped",
+}
 
 
 def submit_feedback(
@@ -39,15 +48,17 @@ def submit_feedback(
     if decision == "kickback" and require_feedback and not kickback_reason:
         raise ValueError("kickback_reason is required when ICDEV_HITL_REQUIRE_FEEDBACK=true")
 
+    db_status = _DECISION_TO_STATUS.get(decision, decision)
+
     conn = get_connection()
     try:
-        approval = conn.execute("SELECT * FROM wf_approvals WHERE id=?", (approval_id,)).fetchone()
+        approval = conn.execute("SELECT * FROM wf_approvals WHERE id=%s", (approval_id,)).fetchone()
         if not approval:
             raise ValueError(f"Approval {approval_id!r} not found")
         approval = dict(approval)
         instance_id = approval["instance_id"]
         stage = approval["stage"]
-        inst = conn.execute("SELECT * FROM wf_instances WHERE id=?", (instance_id,)).fetchone()
+        inst = conn.execute("SELECT * FROM wf_instances WHERE id=%s", (instance_id,)).fetchone()
         inst = dict(inst) if inst else {}
     finally:
         conn.close()
@@ -62,7 +73,7 @@ def submit_feedback(
                (id, approval_id, instance_id, task_id, canvas_type, template_id,
                 stage, decision, feedback_types, rating, comments, improvement_tags,
                 kickback_reason, citations_json, submitted_by, submitted_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 feedback_id, approval_id, instance_id,
                 inst.get("task_id"), inst.get("canvas_type"), inst.get("template_id"),
@@ -73,10 +84,10 @@ def submit_feedback(
                 kickback_reason, citations_json, submitted_by, _now(),
             ),
         )
-        # Update approval status
+        # Update approval status (map API decision values to DB constraint values)
         conn.execute(
-            "UPDATE wf_approvals SET status=?, updated_at=? WHERE id=?",
-            (decision, _now(), approval_id),
+            "UPDATE wf_approvals SET status=%s, updated_at=%s WHERE id=%s",
+            (db_status, _now(), approval_id),
         )
         try:
             conn.commit()
@@ -91,7 +102,9 @@ def submit_feedback(
     if decision == "approve" or decision == "conditional":
         try:
             from tools.workflow_hitl.engine import WorkflowEngine
-            WorkflowEngine().advance_stage(instance_id)
+            advance_result = WorkflowEngine().advance_stage(instance_id)
+            if advance_result.get("completed"):
+                _post_approve(instance_id)
         except Exception as exc:
             logger.warning("advance_stage failed after feedback: %s", exc)
     elif decision == "kickback":
@@ -104,11 +117,22 @@ def submit_feedback(
     return feedback_id
 
 
+def _post_approve(instance_id: str) -> None:
+    """Fire post-completion handlers for fully approved HITL instances."""
+    try:
+        from tools.workflow_hitl.intake_promote_handler import maybe_promote
+        maybe_promote(instance_id)
+    except ImportError:
+        pass
+    except Exception as exc:
+        logger.warning("Post-approve hook failed for %s: %s", instance_id, exc)
+
+
 def get_by_instance(instance_id: str) -> list:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM wf_feedback WHERE instance_id=? ORDER BY submitted_at",
+            "SELECT * FROM wf_feedback WHERE instance_id=%s ORDER BY submitted_at",
             (instance_id,),
         ).fetchall()
         results = []
@@ -134,20 +158,20 @@ def get_all(
     try:
         clauses, params = [], []
         if canvas_type:
-            clauses.append("canvas_type=?")
+            clauses.append("canvas_type=%s")
             params.append(canvas_type)
         if task_id:
-            clauses.append("task_id=?")
+            clauses.append("task_id=%s")
             params.append(task_id)
         if period_start:
-            clauses.append("submitted_at>=?")
+            clauses.append("submitted_at>=%s")
             params.append(period_start)
         if period_end:
-            clauses.append("submitted_at<=?")
+            clauses.append("submitted_at<=%s")
             params.append(period_end)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         rows = conn.execute(
-            f"SELECT * FROM wf_feedback {where} ORDER BY submitted_at DESC LIMIT ?",
+            f"SELECT * FROM wf_feedback {where} ORDER BY submitted_at DESC LIMIT %s",
             params + [limit],
         ).fetchall()
         return [dict(r) for r in rows]

@@ -63,6 +63,7 @@ VALID_EVENT_TYPES = (
     "gap_detected",
     "ambiguity_detected",
     "readiness_scored",
+    "complexity_scored",
     "decomposition_generated",
     "document_uploaded",
     "document_extracted",
@@ -255,6 +256,8 @@ VALID_EVENT_TYPES = (
     "cross_agency_transfer_rejected",
     # Alert dispatcher events (secure log store integration)
     "pir_alert_generated",
+    # ANVIL build validation events
+    "code.validation",
 )
 
 

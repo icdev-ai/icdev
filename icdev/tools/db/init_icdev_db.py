@@ -196,7 +196,8 @@ CREATE TABLE IF NOT EXISTS audit_trail (
         'auto_resolution_started', 'auto_resolution_completed',
         'auto_resolution_failed', 'auto_resolution_escalated',
         'critique_session_created', 'critique_completed',
-        'critique_revision_requested'
+        'critique_revision_requested',
+        'pir_alert_generated'
     )),
     actor TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -230,6 +231,28 @@ CREATE TABLE IF NOT EXISTS audit (
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit(actor);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit(action);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit(created_at);
+
+-- ============================================================
+-- CHAIN ORCHESTRATION TELEMETRY (CoT / CoD)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS llm_chain_telemetry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    function TEXT NOT NULL,
+    chain_mode TEXT NOT NULL,
+    models_used TEXT NOT NULL DEFAULT '[]',
+    rounds TEXT NOT NULL DEFAULT '{}',
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0.0,
+    duration_ms INTEGER DEFAULT 0,
+    final_model_id TEXT,
+    stop_reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_chain_telemetry_function ON llm_chain_telemetry (function);
+CREATE INDEX IF NOT EXISTS idx_chain_telemetry_created ON llm_chain_telemetry (created_at);
 
 -- ============================================================
 -- CONTINUOUS COMPLIANCE EVIDENCE CHAIN (D-CHAIN-1)
@@ -1420,7 +1443,6 @@ CREATE TABLE IF NOT EXISTS alerts (
     resolved_at TIMESTAMP,
     auto_healed BOOLEAN DEFAULT FALSE,
     healing_event_id INTEGER REFERENCES self_healing_events(id),
-    watchcon_tier INTEGER DEFAULT 4 CHECK(watchcon_tier IN (2, 3, 4)),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -2111,6 +2133,40 @@ CREATE TABLE IF NOT EXISTS agent_token_budgets (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE(agent_id, month)
+);
+
+-- Module-level budget tracking (generative_intelligence + predictive_analysis)
+CREATE TABLE IF NOT EXISTS module_budget_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_name TEXT NOT NULL CHECK(module_name IN ('generative_intelligence', 'predictive_analysis')),
+    function_name TEXT,
+    resource_type TEXT NOT NULL DEFAULT 'usd' CHECK(resource_type IN ('usd', 'tokens', 'operations')),
+    amount REAL NOT NULL DEFAULT 0.0,
+    tokens INTEGER NOT NULL DEFAULT 0,
+    operations INTEGER NOT NULL DEFAULT 0,
+    project_id TEXT,
+    model_id TEXT,
+    details_json TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_module_usage_module ON module_budget_usage(module_name);
+CREATE INDEX IF NOT EXISTS idx_module_usage_created ON module_budget_usage(created_at);
+
+CREATE TABLE IF NOT EXISTS module_budget_periods (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_name TEXT NOT NULL CHECK(module_name IN ('generative_intelligence', 'predictive_analysis')),
+    month TEXT NOT NULL,
+    budget_usd REAL NOT NULL DEFAULT 0.0,
+    budget_tokens INTEGER NOT NULL DEFAULT 0,
+    budget_operations INTEGER NOT NULL DEFAULT 0,
+    spent_usd REAL NOT NULL DEFAULT 0.0,
+    spent_tokens INTEGER NOT NULL DEFAULT 0,
+    spent_operations INTEGER NOT NULL DEFAULT 0,
+    warning_threshold REAL NOT NULL DEFAULT 0.8,
+    hard_stop INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(module_name, month)
 );
 
 -- Atomic task checkout — lease-based single-assignee enforcement
@@ -3306,6 +3362,7 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
     status TEXT NOT NULL DEFAULT 'active'
         CHECK(status IN ('active', 'suspended')),
     created_by TEXT,
+    tenant_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -4053,6 +4110,15 @@ CREATE TABLE IF NOT EXISTS chat_tasks (
 CREATE INDEX IF NOT EXISTS idx_chat_task_ctx ON chat_tasks(context_id);
 CREATE INDEX IF NOT EXISTS idx_chat_task_status ON chat_tasks(status);
 
+CREATE TABLE IF NOT EXISTS chat_corrections (
+    id SERIAL PRIMARY KEY,
+    context_id TEXT NOT NULL,
+    correction_text TEXT NOT NULL,
+    turn_number INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_chat_corrections_ctx ON chat_corrections(context_id, created_at DESC);
+
 -- ============================================================
 -- Phase 69: Codebase Assistant (D-CA-1 to D-CA-10)
 -- ============================================================
@@ -4140,7 +4206,10 @@ CREATE TABLE IF NOT EXISTS memory_entries (
     content_hash TEXT,
     user_id TEXT,
     tenant_id TEXT,
-    source TEXT DEFAULT 'manual'
+    source TEXT DEFAULT 'manual',
+    decay_weight REAL DEFAULT 1.0,
+    classification TEXT DEFAULT 'CUI',
+    compartment TEXT DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash_user
     ON memory_entries(content_hash, user_id);
@@ -5973,6 +6042,7 @@ CREATE TABLE IF NOT EXISTS cpmp_subcontractors (
     performance_rating TEXT CHECK(performance_rating IN (
         'exceptional', 'very_good', 'satisfactory', 'marginal', 'unsatisfactory')),
     flow_down_complete INTEGER DEFAULT 0,
+    flowdown_verified INTEGER DEFAULT 0,
     cybersecurity_compliant INTEGER DEFAULT 0,
     cmmc_level INTEGER,
     isr_ssr_current INTEGER DEFAULT 0,
@@ -6244,6 +6314,89 @@ CREATE TABLE IF NOT EXISTS proposal_question_responses (
 );
 CREATE INDEX IF NOT EXISTS idx_prop_qr_question ON proposal_question_responses(question_id);
 CREATE INDEX IF NOT EXISTS idx_prop_qr_opp ON proposal_question_responses(opportunity_id);
+
+-- =========================================================================
+-- Proposals Module Enhancement — Capture / Review / Compliance tables
+-- prop-cap-01: capture fields on proposal_opportunities (ALTER TABLE)
+-- prop-cap-02: proposal_competitors
+-- prop-cap-03: proposal_teaming_partners
+-- prop-rev-01: review/finding extra fields (ALTER TABLE)
+-- prop-rev-02: proposal_versions
+-- prop-cmp-01: proposal_shred_items
+-- prop-cmp-02: changed_requirement_ids on proposal_amendments (ALTER TABLE)
+-- =========================================================================
+
+-- prop-cap-01: capture pipeline fields (idempotent ALTER TABLEs handled in Python init via PROPOSALS_ALTER_SQL)
+
+-- prop-cap-02: competitor intelligence
+CREATE TABLE IF NOT EXISTS proposal_competitors (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    company_name TEXT NOT NULL,
+    incumbent INTEGER DEFAULT 0,
+    strengths TEXT,
+    weaknesses TEXT,
+    estimated_price NUMERIC,
+    win_probability_pct INTEGER,
+    notes TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_comp_opp ON proposal_competitors(opportunity_id);
+
+-- prop-cap-03: teaming partners
+CREATE TABLE IF NOT EXISTS proposal_teaming_partners (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    company_name TEXT NOT NULL,
+    role TEXT CHECK(role IN ('prime','sub','key_sub','mentor_protege')),
+    naics TEXT,
+    cage_code TEXT,
+    capabilities TEXT,
+    workshare_pct NUMERIC,
+    notes TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_team_opp ON proposal_teaming_partners(opportunity_id);
+
+-- prop-rev-01: executive summary + finding closure fields (handled via PROPOSALS_ALTER_SQL)
+
+-- prop-rev-02: version snapshots
+CREATE TABLE IF NOT EXISTS proposal_versions (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    version_number INTEGER NOT NULL,
+    label TEXT,
+    snapshot_json TEXT,
+    created_by TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_ver_opp ON proposal_versions(opportunity_id);
+
+-- prop-cmp-01: shred matrix
+CREATE TABLE IF NOT EXISTS proposal_shred_items (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    statement_text TEXT NOT NULL,
+    statement_type TEXT CHECK(statement_type IN ('shall','must','will','should')),
+    rfp_section TEXT,
+    rfp_page TEXT,
+    section_id TEXT REFERENCES proposal_sections(id),
+    writer TEXT,
+    status TEXT DEFAULT 'unassigned' CHECK(status IN ('unassigned','assigned','drafted','complete')),
+    notes TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_shred_opp ON proposal_shred_items(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_prop_shred_status ON proposal_shred_items(status);
+
+-- prop-cmp-02: amendment impact tracking (handled via PROPOSALS_ALTER_SQL)
 
 -- =========================================================================
 -- ANVIL Critique Phase (Phase 61 — Feature 3)
@@ -6770,6 +6923,62 @@ CREATE TABLE IF NOT EXISTS ft_pipeline_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_ft_pipeline_source
     ON ft_pipeline_runs(source_type, status);
+
+-- Operator-configured indicator baselines (D-BASELINE-1)
+CREATE TABLE IF NOT EXISTS indicator_baselines (
+    id TEXT PRIMARY KEY,
+    indicator_name TEXT NOT NULL,
+    indicator_category TEXT DEFAULT 'general',
+    scope TEXT NOT NULL DEFAULT 'project'
+        CHECK(scope IN ('global', 'platform', 'tenant', 'project', 'user')),
+    scope_id TEXT,
+    threshold_score REAL NOT NULL,
+    severity_band TEXT DEFAULT 'medium'
+        CHECK(severity_band IN ('low', 'medium', 'high', 'critical')),
+    operator_id TEXT NOT NULL,
+    rationale TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_indicator_baselines_scope
+    ON indicator_baselines(scope, scope_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_indicator_baselines_name
+    ON indicator_baselines(indicator_name, is_active);
+CREATE INDEX IF NOT EXISTS idx_indicator_baselines_operator
+    ON indicator_baselines(operator_id, created_at);
+
+-- Observed indicator scores with snapshotted evaluation results (D-SCORE-1)
+CREATE TABLE IF NOT EXISTS indicator_scores (
+    id TEXT PRIMARY KEY,
+    indicator_name TEXT NOT NULL,
+    indicator_category TEXT DEFAULT 'general',
+    scope TEXT NOT NULL DEFAULT 'project'
+        CHECK(scope IN ('global', 'platform', 'tenant', 'project', 'user')),
+    scope_id TEXT,
+    score REAL NOT NULL
+        CHECK(score >= 0),
+    score_type TEXT DEFAULT 'raw'
+        CHECK(score_type IN ('raw', 'normalized', 'aggregated')),
+    source TEXT,
+    operator_id TEXT,
+    baseline_id TEXT,
+    exceeded INTEGER,
+    delta REAL,
+    severity_at_time TEXT
+        CHECK(severity_at_time IN ('low', 'medium', 'high', 'critical')),
+    evaluated_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_indicator_scores_name
+    ON indicator_scores(indicator_name, created_at);
+CREATE INDEX IF NOT EXISTS idx_indicator_scores_scope
+    ON indicator_scores(scope, scope_id);
+CREATE INDEX IF NOT EXISTS idx_indicator_scores_baseline
+    ON indicator_scores(baseline_id);
+CREATE INDEX IF NOT EXISTS idx_indicator_scores_exceeded
+    ON indicator_scores(exceeded, created_at)
+    WHERE exceeded = 1;
 
 -- Quality monitoring snapshots (append-only, D-KARL-8)
 CREATE TABLE IF NOT EXISTS ft_quality_snapshots (
@@ -9292,6 +9501,7 @@ CREATE TABLE IF NOT EXISTS workflow_acceptance_criteria (
     )),
     evidence TEXT,
     verified_at TEXT,
+    cot_config TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (loop_id) REFERENCES workflow_loops(id),
     FOREIGN KEY (bdd_story_id) REFERENCES safe_decomposition(id)
@@ -9831,6 +10041,7 @@ CREATE TABLE IF NOT EXISTS canvas_kg_nodes (
     node_id         TEXT NOT NULL,
     node_type       TEXT,
     label           TEXT,
+    ontology_id     TEXT,
     metadata_json   TEXT DEFAULT '{}',
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -9848,6 +10059,7 @@ CREATE TABLE IF NOT EXISTS canvas_kg_edges (
     source_id       TEXT NOT NULL,
     target_id       TEXT NOT NULL,
     edge_type       TEXT,
+    confidence      REAL DEFAULT 1.0,
     metadata_json   TEXT DEFAULT '{}',
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -9863,7 +10075,9 @@ CREATE TABLE IF NOT EXISTS reflex_observations (
     status          TEXT NOT NULL DEFAULT 'running',
     artifact_count  INTEGER DEFAULT 0,
     error_msg       TEXT,
-    result_json     TEXT DEFAULT '{}'
+    result_json     TEXT DEFAULT '{}',
+    trace_id        TEXT,
+    span_id         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reflex_obs_name
     ON reflex_observations(reflex_name);
@@ -10091,6 +10305,67 @@ CREATE TABLE IF NOT EXISTS wf_report_section_chunks (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_wf_rsc_report ON wf_report_section_chunks(report_id, section_key);
+
+-- Cross-Agency Data Transfer Audit (NIST AU-2, AU-9 — append-only)
+CREATE TABLE IF NOT EXISTS cross_agency_transfers (
+    id                  TEXT PRIMARY KEY,
+    transfer_id         TEXT NOT NULL,
+    event_type          TEXT NOT NULL CHECK(event_type IN (
+                            'initiated', 'completed', 'failed', 'rejected')),
+    source_agency       TEXT NOT NULL,
+    target_agency       TEXT NOT NULL,
+    data_type           TEXT,
+    data_classification TEXT NOT NULL DEFAULT 'CUI',
+    actor               TEXT NOT NULL DEFAULT '',
+    project_id          TEXT,
+    bytes_transferred   INTEGER,
+    checksum            TEXT,
+    duration_ms         INTEGER,
+    rejection_reason    TEXT,
+    error_code          TEXT,
+    details             TEXT,
+    occurred_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cat_transfer_id ON cross_agency_transfers(transfer_id);
+CREATE INDEX IF NOT EXISTS idx_cat_occurred_at ON cross_agency_transfers(occurred_at);
+
+-- ============================================================
+-- CANVAS INSTANCES (Append-only — NIST AU-3/AU-12)
+-- Tracks which catalog artifacts were activated per session+tenant.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS canvas_instances (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    tenant_id       TEXT NOT NULL,
+    canvas          TEXT NOT NULL,
+    artifact_type   TEXT NOT NULL CHECK (artifact_type IN ('template','snippet','sop','runbook')),
+    artifact_name   TEXT NOT NULL,
+    use_case_id     TEXT,
+    status          TEXT NOT NULL DEFAULT 'seeded' CHECK (status IN ('seeded','active','superseded')),
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    metadata_json   TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_canvas_instances_session ON canvas_instances (session_id);
+CREATE INDEX IF NOT EXISTS idx_canvas_instances_tenant_canvas ON canvas_instances (tenant_id, canvas);
+
+-- JISE requirements feed (tools/dashboard/api/jise.py GET /requirements)
+CREATE TABLE IF NOT EXISTS requirements (
+    id             TEXT PRIMARY KEY,
+    title          TEXT NOT NULL DEFAULT '',
+    description    TEXT NOT NULL DEFAULT '',
+    status         TEXT NOT NULL DEFAULT 'open'
+        CHECK(status IN ('open', 'closed', 'in_progress', 'draft', 'review', 'deferred')),
+    priority       TEXT NOT NULL DEFAULT 'medium'
+        CHECK(priority IN ('critical', 'high', 'medium', 'low')),
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_requirements_status   ON requirements (status);
+CREATE INDEX IF NOT EXISTS idx_requirements_priority ON requirements (priority);
+CREATE INDEX IF NOT EXISTS idx_requirements_created  ON requirements (created_at);
+
 """
 
 
@@ -10242,6 +10517,21 @@ FINETUNE_ALTER_SQL = [
     "ALTER TABLE projects ADD COLUMN finetune_dataset_count INTEGER DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN finetune_active_model_count INTEGER DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN finetune_last_training TIMESTAMP",
+]
+
+# Proposals Module Enhancement — capture / review / compliance columns (prop-cap/rev/cmp)
+PROPOSALS_ALTER_SQL = [
+    "ALTER TABLE proposal_opportunities ADD COLUMN win_probability INTEGER",
+    "ALTER TABLE proposal_opportunities ADD COLUMN capture_notes TEXT",
+    "ALTER TABLE proposal_opportunities ADD COLUMN win_themes TEXT",
+    "ALTER TABLE proposal_opportunities ADD COLUMN key_discriminators TEXT",
+    "ALTER TABLE proposal_opportunities ADD COLUMN ptw_low NUMERIC",
+    "ALTER TABLE proposal_opportunities ADD COLUMN ptw_high NUMERIC",
+    "ALTER TABLE proposal_opportunities ADD COLUMN capture_phase TEXT",
+    "ALTER TABLE proposal_reviews ADD COLUMN executive_summary TEXT",
+    "ALTER TABLE proposal_review_findings ADD COLUMN resolved_evidence TEXT",
+    "ALTER TABLE proposal_review_findings ADD COLUMN closure_approved_by TEXT",
+    "ALTER TABLE proposal_amendments ADD COLUMN changed_requirement_ids TEXT",
 ]
 
 
@@ -10424,6 +10714,12 @@ def init_db(db_path=None):
             pass
     # Phase 64: RAG Subsystem columns (D-RAG-1)
     for sql in RAG_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Proposals Module Enhancement — capture / review / compliance columns
+    for sql in PROPOSALS_ALTER_SQL:
         try:
             conn.execute(sql)
         except sqlite3.OperationalError:

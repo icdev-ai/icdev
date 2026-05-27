@@ -17,17 +17,123 @@ Usage:
   python -m tools.migration_canvas.inventory_scanner --nmap scan.xml --session-id <sid> --dry-run
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import csv
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.migration_canvas.inventory_scanner")
+logger = get_logger("icdev.migration_canvas.inventory_scanner")
+
+# ---------------------------------------------------------------------------
+# SLA & performance constants
+# ---------------------------------------------------------------------------
+DEFAULT_HOST_TIMEOUT_SECONDS: int = 30
+DEFAULT_WORKER_COUNT: int = 10
+SLA_BUDGET_SECONDS: int = 7200   # 2 hours
+SLA_MAX_SERVERS: int = 1000
+
+
+class PerformanceTracker:
+    """Times a batch operation and checks SLA compliance."""
+
+    def __init__(self, sla_seconds: float = SLA_BUDGET_SECONDS) -> None:
+        self._sla_seconds = sla_seconds
+        self._start: float | None = None
+        self._stop: float | None = None
+        self.server_count: int = 0
+
+    def start(self) -> None:
+        import time
+        self._start = time.monotonic()
+
+    def stop(self) -> None:
+        import time
+        self._stop = time.monotonic()
+
+    @property
+    def elapsed_seconds(self) -> float:
+        import time
+        if self._start is None:
+            return 0.0
+        end = self._stop if self._stop is not None else time.monotonic()
+        return end - self._start
+
+    @property
+    def sla_compliant(self) -> bool:
+        return self.elapsed_seconds <= self._sla_seconds
+
+    @property
+    def throughput_per_hour(self) -> float:
+        elapsed = self.elapsed_seconds
+        if elapsed <= 0 or self.server_count <= 0:
+            return 0.0
+        return (self.server_count / elapsed) * 3600
+
+    def projected_duration(self, target_count: int) -> float:
+        """Linear projection: time for target_count based on current rate."""
+        elapsed = self.elapsed_seconds
+        if self.server_count <= 0 or elapsed <= 0:
+            return 0.0
+        return (elapsed / self.server_count) * target_count
+
+    def report(self) -> dict:
+        proj = self.projected_duration(SLA_MAX_SERVERS)
+        return {
+            "elapsed_seconds": self.elapsed_seconds,
+            "server_count": self.server_count,
+            "throughput_per_hour": self.throughput_per_hour,
+            "sla_budget_seconds": self._sla_seconds,
+            "sla_compliant": self.sla_compliant,
+            "projected_1000_server_seconds": proj,
+            "projected_1000_server_within_sla": proj <= self._sla_seconds,
+        }
+
+
+def validate_performance_sla(
+    sample_size: int = 100,
+    dry_run: bool = True,
+) -> dict:
+    """Time a sample write_inventory call and project SLA compliance at SLA_MAX_SERVERS."""
+    import uuid as _uuid
+    servers = [
+        {
+            "id": str(_uuid.uuid4()),
+            "hostname": f"srv-sla-{i:04d}",
+            "ip_address": f"10.0.{i // 256}.{i % 256}",
+            "os": "RHEL 9",
+            "cpu_cores": 4,
+            "ram_gb": 16,
+            "disk_gb": 500,
+            "environment": "sla-sample",
+            "status": "active",
+            "tags": "[]",
+            "created_at": _now(),
+        }
+        for i in range(sample_size)
+    ]
+    tracker = PerformanceTracker(sla_seconds=SLA_BUDGET_SECONDS)
+    tracker.server_count = sample_size
+    tracker.start()
+    write_inventory(servers, f"sla-{_uuid.uuid4().hex[:8]}", dry_run=dry_run)
+    tracker.stop()
+
+    proj = tracker.projected_duration(SLA_MAX_SERVERS)
+    scale = SLA_MAX_SERVERS / sample_size if sample_size > 0 else 0.0
+    return {
+        "sample_size": sample_size,
+        "scale_factor": scale,
+        "elapsed_seconds": tracker.elapsed_seconds,
+        "throughput_per_hour": tracker.throughput_per_hour,
+        "projected_1000_server_seconds": proj,
+        "projected_1000_server_within_sla": proj <= SLA_BUDGET_SECONDS,
+        "sla_max_servers": SLA_MAX_SERVERS,
+        "sla_budget_seconds": SLA_BUDGET_SECONDS,
+    }
 
 
 def _now() -> str:
@@ -185,12 +291,17 @@ def write_inventory(
     import_id = str(uuid.uuid4())
 
     if dry_run:
+        tracker = PerformanceTracker()
+        tracker.server_count = len(servers)
+        tracker.start()
+        tracker.stop()
         return {
             "inserted": len(servers),
             "skipped": 0,
             "import_id": import_id,
             "session_id": session_id,
             "dry_run": True,
+            "performance": tracker.report(),
         }
 
     conn = _conn()

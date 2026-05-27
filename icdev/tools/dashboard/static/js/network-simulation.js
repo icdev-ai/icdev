@@ -1105,7 +1105,10 @@ function zoomOut() {
 }
 
 function zoomFit() {
-  paper.scaleContentToFit({ padding: 30, maxScale: 2 });
+  const area = document.querySelector('.canvas-area') || document.querySelector('.canvas-body');
+  const w = area ? area.clientWidth : 1200;
+  const h = area ? area.clientHeight : 800;
+  paper.scaleContentToFit({ fittingBBox: { x: 0, y: 0, width: w, height: h }, padding: 30, maxScale: 1 });
   _zoomLevel = paper.scale().sx;
   updateZoomDisplay();
 }

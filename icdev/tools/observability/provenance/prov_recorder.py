@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """PROV-AGENT Provenance Recorder — W3C PROV standard (D287).
 
@@ -20,7 +22,6 @@ Usage:
 
 import hashlib
 import json
-import logging
 import os
 import sqlite3
 import uuid
@@ -29,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.observability.provenance")
+logger = get_logger("icdev.observability.provenance")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

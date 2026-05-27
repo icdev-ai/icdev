@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Standalone MCP Server -- Builder.
 
@@ -12,7 +14,7 @@ import os
 import sys
 from pathlib import Path
 
-logger = logging.getLogger("icdev.mcp.standalone.builder")
+logger = get_logger("icdev.mcp.standalone.builder")
 
 
 def _resolve_base_dir():

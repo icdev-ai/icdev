@@ -418,6 +418,82 @@ def _check_args(project_dir: Path) -> List[GotchaCheck]:
             )
         )
 
+    # ONTO: ontology inheritance check (onto-eco-05)
+    ontology_dir = args_dir / "ontology"
+    if ontology_dir.is_dir():
+        ttl_files = list(ontology_dir.glob("*.ttl"))
+        yaml_files_onto = list(ontology_dir.glob("*.yaml"))
+        if ttl_files:
+            checks.append(
+                GotchaCheck(
+                    check_id="FORGE-04b",
+                    check_name="Ontology files present",
+                    layer="args",
+                    status="pass",
+                    expected="args/ontology/*.ttl and *.yaml",
+                    actual=f"{len(ttl_files)} TTL, {len(yaml_files_onto)} YAML",
+                    fix_suggestion="",
+                    message=f"Ontology: {len(ttl_files)} TTL + {len(yaml_files_onto)} YAML found",
+                )
+            )
+        else:
+            checks.append(
+                GotchaCheck(
+                    check_id="FORGE-04b",
+                    check_name="Ontology files present",
+                    layer="args",
+                    status="warn",
+                    expected="args/ontology/*.ttl",
+                    actual="0 TTL files",
+                    fix_suggestion="Add args/ontology/app.ttl extending parent ontology",
+                    message="Ontology directory exists but no .ttl files found",
+                )
+            )
+
+        # Validate owl:imports in app.ttl
+        app_ttl = ontology_dir / "app.ttl"
+        if app_ttl.exists():
+            content = app_ttl.read_text(encoding="utf-8")
+            if "owl:imports" in content:
+                checks.append(
+                    GotchaCheck(
+                        check_id="FORGE-04c",
+                        check_name="Ontology imports parent",
+                        layer="args",
+                        status="pass",
+                        expected="owl:imports in app.ttl",
+                        actual="owl:imports found",
+                        fix_suggestion="",
+                        message="Ontology: app.ttl imports parent ontology",
+                    )
+                )
+            else:
+                checks.append(
+                    GotchaCheck(
+                        check_id="FORGE-04c",
+                        check_name="Ontology imports parent",
+                        layer="args",
+                        status="fail",
+                        expected="owl:imports in app.ttl",
+                        actual="owl:imports missing",
+                        fix_suggestion="Add owl:imports pointing to parent ontology",
+                        message="Ontology: app.ttl missing owl:imports (parent link)",
+                    )
+                )
+    else:
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-04b",
+                check_name="Ontology directory present",
+                layer="args",
+                status="warn",
+                expected="args/ontology/ directory",
+                actual="Directory not found",
+                fix_suggestion="Create args/ontology/ with app.ttl and app_config.yaml",
+                message="Ontology directory missing — child apps should extend parent ontology",
+            )
+        )
+
     return checks
 
 

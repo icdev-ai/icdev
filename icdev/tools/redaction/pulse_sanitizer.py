@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Pulse Sanitizer — hardened case study sanitization for public articles.
 
@@ -22,7 +24,6 @@ CLI:
 
 import argparse
 import json
-import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,7 +34,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.redaction.govcon_sanitizer import GovConSanitizer  # noqa: E402
 
-logger = logging.getLogger("icdev.redaction.pulse_sanitizer")
+logger = get_logger("icdev.redaction.pulse_sanitizer")
 
 
 class PulseSanitizer:

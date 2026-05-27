@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """CVE Triage with upstream/downstream blast radius analysis.
 
 Triages CVEs by severity, auto-computes SLA deadlines, traces upstream and

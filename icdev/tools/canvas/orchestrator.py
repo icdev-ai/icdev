@@ -7,9 +7,9 @@ canvas linking/unlinking, compliance aggregation, and readiness scoring.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -18,7 +18,7 @@ from typing import Any
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("icdev.canvas.orchestrator")
+logger = get_logger("icdev.canvas.orchestrator")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -333,18 +333,32 @@ def _count_cat1_findings(canvas_key: str) -> int:
         return 0
 
 
+def _count_cot_cod_enabled(project_id: str, links: dict) -> int:
+    """Count canvases in this project that have CoT/CoD chain telemetry recorded."""
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT function) FROM llm_chain_telemetry",
+        ).fetchone()
+        conn.close()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
 def compute_readiness(project_id: str) -> dict:
-    """Compute ATO readiness across 4 dimensions (0-100).
+    """Compute ATO readiness across 5 dimensions (0-100).
 
     Dimensions:
     - completeness: fraction of 9 canvases linked
     - compliance: average score across scored canvases
     - coverage: fraction of scored canvases with score > 70
     - risk: penalty for canvases with CAT1 findings
+    - explainability: CoT/CoD chain reasoning coverage across canvases
     """
     summary = get_compliance_summary(project_id)
     links = {k: v for k, v in summary["canvases"].items() if v["design_id"] is not None}
-    total_canvases = len(VALID_CANVAS_KEYS)  # 9
+    total_canvases = len(VALID_CANVAS_KEYS)
 
     # Completeness — how many canvases are linked
     linked_count = len(links)
@@ -365,13 +379,20 @@ def compute_readiness(project_id: str) -> dict:
     # Each CAT1 finding deducts 5 points, floor at 0
     risk_score = max(0.0, 100.0 - cat1_count * 5.0)
 
+    # Explainability — CoT/CoD reasoning chain coverage
+    # Score based on whether chain telemetry exists (any usage = partial credit)
+    cot_cod_count = _count_cot_cod_enabled(project_id, links)
+    # Full credit (100) if ≥2 functions used CoT/CoD; proportional otherwise
+    explainability = min(100.0, round(cot_cod_count * 50.0, 1))
+
     # Overall readiness: weighted average
-    # 25% completeness, 35% compliance, 25% coverage, 15% risk
+    # 20% completeness, 30% compliance, 20% coverage, 15% risk, 15% explainability
     overall = round(
-        completeness * 0.25
-        + compliance * 0.35
-        + coverage * 0.25
-        + risk_score * 0.15,
+        completeness * 0.20
+        + compliance * 0.30
+        + coverage * 0.20
+        + risk_score * 0.15
+        + explainability * 0.15,
         1,
     )
 
@@ -384,5 +405,6 @@ def compute_readiness(project_id: str) -> dict:
             "compliance": {"score": compliance, "scored_canvases": len(scored)},
             "coverage": {"score": coverage, "passing": passing, "scored": len(scored)},
             "risk": {"score": risk_score, "cat1_findings": cat1_count},
+            "explainability": {"score": explainability, "cot_cod_functions": cot_cod_count},
         },
     }

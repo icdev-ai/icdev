@@ -12,6 +12,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -31,7 +32,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger("icdev.security.sandbox_executor")
+logger = get_logger("icdev.security.sandbox_executor")
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -117,6 +118,30 @@ class SandboxResult:
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class _ExecutionLog:
+    """Structured execution audit record passed to _log_execution."""
+
+    exec_id: str
+    executor_type: str
+    language: str
+    code_hash: str
+    runtime: str
+    exit_code: int
+    runtime_ms: int
+    stdout: str
+    stderr: str
+    network: int
+    memory: int
+    timeout: int
+    container_id: str
+    artifacts: List[str]
+    status: str
+    actor: Optional[str] = None
+    project_id: Optional[str] = None
+    tenant_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +339,7 @@ class SandboxExecutor:
                     break
 
         if self._config.get("audit_all_executions", True):
-            self._log_execution(
+            self._log_execution(_ExecutionLog(
                 exec_id=exec_id,
                 executor_type=executor_type,
                 language=language,
@@ -333,7 +358,7 @@ class SandboxExecutor:
                 actor=actor,
                 project_id=project_id,
                 tenant_id=tenant_id,
-            )
+            ))
 
         return result
 
@@ -623,34 +648,13 @@ class SandboxExecutor:
         except Exception as exc:
             logger.warning("Failed to log rebuild event %s: %s", event_id, exc)
 
-    def _log_execution(
-        self,
-        exec_id: str,
-        executor_type: str,
-        language: str,
-        code_hash: str,
-        runtime: str,
-        exit_code: int,
-        runtime_ms: int,
-        stdout: str,
-        stderr: str,
-        network: int,
-        memory: int,
-        timeout: int,
-        container_id: str,
-        artifacts: List[str],
-        status: str,
-        actor: Optional[str],
-        project_id: Optional[str],
-        tenant_id: Optional[str],
-    ) -> None:
+    def _log_execution(self, log: _ExecutionLog) -> None:
         """Insert an execution record into sandbox_execution_log (append-only, D6)."""
         if not self._db_path.exists():
             return
 
-        # Truncate stdout/stderr previews to 512 chars each
-        stdout_preview = stdout[:512] if stdout else ""
-        stderr_preview = stderr[:512] if stderr else ""
+        stdout_preview = log.stdout[:512] if log.stdout else ""
+        stderr_preview = log.stderr[:512] if log.stderr else ""
 
         try:
             conn = get_connection(db_path=str(self._db_path))
@@ -670,30 +674,18 @@ class SandboxExecutor:
                     ?, ?, ?, 'CUI', ?
                 )""",
                 (
-                    exec_id,
-                    executor_type,
-                    language,
-                    code_hash,
-                    runtime,
-                    exit_code,
-                    runtime_ms,
-                    stdout_preview,
-                    stderr_preview,
-                    network,
-                    memory,
-                    timeout,
-                    container_id,
-                    len(artifacts),
-                    status,
-                    actor,
-                    project_id,
-                    tenant_id,
+                    log.exec_id, log.executor_type, log.language,
+                    log.code_hash, log.runtime, log.exit_code,
+                    log.runtime_ms, stdout_preview, stderr_preview,
+                    log.network, log.memory, log.timeout,
+                    log.container_id, len(log.artifacts), log.status,
+                    log.actor, log.project_id, log.tenant_id,
                     datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 ),
             )
             conn.commit()
         except Exception as exc:
-            logger.warning("Failed to log sandbox execution %s: %s", exec_id, exc)
+            logger.warning("Failed to log sandbox execution %s: %s", log.exec_id, exc)
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -37,7 +38,7 @@ import yaml
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
 
-logger = logging.getLogger("cost_intelligence")
+logger = get_logger("cost_intelligence")
 
 # Alert / recommendation type enums (mirrored in CHECK constraints)
 ALERT_TYPES = ("spike", "overspend", "projection", "optimization")
@@ -48,6 +49,8 @@ RECOMMENDATION_TYPES = (
     "batch_requests",
     "reduce_tokens",
     "cache_responses",
+    "enable_cot",
+    "enable_cod",
 )
 RECOMMENDATION_STATUSES = ("pending", "accepted", "rejected", "implemented")
 
@@ -101,7 +104,8 @@ def init_tables(conn=None):
             recommendation_type TEXT NOT NULL CHECK(
                 recommendation_type IN (
                     'downgrade_model','switch_to_local','batch_requests',
-                    'reduce_tokens','cache_responses'
+                    'reduce_tokens','cache_responses',
+                    'enable_cot','enable_cod'
                 )
             ),
             function_name TEXT,
@@ -672,6 +676,118 @@ def recommend_optimizations() -> list[dict]:
                     ),
                 )
                 recommendations.append(rec)
+
+    # ---------------------------------------------------------------
+    # 4. High-variance functions → recommend CoT or CoD
+    #    Query llm_chain_telemetry for functions with high cost variance.
+    #    If NO chain telemetry yet, recommend enabling CoT for costly functions.
+    # ---------------------------------------------------------------
+    try:
+        # Check if llm_chain_telemetry table exists
+        has_table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='llm_chain_telemetry'"
+        ).fetchone()
+
+        if has_table:
+            variance_rows = conn.execute(
+                """SELECT function,
+                          AVG(cost_usd) as avg_cost,
+                          COUNT(*) as calls
+                   FROM llm_chain_telemetry
+                   WHERE created_at >= ?
+                   GROUP BY function
+                   HAVING COUNT(*) >= 3""",
+                (cutoff_30d,),
+            ).fetchall()
+
+            # For functions with non-trivial cost but no CoT/CoD yet, suggest enabling
+            # For functions already using CoT with high debate potential, suggest CoD
+            for row in variance_rows:
+                fn = row[0] if isinstance(row, (tuple, list)) else row["function"]
+                avg_cost = float(row[1] if isinstance(row, (tuple, list)) else row["avg_cost"])
+                calls = int(row[2] if isinstance(row, (tuple, list)) else row["calls"])
+
+                # Detect functions with avg cost > $0.01/call that aren't using CoD yet
+                if avg_cost > 0.01 and calls >= 5:
+                    mode_row = conn.execute(
+                        "SELECT DISTINCT chain_mode FROM llm_chain_telemetry WHERE function=?",
+                        (fn,),
+                    ).fetchall()
+                    modes = {r[0] for r in mode_row}
+                    if "cod" not in modes:
+                        rec_id = _gen_id("crec-")
+                        rec = {
+                            "id": rec_id,
+                            "recommendation_type": "enable_cod",
+                            "function_name": fn,
+                            "current_model": None,
+                            "recommended_model": None,
+                            "estimated_savings_usd": 0.0,
+                            "confidence": 0.65,
+                            "status": "pending",
+                        }
+                        conn.execute(
+                            """INSERT OR IGNORE INTO llm_cost_recommendations
+                               (id, recommendation_type, function_name, current_model,
+                                recommended_model, estimated_savings_usd, confidence,
+                                status, created_at, updated_at)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            (rec_id, rec["recommendation_type"], rec["function_name"],
+                             rec["current_model"], rec["recommended_model"],
+                             rec["estimated_savings_usd"], rec["confidence"],
+                             rec["status"], now_iso, now_iso),
+                        )
+                        recommendations.append(rec)
+
+        # Recommend CoT for high-cost cloud functions with no chain usage at all
+        high_cost_rows = conn.execute(
+            """SELECT function_name,
+                      SUM(cost_estimate_usd) as total_cost
+               FROM agent_token_usage
+               WHERE created_at >= ?
+               GROUP BY function_name
+               HAVING SUM(cost_estimate_usd) > 0.10 AND function_name IS NOT NULL""",
+            (cutoff_30d,),
+        ).fetchall() if conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='agent_token_usage'"
+        ).fetchone() else []
+
+        for row in high_cost_rows:
+            fn = row[0] if isinstance(row, (tuple, list)) else row["function_name"]
+            if not fn:
+                continue
+            # Only recommend if no CoT telemetry exists for this function
+            if has_table:
+                existing = conn.execute(
+                    "SELECT 1 FROM llm_chain_telemetry WHERE function=? LIMIT 1", (fn,)
+                ).fetchone()
+                if existing:
+                    continue
+            rec_id = _gen_id("crec-")
+            rec = {
+                "id": rec_id,
+                "recommendation_type": "enable_cot",
+                "function_name": fn,
+                "current_model": None,
+                "recommended_model": None,
+                "estimated_savings_usd": 0.0,
+                "confidence": 0.70,
+                "status": "pending",
+            }
+            conn.execute(
+                """INSERT OR IGNORE INTO llm_cost_recommendations
+                   (id, recommendation_type, function_name, current_model,
+                    recommended_model, estimated_savings_usd, confidence,
+                    status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (rec_id, rec["recommendation_type"], rec["function_name"],
+                 rec["current_model"], rec["recommended_model"],
+                 rec["estimated_savings_usd"], rec["confidence"],
+                 rec["status"], now_iso, now_iso),
+            )
+            recommendations.append(rec)
+    except Exception as exc:
+        logger.debug("CoT/CoD recommendation detection skipped: %s", exc)
 
     conn.commit()
     conn.close()

@@ -26,7 +26,7 @@ DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
 
 _VALID_STATUSES = {"draft", "review", "approved", "deprecated"}
 _CONTENT_FIELDS = {
-    "title", "category", "description", "prerequisites", "steps",
+    "title", "category", "csp", "description", "prerequisites", "steps",
     "validation", "rollback", "escalation", "classification",
 }
 
@@ -89,7 +89,8 @@ def _log_action(conn: sqlite3.Connection, sop_id: str, actor: str,
 def create_sop(title: str, category: str, description: str, steps: list,
                prerequisites: list | None = None, validation: list | None = None,
                rollback: dict | None = None, escalation: list | None = None,
-               author: str = "", classification: str = "CUI") -> dict:
+               author: str = "", classification: str = "CUI",
+               csp: str = "multi") -> dict:
     """Create a draft SOP. Returns the new SOP dict."""
     if not title or not category:
         raise ValueError("title and category are required")
@@ -103,8 +104,8 @@ def create_sop(title: str, category: str, description: str, steps: list,
         conn.execute(
             "INSERT INTO ndc_sops (sop_id, title, category, version, status, "
             "description, prerequisites, steps, validation, rollback, escalation, "
-            "classification, author, created_at, updated_at) "
-            "VALUES (?, ?, ?, 1, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "classification, author, csp, created_at, updated_at) "
+            "VALUES (?, ?, ?, 1, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 sop_id, title, category, description or "",
                 _dumps(prerequisites or []),
@@ -112,7 +113,7 @@ def create_sop(title: str, category: str, description: str, steps: list,
                 _dumps(validation or []),
                 _dumps(rollback or {}),
                 _dumps(escalation or []),
-                classification, author, now, now,
+                classification, author, csp, now, now,
             ),
         )
         _log_action(conn, sop_id, author or "system", "created",

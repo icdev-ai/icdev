@@ -183,7 +183,7 @@ def compute_governance_score(domain_id: str | None = None) -> dict:
             pts += 25
         if any(p["applies_to"] in ("all", did) for p in active_policies):
             pts += 25
-        if (maturity_by_domain.get(did) or d.get("maturity_level", 0)) >= 2:
+        if int(maturity_by_domain.get(did) or d.get("maturity_level", 0) or 0) >= 2:
             pts += 25
         if d.get("owner") and d.get("steward"):
             pts += 25

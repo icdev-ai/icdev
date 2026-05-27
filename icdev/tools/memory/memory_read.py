@@ -15,6 +15,30 @@ LOGS_DIR = BASE_DIR / "memory" / "logs"
 # Overridable in tests via monkeypatch
 DB_PATH = None
 
+# Ordinal classification levels (lowest to highest)
+_CLASSIFICATION_ORDER = {
+    "PUBLIC": 0,
+    "CUI": 1,
+    "SECRET": 2,
+    "TOP SECRET": 3,
+    "TOP SECRET//SCI": 4,
+}
+
+
+def _classification_level(label: str) -> int:
+    return _CLASSIFICATION_ORDER.get((label or "CUI").upper().strip(), 1)
+
+
+def _compartments_allowed(entry_compartments: str, user_compartments: list[str] | None) -> bool:
+    """Return True if entry's compartments are a subset of user's compartments."""
+    if not entry_compartments or entry_compartments.strip() == "":
+        return True
+    if user_compartments is None:
+        return False
+    entry_set = {c.strip().upper() for c in entry_compartments.split(",") if c.strip()}
+    user_set = {c.strip().upper() for c in user_compartments if c.strip()}
+    return entry_set <= user_set
+
 
 def _connect():
     if DB_PATH is not None:
@@ -39,11 +63,11 @@ def read_recent_logs(days=2):
     return logs
 
 
-def read_db_recent(limit=10, user_id=None, tenant_id=None):
+def read_db_recent(limit=10, user_id=None, tenant_id=None, clearance=None, compartments=None):
     conn = _connect()
     c = conn.cursor()
 
-    sql = "SELECT content, type, importance, created_at FROM memory_entries WHERE 1=1"
+    sql = "SELECT content, type, importance, created_at, classification, compartment FROM memory_entries WHERE 1=1"
     params = []
     if user_id:
         sql += " AND (user_id = ? OR user_id IS NULL)"
@@ -57,6 +81,18 @@ def read_db_recent(limit=10, user_id=None, tenant_id=None):
     c.execute(sql, params)
     rows = c.fetchall()
     conn.close()
+
+    # Security-context filtering in Python (compartments require parsing)
+    if clearance is not None:
+        user_level = _classification_level(clearance)
+        filtered = []
+        for row in rows:
+            entry_class = row[4] if len(row) > 4 else "CUI"
+            entry_compartment = row[5] if len(row) > 5 else ""
+            if _classification_level(entry_class) <= user_level and _compartments_allowed(entry_compartment, compartments):
+                filtered.append(row)
+        rows = filtered
+
     return rows
 
 
@@ -89,12 +125,32 @@ def main():
     parser.add_argument("--db-limit", type=int, default=10, help="Number of recent DB entries")
     parser.add_argument("--user-id", help="Filter by user ID (D180)")
     parser.add_argument("--tenant-id", help="Filter by tenant ID (D180)")
+    parser.add_argument(
+        "--clearance",
+        default=None,
+        help="User security clearance for classification filtering",
+    )
+    parser.add_argument(
+        "--compartments",
+        default=None,
+        help="Comma-separated list of user compartments",
+    )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
+    comps = None
+    if args.compartments:
+        comps = [c.strip() for c in args.compartments.split(",") if c.strip()]
+
     memory_text = read_memory_file()
     logs = read_recent_logs(args.days)
-    db_entries = read_db_recent(args.db_limit, user_id=args.user_id, tenant_id=args.tenant_id)
+    db_entries = read_db_recent(
+        args.db_limit,
+        user_id=args.user_id,
+        tenant_id=args.tenant_id,
+        clearance=args.clearance,
+        compartments=comps,
+    )
 
     if args.format == "markdown":
         print(format_markdown(memory_text, logs, db_entries))

@@ -12,13 +12,13 @@ Decision Support Template). Steps are persisted in sg_ipb_steps and can
 be LLM-synthesized on demand.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.ipb")
+logger = get_logger("icdev.strategos.ipb")
 
 STEP_NAMES = [
     "Define Battlespace Environment",

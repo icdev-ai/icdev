@@ -6,11 +6,11 @@ planning and portfolio scaling simulation.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import Optional
 
-logger = logging.getLogger("icdev.mission_canvas.portfolio")
+logger = get_logger("icdev.mission_canvas.portfolio")
 
 
 def optimize_portfolio(mission_id: str, scenarios: Optional[list[dict]] = None) -> dict:

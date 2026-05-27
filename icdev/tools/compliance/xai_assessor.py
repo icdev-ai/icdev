@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """XAI Compliance Assessor — Explainable AI assessment (D289).
 
@@ -22,7 +24,6 @@ CLI:
     python tools/compliance/xai_assessor.py --project-id proj-123 --gate
 """
 
-import logging
 import sqlite3
 from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
@@ -31,7 +32,7 @@ from typing import Dict, Optional
 
 from tools.compliance.base_assessor import BaseAssessor
 
-logger = logging.getLogger("icdev.compliance.xai_assessor")
+logger = get_logger("icdev.compliance.xai_assessor")
 
 
 class XAIAssessor(BaseAssessor):

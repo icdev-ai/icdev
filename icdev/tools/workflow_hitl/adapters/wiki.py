@@ -1,12 +1,12 @@
 # CUI // SP-CTI
 """Wiki adapter — routes to Confluence / SharePoint strategy."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 
 from tools.workflow_hitl.adapters.base import ExternalStepAdapter
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class WikiAdapter(ExternalStepAdapter):

@@ -12,6 +12,7 @@ Scans for documentation drift between code reality and docs:
 GREEN tier (read-only analysis, no writes).
 Scanner-tier only (zero Claude tokens).
 """
+IMPLEMENTATION_STATUS = "full"
 
 import re
 import sys

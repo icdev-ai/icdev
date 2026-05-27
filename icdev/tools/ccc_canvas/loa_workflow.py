@@ -89,3 +89,114 @@ Notes: {r.get('notes', 'None')}
 Authorized by: ________________________________  Date: ___________
 Title: NOC Manager / Network Engineering
 """
+
+
+def generate_loa_for_facility(conn, loa_id: int, facility_type: str) -> str:
+    """Facility-aware LOA document.
+
+    'equinix': adds IBX code, MMR/MRR designation, LOA-CFA header, Smart Hands section.
+    'megaport': adds Megaport UID, diversity designation, VXC details.
+    Falls back to generate_loa_text() for 'generic' or unknown facility types.
+    """
+    facility_type = (facility_type or "generic").lower()
+    if facility_type not in ("equinix", "megaport"):
+        return generate_loa_text(conn, loa_id)
+
+    try:
+        row = conn.execute("SELECT * FROM ccc_loa_requests WHERE id=?", (loa_id,)).fetchone()
+    except Exception:
+        row = conn.execute("SELECT * FROM ccc_loa_requests WHERE id=%s", (loa_id,)).fetchone()
+    if not row:
+        return "LOA not found."
+
+    r = dict(row)
+    valid_until = (date.today() + timedelta(days=int(r.get("valid_days", 30)))).isoformat()
+    notes = r.get("notes", "")
+
+    # Parse optional JSON extras from notes field
+    import json as _json
+    extras: dict = {}
+    try:
+        extras = _json.loads(notes) if notes.startswith("{") else {}
+    except Exception:
+        pass
+
+    if facility_type == "equinix":
+        ibx_code = extras.get("ibx_code", r.get("facility_id", "TBD"))
+        mmr = extras.get("mmr", "TBD")
+        smart_hands = extras.get("smart_hands", False)
+        sh_section = (
+            "\nSMART HANDS AUTHORIZATION\n"
+            "  This LOA also authorizes Equinix Smart Hands to perform cable\n"
+            "  installation on behalf of the requester. Smart Hands task must\n"
+            "  reference this LOA number.\n"
+        ) if smart_hands else ""
+
+        return f"""LETTER OF AUTHORIZATION — LOA-CFA (Cross-Facility Authorization)
+{r['loa_number']} — Equinix IBX: {ibx_code}
+Generated: {date.today().isoformat()}  |  Valid Until: {valid_until}
+Classification: CUI
+
+AUTHORIZED PARTY
+  Company:     {r['requester_company']}
+  Contact:     {r['requester_name']}
+  Email:       {r['requester_email']}
+
+CROSS-CONNECT AUTHORIZATION
+  Facility:         EQUINIX {ibx_code}
+  MMR/MRR:          {mmr}
+  Rack A (Near):    {r.get('rack_a', 'TBD')}
+  Patch Panel A:    {r.get('patch_panel_a', 'TBD')}
+  Rack Z (Far):     {r.get('rack_z', 'TBD')}
+  Patch Panel Z:    {r.get('patch_panel_z', 'TBD')}
+{sh_section}
+AUTHORIZATION
+This LOA-CFA authorizes the above-named party to install cross-connect cabling
+between the specified demarcation points at Equinix IBX {ibx_code}.
+All work must comply with Equinix IBX standards (ECP-CX) and be completed
+by {valid_until}. Requester is responsible for coordinating with Equinix IBX Ops.
+
+Notes: {notes or 'None'}
+
+Authorized by: ________________________________  Date: ___________
+Title: NOC Manager / Network Engineering
+"""
+
+    # megaport
+    megaport_uid = extras.get("megaport_uid", r.get("facility_id", "TBD"))
+    diverse_port = extras.get("diverse_port", "")
+    vxc_details = extras.get("vxc_details", "")
+    diversity_section = (
+        f"\n  Diversity Port:   {diverse_port}"
+    ) if diverse_port else ""
+    vxc_section = (
+        f"\nVXC DETAILS\n  {vxc_details}\n"
+    ) if vxc_details else ""
+
+    return f"""LETTER OF AUTHORIZATION
+{r['loa_number']} — Megaport Port UID: {megaport_uid}
+Generated: {date.today().isoformat()}  |  Valid Until: {valid_until}
+Classification: CUI
+
+AUTHORIZED PARTY
+  Company:     {r['requester_company']}
+  Contact:     {r['requester_name']}
+  Email:       {r['requester_email']}
+
+CROSS-CONNECT AUTHORIZATION
+  Facility:         Megaport
+  Port UID:         {megaport_uid}{diversity_section}
+  Rack A (Near):    {r.get('rack_a', 'TBD')}
+  Patch Panel A:    {r.get('patch_panel_a', 'TBD')}
+  Rack Z (Far):     {r.get('rack_z', 'TBD')}
+  Patch Panel Z:    {r.get('patch_panel_z', 'TBD')}
+{vxc_section}
+AUTHORIZATION
+This LOA authorizes the above-named party to provision a Megaport cross-connect
+(VXC) on Port UID {megaport_uid}, valid until {valid_until}.
+
+Notes: {notes or 'None'}
+
+Authorized by: ________________________________  Date: ___________
+Title: NOC Manager / Network Engineering
+"""

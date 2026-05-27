@@ -9,8 +9,8 @@
 #   5. Starts Ollama + Dashboard + Genesis Daemon
 
 $taskName = "ICDEV Genesis Daemon"
-$batPath = "C:\Users\schuo\Downloads\ICDev\tools\genesis\start_daemon.bat"
-$workDir = "C:\Users\schuo\Downloads\ICDev"
+$workDir  = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+$batPath  = Join-Path $workDir "tools\genesis\start_daemon.bat"
 
 # Check admin
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()

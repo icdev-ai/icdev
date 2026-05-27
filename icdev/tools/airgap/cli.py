@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """ICDEV™ Air-Gap CLI — detect, activate, validate, and report air-gap status.
 
@@ -22,14 +24,13 @@ Usage::
 
 import argparse
 import json
-import logging
 import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.airgap.cli")
+logger = get_logger("icdev.airgap.cli")
 
 
 def cmd_detect(as_json: bool = False) -> int:

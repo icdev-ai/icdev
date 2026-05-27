@@ -10,12 +10,12 @@ check_isa_expiry() is the main entry point. It:
 Returns a summary dict: isas_checked, events_published, notifications_sent, dry_run.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _WARN_DAYS = 90
 _NOTIFY_DAYS = 30

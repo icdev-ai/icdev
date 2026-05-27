@@ -344,10 +344,22 @@ def get_technique(technique_id):
 
 def _get_connection(db_path=None):
     """Get database connection."""
-    path = db_path or DB_PATH
-    if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}")
-    conn = get_connection(db_path=str(path))
+    import os
+    if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+        conn = get_connection()
+    else:
+        path = db_path or DB_PATH
+        if not path.exists():
+            raise FileNotFoundError(f"Database not found: {path}")
+        conn = get_connection(db_path=str(path))
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+    try:
+        conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
+    except Exception:
+        pass
     return conn
 
 

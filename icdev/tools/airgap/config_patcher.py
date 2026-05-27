@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Air-gap config patcher — rewrites LLM routing for local-only operation.
 
@@ -24,12 +26,11 @@ Usage::
 """
 
 import copy
-import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.airgap.config_patcher")
+logger = get_logger("icdev.airgap.config_patcher")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

@@ -12,6 +12,7 @@ CLI:
   python -m icdev.tools.threat_analysis.osint_normalizer [--limit N] [--json]
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -28,7 +29,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection, is_pg  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ── country centroid lookup (offline, ~ISO 3166-1 top entries) ────────────────
 # Covers the countries most frequently appearing in OSINT feeds.

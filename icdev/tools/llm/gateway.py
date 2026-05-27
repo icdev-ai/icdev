@@ -21,11 +21,11 @@ CLI:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
 import json
-import logging
 import re
 import sys
 import time
@@ -41,7 +41,7 @@ try:
 except ImportError:
     yaml = None
 
-logger = logging.getLogger("icdev.llm.gateway")
+logger = get_logger("icdev.llm.gateway")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = BASE_DIR / "args" / "llm_gateway_config.yaml"

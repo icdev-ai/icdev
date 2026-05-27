@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Cross-canvas Knowledge Graph builder.
 
@@ -9,14 +11,13 @@ blueprint on save inside a try/except:
 """
 
 import json
-import logging
 import sqlite3
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-logger = logging.getLogger("icdev.canvas.kg_builder")
+logger = get_logger("icdev.canvas.kg_builder")
 
 # ---------------------------------------------------------------------------
 # Canvas -> (DB filename, designs table) mapping
@@ -61,6 +62,7 @@ CREATE TABLE IF NOT EXISTS canvas_kg_edges (
     source_id    TEXT NOT NULL,
     target_id    TEXT NOT NULL,
     edge_type    TEXT,
+    confidence   REAL DEFAULT 1.0,
     metadata_json TEXT,
     updated_at   TEXT
 )
@@ -185,6 +187,15 @@ def rebuild_canvas_kg(canvas_key: str, design_id: str) -> dict:
                 for k, v in node.items()
                 if k not in ("id", "type", "node_type", "label", "name")
             }
+
+            # reasoning_step nodes carry CoT/CoD trace fields — promote to metadata
+            if node_type == "reasoning_step":
+                metadata.setdefault("step_name", node.get("step_name", ""))
+                metadata.setdefault("model_id", node.get("model_id", ""))
+                metadata.setdefault("chain_mode", node.get("chain_mode", ""))
+                metadata.setdefault("trace_id", node.get("trace_id", ""))
+                metadata.setdefault("round_num", node.get("round_num", 0))
+
             ontology_id = None
             if _get_onto_id and node_type:
                 try:

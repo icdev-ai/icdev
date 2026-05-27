@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Server Migration Canvas engine.
 
@@ -11,13 +13,12 @@ public pricing APIs when internet is available).
 import csv
 import io
 import json
-import logging
 import socket
 import uuid
 from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
 
-logger = logging.getLogger("icdev.server_migration")
+logger = get_logger("icdev.server_migration")
 
 
 def _mc_conn():
@@ -1196,3 +1197,188 @@ def sync_cloud_catalog(providers: list[str] | None = None, force: bool = False) 
         "rows_upserted": total_upserted,
         "errors": errors,
     }
+
+
+# ── Hypervisor Live Import ────────────────────────────────────────────────────
+
+def import_from_hypervisor(
+    session_id: str,
+    adapter_type: str,
+    host: str,
+    user: str,
+    password: str,
+    datacenter: str | None = None,
+    cluster: str | None = None,
+) -> dict:
+    """Pull live VM inventory from a hypervisor and upsert into mc_srv_inventory.
+
+    Args:
+        session_id: Server migration session ID.
+        adapter_type: 'vmware', 'hyperv', or 'nutanix'.
+        host: Hypervisor host/IP.
+        user: Credentials username.
+        password: Credentials password.
+        datacenter: Optional datacenter filter (VMware).
+        cluster: Optional cluster filter (Nutanix).
+
+    Returns:
+        {"ok": bool, "imported": int, "hypervisor_session_id": str, "error": str | None}
+    """
+    from tools.migration_canvas.adapters import pull_inventory as _pull
+
+    kwargs: dict = {}
+    if datacenter:
+        kwargs["datacenter"] = datacenter
+    if cluster:
+        kwargs["cluster"] = cluster
+
+    result = _pull(adapter_type, host, user, password, **kwargs)
+    vms = result.get("vms", [])
+    ok = result.get("ok", False)
+
+    conn = _mc_conn()
+    now = _now()
+    hv_session_id = "hvs-" + uuid.uuid4().hex[:10] if "uuid" in dir() else \
+        "hvs-" + str(id(result))[-10:]
+
+    try:
+        import uuid as _uuid
+        hv_session_id = "hvs-" + _uuid.uuid4().hex[:10]
+    except Exception:
+        pass
+
+    try:
+        # Record the pull session
+        conn.execute(
+            "INSERT OR IGNORE INTO mc_srv_hypervisor_sessions "
+            "(id, session_id, adapter_type, host, datacenter, cluster, pulled_at, vm_count, status, error_msg) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (
+                hv_session_id, session_id, adapter_type, host,
+                datacenter or "", cluster or "", now,
+                len(vms), "ok" if ok else "error",
+                result.get("error") or "",
+            ),
+        )
+
+        # Upsert each VM into mc_srv_inventory
+        imported = 0
+        for vm in vms:
+            inv_id = "inv-" + uuid.uuid4().hex[:10]
+            conn.execute(
+                "INSERT OR IGNORE INTO mc_srv_inventory "
+                "(id, session_id, hostname, vcpus, ram_gb, disk_count, total_disk_gb, "
+                "disk_type, nic_count, os_family, os_name, os_arch, bios_type, "
+                "virtualization_ext, source_format, imported_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    inv_id, session_id,
+                    vm.get("hostname", "unknown"),
+                    vm.get("vcpus", 1),
+                    vm.get("ram_gb", 0),
+                    vm.get("disk_count", 0),
+                    vm.get("total_disk_gb", 0),
+                    vm.get("disk_type", ""),
+                    vm.get("nic_count", 1),
+                    vm.get("os_family", ""),
+                    vm.get("os_name", ""),
+                    vm.get("os_arch", "x86_64"),
+                    vm.get("bios_type", "UEFI"),
+                    vm.get("virtualization_ext", 1),
+                    f"hypervisor:{adapter_type}",
+                    now,
+                ),
+            )
+            imported += 1
+
+        conn.commit()
+        logger.info("import_from_hypervisor: imported %d VMs from %s (%s)", imported, host, adapter_type)
+        return {
+            "ok": ok,
+            "imported": imported,
+            "hypervisor_session_id": hv_session_id,
+            "error": result.get("error"),
+        }
+    finally:
+        conn.close()
+
+
+# ── Advanced Cloud Catalog (spot / reserved / savings plans) ──────────────────
+
+def get_cloud_instances_advanced(
+    provider: str,
+    filters: dict | None = None,
+    pricing_model: str = "on_demand",
+    vcpu_min: int = 0,
+    ram_min: float = 0,
+) -> list[dict]:
+    """Return cloud instances filtered by pricing model.
+
+    Extends get_cloud_instances() with spot/reserved/savings_plan pricing columns
+    added by migration 084.
+
+    Args:
+        provider: 'aws', 'azure', 'gcp', 'oci' or 'all'.
+        filters: Optional dict of column filters (same as get_cloud_instances).
+        pricing_model: 'on_demand', 'spot', 'reserved_1yr', 'reserved_3yr', 'savings_plan'.
+        vcpu_min: Minimum vCPU count.
+        ram_min: Minimum RAM in GB.
+
+    Returns:
+        List of instance dicts ranked by effective cost (lowest first).
+    """
+    VALID_MODELS = {"on_demand", "spot", "reserved_1yr", "reserved_3yr", "savings_plan"}
+    if pricing_model not in VALID_MODELS:
+        pricing_model = "on_demand"
+
+    price_col_map = {
+        "spot": "spot_price",
+        "reserved_1yr": "reserved_1yr_price",
+        "reserved_3yr": "reserved_3yr_price",
+        "savings_plan": "savings_plan_price",
+        "on_demand": None,
+    }
+    price_col = price_col_map[pricing_model]
+
+    conn = _mc_conn()
+    try:
+        where = ["1=1"]
+        params: list = []
+
+        if provider and provider != "all":
+            where.append("provider=?")
+            params.append(provider)
+        if vcpu_min:
+            where.append("vcpus >= ?")
+            params.append(vcpu_min)
+        if ram_min:
+            where.append("ram_gb >= ?")
+            params.append(ram_min)
+
+        for f_filters in (filters or {}).items():
+            col, val = f_filters
+            where.append(f"{col}=?")
+            params.append(val)
+
+        # If pricing column exists and is not null, filter to those rows for non-on-demand
+        if price_col:
+            where.append(f"{price_col} IS NOT NULL")
+
+        order_col = price_col if price_col else "vcpus"
+        sql = (
+            f"SELECT *, {price_col or 'NULL'} AS effective_price "
+            f"FROM mc_cloud_instances WHERE {' AND '.join(where)} "
+            f"ORDER BY {order_col} ASC LIMIT 100"
+        )
+        rows = conn.execute(sql, params).fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            d["pricing_model"] = pricing_model
+            result.append(d)
+        return result
+    except Exception as exc:
+        logger.warning("get_cloud_instances_advanced failed: %s", exc)
+        return []
+    finally:
+        conn.close()

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Declarative prompt-chain executor for LLM-to-LLM sequential reasoning.
 
@@ -38,7 +40,7 @@ if str(BASE_DIR) not in sys.path:
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CHAINS_PATH = BASE_DIR / "args" / "prompt_chains.yaml"
 
-logger = logging.getLogger("icdev.prompt_chain_executor")
+logger = get_logger("icdev.prompt_chain_executor")
 
 # ---------------------------------------------------------------------------
 # Agent-to-function mapping for LLMRouter

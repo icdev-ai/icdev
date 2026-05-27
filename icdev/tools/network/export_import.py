@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # [CUI // SP-CTI]
 """ICDEV™ Network Design Canvas — Export/Import Functions.
 
@@ -11,13 +13,12 @@ No Flask dependency — takes graph dicts and returns strings,
 or takes XML/SVG strings and returns graph dicts.
 """
 
-import logging
 import math
 import re
 import uuid
 import xml.etree.ElementTree as ET
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Export Functions ───────────────────────────────────────────────────────────

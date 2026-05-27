@@ -6,6 +6,7 @@ Runs the MI scan pipeline autonomously via Genesis reflex system.
 Air-gap safe: local canvas scan only when ICDEV_AIRGAP=true.
 Zero Claude tokens consumed (scanner-tier only).
 """
+IMPLEMENTATION_STATUS = "full"
 
 import os
 from datetime import datetime, timezone

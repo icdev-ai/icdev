@@ -26,16 +26,16 @@ Transitions:
                                                              failed
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class KanbanState(str, Enum):
@@ -148,6 +148,7 @@ class TransitionResult:
     resume_cycle: int = 0
     audit_written: bool = False
     applied: bool = True  # False for no-op (same state)
+    cot_trace_id: str = ""
     extra: Dict = field(default_factory=dict)
 
 
@@ -176,6 +177,22 @@ def db_status_for(state: KanbanState) -> str:
 # ────────────────────────────────────────────────────────────────────────────
 
 
+def _ensure_kanban_cot_enabled() -> None:
+    """Defensively add cot_enabled column to kanban_tasks if missing."""
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        cols = conn.execute("PRAGMA table_info(kanban_tasks)").fetchall()
+        if not any(c[1] == "cot_enabled" for c in cols):
+            conn.execute(
+                "ALTER TABLE kanban_tasks ADD COLUMN cot_enabled INTEGER NOT NULL DEFAULT 0"
+            )
+            conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 def transition(
     task_id: str,
     from_state: KanbanState,
@@ -186,6 +203,7 @@ def transition(
     resume_cycle: int = 0,
     db_exec=None,
     audit_exec=None,
+    cot_trace_id: str = "",
 ) -> TransitionResult:
     """Validate + (optionally) persist a state transition.
 
@@ -229,6 +247,7 @@ def transition(
             timestamp=datetime.now(timezone.utc).isoformat(),
             resume_cycle=resume_cycle,
             applied=False,
+            cot_trace_id=cot_trace_id,
         )
 
     label = _TRANSITIONS[(from_state, to_state)]
@@ -282,6 +301,7 @@ def transition(
                         "reason": reason,
                         "label": label,
                         "resume_cycle": resume_cycle,
+                        "cot_trace_id": cot_trace_id,
                     }),
                 ),
             )
@@ -290,6 +310,37 @@ def transition(
             logger.warning(
                 "state_machine: audit write failed for %s: %s", task_id, exc
             )
+
+    # Best-effort write to kanban_status_transitions with structured CoT rationale
+    try:
+        from tools.db.storage import get_connection
+        import secrets as _secrets
+        conn = get_connection()
+        kst_reason = reason
+        if cot_trace_id:
+            kst_reason = json.dumps({
+                "cot_trace_id": cot_trace_id,
+                "rationale": reason,
+                "label": label,
+            })
+        conn.execute(
+            "INSERT INTO kanban_status_transitions "
+            "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "kst-" + _secrets.token_hex(6),
+                task_id,
+                from_state.value,
+                to_state.value,
+                actor,
+                kst_reason,
+                now,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
     return TransitionResult(
         task_id=task_id,
@@ -303,6 +354,7 @@ def transition(
         resume_cycle=resume_cycle,
         audit_written=audit_written,
         applied=True,
+        cot_trace_id=cot_trace_id,
     )
 
 

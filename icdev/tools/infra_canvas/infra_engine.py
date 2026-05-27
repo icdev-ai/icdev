@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV Infrastructure Design Canvas — Assessment Engine.
 
@@ -5,14 +7,13 @@ Pure deterministic functions for evaluating infrastructure designs against
 compliance rules. No Flask dependency — takes graph data and returns results.
 """
 
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from tools.infra_canvas.constants import INFRA_COMPLIANCE_RULES
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 try:
     import yaml as _yaml

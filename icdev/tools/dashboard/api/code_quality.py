@@ -308,6 +308,7 @@ def log_health():
     build_events = [e for e in events if e.get("event_type") in ("pytest_run", "playwright_run")]
     last_build = build_events[-1] if build_events else None
 
+    # Count triage Kanban tasks created in last 7 days via DB
     triage_count = 0
     try:
         conn = _get_db()

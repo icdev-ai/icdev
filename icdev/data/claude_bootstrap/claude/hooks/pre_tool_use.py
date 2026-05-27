@@ -392,6 +392,15 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "canvas_events",
         # ODC MITRE ATT&CK technique catalog (migration cvo-odc-01, append-only NIST AU)
         "odc_mitre_techniques",
+        # Security Framework (Phase 74 — sec-fnd)
+        "security_policies",
+        "user_compartments",
+        "security_context_log",
+        "abac_decisions",
+        "mac_violations",
+        "rls_audit",
+        "column_mask_audit",
+        "field_filter_audit",
         # FathomDesk Market Breadth (migration 047 — periodic breadth snapshots, NIST AU)
         "ad_breadth_snapshots",
         # FathomDesk Value Compass (migration 048 — F&G + Buffett snapshots, NIST AU)
@@ -419,6 +428,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "mc_net_ai_sessions",
         # STRATEGOS — war readiness event log (migration 118, NIST AU — append-only I&W audit)
         "sg_war_readiness_events",
+        # STRATEGOS — adversarial data validation audit (NIST AU-9 — append-only)
+        "sg_adversarial_validation_audit",
         # NDC↔Migration — topology snapshots (NIST AU; phase-completion history must be immutable)
         "nc_topology_snapshots",
         # Phase 71 — OHC Ops Hub Canvas (migration 120, NIST AU — adapter health log + drift events append-only)
@@ -428,6 +439,29 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "govlift_audit_log",
         # AI Traceability (migration 121 — cross-canvas AI decision audit log, NIST AU-2/AU-3)
         "canvas_ai_decisions",
+        # Cross-Agency Data Transfer (NIST AU-2, AU-9 — append-only transfer audit log)
+        "cross_agency_transfers",
+        # IL5 data ingestion audit (NIST AU-2, AU-12 — 30-second SLA display pipeline)
+        "il5_ingestion_log",
+        # Canvas Instances — seeding audit (NIST AU — append-only activation log)
+        "canvas_instances",
+        # NOC Operations Canvas — audit trail (NIST AU, append-only)
+        "noc_audit",
+        # Peering Management Canvas — audit trail (NIST AU, append-only)
+        "pmc_audit",
+        # Circuit & Capacity Canvas — audit trail (NIST AU, append-only)
+        "ccc_audit",
+        # DDoS & Security Ops Canvas — audit trail (NIST AU, append-only)
+        "dsoc_audit",
+        # OSINT Privacy Sanitizer — PII detection/redaction audit (NIST AU, migration 159)
+        "osint_privacy_audit",
+        # AI Augmentation Canvas — scan sessions and audit trail (NIST AU, append-only)
+        "aac_scans",
+        "aac_audit_log",
+        # ISP/Telco — Partner & Agreement Lifecycle (NIST AU, append-only amendment log)
+        "nc_agreement_amendments",
+        # ISP/Telco — Cross-Connect Order Workflow (NIST AU, append-only order state log)
+        "ccc_xc_order_events",
     ]
 
     if tool_name == "Bash":

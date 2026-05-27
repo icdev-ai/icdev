@@ -164,3 +164,36 @@ def compliance_summary():
         )
     finally:
         conn.close()
+
+
+@compliance_api.route("/iqe-query", methods=["POST"])
+def compliance_iqe_query():
+    """Natural-language IQE query against compliance collections."""
+    import logging as _log
+    import tools.iqe.adapters.compliance  # noqa: F401 — registers compliance.* collections
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import Parser
+    from tools.iqe.executor import execute_query
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    collections = ["compliance.snapshots", "compliance.controls", "compliance.violations"]
+    iqe_str = ""
+    try:
+        result = nl_to_iqe(question, collections)
+        iqe_str = result.get("iqe", "")
+        explanation = result.get("explanation", "")
+        ast = Parser().parse(iqe_str)
+        conn = _get_db()
+        try:
+            rows = execute_query(ast, conn)
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                        "results": rows, "row_count": len(rows)})
+    except Exception as exc:
+        _log.getLogger(__name__).warning("compliance IQE error: %s", exc)
+        return jsonify({"error": str(exc), "iqe": iqe_str}), 500

@@ -319,6 +319,113 @@ def create_ccc_blueprint() -> Blueprint:
         finally:
             conn.close()
 
+    # ── Cross-Connect Order Workflow ──────────────────────────────────────
+
+    @bp.route("/ccc/orders")
+    def ccc_orders_page():
+        return render_template("ccc_canvas/orders.html")
+
+    @bp.route("/api/ccc/cross-connect-orders", methods=["GET"])
+    def api_ccc_xc_orders_list():
+        from tools.ccc_canvas.db.init_db import get_connection
+        from tools.ccc_canvas.xc_order_manager import list_in_flight_orders
+        conn = get_connection()
+        try:
+            return jsonify(list_in_flight_orders(conn))
+        finally:
+            conn.close()
+
+    @bp.route("/api/ccc/cross-connects/<int:xc_id>/order", methods=["POST"])
+    def api_ccc_xc_order_create(xc_id):
+        from tools.ccc_canvas.db.init_db import get_connection
+        from tools.ccc_canvas.xc_order_manager import create_cross_connect_order
+        data = request.get_json(force=True) or {}
+        ordered_by = data.get("ordered_by", "noc")
+        conn = get_connection()
+        try:
+            result = create_cross_connect_order(conn, xc_id, ordered_by)
+            return jsonify(result), 201
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ccc/cross-connects/<int:xc_id>/cancel-order", methods=["POST"])
+    def api_ccc_xc_order_cancel(xc_id):
+        from tools.ccc_canvas.db.init_db import get_connection
+        from tools.ccc_canvas.xc_order_manager import cancel_order
+        data = request.get_json(force=True) or {}
+        reason = data.get("reason", "")
+        actor = data.get("actor", "noc")
+        conn = get_connection()
+        try:
+            result = cancel_order(conn, xc_id, reason, actor)
+            return jsonify(result)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+        finally:
+            conn.close()
+
+    @bp.route("/api/ccc/cross-connects/<int:xc_id>/order-status", methods=["GET"])
+    def api_ccc_xc_order_status(xc_id):
+        from tools.ccc_canvas.db.init_db import get_connection
+        from tools.ccc_canvas.xc_order_manager import poll_order_status
+        conn = get_connection()
+        try:
+            result = poll_order_status(conn, xc_id)
+            return jsonify(result)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+        finally:
+            conn.close()
+
+    @bp.route("/api/ccc/cross-connects/<int:xc_id>/generate-loa", methods=["POST"])
+    def api_ccc_xc_generate_loa(xc_id):
+        from tools.ccc_canvas.db.init_db import get_connection
+        from tools.ccc_canvas.loa_workflow import create_loa_request, generate_loa_for_facility
+        data = request.get_json(force=True) or {}
+        conn = get_connection()
+        try:
+            try:
+                xc = conn.execute("SELECT * FROM ccc_cross_connects WHERE id=?", (xc_id,)).fetchone()
+            except Exception:
+                xc = conn.execute("SELECT * FROM ccc_cross_connects WHERE id=%s", (xc_id,)).fetchone()
+            if not xc:
+                return jsonify({"error": "cross-connect not found"}), 404
+            xc_d = dict(xc)
+            loa_data = {
+                "facility": xc_d.get("facility", "other"),
+                "xc_id": xc_id,
+                "requester_name": data.get("requester_name", "NOC"),
+                "requester_email": data.get("requester_email", ""),
+                "requester_company": data.get("requester_company", ""),
+                "rack_a": data.get("rack_a", ""),
+                "rack_z": data.get("rack_z", ""),
+                "patch_panel_a": data.get("patch_panel_a", ""),
+                "patch_panel_z": data.get("patch_panel_z", ""),
+                "notes": data.get("notes", ""),
+            }
+            loa_result = create_loa_request(conn, loa_data)
+            _loa_id = loa_result.get("loa_id") or loa_result.get("loa_number")  # noqa: F841
+            # Fetch the numeric id for generate_loa_for_facility
+            try:
+                loa_row = conn.execute("SELECT id FROM ccc_loa_requests WHERE loa_number=?", (loa_result.get("loa_number"),)).fetchone()
+            except Exception:
+                loa_row = conn.execute("SELECT id FROM ccc_loa_requests WHERE loa_number=%s", (loa_result.get("loa_number"),)).fetchone()
+            loa_numeric_id = loa_row[0] if loa_row else None
+            doc = generate_loa_for_facility(conn, loa_numeric_id, xc_d.get("facility", "generic"))
+            return jsonify({
+                "loa_number": loa_result.get("loa_number"),
+                "loa_id": loa_numeric_id,
+                "document": doc,
+            }), 201
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        finally:
+            conn.close()
+
     @bp.route("/api/ccc/capacity/report")
     def api_ccc_capacity_report():
         from tools.ccc_canvas.db.init_db import get_connection

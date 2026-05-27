@@ -885,4 +885,400 @@ __all__ = [
     "generate_contract_assertions",
     # constants re-exported for convenience
     "EDGE_TYPE_COLUMN_LINEAGE",
+    # governance
+    "compute_data_governance",
 ]
+
+
+# ── Data Governance Framework Check ──────────────────────────────────────────
+#
+# Evaluates a design graph against 7 governance pillars (DAMA DMBOK v2 /
+# DCAM / NIST SP 800-188 / FedRAMP / OMB M-19-17 / GDPR Art.25):
+#
+#   1. Stewardship & Ownership     4. Quality & Observability
+#   2. Catalog & Metadata          5. Privacy & Consent
+#   3. Lineage & Provenance        6. Compliance & Policy
+#                                  7. Data Mesh Governance (conditional)
+#
+# All checks are deterministic — no LLM calls.
+
+
+_GOVERNANCE_CHECKS = [
+    # ── 1. Stewardship & Ownership ──────────────────────────────────────────
+    {
+        "id": "GOV-ST-01", "pillar": "Stewardship", "weight": 8,
+        "framework": "DAMA DMBOK v2 §2", "severity": "HIGH",
+        "title": "Data Domain Ownership Defined",
+        "detail": "At least one data domain entity (ent-domain) defines ownership and stewardship scope.",
+        "check": "has_any", "targets": ["ent-domain"],
+        "recommendation": "Add an 'ent-domain' node representing each data domain and annotate with owner.",
+    },
+    {
+        "id": "GOV-ST-02", "pillar": "Stewardship", "weight": 6,
+        "framework": "DAMA DMBOK v2 §2", "severity": "MEDIUM",
+        "title": "Data Steward Role Identified",
+        "detail": "A control node marking stewardship responsibility (ctrl-steward or ctrl-ownership) is present.",
+        "check": "has_any", "targets": ["ctrl-steward", "ctrl-ownership", "ctrl-data-owner"],
+        "recommendation": "Add a 'ctrl-steward' control node and connect it to each data domain.",
+    },
+    {
+        "id": "GOV-ST-03", "pillar": "Stewardship", "weight": 4,
+        "framework": "OMB M-19-17", "severity": "LOW",
+        "title": "Data Classification Boundary Present",
+        "detail": "At least one boundary node defines data classification scope (bnd-classification).",
+        "check": "has_any", "targets": ["bnd-classification", "bnd-zone"],
+        "recommendation": "Wrap entities in a 'bnd-classification' boundary to declare data sensitivity.",
+    },
+    # ── 2. Catalog & Metadata ────────────────────────────────────────────────
+    {
+        "id": "GOV-CAT-01", "pillar": "Catalog & Metadata", "weight": 8,
+        "framework": "DAMA DMBOK v2 §12", "severity": "HIGH",
+        "title": "Data Catalog Integration Node Present",
+        "detail": "A catalog node (twin-catalog) or metadata store entity is present, enabling discovery.",
+        "check": "has_any", "targets": ["twin-catalog", "ent-catalog", "ctrl-catalog"],
+        "recommendation": "Add a 'twin-catalog' node to bridge design metadata to Collibra / Alation / Unity Catalog.",
+    },
+    {
+        "id": "GOV-CAT-02", "pillar": "Catalog & Metadata", "weight": 5,
+        "framework": "DCAM §4.2", "severity": "MEDIUM",
+        "title": "Schema Documentation Nodes Present",
+        "detail": "Column nodes (col-*) exist to document the data schema — minimum 1 required.",
+        "check": "has_prefix", "targets": ["col-"],
+        "recommendation": "Add 'col-field', 'col-pk', or 'col-fk' nodes to document entity schemas.",
+    },
+    {
+        "id": "GOV-CAT-03", "pillar": "Catalog & Metadata", "weight": 4,
+        "framework": "DCAM §4.3", "severity": "LOW",
+        "title": "Data Contract Defined",
+        "detail": "At least one data contract node (ent-contract) formalises schema + SLA expectations.",
+        "check": "has_any", "targets": ["ent-contract"],
+        "recommendation": "Add an 'ent-contract' node (ODCS-compatible) to codify schema and quality SLAs.",
+    },
+    # ── 3. Lineage & Provenance ──────────────────────────────────────────────
+    {
+        "id": "GOV-LIN-01", "pillar": "Lineage & Provenance", "weight": 9,
+        "framework": "NIST SP 800-188 §3.4", "severity": "HIGH",
+        "title": "Data Flow Edges Present (Lineage)",
+        "detail": "At least one flow edge connects source and sink entities, enabling lineage tracing.",
+        "check": "has_flow_edges",
+        "recommendation": "Draw edges between entities to document data flows and enable lineage analysis.",
+    },
+    {
+        "id": "GOV-LIN-02", "pillar": "Lineage & Provenance", "weight": 6,
+        "framework": "DAMA DMBOK v2 §11", "severity": "MEDIUM",
+        "title": "Lineage Twin Node Present",
+        "detail": "A 'twin-lineage' node is present to snapshot lineage as a baseline for drift detection.",
+        "check": "has_any", "targets": ["twin-lineage"],
+        "recommendation": "Add a 'twin-lineage' node to enable schema-drift and downstream-impact analysis.",
+    },
+    {
+        "id": "GOV-LIN-03", "pillar": "Lineage & Provenance", "weight": 5,
+        "framework": "DAMA DMBOK v2 §11", "severity": "LOW",
+        "title": "Impact Analysis Node Present",
+        "detail": "A 'twin-impact-analysis' or equivalent node models downstream impact of schema changes.",
+        "check": "has_any", "targets": ["twin-impact-analysis", "twin-schema-drift"],
+        "recommendation": "Add 'twin-schema-drift' to detect and alert on breaking schema changes.",
+    },
+    # ── 4. Quality & Observability ───────────────────────────────────────────
+    {
+        "id": "GOV-QUA-01", "pillar": "Quality & Observability", "weight": 9,
+        "framework": "DAMA DMBOK v2 §13", "severity": "HIGH",
+        "title": "Data Quality Gate Present",
+        "detail": "A quality gate node (twin-quality-gate or ctrl-data-quality) enforces quality rules before consumption.",
+        "check": "has_any", "targets": ["twin-quality-gate", "ctrl-data-quality", "ctrl-quality"],
+        "recommendation": "Add a 'twin-quality-gate' node connected to entities before downstream consumers.",
+    },
+    {
+        "id": "GOV-QUA-02", "pillar": "Quality & Observability", "weight": 6,
+        "framework": "DCAM §5.1", "severity": "MEDIUM",
+        "title": "Audit Trail Present",
+        "detail": "An audit log control (ctrl-audit-log) or audit column (col-audit) is present.",
+        "check": "has_any", "targets": ["ctrl-audit-log", "col-audit", "ctrl-audit"],
+        "recommendation": "Add 'ctrl-audit-log' and connect to all CUI/SECRET entities.",
+    },
+    {
+        "id": "GOV-QUA-03", "pillar": "Quality & Observability", "weight": 4,
+        "framework": "DCAM §5.2", "severity": "LOW",
+        "title": "Monitoring / Observability Node Present",
+        "detail": "A monitoring node or observability control indicates production readiness.",
+        "check": "has_any", "targets": ["ctrl-monitoring", "ctrl-observability", "ctrl-sla"],
+        "recommendation": "Add a 'ctrl-monitoring' node to surface data freshness and SLA metrics.",
+    },
+    # ── 5. Privacy & Consent ─────────────────────────────────────────────────
+    {
+        "id": "GOV-PRI-01", "pillar": "Privacy & Consent", "weight": 9,
+        "framework": "GDPR Art.25 / NIST SP 800-188", "severity": "HIGH",
+        "title": "PII Masking / Tokenization Control Present",
+        "detail": "PII entities are protected by a masking or tokenization control (ctrl-masking, ctrl-tokenization).",
+        "check": "pii_has_masking",
+        "recommendation": "Add 'ctrl-masking' or 'ctrl-tokenization' and connect it to all PII-tagged entities.",
+    },
+    {
+        "id": "GOV-PRI-02", "pillar": "Privacy & Consent", "weight": 7,
+        "framework": "CCPA §1798.100 / GDPR Art.5", "severity": "HIGH",
+        "title": "Retention Policy Control Present",
+        "detail": "A retention policy control (ctrl-retention) governs how long PII/CUI data is stored.",
+        "check": "has_any", "targets": ["ctrl-retention"],
+        "recommendation": "Add 'ctrl-retention' with configured purge schedule for CUI/PII entities.",
+    },
+    {
+        "id": "GOV-PRI-03", "pillar": "Privacy & Consent", "weight": 5,
+        "framework": "GDPR Art.25", "severity": "MEDIUM",
+        "title": "DLP Control on Egress Flows",
+        "detail": "Data Loss Prevention (ctrl-dlp) is applied on outbound/egress data flows.",
+        "check": "has_any", "targets": ["ctrl-dlp"],
+        "recommendation": "Add 'ctrl-dlp' and connect it to all egress flow edges (flow-export, flow-api).",
+    },
+    # ── 6. Compliance & Policy ───────────────────────────────────────────────
+    {
+        "id": "GOV-CMP-01", "pillar": "Compliance & Policy", "weight": 9,
+        "framework": "FedRAMP / NIST 800-53 SC", "severity": "HIGH",
+        "title": "Encryption Control Applied",
+        "detail": "At least one encryption control (ctrl-encryption, ctrl-kms) secures data at rest.",
+        "check": "has_any", "targets": ["ctrl-encryption", "ctrl-kms", "ctrl-tde"],
+        "recommendation": "Add 'ctrl-encryption' (TDE/KMS) and connect to all CUI/SECRET entity nodes.",
+    },
+    {
+        "id": "GOV-CMP-02", "pillar": "Compliance & Policy", "weight": 8,
+        "framework": "NIST 800-53 AC / FedRAMP", "severity": "HIGH",
+        "title": "Access Control / RBAC Present",
+        "detail": "A role-based access control node (ctrl-rbac, ctrl-abac) restricts data access.",
+        "check": "has_any", "targets": ["ctrl-rbac", "ctrl-abac", "ctrl-access"],
+        "recommendation": "Add 'ctrl-rbac' and connect to each entity that stores CUI or PII.",
+    },
+    {
+        "id": "GOV-CMP-03", "pillar": "Compliance & Policy", "weight": 6,
+        "framework": "NIST 800-53 CP", "severity": "MEDIUM",
+        "title": "Backup / Recovery Policy Defined",
+        "detail": "A backup policy control (ctrl-backup-policy) defines RTO/RPO targets.",
+        "check": "has_any", "targets": ["ctrl-backup-policy", "ctrl-backup"],
+        "recommendation": "Add 'ctrl-backup-policy' connected to critical data stores.",
+    },
+    {
+        "id": "GOV-CMP-04", "pillar": "Compliance & Policy", "weight": 5,
+        "framework": "NIST 800-188 §4 / GDPR Art.17", "severity": "MEDIUM",
+        "title": "Data Sovereignty / Residency Boundary",
+        "detail": "A data residency boundary (bnd-region) declares where data physically resides.",
+        "check": "has_any", "targets": ["bnd-region", "bnd-sovereignty"],
+        "recommendation": "Wrap cloud-hosted entities in a 'bnd-region' boundary (US-GovCloud, EU, etc.).",
+    },
+    # ── 7. Data Mesh Governance (fires only when data mesh nodes present) ───
+    {
+        "id": "GOV-MESH-01", "pillar": "Data Mesh Governance", "weight": 7,
+        "framework": "Data Mesh Principles §3", "severity": "HIGH",
+        "title": "Data Product Has Input + Output Ports",
+        "detail": "Data products (ent-data-product) expose at least one input port and one output port.",
+        "check": "data_product_has_ports",
+        "recommendation": "Add 'ent-input-port' and 'ent-output-port' nodes connected to each data product.",
+    },
+    {
+        "id": "GOV-MESH-02", "pillar": "Data Mesh Governance", "weight": 6,
+        "framework": "Data Mesh Principles §4", "severity": "MEDIUM",
+        "title": "Federated Governance Policy Applied",
+        "detail": "A federated governance control (ctrl-federated-governance) or mesh policy node is present.",
+        "check": "has_any", "targets": ["ctrl-federated-governance", "ctrl-mesh-policy", "ctrl-governance"],
+        "recommendation": "Add 'ctrl-federated-governance' to enforce cross-domain policy standards.",
+    },
+    {
+        "id": "GOV-MESH-03", "pillar": "Data Mesh Governance", "weight": 5,
+        "framework": "ODCS §2.1", "severity": "LOW",
+        "title": "Data Contract Linked to Data Product",
+        "detail": "Each data product has an 'ent-contract' edge defining SLAs and schema terms.",
+        "check": "data_product_has_contract",
+        "recommendation": "Connect an 'ent-contract' node to each 'ent-data-product' node.",
+    },
+]
+
+_PILLAR_ORDER = [
+    "Stewardship",
+    "Catalog & Metadata",
+    "Lineage & Provenance",
+    "Quality & Observability",
+    "Privacy & Consent",
+    "Compliance & Policy",
+    "Data Mesh Governance",
+]
+
+_MATURITY_LEVELS = [
+    (0,  20,  1, "Initial",    "Ad-hoc — no formal data governance practices"),
+    (20, 40,  2, "Developing", "Some controls present but inconsistently applied"),
+    (40, 60,  3, "Defined",    "Governance framework documented and partially enforced"),
+    (60, 80,  4, "Managed",    "Controls measured and monitored; gaps tracked"),
+    (80, 101, 5, "Optimised",  "Continuous improvement; governance is embedded in design"),
+]
+
+
+def _gov_grade(score: float) -> str:
+    if score >= 90:
+        return "A"
+    if score >= 80:
+        return "B"
+    if score >= 70:
+        return "C"
+    if score >= 60:
+        return "D"
+    return "F"
+
+
+def compute_data_governance(graph_data: dict) -> dict:
+    """Run data governance framework checks against a DDC graph.
+
+    Evaluates the graph against 7 pillars (DAMA DMBOK v2 / DCAM / NIST SP
+    800-188 / FedRAMP / GDPR Art.25 / Data Mesh Principles).
+
+    Args:
+        graph_data: Dict with ``nodes``, ``edges``, and ``boundaries``.
+
+    Returns:
+        Dict with ``score``, ``grade``, ``maturity``, ``checks`` (list),
+        ``categories`` (per-pillar scores), and ``recommendations`` (list).
+    """
+    nodes = graph_data.get("nodes", [])
+    edges = graph_data.get("edges", [])
+
+    node_types: set[str] = {n.get("type", "") for n in nodes}
+    node_map: dict[str, dict] = {n["id"]: n for n in nodes}
+
+    # Adjacency map for graph traversal
+    adj: dict[str, set[str]] = {}
+    for e in edges:
+        adj.setdefault(e.get("source", ""), set()).add(e.get("target", ""))
+
+    has_mesh = bool(node_types & {"ent-data-product", "ent-domain", "ent-contract",
+                                   "ent-input-port", "ent-output-port"})
+    has_pii  = any("pii" in (n.get("type", "") + n.get("label", "")).lower() for n in nodes)
+
+    def _has_any(targets: list[str]) -> bool:
+        return bool(node_types & set(targets))
+
+    def _has_prefix(prefix: str) -> bool:
+        return any(t.startswith(prefix) for t in node_types)
+
+    def _has_flow_edges() -> bool:
+        return any(
+            e.get("source") and e.get("target")
+            and e.get("source") != e.get("target")
+            for e in edges
+        )
+
+    def _pii_has_masking() -> bool:
+        if not has_pii:
+            return True  # no PII → vacuously satisfied
+        return bool(node_types & {"ctrl-masking", "ctrl-tokenization", "ctrl-pii-mask"})
+
+    def _data_product_has_ports() -> bool:
+        if not has_mesh:
+            return True  # no mesh → vacuously satisfied
+        products = [n for n in nodes if n.get("type") == "ent-data-product"]
+        if not products:
+            return True
+        ports = node_types & {"ent-input-port", "ent-output-port"}
+        return len(ports) >= 2  # at least one of each present
+
+    def _data_product_has_contract() -> bool:
+        if not has_mesh:
+            return True
+        products = [n for n in nodes if n.get("type") == "ent-data-product"]
+        if not products:
+            return True
+        has_contract = "ent-contract" in node_types
+        if not has_contract:
+            return False
+        # Check at least one contract is connected to a product
+        for p in products:
+            if any(t in node_map and node_map[t].get("type") == "ent-contract"
+                   for t in adj.get(p["id"], set())):
+                return True
+        return False
+
+    _DISPATCHERS = {
+        "has_any":                 lambda c: _has_any(c.get("targets", [])),
+        "has_prefix":              lambda c: _has_prefix(c["targets"][0]),
+        "has_flow_edges":          lambda c: _has_flow_edges(),
+        "pii_has_masking":         lambda c: _pii_has_masking(),
+        "data_product_has_ports":  lambda c: _data_product_has_ports(),
+        "data_product_has_contract": lambda c: _data_product_has_contract(),
+    }
+
+    total_weight = 0.0
+    passed_weight = 0.0
+    checks_out: list[dict] = []
+    pillar_stats: dict[str, dict] = {}
+
+    for chk in _GOVERNANCE_CHECKS:
+        pillar = chk["pillar"]
+        # Skip mesh checks when no mesh nodes present (unless failing by design)
+        if pillar == "Data Mesh Governance" and not has_mesh:
+            continue
+
+        w = chk["weight"]
+        total_weight += w
+        pillar_stats.setdefault(pillar, {"passed": 0, "total": 0, "weight_passed": 0.0, "weight_total": 0.0})
+        pillar_stats[pillar]["total"] += 1
+        pillar_stats[pillar]["weight_total"] += w
+
+        fn = _DISPATCHERS.get(chk["check"], lambda c: False)
+        passed = fn(chk)
+
+        if passed:
+            passed_weight += w
+            pillar_stats[pillar]["passed"] += 1
+            pillar_stats[pillar]["weight_passed"] += w
+
+        status = "PASS" if passed else (
+            "WARN" if chk["severity"] == "LOW" else "FAIL"
+        )
+        checks_out.append({
+            "id":             chk["id"],
+            "pillar":         pillar,
+            "framework":      chk["framework"],
+            "severity":       chk["severity"],
+            "title":          chk["title"],
+            "detail":         chk["detail"],
+            "status":         status,
+            "passed":         passed,
+            "recommendation": chk["recommendation"] if not passed else "",
+        })
+
+    score = round((passed_weight / total_weight) * 100, 1) if total_weight else 0.0
+    grade = _gov_grade(score)
+
+    maturity_level, maturity_label, maturity_desc = 1, "Initial", _MATURITY_LEVELS[0][3]
+    for lo, hi, lvl, lbl, desc in _MATURITY_LEVELS:
+        if lo <= score < hi:
+            maturity_level, maturity_label, maturity_desc = lvl, lbl, desc
+            break
+
+    # Per-pillar summary
+    categories = {}
+    for pillar in _PILLAR_ORDER:
+        if pillar not in pillar_stats:
+            continue
+        ps = pillar_stats[pillar]
+        wt = ps["weight_total"] or 1
+        categories[pillar] = {
+            "passed":      ps["passed"],
+            "total":       ps["total"],
+            "pct":         round((ps["weight_passed"] / wt) * 100),
+            "weight_passed": ps["weight_passed"],
+            "weight_total":  ps["weight_total"],
+        }
+
+    recommendations = [
+        {"id": c["id"], "pillar": c["pillar"], "severity": c["severity"],
+         "title": c["title"], "recommendation": c["recommendation"]}
+        for c in checks_out if not c["passed"]
+    ]
+
+    return {
+        "score":           score,
+        "grade":           grade,
+        "maturity":        {"level": maturity_level, "label": maturity_label, "description": maturity_desc},
+        "checks":          checks_out,
+        "categories":      categories,
+        "recommendations": recommendations,
+        "total_checks":    len(checks_out),
+        "passed_checks":   sum(1 for c in checks_out if c["passed"]),
+        "has_mesh":        has_mesh,
+        "assessed_at":     datetime.now(timezone.utc).isoformat(),
+    }

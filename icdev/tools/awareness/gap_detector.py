@@ -35,6 +35,7 @@ CLI:
     python tools/awareness/gap_detector.py --stats --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import ast
@@ -47,7 +48,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-LOG = logging.getLogger("gap_detector")
+LOG = get_logger("gap_detector")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -568,6 +569,19 @@ def _extract_py_string_literals(py_path: Path) -> List[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             strings.append(node.value)
+        elif isinstance(node, ast.JoinedStr) and node.values:
+            # f-strings are JoinedStr in the AST; their Constant children are
+            # already visited individually by ast.walk, but a trailing segment
+            # (e.g. the part after the last {var}) may not start with a SQL
+            # keyword and fails _is_likely_sql on its own.  Joining all static
+            # parts preserves the full schema text so create_re can find every
+            # CREATE TABLE regardless of where f-string substitutions fall.
+            parts = [
+                n.value for n in node.values
+                if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            ]
+            if parts:
+                strings.append("".join(parts))
     return strings
 
 
@@ -685,11 +699,11 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+([a-zA-Z_][\w]*)",
         re.IGNORECASE,
     )
-    # CTE names defined via WITH x AS (...) or chained , x AS (...) are
-    # virtual tables scoped to their query — treat them as "created" so they
-    # are never flagged as orphans (e.g. pattern_coverage in gap_analyzer.py).
-    cte_re = re.compile(
-        r"(?:WITH|,)\s+([a-zA-Z_][\w]*)\s+AS\s*\(",
+    # ALTER TABLE x RENAME TO y is equivalent to "CREATE TABLE y" for the
+    # purposes of this check: the renamed table exists under the new name and
+    # any subsequent INSERT/SELECT against it is valid.
+    rename_re = re.compile(
+        r"ALTER\s+TABLE\s+[a-zA-Z_][\w]*\s+RENAME\s+TO\s+([a-zA-Z_][\w]*)",
         re.IGNORECASE,
     )
     # INSERT INTO must be followed by a SQL-valid continuation: a column
@@ -708,7 +722,7 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         re.IGNORECASE,
     )
 
-    # First pass: collect CREATE TABLE and CTE names from SQL-shaped string
+    # First pass: collect CREATE TABLE (and RENAME TO) from SQL-shaped string
     # literals in .py files. Comments are stripped first so documentation
     # inside SQL doesn't leak English prose into the regex matcher.
     for py in _walk_py(tools_dir):
@@ -718,9 +732,7 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
             sql_clean = _strip_sql_comments(sql)
             for m in create_re.finditer(sql_clean):
                 created.add(m.group(1).lower())
-            # CTE names are virtual tables — add them so FROM <cte> is not
-            # flagged as an orphan (e.g. pattern_coverage in gap_analyzer.py).
-            for m in cte_re.finditer(sql_clean):
+            for m in rename_re.finditer(sql_clean):
                 created.add(m.group(1).lower())
 
     # Also scan raw .sql files (migrations written as pure SQL). These
@@ -732,7 +744,7 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         src = _strip_sql_comments(_read_text(sql_path))
         for m in create_re.finditer(src):
             created.add(m.group(1).lower())
-        for m in cte_re.finditer(src):
+        for m in rename_re.finditer(src):
             created.add(m.group(1).lower())
 
     # Second pass: references from SQL-shaped string literals. Python

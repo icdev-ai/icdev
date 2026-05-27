@@ -7,6 +7,7 @@ that put_call_sentiment pillar modules read for z-score regime detection.
 
 GREEN tier (read + append-only writes, no LLM in hot path). Air-gap safe.
 """
+IMPLEMENTATION_STATUS = "full"
 
 from __future__ import annotations
 

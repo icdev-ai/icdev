@@ -21,6 +21,7 @@ CLI:
     python tools/strategos/doctrine_corpus.py --query "taiwan" --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -30,7 +31,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.doctrine_corpus")
+logger = get_logger("icdev.strategos.doctrine_corpus")
 
 # ── Built-in doctrine corpus ───────────────────────────────────────────────────
 

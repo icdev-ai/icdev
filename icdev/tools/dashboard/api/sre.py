@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """SRE API Blueprint — exposes SLO, incident, runbook, DORA, and chaos endpoints.
 
@@ -8,13 +10,12 @@ Registers at /api/sre/* in the ICDEV dashboard.
 """
 
 import json
-import logging
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, jsonify, request
 from tools.common.helpers import now_isoformat
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("icdev.sre.api")
+logger = get_logger("icdev.sre.api")
 
 sre_api = Blueprint("sre_api", __name__, url_prefix="/api/sre")
 

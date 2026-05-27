@@ -1,3 +1,4 @@
+
 # CUI // SP-CTI
 """Connector Forge Templates — inline Jinja2 connector skeletons (D-CF-3).
 
@@ -23,7 +24,7 @@ from tools.databridge.connector import ConnectorCapabilities, ConnectorType  # n
 from tools.databridge.connectors.saas_base import SaaSBaseConnector
 from tools.databridge.registry import register_connector
 
-logger = logging.getLogger("databridge.connectors.{{ connector_name }}")
+logger = get_logger("databridge.connectors.{{ connector_name }}")
 
 
 @register_connector
@@ -89,7 +90,7 @@ from tools.databridge.connector import ConnectorCapabilities, ConnectorType
 from tools.databridge.connectors.saas_base import SaaSBaseConnector
 from tools.databridge.registry import register_connector
 
-logger = logging.getLogger("databridge.connectors.{{ connector_name }}")
+logger = get_logger("databridge.connectors.{{ connector_name }}")
 
 try:
     import requests as _requests
@@ -164,7 +165,7 @@ from tools.databridge.connector import ConnectorCapabilities, ConnectorType
 from tools.databridge.connectors.soap_base import SoapBaseConnector
 from tools.databridge.registry import register_connector
 
-logger = logging.getLogger("databridge.connectors.{{ connector_name }}")
+logger = get_logger("databridge.connectors.{{ connector_name }}")
 
 
 @register_connector
@@ -218,7 +219,7 @@ from tools.databridge.connector import (
 )
 from tools.databridge.registry import register_connector
 
-logger = logging.getLogger("databridge.connectors.{{ connector_name }}")
+logger = get_logger("databridge.connectors.{{ connector_name }}")
 
 
 @register_connector
@@ -294,7 +295,7 @@ from tools.databridge.connector import (
 )
 from tools.databridge.registry import register_connector
 
-logger = logging.getLogger("databridge.connectors.{{ connector_name }}")
+logger = get_logger("databridge.connectors.{{ connector_name }}")
 
 
 @register_connector
@@ -365,7 +366,7 @@ from tools.databridge.connector import (
 )
 from tools.databridge.registry import register_connector
 
-logger = logging.getLogger("databridge.connectors.{{ connector_name }}")
+logger = get_logger("databridge.connectors.{{ connector_name }}")
 
 
 @register_connector
@@ -441,7 +442,7 @@ from tools.databridge.connectors.health_base import (
 )
 from tools.databridge.registry import register_connector
 
-logger = logging.getLogger("databridge.connectors.{{ connector_name }}")
+logger = get_logger("databridge.connectors.{{ connector_name }}")
 
 
 @register_connector
@@ -496,7 +497,7 @@ from tools.databridge.connector import (
 )
 from tools.databridge.registry import register_connector
 
-logger = logging.getLogger("databridge.connectors.{{ connector_name }}")
+logger = get_logger("databridge.connectors.{{ connector_name }}")
 
 
 @register_connector

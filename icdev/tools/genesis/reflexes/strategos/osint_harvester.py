@@ -12,6 +12,7 @@ Config: args/strategos_config.yaml (osint section).
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import io
@@ -41,7 +42,7 @@ from tools.strategos.tier_resolver import (  # noqa: E402
     resolve_tiers,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _INBOX = BASE_DIR / "data" / "osint_inbox"
 _FILE_INBOX_MAX = 500
@@ -805,6 +806,19 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     print(f"  Strategos OSINT: {summary}")
     logger.info("OSINT harvest complete: %s", summary)
 
+    # Normalize newly ingested raw signals into the unified schema
+    norm_result: Dict[str, Any] = {"inserted": 0, "errors": 0}
+    try:
+        from tools.threat_analysis.osint_normalizer import run_normalization  # noqa: PLC0415
+        norm_result = run_normalization(limit=harvested + 100)
+        logger.info(
+            "OSINT normalization: inserted=%d errors=%d",
+            norm_result.get("inserted", 0),
+            norm_result.get("errors", 0),
+        )
+    except Exception as _norm_exc:
+        logger.warning("OSINT normalizer skipped: %s", _norm_exc)
+
     return {
         "success": True,
         "metric_value": harvested,
@@ -813,6 +827,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "signals_harvested": harvested,
             "duplicates_skipped": dupes,
             "errors": errors,
+            "normalized": norm_result.get("inserted", 0),
+            "normalization_errors": norm_result.get("errors", 0),
         },
     }
 

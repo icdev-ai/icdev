@@ -2466,6 +2466,18 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
 """)
         conn.commit()
 
+        # Migration: add owner_team and owner_email to dm_domains if missing
+        for _col, _default in [("owner_team", "''"), ("owner_email", "''")]:
+            try:
+                conn.execute(f"ALTER TABLE dm_domains ADD COLUMN {_col} TEXT DEFAULT {_default}")
+                conn.commit()
+                print(f"[init_db] Migration applied: dm_domains.{_col} added.")
+            except Exception as _e:
+                if "duplicate column" in str(_e).lower() or "already exists" in str(_e).lower():
+                    pass
+                else:
+                    raise
+
         # Migration: add anomaly_json to dd_explore_profiles if missing
         try:
             conn.execute("ALTER TABLE dd_explore_profiles ADD COLUMN anomaly_json TEXT")

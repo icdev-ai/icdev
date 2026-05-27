@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Agent Topology & Dependency Graph — maps relationships between agents,
 models, providers, functions, and skills across the ICDEV™ platform.
@@ -24,7 +26,6 @@ Usage:
 import argparse
 import hashlib
 import json
-import logging
 import sys
 import uuid
 from collections import defaultdict
@@ -32,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-logger = logging.getLogger("icdev.agent.topology")
+logger = get_logger("icdev.agent.topology")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

@@ -1,13 +1,13 @@
 # CUI // SP-CTI
 """SharePoint REST API via Microsoft Graph wiki strategy."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 import urllib.request
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _cfg():

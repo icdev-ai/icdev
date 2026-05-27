@@ -14,8 +14,9 @@ execute without human approval. The daemon monitors subprocess completion.
 """
 
 from __future__ import annotations
+IMPLEMENTATION_STATUS = "full"
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import re
 import shutil
 import subprocess
@@ -25,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -1262,19 +1263,24 @@ def _get_due_tasks() -> list:
                 )
         result = filtered_result
 
-        # Rate-limit backlog auto-promotion
+        # Rate-limit both scheduled dispatch and backlog auto-promotion.
+        # Cap scheduled tasks by available slots so we never exceed MAX_IN_PROGRESS.
         current_in_progress = _count_in_progress()
         pending_prompts = _count_pending_prompts()
 
-        if current_in_progress >= MAX_IN_PROGRESS:
-            return result  # Too many in-progress, only return scheduled
+        available_slots = MAX_IN_PROGRESS - current_in_progress
+        if available_slots <= 0:
+            return []  # At capacity — don't dispatch any scheduled or backlog tasks
+
+        # Cap scheduled results to available slots (prevents burst on restart)
+        result = result[:available_slots]
 
         if pending_prompts >= MAX_AUTO_PROMOTE:
-            return result  # Prompt files waiting, don't add more
+            return result  # Prompt files waiting, don't add more backlog
 
         slots = min(
             MAX_AUTO_PROMOTE,
-            MAX_IN_PROGRESS - current_in_progress,
+            MAX_IN_PROGRESS - current_in_progress - len(result),
         )
         if slots <= 0:
             return result
@@ -2514,6 +2520,10 @@ _ollama_running_count: int = 0
 # routing through the in_progress polling loop.
 _ollama_completed: set = set()
 
+# Tasks dispatched to GitHub Actions (async, no local Popen). run() checks
+# this to move them to in_progress without the _running dict.
+_github_actions_dispatched: set = set()
+
 # D-AUTO-DEGRADE: Track executors that have hit rate/token limits.
 # When degraded, the scheduler skips them in the fallback chain.
 _degraded_executors: set = set()
@@ -2965,6 +2975,326 @@ def _dispatch_gitlab(task_id: str, task_desc: str, task_type: str) -> bool:
     return False
 
 
+def _dispatch_github_actions(task_id: str, task_desc: str, task_type: str) -> bool:
+    """Trigger a GitHub Actions workflow for the given task (EXEC_GITHUB_ACTIONS tier).
+
+    POSTs to the GitHub API workflow_dispatch endpoint with task_id, task_desc,
+    and task_type as inputs. Stores the returned run_id in the task row.
+    Returns True on HTTP 204, False on any error.
+    """
+    import os as _os
+    try:
+        import requests as _requests
+    except ImportError:
+        logger.warning("kanban: requests library not available — cannot dispatch via GitHub Actions")
+        return False
+
+    token = _os.getenv("GITHUB_TOKEN", "").strip()
+    repo = _os.getenv("GITHUB_RUNNER_REPO", "").strip()
+    if not token or not repo:
+        logger.warning("kanban: GITHUB_TOKEN / GITHUB_RUNNER_REPO not set")
+        return False
+
+    workflow_file = _os.getenv("GITHUB_WORKFLOW_FILE", "icdev-kanban-runner.yml")
+    url = f"https://api.github.com/repos/{repo}/actions/workflows/{workflow_file}/dispatches"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    llm_provider = _os.getenv("LLM_PROVIDER", "ollama_cloud").strip() or "ollama_cloud"
+    payload = {
+        "ref": "main",
+        "inputs": {
+            "task_id": task_id,
+            "task_desc": task_desc,
+            "task_type": task_type,
+            "llm_provider": llm_provider,
+        },
+    }
+
+    try:
+        resp = _requests.post(url, headers=headers, json=payload, timeout=15)
+    except _requests.RequestException as exc:
+        logger.warning("kanban: GitHub Actions dispatch failed for %s: %s", task_id, exc)
+        return False
+
+    if resp.status_code == 204:
+        run_url = f"https://github.com/{repo}/actions"
+        run_id = "pending"
+        try:
+            import time as _time
+            _time.sleep(6)
+            runs_url = (
+                f"https://api.github.com/repos/{repo}/actions/workflows/"
+                f"{workflow_file}/runs?per_page=10&event=workflow_dispatch"
+            )
+            runs_resp = _requests.get(runs_url, headers=headers, timeout=10)
+            if runs_resp.status_code == 200:
+                for _run in runs_resp.json().get("workflow_runs", []):
+                    if task_id in (_run.get("display_title") or _run.get("name") or ""):
+                        run_id = str(_run["id"])
+                        run_url = _run.get("html_url", run_url)
+                        break
+        except Exception as _poll_exc:
+            logger.warning("kanban: could not capture run_id for %s: %s", task_id, _poll_exc)
+        try:
+            conn = get_connection()
+            conn.execute(
+                "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
+                (run_id, run_url, datetime.now(timezone.utc).isoformat(), task_id),
+            )
+            conn.commit()
+        except Exception as _db_exc:
+            logger.warning("kanban: failed to store execution_id for %s: %s", task_id, _db_exc)
+        logger.info("kanban: GitHub Actions workflow triggered for task %s (run_id=%s)", task_id, run_id)
+        return True
+
+    logger.warning(
+        "kanban: GitHub Actions dispatch returned %d for %s: %s",
+        resp.status_code, task_id, resp.text[:200],
+    )
+    return False
+
+
+_ga_last_polled: dict = {}  # task_id -> datetime of last poll
+
+
+def _poll_github_actions_completions() -> None:
+    """Check GA API for completed runs and move tasks to done/backlog.
+
+    Runs at the start of each scheduler cycle. Rate-limited to one API call
+    per task per 60 seconds to stay well within GitHub's 5000-req/hour limit.
+    Tasks with execution_id='pending' are matched by task_id in the run name.
+    """
+    import os as _os
+    try:
+        import requests as _req
+    except ImportError:
+        return
+
+    token = _os.getenv("GITHUB_TOKEN", "").strip()
+    repo = _os.getenv("GITHUB_RUNNER_REPO", "").strip()
+    workflow_file = _os.getenv("GITHUB_WORKFLOW_FILE", "icdev-kanban-runner.yml")
+    if not token or not repo:
+        return
+
+    _hdrs = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    try:
+        _conn = get_connection()
+        _rows = _conn.execute(
+            "SELECT id, execution_id FROM kanban_tasks "
+            "WHERE status='in_progress' AND executor_type='github_actions'"
+        ).fetchall()
+    except Exception:
+        return
+
+    now = datetime.now(timezone.utc)
+    for _row in _rows:
+        task_id = _row["id"]
+        run_id = _row["execution_id"] or "pending"
+
+        # Rate-limit: skip if polled within the last 60 seconds
+        _last = _ga_last_polled.get(task_id)
+        if _last and (now - _last).total_seconds() < 60:
+            continue
+        _ga_last_polled[task_id] = now
+
+        try:
+            if run_id == "pending":
+                # Discover run_id by matching task_id in the run display_title
+                _search_url = (
+                    f"https://api.github.com/repos/{repo}/actions/workflows/"
+                    f"{workflow_file}/runs?per_page=20&event=workflow_dispatch"
+                )
+                _sr = _req.get(_search_url, headers=_hdrs, timeout=10)
+                if _sr.status_code == 200:
+                    for _run in _sr.json().get("workflow_runs", []):
+                        if task_id in (_run.get("display_title") or _run.get("name") or ""):
+                            run_id = str(_run["id"])
+                            _conn.execute(
+                                "UPDATE kanban_tasks SET execution_id=?, executor_url=? WHERE id=?",
+                                (run_id, _run.get("html_url", ""), task_id),
+                            )
+                            _conn.commit()
+                            break
+                if run_id == "pending":
+                    continue  # still not found — check next cycle
+
+            # Check run status
+            _run_resp = _req.get(
+                f"https://api.github.com/repos/{repo}/actions/runs/{run_id}",
+                headers=_hdrs, timeout=10,
+            )
+            if _run_resp.status_code != 200:
+                continue
+            _data = _run_resp.json()
+            if _data.get("status") == "completed":
+                _conclusion = _data.get("conclusion", "")
+                if _conclusion == "success":
+                    logger.info("kanban: GA run %s for %s succeeded → done", run_id, task_id)
+                    _move_task(task_id, "done")
+                else:
+                    logger.warning(
+                        "kanban: GA run %s for %s conclusion=%s → backlog", run_id, task_id, _conclusion
+                    )
+                    _move_task(task_id, "backlog")
+                _ga_last_polled.pop(task_id, None)
+        except Exception as _exc:
+            logger.warning("kanban: GA poll error for %s: %s", task_id, _exc)
+
+
+# Workflows to monitor for CI failures. Kanban runner is intentionally excluded.
+_CI_WATCHED_WORKFLOWS: list = ["icdev-ci.yml", "ci_cd_pipeline.yml"]
+
+
+def _detect_and_queue_ci_failures() -> None:
+    """Detect failed CI runs on main and enqueue auto-fix tasks in the backlog.
+
+    Watches _CI_WATCHED_WORKFLOWS for conclusion=failure on the main branch.
+    For each unprocessed failure:
+      - Fetches failed-step logs from the GitHub API
+      - Creates a backlog task (id=ci-fix-{run_id}, type=fix, executor=github_actions)
+        so the scheduler dispatches it to the kanban runner for auto-remediation.
+
+    Infinite-loop guards:
+      - Deduped by run_id: once a ci-fix-{id} task exists, the run is never requeued.
+      - Kanban runner failures are skipped (workflow path contains kanban-runner).
+      - Runs triggered by a ci-fix task (display_title contains 'ci-fix-') are skipped.
+    """
+    import os as _os
+    try:
+        import requests as _req
+    except ImportError:
+        return
+
+    token = _os.getenv("GITHUB_TOKEN", "").strip()
+    repo = _os.getenv("GITHUB_RUNNER_REPO", "").strip()
+    if not token or not repo:
+        return
+
+    _hdrs = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    try:
+        _conn = get_connection()
+    except Exception:
+        return
+
+    now = datetime.now(timezone.utc)
+
+    for wf_file in _CI_WATCHED_WORKFLOWS:
+        try:
+            runs_resp = _req.get(
+                f"https://api.github.com/repos/{repo}/actions/workflows/"
+                f"{wf_file}/runs?status=failure&per_page=5&branch=main",
+                headers=_hdrs, timeout=10,
+            )
+            if runs_resp.status_code != 200:
+                continue
+        except Exception as _re:
+            logger.warning("kanban: CI failure poll error for %s: %s", wf_file, _re)
+            continue
+
+        for _run in runs_resp.json().get("workflow_runs", []):
+            run_id = str(_run["id"])
+            run_title = _run.get("display_title") or _run.get("name") or ""
+            wf_path = _run.get("path", "")
+
+            # Guard 1: never queue failures from the kanban runner itself
+            if "kanban-runner" in wf_path or "kanban_runner" in wf_path:
+                continue
+
+            # Guard 2: never queue a failure caused by a ci-fix task (no recursion)
+            if "ci-fix-" in run_title:
+                continue
+
+            # Guard 3: only act on failures from the last 24 hours
+            try:
+                from datetime import timedelta as _td
+                _run_created = datetime.fromisoformat(
+                    (_run.get("created_at") or "").replace("Z", "+00:00")
+                )
+                if (now - _run_created) > _td(hours=24):
+                    continue
+            except Exception:
+                pass
+
+            task_id = f"ci-fix-{run_id}"
+
+            # Guard 3: dedup — skip if a fix task for this run already exists
+            if _conn.execute("SELECT 1 FROM kanban_tasks WHERE id=?", (task_id,)).fetchone():
+                continue
+
+            # Fetch failed job logs for error context
+            error_ctx = (
+                f"CI workflow: {wf_file}\n"
+                f"Run URL: {_run.get('html_url', '')}\n"
+                f"Triggered by commit: {run_title}\n\n"
+            )
+            try:
+                _jobs_resp = _req.get(
+                    f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs",
+                    headers=_hdrs, timeout=10,
+                )
+                _jobs = _jobs_resp.json().get("jobs", []) if _jobs_resp.status_code == 200 else []
+                _failed_jobs = [j for j in _jobs if j.get("conclusion") == "failure"]
+
+                for _job in _failed_jobs[:3]:
+                    _jname = _job.get("name", "unknown job")
+                    _fsteps = [s for s in _job.get("steps", []) if s.get("conclusion") == "failure"]
+                    _step_names = ", ".join(s.get("name", "") for s in _fsteps[:3])
+                    error_ctx += f"=== Job: {_jname} | Failed steps: {_step_names} ===\n"
+
+                    # Fetch the job log (redirects to pre-signed URL)
+                    _log_resp = _req.get(
+                        f"https://api.github.com/repos/{repo}/actions/jobs/{_job['id']}/logs",
+                        headers=_hdrs, timeout=15, allow_redirects=True,
+                    )
+                    if _log_resp.status_code == 200:
+                        # Keep error-bearing lines only (filter runner noise)
+                        _error_lines = [
+                            ln for ln in _log_resp.text.splitlines()
+                            if any(
+                                kw in ln
+                                for kw in (
+                                    "error", "Error", "ERROR", "FAILED", "failed",
+                                    "exit code", ">> Issue", "ModuleNotFoundError",
+                                    "ImportError", "SyntaxError", "not found",
+                                    "cannot import", "Traceback",
+                                )
+                            )
+                        ]
+                        error_ctx += "\n".join(_error_lines[:80]) + "\n\n"
+            except Exception as _le:
+                logger.warning("kanban: log fetch failed for run %s: %s", run_id, _le)
+                error_ctx += f"(log fetch failed: {_le})\n"
+
+            # Insert fix task
+            _title = f"fix(ci): auto-fix {wf_file} failure — run {run_id}"
+            try:
+                _conn.execute(
+                    "INSERT OR IGNORE INTO kanban_tasks "
+                    "(id, title, description, priority, task_type, status, "
+                    " executor_type, tags, created_at, updated_at) "
+                    "VALUES (?, ?, ?, 'high', 'fix', 'backlog', 'claude_cli', "
+                    "        'ci_autofix', ?, ?)",
+                    (_task_id := task_id, _title, error_ctx[:8000], now.isoformat(), now.isoformat()),
+                )
+                _conn.commit()
+                logger.info("kanban: queued CI fix task %s for run %s", task_id, run_id)
+            except Exception as _ie:
+                logger.warning("kanban: failed to insert ci-fix task %s: %s", task_id, _ie)
+
+
 def _dispatch_ollama_local(task_id: str, task_desc: str, task_type: str) -> bool:
     """Run an Ollama-backed anvil script directly for the EXEC_OLLAMA_LOCAL tier.
 
@@ -3173,8 +3503,9 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     task_log = PROMPT_DIR / f"{task_id}.log"
 
     try:
+        import os as _os_chain  # noqa: PLC0415
         # Env-var override for quick mode switching (e.g. air-gap toggle).
-        _env_chain = os.environ.get("ICDEV_KANBAN_EXECUTOR_CHAIN", "")
+        _env_chain = _os_chain.environ.get("ICDEV_KANBAN_EXECUTOR_CHAIN", "")
         if _env_chain:
             _fallback_chain = [x.strip() for x in _env_chain.split(",") if x.strip()]
         else:
@@ -3209,6 +3540,18 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
                 _dispatch_times[task_id] = datetime.now(timezone.utc)
                 _set_executor_type(task_id, "gitlab")
                 print(f"  Kanban: dispatched {task_id} via GitLab CI pipeline")
+                dispatched = True
+                break
+        elif tier == "github_actions":
+            ok = _dispatch_github_actions(task_id, task_desc, task_type)
+            if ok:
+                _dispatch_times[task_id] = datetime.now(timezone.utc)
+                _set_executor_type(task_id, "github_actions")
+                # Move to in_progress immediately — GA is async and the
+                # _github_actions_dispatched in-memory set is lost on restart.
+                _move_task(task_id, "in_progress")
+                _github_actions_dispatched.add(task_id)
+                print(f"  Kanban: dispatched {task_id} via GitHub Actions → in_progress")
                 dispatched = True
                 break
         elif tier == "ollama_local":
@@ -4623,7 +4966,7 @@ _dispatch_times: Dict[str, datetime] = {}
 # Current executor tier — updated once per scheduler cycle
 _current_exec_tier: Optional[str] = None
 
-_SILENT_DISPATCH_THRESHOLD = 5 * 60  # 5 min — no log file content yet = never dispatched
+_SILENT_DISPATCH_THRESHOLD = 1 * 60  # 1 min — no log file content yet = never dispatched
 _ABSOLUTE_MAX_IN_PROGRESS_SECONDS = 24 * 60 * 60  # 24 h hard ceiling — force-reap even if in _running
 
 
@@ -4832,7 +5175,7 @@ def _startup_recover_stale_in_progress() -> None:
     try:
         conn = get_connection()
         rows = conn.execute(
-            "SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'"
+            "SELECT id, title, executor_type FROM kanban_tasks WHERE status = 'in_progress'"
         ).fetchall()
         if not rows:
             conn.close()
@@ -4843,9 +5186,12 @@ def _startup_recover_stale_in_progress() -> None:
             "restarted — process died or scheduler crashed mid-run."
         )
         for r in rows:
-            tid = dict(r)["id"]
+            rd = dict(r)
+            tid = rd["id"]
             if tid in _running:
                 continue  # live process from this session — skip
+            if rd.get("executor_type") == "github_actions":
+                continue  # external executor — GitHub Actions runs independently
             conn.execute(
                 "UPDATE kanban_tasks SET status='backlog', "
                 "last_failure_reason=?, updated_at=? WHERE id=?",
@@ -5716,19 +6062,27 @@ def _decompose_one_task(task: dict) -> None:
     )
 
     try:
+        import concurrent.futures as _cf
         router = LLMRouter()
         req = LLMRequest(
             system_prompt=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
             max_tokens=1200,
         )
-        raw = router.invoke("kanban_decompose", req)
+        with _cf.ThreadPoolExecutor(max_workers=1) as _pool:
+            _future = _pool.submit(router.invoke, "kanban_decompose", req)
+            try:
+                raw = _future.result(timeout=45)
+            except _cf.TimeoutError:
+                raise RuntimeError("LLM invoke timed out after 45s") from None
         if isinstance(raw, str):
             response_text = raw
         elif hasattr(raw, "content"):
             response_text = raw.content
         else:
             response_text = str(raw)
+    except RuntimeError:
+        raise
     except Exception as exc:
         raise RuntimeError(f"LLM invoke failed: {exc}") from exc
 
@@ -5866,6 +6220,21 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             _reap_stale_in_progress()
     except Exception as _rip_exc:
         logger.warning("stale-in_progress reaper failed: %s", _rip_exc)
+    # 0e. GA completion poller — move completed GA runs to done/backlog and free slots.
+    try:
+        _poll_github_actions_completions()
+    except Exception as _gp_exc:
+        logger.warning("GA completion poll failed: %s", _gp_exc)
+
+    # 0f. CI failure detector — every ~10 cycles (≈10 min) scan watched workflows
+    # for failures and enqueue ci-fix-{run_id} tasks into the backlog.
+    try:
+        import random as _rcf  # noqa: PLC0415
+        if _rcf.random() < 0.10:  # ~1-in-10 ≈ once per 10 min  # noqa: S311
+            _detect_and_queue_ci_failures()
+    except Exception as _cf_exc:
+        logger.warning("CI failure detection failed: %s", _cf_exc)
+
     # Suggested-decay: re-queue soft-stuck tasks once every ~4 h (1/240 cycles).
     try:
         if _rr.random() < 0.004:  # noqa: S311
@@ -6161,6 +6530,20 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     }
                 )
                 print(f"  Kanban: {task['id']} '{task['title']}' -> done (Ollama sync)")
+            elif task["id"] in _github_actions_dispatched:
+                # Async GitHub Actions dispatch — move to in_progress;
+                # completion is tracked externally (GitHub Actions run).
+                _github_actions_dispatched.discard(task["id"])
+                _move_task(task["id"], "in_progress")
+                _send_notification(task)
+                processed.append(
+                    {
+                        "id": task["id"],
+                        "title": task["title"],
+                        "prompt_file": prompt_path,
+                    }
+                )
+                print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress (GitHub Actions)")
             elif task["id"] in _running:
                 # Async Claude/LLM subprocess launched — move to in_progress
                 _move_task(task["id"], "in_progress")

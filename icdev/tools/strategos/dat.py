@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Diplomatic Activity Tracker (DAT) — DTI computation engine (icdev mirror).
+"""Diplomatic Activity Tracker (DAT) — DTI computation engine.
 
 Ingests three signal streams and produces a Diplomatic Tension Index (DTI)
 score in [0, 100] refreshed on a 6-hour cadence:
@@ -15,7 +15,7 @@ DTI scoring weights:
   Back-channel patterns   30 %
 
 Usage:
-    from icdev.tools.strategos.dat import (
+    from tools.strategos.dat import (
         ensure_tables, ingest_cable, ingest_unsc_event,
         ingest_backchannel, compute_dti, refresh_dti,
         get_latest_dti, get_dti_history,
@@ -26,15 +26,15 @@ Usage:
     print(snap["dti_score"])
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import math
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.dat")
+logger = get_logger("icdev.strategos.dat")
 
 REFRESH_HOURS = 6  # target cadence
 CABLE_WEIGHT = 0.40

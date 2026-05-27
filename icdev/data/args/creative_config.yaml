@@ -12,6 +12,28 @@ domain:
   trustradius_category_url: ""          # TrustRadius category page URL
   producthunt_topic: "file-sync"        # Product Hunt topic for monitoring
 
+# Migration Canvas domain — server/network/application migration tooling
+migration:
+  name: "server migration software"
+  g2_category_url: "https://www.g2.com/categories/server-migration"
+  capterra_category_url: "https://www.capterra.com/migration-software/"
+  trustradius_category_url: "https://www.trustradius.com/migration"
+  producthunt_topic: "server-migration"
+  keywords:
+    - server migration
+    - p2v migration
+    - cloud migration
+    - lift and shift
+    - data migration
+    - vmware migration
+    - hyper-v migration
+    - workload migration
+    - migration assessment
+    - cutover planning
+    - wave planning
+    - migration automation
+    - rehost replatform refactor
+
 # Secondary domain — blockchain monitoring & analytics
 blockchain:
   name: "blockchain"
@@ -207,6 +229,49 @@ devops_canvas:
     - blue green deployment
     - canary deployment
     - progressive delivery
+
+# Migration Canvas domain — server, network, and application migration planning wizard
+migration_canvas:
+  name: "server migration"
+  g2_category_url: "https://www.g2.com/categories/server-migration"
+  capterra_category_url: "https://www.capterra.com/server-migration-software/"
+  trustradius_category_url: "https://www.trustradius.com/server-migration"
+  producthunt_topic: "migration"
+  aliases:
+    - "server migration"
+    - "application migration"
+    - "cloud migration"
+    - "network migration"
+    - "data center migration"
+  keywords:
+    - server migration
+    - application migration
+    - cloud migration
+    - data center migration
+    - lift and shift
+    - replatform
+    - rehost
+    - migration wizard
+    - migration assessment
+    - migration plan
+    - runbook generator
+    - cutover plan
+    - rollback plan
+    - migration risk
+    - dependency mapping
+    - server discovery
+    - network migration
+    - workload migration
+    - CloudEndure
+    - AWS MGN
+    - Azure Migrate
+    - Google Migrate for Compute
+    - Carbonite Migrate
+    - Zerto
+    - Veeam
+    - migration SOP
+    - pre-migration checklist
+    - post-migration validation
 
 # Knowledge graph tools domain
 knowledge_graph:

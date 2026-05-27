@@ -15,6 +15,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 python tools/memory/memory_read.py --format markdown
 python tools/project/session_context_builder.py --format markdown
 
+# ICDEV™ CLI entry points
+icdev init [target]               # Scaffold new project (CLAUDE.md + FORGE data + .claude/ + .env)
+icdev enable <name> [...]         # Turn on canvas / subsystem toggles in .env
+icdev disable <name> [...]        # Turn off toggles
+icdev status [--json]              # Show active toggles
+icdev list [--json]               # List supported toggles
+
+# Testing
+pytest tests/ -v --tb=short      # Run all platform tests (~330+ tests; SQLite forced by conftest)
+pytest tests/test_<name>.py -v   # Run a single test file
+behave features/                  # BDD / Gherkin scenario tests
+python tools/testing/health_check.py --json
+python tools/testing/test_orchestrator.py --project-dir /path/to/project
+python tools/testing/e2e_runner.py --run-all
+# FathomDesk authenticated smoke test (MANDATORY after any FathomDesk change)
+python tools/testing/fathomdesk_smoke.py                            # reads .env for credentials
+python tools/testing/fathomdesk_smoke.py --fast                     # skip DB schema checks
+python tools/testing/fathomdesk_smoke.py --json                     # machine-readable
+
+# Lint / quality
+ruff check .                      # Ultra-fast Python linter (replaces flake8+isort+black)
+ruff check <file>
+python -m bandit -r tools/ --severity-level medium
+
+# Frontend (OpenAPI codegen)
+cd frontend && npm run codegen    # Regenerate lib/api-types.ts from localhost:5050
+
 # Memory
 python tools/memory/memory_write.py --content "text" --type event
 python tools/memory/hybrid_search.py --query "query"
@@ -27,20 +54,17 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 python tools/db/init_icdev_db.py
 python tools/db/storage.py --health --json
 
-# Testing
-python tools/testing/health_check.py --json
-python tools/testing/test_orchestrator.py --project-dir /path/to/project
-python tools/testing/e2e_runner.py --run-all
-# FathomDesk authenticated smoke test (MANDATORY after any FathomDesk change)
-python tools/testing/fathomdesk_smoke.py                            # reads .env for credentials
-python tools/testing/fathomdesk_smoke.py --fast                     # skip DB schema checks
-python tools/testing/fathomdesk_smoke.py --json                     # machine-readable
-
 # Companion sync (ALWAYS after code changes)
 python tools/dx/companion.py --sync --write --json
 
 # Coherence check
 python tools/workflow/coherence_checker.py --all --fix --gate
+
+# Showcase
+python tools/showcase/generate_app.py --slug <name> --category <cat>
+python tools/showcase/osint_engine.py --source cve --fetch --json
+python tools/showcase/synthetic_data_engine.py --domain cyber --records 1000
+python tools/showcase/validator.py --app <slug> --json
 
 # Internal Awareness Engine (Phase 1-6, D-AWARE)
 python tools/awareness/component_indexer.py --scan --json        # Refresh kg-icdev-self-awareness nodes
@@ -60,27 +84,71 @@ See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic,
 
 ---
 
-## Architecture: FORGE Framework
+## Architecture
 
-6-layer agentic system. AI orchestrates; tools execute deterministically.
+### FORGE Framework (6 layers)
+
+AI orchestrates; deterministic tools execute.
 
 | Layer | Directory | Role |
 |-------|-----------|------|
 | **Goals** | `goals/` | Process definitions — what to achieve, which tools, expected outputs |
-| **Orchestration** | *(you)* | Read goal → decide tool order → apply args → handle errors |
-| **Tools** | `tools/` | Python scripts, one job each. Deterministic. Don't think, just execute. |
+| **Orchestration** | *(Claude Code / multi-agent)* | Read goal, decide tool order, apply args, handle errors |
+| **Tools** | `icdev/tools/` (canonical) | Python scripts, one job each. Deterministic execution. |
 | **Args** | `args/` | YAML/JSON behavior settings. Change behavior without editing goals/tools |
 | **Context** | `context/` | Static reference material (tone rules, writing samples, case studies) |
 | **Hard Prompts** | `hardprompts/` | Reusable LLM instruction templates |
 
-**Why:** LLMs are probabilistic. Business logic must be deterministic. 90% accuracy/step = ~59% over 5 steps.
+**Why the separation:** LLMs are probabilistic. At 90% accuracy per step, a 5-step workflow degrades to ~59% end-to-end (0.9⁵). FORGE confines LLM reasoning to orchestration; all execution is delegated to deterministic Python tools.
 
-### Key Files
-- `goals/manifest.md` — Index of all goal workflows. Check before starting any task.
-- `tools/manifest.md` — Thin index of all tool shards. Detail lives in `tools/manifest/<topic>.md`. Grep the shard directory (not the index) when searching for an existing tool.
-- `memory/MEMORY.md` — Curated long-term facts/preferences.
+**Key indexes:**
+- `goals/manifest.md` — master index of goal workflows. Check before starting any task.
+- `tools/manifest.md` — thin index; per-domain detail lives in `tools/manifest/<topic>.md`. Grep the shards when searching for an existing tool.
+- `memory/MEMORY.md` — curated long-term facts/preferences.
 - `.env` — API keys, LLM model names. **Admins configure LLM here, not in code.**
-- `.tmp/` — Disposable scratch work. Never store important data here.
+- `.tmp/` — disposable scratch work. Never store important data here.
+
+### ANVIL Build Workflow
+5-phase TDD cycle invoked automatically on build requests:
+1. **Architect** — design and acceptance criteria
+2. **Navigate** — map to existing tools and patterns
+3. **Verify** — write failing tests (RED)
+4. **Integrate** — generate implementation (GREEN)
+5. **Launch** — refactor, security scan, compliance map, merge
+
+### Multi-Agent System
+15 agents across 3 tiers communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS).
+
+| Tier | Agents | Port Range |
+|------|--------|------------|
+| Core | Orchestrator, Architect | 8443–8444 |
+| Domain | Builder, Compliance, Security, Infrastructure, MBSE, Modernization, Requirements, Supply Chain, Simulation, DevSecOps & ZTA, Gateway | 8445–8458 |
+| Support | Knowledge, Monitor | 8449–8450 |
+
+Claude Code interacts with agents through MCP servers using stdio transport.
+
+### Import Conventions
+**Canonical namespace:** `icdev.tools.*`
+
+```python
+# CORRECT for all new code
+from icdev.tools.llm.router import LLMRouter
+from icdev.tools.db.storage import get_connection
+
+# WRONG for new code (backward-compat shim only)
+from tools.llm.router import LLMRouter
+```
+
+The root `tools/` package is a backward-compatibility shim (`tools/__init__.py`) that redirects `tools.xxx` to `icdev.tools.xxx`. Existing scripts continue to work, but all new code must use `icdev.tools.*`.
+
+**Test environments:** `tests/conftest.py` automatically injects the repo root into `sys.path` and forces `ICDEV_STORAGE_BACKEND=sqlite`. If you see `ModuleNotFoundError: No module named 'icdev'`, the repo root is not on `PYTHONPATH` and the package is not installed in editable mode.
+
+### Databases & Storage
+- Default backend: **SQLite** (`data/icdev.db`, 391+ tables).
+- Override via `.env`: `ICDEV_STORAGE_BACKEND=postgresql` (requires `psycopg2-binary`).
+- SaaS platform DB: `data/platform.db`
+- Per-tenant: `data/tenants/{slug}.db`
+- Audit trail is **append-only/immutable** (NIST AU). Never UPDATE or DELETE audit rows.
 
 ---
 
@@ -212,6 +280,8 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
 
 ## Guardrails
 
+### Development Rules
+- **Canvas DB connections MUST use `get_canvas_connection()`** — Canvas-specific tables (e.g. `aac_*`, `dsoc_*`, `ccc_*`) have no `classification`/`tenant_id` columns. Using `get_connection()` directly in a canvas `db/init_db.py` attaches the global RLS predicate and raises `UndefinedColumn` on every query. Always use `from tools.db.storage import get_canvas_connection` in canvas init files. See `tools/ai_augmentation/db/init_db.py` for the canonical pattern.
 - Always grep `tools/manifest/` shards before writing a new script
 - Verify tool output format before chaining into another tool
 - Don't assume APIs support batch operations — check first
@@ -250,49 +320,7 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
   7. `python tools/dx/companion.py --sync --write --json` — sync to all AI platforms
   8. `python tools/workflow/coherence_checker.py --all --fix --gate` — coherence validation
 
----
-
-## ICDEV™ System — Intelligent Certified Development
-
-Meta-builder that autonomously builds Gov/DoD applications using FORGE + ANVIL workflow. Full SDLC with TDD/BDD, NIST 800-53 RMF compliance, and self-healing.
-
-### Environment
-- **Classification:** CUI // SP-CTI (IL4/IL5), SECRET (IL6)
-- **Impact Levels:** IL2 (Public), IL4 (CUI/GovCloud), IL5 (CUI/Dedicated), IL6 (SECRET/SIPR)
-- **Cloud:** Multi-cloud — AWS GovCloud, Azure Government, GCP, OCI, IBM, Local
-- **LLM:** Multi-cloud — Bedrock, Azure OpenAI, Vertex AI, OCI GenAI, watsonx.ai, Ollama
-- **Languages:** Python, Java, JavaScript/TS, Go, Rust, C# (6 first-class)
-- **CI/CD:** GitLab | **Orchestration:** K8s/OpenShift | **IaC:** Terraform + Ansible
-
-### Multi-Agent Architecture
-15 agents across 3 tiers (Core, Domain, Support) on ports 8443-8458. See [docs/reference/architecture.md](docs/reference/architecture.md).
-
-### Memory System
-Dual storage: markdown (human-readable) + DB (searchable, SQLite or PostgreSQL).
-- Tables in main `data/icdev.db` (or PostgreSQL): `memory_entries`, `daily_logs`, `memory_access_log`, `memory_consolidation_log`, `memory_buffer`
-- Activity tracking: `tasks`, `activity_tasks` tables (also in main DB)
-- Types: fact, preference, event, insight, task, relationship
-- Search: hybrid_search.py (0.7 BM25 + 0.3 semantic)
-- All tools use `get_connection()` — supports both SQLite and PostgreSQL backends
-
-### Self-Healing
-- **≥ 0.7** confidence → auto-remediate (max 5/hour)
-- **0.3–0.7** → suggest fix, require approval
-- **< 0.3** → escalate with full context
-
-### Databases
-| Database | Purpose |
-|----------|---------|
-| `data/icdev.db` | Main operational DB (391 tables, incl. memory + activity) |
-| `data/platform.db` | SaaS platform DB |
-| `data/tenants/{slug}.db` | Per-tenant isolated DB |
-
-Audit trail is **append-only/immutable** (NIST AU). Full schema: [docs/reference/databases.md](docs/reference/databases.md).
-
----
-
-## ICDEV™ Guardrails
-
+### Compliance & Security Rules
 - All artifacts MUST include classification markings (CUI for IL4/IL5, SECRET for IL6)
 - Use `classification_manager.py` for markings — don't hard-code CUI banners
 - Audit trail is append-only — NEVER UPDATE/DELETE audit tables

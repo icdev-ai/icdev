@@ -182,7 +182,7 @@ def _parse_create_tables(sql_text: str) -> Dict[str, List[str]]:
             segments.append(current.strip())
 
         skip_kw = {"foreign", "primary", "check", "unique", "constraint", "create", "index"}
-        type_kw = r"(TEXT|INTEGER|REAL|BLOB|TIMESTAMP|BOOLEAN|DATE|DEFAULT|NOT|CHECK|REFERENCES|AUTOINCREMENT)"
+        type_kw = r"(TEXT|INTEGER|REAL|BLOB|NUMERIC|DECIMAL|TIMESTAMP|BOOLEAN|DATE|DEFAULT|NOT|CHECK|REFERENCES|AUTOINCREMENT)"
 
         for seg in segments:
             seg = seg.strip()

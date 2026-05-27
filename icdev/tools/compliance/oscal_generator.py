@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 ####################################################################
 # CONTROLLED UNCLASSIFIED INFORMATION (CUI) // SP-CTI
 # Distribution: Distribution D -- Authorized DoD Personnel Only

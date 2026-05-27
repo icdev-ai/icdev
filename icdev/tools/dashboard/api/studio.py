@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request, send_file, stream_with_context
 
 _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
@@ -24,6 +24,7 @@ from tools.studio.workflow_editor import (  # noqa: E402
     get_workflow,
     list_builtin_templates,
     list_workflows,
+    save_workflow,
     update_workflow,
     workflow_to_composer_format,
 )
@@ -38,6 +39,48 @@ studio_api = Blueprint("studio_api", __name__, url_prefix="/api/studio")
 def api_list_workflows():
     shared = request.args.get("shared") == "1"
     return jsonify({"workflows": list_workflows(shared_only=shared)})
+
+
+@studio_api.route("/workflows/templates", methods=["GET"])
+def list_workflow_templates():
+    """List workflow templates from context/workflow_templates/*.yaml."""
+    import yaml  # noqa: PLC0415 — deferred to avoid startup cost
+
+    tpl_dir = _ROOT / "context" / "workflow_templates"
+    if not tpl_dir.is_dir():
+        return jsonify({"templates": [], "total": 0, "builtin": 0, "community": 0, "categories": {}})
+
+    templates = []
+    for path in sorted(tpl_dir.glob("*.yaml")):
+        raw = path.read_text(encoding="utf-8")
+        try:
+            data = yaml.safe_load(raw) or {}
+        except yaml.YAMLError:
+            data = {}
+        steps = data.get("steps", [])
+        templates.append({
+            "id": path.stem,
+            "name": data.get("name", path.stem.replace("-", " ").replace("_", " ").title()),
+            "description": data.get("description", ""),
+            "category": data.get("category", "general"),
+            "tags": data.get("tags", []),
+            "author": data.get("author", "builtin"),
+            "steps_count": len(steps) if isinstance(steps, list) else 0,
+            "yaml": raw,
+        })
+
+    categories: dict[str, int] = {}
+    for t in templates:
+        cat = t["category"]
+        categories[cat] = categories.get(cat, 0) + 1
+
+    return jsonify({
+        "templates": templates,
+        "total": len(templates),
+        "builtin": len(templates),
+        "community": 0,
+        "categories": categories,
+    })
 
 
 @studio_api.route("/workflows/<workflow_id>", methods=["GET"])
@@ -98,6 +141,43 @@ def api_workflow_composer_format(workflow_id: str):
     if not data:
         return jsonify({"error": "Workflow not found or invalid YAML"}), 404
     return jsonify(data)
+
+
+@studio_api.route("/workflows/from-canvas", methods=["POST"])
+def create_workflow_from_canvas():
+    """Create a pre-filled workflow draft from a canvas template."""
+    try:
+        from tools.studio.canvas_bridge import get_canvas_workflow_template, list_canvas_ids
+    except ImportError as exc:
+        return jsonify({"error": f"canvas_bridge unavailable: {exc}"}), 503
+
+    import uuid
+    import yaml
+
+    data = request.get_json(silent=True) or {}
+    canvas_id = (data.get("canvas_id") or "").strip().lower()
+    context_label = (data.get("context_label") or "").strip()
+    design_id = (data.get("design_id") or "").strip()
+
+    if not canvas_id or canvas_id not in list_canvas_ids():
+        return jsonify({"error": f"Unknown canvas_id: {canvas_id!r}"}), 400
+
+    template = dict(get_canvas_workflow_template(canvas_id))
+    if context_label:
+        base_desc = template.get("description", "")
+        template["description"] = f"{base_desc} — {context_label}".strip(" —")
+    if design_id:
+        template["project_id"] = design_id
+
+    wf_id = str(uuid.uuid4())
+    wf_name = f"{canvas_id.upper()} Workflow" + (f" — {context_label}" if context_label else "")
+    yaml_str = yaml.dump(template, default_flow_style=False, allow_unicode=True)
+
+    save_workflow(wf_id, wf_name, yaml_str, category=template.get("category", "general"))
+
+    return jsonify(
+        {"workflow_id": wf_id, "name": wf_name, "redirect": f"/studio/workflows?load={wf_id}"}
+    ), 201
 
 
 # ── Tool Catalog ───────────────────────────────────────────
@@ -651,4 +731,250 @@ def api_app_builder_build(session_id: str):
     result = execute_build(session_id, output_dir=data.get("output_dir"))
     if result.get("status") == "error":
         return jsonify(result), 400
+    return jsonify(result)
+
+
+@studio_api.route("/app-builder/from-prd/<intake_session_id>", methods=["POST"])
+def api_app_builder_from_prd(intake_session_id: str):
+    """Bootstrap an App Builder session from a completed intake PRD."""
+    import re as _re
+
+    try:
+        from tools.requirements.prd_generator import generate_prd as _gen_prd
+    except ImportError:
+        return jsonify({"error": "PRD generator not available"}), 503
+
+    try:
+        from tools.studio.nl_app_builder import create_builder_session
+    except ImportError:
+        return jsonify({"error": "App builder not available"}), 503
+
+    # Load PRD markdown
+    try:
+        prd_result = _gen_prd(intake_session_id)
+    except Exception as exc:
+        return jsonify({"error": f"PRD generation failed: {exc}"}), 500
+
+    if prd_result.get("status") != "ok":
+        return jsonify({"error": prd_result.get("error", "PRD not found")}), 404
+
+    prd_markdown = prd_result.get("prd_markdown") or prd_result.get("prd") or ""
+
+    # Extract app name from first H1 heading in the PRD
+    title_match = _re.search(r"^#\s+(.+)$", prd_markdown, _re.MULTILINE)
+    app_name = title_match.group(1).strip() if title_match else f"App {intake_session_id[:8]}"
+
+    # Load requirement types to enrich the description with capability hints
+    _REQ_TYPE_CAPABILITY_MAP = {
+        "security": "security scanning and role-based access control",
+        "compliance": "FedRAMP/CMMC compliance tracking",
+        "data": "data pipeline and storage management",
+        "performance": "performance monitoring and SLO dashboards",
+        "interface": "REST API with OpenAPI documentation",
+        "operational": "operational runbooks and alerting",
+    }
+    capability_hints: list[str] = []
+    try:
+        from tools.db.storage import get_connection
+        from pathlib import Path as _Path
+        _DB_PATH = _Path(__file__).resolve().parents[3] / "data" / "icdev.db"
+        import os as _os
+        if _os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+            conn = get_connection()
+        else:
+            conn = get_connection(db_path=str(_DB_PATH))
+        try:
+            conn.set_security_context(None)  # rls-bypass: studio reads intake_requirements by session_id, not user tenant
+        except Exception:
+            pass
+        rows = conn.execute(
+            "SELECT DISTINCT requirement_type FROM intake_requirements WHERE session_id = ?",
+            (intake_session_id,),
+        ).fetchall()
+        for row in rows:
+            rt = (row[0] or "").lower()
+            if rt in _REQ_TYPE_CAPABILITY_MAP:
+                capability_hints.append(_REQ_TYPE_CAPABILITY_MAP[rt])
+    except Exception:
+        pass
+
+    # Build composite description: first 2000 chars of PRD + capability hints
+    description = prd_markdown[:2000]
+    if capability_hints:
+        description += "\n\nKey capabilities required: " + ", ".join(capability_hints) + "."
+
+    # Create builder session
+    try:
+        result = create_builder_session(description, app_name=app_name)
+    except Exception as exc:
+        return jsonify({"error": f"Builder session creation failed: {exc}"}), 500
+
+    if result.get("status") == "error":
+        return jsonify(result), 400
+
+    builder_session_id = result.get("session_id", "")
+    return jsonify({
+        "status": "ok",
+        "builder_session_id": builder_session_id,
+        "app_name": app_name,
+        "preview_url": f"/studio/app-builder?session_id={builder_session_id}",
+        "blueprint_preview": result.get("blueprint_preview"),
+    })
+
+
+# ── Workflow Execution (wex Phase 1-3) ─────────────────────
+
+
+@studio_api.route("/workflows/<workflow_id>/run", methods=["POST"])
+def api_run_workflow(workflow_id: str):
+    """Start an async workflow execution. Returns run_id for SSE streaming."""
+    from tools.studio.workflow_runner import start_run
+
+    data = request.get_json(silent=True) or {}
+    project_id = data.get("project_id", "default")
+    try:
+        run_id = start_run(workflow_id, project_id=project_id)
+        return jsonify({"status": "ok", "run_id": run_id}), 202
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@studio_api.route("/workflows/runs/<run_id>/stream", methods=["GET"])
+def api_stream_run(run_id: str):
+    """Per-run SSE stream. Each event is: data: <json>\n\n"""
+    from tools.studio.workflow_runner import stream_run
+
+    def generate():
+        yield from stream_run(run_id)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@studio_api.route("/artifacts/<path:filepath>", methods=["GET"])
+def api_download_artifact(filepath: str):
+    """Download a generated workflow artifact file."""
+    import mimetypes
+    filepath = filepath.replace("\\", "/")
+    safe_path = (_ROOT / Path(filepath)).resolve()
+    # Security: must stay inside _ROOT/data/studio_artifacts
+    artifacts_root = (_ROOT / "data" / "studio_artifacts").resolve()
+    if not str(safe_path).startswith(str(artifacts_root)):
+        return jsonify({"error": "Access denied"}), 403
+    if not safe_path.exists():
+        return jsonify({"error": "Artifact not found"}), 404
+    mime, _ = mimetypes.guess_type(str(safe_path))
+    as_attachment = request.args.get("download", "0") == "1"
+    return send_file(safe_path, mimetype=mime or "text/plain", as_attachment=as_attachment,
+                     download_name=safe_path.name)
+
+
+@studio_api.route("/workflows/runs", methods=["GET"])
+def api_list_runs():
+    """List workflow runs. Optional ?workflow_id= filter."""
+    from tools.studio.workflow_runner import list_runs
+
+    workflow_id = request.args.get("workflow_id")
+    limit = int(request.args.get("limit", 50))
+    return jsonify({"runs": list_runs(workflow_id=workflow_id, limit=limit)})
+
+
+@studio_api.route("/workflows/runs/<run_id>", methods=["GET"])
+def api_get_run(run_id: str):
+    from tools.studio.workflow_runner import get_run, get_run_steps
+
+    run = get_run(run_id)
+    if not run:
+        return jsonify({"error": "Run not found"}), 404
+    run["steps"] = get_run_steps(run_id)
+    return jsonify(run)
+
+
+@studio_api.route("/workflows/runs/<run_id>/steps/<step_run_id>/approve", methods=["POST"])
+def api_approve_step(run_id: str, step_run_id: str):
+    from tools.studio.workflow_runner import approve_step
+    data = request.get_json(silent=True) or {}
+    actor = data.get("actor", "approver")
+    ok = approve_step(step_run_id, actor=actor)
+    if not ok:
+        return jsonify({"error": "No pending approval for this step — it may have already been resolved or timed out"}), 404
+    return jsonify({"status": "approved", "step_run_id": step_run_id})
+
+
+@studio_api.route("/workflows/runs/<run_id>/steps/<step_run_id>/reject", methods=["POST"])
+def api_reject_step(run_id: str, step_run_id: str):
+    from tools.studio.workflow_runner import reject_step
+    data = request.get_json(silent=True) or {}
+    reason = data.get("reason", "")
+    actor = data.get("actor", "approver")
+    ok = reject_step(step_run_id, reason=reason, actor=actor)
+    if not ok:
+        return jsonify({"error": "No pending approval for this step — it may have already been resolved or timed out"}), 404
+    return jsonify({"status": "rejected", "step_run_id": step_run_id})
+
+
+@studio_api.route("/workflows/runs/<run_id>", methods=["DELETE"])
+def api_delete_run(run_id: str):
+    from tools.studio.workflow_runner import delete_run
+
+    deleted = delete_run(run_id)
+    if not deleted:
+        return jsonify({"error": "Run not found"}), 404
+    return jsonify({"status": "deleted", "run_id": run_id})
+
+
+@studio_api.route("/workflows/runs", methods=["DELETE"])
+def api_delete_all_runs():
+    from tools.studio.workflow_runner import delete_all_runs
+
+    workflow_id = request.args.get("workflow_id")
+    count = delete_all_runs(workflow_id=workflow_id or None)
+    return jsonify({"status": "deleted", "count": count})
+
+
+@studio_api.route("/workflows/<workflow_id>/generate-code", methods=["POST"])
+def api_generate_code(workflow_id: str):
+    """Generate a standalone Python script for this workflow."""
+    from tools.studio.workflow_runner import generate_python_script
+
+    try:
+        script = generate_python_script(workflow_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    wf_name = workflow_id.replace("-", "_")
+    return Response(
+        script,
+        mimetype="text/x-python",
+        headers={"Content-Disposition": f'attachment; filename="workflow_{wf_name}.py"'},
+    )
+
+
+# ── Chat-to-Workflow (wex Phase 4-5) ───────────────────────
+
+
+@studio_api.route("/chat/generate-workflow", methods=["POST"])
+def api_chat_generate_workflow():
+    """Generate workflow YAML from a natural language message via Ollama/Qwen3."""
+    from tools.studio.workflow_chat import generate_workflow_yaml
+
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+
+    history = data.get("history", [])
+    result = generate_workflow_yaml(message, conversation_history=history or None)
+    if result.get("status") == "error":
+        return jsonify(result), 422
     return jsonify(result)

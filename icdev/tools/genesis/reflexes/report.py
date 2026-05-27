@@ -8,6 +8,7 @@ comprehensive markdown report.
 
 GREEN tier (read-only, informational).  Always succeeds.
 """
+IMPLEMENTATION_STATUS = "full"
 
 import sys
 from pathlib import Path

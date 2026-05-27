@@ -2,15 +2,15 @@
 """TTX Engine — After-Action Report (AAR) generator."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from pathlib import Path
 
 from tools.db.storage import get_connection
 from .leaderboard import get_leaderboard, award_ribbons
 from .constants import RIBBON_DEFS
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def generate_aar(session_id: int) -> str:

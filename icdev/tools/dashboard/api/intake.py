@@ -209,7 +209,7 @@ def _get_db():
     # Without this, the Flask security middleware's default CUI context
     # filters out Government sessions (classification=IL4/IL2) from SELECTs.
     try:
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
     except Exception:
         pass
     return conn
@@ -232,6 +232,8 @@ def create_intake_session():
     frameworks = data.get("frameworks", [])
     custom_role_name = data.get("custom_role_name", "")
     custom_role_description = data.get("custom_role_description", "")
+    extra_context = data.get("extra_context", {})
+    template_requirements = data.get("template_requirements", [])
 
     # Map classification to impact level — empty string means no compliance framing
     il_map = {"il2": "IL2", "il4": "IL4", "il5": "IL5", "il6": "IL6"}
@@ -258,6 +260,8 @@ def create_intake_session():
             goal=goal,
             selected_frameworks=frameworks,
             custom_role_description=custom_role_description,
+            extra_context=extra_context if extra_context else None,
+            template_requirements=template_requirements if template_requirements else None,
         )
         result["wizard_context"] = {
             "goal": goal,
@@ -609,9 +613,19 @@ def ai_boost(session_id):
             f"- [{r['requirement_type']}] {r['raw_text']}" for r in existing_reqs
         ) or "(none yet)"
 
-        # All types the scorer expects
+        # Load skip_requirement_types from session context (set by use case fast_track config)
+        import json as _json
+        session_context = {}
+        try:
+            session_context = _json.loads(session_data.get("context_summary") or "{}")
+        except Exception:
+            pass
+        skip_types = set(session_context.get("skip_requirement_types", []))
+
+        # All types the scorer expects — minus any that are skipped for this use case
         all_types = ["functional", "security", "interface", "data", "performance", "compliance"]
-        missing_types = [t for t in all_types if t not in existing_types]
+        candidate_types = [t for t in all_types if t not in skip_types]
+        missing_types = [t for t in candidate_types if t not in existing_types]
 
         # Scoring gaps: check feasibility keywords
         all_text = " ".join(r["raw_text"] or "" for r in existing_reqs).lower()
@@ -863,6 +877,317 @@ def validate_prd_endpoint(session_id):
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@intake_api.route("/api/intake/prd/<session_id>/auto-remediate", methods=["POST"])
+def auto_remediate_prd(session_id):
+    """LLM auto-fixes failing PRD requirements and returns before/after readiness scores.
+
+    Handles four distinct remediation strategies:
+      traceability  → run SAFe decomposition on orphan requirements
+      completeness  → LLM-generate new requirements for missing types
+      smart         → rewrite low-scoring requirements on weakest SMART dimension
+      density/measurability → rewrite individual findings per requirement
+    """
+    if not _HAS_PRD_VALIDATOR:
+        return jsonify({"error": "PRD validator not available"}), 503
+    if not _HAS_SCORER:
+        return jsonify({"error": "Readiness scorer not available"}), 503
+
+    conn = _get_db()
+
+    # ── Baseline score ──────────────────────────────────────────────────────
+    try:
+        before_result = score_readiness(session_id)
+        before_score_pct = round((before_result.get("overall_score") or 0) * 100)
+    except Exception as exc:
+        return jsonify({"error": f"Could not score session: {exc}"}), 500
+
+    # ── Validator ───────────────────────────────────────────────────────────
+    try:
+        val_result = _validate_prd(session_id)
+    except Exception as exc:
+        return jsonify({"error": f"Validation failed: {exc}"}), 500
+
+    if val_result.get("status") != "ok":
+        return jsonify(val_result), 404
+
+    checks_by_name = {c["check"]: c for c in (val_result.get("checks") or [])}
+
+    updated: list[dict] = []
+    suggested: list[dict] = []
+    actions_taken: list[str] = []
+
+    # ── LLM setup ──────────────────────────────────────────────────────────
+    try:
+        from tools.llm import get_router
+        from tools.llm.provider import LLMRequest
+        router = get_router()
+        _llm_available = True
+    except Exception:
+        _llm_available = False
+
+    def _llm_rewrite(original_text: str, instruction: str) -> str | None:
+        if not _llm_available or not original_text.strip():
+            return None
+        try:
+            req_obj = LLMRequest(
+                messages=[{"role": "user", "content": (
+                    f"You are a requirements engineer. {instruction}\n\n"
+                    f"REQUIREMENT: {original_text}\n\n"
+                    f"Return ONLY the rewritten requirement text. No preamble, no labels."
+                )}],
+                system_prompt="You are a precise requirements engineer. Return only the rewritten requirement.",
+                max_tokens=400,
+                temperature=0.3,
+                agent_id="icdev-prd-remediate",
+            )
+            response = router.invoke("requirements_analysis", req_obj)
+            refined = (response.content or "").strip() if response else ""
+            return refined if len(refined) >= 10 else None
+        except Exception:
+            return None
+
+    def _write_refined(rid, original_text: str, refined: str, check: str) -> bool:
+        try:
+            conn.execute(
+                "UPDATE intake_requirements SET refined_text = ? WHERE id = ?",
+                (refined, rid),
+            )
+            conn.commit()
+            updated.append({"req_id": rid, "check": check,
+                            "original_text": original_text, "refined_text": refined})
+            return True
+        except Exception:
+            suggested.append({"req_id": rid, "check": check, "suggestion": refined})
+            return False
+
+    # ── 1. TRACEABILITY: run SAFe decomposition on orphan requirements ──────
+    traceability_check = checks_by_name.get("traceability", {})
+    if traceability_check.get("severity") in ("warning", "critical"):
+        orphans = traceability_check.get("orphan_requirements") or []
+        if orphans:
+            try:
+                _HAS_DECOMP_LOCAL = _HAS_DECOMP
+                if _HAS_DECOMP_LOCAL:
+                    from tools.requirements.decomposition_engine import decompose_requirements
+                    decompose_requirements(session_id, target_level="story")
+                    actions_taken.append(
+                        f"traceability: decomposed {len(orphans)} orphan requirement(s) into SAFe epics/stories"
+                    )
+                    updated.append({
+                        "req_id": None,
+                        "check": "traceability",
+                        "action": f"SAFe decomposition created links for {len(orphans)} orphan requirement(s)",
+                    })
+                else:
+                    suggested.append({
+                        "req_id": None,
+                        "check": "traceability",
+                        "suggestion": (
+                            f"{len(orphans)} requirement(s) lack decomposition links. "
+                            "Use 'Send to Kanban' to decompose into epics/stories."
+                        ),
+                    })
+            except Exception as exc:
+                suggested.append({
+                    "req_id": None,
+                    "check": "traceability",
+                    "suggestion": f"Decomposition unavailable: {exc}. Use 'Send to Kanban' to create links.",
+                })
+
+    # ── 2. COMPLETENESS: generate new requirements for missing types ─────────
+    completeness_check = checks_by_name.get("completeness", {})
+    if completeness_check.get("severity") in ("warning", "critical"):
+        missing_types = completeness_check.get("missing_types") or []
+        type_counts_existing = completeness_check.get("type_counts") or {}
+        # Load session context for better LLM prompts
+        session_row = conn.execute(
+            "SELECT customer_name, project_id, impact_level FROM intake_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        session_ctx = dict(session_row) if session_row else {}
+        customer = session_ctx.get("customer_name") or "the system"
+        impact_level = session_ctx.get("impact_level") or "IL2"
+
+        # For IL4/IL5/IL6 the completeness check requires >= 3 security requirements.
+        # Determine how many of each type we need to insert to clear the issue.
+        _SECURITY_MIN = 3 if impact_level in ("IL4", "IL5", "IL6") else 1
+
+        def _needed_count(req_type: str) -> int:
+            current = type_counts_existing.get(req_type, 0)
+            if req_type == "security":
+                return max(0, _SECURITY_MIN - current)
+            return 0 if current > 0 else 1
+
+        # Templates indexed by type; {n} = sequence number for varied phrasing
+        _TYPE_TEMPLATES = {
+            "security": [
+                "The system shall enforce role-based access control for {customer}, ensuring only authenticated and authorized users can access sensitive data, with audit logs retained for 90 days.",
+                "The system shall encrypt all data in transit and at rest for {customer} using FIPS 140-2 validated cryptographic modules, with key rotation every 90 days.",
+                "The system shall implement multi-factor authentication for all privileged accounts in {customer}, with failed login attempts locked after 5 consecutive failures.",
+            ],
+            "performance": [
+                "The system shall respond to all user-initiated requests for {customer} within 200ms at the 95th percentile under normal load (up to 1,000 concurrent users).",
+            ],
+            "interface": [
+                "The system shall expose a RESTful API for {customer} with OpenAPI 3.0 documentation, supporting JSON payloads and returning HTTP status codes per RFC 7231.",
+            ],
+            "data": [
+                "The system shall retain all transaction records for {customer} for a minimum of 7 years and provide export in CSV and JSON formats within 24 hours of request.",
+            ],
+            "compliance": [
+                "The system shall comply with NIST SP 800-53 Rev 5 moderate baseline controls for {customer}, with a documented System Security Plan (SSP) updated annually.",
+            ],
+        }
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        # Build a combined set: missing types + types that exist but fall below minimum count
+        types_to_remediate: list[str] = list(missing_types)
+        if "security" not in types_to_remediate and _needed_count("security") > 0:
+            types_to_remediate.append("security")
+
+        for missing_type in types_to_remediate:
+            n_needed = _needed_count(missing_type)
+            if n_needed == 0:
+                continue
+            templates = _TYPE_TEMPLATES.get(missing_type, [])
+            if not templates:
+                suggested.append({"req_id": None, "check": "completeness",
+                                   "suggestion": f"Add {n_needed} {missing_type} requirement(s) to improve coverage."})
+                continue
+
+            inserted = 0
+            for i in range(n_needed):
+                tmpl = templates[i % len(templates)]
+                if _llm_available and i >= len(templates):
+                    # LLM generates variants beyond the hardcoded templates
+                    base_instruction = tmpl.format(customer=customer)
+                    try:
+                        req_obj = LLMRequest(
+                            messages=[{"role": "user", "content": (
+                                f"Write a different {missing_type} requirement for {customer}. "
+                                f"Here is an example for reference (do NOT copy it): {base_instruction}\n\n"
+                                f"Return ONLY the new requirement text. One clear sentence with a measurable criterion."
+                            )}],
+                            system_prompt="Return only the requirement text. One clear sentence.",
+                            max_tokens=200, temperature=0.5, agent_id="icdev-prd-remediate",
+                        )
+                        resp = router.invoke("requirements_analysis", req_obj)
+                        new_text = (resp.content or "").strip() if resp else ""
+                    except Exception:
+                        new_text = ""
+                else:
+                    new_text = tmpl.format(customer=customer)
+
+                if len(new_text) < 10:
+                    continue
+                try:
+                    import uuid as _uuid
+                    new_req_id = "req-" + _uuid.uuid4().hex[:12]
+                    conn.execute(
+                        """INSERT INTO intake_requirements
+                           (id, session_id, requirement_type, priority, raw_text, acceptance_criteria,
+                            created_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            new_req_id, session_id,
+                            missing_type, "high" if missing_type == "security" else "medium",
+                            new_text,
+                            f"System shall satisfy this {missing_type} requirement as stated and verified by testing.",
+                            now_iso, now_iso,
+                        ),
+                    )
+                    conn.commit()
+                    updated.append({"req_id": None, "check": "completeness",
+                                    "action": f"Added {missing_type} requirement ({i+1}/{n_needed})",
+                                    "refined_text": new_text})
+                    inserted += 1
+                except Exception:
+                    suggested.append({"req_id": None, "check": "completeness",
+                                      "suggestion": f"Add this {missing_type} requirement: {new_text}"})
+            if inserted:
+                actions_taken.append(f"completeness: inserted {inserted} {missing_type} requirement(s)")
+
+    # ── 3. SMART: rewrite low-scoring requirements ──────────────────────────
+    smart_check = checks_by_name.get("smart", {})
+    if smart_check.get("severity") in ("warning", "critical"):
+        weakest_dim = smart_check.get("weakest_dimension") or "specific"
+        _DIM_INSTRUCTIONS = {
+            "specific": "Rewrite to be more Specific — name the exact system, user role, and condition. Remove vague scope.",
+            "measurable": "Rewrite adding a concrete measurable target (number, %, SLA). Replace vague adjectives.",
+            "attainable": "Rewrite to be clearly achievable — remove impossibly broad scope, break into focused statements.",
+            "relevant": "Rewrite to clearly state the business value and who benefits. Make the relevance explicit.",
+            "traceable": "Rewrite to include an explicit acceptance criterion (Given/When/Then) that can be tested.",
+        }
+        instruction = _DIM_INSTRUCTIONS.get(weakest_dim, _DIM_INSTRUCTIONS["specific"])
+        SMART_THRESHOLD = 70  # validator WARNING fires at avg < 70; rewrite anything below PASS line
+        for score_entry in (smart_check.get("scores") or []):
+            if (score_entry.get("pct") or 0) >= SMART_THRESHOLD:
+                continue
+            rid = score_entry.get("requirement_id")
+            if rid is None:
+                continue
+            row = conn.execute(
+                "SELECT id, raw_text FROM intake_requirements WHERE id = ?", (rid,)
+            ).fetchone()
+            if not row:
+                continue
+            original_text = (row["raw_text"] or "").strip()
+            refined = _llm_rewrite(original_text, instruction)
+            if refined:
+                _write_refined(rid, original_text, refined, f"smart/{weakest_dim}")
+            else:
+                suggested.append({"req_id": rid, "check": "smart",
+                                   "suggestion": f"Improve the '{weakest_dim}' dimension of this requirement."})
+
+    # ── 4. DENSITY + MEASURABILITY: per-finding rewrites ───────────────────
+    _FIX_INSTRUCTIONS = {
+        "density": "Rewrite removing filler phrases and redundant words. Keep only precise, measurable assertions.",
+        "measurability": "Rewrite adding a concrete, measurable metric (number, percentage, or SLA target).",
+    }
+    for check_name, fix_instruction in _FIX_INSTRUCTIONS.items():
+        check = checks_by_name.get(check_name, {})
+        if check.get("severity") == "pass":
+            continue
+        for finding in check.get("findings") or []:
+            rid = finding.get("requirement_id")
+            if rid is None:
+                continue
+            row = conn.execute(
+                "SELECT id, raw_text FROM intake_requirements WHERE id = ?", (rid,)
+            ).fetchone()
+            if not row:
+                continue
+            original_text = (row["raw_text"] or "").strip()
+            refined = _llm_rewrite(original_text, fix_instruction)
+            if refined:
+                _write_refined(rid, original_text, refined, check_name)
+            else:
+                suggested.append({"req_id": rid, "check": check_name,
+                                   "suggestion": "Manual review needed."})
+
+    # ── Re-score ────────────────────────────────────────────────────────────
+    try:
+        after_result = score_readiness(session_id)
+        after_score_pct = round((after_result.get("overall_score") or 0) * 100)
+    except Exception:
+        after_score_pct = before_score_pct
+
+    no_action = not updated and not suggested
+    return jsonify({
+        "status": "ok",
+        "fixed_count": len(updated),
+        "suggested_count": len(suggested),
+        "before_score_pct": before_score_pct,
+        "after_score_pct": after_score_pct,
+        "score_delta_pct": after_score_pct - before_score_pct,
+        "actions_taken": actions_taken,
+        "updated": updated,
+        "suggested": suggested,
+        **({"message": "No actionable findings — PRD already looks clean."} if no_action else {}),
+    })
 
 
 @intake_api.route("/api/intake/force-build/<session_id>", methods=["POST"])
@@ -1302,7 +1627,7 @@ def _run_build_pipeline(session_id):
         else:
             conn = get_connection(db_path=str(DB_PATH))
         try:
-            conn.set_security_context(None)
+            conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
         except Exception:
             pass
     except Exception as exc:

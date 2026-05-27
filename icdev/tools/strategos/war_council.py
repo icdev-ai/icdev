@@ -26,6 +26,7 @@ CLI:
     python tools/strategos/war_council.py --scenario "..." --save
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -52,7 +53,7 @@ from tools.strategos.strategy_agent import (
     StrategyResult,
 )
 
-logger = logging.getLogger("icdev.strategos.war_council")
+logger = get_logger("icdev.strategos.war_council")
 
 _TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "tools" / "intelligence" / "templates"
 

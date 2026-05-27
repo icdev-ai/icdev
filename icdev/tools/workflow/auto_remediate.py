@@ -14,8 +14,8 @@ re-run still fails, the task goes to backlog with an annotated reason.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import re
 import subprocess
 from pathlib import Path
@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from tools.workflow.git_utils import default_branch
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -584,9 +584,26 @@ def attempt_remediation(
     else:
         return False, f"no handler for {failure_type}", info
 
+    # Build CoT trace explaining the chosen remediation path
     info["remediation_attempted"] = True
     info["remediation_success"] = ok
     info["remediation_message"] = msg
+    info["cot_trace"] = {
+        "failure_type": failure_type,
+        "classification_rationale": f"Matched '{failure_type}' against classify_failure() heuristics",
+        "chosen_handler": (
+            "remediate_missing_worktree" if failure_type == FAILURE_WORKTREE_MISSING
+            else "remediate_stale_baseline" if failure_type == FAILURE_STALE_BASELINE
+            else "remediate_ruff_issues" if failure_type == FAILURE_RUFF_ISSUES
+            else "remediate_missing_manifest" if failure_type == FAILURE_MISSING_MANIFEST
+            else "remediate_phantom_paths" if failure_type == FAILURE_PHANTOM_PATHS
+            else "remediate_stale_baseline/ruff/manifest/uncommitted"
+            if failure_type == FAILURE_COHERENCE_BROKEN
+            else "none"
+        ),
+        "outcome": "success" if ok else "failed",
+        "reason": msg,
+    }
     logger.info(
         "remediation for %s (%s): %s — %s",
         task_id, failure_type, "SUCCESS" if ok else "FAILED", msg,

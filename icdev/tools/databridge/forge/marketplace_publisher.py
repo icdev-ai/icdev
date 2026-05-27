@@ -6,11 +6,11 @@ db_forge_connectors with marketplace_artifact_id and published_slug.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import io
 import json
-import logging
 import sqlite3
 import uuid
 import zipfile
@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger("databridge.forge.marketplace_publisher")
+logger = get_logger("databridge.forge.marketplace_publisher")
 
 DB_PATH = Path(__file__).resolve().parents[3] / "data" / "icdev.db"
 

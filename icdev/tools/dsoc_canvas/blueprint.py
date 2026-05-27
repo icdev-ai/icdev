@@ -46,7 +46,7 @@ def create_dsoc_blueprint() -> Blueprint:
     @bp.route("/dsoc")
     def dsoc_index():
         from tools.dsoc_canvas.db.init_db import get_connection
-        from tools.dsoc_canvas.threat_aggregator import get_dsoc_overview
+        from tools.dsoc_canvas.dsoc_aggregator import get_dsoc_overview
         conn = get_connection()
         try:
             overview = get_dsoc_overview(conn)
@@ -77,7 +77,7 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT * FROM dsoc_rtbh_entries ORDER BY triggered_at DESC"
+                "SELECT * FROM dsoc_rtbh_entries ORDER BY created_at DESC"
             ).fetchall()
             entries = [dict(r) for r in rows]
         except Exception:
@@ -139,7 +139,7 @@ def create_dsoc_blueprint() -> Blueprint:
     @bp.route("/api/dsoc/overview")
     def api_dsoc_overview():
         from tools.dsoc_canvas.db.init_db import get_connection
-        from tools.dsoc_canvas.threat_aggregator import get_dsoc_overview
+        from tools.dsoc_canvas.dsoc_aggregator import get_dsoc_overview
         conn = get_connection()
         try:
             return jsonify(get_dsoc_overview(conn))
@@ -237,7 +237,7 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT * FROM dsoc_rtbh_entries ORDER BY triggered_at DESC"
+                "SELECT * FROM dsoc_rtbh_entries ORDER BY created_at DESC"
             ).fetchall()
             return jsonify([dict(r) for r in rows])
         finally:
@@ -302,7 +302,7 @@ def create_dsoc_blueprint() -> Blueprint:
                 "provider":            data.get("provider", ""),
                 "capacity_gbps":       float(data.get("capacity_gbps", 0)),
                 "current_load_gbps":   float(data.get("current_load_gbps", 0)),
-                "status":              data.get("status", "active"),
+                "status":              data.get("status", "operational"),
                 "upstream_links":      data.get("upstream_links", ""),
                 "anycast_prefix":      data.get("anycast_prefix", ""),
             }

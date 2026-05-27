@@ -17,11 +17,11 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
 import json
-import logging
 import re
 import time
 from tools.db.storage import get_connection
@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional
 from tools.rag.vector_store_factory import VectorStoreFactory  # noqa: E402
 from tools.rag.vector_store_provider import SearchResult  # noqa: E402
 
-logger = logging.getLogger("icdev.rag.retriever")
+logger = get_logger("icdev.rag.retriever")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ICDEV_DB = BASE_DIR / "data" / "icdev.db"

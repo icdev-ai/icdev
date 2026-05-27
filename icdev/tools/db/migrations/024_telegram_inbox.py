@@ -16,13 +16,6 @@ _BASE = Path(__file__).resolve().parent.parent.parent.parent
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-Provides a persistent local buffer between Telegram getUpdates and Kanban task
-creation. Messages are inserted here first, then processed idempotently.
-Rows are NOT append-only (they are updated when processed).
-
-Safe to re-run: uses CREATE TABLE IF NOT EXISTS.
-"""
-
 MIGRATION_ID = "024"
 MIGRATION_NAME = "telegram_inbox"
 DESCRIPTION = "Create telegram_inbox table for durable Telegram message receipt and replay"

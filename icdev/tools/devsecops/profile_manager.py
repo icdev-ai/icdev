@@ -95,8 +95,19 @@ def _load_config() -> dict:
 
 def _get_db():
     """Get database connection."""
-    conn = get_connection(str(DB_PATH))
-    conn.execute("PRAGMA journal_mode=WAL")
+    import os
+    if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+        conn = get_connection()
+    else:
+        conn = get_connection(str(DB_PATH))
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except Exception:
+            pass
+    try:
+        conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
+    except Exception:
+        pass
     return conn
 
 

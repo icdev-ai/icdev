@@ -9,8 +9,8 @@ POST /iqe/run   — parse and execute a query file; returns JSON rows
 NIST 800-53: AU-2 (Audit Events), SI-10 (Information Input Validation)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -18,7 +18,7 @@ from flask import Blueprint, jsonify, request
 from tools.iqe import IQESyntaxError, parse
 from tools.iqe.executor import execute_query
 
-logger = logging.getLogger("icdev.dashboard.iqe")
+logger = get_logger("icdev.dashboard.iqe")
 
 # Resolved once at import time; stays inside the project tree.
 _QUERIES_DIR = (Path(__file__).resolve().parents[3] / "context" / "iqe" / "queries")

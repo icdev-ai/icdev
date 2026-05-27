@@ -9,6 +9,7 @@ Decision D42: YAML-defined authority matrix, vetoes append-only.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -25,7 +26,7 @@ if str(BASE_DIR) not in sys.path:
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 AUTHORITY_CONFIG_PATH = BASE_DIR / "args" / "agent_authority.yaml"
 
-logger = logging.getLogger("icdev.authority")
+logger = get_logger("icdev.authority")
 
 try:
     import yaml

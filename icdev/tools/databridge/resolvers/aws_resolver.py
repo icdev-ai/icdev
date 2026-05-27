@@ -8,13 +8,13 @@ EC2/ECS instance profile — never hardcoded.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 from typing import Optional
 
-logger = logging.getLogger("databridge.resolvers.aws")
+logger = get_logger("databridge.resolvers.aws")
 
 
 class SecretResolverError(Exception):

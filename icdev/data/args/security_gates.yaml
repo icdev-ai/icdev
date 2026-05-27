@@ -516,6 +516,34 @@ cross_platform:
     require_gitattributes: true
     require_timezone_aware_datetime: true
 
+# URL Scheme Validation Gate (Bandit B310 — urllib_urlopen non-HTTP schemes)
+# Blocks code that passes non-HTTP(S) URLs to urllib.request.urlopen or similar
+# functions, which Bandit flags as B310. file:/, ftp:/, custom URI schemes must
+# not appear in external interface calls without an explicit allowlist exception.
+# Run: python -m bandit -r tools/ --test B310 --severity-level medium --json
+url_scheme_validation:
+  description: "Block non-HTTP(S) schemes in external interface calls (Bandit B310)"
+  blocking:
+    - b310_non_http_scheme_in_urlopen         # file:/, ftp:/, data:, custom:// in urlopen calls
+    - file_scheme_in_external_call            # file:/ URI reaching external-interface functions
+    - custom_scheme_without_allowlist         # non-standard URI scheme with no documented exception
+  warning:
+    - ftp_scheme_detected                     # ftp:/ URI — prefer https:/ equivalent
+    - scheme_validation_not_enforced          # urllib call has no scheme pre-check
+  thresholds:
+    permitted_schemes:
+      - http
+      - https
+    max_b310_findings: 0
+    require_scheme_allowlist: true
+    scheme_check_required_for_user_input: true
+  note: >
+    B310 violations are detected by Bandit test B310 (urllib_urlopen).
+    To suppress a single call that is genuinely safe (e.g., test fixtures),
+    add # nosec B310 with a justification comment on the same line.
+    New external-interface modules MUST pre-validate the URL scheme before
+    calling urlopen/requests.get/httpx or any equivalent.
+
 # Endpoint Security Gates (D-EPSEC-2)
 endpoint_security:
   blocking:
@@ -1345,3 +1373,180 @@ theater_detector:
     max_blocking_files: 0
     max_warn_files: 5
     min_clean_pct: 80
+
+# System Graph health gate — warns when any federated source returns 0 nodes,
+# indicating a broken DB connection or missing table.
+# Evaluated by the coherence_checker or a scheduled awareness health probe.
+system_graph:
+  warning:
+    - system_graph_source_empty    # a federation source returned 0 nodes (broken loader)
+    - system_graph_build_slow      # cold build > 10s (layout or DB query regression)
+  note: >
+    system_graph_source_empty fires when any loader in graph_builder.py returns an
+    empty node list for its source (awareness_kg, canvas_kg, kanban_deps, goals,
+    migrations, codebase). Check DB connectivity and table existence.
+    system_graph_build_slow fires when stats.build_ms > 10000 on an uncached request.
+
+# AI Traceability gate — warn if canvas_ai_decisions table is empty after 24h of activity
+# Evaluated by coherence_checker.py or a daily health probe.
+ai_trace:
+  warning:
+    - canvas_ai_decisions_empty   # no AI decisions recorded after >24h of canvas use
+  note: >
+    canvas_ai_decisions_empty fires when the table is empty more than 24 hours after
+    any canvas blueprint has been accessed (evidence that traceability hooks are not firing).
+    Check canvas blueprint wiring in tools/network/blueprint.py and peers.
+
+# Security Framework Gates (Phase 74 — sec-fnd)
+security_framework:
+  description: "Multi-layer security framework gates — context, ABAC, MAC, RLS, column, field, encryption, mTLS"
+  blocking:
+    - missing_security_context
+    - abac_policy_violation_unresolved
+    - classification_violation
+    - missing_rls_on_classification_table
+    - mtls_not_enforced_for_il5_plus
+    - encryption_not_configured_for_secret
+  warning:
+    - security_context_incomplete
+    - compartment_bypass_attempt
+    - pdp_cache_stale
+    - field_filtering_disabled
+  thresholds:
+    require_security_context: true
+    require_abac_for_il4_plus: true
+    require_rls_for_classified_tables: true
+    require_mtls_for_il5: true
+    require_encryption_for_secret: true
+    pdp_cache_ttl_seconds: 60
+
+# Ontology Validation Gate
+ontology:
+  description: "Validates ontology federation integrity — ensures class alignment, property consistency, and subclass closure freshness"
+  blocking:
+    - ontology_build_failed
+    - ontology_alignment_conflict
+    - ontology_property_range_violation
+  warning:
+    - ontology_class_count_below_threshold
+    - ontology_closure_stale_over_7_days
+    - ontology_external_mapping_outdated
+  thresholds:
+    min_classes: 10
+    closure_max_age_days: 7
+    require_external_mappings_current: true
+
+# Named security gate registry — structured entries consumed by mcp_scanner and gate dispatcher
+gates:
+  - id: AI-TRACE-001
+    name: Canvas AI Traceability Gate
+    description: Warns when canvas_ai_decisions table is empty after 24h of canvas activity — indicates AI traceability hooks are not firing
+    severity: WARN
+    block_on: []
+    warn_on: [canvas_ai_decisions_empty]
+    table: canvas_ai_decisions
+    nist_controls: [AU-2, AU-3, SI-4]
+    dod_rai: [Traceable]
+    nist_ai_rmf: [MEASURE-2.5, MEASURE-2.7, MEASURE-2.8]
+
+  - id: MCP-SEC-001
+    name: MCP Server Security Gate
+    description: Blocks on HIGH severity MCP server findings (unauthenticated transport, missing TLS, privilege escalation tools)
+    severity: HIGH
+    block_on: [unauthenticated_transport, privilege_escalation]
+    warn_on: [no_tls, missing_classification]
+    tool: tools/mcp/mcp_scanner.py
+    nist_controls: [SC-8, AC-3, AU-12]
+
+  - id: URL-SEC-001
+    name: URL Scheme Validation Gate (B310)
+    description: Blocks non-HTTP(S) URI schemes (file:/, ftp:/, custom://) in external interface calls. Detects Bandit B310 — urllib_urlopen called with a scheme outside the http/https allowlist.
+    severity: HIGH
+    block_on:
+      - b310_non_http_scheme_in_urlopen
+      - file_scheme_in_external_call
+      - custom_scheme_without_allowlist
+    warn_on:
+      - ftp_scheme_detected
+      - scheme_validation_not_enforced
+    permitted_schemes: [http, https]
+    tool: "python -m bandit -r tools/ --test B310 --severity-level medium --json"
+    nist_controls: [SI-10, SC-8, SA-11]
+    bandit_test: B310
+
+  # NOC Operations Canvas gates
+  - id: NOC-OPS-001
+    name: P1 Incident Unacknowledged
+    description: Warns when a P1 (critical) NOC incident has been open for more than 15 minutes without acknowledgement.
+    severity: WARN
+    warn_on: [noc_p1_unacknowledged]
+    threshold_minutes: 15
+    table: noc_incidents
+    query: "SELECT COUNT(*) FROM noc_incidents WHERE severity='p1' AND status='open' AND created_at < NOW() - INTERVAL '15 minutes'"
+    nist_controls: [IR-6, SI-4]
+
+  # PMC (Peering Management Canvas) gates
+  - id: PMC-RPKI-001
+    name: RPKI Invalid High-Traffic Peer
+    description: Warns when a high-traffic peer (95th-pct ≥ 1 Gbps) has any RPKI-invalid prefix registered.
+    severity: WARN
+    warn_on: [pmc_rpki_invalid_high_traffic]
+    threshold_traffic_gbps: 1.0
+    table: peering_prefixes
+    nist_controls: [SC-5, SI-3, RA-5]
+
+  - id: PMC-IRR-001
+    name: IRR Unregistered Open Peer
+    description: Warns when an active peer with open peering policy has more than 20% of routes unregistered in IRR.
+    severity: WARN
+    warn_on: [irr_unregistered_open_peer]
+    threshold_unregistered_pct: 20
+    table: peering_peers
+    nist_controls: [SC-5, CM-8]
+
+  # CCC (Circuit & Capacity Canvas) gates
+  - id: CCC-UTIL-001
+    name: Circuit Critical Utilization
+    description: Warns when any active circuit reaches 85% utilization — indicates immediate upgrade needed.
+    severity: WARN
+    warn_on: [ccc_circuit_critical_utilization]
+    threshold_utilization_pct: 85
+    table: ccc_circuits
+    nist_controls: [CP-2, SA-9, SC-5]
+
+  - id: CCC-EXPIRY-001
+    name: Circuit Contract Expiring
+    description: Warns when an active circuit contract expires within 90 days with no renewal record.
+    severity: WARN
+    warn_on: [ccc_contract_expiring_soon]
+    threshold_days: 90
+    table: ccc_circuits
+    nist_controls: [CP-2, SA-9]
+
+  # DSOC (DDoS & Security Ops Canvas) gates
+  - id: DSOC-RTBH-001
+    name: RTBH Entries Without Auto-Withdraw
+    description: Warns when active RTBH entries have no auto_withdraw_minutes set — risk of indefinite null-routing.
+    severity: WARN
+    warn_on: [dsoc_rtbh_no_auto_withdraw]
+    threshold_auto_withdraw_minutes: 0
+    table: dsoc_rtbh_entries
+    nist_controls: [SC-5, IR-4, CP-2]
+
+  - id: DSOC-SCRUB-001
+    name: Scrubbing Center Critical Utilization
+    description: Warns when any scrubbing center exceeds 85% of its rated capacity — mitigation may overflow.
+    severity: WARN
+    warn_on: [dsoc_scrubbing_critical_utilization]
+    threshold_utilization_pct: 85
+    table: dsoc_scrubbing_centers
+    nist_controls: [SC-5, CP-2, SA-9]
+
+  - id: DSOC-THREAT-001
+    name: High-Confidence Active Threats Without Mitigation
+    description: Warns when threats with confidence >= 90% have no associated active mitigation.
+    severity: WARN
+    warn_on: [dsoc_unmitigated_high_confidence_threats]
+    threshold_confidence_pct: 90
+    table: dsoc_threats
+    nist_controls: [IR-4, SI-3, SC-5]

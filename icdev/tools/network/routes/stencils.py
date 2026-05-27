@@ -16,15 +16,15 @@ Endpoints:
   GET  /api/stencils/shapes/<id>/icon   — serve shape icon (PNG/SVG)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import base64
 import io
-import logging
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, render_template, send_file
 
-logger = logging.getLogger("icdev.network.routes.stencils")
+logger = get_logger("icdev.network.routes.stencils")
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 

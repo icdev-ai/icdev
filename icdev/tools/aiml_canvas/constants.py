@@ -196,6 +196,13 @@ AIMC_NODE_PALETTE = {
             "desc": "Model A vs B comparison — side-by-side evaluation on matched prompts",
             "color": "#14b8a6",
         },
+        {
+            "type": "eval-agentic-red-team",
+            "label": "Agentic Red Team",
+            "icon": "ART",
+            "desc": "Multi-turn agentic adversarial testing — tool-abuse, agent impersonation, indirect injection (MITRE ATLAS AML.T0054)",
+            "color": "#7f1d1d",
+        },
     ],
     "deployment": [
         {
@@ -268,6 +275,13 @@ AIMC_NODE_PALETTE = {
             "desc": "IBM watsonx.ai Deployment Space — Granite + partner models, IBM GovCloud FedRAMP High",
             "color": "#0f62fe",
         },
+        {
+            "type": "deploy-kserve",
+            "label": "KServe (Kubernetes)",
+            "icon": "KSV",
+            "desc": "KServe Kubernetes Model Inference Platform — multi-framework serving (TensorFlow/PyTorch/ONNX), air-gap IL5/IL6 on-prem",
+            "color": "#326ce5",
+        },
     ],
     "vector-stores": [
         {
@@ -327,6 +341,20 @@ AIMC_NODE_PALETTE = {
             "icon": "VFT",
             "desc": "GCP Vertex AI Supervised Tuning — Gemini model fine-tuning with training dataset from Cloud Storage",
             "color": "#4285f4",
+        },
+        {
+            "type": "adapt-oci-ft",
+            "label": "OCI GenAI Fine-Tuning",
+            "icon": "OFT",
+            "desc": "OCI GenAI Dedicated AI Cluster fine-tuning — Cohere Command R custom model, OCI GovCloud",
+            "color": "#f80000",
+        },
+        {
+            "type": "adapt-watsonx-ft",
+            "label": "IBM watsonx Fine-Tuning",
+            "icon": "WFT",
+            "desc": "IBM watsonx.ai AutoAI Experiment or Tuning Studio — Granite and custom models, IBM GovCloud",
+            "color": "#0f62fe",
         },
     ],
     "governance": [
@@ -409,6 +437,35 @@ AIMC_NODE_TYPES: list[str] = [
 # Each entry: id, name, provider, family, context_window, vram_gb, cost_per_1k_tokens,
 #             il_suitability [2,4,5,6], air_gap_ready, quantization_options, notes
 FOUNDATION_MODELS = [
+    # ── Ollama Cloud (ollama.com — requires OLLAMA_API_KEY) ───────────────────
+    {
+        "id": "kimi-cloud",
+        "name": "Kimi K2.6 (Ollama Cloud)",
+        "provider": "Ollama Cloud",
+        "family": "Kimi",
+        "type": "llm",
+        "context_window": 32768,
+        "vram_gb": 0,
+        "cost_per_1k_tokens": 0.0,
+        "il_suitability": [2, 4, 5],
+        "air_gap_ready": False,
+        "quantization_options": [],
+        "notes": "Kimi K2.6 via ollama.com cloud API — primary inference model; requires OLLAMA_API_KEY",
+    },
+    {
+        "id": "gpt-oss-cloud",
+        "name": "GPT-OSS 120B (Ollama Cloud)",
+        "provider": "Ollama Cloud",
+        "family": "GPT-OSS",
+        "type": "llm",
+        "context_window": 32768,
+        "vram_gb": 0,
+        "cost_per_1k_tokens": 0.0,
+        "il_suitability": [2, 4, 5],
+        "air_gap_ready": False,
+        "quantization_options": [],
+        "notes": "Large open-source model via ollama.com cloud API; requires OLLAMA_API_KEY",
+    },
     # ── Ollama / Local ────────────────────────────────────────────────────────
     {
         "id": "qwen3-local",
@@ -422,7 +479,21 @@ FOUNDATION_MODELS = [
         "il_suitability": [2, 4, 5, 6],
         "air_gap_ready": True,
         "quantization_options": ["Q4_K_M", "Q5_K_M", "Q8_0", "fp16"],
-        "notes": "Primary ICDEV™ model — fully air-gap safe, GGUF quantized",
+        "notes": "Qwen3.5 local — thinking disabled for speed; air-gap safe, GGUF quantized",
+    },
+    {
+        "id": "kimi-local",
+        "name": "Kimi K2.6 (Local Ollama)",
+        "provider": "Ollama",
+        "family": "Kimi",
+        "type": "llm",
+        "context_window": 32768,
+        "vram_gb": 16,
+        "cost_per_1k_tokens": 0.0,
+        "il_suitability": [2, 4, 5, 6],
+        "air_gap_ready": True,
+        "quantization_options": ["Q4_K_M", "Q8_0"],
+        "notes": "Kimi K2.6 pulled locally via Ollama — air-gap safe fallback",
     },
     {
         "id": "llama3-70b-instruct",
@@ -1380,4 +1451,66 @@ NIST_AI_RMF_FUNCTIONS = {
         "MANAGE 3.1 — Responses to identified AI risks developed",
         "MANAGE 4.1 — Post-deployment AI risks and benefits monitored",
     ],
+}
+
+_ML = "https://icdev.dev/ontology/aiml#"
+
+AIML_ONTOLOGY_MAP: dict[str, str] = {
+    # Model types
+    "model-llm":              f"{_ML}AIModel.LLM",
+    "model-vlm":              f"{_ML}AIModel.VLM",
+    "model-embedding":        f"{_ML}AIModel.Embedding",
+    "model-reranker":         f"{_ML}AIModel.Reranker",
+    "model-classifier":       f"{_ML}AIModel.Classifier",
+    "model-code":             f"{_ML}AIModel.Code",
+    "model-judge":            f"{_ML}AIModel.Judge",
+    # Adaptation techniques
+    "adapt-prompt":           f"{_ML}Adaptation.Prompt",
+    "adapt-rag":              f"{_ML}Adaptation.RAG",
+    "adapt-finetune":         f"{_ML}Adaptation.FineTune",
+    "adapt-hybrid":           f"{_ML}Adaptation.Hybrid",
+    "adapt-fewshot":          f"{_ML}Adaptation.FewShot",
+    "adapt-bedrock-ft":       f"{_ML}Adaptation.BedrockFineTune",
+    "adapt-azure-openai-ft":  f"{_ML}Adaptation.AzureOpenAIFineTune",
+    "adapt-vertex-ft":        f"{_ML}Adaptation.VertexFineTune",
+    "adapt-oci-ft":           f"{_ML}Adaptation.OCIFineTune",
+    "adapt-watsonx-ft":       f"{_ML}Adaptation.WatsonxFineTune",
+    # Data sources
+    "data-corpus":            f"{_ML}AIData.Corpus",
+    "data-vector-store":      f"{_ML}AIData.VectorStore",
+    "data-dataset":           f"{_ML}AIData.Dataset",
+    "data-eval-set":          f"{_ML}AIData.EvalSet",
+    "data-knowledge-base":    f"{_ML}AIData.KnowledgeBase",
+    "data-opensearch":        f"{_ML}AIData.OpenSearch",
+    "data-pinecone":          f"{_ML}AIData.Pinecone",
+    "data-weaviate":          f"{_ML}AIData.Weaviate",
+    "data-chroma":            f"{_ML}AIData.Chroma",
+    "data-azure-ai-search":   f"{_ML}AIData.AzureAISearch",
+    # Safety components
+    "safety-guardrail":       f"{_ML}AISafety.Guardrail",
+    "safety-output-validator":f"{_ML}AISafety.OutputValidator",
+    "safety-content-filter":  f"{_ML}AISafety.ContentFilter",
+    "safety-pii-scrubber":    f"{_ML}AISafety.PIIScrubber",
+    # Evaluation
+    "eval-benchmark":         f"{_ML}AIEval.Benchmark",
+    "eval-rubric":            f"{_ML}AIEval.Rubric",
+    "eval-red-team":          f"{_ML}AIEval.RedTeam",
+    "eval-ab-test":           f"{_ML}AIEval.ABTest",
+    "eval-agentic-red-team":  f"{_ML}AIEval.AgenticRedTeam",
+    # Deployment targets
+    "deploy-ollama":          f"{_ML}AIDeployment.Ollama",
+    "deploy-vllm":            f"{_ML}AIDeployment.vLLM",
+    "deploy-bedrock":         f"{_ML}AIDeployment.Bedrock",
+    "deploy-tgi":             f"{_ML}AIDeployment.TGI",
+    "deploy-triton":          f"{_ML}AIDeployment.Triton",
+    "deploy-azure-ml":        f"{_ML}AIDeployment.AzureML",
+    "deploy-sagemaker":       f"{_ML}AIDeployment.SageMaker",
+    "deploy-vertex-ai":       f"{_ML}AIDeployment.VertexAI",
+    "deploy-oci-genai":       f"{_ML}AIDeployment.OCIGenAI",
+    "deploy-watsonx-ai":      f"{_ML}AIDeployment.WatsonxAI",
+    "deploy-kserve":          f"{_ML}AIDeployment.KServe",
+    # Governance artifacts
+    "gov-model-card":         f"{_ML}AIGovernance.ModelCard",
+    "gov-system-card":        f"{_ML}AIGovernance.SystemCard",
+    "gov-ai-bom":             f"{_ML}AIGovernance.AIBOM",
 }

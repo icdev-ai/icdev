@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Session Purpose Declaration — session-level intent tracking for audit.
 
@@ -11,7 +13,6 @@ Decision D-ORCH-5: Session purpose for NIST AU-3 event detail traceability.
 import argparse
 import hashlib
 import json
-import logging
 import sqlite3
 import sys
 import uuid
@@ -38,7 +39,7 @@ except ImportError:
         pass
 
 
-logger = logging.getLogger("icdev.session_purpose")
+logger = get_logger("icdev.session_purpose")
 
 
 # ---------------------------------------------------------------------------

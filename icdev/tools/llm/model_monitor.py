@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Model Drift & Performance Monitor.
 
@@ -12,7 +14,6 @@ Tables:
 
 import argparse
 import json
-import logging
 import math
 import statistics
 import sys
@@ -28,7 +29,7 @@ try:
 except ImportError:
     yaml = None
 
-logger = logging.getLogger("icdev.llm.model_monitor")
+logger = get_logger("icdev.llm.model_monitor")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"

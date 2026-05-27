@@ -11,14 +11,14 @@ Usage in app.py::create_app():
     register_api_blueprints(app)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from flask import Flask
 
-logger = logging.getLogger("icdev.dashboard.api")
+logger = get_logger("icdev.dashboard.api")
 
 # ---------------------------------------------------------------------------
 # Lazy imports — each blueprint is imported inside the function so that a
@@ -247,11 +247,17 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     from tools.dashboard.api.canvas_projects import canvas_projects_api
     _mount_inline(canvas_projects_api)   # inline routes: /api/canvas-projects/*
 
+    from tools.dashboard.api.il5 import il5_api
+    _mount(il5_api, v1_prefix="/api/v1/il5", legacy_prefix="/api/il5")
+
     from tools.dashboard.api.writeguard import writeguard_api
     _mount(writeguard_api, v1_prefix="/api/v1/writeguard")
 
     from tools.dashboard.api.orchestration import orchestration_api
     _mount(orchestration_api, v1_prefix="/api/v1/orchestration")
+
+    from tools.dashboard.api.genesis import genesis_api
+    _mount(genesis_api, v1_prefix="/api/v1/genesis")
 
     from tools.dashboard.api.studio import studio_api
     _mount(studio_api, v1_prefix="/api/v1/studio")
@@ -363,6 +369,22 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("Safety Monitor API skipped: %s", exc)
 
+    # JISE Portal feed — /api/v1/jise/{status,requirements,intelligence,compliance}
+    try:
+        from tools.dashboard.api.jise import jise_api
+        _mount(jise_api, v1_prefix="/api/v1/jise")
+        logger.info("JISE portal API registered at /api/v1/jise/")
+    except Exception as exc:
+        logger.warning("JISE portal API skipped: %s", exc)
+
+    # Cross-Agency Transfer Audit API — NIST AU-2/AU-9 (append-only logging)
+    try:
+        from tools.dashboard.api.cross_agency_transfer import cross_agency_transfer_api
+        _mount(cross_agency_transfer_api, v1_prefix="/api/v1/cross-agency-transfer")
+        logger.info("cross_agency_transfer_api registered at /api/v1/cross-agency-transfer/")
+    except Exception as exc:
+        logger.warning("cross_agency_transfer_api skipped: %s", exc)
+
     logger.info("register_api_blueprints: all API blueprints mounted.")
 
     # km-autoclose: sweep decomposed parents stuck before the auto-close hook
@@ -436,6 +458,7 @@ ALL_BLUEPRINTS = [
     ("canvas_projects_api", "/api/v1/canvas-projects", False),   # inline routes
     ("writeguard_api", "/api/v1/writeguard", False),
     ("orchestration_api", "/api/v1/orchestration", False),
+    ("genesis_api", "/api/v1/genesis", False),
     ("studio_api", "/api/v1/studio", False),
     # Optional
     ("finetune_api", "/api/v1/finetune", True),
@@ -447,4 +470,6 @@ ALL_BLUEPRINTS = [
     ("govcon_api", "/api/v1/govcon", True),
     ("cpmp_api", "/api/v1/cpmp", True),
     ("proposal_genesis_api", "/api/v1/proposal-genesis", True),
+    ("jise_api", "/api/v1/jise", False),
+    ("cross_agency_transfer_api", "/api/v1/cross-agency-transfer", False),
 ]

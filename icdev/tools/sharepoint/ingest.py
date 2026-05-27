@@ -19,6 +19,7 @@ CLI::
     python tools/sharepoint/ingest.py --site URL [--dry-run] --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -34,7 +35,7 @@ import yaml
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = BASE_DIR / "args" / "sharepoint.yaml"
 
-logger = logging.getLogger("icdev.sharepoint.ingest")
+logger = get_logger("icdev.sharepoint.ingest")
 
 
 # ---------------------------------------------------------------------------

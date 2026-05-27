@@ -256,6 +256,70 @@ DATA_OBJECTS = {
             "desc": "Integrates with external data catalogs (Collibra/Alation pattern) — bridges catalog metadata into ICDEV lineage graph",
         },
     ],
+    "data_science": [
+        {
+            "type": "ent-feature-store",
+            "label": "Feature Store",
+            "icon": "FS",
+            "desc": "Online/offline feature store for ML models (Feast/Tecton/SageMaker Feature Store)",
+        },
+        {
+            "type": "ent-model-registry",
+            "label": "Model Registry",
+            "icon": "MR",
+            "desc": "ML model artifact store with versioning, lineage, and lifecycle stages (MLflow/SageMaker/Vertex AI)",
+        },
+        {
+            "type": "ent-dataset",
+            "label": "Training Dataset",
+            "icon": "DST",
+            "desc": "Labeled dataset for supervised/unsupervised learning — train/val/test splits with provenance tracking",
+        },
+        {
+            "type": "ent-experiment",
+            "label": "Experiment Run",
+            "icon": "EXP",
+            "desc": "ML experiment with hyperparameters, metrics, and artifact tracking (MLflow/Weights & Biases)",
+        },
+        {
+            "type": "ent-ml-pipeline",
+            "label": "ML Pipeline",
+            "icon": "MLP",
+            "desc": "Orchestrated ML workflow (Kubeflow Pipelines/SageMaker Pipelines/Vertex AI Pipelines)",
+        },
+    ],
+    "data_mesh": [
+        {
+            "type": "ent-data-product",
+            "label": "Data Product",
+            "icon": "DP",
+            "desc": "Self-contained, self-describing data mesh product with input/output ports and SLA guarantees",
+        },
+        {
+            "type": "ent-domain",
+            "label": "Data Domain",
+            "icon": "DOM",
+            "desc": "Organizational data domain with ownership, stewardship, and bounded context definition",
+        },
+        {
+            "type": "ent-contract",
+            "label": "Data Contract",
+            "icon": "DCT",
+            "desc": "ODCS/bitol-io data contract — schema, SLA, quality rules, and ownership terms",
+        },
+        {
+            "type": "ent-input-port",
+            "label": "Input Port",
+            "icon": "INP",
+            "desc": "Data product input port — CDC, API, or batch ingest interface with schema enforcement",
+        },
+        {
+            "type": "ent-output-port",
+            "label": "Output Port",
+            "icon": "OTP",
+            "desc": "Data product output port — REST API, export file, or streaming interface with SLA tracking",
+        },
+    ],
 }
 
 # Classification levels for data objects
@@ -383,6 +447,13 @@ COLUMN_LINEAGE_TYPES = [
     "col-passthrough",      # Column copied unchanged (SELECT col FROM ...)
 ]
 
+# ── Data Science Constants ────────────────────────────────────────────────────
+
+DS_CHECK_TYPES = ["completeness", "uniqueness", "range", "pattern", "freshness"]
+DS_DB_TYPES = ["sqlite", "postgresql", "duckdb"]
+DS_PROFILER_MAX_ROWS = 50_000
+DS_QUERY_MAX_ROWS = 1_000
+
 # NIST 800-53 control families relevant to data design
 DATA_NIST_FAMILIES = {
     "AC": "Access Control",
@@ -394,4 +465,86 @@ DATA_NIST_FAMILIES = {
     "SI": "System and Information Integrity",
     "SR": "Supply Chain Risk Management",
     "PT": "PII Processing and Transparency",
+}
+
+# ── Data Mesh Constants ───────────────────────────────────────────────────────
+
+DM_DOMAIN_MATURITY_LEVELS = [
+    {"level": 0, "label": "Initial",    "description": "Ad-hoc data practices, no formal ownership or governance"},
+    {"level": 1, "label": "Defined",    "description": "Domains identified, ownership assigned, basic data products exist"},
+    {"level": 2, "label": "Managed",    "description": "Contracts published, SLAs tracked, quality gates active"},
+    {"level": 3, "label": "Optimized",  "description": "Federated governance active, cross-domain lineage, schema drift alerts"},
+    {"level": 4, "label": "Autonomous", "description": "Self-service, automated quality gates, AI-assisted governance"},
+]
+
+DM_PORT_TYPES = ["cdc", "api", "batch", "stream", "file"]
+DM_CONTRACT_STATUSES = ["draft", "active", "deprecated", "archived"]
+DM_GOVERNANCE_POLICY_TYPES = ["opa", "rbac", "classification", "retention", "dlp"]
+
+_D = "https://icdev.dev/ontology/data#"
+
+DATA_ONTOLOGY_MAP: dict[str, str] = {
+    # Data entities
+    "ent-table":            f"{_D}DataEntity.Table",
+    "ent-view":             f"{_D}DataEntity.View",
+    "ent-collection":       f"{_D}DataEntity.Collection",
+    "ent-topic":            f"{_D}DataEntity.Topic",
+    "ent-cache":            f"{_D}DataEntity.Cache",
+    "ent-queue":            f"{_D}DataEntity.Queue",
+    "ent-datalake":         f"{_D}DataEntity.DataLake",
+    "ent-warehouse":        f"{_D}DataEntity.Warehouse",
+    "ent-graph":            f"{_D}DataEntity.Graph",
+    "ent-timeseries":       f"{_D}DataEntity.TimeSeries",
+    "ent-vector":           f"{_D}DataEntity.VectorStore",
+    "ent-file":             f"{_D}DataEntity.File",
+    "ent-feature-store":    f"{_D}DataEntity.FeatureStore",
+    "ent-model-registry":   f"{_D}DataEntity.ModelRegistry",
+    "ent-dataset":          f"{_D}DataEntity.Dataset",
+    "ent-experiment":       f"{_D}DataEntity.Experiment",
+    "ent-ml-pipeline":      f"{_D}DataEntity.MLPipeline",
+    "ent-data-product":     f"{_D}DataEntity.DataProduct",
+    "ent-domain":           f"{_D}DataEntity.Domain",
+    "ent-contract":         f"{_D}DataEntity.Contract",
+    "ent-input-port":       f"{_D}DataEntity.InputPort",
+    "ent-output-port":      f"{_D}DataEntity.OutputPort",
+    # Column classifications
+    "col-pk":               f"{_D}Column.PrimaryKey",
+    "col-fk":               f"{_D}Column.ForeignKey",
+    "col-data":             f"{_D}Column.Data",
+    "col-pii":              f"{_D}Column.PII",
+    "col-phi":              f"{_D}Column.PHI",
+    "col-cui":              f"{_D}Column.CUI",
+    "col-secret":           f"{_D}Column.Secret",
+    "col-encrypted":        f"{_D}Column.Encrypted",
+    "col-audit":            f"{_D}Column.Audit",
+    # Data flows
+    "flow-etl":             f"{_D}DataFlow.ETL",
+    "flow-api":             f"{_D}DataFlow.API",
+    "flow-replication":     f"{_D}DataFlow.Replication",
+    "flow-cdc":             f"{_D}DataFlow.CDC",
+    "flow-backup":          f"{_D}DataFlow.Backup",
+    "flow-export":          f"{_D}DataFlow.Export",
+    "flow-cross-domain":    f"{_D}DataFlow.CrossDomain",
+    "flow-column-lineage":  f"{_D}DataFlow.ColumnLineage",
+    # Data controls
+    "ctrl-encryption":      f"{_D}DataControl.Encryption",
+    "ctrl-masking":         f"{_D}DataControl.Masking",
+    "ctrl-dlp":             f"{_D}DataControl.DLP",
+    "ctrl-rbac":            f"{_D}DataControl.RBAC",
+    "ctrl-audit-log":       f"{_D}DataControl.AuditLog",
+    "ctrl-retention":       f"{_D}DataControl.Retention",
+    "ctrl-classification":  f"{_D}DataControl.Classification",
+    "ctrl-backup-policy":   f"{_D}DataControl.BackupPolicy",
+    # Data boundaries
+    "bnd-schema":           f"{_D}DataBoundary.Schema",
+    "bnd-classification":   f"{_D}DataBoundary.Classification",
+    "bnd-region":           f"{_D}DataBoundary.Region",
+    "bnd-tenant":           f"{_D}DataBoundary.Tenant",
+    "bnd-enclave":          f"{_D}DataBoundary.Enclave",
+    # Digital twins
+    "twin-lineage":         f"{_D}DigitalTwin.Lineage",
+    "twin-schema-drift":    f"{_D}DigitalTwin.SchemaDrift",
+    "twin-impact-analyzer": f"{_D}DigitalTwin.ImpactAnalyzer",
+    "twin-quality-gate":    f"{_D}DigitalTwin.QualityGate",
+    "twin-catalog":         f"{_D}DigitalTwin.Catalog",
 }

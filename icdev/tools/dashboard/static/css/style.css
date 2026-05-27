@@ -450,6 +450,86 @@ tbody tr:hover {
     border: 1px solid var(--severity-low);
 }
 
+/* --- Classification Badges (sec-cvs-08) --- */
+.badge-PUBLIC {
+    background: #dcfce7;
+    color: #16a34a;
+    border: 1px solid #bbf7d0;
+}
+.badge-CUI {
+    background: #dbeafe;
+    color: #2563eb;
+    border: 1px solid #bfdbfe;
+}
+.badge-SECRET {
+    background: #ffedd5;
+    color: #ea580c;
+    border: 1px solid #fed7aa;
+}
+.badge-TOP-SECRET, .badge-TOP-SECRET-SCI {
+    background: #fee2e2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+}
+.badge-TS-SCI, .badge-TOP-SECRET--SCI {
+    background: #f3e8ff;
+    color: #9333ea;
+    border: 1px solid #e9d5ff;
+}
+.badge-compartment {
+    background: #1e1b4b;
+    color: #a5b4fc;
+    border: 1px solid #3730a3;
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+/* --- Per-Design Classification Banner (sec-cvs-08) --- */
+.design-classification-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: 0;
+    border-bottom: 2px solid;
+    margin-bottom: 0;
+    white-space: nowrap;
+    overflow-x: auto;
+}
+.design-classification-banner.cls-PUBLIC  { background: rgba(22,163,74,0.08); color: #16a34a; border-color: #16a34a; }
+.design-classification-banner.cls-CUI     { background: rgba(37,99,235,0.08); color: #2563eb; border-color: #2563eb; }
+.design-classification-banner.cls-SECRET { background: rgba(234,88,12,0.08); color: #ea580c; border-color: #ea580c; }
+.design-classification-banner.cls-TOP-SECRET { background: rgba(220,38,38,0.08); color: #dc2626; border-color: #dc2626; }
+.design-classification-banner.cls-TOP-SECRET--SCI { background: rgba(147,51,234,0.08); color: #9333ea; border-color: #9333ea; }
+.design-classification-banner .readonly-badge {
+    background: #450a0a;
+    color: #fca5a5;
+    border: 1px solid #7f1d1d;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+}
+.design-classification-banner .compartment-badge {
+    background: #1e1b4b;
+    color: #a5b4fc;
+    border: 1px solid #3730a3;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+
 /* --- Status Indicator Dot --- */
 .status-dot {
     display: inline-block;

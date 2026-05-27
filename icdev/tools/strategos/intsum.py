@@ -17,13 +17,13 @@ Usage:
     result = generate_intsum(theater="western_pacific", lookback_hours=24)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.intsum")
+logger = get_logger("icdev.strategos.intsum")
 
 _PARA_HEADINGS = [
     "Situation Overview",

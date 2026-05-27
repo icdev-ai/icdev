@@ -589,6 +589,110 @@
     color: var(--text-secondary);
 }
 
+.gov-info-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 10px;
+}
+
+.gov-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border-color, #21262d);
+    gap: 8px;
+}
+
+.gov-info-row--sub {
+    border-bottom: none;
+    padding: 2px 0;
+}
+
+.gov-info-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #8b949e);
+    flex-shrink: 0;
+}
+
+.gov-info-value {
+    font-size: 0.8rem;
+    color: var(--text-primary, #e6edf3);
+    text-align: right;
+    word-break: break-all;
+}
+
+.gov-info-value.gov-mono {
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: var(--text-secondary, #8b949e);
+}
+
+.gov-classification {
+    background: rgba(240,136,62,0.15);
+    color: #f0883e;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.gov-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color, #21262d);
+}
+
+.gov-link {
+    font-size: 0.75rem;
+    color: var(--accent-blue, #58a6ff);
+    text-decoration: none;
+    padding: 2px 8px;
+    border: 1px solid var(--accent-blue, #58a6ff);
+    border-radius: 4px;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+}
+
+.gov-link:hover { opacity: 1; }
+
+/* ===================================================================
+   Tab Processing Bar — shared across RICOAS / Gov / Intel tabs
+   =================================================================== */
+
+.tab-processing-bar {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    background: var(--bg-secondary, #161b22);
+    border: 1px solid var(--accent-blue, #1f6feb);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: var(--accent-blue, #58a6ff);
+}
+
+.tab-processing-bar--visible {
+    display: flex;
+}
+
+.tab-processing-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(88, 166, 255, 0.3);
+    border-top-color: var(--accent-blue, #58a6ff);
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: sendSpin 0.8s linear infinite;
+}
+
 .gov-stat-row {
     display: flex;
     justify-content: space-between;
@@ -1102,6 +1206,75 @@
     background: var(--bg-tertiary, #1a2233);
 }
 
+.chat-uc-card--loading {
+    opacity: 0.75;
+    pointer-events: none;
+    position: relative;
+    border-color: var(--accent-green, #16a34a) !important;
+    background: var(--accent-green, #16a34a) !important;
+}
+
+.chat-uc-card--loading::after {
+    content: '';
+    position: absolute;
+    top: 7px;
+    right: 9px;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.25);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: uc-spin 0.7s linear infinite;
+}
+
+.chat-uc-compact-row--loading {
+    opacity: 0.75;
+    pointer-events: none;
+    border-color: var(--accent-green, #16a34a) !important;
+    background: rgba(22, 163, 74, 0.12) !important;
+}
+
+.chat-uc-compact-row--loading::after {
+    content: '';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 13px;
+    height: 13px;
+    border: 2px solid rgba(22, 163, 74, 0.3);
+    border-top-color: #16a34a;
+    border-radius: 50%;
+    animation: uc-spin 0.7s linear infinite;
+}
+
+@keyframes uc-spin {
+    to { transform: rotate(360deg); }
+}
+
+.ctx-item__delete {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    padding: 1px 4px;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.ctx-item:hover .ctx-item__delete {
+    opacity: 1;
+}
+
+.ctx-item__delete:hover {
+    color: var(--accent-red, #e05);
+    opacity: 1;
+}
+
 .chat-uc-card__top {
     display: flex;
     justify-content: space-between;
@@ -1195,6 +1368,36 @@
     color: var(--accent-blue);
     text-decoration: none;
 }
+
+/* --- Fast-track tag lists (user_config: industries, equipment, vendors) --- */
+.uc-user-config-header { display: flex; align-items: center; margin-bottom: 10px; }
+.uc-badge { font-size: 0.65rem; font-weight: 600; padding: 2px 7px; border-radius: 10px; }
+.uc-badge--blue { background: var(--accent-blue, #1a56db); color: #fff; }
+.uc-user-config-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+.uc-user-config-col { display: flex; flex-direction: column; gap: 4px; }
+.uc-config-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+.uc-tag-list { display: flex; flex-wrap: wrap; gap: 4px; min-height: 28px; padding: 4px 0; }
+.uc-config-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; padding: 2px 8px; background: var(--bg-tertiary, #1a2233); border: 1px solid var(--border-color); border-radius: 12px; color: var(--text-primary); }
+.uc-tag-remove { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 0.7rem; padding: 0; line-height: 1; }
+.uc-tag-remove:hover { color: var(--accent-red, #e05); }
+.uc-tag-add-row { display: flex; gap: 4px; margin-top: 4px; }
+.uc-tag-input { flex: 1; font-size: 0.78rem; padding: 3px 7px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); }
+.uc-skip-types-section { margin-top: 8px; }
+.uc-skip-checkboxes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.uc-skip-check { display: flex; align-items: center; gap: 5px; font-size: 0.78rem; cursor: pointer; }
+
+/* --- Send to Kanban button --- */
+.uc-send-kanban-btn { margin-top: 8px; padding: 7px 16px; background: var(--accent-blue, #1a56db); color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.82rem; font-weight: 600; }
+.uc-send-kanban-btn:hover { opacity: 0.88; }
+
+/* --- Fast-track system messages --- */
+.msg--system .msg__bubble { background: var(--bg-tertiary, #1a2233); border: 1px solid var(--border-color); border-left: 3px solid var(--accent-blue, #1a56db); color: var(--text-muted); font-size: 0.8rem; padding: 7px 12px; }
+
+/* --- Use case card footer actions (Standalone button) --- */
+.chat-uc-card__actions { display: flex; gap: 6px; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border-color); }
+.chat-uc-standalone-btn { font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-muted); text-decoration: none; cursor: pointer; transition: border-color 0.12s, color 0.12s; }
+.chat-uc-standalone-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); text-decoration: none; }
+.chat-uc-card__ft-badge { font-size: 0.6rem; font-weight: 700; padding: 1px 5px; border-radius: 8px; background: #1f6feb30; color: #58a6ff; border: 1px solid #1f6feb; margin-left: 4px; vertical-align: middle; }
 
 /* ===================================================================
    Use Case — Post-export action bar (deep links per active use case)
@@ -1792,3 +1995,181 @@
         width: 260px;
     }
 }
+
+/* ===================================================================
+   Use Cases — Toolbar buttons, category chips, compact mode, chain
+   =================================================================== */
+
+.chat-uc-toolbar-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.82rem;
+    padding: 2px 5px;
+    line-height: 1.4;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.chat-uc-toolbar-btn:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+.chat-uc-toolbar-btn--active { background: #1f6feb22; border-color: var(--accent-blue); color: var(--accent-blue); }
+
+/* Category chips */
+.chat-uc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 8px 6px;
+}
+.uc-cat-chip {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    white-space: nowrap;
+}
+.uc-cat-chip:hover { border-color: var(--accent-blue); color: var(--text-primary); }
+.uc-cat-chip--active { background: #1f6feb22; border-color: var(--accent-blue); color: var(--accent-blue); font-weight: 600; }
+
+/* Chain bar */
+.chat-uc-chain-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: #1f6feb18;
+    border-bottom: 1px solid var(--accent-blue);
+    flex-wrap: wrap;
+}
+.chat-uc-chain-bar > span { font-size: 0.75rem; color: var(--accent-blue); font-weight: 600; flex-shrink: 0; }
+.chat-uc-chain-input {
+    flex: 1;
+    min-width: 100px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    padding: 3px 7px;
+}
+.chain-selected { border-color: var(--accent-blue) !important; background: #1f6feb12 !important; }
+.uc-chain-cb { width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; accent-color: var(--accent-blue); }
+
+/* Compact row */
+.chat-uc-compact-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+    border: 1px solid transparent;
+    user-select: none;
+}
+.chat-uc-compact-row:hover { background: var(--bg-tertiary, #1a2233); border-color: var(--accent-blue); }
+.chat-uc-compact-row:focus { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.chat-uc-compact-row__icon { font-size: 0.9rem; flex-shrink: 0; width: 18px; text-align: center; }
+.chat-uc-compact-row__label { flex: 1; font-size: 0.8rem; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.chat-uc-compact-row__actions {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.12s;
+    background: var(--bg-secondary);
+    border-radius: 3px;
+    padding: 1px 2px;
+}
+.chat-uc-compact-row:hover .chat-uc-compact-row__actions,
+.chat-uc-compact-row:focus .chat-uc-compact-row__actions { opacity: 1; }
+
+.uc-step-count { display: none; }
+
+/* Export button (used in both compact and expanded) */
+.chat-uc-export-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.78rem;
+    padding: 2px 4px;
+    border-radius: 3px;
+    line-height: 1;
+    transition: color 0.12s, background 0.12s;
+}
+.chat-uc-export-btn:hover { color: var(--accent-blue); background: #1f6feb18; }
+
+/* Workflow steps mini-display in expanded card */
+.chat-uc-card__workflow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    margin: 5px 0 4px;
+    padding: 4px 6px;
+    background: var(--bg-tertiary, #151d2e);
+    border-radius: 4px;
+    border-left: 2px solid var(--accent-blue);
+}
+.uc-wf-step {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    white-space: nowrap;
+    cursor: default;
+    transition: color 0.1s;
+}
+.uc-wf-step:hover { color: var(--text-secondary); }
+.uc-wf-arrow { font-size: 0.65rem; color: var(--border-color); padding: 0 1px; }
+
+/* Wizard modal extras */
+.uc-wizard-modal { max-width: 640px; }
+
+.uc-archetype-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.uc-archetype-btn {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.73rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.uc-archetype-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background: #1f6feb18; }
+
+/* Workflow Step Bar */
+.wf-step-progress { margin-bottom: 8px; }
+.wf-step-indicator { font-size: 0.85rem; font-weight: 700; color: var(--accent-blue, #58a6ff); margin-bottom: 2px; }
+.wf-step-label { font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 6px; }
+.wf-step-dots { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.wf-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--border-color, #30363d); }
+.wf-dot--active { background: var(--accent-blue, #58a6ff); }
+.wf-dot--done { background: var(--success-color, #3fb950); }
+.wf-next-btn { width: 100%; margin-top: 4px; }
+
+.uc-field-label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+}
+.uc-field-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.uc-wiz-radio-label { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer; color: var(--text-secondary); }
+.uc-wiz-radio-label:hover { color: var(--text-primary); }

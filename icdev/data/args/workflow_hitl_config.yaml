@@ -20,15 +20,18 @@ canvas_roles:
 default_stages:
   - name: build
     step_type: automated
+    cot_required: false
   - name: review
     step_type: manual
     role: reviewer
+    cot_required: false
     required_docs:
       - doc_template_id: sys-dt-peer-review-checklist
         required: true
   - name: approve
     step_type: manual
     role: manager
+    cot_required: false
     required_docs:
       - doc_template_id: sys-dt-security-sign-off
         required: false

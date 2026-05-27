@@ -19,6 +19,12 @@ CROSS_CONNECT_FACILITIES = [
 
 XC_STATUSES = ["active", "pending_loa", "installing", "decommissioned", "suspended"]
 
+XC_ORDER_STATUSES = [
+    "not_ordered", "quoted", "ordered", "loa_submitted",
+    "loa_approved", "installing", "testing", "active", "cancelled",
+]
+XC_IN_FLIGHT_STATUSES = ["quoted", "ordered", "loa_submitted", "loa_approved", "installing", "testing"]
+
 LOA_STATUSES = ["draft", "submitted", "approved", "expired", "completed", "rejected"]
 
 DWDM_STATUSES = ["operational", "degraded", "dark", "maintenance"]

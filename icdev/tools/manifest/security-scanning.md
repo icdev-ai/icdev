@@ -5,7 +5,7 @@
 ## Security Scanning
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Vuln Scanner | tools/security/vuln_scanner.py | Vulnerability scanning orchestrator | --project | Scan results |
+| Vuln Scanner [DEPRECATED] | tools/security/vuln_scanner.py | Vulnerability scanning orchestrator | --project | Scan results |
 | SAST Runner | tools/security/sast_runner.py | Multi-language SAST (Bandit, SpotBugs, gosec, clippy, ESLint-security, SecurityCodeScan) | --report, --gate | Findings |
 | Dependency Auditor | tools/security/dependency_auditor.py | Multi-language dep audit (pip-audit, npm-audit, cargo-audit, govulncheck, OWASP DC, dotnet) | --report, --gate | Vulnerabilities |
 | Secret Detector | tools/security/secret_detector.py | detect-secrets wrapper | --report, --gate | Secrets found |

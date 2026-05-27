@@ -928,14 +928,10 @@ class DaemonBase(abc.ABC):
                         print(f"INFO: {self.daemon_name} disabled -- shutting down")
                         break
 
-                # Quiet hours — sleep between 11 PM and 8 AM local time
-                current_hour = datetime.now().hour
-                if current_hour >= 23 or current_hour < 8:
-                    for _ in range(60):
-                        if self._shutdown_event.is_set():
-                            break
-                        time.sleep(1)
-                    continue
+                # Note: active_hours time gating is handled inside run_due_reflexes()
+                # via in_active_hours(config). The hardcoded 23:00-08:00 quiet-hours
+                # block was removed so the config file (args/genesis_config.yaml)
+                # controls scheduling windows.
 
                 try:
                     self.run_due_reflexes()

@@ -1808,6 +1808,8 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .pi-icon.oci-icon { background: #f80000; color: #fff; }
 .pi-icon.ibm-icon { background: #0f62fe; color: #fff; }
 .pi-icon.multi-icon { background: #8b5cf6; color: #fff; }
+.pi-icon.dod-icon   { background: #1a3a1a; color: #69f0ae; border: 1px solid #2e7d32; }
+.dod-icon           { background: #1a3a1a; border: 1px solid #2e7d32; color: #69f0ae; }
 
 .palette-section.cloud-section .palette-cat {
   font-size: 11px;
@@ -1817,6 +1819,13 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
   background: var(--bg3);
   border-radius: 4px;
   margin-bottom: 4px;
+}
+
+/* DoD/SCCA palette group — military green accent */
+.palette-section.csp-dod .palette-cat {
+  background: #0d1f0d;
+  color: #69f0ae;
+  border-left: 3px solid #2e7d32;
 }
 
 /* ── JointJS port visibility on hover ────────────────────────────────────────── */

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """A2A Agent Server — HTTP-based agent server implementing the A2A protocol.
 
@@ -36,7 +38,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("a2a.server")
+logger = get_logger("a2a.server")
 
 
 class A2AAgentServer:
@@ -102,6 +104,17 @@ class A2AAgentServer:
         def health():
             return jsonify({"status": "healthy", "agent_id": self.agent_id})
 
+        @self.app.route("/skills", methods=["GET"])
+        def list_skills():
+            return jsonify({"skills": list(self._skills.values())})
+
+        @self.app.route("/skills/<skill_id>", methods=["GET"])
+        def get_skill(skill_id):
+            info = self._skills.get(skill_id)
+            if not info:
+                return jsonify({"error": f"Skill not found: {skill_id}"}), 404
+            return jsonify(info)
+
         # ── Mailbox Routes (Phase C) ──────────────────────────────
 
         @self.app.route("/messages/send", methods=["POST"])
@@ -158,7 +171,7 @@ class A2AAgentServer:
         card = {
             "name": self.name,
             "description": self.description,
-            "url": f"https://{self.host}:{self.port}",
+            "url": f"{'https' if self.tls_cert else 'http'}://{self.host}:{self.port}",
             "version": self.version,
             "capabilities": {
                 "streaming": False,

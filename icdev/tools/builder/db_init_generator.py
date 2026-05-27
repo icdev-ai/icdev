@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -31,7 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-logger = logging.getLogger("icdev.db_init_generator")
+logger = get_logger("icdev.db_init_generator")
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
@@ -1214,6 +1216,55 @@ DEVSECOPS_ZTA_TABLES: Dict[str, str] = {
 
 
 # ============================================================
+# D-EPSEC-7: SECURITY FRAMEWORK TABLES
+# ============================================================
+
+SECURITY_TABLES: Dict[str, str] = {
+    "security_policies": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS security_policies (
+            id TEXT PRIMARY KEY,
+            policy_type TEXT NOT NULL,
+            classification TEXT DEFAULT 'CUI',
+            clearance_ceiling TEXT DEFAULT 'SECRET',
+            default_classification TEXT DEFAULT 'CUI',
+            required_markings TEXT,
+            mfa_required INTEGER DEFAULT 1,
+            session_timeout_minutes INTEGER DEFAULT 30,
+            encryption_at_rest INTEGER DEFAULT 1,
+            encryption_in_transit INTEGER DEFAULT 1,
+            immutable_audit INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(policy_type)
+        );"""),
+    "user_clearances": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS user_clearances (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            user_name TEXT,
+            clearance_level TEXT NOT NULL DEFAULT 'CUI',
+            effective_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            granted_by TEXT,
+            project_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, project_id)
+        );"""),
+    "security_framework_status": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS security_framework_status (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            framework TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1,
+            inherited_from_parent INTEGER DEFAULT 1,
+            last_verified TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(project_id, framework)
+        );"""),
+}
+
+
+# ============================================================
 # D-RAG-13: RAG TABLES (Phase 64)
 # ============================================================
 
@@ -1614,6 +1665,8 @@ CAPABILITY_TABLE_MAP: Dict[str, Dict[str, str]] = {
     "observability": OBSERVABILITY_TABLES,
     "code_intelligence": CODE_INTELLIGENCE_TABLES,
     "devsecops_zta": DEVSECOPS_ZTA_TABLES,
+    # D-EPSEC-7: Security framework tables (always available)
+    "security": SECURITY_TABLES,
     # D-RAG-13: RAG tables (Phase 64)
     "rag": RAG_TABLES,
     # D-FT-19: Fine-tuning tables (Phase 64 Extension)

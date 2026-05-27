@@ -13,6 +13,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -30,7 +31,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger("icdev.finetune.statement_extractor")
+logger = get_logger("icdev.finetune.statement_extractor")
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 RAG_DB_PATH = BASE_DIR / "data" / "rag" / "rag_vectors.db"

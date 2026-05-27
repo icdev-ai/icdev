@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Pipeline Design Canvas — Flask Blueprint integration.
 
@@ -13,7 +15,6 @@ Usage in ICDEV dashboard app.py:
 """
 
 import json
-import logging
 import os
 import uuid as _uuid
 from functools import wraps
@@ -29,7 +30,7 @@ from flask import (
     g,
 )
 
-logger = logging.getLogger("icdev.pipeline")
+logger = get_logger("icdev.pipeline")
 
 _PIPELINE_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _PIPELINE_DIR.parent.parent
@@ -63,6 +64,8 @@ from tools.pipeline.sops import (  # noqa: E402
     reject_sop as _pdc_reject_sop,
     seed_sops as _pdc_seed_sops,
 )
+
+from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
 # ── Optional imports from existing ICDEV modules ─────────────────────────────
 try:
@@ -278,6 +281,12 @@ def create_pipeline_blueprint():
     except Exception as exc:
         logger.warning("Pipeline DB init failed: %s", exc)
 
+    try:
+        from tools.pipeline import bus_subscriber as _pdc_bus
+        _pdc_bus.register()
+    except Exception as exc:
+        logger.warning("PDC bus subscriber registration failed: %s", exc)
+
     bp = Blueprint(
         "pipeline_canvas",
         __name__,
@@ -371,6 +380,8 @@ def create_pipeline_blueprint():
             pipeline_id=pipe["id"],
             pipeline_name=pipe["name"],
             graph_json=pipe["graph_json"],
+            classification=pipe.get("classification", "public"),
+            design=pipe,
             stages=PIPELINE_STAGES,
             objects=PIPELINE_OBJECTS,
         )
@@ -498,6 +509,17 @@ def create_pipeline_blueprint():
             from tools.canvas.kg_builder import rebuild_canvas_kg
 
             rebuild_canvas_kg("pdc", pipe_id)
+        except Exception:
+            pass
+        # Blockchain provenance
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="pdc",
+                design_id=pipe_id,
+                graph_json=data.get("graph_json", {}),
+                project_id=data.get("project_id", ""),
+            )
         except Exception:
             pass
         resp = {"updated": True}
@@ -722,10 +744,21 @@ def create_pipeline_blueprint():
                 result["total"] = len(result["findings"])
             except Exception as exc:
                 result = {"findings": [], "total": 0, "error": str(exc)}
+        elif analysis_type == "governance":
+            result = _compute_pdc_governance({"nodes": nodes, "edges": edges})
         else:
             return jsonify({"error": f"Unknown analysis type: {analysis_type}"}), 400
 
         _audit("ANALYZE", "pipeline", pipe_id, analysis_type)
+        _summary = str(result.get("score", result.get("total", result.get("coverage", ""))))
+        record_canvas_decision(
+            canvas_type="pdc",
+            record_id=pipe_id,
+            decision_type="compliance_finding",
+            decision=f"{analysis_type}: {_summary}",
+            rationale=f"Nodes analyzed: {len(nodes)}",
+            model_used=None,
+        )
         return jsonify({"analysis_type": analysis_type, "result": result})
 
     # ══════════════════════════════════════════════════════════════════════
@@ -764,6 +797,17 @@ def create_pipeline_blueprint():
         conn.commit()
         conn.close()
         _audit("COMPLIANCE_AUDIT", "pipeline", pipe_id, f"passed={result['passed']}, failed={result['failed']}")
+        # Blockchain provenance for assessment
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="pdc",
+                design_id=pipe_id,
+                assessment_data=result,
+                project_id="",
+            )
+        except Exception:
+            pass
         return jsonify(result)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -930,6 +974,86 @@ def create_pipeline_blueprint():
 
         _audit("VALIDATE_IAC", "pipeline", pipe_id, f"gate={result.get('validation', {}).get('gate', '?')}")
         return jsonify(result)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # API — FIX IaC WARNINGS
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/validate/<pipe_id>/fix", methods=["POST"])
+    @pc_login_required
+    def pc_api_fix_warnings(pipe_id):
+        """Apply suggested auto-fixes to IaC warnings and re-validate."""
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        pipe = row_to_dict(row)
+        graph = json.loads(pipe["graph_json"])
+        data = request.get_json(force=True, silent=True) or {}
+        fixes = data.get("fixes", [])
+
+        try:
+            from tools.pipeline.deploy_generator import generate_deploy_bundle
+            from tools.pipeline.iac_validator import validate_deploy_bundle_from_generator, _EMPTY_YAML_DEFAULTS
+
+            bundle = generate_deploy_bundle(graph, pipe["name"], target_csp="auto", options={})
+            files = bundle.get("files_content", [])
+
+            applied = []
+            for fix in fixes:
+                action = fix.get("fix_action", "")
+                target_file = fix.get("file")
+
+                if action == "add_provider_block":
+                    # Inject a provider stub into the target .tf file
+                    for f in files:
+                        if f["path"] == target_file:
+                            if "provider " not in f["content"]:
+                                f["content"] = 'provider "aws" {\n  region = "us-east-1"\n}\n\n' + f["content"]
+                                applied.append(f"Added provider block to {target_file}")
+                            break
+
+                elif action == "populate_empty_yaml":
+                    stem = Path(target_file).stem if target_file else ""
+                    defaults = _EMPTY_YAML_DEFAULTS.get(stem, _EMPTY_YAML_DEFAULTS.get("values", "# configure here\n"))
+                    for f in files:
+                        if f["path"] == target_file:
+                            if not f["content"].strip() or all(
+                                ln.strip().startswith("#") or not ln.strip()
+                                for ln in f["content"].splitlines()
+                            ):
+                                f["content"] = defaults
+                                applied.append(f"Populated {target_file} with default config")
+                            break
+
+                elif action == "fix_shell_header":
+                    for f in files:
+                        if f["path"] == target_file:
+                            if not f["content"].startswith("#!/"):
+                                f["content"] = "#!/bin/bash\nset -euo pipefail\n\n" + f["content"]
+                                applied.append(f"Added shebang + set -euo pipefail to {target_file}")
+                            break
+
+                elif action == "add_tags":
+                    for f in files:
+                        if f["path"] == (target_file or f["path"]) and f["path"].endswith(".tf"):
+                            if "common_tags" not in f["content"]:
+                                tag_block = '\nlocals {\n  common_tags = {\n    Environment = "production"\n    ManagedBy   = "terraform"\n  }\n}\n'
+                                f["content"] = f["content"] + tag_block
+                                applied.append(f"Added common_tags locals block to {f['path']}")
+                            break
+
+            # Re-validate with patched files
+            re_result = validate_deploy_bundle_from_generator(
+                graph, pipe["name"], target_csp="auto", max_layer=3, _override_files=files
+            )
+            _audit("FIX_IAC", "pipeline", pipe_id, f"applied={len(applied)}")
+            return jsonify({"fixed": len(applied), "applied": applied, **re_result})
+
+        except Exception as exc:
+            logger.warning("IaC fix failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
 
     # ══════════════════════════════════════════════════════════════════════
     # API — DEPLOY IaC BUNDLE
@@ -1183,6 +1307,81 @@ def create_pipeline_blueprint():
 
     def _run_compliance_check(nodes, edges):
         return run_compliance_check(nodes, edges)
+
+    def _compute_pdc_governance(graph_data):
+        """DevSecOps pipeline governance — SLSA / NIST SSDF / DoD DEVSECOPS aligned."""
+        _nodes = graph_data.get("nodes", [])
+        _edges = graph_data.get("edges", [])
+        _types = [n.get("type", "").lower() for n in _nodes]
+        _labels = [str(n.get("label", "")).lower() for n in _nodes]
+
+        def _any(*pfx): return any(any(t.startswith(p) for p in pfx) for t in _types)
+        def _lbl(*kws): return any(kw in l for l in _labels for kw in kws)
+
+        CHECKS = [
+            ("Source Control Defined",           "Source Control",   "CAT1", _any("src-","git-","vcs-") or _lbl("git","gitlab","github","bitbucket","svn","vcs","source control")),
+            ("Automated Build Stage",            "CI/CD Pipeline",   "CAT1", _any("bld-","build-","ci-") or _lbl("build","compile","make","gradle","maven","npm build","docker build")),
+            ("Automated Test Stage",             "CI/CD Pipeline",   "CAT1", _any("tst-","test-") or _lbl("test","pytest","jest","junit","mocha","rspec","automated test")),
+            ("SAST Integration",                 "Security",         "CAT1", _any("sast-","sec-") or _lbl("sast","sonar","semgrep","bandit","snyk","veracode","checkmarx")),
+            ("Container Image Scanning",         "Security",         "CAT1", _lbl("trivy","snyk","aqua","anchore","image scan","clair","container scan")),
+            ("SCA / Dependency Scanning",        "Security",         "CAT2", _lbl("sca","dependency","sbom","cyclonedx","dependency-check","owasp dependency")),
+            ("Secrets Detection",                "Security",         "CAT1", _lbl("secret detect","truffleH","detect-secrets","gitleaks","credscan")),
+            ("Artifact Registry Defined",        "CI/CD Pipeline",   "CAT2", _any("reg-","art-") or _lbl("registry","nexus","artifactory","ecr","acr","gcr","harbor")),
+            ("Deployment Stage",                 "CI/CD Pipeline",   "CAT1", _any("dep-","deploy-","cd-") or _lbl("deploy","release","rollout","helm","argocd","flux","eks deploy")),
+            ("Environment Promotion Gates",      "CI/CD Pipeline",   "CAT2", _lbl("staging","prod","promote","env gate","approval","manual gate","dev→staging")),
+            ("SLSA L2 or Higher",                "Supply Chain",     "CAT2", _lbl("slsa","provenance","build attestation","sigstore","cosign","rekor")),
+            ("SBOM Generation",                  "Supply Chain",     "CAT2", _lbl("sbom","cyclonedx","spdx","bill of materials","bom")),
+            ("IaC Scanning / Policy",            "Security",         "CAT2", _lbl("terrascan","checkov","tflint","opa","sentinel","policy as code","iac scan")),
+            ("Pipeline Execution Monitoring",    "Observability",    "CAT2", _lbl("monitor","pipeline log","metrics","duration","observ","grafana","datadog pipeline")),
+            ("Failure Alerting",                 "Observability",    "CAT2", _lbl("alert","notify","pagerduty","slack notify","webhook","on failure")),
+            ("Rollback / Blue-Green / Canary",   "Resilience",       "CAT2", _lbl("rollback","blue-green","canary","progressive","feature flag")),
+            ("Compliance Gate (FedRAMP/CMMC)",   "Compliance",       "CAT1", _lbl("fedramp","cmmc","stig","il4","il5","rmf","ato","compliance gate")),
+            ("DoD DevSecOps Ref Arch Aligned",   "Compliance",       "CAT2", _lbl("devsecops","dod","enterprise devsecops","p-ato","continuous ato","c-ato")),
+        ]
+
+        PILLARS = ["Source Control", "CI/CD Pipeline", "Security", "Supply Chain", "Observability", "Resilience", "Compliance"]
+        WEIGHTS = {"CAT1": 3, "CAT2": 2, "CAT3": 1}
+        MATURITY = [
+            (0,  "L1 — Initial",    "Ad-hoc pipelines with no security gates."),
+            (30, "L2 — Developing", "Basic CI with some SAST/test automation."),
+            (55, "L3 — Defined",    "Full CI/CD with security integrated throughout."),
+            (70, "L4 — Managed",    "SLSA L2+, SBOM, compliance gates automated."),
+            (85, "L5 — Optimised",  "Continuous ATO with supply chain integrity and full observability."),
+        ]
+
+        check_results, total_w, passed_w = [], 0, 0
+        cats = {p: {"passed": 0, "total": 0, "pct": 0} for p in PILLARS}
+        for title, pillar, sev, passed in CHECKS:
+            w = WEIGHTS[sev]
+            total_w += w
+            status = "pass" if passed else "fail"
+            if passed:
+                passed_w += w
+            cats.setdefault(pillar, {"passed": 0, "total": 0, "pct": 0})
+            cats[pillar]["total"] += 1
+            if passed:
+                cats[pillar]["passed"] += 1
+            check_results.append({"title": title, "pillar": pillar, "severity": sev,
+                                   "status": status, "weight": w, "detail": ""})
+        for c in cats.values():
+            c["pct"] = round(c["passed"] / c["total"] * 100) if c["total"] else 0
+
+        score = round(passed_w / total_w * 100) if total_w else 0
+        grade = "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
+        mat_level = sum(1 for t, *_ in MATURITY if score >= t)
+        mat_label, mat_desc = MATURITY[mat_level - 1][1], MATURITY[mat_level - 1][2]
+
+        recs = [{"title": c["title"], "pillar": c["pillar"], "priority": c["severity"]}
+                for c in check_results if c["status"] == "fail"]
+        recs.sort(key=lambda r: {"CAT1": 0, "CAT2": 1, "CAT3": 2}[r["priority"]])
+        from datetime import datetime, timezone as _tz
+        return {
+            "score": score, "grade": grade,
+            "maturity": {"level": mat_level, "label": mat_label.split(" — ")[1], "description": mat_desc},
+            "checks": check_results, "categories": cats, "recommendations": recs,
+            "total_checks": len(CHECKS), "passed_checks": sum(1 for c in check_results if c["status"] == "pass"),
+            "assessed_at": datetime.now(_tz.utc).isoformat(),
+        }
 
     # Heatmap color helpers
     def _time_color(minutes):
@@ -1625,5 +1824,63 @@ def create_pipeline_blueprint():
         )
         status = payload.pop("_status", 200)
         return jsonify(payload), status
+
+    @bp.route("/api/iqe-query", methods=["POST"])
+    @pc_login_required
+    def pdc_api_iqe_query():
+        """IQE structured query — translate NL to IQE and execute against PDC pipeline data."""
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import IQESyntaxError, parse
+        from tools.iqe.executor import execute_query
+        import tools.iqe.adapters.pipeline  # noqa: F401 — registers pipeline.* collections
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        collections = ["pipeline.snapshots", "pipeline.nodes", "pipeline.edges"]
+        translation = nl_to_iqe(question, collections)
+        iqe_str = translation.get("iqe", "")
+        explanation = translation.get("explanation", "")
+
+        if not data.get("execute", True):
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+        try:
+            ast = parse(iqe_str)
+            rows = execute_query(ast, None)
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                            "results": rows, "row_count": len(rows)}), 200
+        except IQESyntaxError as exc:
+            return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+        except Exception as exc:
+            logger.warning("PDC IQE query error: %s", exc)
+            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+    @bp.route("/api/ai-trace")
+    @pc_login_required
+    def pc_api_ai_trace():
+        """Return recent AI decisions made by PDC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='pdc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='pdc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "pdc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     return bp

@@ -12,10 +12,10 @@ Risk tier: GREEN — read-only on logs, write-only to Kanban API.
 Returns: {"reflex": "log_triage", "signatures_seen": N, "tasks_created": N}
 """
 from __future__ import annotations
+IMPLEMENTATION_STATUS = "full"
 
 import hashlib
 import json
-import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,7 +25,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-log = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+log = get_logger("log_triage")
 
 _BUILD_LOG = BASE_DIR / ".logs" / "build.ndjson"
 _KANBAN_URL = "http://localhost:5050/api/kanban/tasks"
@@ -158,11 +160,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     _save_seen(seen)
 
     result = {
+        "success": True,  # completing the scan cycle without error is success
+        "metric_value": float(created),  # tasks_created is the tracked metric
         "reflex": "log_triage",
         "events_scanned": len(events),
         "signatures_seen": len(sigs),
         "new_signatures": len(new_sigs),
         "tasks_created": created,
+        "details": {"status": "no_changes" if created == 0 else "tasks_created", "tasks_created": created},
     }
     log.info("log_triage cycle complete", extra={"extra": result})
     return result

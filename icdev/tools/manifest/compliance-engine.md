@@ -5,10 +5,10 @@
 ## Compliance Engine
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| SSP Generator | tools/compliance/ssp_generator.py | System Security Plan generator (17 sections) | --project, --system-name | SSP document path |
-| POAM Generator | tools/compliance/poam_generator.py | Plan of Action & Milestones generator | --project, --findings | POAM document path |
-| STIG Checker | tools/compliance/stig_checker.py | STIG checklist auto-generation | --project, --stig-id, --target-type | Findings + checklist |
-| SBOM Generator | tools/compliance/sbom_generator.py | CycloneDX SBOM generation | --project, --format | SBOM path |
+| SSP Generator [DEPRECATED] | tools/compliance/ssp_generator.py | System Security Plan generator (17 sections) | --project, --system-name | SSP document path |
+| POAM Generator [DEPRECATED] | tools/compliance/poam_generator.py | Plan of Action & Milestones generator | --project, --findings | POAM document path |
+| STIG Checker [DEPRECATED] | tools/compliance/stig_checker.py | STIG checklist auto-generation | --project, --stig-id, --target-type | Findings + checklist |
+| SBOM Generator [DEPRECATED] | tools/compliance/sbom_generator.py | CycloneDX SBOM generation | --project, --format | SBOM path |
 | CUI Marker | tools/compliance/cui_marker.py | Apply CUI classification markings | --file, --directory | Marked file path |
 | Control Mapper | tools/compliance/control_mapper.py | NIST 800-53 control mapping | --project, --control-families | Control matrix |
 | NIST Lookup | tools/compliance/nist_lookup.py | NIST control reference lookup | --control-id | Control details |

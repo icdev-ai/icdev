@@ -2,16 +2,16 @@
 """TTX Engine — AI scoring: receipt validation + LLM judge + time bonus."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from tools.db.storage import get_connection
 from .constants import TIME_BONUS_BRACKETS
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def _now() -> str:
@@ -97,12 +97,11 @@ def judge_response(
     try:
         from tools.llm.router import LLMRequest
         req = LLMRequest(
-            function="ttx_judge",
+            messages=[{"role": "user", "content": user_msg}],
             system_prompt=system_prompt,
-            user_message=user_msg,
             max_tokens=512,
         )
-        resp = router.invoke(req)
+        resp = router.invoke("ttx_judge", req)
         raw = resp.content.strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]

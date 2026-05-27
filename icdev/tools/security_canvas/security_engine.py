@@ -197,409 +197,246 @@ def run_stride_analysis(graph_data: dict) -> dict:
     }
 
 
-# ── Security Assessment ─────────────────────────────────────────────────────
+# ── Security Assessment — check helpers ──────────────────────────────────────
 
 
-def run_security_assessment(design_id: str, graph_data: dict, rules: list = None) -> dict:
-    """Evaluate security assessment rules against a design.
-
-    Args:
-        design_id: UUID of the security design.
-        graph_data: Dict with "nodes", "edges", and "boundaries".
-        rules: Optional list of rules (defaults to SECURITY_ASSESSMENT_RULES).
-
-    Returns:
-        Dict with findings, scores by category, risk_score, and posture_grade.
-    """
-    if rules is None:
-        rules = SECURITY_ASSESSMENT_RULES
-
+def _sec_build_ctx(graph_data: dict) -> dict:
     nodes = graph_data.get("nodes", [])
     edges = graph_data.get("edges", [])
-    boundaries = graph_data.get("boundaries", [])
-    threats = graph_data.get("threats", [])
     ntypes = _node_types(nodes)
-    labels = _label_map(nodes)
-    adj = _build_adjacency(edges)
+    return {
+        "nodes": nodes, "edges": edges,
+        "boundaries": graph_data.get("boundaries", []),
+        "threats": graph_data.get("threats", []),
+        "ntypes": ntypes, "labels": _label_map(nodes), "adj": _build_adjacency(edges),
+        "asset_nodes": [n for n in nodes if _is_asset(ntypes.get(n["id"], ""))],
+        "db_nodes": [n for n in nodes if ntypes.get(n["id"]) in ("asset-database", "asset-storage")],
+        "siem_nodes": [n for n in nodes if ntypes.get(n["id"]) == "ctrl-siem"],
+        "kms_nodes": [n for n in nodes if ntypes.get(n["id"]) == "ctrl-kms"],
+        "idp_nodes": [n for n in nodes if ntypes.get(n["id"]) == "ctrl-idp"],
+        "ids_nodes": [n for n in nodes if ntypes.get(n["id"]) == "ctrl-ids"],
+        "scanner_nodes": [n for n in nodes if ntypes.get(n["id"]) == "ctrl-scanner"],
+        "pam_nodes": [n for n in nodes if ntypes.get(n["id"]) == "ctrl-pam"],
+    }
 
-    asset_nodes = [n for n in nodes if _is_asset(ntypes.get(n["id"], ""))]
-    db_nodes = [n for n in nodes if ntypes.get(n["id"]) in ("asset-database", "asset-storage")]
-    siem_nodes = [n for n in nodes if ntypes.get(n["id"]) == "ctrl-siem"]
-    kms_nodes = [n for n in nodes if ntypes.get(n["id"]) == "ctrl-kms"]
-    idp_nodes = [n for n in nodes if ntypes.get(n["id"]) == "ctrl-idp"]
-    ids_nodes = [n for n in nodes if ntypes.get(n["id"]) == "ctrl-ids"]
-    scanner_nodes = [n for n in nodes if ntypes.get(n["id"]) == "ctrl-scanner"]
-    pam_nodes = [n for n in nodes if ntypes.get(n["id"]) == "ctrl-pam"]
 
-    findings = []
+def _sec_make_finding(rule, affected="", affected_type="design") -> dict:
+    return {"rule_id": rule["id"], "title": rule["title"], "severity": rule["severity"],
+            "category": rule["category"], "affected_entity": affected, "affected_type": affected_type}
 
-    def add_finding(rule, affected="", affected_type="design"):
-        findings.append(
-            {
-                "rule_id": rule["id"],
-                "title": rule["title"],
-                "severity": rule["severity"],
-                "category": rule["category"],
-                "affected_entity": affected,
-                "affected_type": affected_type,
-            }
+
+def _sec_edge_label(e, labels):
+    return f"{labels.get(e['source'], '')}→{labels.get(e['target'], '')}"
+
+
+def _sec_run_flow_checks(check, rule, ctx):
+    nodes, edges, ntypes, labels, adj = ctx["nodes"], ctx["edges"], ctx["ntypes"], ctx["labels"], ctx["adj"]
+    db_nodes, siem_nodes, kms_nodes = ctx["db_nodes"], ctx["siem_nodes"], ctx["kms_nodes"]
+    asset_nodes, idp_nodes, pam_nodes = ctx["asset_nodes"], ctx["idp_nodes"], ctx["pam_nodes"]
+    boundaries, threats = ctx["boundaries"], ctx["threats"]
+    ids_nodes, scanner_nodes = ctx["ids_nodes"], ctx["scanner_nodes"]
+
+    if check == "all_flows_authenticated":
+        return [_sec_make_finding(rule, _sec_edge_label(e, labels), "edge") for e in edges
+                if not e.get("authenticated") and ntypes.get(e["target"], "") != "ctrl-siem"]
+    if check == "idp_for_user_assets":
+        return [_sec_make_finding(rule)] if not idp_nodes and any(ntypes.get(n["id"]) == "asset-client" for n in nodes) else []
+    if check == "pam_for_privileged":
+        return [_sec_make_finding(rule)] if not pam_nodes and any((e.get("protocol") or "").lower() in ("ssh", "rdp", "admin") for e in edges) else []
+    if check == "boundary_flows_encrypted":
+        return [_sec_make_finding(rule, _sec_edge_label(e, labels), "edge") for e in edges
+                if _edge_crosses_boundary(e, boundaries) and not e.get("encrypted", False)]
+    if check == "kms_present":
+        return [] if kms_nodes else [_sec_make_finding(rule)]
+    if check == "db_encryption_at_rest":
+        return [_sec_make_finding(rule, labels.get(db["id"], db["id"]), "node") for db in db_nodes
+                if not kms_nodes and not any(ntypes.get(nb) == "ctrl-kms" for nb in adj.get(db["id"], set()))]
+    if check in ("boundaries_defined", "has_boundaries"):
+        return [] if boundaries else [_sec_make_finding(rule)]
+    if check == "firewall_at_boundary":
+        return [_sec_make_finding(rule, labels.get(n["id"], n["id"]), "node")
+                for n in nodes if ntypes.get(n["id"]) == "boundary-internet"
+                and not any(ntypes.get(nb) == "ctrl-firewall" for nb in adj.get(n["id"], set()))]
+    if check == "no_direct_inet_db":
+        inet_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "boundary-internet"}
+        db_ids = {n["id"] for n in db_nodes}
+        return [_sec_make_finding(rule, _sec_edge_label(e, labels), "edge") for e in edges
+                if (e["source"] in inet_ids and e["target"] in db_ids) or (e["target"] in inet_ids and e["source"] in db_ids)]
+    if check == "siem_present":
+        return [] if siem_nodes else [_sec_make_finding(rule)]
+    if check == "all_assets_logged":
+        if not siem_nodes:
+            return []
+        siem_ids = {n["id"] for n in siem_nodes}
+        return [_sec_make_finding(rule, labels.get(a["id"], a["id"]), "node") for a in asset_nodes
+                if not (adj.get(a["id"], set()) & siem_ids)]
+    if check == "db_audit_logging":
+        if not siem_nodes:
+            return []
+        siem_ids = {n["id"] for n in siem_nodes}
+        return [_sec_make_finding(rule, labels.get(db["id"], db["id"]), "node") for db in db_nodes
+                if not (adj.get(db["id"], set()) & siem_ids)]
+    if check == "ids_present":
+        return [] if ids_nodes else [_sec_make_finding(rule)]
+    if check == "scanner_present":
+        return [] if scanner_nodes else [_sec_make_finding(rule)]
+    if check == "s2s_auth":
+        return [_sec_make_finding(rule, _sec_edge_label(e, labels), "edge") for e in edges
+                if _is_asset(ntypes.get(e["source"], "")) and _is_asset(ntypes.get(e["target"], ""))
+                and not e.get("authenticated", False)]
+    if check == "data_classification":
+        results = []
+        for db in db_nodes:
+            cfg = db.get("config_json", "{}")
+            if isinstance(cfg, str):
+                try:
+                    cfg = json.loads(cfg)
+                except (json.JSONDecodeError, TypeError):
+                    cfg = {}
+            if not cfg.get("data_classification"):
+                results.append(_sec_make_finding(rule, labels.get(db["id"], db["id"]), "node"))
+        return results
+    if check == "dlp_present":
+        return [_sec_make_finding(rule)] if db_nodes and not any(ntypes.get(n["id"]) == "ctrl-dlp" for n in nodes) else []
+    if check == "siem_alerting":
+        return [_sec_make_finding(rule, labels.get(s["id"], s["id"]), "node")
+                for s in siem_nodes if not adj.get(s["id"], set())]
+    if check in ("ir_runbook", "no_shared_admin", "sbom_present"):
+        return []
+    if check == "registry_admission":
+        return [_sec_make_finding(rule)] if (any(ntypes.get(n["id"]) == "asset-registry" for n in nodes)
+                and not any(ntypes.get(n["id"]) == "ctrl-admission" for n in nodes)) else []
+    if check == "assets_labeled":
+        return [_sec_make_finding(rule, n["id"], "node") for n in nodes
+                if not n.get("label") or n["label"] == n["id"]]
+    if check == "threats_documented":
+        return [] if threats else [_sec_make_finding(rule)]
+    if check == "edr_present":
+        return [_sec_make_finding(rule)] if asset_nodes and not any(ntypes.get(n["id"]) == "ctrl-edr" for n in nodes) else []
+    if check == "cspm_present":
+        has_cloud = any(_is_boundary(ntypes.get(n["id"], "")) and "cloud" in ntypes.get(n["id"], "") for n in nodes)
+        return [_sec_make_finding(rule)] if has_cloud and not any(ntypes.get(n["id"]) == "ctrl-cspm" for n in nodes) else []
+    if check == "backup_present":
+        storage = [n for n in nodes if ntypes.get(n["id"]) in ("asset-database", "asset-storage")]
+        if storage and not any(kw in (n.get("label", "") or "").lower() for n in nodes for kw in ("backup", " dr", "replica")):
+            return [_sec_make_finding(rule)]
+        return []
+    if check == "secret_mgmt_present":
+        return [_sec_make_finding(rule)] if asset_nodes and not kms_nodes else []
+    if check == "mtls_s2s":
+        return [_sec_make_finding(rule, _sec_edge_label(e, labels), "edge") for e in edges
+                if _is_asset(ntypes.get(e["source"], "")) and _is_asset(ntypes.get(e["target"], ""))
+                and not (e.get("encrypted") and e.get("authenticated"))]
+    if check == "api_gateway_protected":
+        inet_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "boundary-internet"}
+        return [_sec_make_finding(rule, labels.get(api["id"], api["id"]), "node")
+                for api in nodes if ntypes.get(api["id"]) in ("asset-server", "asset-api")
+                and (adj.get(api["id"], set()) & inet_ids)
+                and not any(ntypes.get(nb) == "ctrl-firewall" for nb in adj.get(api["id"], set()))]
+    if check == "zero_trust_posture":
+        return [_sec_make_finding(rule, _sec_edge_label(e, labels), "edge") for e in edges
+                if ntypes.get(e["target"], "") not in ("ctrl-siem", "ctrl-ids")
+                and not (e.get("encrypted") and e.get("authenticated"))]
+    if check == "admission_control_present":
+        has_containers = any(ntypes.get(n["id"]) in ("asset-container", "asset-registry") for n in nodes)
+        has_admission = any(
+            ("admission" in (n.get("label", "") or "").lower() and ntypes.get(n["id"]) == "ctrl-scanner")
+            or any(kw in (n.get("label", "") or "").lower() for kw in ("kyverno", "opa", "gatekeeper"))
+            for n in nodes
         )
-
-    # Check dispatch — maps check function names to logic
-    for rule in rules:
-        check = rule["check"]
-
-        if check == "all_flows_authenticated":
-            for e in edges:
-                if not e.get("authenticated", False):
-                    src_t = ntypes.get(e["source"], "")
-                    tgt_t = ntypes.get(e["target"], "")
-                    # Skip log flows (siem targets)
-                    if tgt_t == "ctrl-siem":
-                        continue
-                    add_finding(rule, f"{labels.get(e['source'], '')}→{labels.get(e['target'], '')}", "edge")
-
-        elif check == "idp_for_user_assets":
-            if not idp_nodes and any(ntypes.get(n["id"]) == "asset-client" for n in nodes):
-                add_finding(rule, "design", "design")
-
-        elif check == "pam_for_privileged":
-            if not pam_nodes and any((e.get("protocol") or "").lower() in ("ssh", "rdp", "admin") for e in edges):
-                add_finding(rule, "design", "design")
-
-        elif check == "boundary_flows_encrypted":
-            for e in edges:
-                if _edge_crosses_boundary(e, boundaries) and not e.get("encrypted", False):
-                    add_finding(rule, f"{labels.get(e['source'], '')}→{labels.get(e['target'], '')}", "edge")
-
-        elif check == "kms_present":
-            if not kms_nodes:
-                add_finding(rule, "design", "design")
-
-        elif check == "db_encryption_at_rest":
-            for db in db_nodes:
-                neighbors = adj.get(db["id"], set())
-                has_kms = any(ntypes.get(nb) == "ctrl-kms" for nb in neighbors)
-                if not has_kms and not kms_nodes:
-                    add_finding(rule, labels.get(db["id"], db["id"]), "node")
-
-        elif check == "boundaries_defined":
-            if not boundaries:
-                add_finding(rule, "design", "design")
-
-        elif check == "firewall_at_boundary":
-            inet_nodes = [n for n in nodes if ntypes.get(n["id"]) == "boundary-internet"]
-            for inet in inet_nodes:
-                neighbors = adj.get(inet["id"], set())
-                has_fw = any(ntypes.get(nb) == "ctrl-firewall" for nb in neighbors)
-                if not has_fw:
-                    add_finding(rule, labels.get(inet["id"], inet["id"]), "node")
-
-        elif check == "no_direct_inet_db":
-            inet_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "boundary-internet"}
-            db_ids = {n["id"] for n in db_nodes}
-            for e in edges:
-                if (e["source"] in inet_ids and e["target"] in db_ids) or (
-                    e["target"] in inet_ids and e["source"] in db_ids
-                ):
-                    add_finding(rule, f"{labels.get(e['source'], '')}→{labels.get(e['target'], '')}", "edge")
-
-        elif check == "siem_present":
-            if not siem_nodes:
-                add_finding(rule, "design", "design")
-
-        elif check == "all_assets_logged":
-            if siem_nodes:
-                siem_ids = {n["id"] for n in siem_nodes}
-                for asset in asset_nodes:
-                    neighbors = adj.get(asset["id"], set())
-                    sends_to_siem = bool(neighbors & siem_ids)
-                    if not sends_to_siem:
-                        add_finding(rule, labels.get(asset["id"], asset["id"]), "node")
-
-        elif check == "db_audit_logging":
-            if siem_nodes:
-                siem_ids = {n["id"] for n in siem_nodes}
-                for db in db_nodes:
-                    neighbors = adj.get(db["id"], set())
-                    sends_to_siem = bool(neighbors & siem_ids)
-                    if not sends_to_siem:
-                        add_finding(rule, labels.get(db["id"], db["id"]), "node")
-
-        elif check == "ids_present":
-            if not ids_nodes:
-                add_finding(rule, "design", "design")
-
-        elif check == "scanner_present":
-            if not scanner_nodes:
-                add_finding(rule, "design", "design")
-
-        elif check == "no_shared_admin":
-            # Cannot check from graph data alone — pass (informational)
-            pass
-
-        elif check == "s2s_auth":
-            for e in edges:
-                src_t = ntypes.get(e["source"], "")
-                tgt_t = ntypes.get(e["target"], "")
-                if _is_asset(src_t) and _is_asset(tgt_t) and not e.get("authenticated", False):
-                    add_finding(rule, f"{labels.get(e['source'], '')}→{labels.get(e['target'], '')}", "edge")
-
-        elif check == "data_classification":
-            for db in db_nodes:
-                cfg = db.get("config_json", "{}")
+        return [_sec_make_finding(rule)] if has_containers and not has_admission else []
+    if check == "fips_crypto_validated":
+        has_crypto = bool(kms_nodes) or any(ntypes.get(n["id"]) == "ctrl-encryption" for n in nodes)
+        return [_sec_make_finding(rule)] if not has_crypto and any(e.get("encrypted") for e in edges) else []
+    if check == "hardening_baseline":
+        results = []
+        for n in nodes:
+            if ntypes.get(n["id"]) == "asset-server":
+                cfg = n.get("config_json", n.get("config", {}))
                 if isinstance(cfg, str):
                     try:
                         cfg = json.loads(cfg)
                     except (json.JSONDecodeError, TypeError):
                         cfg = {}
-                if not cfg.get("data_classification"):
-                    add_finding(rule, labels.get(db["id"], db["id"]), "node")
+                if not cfg.get("hardening_baseline"):
+                    results.append(_sec_make_finding(rule, labels.get(n["id"], n["id"]), "node"))
+        return results
+    return None  # unknown check
 
-        elif check == "dlp_present":
-            if not any(ntypes.get(n["id"]) == "ctrl-dlp" for n in nodes):
-                # Only flag if there are data stores
-                if db_nodes:
-                    add_finding(rule, "design", "design")
 
-        elif check == "siem_alerting":
-            # Check that SIEM has outbound edges (alerting)
-            for siem in siem_nodes:
-                neighbors = adj.get(siem["id"], set())
-                if not neighbors:
-                    add_finding(rule, labels.get(siem["id"], siem["id"]), "node")
+def _sec_run_vdi_checks(check, rule, ctx):
+    nodes, ntypes, labels, adj, boundaries = ctx["nodes"], ctx["ntypes"], ctx["labels"], ctx["adj"], ctx["boundaries"]
+    vdi_hosts = [n for n in nodes if ntypes.get(n["id"]) == "asset-vdi-host"]
+    if not vdi_hosts:
+        return []
+    if check == "vdi_session_policy":
+        return [_sec_make_finding(rule, labels.get(h["id"], h["id"]), "node") for h in vdi_hosts
+                if not any(ntypes.get(nb) == "ctrl-session-policy" for nb in adj.get(h["id"], set()))]
+    if check == "vdi_gateway_required":
+        inet_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "boundary-internet"}
+        gw_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "ctrl-vdi-gateway"}
+        findings = [_sec_make_finding(rule, labels.get(h["id"], h["id"]), "node") for h in vdi_hosts
+                    if (adj.get(h["id"], set()) & inet_ids) and not (adj.get(h["id"], set()) & gw_ids)]
+        if not gw_ids:
+            findings.append(_sec_make_finding(rule))
+        return findings
+    if check == "vdi_boundary_isolation":
+        vdi_bounds = [b for b in boundaries if b.get("type") == "boundary-vdi-session"]
+        if not vdi_bounds:
+            return [_sec_make_finding(rule)]
+        contained = {cid for b in vdi_bounds for cid in b.get("contained_assets", [])}
+        return [_sec_make_finding(rule, labels.get(h["id"], h["id"]), "node") for h in vdi_hosts if h["id"] not in contained]
+    if check == "vdi_profile_encrypted":
+        return [_sec_make_finding(rule, labels.get(ps["id"], ps["id"]), "node")
+                for ps in nodes if ntypes.get(ps["id"]) == "asset-profile-store"
+                and not any(ntypes.get(nb) in ("ctrl-kms", "ctrl-encryption") for nb in adj.get(ps["id"], set()))]
+    if check == "vdi_endpoint_authenticated":
+        return [_sec_make_finding(rule, labels.get(tc["id"], tc["id"]), "node")
+                for tc in nodes if ntypes.get(tc["id"]) == "asset-thin-client"
+                and not any(ntypes.get(nb) == "ctrl-idp" for nb in adj.get(tc["id"], set()))]
+    if check == "vdi_image_integrity":
+        hardening_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "ctrl-image-hardening"}
+        if not hardening_ids:
+            return [_sec_make_finding(rule)]
+        return [_sec_make_finding(rule, labels.get(h["id"], h["id"]), "node") for h in vdi_hosts
+                if not (adj.get(h["id"], set()) & hardening_ids)]
+    return []
 
-        elif check == "ir_runbook":
-            # Informational — cannot verify from graph
-            pass
 
-        elif check == "registry_admission":
-            has_registry = any(ntypes.get(n["id"]) == "asset-registry" for n in nodes)
-            has_admission = any(ntypes.get(n["id"]) == "ctrl-admission" for n in nodes)
-            if has_registry and not has_admission:
-                add_finding(rule, "design", "design")
-
-        elif check == "sbom_present":
-            # Informational — cannot verify from graph
-            pass
-
-        elif check == "assets_labeled":
-            for n in nodes:
-                if not n.get("label") or n["label"] == n["id"]:
-                    add_finding(rule, n["id"], "node")
-
-        elif check == "has_boundaries":
-            if not boundaries:
-                add_finding(rule, "design", "design")
-
-        elif check == "threats_documented":
-            if not threats:
-                add_finding(rule, "design", "design")
-
-        elif check == "edr_present":
-            if not any(ntypes.get(n["id"]) in ("ctrl-edr",) for n in nodes):
-                if asset_nodes:  # Only flag if there are assets to protect
-                    add_finding(rule, "design", "design")
-
-        elif check == "cspm_present":
-            has_cloud = any(_is_boundary(ntypes.get(n["id"], "")) and "cloud" in ntypes.get(n["id"], "") for n in nodes)
-            if has_cloud and not any(ntypes.get(n["id"]) == "ctrl-cspm" for n in nodes):
-                add_finding(rule, "design", "design")
-
-        elif check == "backup_present":
-            # Check if any storage node has a backup/DR neighbor
-            storage_nodes = [n for n in nodes if ntypes.get(n["id"]) in ("asset-database", "asset-storage")]
-            if storage_nodes:
-                has_backup = any(
-                    "backup" in (n.get("label", "") or "").lower()
-                    or "dr" in (n.get("label", "") or "").lower()
-                    or "replica" in (n.get("label", "") or "").lower()
-                    for n in nodes
-                )
-                if not has_backup:
-                    add_finding(rule, "design", "design")
-
-        elif check == "secret_mgmt_present":
-            # Vault/KMS serves as secret manager
-            if not kms_nodes:
-                if asset_nodes:
-                    add_finding(rule, "design", "design")
-
-        elif check == "mtls_s2s":
-            # Check that ALL asset-to-asset flows are both encrypted AND authenticated
-            for e in edges:
-                src_t = ntypes.get(e["source"], "")
-                tgt_t = ntypes.get(e["target"], "")
-                if _is_asset(src_t) and _is_asset(tgt_t):
-                    if not (e.get("encrypted") and e.get("authenticated")):
-                        add_finding(rule, f"{labels.get(e['source'], '')}→{labels.get(e['target'], '')}", "edge")
-
-        elif check == "api_gateway_protected":
-            # Check if API/webapp assets behind internet have a firewall/WAF neighbor
-            inet_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "boundary-internet"}
-            api_nodes = [n for n in nodes if ntypes.get(n["id"]) in ("asset-server", "asset-api")]
-            for api in api_nodes:
-                neighbors = adj.get(api["id"], set())
-                directly_exposed = bool(neighbors & inet_ids)
-                has_waf = any(ntypes.get(nb) == "ctrl-firewall" for nb in neighbors)
-                if directly_exposed and not has_waf:
-                    add_finding(rule, labels.get(api["id"], api["id"]), "node")
-
-        elif check == "zero_trust_posture":
-            # ALL flows must be BOTH encrypted AND authenticated (strictest check)
-            for e in edges:
-                src_t = ntypes.get(e["source"], "")
-                tgt_t = ntypes.get(e["target"], "")
-                # Skip monitoring flows (to SIEM/IDS)
-                if tgt_t in ("ctrl-siem", "ctrl-ids"):
-                    continue
-                if not (e.get("encrypted") and e.get("authenticated")):
-                    add_finding(rule, f"{labels.get(e['source'], '')}→{labels.get(e['target'], '')}", "edge")
-
-        elif check == "admission_control_present":
-            has_containers = any(ntypes.get(n["id"]) in ("asset-container", "asset-registry") for n in nodes)
-            has_admission = any(
-                ntypes.get(n["id"]) in ("ctrl-scanner",) and "admission" in (n.get("label", "") or "").lower()
-                for n in nodes
-            )
-            # Also check for Kyverno/OPA type labels
-            if not has_admission:
-                has_admission = any(
-                    "kyverno" in (n.get("label", "") or "").lower()
-                    or "opa" in (n.get("label", "") or "").lower()
-                    or "gatekeeper" in (n.get("label", "") or "").lower()
-                    for n in nodes
-                )
-            if has_containers and not has_admission:
-                add_finding(rule, "design", "design")
-
-        elif check == "fips_crypto_validated":
-            # Check if any encryption/KMS node exists — informational flag
-            has_crypto = bool(kms_nodes) or any(ntypes.get(n["id"]) == "ctrl-encryption" for n in nodes)
-            if not has_crypto and any(e.get("encrypted") for e in edges):
-                add_finding(rule, "design", "design")
-
-        elif check == "hardening_baseline":
-            # Informational — check if server nodes have hardening label
-            for n in nodes:
-                if ntypes.get(n["id"]) == "asset-server":
-                    cfg = n.get("config_json", n.get("config", {}))
-                    if isinstance(cfg, str):
-                        try:
-                            cfg = json.loads(cfg)
-                        except (json.JSONDecodeError, TypeError):
-                            cfg = {}
-                    if not cfg.get("hardening_baseline"):
-                        add_finding(rule, labels.get(n["id"], n["id"]), "node")
-
-        # ── VDI Security Checks ────────────────────────────────────────
-        elif check == "vdi_session_policy":
-            # All VDI session hosts must have a session policy control connected
-            vdi_hosts = [n for n in nodes if ntypes.get(n["id"]) == "asset-vdi-host"]
-            if vdi_hosts:
-                for host in vdi_hosts:
-                    neighbors = adj.get(host["id"], set())
-                    has_policy = any(ntypes.get(nb) == "ctrl-session-policy" for nb in neighbors)
-                    if not has_policy:
-                        add_finding(rule, labels.get(host["id"], host["id"]), "node")
-
-        elif check == "vdi_gateway_required":
-            # External users must connect through a VDI gateway — no direct internet to session hosts
-            vdi_hosts = [n for n in nodes if ntypes.get(n["id"]) == "asset-vdi-host"]
-            if vdi_hosts:
-                inet_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "boundary-internet"}
-                gw_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "ctrl-vdi-gateway"}
-                for host in vdi_hosts:
-                    neighbors = adj.get(host["id"], set())
-                    directly_exposed = bool(neighbors & inet_ids)
-                    has_gateway = bool(neighbors & gw_ids)
-                    if directly_exposed and not has_gateway:
-                        add_finding(rule, labels.get(host["id"], host["id"]), "node")
-                # Also flag if there are VDI hosts but no gateway at all in design
-                if not gw_ids:
-                    add_finding(rule, "design", "design")
-
-        elif check == "vdi_boundary_isolation":
-            # VDI session hosts must reside within a dedicated VDI session zone boundary
-            vdi_hosts = [n for n in nodes if ntypes.get(n["id"]) == "asset-vdi-host"]
-            if vdi_hosts:
-                vdi_boundaries = [b for b in boundaries if b.get("type") == "boundary-vdi-session"]
-                if not vdi_boundaries:
-                    add_finding(rule, "design", "design")
-                else:
-                    # Check each VDI host is contained in a VDI session boundary
-                    vdi_contained = set()
-                    for b in vdi_boundaries:
-                        for cid in b.get("contained_assets", []):
-                            vdi_contained.add(cid)
-                    for host in vdi_hosts:
-                        if host["id"] not in vdi_contained:
-                            add_finding(rule, labels.get(host["id"], host["id"]), "node")
-
-        elif check == "vdi_profile_encrypted":
-            # Profile stores must have KMS/HSM encryption control connected
-            profile_stores = [n for n in nodes if ntypes.get(n["id"]) == "asset-profile-store"]
-            if profile_stores:
-                for ps in profile_stores:
-                    neighbors = adj.get(ps["id"], set())
-                    has_kms = any(ntypes.get(nb) in ("ctrl-kms", "ctrl-encryption") for nb in neighbors)
-                    if not has_kms:
-                        add_finding(rule, labels.get(ps["id"], ps["id"]), "node")
-
-        elif check == "vdi_endpoint_authenticated":
-            # Thin/zero clients must have IdP/MFA control connected
-            thin_clients = [n for n in nodes if ntypes.get(n["id"]) == "asset-thin-client"]
-            if thin_clients:
-                for tc in thin_clients:
-                    neighbors = adj.get(tc["id"], set())
-                    has_idp = any(ntypes.get(nb) == "ctrl-idp" for nb in neighbors)
-                    if not has_idp:
-                        add_finding(rule, labels.get(tc["id"], tc["id"]), "node")
-
-        elif check == "vdi_image_integrity":
-            # VDI session hosts should have image hardening control
-            vdi_hosts = [n for n in nodes if ntypes.get(n["id"]) == "asset-vdi-host"]
-            if vdi_hosts:
-                hardening_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "ctrl-image-hardening"}
-                if not hardening_ids:
-                    # No image hardening control in design at all
-                    add_finding(rule, "design", "design")
-                else:
-                    for host in vdi_hosts:
-                        neighbors = adj.get(host["id"], set())
-                        has_hardening = bool(neighbors & hardening_ids)
-                        if not has_hardening:
-                            add_finding(rule, labels.get(host["id"], host["id"]), "node")
-
-    # Compute scores
-    total_rules = len(rules)
-    passed = total_rules - len(findings)
+def _sec_compute_scores(findings, rules):
+    severity_weights = {"CAT1": 10, "CAT2": 5, "CAT3": 2}
     scores = {}
     for cat in {r["category"] for r in rules}:
         cat_rules = [r for r in rules if r["category"] == cat]
         cat_findings = [f for f in findings if f["category"] == cat]
-        scores[cat] = {
-            "total": len(cat_rules),
-            "passed": len(cat_rules) - len(cat_findings),
-            "failed": len(cat_findings),
-        }
-
-    # Risk score: 100 - (weighted findings penalty)
-    severity_weights = {"CAT1": 10, "CAT2": 5, "CAT3": 2}
+        scores[cat] = {"total": len(cat_rules), "passed": len(cat_rules) - len(cat_findings), "failed": len(cat_findings)}
     penalty = sum(severity_weights.get(f["severity"], 2) for f in findings)
-    risk_score = max(0.0, min(100.0, 100.0 - penalty))
+    return scores, max(0.0, min(100.0, 100.0 - penalty))
 
+
+# ── Security Assessment ─────────────────────────────────────────────────────
+
+
+def run_security_assessment(design_id: str, graph_data: dict, rules: list = None) -> dict:
+    """Evaluate security assessment rules against a design."""
+    if rules is None:
+        rules = SECURITY_ASSESSMENT_RULES
+    ctx = _sec_build_ctx(graph_data)
+    findings = []
+    for rule in rules:
+        check = rule["check"]
+        result = _sec_run_flow_checks(check, rule, ctx)
+        if result is None:
+            result = _sec_run_vdi_checks(check, rule, ctx)
+        findings.extend(result or [])
+    scores, risk_score = _sec_compute_scores(findings, rules)
     return {
-        "design_id": design_id,
-        "findings": findings,
-        "total_rules": total_rules,
-        "passed": passed,
-        "failed": len(findings),
-        "scores": scores,
-        "risk_score": round(risk_score, 1),
+        "design_id": design_id, "findings": findings,
+        "total_rules": len(rules), "passed": len(rules) - len(findings), "failed": len(findings),
+        "scores": scores, "risk_score": round(risk_score, 1),
         "posture_grade": compute_posture_grade(risk_score),
         "assessed_at": datetime.now(timezone.utc).isoformat(),
-        "_rules": rules,  # Pass rules to remediation engine for check name lookup
+        "_rules": rules,
     }
 
 

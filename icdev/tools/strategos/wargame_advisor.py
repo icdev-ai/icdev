@@ -13,13 +13,13 @@ LLM guard: wraps the council generation with has_any_llm() check.
 Returns a mock assessment when no LLM is available.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.wargame_advisor")
+logger = get_logger("icdev.strategos.wargame_advisor")
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────

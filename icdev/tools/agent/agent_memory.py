@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Agent Memory — scoped knowledge storage per agent and project.
 
@@ -25,7 +27,7 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-logger = logging.getLogger("icdev.agent_memory")
+logger = get_logger("icdev.agent_memory")
 
 # Valid memory types matching the DB CHECK constraint
 VALID_MEMORY_TYPES = (

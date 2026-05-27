@@ -13,6 +13,7 @@ Always exits 0 — empty output is a valid artifact.
 Max 500 signals per run.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
@@ -31,7 +32,7 @@ _USER_AGENT = "ICDEV-Strategos-GitLab-Collector/1.0"
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 
 

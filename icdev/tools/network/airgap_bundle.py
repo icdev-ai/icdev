@@ -19,11 +19,11 @@ so the bundle shows up as an authorized supply-chain artifact.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
 import json
-import logging
 import shutil
 import subprocess
 import sys
@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.network.airgap_bundle")
+logger = get_logger("icdev.network.airgap_bundle")
 
 _CHUNK = 1024 * 1024  # 1 MB
 

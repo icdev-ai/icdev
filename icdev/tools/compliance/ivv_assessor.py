@@ -1499,6 +1499,289 @@ def _map_priority_to_severity(priority):
 
 
 # -----------------------------------------------------------------
+# run_ivv_assessment helpers
+# -----------------------------------------------------------------
+
+
+def _ivv_resolve_project_dir(project, project_dir):
+    if project_dir and Path(project_dir).is_dir():
+        return project_dir, True
+    d = project.get("directory_path", "")
+    if d and Path(d).is_dir():
+        return d, True
+    return project_dir, False
+
+
+def _ivv_run_auto_check(req_id, project_dir, automation_level):
+    """Run an automated or semi-automated check. Returns (ivv_status, evidence, details, notes)."""
+    if req_id in AUTO_CHECKS:
+        try:
+            r = AUTO_CHECKS[req_id](project_dir)
+            notes = ("Semi-automated check completed. Manual review required to verify full compliance."
+                     if automation_level == "semi" else "")
+            return _map_check_status(r["status"]), r["evidence"], r.get("details", ""), notes
+        except Exception as e:
+            msg = "Semi-automated check failed" if automation_level == "semi" else "Auto-check"
+            return "not_assessed", f"{msg} error: {e}", "", f"{msg} failed; manual review required."
+    if automation_level == "semi":
+        return "not_assessed", "Semi-automated: no automated component implemented.", "", ""
+    return "not_assessed", "No automated check implemented for this requirement.", "", "Manual review required."
+
+
+def _ivv_assess_req(req, project_dir, can_auto_check):
+    """Determine ivv_status/evidence/details/notes for a single requirement."""
+    level = req.get("automation_level", "manual")
+    evidence_hint = req.get("evidence_required", "See requirement description.")
+    if level in ("auto", "semi") and can_auto_check:
+        return _ivv_run_auto_check(req["id"], project_dir, level)
+    if level in ("auto", "semi") and not can_auto_check:
+        prefix = "Semi-automated check" if level == "semi" else "No project directory"
+        return "not_assessed", f"{prefix} requires project directory.", "", \
+            f"Manual review required. Evidence needed: {evidence_hint}"
+    return "not_assessed", "Manual assessment required.", "", \
+        f"This requirement must be verified manually. Evidence needed: {evidence_hint}"
+
+
+def _ivv_upsert_assessment(conn, project_id, req, now, ivv_status, evidence, details, notes):
+    automation_level = req.get("automation_level", "manual")
+    req_id = req["id"]
+    try:
+        conn.execute(
+            """INSERT OR REPLACE INTO ivv_assessments
+               (project_id, assessment_date, assessor, process_area,
+                verification_type, requirement_id, status,
+                evidence_description, evidence_path,
+                automation_result, notes, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (project_id, now.isoformat(), "icdev-ivv-engine", req["process_area"],
+             req.get("verification_type", "verification"), req_id, ivv_status, evidence,
+             details or None,
+             json.dumps({"automation_level": automation_level,
+                         "check_function": (AUTO_CHECKS[req_id].__name__ if req_id in AUTO_CHECKS else None)}),
+             notes or None, now.isoformat()),
+        )
+    except Exception as e:
+        print(f"Warning: Could not upsert assessment for {req_id}: {e}", file=sys.stderr)
+
+
+def _ivv_gen_finding(project_id, req, now, ivv_status, evidence):
+    if ivv_status != "fail":
+        return None
+    finding_id = f"IVV-F-{project_id[:8]}-{req['id']}-{now.strftime('%Y%m%d')}"
+    return {
+        "finding_id": finding_id,
+        "severity": _map_priority_to_severity(req.get("priority", "medium")),
+        "process_area": req["process_area"],
+        "title": f"IV&V Finding: {req['title']}",
+        "description": f"Requirement {req['id']} ({req['title']}) failed IV&V assessment. {evidence}",
+        "recommendation": f"Address the following: {req.get('evidence_required', req['description'])}",
+    }
+
+
+def _ivv_persist_finding(conn, project_id, finding):
+    try:
+        conn.execute(
+            """INSERT OR IGNORE INTO ivv_findings
+               (project_id, finding_id, severity, process_area,
+                title, description, recommendation, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (project_id, finding["finding_id"], finding["severity"], finding["process_area"],
+             finding["title"], finding["description"], finding["recommendation"], "open"),
+        )
+    except Exception as e:
+        print(f"Warning: Could not insert finding {finding['finding_id']}: {e}", file=sys.stderr)
+
+
+def _ivv_build_summary(results):
+    blank = lambda: {"total": 0, "pass": 0, "partial": 0, "fail": 0, "not_assessed": 0, "not_applicable": 0, "deferred": 0}  # noqa: E731
+    summary = {area: blank() for area in PROCESS_AREAS}
+    for r in results:
+        area = r["process_area"]
+        if area not in summary:
+            summary[area] = blank()
+        summary[area]["total"] += 1
+        st = r["status"]
+        if st in summary[area]:
+            summary[area][st] += 1
+    return summary
+
+
+def _ivv_calculate_scores(summary):
+    area_scores = {}
+    for area in PROCESS_AREAS:
+        s = summary.get(area, {})
+        assessable = s.get("total", 0) - s.get("not_applicable", 0) - s.get("deferred", 0)
+        score = 100.0 * (s.get("pass", 0) + s.get("partial", 0) * 0.5) / assessable if assessable > 0 else 0.0
+        area_scores[PROCESS_AREA_CODES.get(area, area[:4].upper())] = round(score, 1)
+    v_scores = [area_scores[c] for c in VERIFICATION_AREAS if c in area_scores]
+    d_scores = [area_scores[c] for c in VALIDATION_AREAS if c in area_scores]
+    v_score = round(sum(v_scores) / len(v_scores), 1) if v_scores else 0.0
+    d_score = round(sum(d_scores) / len(d_scores), 1) if d_scores else 0.0
+    return area_scores, v_score, d_score, round(0.6 * v_score + 0.4 * d_score, 1)
+
+
+def _ivv_evaluate_gate(findings, gate):
+    critical = [f for f in findings if f["severity"] == "critical"]
+    passed = not critical
+    return {
+        "evaluated": gate,
+        "passed": passed,
+        "critical_findings_count": len(critical),
+        "critical_findings": [f"{f['finding_id']}: {f['title']}" for f in critical],
+        "reason": ("PASS: 0 critical IV&V findings" if passed
+                   else f"FAIL: {len(critical)} critical IV&V finding(s): {', '.join(f['finding_id'] for f in critical)}"),
+    }
+
+
+def _ivv_cert_status(gate_passed, overall_score):
+    if gate_passed and overall_score >= 80.0:
+        return "submitted"
+    if not gate_passed:
+        return "denied"
+    return "in_progress"
+
+
+def _ivv_persist_certification(conn, project_id, now, cert_status, v_score, d_score, overall_score, findings, critical_count):
+    try:
+        conn.execute(
+            """INSERT OR REPLACE INTO ivv_certifications
+               (project_id, certification_type, status,
+                verification_score, validation_score, overall_score,
+                ivv_authority, open_findings_count, critical_findings_count, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (project_id, "IV&V", cert_status, v_score, d_score, overall_score,
+             "icdev-ivv-engine", len(findings), critical_count, now.isoformat()),
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"Warning: Could not update ivv_certifications: {e}", file=sys.stderr)
+
+
+def _ivv_build_summary_table(summary, area_scores):
+    grand = {"total": 0, "pass": 0, "partial": 0, "fail": 0, "not_assessed": 0, "not_applicable": 0, "deferred": 0}
+    rows = ["| Process Area | Total | Pass | Partial | Fail | Not Assessed | N/A | Deferred | Score |",
+            "|--------------|-------|------|---------|------|--------------|-----|----------|-------|"]
+    for area in PROCESS_AREAS:
+        s = summary.get(area, {})
+        if not s.get("total", 0):
+            continue
+        code = PROCESS_AREA_CODES.get(area, "")
+        score = area_scores.get(code, 0.0)
+        rows.append(f"| {area} | {s['total']} | {s['pass']} | {s['partial']} | {s['fail']} | "
+                    f"{s['not_assessed']} | {s['not_applicable']} | {s['deferred']} | {score:.1f}% |")
+        for k in grand:
+            grand[k] += s.get(k, 0)
+    rows.append(f"| **Total** | **{grand['total']}** | **{grand['pass']}** | **{grand['partial']}** | "
+                f"**{grand['fail']}** | **{grand['not_assessed']}** | **{grand['not_applicable']}** | "
+                f"**{grand['deferred']}** | |")
+    return rows, grand
+
+
+def _ivv_build_report(project, project_id, process_area, now, metadata, results, findings,
+                      summary, area_scores, v_score, d_score, overall_score,
+                      gate, gate_result, cert_status, doc_header, doc_footer):
+    critical_count = gate_result["critical_findings_count"]
+    open_count = len(findings)
+    lines = [doc_header, "", "# IV&V Assessment Report -- IEEE 1012", "",
+             f"**Project:** {project.get('name', project_id)} ({project_id})",
+             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
+             "**Assessor:** ICDEV™ IV&V Engine (automated)",
+             f"**Process Area Scope:** {process_area}", "**IEEE 1012 Version:** IEEE 1012-2016",
+             f"**Source Standards:** {metadata.get('source', 'IEEE 1012-2016, DoDI 5000.87, DoDI 8510.01')}",
+             "**Classification:** CUI // SP-CTI", "", "---", "", "## Executive Summary", ""]
+    table_rows, grand = _ivv_build_summary_table(summary, area_scores)
+    lines.extend(table_rows)
+    lines.extend(["", "## IV&V Scores", "", "| Metric | Score |", "|--------|-------|",
+                  f"| Verification Score | {v_score:.1f}% |", f"| Validation Score | {d_score:.1f}% |",
+                  f"| **Overall IV&V Score** | **{overall_score:.1f}%** |", "",
+                  "*Scoring: Overall = 0.6 x Verification + 0.4 x Validation. Per-area = 100 x (pass + partial x 0.5) / assessable.*",
+                  "", "### Score Breakdown by Area", "", "| Area Code | Score |", "|-----------|-------|"])
+    for area in PROCESS_AREAS:
+        code = PROCESS_AREA_CODES.get(area, "")
+        if code in area_scores:
+            cat = "Verification" if code in VERIFICATION_AREAS else "Validation"
+            lines.append(f"| {code} ({area}) | {area_scores[code]:.1f}% [{cat}] |")
+    lines.append("")
+    if gate:
+        gate_label = "PASS" if gate_result["passed"] else "**FAIL**"
+        lines.extend(["## IV&V Gate Evaluation", "", f"**Gate Result:** {gate_label}",
+                      "**Criteria:** 0 critical IV&V findings",
+                      f"**Critical Findings:** {gate_result['critical_findings_count']}", ""])
+        if gate_result["critical_findings"]:
+            lines.append("**Critical Findings:**")
+            lines.extend(f"- {cf}" for cf in gate_result["critical_findings"])
+            lines.append("")
+    lines.extend(["## IV&V Certification Status", "",
+                  f"**Status:** {cert_status.replace('_', ' ').title()}",
+                  f"**Open Findings:** {open_count}", f"**Critical Findings:** {critical_count}", ""])
+    if findings:
+        lines.extend(["---", "", "## IV&V Findings", ""])
+        for f in findings:
+            lines.extend([f"### {f['finding_id']}", "", f"**Severity:** {f['severity'].upper()}  ",
+                          f"**Process Area:** {f['process_area']}  ", f"**Title:** {f['title']}", "",
+                          f"**Description:** {f['description']}", "",
+                          f"**Recommendation:** {f['recommendation']}", "", "---", ""])
+    lines.extend(["---", "", "## Detailed Assessment Results", ""])
+    for area in PROCESS_AREAS:
+        area_results = [r for r in results if r["process_area"] == area]
+        if not area_results:
+            continue
+        code = PROCESS_AREA_CODES.get(area, "")
+        lines.extend([f"### {area} ({code}) -- {area_scores.get(code, 0.0):.1f}%", ""])
+        for r in area_results:
+            nist_str = ", ".join(r["nist_controls"]) if r["nist_controls"] else "N/A"
+            lines.extend([f"#### {r['requirement_id']}: {r['title']}", "",
+                          f"**Type:** {r['verification_type'].title()}  ",
+                          f"**Priority:** {r['priority'].upper()}  ",
+                          f"**Status:** {r['status'].replace('_', ' ').title()}  ",
+                          f"**Automation Level:** {r['automation_level']}  ",
+                          f"**NIST Controls:** {nist_str}", "", f"**Evidence:** {r['evidence']}", ""])
+            if r["details"]:
+                lines.extend([f"**Details:** {r['details']}", ""])
+            if r["notes"]:
+                lines.extend([f"**Notes:** {r['notes']}", ""])
+            lines.extend(["---", ""])
+    lines.extend([doc_footer, ""])
+    return "\n".join(lines), grand
+
+
+def _ivv_write_report(content, project, project_id, process_area, output_path, now):
+    if output_path:
+        out_dir = Path(output_path)
+    else:
+        dir_path = project.get("directory_path", "")
+        out_dir = Path(dir_path) / "compliance" if dir_path else BASE_DIR / ".tmp" / "compliance" / project_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    area_suffix = process_area.lower().replace(" ", "_").replace("/", "_") if process_area != "all" else "all"
+    out_file = out_dir / f"ivv_1012_{project_id}_{area_suffix}_{now.strftime('%Y%m%d_%H%M%S')}.md"
+    with open(out_file, "w", encoding="utf-8") as fh:
+        fh.write(content)
+    return out_file
+
+
+def _ivv_print_console(out_file, process_area, results, findings, summary, area_scores,
+                       v_score, d_score, overall_score, cert_status, gate, gate_result):
+    print("IV&V assessment completed:")
+    print(f"  File: {out_file}")
+    print(f"  Scope: {process_area}")
+    print(f"  Requirements assessed: {len(results)}")
+    print(f"  Findings generated: {len(findings)}")
+    for area in PROCESS_AREAS:
+        s = summary.get(area, {})
+        if not s.get("total", 0):
+            continue
+        code = PROCESS_AREA_CODES.get(area, "")
+        print(f"  {area} ({code}): PASS={s['pass']} PARTIAL={s['partial']} FAIL={s['fail']} "
+              f"NOT_ASSESSED={s['not_assessed']} Score={area_scores.get(code, 0.0):.1f}%")
+    print(f"\n  Verification Score: {v_score:.1f}%")
+    print(f"  Validation Score:   {d_score:.1f}%")
+    print(f"  Overall IV&V Score: {overall_score:.1f}%")
+    print(f"  Certification:      {cert_status}")
+    if gate:
+        print(f"\n  Gate: {gate_result['reason']}")
+
+
+# -----------------------------------------------------------------
 # Core assessment function
 # -----------------------------------------------------------------
 
@@ -1511,614 +1794,64 @@ def run_ivv_assessment(
     output_path=None,
     db_path=None,
 ):
-    """Run IV&V assessment per IEEE 1012 and DoD standards.
-
-    Args:
-        project_id: The project identifier.
-        process_area: Filter to a specific process area or "all".
-        project_dir: Project directory for automated file-based checks.
-        gate: If True, evaluate the IV&V gate (0 critical findings = pass).
-        output_path: Override output directory for the assessment report.
-        db_path: Override database path.
-
-    Returns:
-        Dict with assessment results, summary, scores, gate result,
-        and output file path.
-    """
+    """Run IV&V assessment per IEEE 1012 and DoD standards."""
     conn = _get_connection(db_path)
     try:
         project = _get_project(conn, project_id)
-
-        # Load IV&V requirements catalog
         ivv_data = _load_ivv_requirements()
         metadata = ivv_data.get("metadata", {})
         requirements = ivv_data.get("requirements", [])
-
-        # Filter by process area if specified
         if process_area != "all":
             requirements = [r for r in requirements if r["process_area"] == process_area]
             if not requirements:
-                raise ValueError(
-                    f"No requirements found for process area '{process_area}'. Valid areas: {', '.join(PROCESS_AREAS)}."
-                )
-
-        # Resolve project directory for auto-checks
-        if project_dir and Path(project_dir).is_dir():
-            can_auto_check = True
-        elif project.get("directory_path") and Path(project["directory_path"]).is_dir():
-            project_dir = project["directory_path"]
-            can_auto_check = True
-        else:
-            can_auto_check = False
-
+                raise ValueError(f"No requirements found for process area '{process_area}'. Valid areas: {', '.join(PROCESS_AREAS)}.")
+        project_dir, can_auto_check = _ivv_resolve_project_dir(project, project_dir)
         now = datetime.now(timezone.utc)
-        results = []
-        findings = []
-
-        # -- Assess each requirement --
+        results, findings = [], []
         for req in requirements:
-            req_id = req["id"]
-            automation_level = req.get("automation_level", "manual")
-            check_status = "not_assessed"
-            ivv_status = "not_assessed"
-            evidence = ""
-            details = ""
-            notes = ""
-
-            if automation_level == "auto" and can_auto_check:
-                if req_id in AUTO_CHECKS:
-                    try:
-                        check_result = AUTO_CHECKS[req_id](project_dir)
-                        check_status = check_result["status"]
-                        ivv_status = _map_check_status(check_status)
-                        evidence = check_result["evidence"]
-                        details = check_result.get("details", "")
-                    except Exception as e:
-                        ivv_status = "not_assessed"
-                        evidence = f"Auto-check error: {e}"
-                        notes = "Auto-check failed; manual review required."
-                else:
-                    ivv_status = "not_assessed"
-                    evidence = "No automated check implemented for this requirement."
-                    notes = "Manual review required."
-
-            elif automation_level == "auto" and not can_auto_check:
-                ivv_status = "not_assessed"
-                evidence = "No project directory available for automated scanning."
-                notes = "Provide --project-dir to enable auto-checks."
-
-            elif automation_level == "semi" and can_auto_check:
-                if req_id in AUTO_CHECKS:
-                    try:
-                        check_result = AUTO_CHECKS[req_id](project_dir)
-                        check_status = check_result["status"]
-                        ivv_status = _map_check_status(check_status)
-                        evidence = check_result["evidence"]
-                        details = check_result.get("details", "")
-                        notes = "Semi-automated check completed. Manual review required to verify full compliance."
-                    except Exception as e:
-                        ivv_status = "not_assessed"
-                        evidence = f"Partial auto-check error: {e}"
-                        notes = "Semi-automated check failed; full manual review required."
-                else:
-                    ivv_status = "not_assessed"
-                    evidence = "Semi-automated: no automated component implemented."
-                    notes = (
-                        f"Manual review required. Evidence needed: "
-                        f"{req.get('evidence_required', 'See requirement description.')}"
-                    )
-
-            elif automation_level == "semi" and not can_auto_check:
-                ivv_status = "not_assessed"
-                evidence = "Semi-automated check requires project directory."
-                notes = (
-                    f"Manual review required. Evidence needed: "
-                    f"{req.get('evidence_required', 'See requirement description.')}"
-                )
-
-            else:
-                # manual automation_level
-                ivv_status = "not_assessed"
-                evidence = "Manual assessment required."
-                notes = (
-                    f"This requirement must be verified manually. "
-                    f"Evidence needed: "
-                    f"{req.get('evidence_required', 'See requirement description.')}"
-                )
-
+            ivv_status, evidence, details, notes = _ivv_assess_req(req, project_dir, can_auto_check)
             result_entry = {
-                "requirement_id": req_id,
-                "process_area": req["process_area"],
-                "process_area_code": req.get("process_area_code", ""),
-                "title": req["title"],
-                "description": req["description"],
-                "verification_type": req.get("verification_type", "verification"),
-                "priority": req.get("priority", "medium"),
-                "automation_level": automation_level,
-                "nist_controls": req.get("nist_controls", []),
-                "status": ivv_status,
-                "evidence": evidence,
-                "details": details,
-                "notes": notes,
+                "requirement_id": req["id"], "process_area": req["process_area"],
+                "process_area_code": req.get("process_area_code", ""), "title": req["title"],
+                "description": req["description"], "verification_type": req.get("verification_type", "verification"),
+                "priority": req.get("priority", "medium"), "automation_level": req.get("automation_level", "manual"),
+                "nist_controls": req.get("nist_controls", []), "status": ivv_status,
+                "evidence": evidence, "details": details, "notes": notes,
             }
             results.append(result_entry)
-
-            # -- Upsert into ivv_assessments table --
-            try:
-                conn.execute(
-                    """INSERT OR REPLACE INTO ivv_assessments
-                       (project_id, assessment_date, assessor, process_area,
-                        verification_type, requirement_id, status,
-                        evidence_description, evidence_path,
-                        automation_result, notes, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        project_id,
-                        now.isoformat(),
-                        "icdev-ivv-engine",
-                        req["process_area"],
-                        req.get("verification_type", "verification"),
-                        req_id,
-                        ivv_status,
-                        evidence,
-                        details if details else None,
-                        json.dumps(
-                            {
-                                "automation_level": automation_level,
-                                "check_function": (AUTO_CHECKS[req_id].__name__ if req_id in AUTO_CHECKS else None),
-                            }
-                        ),
-                        notes if notes else None,
-                        now.isoformat(),
-                    ),
-                )
-            except Exception as e:
-                print(
-                    f"Warning: Could not upsert assessment for {req_id}: {e}",
-                    file=sys.stderr,
-                )
-
-            # -- Generate findings for failed checks --
-            if ivv_status == "fail":
-                finding_id = f"IVV-F-{project_id[:8]}-{req_id}-{now.strftime('%Y%m%d')}"
-                severity = _map_priority_to_severity(req.get("priority", "medium"))
-                finding = {
-                    "finding_id": finding_id,
-                    "severity": severity,
-                    "process_area": req["process_area"],
-                    "title": f"IV&V Finding: {req['title']}",
-                    "description": (f"Requirement {req_id} ({req['title']}) failed IV&V assessment. {evidence}"),
-                    "recommendation": (f"Address the following: {req.get('evidence_required', req['description'])}"),
-                }
+            _ivv_upsert_assessment(conn, project_id, req, now, ivv_status, evidence, details, notes)
+            finding = _ivv_gen_finding(project_id, req, now, ivv_status, evidence)
+            if finding:
                 findings.append(finding)
-
-                try:
-                    conn.execute(
-                        """INSERT OR IGNORE INTO ivv_findings
-                           (project_id, finding_id, severity, process_area,
-                            title, description, recommendation, status)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (
-                            project_id,
-                            finding_id,
-                            severity,
-                            req["process_area"],
-                            finding["title"],
-                            finding["description"],
-                            finding["recommendation"],
-                            "open",
-                        ),
-                    )
-                except Exception as e:
-                    print(
-                        f"Warning: Could not insert finding {finding_id}: {e}",
-                        file=sys.stderr,
-                    )
-
+                _ivv_persist_finding(conn, project_id, finding)
         conn.commit()
-
-        # -- Build summary by process area (9 areas) --
-        summary = {}
-        for area in PROCESS_AREAS:
-            summary[area] = {
-                "total": 0,
-                "pass": 0,
-                "partial": 0,
-                "fail": 0,
-                "not_assessed": 0,
-                "not_applicable": 0,
-                "deferred": 0,
-            }
-
-        for r in results:
-            area = r["process_area"]
-            if area not in summary:
-                summary[area] = {
-                    "total": 0,
-                    "pass": 0,
-                    "partial": 0,
-                    "fail": 0,
-                    "not_assessed": 0,
-                    "not_applicable": 0,
-                    "deferred": 0,
-                }
-            summary[area]["total"] += 1
-            st = r["status"]
-            if st in summary[area]:
-                summary[area][st] += 1
-
-        # -- Calculate scores per area --
-        area_scores = {}
-        for area in PROCESS_AREAS:
-            s = summary.get(area, {})
-            total = s.get("total", 0)
-            na = s.get("not_applicable", 0)
-            deferred = s.get("deferred", 0)
-            assessable = total - na - deferred
-            if assessable > 0:
-                score = 100.0 * (s.get("pass", 0) + s.get("partial", 0) * 0.5) / assessable
-            else:
-                score = 0.0
-            code = PROCESS_AREA_CODES.get(area, area[:4].upper())
-            area_scores[code] = round(score, 1)
-
-        # Verification score: average of REQ, DES, CODE, RTM, SEC, BLD, PROC
-        verification_scores = [area_scores[code] for code in VERIFICATION_AREAS if code in area_scores]
-        verification_score = (
-            round(sum(verification_scores) / len(verification_scores), 1) if verification_scores else 0.0
-        )
-
-        # Validation score: average of TEST, INT
-        validation_scores = [area_scores[code] for code in VALIDATION_AREAS if code in area_scores]
-        validation_score = round(sum(validation_scores) / len(validation_scores), 1) if validation_scores else 0.0
-
-        # Overall score: 0.6 * verification + 0.4 * validation
-        overall_score = round(0.6 * verification_score + 0.4 * validation_score, 1)
-
-        # -- Gate evaluation: 0 critical findings = PASS --
-        critical_findings = [f for f in findings if f["severity"] == "critical"]
-        gate_passed = len(critical_findings) == 0
-        gate_result = {
-            "evaluated": gate,
-            "passed": gate_passed,
-            "critical_findings_count": len(critical_findings),
-            "critical_findings": [f"{f['finding_id']}: {f['title']}" for f in critical_findings],
-            "reason": (
-                "PASS: 0 critical IV&V findings"
-                if gate_passed
-                else (
-                    f"FAIL: {len(critical_findings)} critical IV&V finding(s): "
-                    f"{', '.join(f['finding_id'] for f in critical_findings)}"
-                )
-            ),
-        }
-
-        # -- Update ivv_certifications table --
-        open_count = len(findings)
-        critical_count = len(critical_findings)
-        cert_status = "in_progress"
-        if gate_passed and overall_score >= 80.0:
-            cert_status = "submitted"
-        elif not gate_passed:
-            cert_status = "denied"
-
-        try:
-            conn.execute(
-                """INSERT OR REPLACE INTO ivv_certifications
-                   (project_id, certification_type, status,
-                    verification_score, validation_score, overall_score,
-                    ivv_authority, open_findings_count,
-                    critical_findings_count, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    project_id,
-                    "IV&V",
-                    cert_status,
-                    verification_score,
-                    validation_score,
-                    overall_score,
-                    "icdev-ivv-engine",
-                    open_count,
-                    critical_count,
-                    now.isoformat(),
-                ),
-            )
-            conn.commit()
-        except Exception as e:
-            print(
-                f"Warning: Could not update ivv_certifications: {e}",
-                file=sys.stderr,
-            )
-
-        # -- Generate CUI-marked Markdown report --
+        summary = _ivv_build_summary(results)
+        area_scores, v_score, d_score, overall_score = _ivv_calculate_scores(summary)
+        gate_result = _ivv_evaluate_gate(findings, gate)
+        cert_status = _ivv_cert_status(gate_result["passed"], overall_score)
+        _ivv_persist_certification(conn, project_id, now, cert_status, v_score, d_score, overall_score,
+                                   findings, gate_result["critical_findings_count"])
         cui_config = _load_cui_config()
-        doc_header = cui_config.get("document_header", "CUI // SP-CTI").strip()
-        doc_footer = cui_config.get("document_footer", "CUI // SP-CTI").strip()
-
-        lines = [
-            doc_header,
-            "",
-            "# IV&V Assessment Report -- IEEE 1012",
-            "",
-            f"**Project:** {project.get('name', project_id)} ({project_id})",
-            f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            "**Assessor:** ICDEV™ IV&V Engine (automated)",
-            f"**Process Area Scope:** {process_area}",
-            "**IEEE 1012 Version:** IEEE 1012-2016",
-            (f"**Source Standards:** {metadata.get('source', 'IEEE 1012-2016, DoDI 5000.87, DoDI 8510.01')}"),
-            "**Classification:** CUI // SP-CTI",
-            "",
-            "---",
-            "",
-            "## Executive Summary",
-            "",
-        ]
-
-        # Summary table
-        lines.append("| Process Area | Total | Pass | Partial | Fail | Not Assessed | N/A | Deferred | Score |")
-        lines.append("|--------------|-------|------|---------|------|--------------|-----|----------|-------|")
-
-        grand_total = {
-            "total": 0,
-            "pass": 0,
-            "partial": 0,
-            "fail": 0,
-            "not_assessed": 0,
-            "not_applicable": 0,
-            "deferred": 0,
-        }
-
-        for area in PROCESS_AREAS:
-            s = summary.get(area, {})
-            if s.get("total", 0) == 0:
-                continue
-            code = PROCESS_AREA_CODES.get(area, "")
-            score = area_scores.get(code, 0.0)
-            lines.append(
-                f"| {area} | {s['total']} | {s['pass']} | "
-                f"{s['partial']} | {s['fail']} | "
-                f"{s['not_assessed']} | {s['not_applicable']} | "
-                f"{s['deferred']} | {score:.1f}% |"
-            )
-            for key in grand_total:
-                grand_total[key] += s.get(key, 0)
-
-        lines.append(
-            f"| **Total** | **{grand_total['total']}** | "
-            f"**{grand_total['pass']}** | "
-            f"**{grand_total['partial']}** | "
-            f"**{grand_total['fail']}** | "
-            f"**{grand_total['not_assessed']}** | "
-            f"**{grand_total['not_applicable']}** | "
-            f"**{grand_total['deferred']}** | |"
+        content, grand = _ivv_build_report(
+            project, project_id, process_area, now, metadata, results, findings,
+            summary, area_scores, v_score, d_score, overall_score,
+            gate, gate_result, cert_status,
+            cui_config.get("document_header", "CUI // SP-CTI").strip(),
+            cui_config.get("document_footer", "CUI // SP-CTI").strip(),
         )
-        lines.append("")
-
-        # Scores section
-        lines.extend(
-            [
-                "## IV&V Scores",
-                "",
-                "| Metric | Score |",
-                "|--------|-------|",
-                f"| Verification Score | {verification_score:.1f}% |",
-                f"| Validation Score | {validation_score:.1f}% |",
-                f"| **Overall IV&V Score** | **{overall_score:.1f}%** |",
-                "",
-                (
-                    "*Scoring: Overall = 0.6 x Verification + 0.4 x Validation. "
-                    "Per-area = 100 x (pass + partial x 0.5) / assessable.*"
-                ),
-                "",
-            ]
-        )
-
-        # Area score breakdown
-        lines.extend(
-            [
-                "### Score Breakdown by Area",
-                "",
-                "| Area Code | Score |",
-                "|-----------|-------|",
-            ]
-        )
-        for area in PROCESS_AREAS:
-            code = PROCESS_AREA_CODES.get(area, "")
-            if code in area_scores:
-                category = "Verification" if code in VERIFICATION_AREAS else "Validation"
-                lines.append(f"| {code} ({area}) | {area_scores[code]:.1f}% [{category}] |")
-        lines.append("")
-
-        # Gate evaluation section
-        if gate:
-            gate_label = "PASS" if gate_result["passed"] else "**FAIL**"
-            lines.extend(
-                [
-                    "## IV&V Gate Evaluation",
-                    "",
-                    f"**Gate Result:** {gate_label}",
-                    "**Criteria:** 0 critical IV&V findings",
-                    (f"**Critical Findings:** {gate_result['critical_findings_count']}"),
-                    "",
-                ]
-            )
-            if gate_result["critical_findings"]:
-                lines.append("**Critical Findings:**")
-                for cf in gate_result["critical_findings"]:
-                    lines.append(f"- {cf}")
-                lines.append("")
-
-        # Certification status
-        lines.extend(
-            [
-                "## IV&V Certification Status",
-                "",
-                f"**Status:** {cert_status.replace('_', ' ').title()}",
-                f"**Open Findings:** {open_count}",
-                f"**Critical Findings:** {critical_count}",
-                "",
-            ]
-        )
-
-        # Findings section
-        if findings:
-            lines.extend(
-                [
-                    "---",
-                    "",
-                    "## IV&V Findings",
-                    "",
-                ]
-            )
-            for f in findings:
-                lines.extend(
-                    [
-                        f"### {f['finding_id']}",
-                        "",
-                        f"**Severity:** {f['severity'].upper()}  ",
-                        f"**Process Area:** {f['process_area']}  ",
-                        f"**Title:** {f['title']}",
-                        "",
-                        f"**Description:** {f['description']}",
-                        "",
-                        f"**Recommendation:** {f['recommendation']}",
-                        "",
-                        "---",
-                        "",
-                    ]
-                )
-
-        lines.extend(["---", ""])
-
-        # -- Detailed findings per process area --
-        lines.append("## Detailed Assessment Results")
-        lines.append("")
-
-        for area in PROCESS_AREAS:
-            area_results = [r for r in results if r["process_area"] == area]
-            if not area_results:
-                continue
-
-            code = PROCESS_AREA_CODES.get(area, "")
-            score = area_scores.get(code, 0.0)
-            lines.append(f"### {area} ({code}) -- {score:.1f}%")
-            lines.append("")
-
-            for r in area_results:
-                status_display = r["status"].replace("_", " ").title()
-                priority_display = r["priority"].upper()
-                vtype_display = r["verification_type"].title()
-                nist_str = ", ".join(r["nist_controls"]) if r["nist_controls"] else "N/A"
-
-                lines.extend(
-                    [
-                        f"#### {r['requirement_id']}: {r['title']}",
-                        "",
-                        f"**Type:** {vtype_display}  ",
-                        f"**Priority:** {priority_display}  ",
-                        f"**Status:** {status_display}  ",
-                        f"**Automation Level:** {r['automation_level']}  ",
-                        f"**NIST Controls:** {nist_str}",
-                        "",
-                        f"**Evidence:** {r['evidence']}",
-                        "",
-                    ]
-                )
-                if r["details"]:
-                    lines.append(f"**Details:** {r['details']}")
-                    lines.append("")
-                if r["notes"]:
-                    lines.append(f"**Notes:** {r['notes']}")
-                    lines.append("")
-
-                lines.extend(["---", ""])
-
-        # Append CUI footer
-        lines.extend([doc_footer, ""])
-        content = "\n".join(lines)
-
-        # -- Write output file --
-        if output_path:
-            out_dir = Path(output_path)
-        else:
-            dir_path = project.get("directory_path", "")
-            if dir_path:
-                out_dir = Path(dir_path) / "compliance"
-            else:
-                out_dir = BASE_DIR / ".tmp" / "compliance" / project_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        area_suffix = process_area.lower().replace(" ", "_").replace("/", "_") if process_area != "all" else "all"
-        out_file = out_dir / f"ivv_1012_{project_id}_{area_suffix}_{now.strftime('%Y%m%d_%H%M%S')}.md"
-
-        with open(out_file, "w", encoding="utf-8") as f:
-            f.write(content)
-
-        # -- Log audit event --
-        _log_audit_event(
-            conn,
-            project_id,
-            f"IV&V assessment completed ({process_area})",
-            {
-                "process_area": process_area,
-                "requirements_assessed": len(results),
-                "findings_generated": len(findings),
-                "verification_score": verification_score,
-                "validation_score": validation_score,
-                "overall_score": overall_score,
-                "summary": {k: v for k, v in grand_total.items()},
-                "gate_result": gate_result,
-                "certification_status": cert_status,
-                "output_file": str(out_file),
-            },
-            out_file,
-        )
-
-        # -- Console output --
-        print("IV&V assessment completed:")
-        print(f"  File: {out_file}")
-        print(f"  Scope: {process_area}")
-        print(f"  Requirements assessed: {len(results)}")
-        print(f"  Findings generated: {len(findings)}")
-
-        for area in PROCESS_AREAS:
-            s = summary.get(area, {})
-            if s.get("total", 0) == 0:
-                continue
-            code = PROCESS_AREA_CODES.get(area, "")
-            score = area_scores.get(code, 0.0)
-            print(
-                f"  {area} ({code}): "
-                f"PASS={s['pass']} "
-                f"PARTIAL={s['partial']} "
-                f"FAIL={s['fail']} "
-                f"NOT_ASSESSED={s['not_assessed']} "
-                f"Score={score:.1f}%"
-            )
-
-        print(f"\n  Verification Score: {verification_score:.1f}%")
-        print(f"  Validation Score:   {validation_score:.1f}%")
-        print(f"  Overall IV&V Score: {overall_score:.1f}%")
-        print(f"  Certification:      {cert_status}")
-
-        if gate:
-            print(f"\n  Gate: {gate_result['reason']}")
-
-        return {
-            "output_file": str(out_file),
-            "results": results,
-            "findings": findings,
-            "summary": summary,
-            "scores": {
-                "area_scores": area_scores,
-                "verification_score": verification_score,
-                "validation_score": validation_score,
-                "overall_score": overall_score,
-            },
-            "gate_result": gate_result,
-            "certification_status": cert_status,
-        }
-
+        out_file = _ivv_write_report(content, project, project_id, process_area, output_path, now)
+        _log_audit_event(conn, project_id, f"IV&V assessment completed ({process_area})",
+                         {"process_area": process_area, "requirements_assessed": len(results),
+                          "findings_generated": len(findings), "verification_score": v_score,
+                          "validation_score": d_score, "overall_score": overall_score,
+                          "summary": grand, "gate_result": gate_result,
+                          "certification_status": cert_status, "output_file": str(out_file)}, out_file)
+        _ivv_print_console(out_file, process_area, results, findings, summary, area_scores,
+                           v_score, d_score, overall_score, cert_status, gate, gate_result)
+        return {"output_file": str(out_file), "results": results, "findings": findings, "summary": summary,
+                "scores": {"area_scores": area_scores, "verification_score": v_score,
+                           "validation_score": d_score, "overall_score": overall_score},
+                "gate_result": gate_result, "certification_status": cert_status}
     finally:
         conn.close()
 

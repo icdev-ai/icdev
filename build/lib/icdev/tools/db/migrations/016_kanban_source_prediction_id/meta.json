@@ -1,7 +1,0 @@
-{
-  "id": "016",
-  "name": "kanban_source_prediction_id",
-  "description": "Add source_prediction_id column to kanban_tasks. Back-fills pre-existing schema drift: Phase 2 (suggested_card_writer.py) added this column directly to Postgres but never landed a migration, so sqlite data/icdev.db drifted. Surfaced 2026-04-11 while verifying migration 015 (depends_on_task_id) works against sqlite — the dashboard API's LEFT JOIN referenced a column that existed on Postgres but not sqlite, causing a 500 on every /api/kanban/tasks call in sqlite mode.",
-  "created_at": "2026-04-11",
-  "phase": "Phase 68"
-}

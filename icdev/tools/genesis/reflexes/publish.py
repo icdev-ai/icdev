@@ -8,6 +8,7 @@ stages as draft (NEVER auto-publishes to production).
 YELLOW tier (reversible writes — staging/draft only).
 Scanner-tier LLM (qwen3.5) for drafting, WriteGuard deterministic for QA.
 """
+IMPLEMENTATION_STATUS = "full"
 
 import sys
 from datetime import datetime, timezone

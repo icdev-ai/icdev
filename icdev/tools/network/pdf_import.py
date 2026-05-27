@@ -22,13 +22,13 @@ Public API:
 - ``rasterize_pdf_pages(path, dpi=200) -> list[Path]``  (PNG paths)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import math
 import tempfile
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Public entry points ────────────────────────────────────────────────

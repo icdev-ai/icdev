@@ -13,11 +13,11 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import csv
 import json
-import logging
 import sys
 import uuid
 from collections import defaultdict
@@ -29,7 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.network.device_manager")
+logger = get_logger("icdev.network.device_manager")
 
 
 def _get_conn():
@@ -206,8 +206,10 @@ def bulk_import_devices(topology_id: str, file_path: str, conn=None) -> dict:
         if not node_id and label:
             node_id = label_to_node_id.get(label.lower(), "")
         if not node_id:
-            skipped += 1
-            continue
+            # Auto-generate node_id for new devices not yet in topology
+            node_id = "imp-" + str(uuid.uuid4())[:8]
+            if label:
+                label_to_node_id[label.lower()] = node_id  # prevent dup on re-import
 
         result = upsert_device(
             topology_id, node_id, conn=conn,

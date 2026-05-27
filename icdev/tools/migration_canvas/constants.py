@@ -360,3 +360,141 @@ SOP_TYPES = [
 ]
 
 CLASSIFICATION_LEVELS = ["PUBLIC", "CUI", "SECRET", "TOP SECRET"]
+
+
+# ── Server Migration Constants ──────────────────────────────────────────────
+
+SERVER_MIGRATION_TYPES = [
+    {"value": "p2p",              "label": "P2P — Physical to Physical",       "desc": "Bare-metal server refresh or datacenter consolidation"},
+    {"value": "p2v_onprem",       "label": "P2V — Physical to On-Prem VM",     "desc": "Physical server to VMware, Hyper-V, KVM, Nutanix, or Proxmox"},
+    {"value": "p2v_cloud",        "label": "P2V — Physical to Cloud",          "desc": "Physical server to cloud VM (AWS, Azure, GCP, OCI, IBM)"},
+    {"value": "v2v_cloud",        "label": "V2V — VM to Cloud",                "desc": "On-prem VM to cloud (lift-and-shift via OVA/replication)"},
+    {"value": "v2v_hypervisor",   "label": "V2V — Hypervisor to Hypervisor",   "desc": "Cross-hypervisor migration (e.g. VMware → KVM, Hyper-V → vSphere)"},
+    {"value": "v2v_cloud2cloud",  "label": "V2V — Cloud to Cloud",             "desc": "Cross-cloud migration (e.g. AWS → Azure, GCP → OCI)"},
+]
+
+SERVER_PLATFORMS = [
+    # Cloud
+    {"value": "aws",      "label": "AWS EC2",            "category": "cloud",   "govcloud": True},
+    {"value": "azure",    "label": "Azure VM",           "category": "cloud",   "govcloud": True},
+    {"value": "gcp",      "label": "GCP Compute Engine", "category": "cloud",   "govcloud": False},
+    {"value": "oci",      "label": "OCI Compute",        "category": "cloud",   "govcloud": True},
+    {"value": "ibm",      "label": "IBM Cloud VSI",      "category": "cloud",   "govcloud": True},
+    # On-prem hypervisors
+    {"value": "vmware",   "label": "VMware vSphere",     "category": "onprem",  "govcloud": False},
+    {"value": "hyperv",   "label": "Microsoft Hyper-V",  "category": "onprem",  "govcloud": False},
+    {"value": "kvm",      "label": "KVM / QEMU",         "category": "onprem",  "govcloud": False},
+    {"value": "nutanix",  "label": "Nutanix AHV",        "category": "onprem",  "govcloud": False},
+    {"value": "proxmox",  "label": "Proxmox VE",         "category": "onprem",  "govcloud": False},
+    # Physical
+    {"value": "physical", "label": "Physical Server",    "category": "physical","govcloud": False},
+]
+
+SERVER_COMPAT_CATEGORIES = [
+    {"value": "compute",   "label": "Compute",    "icon": "⚙"},
+    {"value": "storage",   "label": "Storage",    "icon": "💾"},
+    {"value": "network",   "label": "Network",    "icon": "🔌"},
+    {"value": "os",        "label": "OS / Kernel","icon": "🖥"},
+    {"value": "licensing", "label": "Licensing",  "icon": "📋"},
+    {"value": "security",  "label": "Security",   "icon": "🛡"},
+]
+
+CUTOVER_PHASES = [
+    {"value": "pre_migration",  "label": "Pre-Migration",  "badge_class": "badge-info"},
+    {"value": "parallel_run",   "label": "Parallel Run",   "badge_class": "badge-primary"},
+    {"value": "cutover",        "label": "Cutover",        "badge_class": "badge-warning"},
+    {"value": "post_migration", "label": "Post-Migration", "badge_class": "badge-success"},
+    {"value": "rollback",       "label": "Rollback",       "badge_class": "badge-danger"},
+]
+
+MIGRATION_TOOLS = {
+    "p2p":             ["Manual / Clonezilla", "Custom Script", "Acronis Migrate"],
+    "p2v_onprem":      ["VMware vCenter Converter", "StarWind V2V", "Virt-P2V / virt-v2v", "Disk2VHD (Hyper-V)"],
+    "p2v_cloud":       ["AWS Application Migration Service (MGN)", "Azure Migrate", "GCP Migrate for Compute", "OCI Cloud Migrations", "IBM Cloud Migration"],
+    "v2v_cloud":       ["AWS MGN", "Azure Site Recovery", "GCP Migrate", "CloudEndure", "OVA Export + Import"],
+    "v2v_hypervisor":  ["VMware vMotion", "StarWind V2V", "qemu-img convert", "Microsoft SCVMM"],
+    "v2v_cloud2cloud": ["AWS MGN", "Azure Site Recovery", "Zerto", "Velero (K8s)"],
+}
+
+
+# ── Compliance Frameworks ───────────────────────────────────────────────────
+
+COMPLIANCE_FRAMEWORKS = {
+    'fedramp': {'label': 'FedRAMP', 'applies_to_envs': ['AWS GovCloud', 'Azure Government', 'GCP Gov'], 'url': 'https://fedramp.gov'},
+    'disa_stig': {'label': 'DISA STIG', 'applies_to_ils': ['IL4', 'IL5', 'IL6']},
+    'nist_800_53': {'label': 'NIST 800-53', 'applies_to_ils': ['IL2', 'IL4', 'IL5', 'IL6']},
+    'cmmc2': {'label': 'CMMC 2.0', 'applies_to_envs': ['On-Prem', 'Hybrid']},
+}
+
+IL_LEVEL_REQUIREMENTS = {
+    'IL2': {'max_classification': 'Unclassified', 'commercial_ok': True},
+    'IL4': {'max_classification': 'CUI', 'commercial_ok': False, 'requires_govcloud': True},
+    'IL5': {'max_classification': 'CUI-High', 'commercial_ok': False, 'requires_govcloud': True, 'requires_disa_stig': True},
+    'IL6': {'max_classification': 'SECRET', 'commercial_ok': False, 'requires_sipr': True},
+}
+
+
+# ── Wave & Dependency Constants ─────────────────────────────────────────────
+
+WAVE_STATUS = {
+    'planned':     {'label': 'Planned',     'color': '#6c757d'},
+    'in_progress': {'label': 'In Progress', 'color': '#fd7e14'},
+    'complete':    {'label': 'Complete',    'color': '#28a745'},
+    'blocked':     {'label': 'Blocked',     'color': '#dc3545'},
+}
+
+DEPENDENCY_TYPES = {
+    'network':     {'label': 'Network',       'color': '#17a2b8', 'icon': '🌐'},
+    'application': {'label': 'Application',   'color': '#6f42c1', 'icon': '📦'},
+    'database':    {'label': 'Database',      'color': '#e83e8c', 'icon': '🗄'},
+    'auth':        {'label': 'Auth/Identity', 'color': '#fd7e14', 'icon': '🔑'},
+    'storage':     {'label': 'Storage',       'color': '#20c997', 'icon': '💾'},
+}
+
+# ── Ontology Mapping (migration -> ICDEV migration ontology) ────────────────
+MIGRATION_ONTOLOGY_MAP: dict[str, str] = {
+    # Sources
+    "src-legacy":       "https://icdev.dev/ontology/migration#Source.LegacyApplication",
+    "src-monolith":     "https://icdev.dev/ontology/migration#Source.Monolith",
+    "src-database":     "https://icdev.dev/ontology/migration#Source.LegacyDatabase",
+    "src-datacenter":   "https://icdev.dev/ontology/migration#Source.DataCenter",
+    "src-mainframe":    "https://icdev.dev/ontology/migration#Source.Mainframe",
+    "src-network":      "https://icdev.dev/ontology/migration#Source.LegacyNetwork",
+    "src-storage":      "https://icdev.dev/ontology/migration#Source.OnPremStorage",
+    "src-middleware":   "https://icdev.dev/ontology/migration#Source.Middleware",
+    # Targets
+    "tgt-govcloud":     "https://icdev.dev/ontology/migration#Target.GovCloud",
+    "tgt-cloud":        "https://icdev.dev/ontology/migration#Target.CommercialCloud",
+    "tgt-vm":           "https://icdev.dev/ontology/migration#Target.CloudVM",
+    "tgt-container":    "https://icdev.dev/ontology/migration#Target.Container",
+    "tgt-serverless":   "https://icdev.dev/ontology/migration#Target.Serverless",
+    "tgt-microservice": "https://icdev.dev/ontology/migration#Target.Microservice",
+    "tgt-managed-db":   "https://icdev.dev/ontology/migration#Target.ManagedDatabase",
+    "tgt-saas":         "https://icdev.dev/ontology/migration#Target.SaaS",
+    # Patterns
+    "pat-rehost":       "https://icdev.dev/ontology/migration#Pattern.Rehost",
+    "pat-replatform":   "https://icdev.dev/ontology/migration#Pattern.Replatform",
+    "pat-refactor":     "https://icdev.dev/ontology/migration#Pattern.Refactor",
+    "pat-rearchitect":  "https://icdev.dev/ontology/migration#Pattern.Rearchitect",
+    "pat-repurchase":   "https://icdev.dev/ontology/migration#Pattern.Repurchase",
+    "pat-retire":       "https://icdev.dev/ontology/migration#Pattern.Retire",
+    "pat-retain":       "https://icdev.dev/ontology/migration#Pattern.Retain",
+    "pat-strangler":    "https://icdev.dev/ontology/migration#Pattern.StranglerFig",
+    # Middleware
+    "mid-proxy":        "https://icdev.dev/ontology/migration#Middleware.APIGateway",
+    "mid-acl":          "https://icdev.dev/ontology/migration#Middleware.AntiCorruptionLayer",
+    "mid-etl":          "https://icdev.dev/ontology/migration#Middleware.ETLPipeline",
+    "mid-queue":        "https://icdev.dev/ontology/migration#Middleware.MessageQueue",
+    "mid-sync":         "https://icdev.dev/ontology/migration#Middleware.DataSync",
+    # Controls
+    "ctl-ato-gate":     "https://icdev.dev/ontology/migration#Control.ATOGate",
+    "ctl-compliance-bridge": "https://icdev.dev/ontology/migration#Control.ComplianceBridge",
+    "ctl-compliance-gate":   "https://icdev.dev/ontology/migration#Control.ComplianceGate",
+    "ctl-security-scan":     "https://icdev.dev/ontology/migration#Control.SecurityScan",
+    "ctl-test-gate":    "https://icdev.dev/ontology/migration#Control.TestGate",
+    "ctl-rollback":     "https://icdev.dev/ontology/migration#Control.RollbackPoint",
+    # Planning
+    "wave-group":       "https://icdev.dev/ontology/migration#Planning.MigrationWave",
+    "plan-milestone":   "https://icdev.dev/ontology/migration#Planning.Milestone",
+    "plan-dependency":  "https://icdev.dev/ontology/migration#Planning.Dependency",
+}

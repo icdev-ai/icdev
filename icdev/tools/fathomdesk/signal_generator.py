@@ -5,15 +5,15 @@ Loads args/signal_thresholds.yaml and filters candidate signals by
 min_confidence and min_score before passing them downstream.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import math
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _ARGS_PATH = Path(__file__).resolve().parents[2] / "args" / "signal_thresholds.yaml"
 

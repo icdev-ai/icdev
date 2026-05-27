@@ -28,6 +28,7 @@ Return shape (consumed by daemon.success_metric):
   }
 """
 from __future__ import annotations
+IMPLEMENTATION_STATUS = "full"
 
 import sys
 import time

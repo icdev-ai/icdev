@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -59,7 +61,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 CONFIG_PATH = BASE_DIR / "args" / "csp_monitor_config.yaml"
 REGISTRY_PATH = BASE_DIR / "context" / "cloud" / "csp_service_registry.json"
 
-logger = logging.getLogger("icdev.cloud.csp_monitor")
+logger = get_logger("icdev.cloud.csp_monitor")
 
 # ── GRACEFUL IMPORTS ────────────────────────────────────────────────────
 try:

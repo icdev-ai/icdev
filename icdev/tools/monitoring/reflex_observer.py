@@ -11,15 +11,15 @@ re-raised so the scheduler's existing error handler still fires.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _extract_artifact_count(result: Any) -> int:
@@ -75,6 +75,18 @@ def observe(
             obs_id, reflex_name, status, duration_ms, artifact_count,
         )
 
+        # Capture active OTel span identifiers for end-to-end traceability
+        _trace_id: str | None = None
+        _span_id: str | None = None
+        try:
+            from tools.observability import get_tracer  # noqa: PLC0415
+            _active = get_tracer().get_active_span()
+            if _active:
+                _trace_id = getattr(_active, "trace_id", None)
+                _span_id = getattr(_active, "span_id", None)
+        except Exception:
+            pass
+
         try:
             from tools.db.storage import get_connection
 
@@ -84,8 +96,9 @@ def observe(
                     """
                     INSERT INTO reflex_observations
                         (reflex_name, started_at, finished_at, duration_ms,
-                         status, artifact_count, error_msg, result_json)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                         status, artifact_count, error_msg, result_json,
+                         trace_id, span_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     [
                         reflex_name,
@@ -96,6 +109,8 @@ def observe(
                         artifact_count,
                         error_msg,
                         result_json,
+                        _trace_id,
+                        _span_id,
                     ],
                 )
                 conn.commit()

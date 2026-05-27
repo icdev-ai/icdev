@@ -51,6 +51,8 @@ Configuration (env vars or args/datahub_config.yaml)
 """
 
 from __future__ import annotations
+import re
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -69,7 +71,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 # ── Logging ───────────────────────────────────────────────────────────────────
-logger = logging.getLogger("icdev.ddc.datahub")
+logger = get_logger("icdev.ddc.datahub")
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _CONFIG_PATH = _ROOT / "args" / "datahub_config.yaml"
@@ -91,6 +93,10 @@ _PLATFORM_MAP: dict[str, str] = {
     "ent-timeseries": "ddc_timeseries",
     "ent-vector": "ddc_vector",
     "ent-file": "ddc_file",
+    # Data Mesh node types
+    "ent-data-product": "ddc_data_product",
+    "ent-input-port": "ddc_input_port",
+    "ent-output-port": "ddc_output_port",
 }
 
 # DDC column types that carry a classification tag
@@ -177,6 +183,14 @@ def _datajob_urn(flow_id: str, job_id: str) -> str:
 
 def _tag_urn(tag: str) -> str:
     return f"urn:li:tag:{tag}"
+
+
+def _domain_urn(slug: str) -> str:
+    return f"urn:li:domain:{slug}"
+
+
+def _data_product_urn(platform: str, name: str, env: str) -> str:
+    return _dataset_urn(platform, name, env)
 
 
 # ── DataHub REST client ───────────────────────────────────────────────────────
@@ -360,6 +374,20 @@ class DataHubClient:
         props = {"name": tag_name, "description": description}
         self.ingest_aspect(urn, "tagProperties", props)
 
+    def upsert_domain(self, slug: str, name: str, description: str,
+                      parent_urn: str | None = None) -> None:
+        """Push a DataHub domain entity (org-level grouping for data products)."""
+        urn = _domain_urn(slug)
+        props: dict = {"name": name, "description": description}
+        if parent_urn:
+            props["parentDomain"] = parent_urn
+        self.ingest_aspect(urn, "domainProperties", props)
+
+    def set_domain_membership(self, entity_urn: str, domain_slug: str) -> None:
+        """Attach an entity to a DataHub domain via domains aspect."""
+        aspect = {"domains": [_domain_urn(domain_slug)]}
+        self.ingest_aspect(entity_urn, "domains", aspect)
+
 
 def _entity_type_from_urn(urn: str) -> str:
     """Derive DataHub entityType from URN prefix."""
@@ -373,6 +401,8 @@ def _entity_type_from_urn(urn: str) -> str:
         return "dataPlatform"
     if urn.startswith("urn:li:tag:"):
         return "tag"
+    if urn.startswith("urn:li:domain:"):
+        return "domain"
     return "dataset"
 
 
@@ -526,6 +556,9 @@ class DDCDataHubSync:
             "DDC_ENCRYPTED": "Field is encrypted at rest",
             "DDC_PUBLIC": "Public data — no CUI markings",
             "DDC_FOUO": "For Official Use Only (FOUO)",
+            "DDC_DATA_PRODUCT": "ICDEV Data Mesh Data Product",
+            "DDC_DOMAIN": "ICDEV Data Mesh Domain",
+            "DDC_CONTRACT": "ICDEV Data Mesh Contract (ODCS)",
         }
         for tag_name, desc in tag_defs.items():
             if not self.dry_run:
@@ -644,6 +677,57 @@ class DDCDataHubSync:
                 else:
                     pushed += 1
 
+        # ── Data Mesh: push domain/data-product entities ─────────────────────
+        for node in nodes:
+            ntype = _node_type(node)
+            nid = node.get("id", "")
+            label = _node_label(node)
+            desc = _node_desc(node)
+            classif = _node_classification(node) or design.get("classification", "")
+
+            if ntype == "ent-domain":
+                slug = re.sub(r"[^a-z0-9_]", "_", label.lower()).strip("_") or "domain"
+                urn = _domain_urn(slug)
+                node_urn_map[nid] = urn
+                if not self.dry_run:
+                    try:
+                        self.client.upsert_domain(
+                            slug=slug, name=label, description=desc or f"DDC Domain: {label}"
+                        )
+                        pushed += 1
+                    except DataHubError as exc:
+                        errors.append(str(exc))
+                else:
+                    pushed += 1
+
+            elif ntype in ("ent-data-product", "ent-contract",
+                           "ent-input-port", "ent-output-port"):
+                platform = _PLATFORM_MAP.get(ntype, "ddc_data_product")
+                urn = _dataset_urn(platform, f"{design_name}.{label}", self.env)
+                node_urn_map[nid] = urn
+                self._ensure_platform(platform)
+                all_tags = list(set(
+                    self._classification_tags(classif)
+                    + (["DDC_DATA_PRODUCT"] if ntype == "ent-data-product" else [])
+                    + (["DDC_CONTRACT"] if ntype == "ent-contract" else [])
+                ))
+                custom_props = {
+                    "ddc_design_id": design_id, "ddc_node_id": nid,
+                    "ddc_node_type": ntype, "ddc_classification": classif,
+                }
+                if not self.dry_run:
+                    try:
+                        self.client.upsert_dataset(
+                            urn=urn, name=label, description=desc,
+                            platform=platform, schema_fields=[],
+                            tags=all_tags, custom_props=custom_props,
+                        )
+                        pushed += 1
+                    except DataHubError as exc:
+                        errors.append(str(exc))
+                else:
+                    pushed += 1
+
         # ── Lineage ───────────────────────────────────────────────────────────
         lineage_pushed = 0
         # Group lineage by target node
@@ -744,7 +828,7 @@ def _cli() -> None:
     args = parser.parse_args()
 
     if args.verbose:
-        logging.getLogger("icdev.ddc.datahub").setLevel(logging.DEBUG)
+        get_logger("icdev.ddc.datahub").setLevel(logging.DEBUG)
 
     syncer = DDCDataHubSync(dry_run=args.dry_run)
 

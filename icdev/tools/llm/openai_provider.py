@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """OpenAI-compatible LLM Provider.
 
@@ -12,7 +14,6 @@ Uses the openai Python SDK with configurable base_url.
 """
 
 import json
-import logging
 import time
 from typing import Any, Dict, Iterator
 
@@ -24,7 +25,7 @@ from tools.llm.provider import (
     tools_to_openai,
 )
 
-logger = logging.getLogger("icdev.llm.openai_compat")
+logger = get_logger("icdev.llm.openai_compat")
 
 try:
     import openai as openai_sdk
@@ -122,6 +123,14 @@ class OpenAICompatibleProvider(LLMProvider):
         if hasattr(completion, "usage") and completion.usage:
             resp.input_tokens = getattr(completion.usage, "prompt_tokens", 0)
             resp.output_tokens = getattr(completion.usage, "completion_tokens", 0)
+            # D-CACHE-OAI-1: OpenAI / OpenAI-compatible cache token parity.
+            # Extract cached_tokens from prompt_tokens_details (available on
+            # openai>=1.26 for GPT-4o+ models with prefix caching enabled).
+            # Maps to cache_read_input_tokens for parity with Anthropic tracking.
+            details = getattr(completion.usage, "prompt_tokens_details", None)
+            if details is not None:
+                cached = getattr(details, "cached_tokens", 0) or 0
+                resp.cache_read_input_tokens = cached
 
         choice = completion.choices[0] if completion.choices else None
         if choice:

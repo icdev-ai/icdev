@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [CUI // SP-CTI]
 """ICDEV™ Security Design Canvas — Threat model importers.
 
@@ -10,7 +12,6 @@ No external dependencies beyond defusedxml (with stdlib fallback).
 """
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -23,7 +24,7 @@ except ImportError:
 
     _USING_DEFUSEDXML = False
 
-logger = logging.getLogger("icdev.security_canvas.importers")
+logger = get_logger("icdev.security_canvas.importers")
 
 # ── Threat Dragon type → SDC type mapping ─────────────────────────────────────
 

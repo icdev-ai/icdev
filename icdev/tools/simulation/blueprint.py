@@ -19,19 +19,19 @@ Register in app.py:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, render_template, request
 
-logger = logging.getLogger("icdev.simulation")
+logger = get_logger("icdev.simulation")
 
 _SIM_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _SIM_DIR.parent.parent
 _TEMPLATE_DIR = _ICDEV_ROOT / "tools" / "dashboard" / "templates"
 
-_ALLOWED_CANVAS_TYPES = {"ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
+_ALLOWED_CANVAS_TYPES = {"ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc", "cam"}
 
 
 def _get_db():
@@ -57,15 +57,17 @@ def create_simulation_blueprint() -> Blueprint:
 
     @bp.route("/simulate/chat")
     def simulate_chat_page():
-        """TFW Simulation Chat — conversational Digital Program Twin for NDC/SDC/EDA/DDC."""
-        canvas_type = (
+        """Permanent redirect — /simulate/chat is now /chat (unified intent-routing hub)."""
+        from flask import redirect
+        canvas = (
             request.args.get("canvas_type")
             or request.args.get("canvas")
-            or "ndc"
+            or ""
         )
-        if canvas_type not in _ALLOWED_CANVAS_TYPES:
-            canvas_type = "ndc"
-        return render_template("simulate_chat.html", canvas_type=canvas_type)
+        target = "/chat"
+        if canvas and canvas in _ALLOWED_CANVAS_TYPES:
+            target = "/chat?canvas=" + canvas
+        return redirect(target, code=301)
 
     @bp.route("/api/simulate/session", methods=["POST"])
     def api_simulate_session():
@@ -76,6 +78,9 @@ def create_simulation_blueprint() -> Blueprint:
         if canvas_type not in _ALLOWED_CANVAS_TYPES:
             return jsonify({"error": f"Unknown canvas_type '{canvas_type}'"}), 400
         session_id = str(_uuid.uuid4())
+        # cam sessions don't require nc_simulation_sessions DB entry
+        if canvas_type == "cam":
+            return jsonify({"session_id": session_id, "canvas_type": canvas_type, "status": "active"})
         try:
             conn = _get_db()
             conn.execute(
@@ -94,6 +99,35 @@ def create_simulation_blueprint() -> Blueprint:
         data = request.get_json(silent=True) or {}
         content = (data.get("content") or "").strip()
         session_id = (data.get("session_id") or "").strip()
+
+        # Detect canvas type from session (cam sessions bypass nc_simulation_sessions)
+        _canvas_type_header = data.get("canvas_type", "")
+
+        # CAM canvas — full migration intelligence pipeline
+        if _canvas_type_header == "cam" or (session_id and session_id.startswith("cam-")):
+            try:
+                from tools.migration_canvas.migration_chat_advisor import (
+                    handle_coa, handle_deprecated, handle_refactor,
+                    handle_status, handle_components, handle_analyze, handle_free_text,
+                )
+                _c = content.lower()
+                if _c.startswith("/coa"):
+                    return jsonify(handle_coa(content[4:].strip(), session_id=session_id))
+                elif _c.startswith("/deprecated"):
+                    return jsonify(handle_deprecated(content[11:].strip()))
+                elif _c.startswith("/refactor"):
+                    return jsonify(handle_refactor(content[9:].strip(), session_id=session_id))
+                elif _c.startswith("/status"):
+                    return jsonify(handle_status(session_id=session_id))
+                elif _c.startswith("/components"):
+                    return jsonify(handle_components(session_id=session_id))
+                elif _c.startswith("/analyze"):
+                    return jsonify(handle_analyze(content[8:].strip()))
+                else:
+                    return jsonify(handle_free_text(content, session_id=session_id))
+            except Exception as _cam_exc:
+                logger.warning("CAM chat error: %s", _cam_exc)
+                return jsonify({"reply": f"[Migration Chat] Error: {_cam_exc}", "mode": "error"})
 
         # Delegate slash commands to TFWChatAgent first
         if content.startswith("/"):

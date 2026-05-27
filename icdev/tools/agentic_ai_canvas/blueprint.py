@@ -41,9 +41,9 @@ Routes:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -56,8 +56,19 @@ from tools.agentic_ai_canvas.solution_packs import (
     SOLUTION_PACK_RISKS, SOLUTION_PACK_ATLAS,
     recommend_pack,
 )
+try:
+    from tools.agentic_ai_canvas.cost_estimator import estimate_design_cost as _estimate_cost
+    from tools.agentic_ai_canvas.iac_generator import generate_deploy_bundle as _gen_iac
+except ImportError:
+    _estimate_cost = None
+    _gen_iac = None
 
-logger = logging.getLogger(__name__)
+try:
+    from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
+except Exception:
+    def _record_decision(**_kw): pass  # type: ignore[assignment]
+
+logger = get_logger(__name__)
 
 aadc_bp = Blueprint(
     "agentic_ai_canvas",
@@ -438,9 +449,15 @@ def run_assessment(design_id: str):
     finally:
         conn.close()
 
+    data = request.get_json(force=True, silent=True) or {}
+    use_cot = data.get("use_cot", False)
+    use_cod = data.get("use_cod", False)
+    chain_mode = "cot" if use_cot else "cod" if use_cod else ""
+
     meta = {"domain": d.get("domain", ""), "classification": d.get("classification", "CUI"),
-            "has_prior_assessment": True}
+            "has_prior_assessment": True, "chain_mode": chain_mode}
     result = assess_design(design_id, d["graph_json"], meta)
+    result["chain_mode"] = chain_mode
 
     conn = _conn()
     try:
@@ -460,6 +477,15 @@ def run_assessment(design_id: str):
 
     result["findings"] = json.loads(result["findings_json"])
     result["atlas"] = json.loads(result["atlas_threats"])
+    _record_decision(
+        canvas_type="aadc",
+        record_id=design_id,
+        decision_type="risk_score",
+        decision=f"Score {result.get('score',0)} — NIST RMF {result.get('nist_rmf_score',0)}, OWASP {result.get('owasp_score',0)}, OMB compliant={result.get('omb_compliant',False)}",
+        rationale=f"Autonomy level: {result.get('autonomy_max','?')}, safety_impacting={result.get('safety_impacting',False)}",
+        model_used=None,
+        confidence=result.get("score", 0) / 100.0 if result.get("score") else None,
+    )
     return jsonify(result)
 
 
@@ -479,6 +505,117 @@ def launch_design(design_id: str):
 
     result = workflow.launch_to_kanban(design_id, d["name"], d["graph_json"])
     return jsonify(result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/simulate-cot", methods=["POST"])
+def simulate_cot(design_id: str):
+    """Run Chain of Thought reasoning over the design and return the trace."""
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        d = dict(row)
+    finally:
+        conn.close()
+
+    data = request.get_json(force=True, silent=True) or {}
+    prompt = data.get("prompt") or (
+        f"Analyze this agentic AI design '{d.get('name', '')}' "
+        f"for risks, compliance gaps, and improvement opportunities. "
+        f"Domain: {d.get('domain', 'general')}. "
+        f"Classification: {d.get('classification', 'CUI')}."
+    )
+
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.provider import LLMRequest
+        orchestrator = ChainOrchestrator()
+        req = LLMRequest(
+            function="aadc_design_analysis",
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are an expert in agentic AI system design, NIST RMF, and OWASP LLM security.",
+        )
+        result = orchestrator.invoke_chain_of_thought("aadc_design_analysis", req)
+        _record_decision(
+            canvas_type="aadc",
+            record_id=design_id,
+            decision_type="chain_of_thought",
+            decision=result.content[:2000],
+            rationale=f"CoT trace_id={result.trace_id}, rounds={len(result.rounds)}",
+            model_used=result.models_used[-1] if result.models_used else None,
+            confidence=result.confidence,
+        )
+        return jsonify({
+            "design_id": design_id,
+            "chain_mode": result.chain_mode,
+            "trace_id": result.trace_id,
+            "content": result.content,
+            "rounds": result.rounds,
+            "models_used": result.models_used,
+            "total_cost_usd": result.total_cost_usd,
+            "total_duration_ms": result.total_duration_ms,
+            "stop_reason": result.stop_reason,
+            "confidence": result.confidence,
+        })
+    except Exception as exc:
+        logger.warning("AADC simulate-cot failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@aadc_bp.route("/api/designs/<design_id>/simulate-cod", methods=["POST"])
+def simulate_cod(design_id: str):
+    """Run Chain of Debate over the design and return the debate transcript."""
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        d = dict(row)
+    finally:
+        conn.close()
+
+    data = request.get_json(force=True, silent=True) or {}
+    prompt = data.get("prompt") or (
+        f"Debate the risks and benefits of deploying this agentic AI design: '{d.get('name', '')}'. "
+        f"Domain: {d.get('domain', 'general')}. "
+        f"Classification: {d.get('classification', 'CUI')}."
+    )
+
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.provider import LLMRequest
+        orchestrator = ChainOrchestrator()
+        req = LLMRequest(
+            function="aadc_design_debate",
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are an expert panel evaluating agentic AI system designs for safety and compliance.",
+        )
+        result = orchestrator.invoke_chain_of_debate("aadc_design_debate", req)
+        _record_decision(
+            canvas_type="aadc",
+            record_id=design_id,
+            decision_type="chain_of_debate",
+            decision=result.content[:2000],
+            rationale=f"CoD trace_id={result.trace_id}, rounds={len(result.rounds)}",
+            model_used=result.models_used[-1] if result.models_used else None,
+            confidence=result.confidence,
+        )
+        return jsonify({
+            "design_id": design_id,
+            "chain_mode": result.chain_mode,
+            "trace_id": result.trace_id,
+            "content": result.content,
+            "rounds": result.rounds,
+            "models_used": result.models_used,
+            "total_cost_usd": result.total_cost_usd,
+            "total_duration_ms": result.total_duration_ms,
+            "stop_reason": result.stop_reason,
+            "confidence": result.confidence,
+        })
+    except Exception as exc:
+        logger.warning("AADC simulate-cod failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -2499,3 +2636,367 @@ def quickstart_recommend():
         })
     finally:
         conn.close()
+
+
+# ── Enhancement routes ── cost estimation, IaC, design links, impact graph ──
+
+@aadc_bp.route("/api/agentic-ai/designs/<did>/cost-estimate", methods=["POST"])
+def aadc_api_cost_estimate(did):
+    if not _estimate_cost:
+        return jsonify({"error": "cost estimator not available"}), 503
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (did,)).fetchone()
+        if not row:
+            return jsonify({"error": "design not found"}), 404
+        graph = json.loads(row["graph_json"] or '{"nodes":[],"edges":[]}')
+        runs = request.json.get("runs_per_month", 1000) if request.is_json else 1000
+        result = _estimate_cost(graph, runs_per_month=int(runs))
+        conn.execute(
+            "DELETE FROM aadc_cost_estimates WHERE design_id=?", (did,)
+        )
+        conn.execute(
+            "INSERT INTO aadc_cost_estimates "
+            "(design_id, model_breakdown, total_per_run, total_monthly, runs_per_month, optimization_hints) "
+            "VALUES (?,?,?,?,?,?)",
+            (
+                did,
+                json.dumps(result["model_breakdown"]),
+                result["total_per_run"],
+                result["total_monthly"],
+                result["runs_per_month"],
+                json.dumps(result["optimization_hints"]),
+            ),
+        )
+        conn.commit()
+        return jsonify(result)
+    finally:
+        conn.close()
+
+
+@aadc_bp.route("/api/agentic-ai/designs/<did>/iac", methods=["GET"])
+def aadc_api_iac(did):
+    if not _gen_iac:
+        return jsonify({"error": "IaC generator not available"}), 503
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT name, graph_json FROM aadc_designs WHERE id=?", (did,)).fetchone()
+        if not row:
+            return jsonify({"error": "design not found"}), 404
+        name = row["name"] or did
+        graph = json.loads(row["graph_json"] or '{"nodes":[],"edges":[]}')
+        csp = request.args.get("csp", "auto")
+        bundle = _gen_iac(graph, name, target_csp=csp)
+        import re as _re
+        safe = _re.sub(r"[^a-z0-9\-]", "-", name.lower())[:40]
+        return Response(
+            bundle["zip_bytes"],
+            mimetype="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{safe}-iac.zip"'},
+        )
+    finally:
+        conn.close()
+
+
+@aadc_bp.route("/api/agentic-ai/designs/<did>/links", methods=["GET", "POST"])
+def aadc_api_design_links(did):
+    conn = _conn()
+    try:
+        if request.method == "GET":
+            rows = conn.execute(
+                "SELECT * FROM aadc_design_links WHERE src_design_id=? OR tgt_design_id=?",
+                (did, did),
+            ).fetchall()
+            return jsonify([dict(r) for r in rows])
+        data = request.get_json(force=True) or {}
+        tgt = data.get("tgt_design_id", "")
+        if not tgt:
+            return jsonify({"error": "tgt_design_id required"}), 400
+        link_type = data.get("link_type", "calls")
+        label = data.get("link_label", "")
+        conn.execute(
+            "INSERT OR REPLACE INTO aadc_design_links "
+            "(src_design_id, tgt_design_id, link_type, link_label, auto_detected) "
+            "VALUES (?,?,?,?,0)",
+            (did, tgt, link_type, label),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM aadc_design_links WHERE src_design_id=? AND tgt_design_id=? AND link_type=?",
+            (did, tgt, link_type),
+        ).fetchone()
+        return jsonify(dict(row)), 201
+    finally:
+        conn.close()
+
+
+@aadc_bp.route("/api/agentic-ai/designs/<did>/links/<int:lid>", methods=["DELETE"])
+def aadc_api_design_link_delete(did, lid):
+    conn = _conn()
+    try:
+        conn.execute(
+            "DELETE FROM aadc_design_links WHERE id=? AND src_design_id=?", (lid, did)
+        )
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@aadc_bp.route("/impact-graph")
+def aadc_impact_graph_page():
+    return render_template("agentic_ai_canvas/impact_graph.html")
+
+
+@aadc_bp.route("/api/agentic-ai/impact-graph", methods=["GET"])
+def aadc_api_impact_graph():
+    conn = _conn()
+    try:
+        designs = conn.execute(
+            "SELECT id, name, autonomy_max FROM aadc_designs ORDER BY updated_at DESC"
+        ).fetchall()
+        links = conn.execute("SELECT * FROM aadc_design_links").fetchall()
+
+        # Build adjacency for blast-radius DFS
+        children: dict[str, list[str]] = {}
+        for lnk in links:
+            src = lnk["src_design_id"]
+            tgt = lnk["tgt_design_id"]
+            children.setdefault(src, []).append(tgt)
+
+        def _blast_radius(did: str) -> int:
+            visited: set[str] = set()
+            stack = list(children.get(did, []))
+            while stack:
+                cur = stack.pop()
+                if cur in visited:
+                    continue
+                visited.add(cur)
+                stack.extend(children.get(cur, []))
+            return len(visited)
+
+        # Latest assessment score per design
+        scores: dict[str, float] = {}
+        for row in conn.execute(
+            "SELECT design_id, MAX(score) as score FROM aadc_assessments GROUP BY design_id"
+        ).fetchall():
+            scores[row["design_id"]] = row["score"]
+
+        nodes = []
+        for d in designs:
+            did = d["id"]
+            nodes.append({
+                "id": did,
+                "label": d["name"],
+                "score": scores.get(did, 0),
+                "autonomy_level": f"L{d['autonomy_max']}",
+                "blast_radius": _blast_radius(did),
+            })
+
+        edges = [
+            {
+                "source": lnk["src_design_id"],
+                "target": lnk["tgt_design_id"],
+                "link_type": lnk["link_type"],
+                "label": lnk["link_label"] or lnk["link_type"],
+            }
+            for lnk in links
+        ]
+
+        high_risk = sum(1 for n in nodes if n["blast_radius"] > 2 or n["score"] < 50)
+        max_br = max((n["blast_radius"] for n in nodes), default=0)
+
+        return jsonify({
+            "nodes": nodes,
+            "edges": edges,
+            "risk_summary": {
+                "total_designs": len(nodes),
+                "high_risk_count": high_risk,
+                "max_blast_radius": max_br,
+            },
+        })
+    finally:
+        conn.close()
+
+
+# ── AIMC Bridge Routes ────────────────────────────────────────────────────────
+
+@aadc_bp.route('/api/aimc-catalog', methods=['GET'])
+def api_aimc_catalog():
+    """Return full AIMC FOUNDATION_MODELS list for AADC model linking."""
+    from tools.agentic_ai_canvas.canvas_bridge import get_aimc_catalog
+    il_filter = request.args.get('il_level')
+    models = get_aimc_catalog()
+    if il_filter and il_filter.startswith('IL'):
+        il_int = int(il_filter.replace('IL', ''))
+        models = [m for m in models if il_int in m.get('il_suitability', [])]
+    return jsonify(models)
+
+
+@aadc_bp.route('/api/designs/<design_id>/link-model', methods=['POST'])
+def api_link_model(design_id: str):
+    """Link an AADC node to an AIMC FOUNDATION_MODELS entry."""
+    from tools.agentic_ai_canvas.canvas_bridge import link_model_node, check_il_compatibility
+    _ensure_init()
+    data = request.get_json(silent=True) or {}
+    aadc_node_id = data.get('aadc_node_id')
+    aimc_model_id = data.get('aimc_model_id')
+    if not aadc_node_id or not aimc_model_id:
+        return jsonify({'error': 'aadc_node_id and aimc_model_id required'}), 400
+    ref = link_model_node(
+        aadc_design_id=design_id,
+        aadc_node_id=aadc_node_id,
+        aimc_model_id=aimc_model_id,
+        aimc_design_id=data.get('aimc_design_id'),
+        notes=data.get('notes', ''),
+    )
+    # Attach IL compatibility status
+    violations = check_il_compatibility(design_id)
+    node_violations = [v for v in violations if v.get('aadc_node_id') == aadc_node_id]
+    ref['il_status'] = 'FAIL' if node_violations else 'PASS'
+    ref['il_violations'] = node_violations
+    return jsonify(ref), 201
+
+
+@aadc_bp.route('/api/designs/<design_id>/model-refs', methods=['GET'])
+def api_get_model_refs(design_id: str):
+    """Get all AIMC model refs for an AADC design."""
+    from tools.agentic_ai_canvas.canvas_bridge import get_model_refs, check_il_compatibility
+    _ensure_init()
+    refs = get_model_refs(design_id)
+    violations = check_il_compatibility(design_id)
+    violation_node_ids = {v.get('aadc_node_id') for v in violations}
+    for ref in refs:
+        ref['il_status'] = 'FAIL' if ref['aadc_node_id'] in violation_node_ids else 'PASS'
+    return jsonify({'refs': refs, 'il_violations': violations})
+
+
+@aadc_bp.route('/api/designs/<design_id>/model-refs/<ref_id>', methods=['DELETE'])
+def api_delete_model_ref(design_id: str, ref_id: str):
+    """Remove an AADC↔AIMC model reference."""
+    from tools.agentic_ai_canvas.canvas_bridge import unlink_model_node
+    deleted = unlink_model_node(ref_id)
+    return jsonify({'deleted': deleted}), 200 if deleted else 404
+
+
+@aadc_bp.route('/api/iqe-query', methods=['POST'])
+def aadc_api_iqe_query():
+    """IQE structured query — translate NL to IQE and execute against AADC agentic AI data."""
+    import logging as _log
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import IQESyntaxError, parse
+    from tools.iqe.executor import execute_query
+    import tools.iqe.adapters.aadc  # noqa: F401 — registers aadc.* collections
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get('question') or '').strip()
+    if not question:
+        return jsonify({'error': 'question is required'}), 400
+
+    collections = ['aadc.designs', 'aadc.assessments', 'aadc.artifacts']
+    translation = nl_to_iqe(question, collections)
+    iqe_str = translation.get('iqe', '')
+    explanation = translation.get('explanation', '')
+
+    if not data.get('execute', True):
+        return jsonify({'ok': True, 'iqe': iqe_str, 'explanation': explanation}), 200
+
+    try:
+        ast = parse(iqe_str)
+        rows = execute_query(ast, None)
+        return jsonify({'ok': True, 'iqe': iqe_str, 'explanation': explanation,
+                        'results': rows, 'row_count': len(rows)}), 200
+    except IQESyntaxError as exc:
+        return jsonify({'error': f'IQE syntax error: {exc}', 'iqe': iqe_str}), 400
+    except Exception as exc:
+        _log.getLogger(__name__).warning('AADC IQE query error: %s', exc)
+        return jsonify({'error': str(exc), 'iqe': iqe_str}), 500
+
+
+# ---------------------------------------------------------------------------
+# Track B — AADC Ops Config Generator
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/canvas/<design_id>/ops-config", methods=["GET"])
+def ops_config_page(design_id: str):
+    """Render the Ops Config modal page for a design."""
+    design_name = design_id
+    not_found = False
+    try:
+        conn = _conn()
+        row = _row(conn.execute("SELECT id, name FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+        conn.close()
+        if row:
+            design_name = row.get("name", design_id)
+        else:
+            not_found = True
+    except Exception:
+        not_found = True
+    return render_template(
+        "agentic_ai_canvas/ops_config.html",
+        design_id=design_id,
+        design_name=design_name,
+        not_found=not_found,
+    )
+
+
+@aadc_bp.route("/api/designs/<design_id>/ops-config", methods=["POST"])
+def generate_ops_config_api(design_id: str):
+    """Generate ops config and (optionally) create Kanban tasks."""
+    import json as _json
+    from tools.agentic_ai_canvas.ops_config_generator import (
+        generate_ops_config,
+        create_kanban_tasks,
+    )
+
+    data = request.get_json(force=True, silent=True) or {}
+    create_tasks = data.get("create_tasks", True)
+
+    try:
+        result = generate_ops_config(design_id)
+        if create_tasks and result["kanban_tasks"]:
+            task_ids = create_kanban_tasks(result["kanban_tasks"])
+            result["created_task_ids"] = task_ids
+        else:
+            result["created_task_ids"] = []
+
+        return jsonify({
+            "ok": True,
+            "config_path": result["config_path"],
+            "design_name": result["design_name"],
+            "matched_nodes": result["matched_nodes"],
+            "unmatched_nodes": result["unmatched_nodes"],
+            "kanban_tasks": result["kanban_tasks"],
+            "created_task_ids": result.get("created_task_ids", []),
+            "config_preview": _json.dumps(result["config"], indent=2, ensure_ascii=False)[:4000],
+        })
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        get_logger(__name__).error("Ops config generation error: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@aadc_bp.route("/api/ai-trace")
+def aadc_api_ai_trace():
+    """Return recent AI decisions made by AADC assessment engines."""
+    limit = min(int(request.args.get("limit", 50)), 200)
+    record_id = request.args.get("record_id")
+    try:
+        from tools.db.storage import get_connection as _gc
+        with _gc() as _conn:
+            if record_id:
+                rows = _conn.execute(
+                    "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aadc' AND record_id=? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (record_id, limit),
+                ).fetchall()
+            else:
+                rows = _conn.execute(
+                    "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aadc' "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        return jsonify({"ok": True, "canvas": "aadc", "decisions": [dict(r) for r in rows]})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500

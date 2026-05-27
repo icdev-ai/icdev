@@ -2,9 +2,9 @@
 """TTX Engine — main orchestrator for tabletop exercise sessions."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -21,7 +21,7 @@ from .persona_generator import generate_persona
 from .leaderboard import compute_leaderboard, get_leaderboard, award_ribbons
 from .aar_generator import generate_aar
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class TTXEngine:
@@ -37,6 +37,7 @@ class TTXEngine:
         facilitator_name: str,
         session_mode: str | None = None,
         config: dict | None = None,
+        tenant_id: str | None = None,
     ) -> dict[str, Any]:
         scenario = load_scenario(scenario_slug)
         mode = session_mode or scenario.get("session_mode", "live")
@@ -49,6 +50,7 @@ class TTXEngine:
             duration_minutes=duration,
             max_teams=max_teams,
             config={"scenario": scenario, **(config or {})},
+            tenant_id=tenant_id,
         )
         session_id = session["session_id"]
         seed_injects(session_id, scenario)

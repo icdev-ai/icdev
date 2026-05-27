@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -36,7 +38,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 CAPABILITY_REGISTRY_PATH = BASE_DIR / "context" / "agentic" / "capability_registry.yaml"
 CSP_REGISTRY_PATH = BASE_DIR / "context" / "agentic" / "csp_mcp_registry.yaml"
 
-logger = logging.getLogger("icdev.app_blueprint")
+logger = get_logger("icdev.app_blueprint")
 
 try:
     import yaml
@@ -1508,7 +1510,7 @@ def main():
     args = parser.parse_args()
 
     if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+        get_logger().setLevel(logging.DEBUG)
 
     # Load inputs
     try:

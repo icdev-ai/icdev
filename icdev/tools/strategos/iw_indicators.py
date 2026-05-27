@@ -9,14 +9,14 @@ Distinct from the IW Effects (PMESII-PT) board at /strategos/iw.
 This module covers classical J2 I&W: indicator → COA probability mapping.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.iw_indicators")
+logger = get_logger("icdev.strategos.iw_indicators")
 
 
 def _now_utc() -> str:

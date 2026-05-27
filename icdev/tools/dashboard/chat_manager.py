@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Multi-stream parallel chat manager (Phase 44 — D257-D260, D265-D267).
 
@@ -26,7 +28,6 @@ Usage:
 """
 
 import json
-import logging
 import sqlite3
 import threading
 import time
@@ -39,7 +40,7 @@ from typing import Dict, List, Optional
 
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
-logger = logging.getLogger("icdev.chat_manager")
+logger = get_logger("icdev.chat_manager")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -123,6 +124,447 @@ def _rag_retrieve(query: str, project_id: str = "", tenant_id: str = "") -> list
     except (ImportError, Exception) as exc:
         logger.debug("RAG retrieval unavailable: %s", exc)
         return []
+
+
+# ---------------------------------------------------------------------------
+# RICOAS Adaptation 1 — Constitution preamble (live system state, ~600 tokens)
+# ---------------------------------------------------------------------------
+
+_RICOAS_CONSTITUTION_ENABLED = True  # gate: set ICDEV_RICOAS_CONSTITUTION=false to disable
+
+
+def _build_ricoas_constitution(
+    context_id: str,
+    project_id: str = "",
+    tenant_id: str = "",
+) -> str:
+    """Build a ~600-token RICOAS state block injected into the system prompt each turn.
+
+    Queries live DB state across all 6 RICOAS dimensions. Failures per dimension
+    are silently skipped — the block degrades gracefully to only populated dimensions.
+    """
+    import os
+    if os.getenv("ICDEV_RICOAS_CONSTITUTION", "true").lower() in ("false", "0"):
+        return ""
+
+    lines: list[str] = ["[RICOAS CONTEXT — live system state]"]
+    conn = None
+    try:
+        conn = get_connection()
+    except Exception:
+        return ""
+
+    # R — Requirements: open intake_requirements count
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM intake_requirements WHERE status NOT IN ('done','dismissed')"
+        ).fetchone()
+        n = row[0] if row else 0
+        if project_id:
+            row2 = conn.execute(
+                "SELECT COUNT(*) FROM intake_requirements WHERE status NOT IN ('done','dismissed') AND session_id LIKE %s",
+                (f"%{project_id}%",),
+            ).fetchone()  # noqa: S608
+            n = row2[0] if row2 else n
+        lines.append(f"R (Requirements): {n} open requirement(s)")
+    except Exception:
+        pass
+
+    # I — Infrastructure: active canvas instances
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*), array_agg(DISTINCT status) FROM canvas_instances WHERE status != 'disabled'"
+        ).fetchone()
+        if row and row[0]:
+            statuses = row[1] or []
+            lines.append(f"I (Infrastructure): {row[0]} canvas instance(s) active — statuses: {', '.join(str(s) for s in statuses[:4])}")
+    except Exception:
+        pass
+
+    # C — Compliance: catalogued controls by family (top 3 families)
+    try:
+        rows = conn.execute(
+            "SELECT family, COUNT(*) as cnt FROM compliance_controls GROUP BY family ORDER BY cnt DESC LIMIT 3"
+        ).fetchall()
+        if rows:
+            summary = "; ".join(f"{r[0]}:{r[1]}" for r in rows)
+            lines.append(f"C (Compliance): controls catalogued — {summary}")
+    except Exception:
+        pass
+
+    # O — Operational health: latest health metrics
+    try:
+        rows = conn.execute(
+            "SELECT component, level, count FROM log_health_metrics ORDER BY ts DESC LIMIT 3"
+        ).fetchall()
+        if rows:
+            parts = [f"{r[0]}={r[1]}({r[2]})" for r in rows]
+            lines.append(f"O (Operational): {'; '.join(parts)}")
+    except Exception:
+        pass
+
+    # A — Architecture: top KG entity types
+    try:
+        rows = conn.execute(
+            "SELECT entity_type, COUNT(*) as cnt FROM kg_nodes GROUP BY entity_type ORDER BY cnt DESC LIMIT 3"
+        ).fetchall()
+        if rows:
+            parts = [f"{r[0]}({r[1]})" for r in rows]
+            lines.append(f"A (Architecture): KG node types — {', '.join(parts)}")
+    except Exception:
+        pass
+
+    # S — Security: open STIG findings by severity + CVE count
+    try:
+        rows = conn.execute(
+            "SELECT severity, COUNT(*) FROM stig_findings WHERE status IN ('Open','Not_Reviewed') GROUP BY severity"
+        ).fetchall()
+        cve_row = conn.execute("SELECT COUNT(*) FROM cve_triage").fetchone()
+        stig_parts = [f"{r[0]}:{r[1]}" for r in rows] if rows else []
+        cve_count = cve_row[0] if cve_row else 0
+        sec_parts = []
+        if stig_parts:
+            sec_parts.append(f"STIG open — {', '.join(stig_parts)}")
+        if cve_count:
+            sec_parts.append(f"CVEs triaged: {cve_count}")
+        if sec_parts:
+            lines.append(f"S (Security): {'; '.join(sec_parts)}")
+    except Exception:
+        pass
+
+    if len(lines) <= 1:
+        return ""  # Nothing populated — skip injection
+
+    return "\n".join(lines) + "\n"
+
+
+def _build_full_constitution(ctx) -> str:
+    """Assemble the full RICOAS constitution block for a context.
+
+    Combines: RICOAS state + scope constraints + axis instruction (if set).
+    """
+    parts = []
+    ricoas = _build_ricoas_constitution(ctx.context_id, ctx.project_id, ctx.tenant_id)
+    if ricoas:
+        parts.append(ricoas)
+    scope = _build_scope_constraint(ctx.project_id)
+    if scope:
+        parts.append(scope)
+    axis = _axis_instruction(getattr(ctx, "ricoas_axis", ""))
+    if axis:
+        parts.append(axis + "\n")
+    return "".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# RICOAS Adaptation 2 — KG-backed invisible context retrieval (~400 tokens)
+# ---------------------------------------------------------------------------
+
+
+def _kg_context_retrieve(user_message: str, top_k: int = 5) -> str:
+    """Return a hidden KG context block for the user message.
+
+    Uses awareness_kg_nodes (self-awareness graph) with keyword matching.
+    Returns empty string if KG is unavailable.
+    """
+    import os
+    if os.getenv("ICDEV_KG_CONTEXT", "true").lower() in ("false", "0"):
+        return ""
+    if not user_message.strip():
+        return ""
+
+    try:
+        from tools.knowledge_graph.graph_rag import retrieve
+
+        result = retrieve(query=user_message, top_k=top_k, compress=False)
+        ctx_text = result.get("context", "")
+        if not ctx_text or result.get("status") == "error":
+            return ""
+        # Trim to ~400 tokens (~1600 chars)
+        trimmed = ctx_text[:1600]
+        return f"[KG CONTEXT]\n{trimmed}\n"
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# RICOAS Adaptation 3 — Persistent corrections store
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+_CORRECTION_PATTERNS = [
+    _re.compile(r"\bactually\b", _re.IGNORECASE),
+    _re.compile(r"\bno,?\s+(?:we|our|it|that|this)\b", _re.IGNORECASE),
+    _re.compile(r"\bthat(?:'s| is) (?:wrong|incorrect|not right|not what)\b", _re.IGNORECASE),
+    _re.compile(r"\byou(?:'re| are) (?:wrong|incorrect|mistaken)\b", _re.IGNORECASE),
+    _re.compile(r"\bI (?:meant|mean|said)\b", _re.IGNORECASE),
+    _re.compile(r"\bcorrection[:\s]\b", _re.IGNORECASE),
+]
+
+_CORRECTIONS_TABLE_CREATED = False
+
+
+def _ensure_corrections_table() -> None:
+    global _CORRECTIONS_TABLE_CREATED
+    if _CORRECTIONS_TABLE_CREATED:
+        return
+    try:
+        conn = get_connection()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS chat_corrections (
+                id SERIAL PRIMARY KEY,
+                context_id TEXT NOT NULL,
+                correction_text TEXT NOT NULL,
+                turn_number INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chat_corrections_ctx ON chat_corrections(context_id, created_at DESC)"
+        )
+        conn.commit()
+        _CORRECTIONS_TABLE_CREATED = True
+    except Exception:
+        _CORRECTIONS_TABLE_CREATED = True  # don't retry on failure
+
+
+def _detect_and_store_correction(context_id: str, content: str, turn_number: int = 0) -> None:
+    """If content matches a correction signal, persist it to chat_corrections."""
+    if not any(p.search(content) for p in _CORRECTION_PATTERNS):
+        return
+    try:
+        _ensure_corrections_table()
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO chat_corrections (context_id, correction_text, turn_number, created_at) VALUES (%s, %s, %s, %s)",
+            (context_id, content[:500], turn_number, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+        conn.commit()
+        logger.debug("[RICOAS] Stored correction for context %s", context_id)
+    except Exception as exc:
+        logger.debug("[RICOAS] Could not store correction: %s", exc)
+
+
+def _get_recent_corrections(context_id: str, limit: int = 5) -> str:
+    """Return last N corrections for this context, formatted for system prompt prepend."""
+    try:
+        _ensure_corrections_table()
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT correction_text, created_at FROM chat_corrections WHERE context_id = %s ORDER BY created_at DESC LIMIT %s",
+            (context_id, limit),
+        ).fetchall()
+        if not rows:
+            return ""
+        corrections = [
+            f"  • {r[0] if isinstance(r, (list,tuple)) else r['correction_text']}"
+            for r in reversed(rows)
+        ]
+        return "[CORRECTIONS FROM THIS SESSION]\n" + "\n".join(corrections) + "\n"
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# RICOAS Adaptation 4 (priority 2) — Scope constraint injection
+# ---------------------------------------------------------------------------
+
+
+def _build_scope_constraint(project_id: str = "") -> str:
+    """Return a [SCOPE] block listing active canvas types for this project.
+
+    Injected into the constitution so the LLM knows it must not modify code
+    outside the active canvases.
+    """
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT DISTINCT canvas FROM canvas_instances WHERE status != 'disabled' LIMIT 12"
+        ).fetchall()
+        if not rows:
+            return ""
+        types = [r[0] if isinstance(r, (list, tuple)) else r["canvas"] for r in rows if r[0]]
+        if not types:
+            return ""
+        return "[SCOPE] Active canvas types: " + ", ".join(types) + ". Do not modify code outside these canvases.\n"
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# RICOAS Adaptation 3 (priority 3) — Live compliance doc injection
+# ---------------------------------------------------------------------------
+
+_COMPLIANCE_TERMS = _re.compile(
+    r"\b(fedramp|cmmc|nist|stig|800-53|800-171|fisma|ato|poam|control|ac-\d|au-\d|cm-\d|ia-\d|sc-\d)\b",
+    _re.IGNORECASE,
+)
+
+
+def _live_compliance_context(user_message: str) -> str:
+    """If query mentions compliance terms, inject live control summaries from DB.
+
+    Returns a [COMPLIANCE CONTEXT] block, or empty string if not applicable.
+    """
+    if not _COMPLIANCE_TERMS.search(user_message):
+        return ""
+    try:
+        conn = get_connection()
+        # Top control families by count — gives LLM a live catalog fingerprint
+        rows = conn.execute(
+            "SELECT family, COUNT(*) as cnt, MIN(impact_level) as lvl "
+            "FROM compliance_controls GROUP BY family ORDER BY cnt DESC LIMIT 8"
+        ).fetchall()
+        if not rows:
+            return ""
+        parts = []
+        for r in rows:
+            fam = r[0] if isinstance(r, (list, tuple)) else r["family"]
+            cnt = r[1] if isinstance(r, (list, tuple)) else r["cnt"]
+            lvl = r[2] if isinstance(r, (list, tuple)) else r["lvl"]
+            parts.append(f"{fam}({cnt} controls, {lvl or 'unset'})")
+        return "[COMPLIANCE CONTEXT — live catalog]\n" + "; ".join(parts) + "\n"
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# RICOAS Adaptation 5 (priority 4) — IaC context injection at session start
+# ---------------------------------------------------------------------------
+
+
+def _build_iac_context(project_id: str = "") -> str:
+    """Return a summary of IaC templates/modules available for this project.
+
+    Called once at context creation and cached in system_prompt.
+    """
+    try:
+        conn = get_connection()
+        # Look for IaC-related tables
+        iac_tables = []
+        for t in ("iac_templates", "iac_modules", "iac_resources", "infrastructure_templates"):
+            try:
+                row = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()  # noqa: S608
+                count = row[0] if row else 0
+                if count > 0:
+                    iac_tables.append(f"{t}({count})")
+            except Exception:
+                pass
+        if not iac_tables:
+            return ""
+        return "[IaC CONTEXT] Available templates/modules: " + ", ".join(iac_tables) + "\n"
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# RICOAS Adaptation 2 (priority 5) — Two-phase inception/construction workflow
+# ---------------------------------------------------------------------------
+
+_INTENT_BUILD_PATTERNS = _re.compile(
+    r"\b(build|create|implement|add|develop|write|generate|scaffold|make|set up|setup)\b.{0,40}"
+    r"\b(feature|endpoint|page|table|module|service|component|canvas|route|api|function)\b",
+    _re.IGNORECASE | _re.DOTALL,
+)
+
+_INCEPTION_INSTRUCTION = (
+    "[INCEPTION PHASE] The user wants to build something new. "
+    "Before generating any code or artifacts: (1) confirm the exact scope — "
+    "what file(s) will change and what won't; (2) state your interpretation of "
+    "the requirements in 2-3 bullet points; (3) ask one clarifying question if "
+    "anything is ambiguous. Only proceed to implementation after the user confirms "
+    "your interpretation is correct."
+)
+
+
+def _check_inception_needed(ctx, user_message: str) -> bool:
+    """Return True if we should inject inception-phase instruction this turn.
+
+    Only fires if: build-intent detected AND early in conversation AND not yet complete.
+    """
+    if ctx._inception_complete:
+        return False
+    if ctx.turn_number > 6:  # past early conversation — skip
+        ctx._inception_complete = True
+        return False
+    return bool(_INTENT_BUILD_PATTERNS.search(user_message))
+
+
+def _mark_inception_complete(ctx) -> None:
+    ctx._inception_complete = True
+
+
+# ---------------------------------------------------------------------------
+# RICOAS Adaptation 1 (priority 6) — Axis-separated thread contexts
+# ---------------------------------------------------------------------------
+
+_AXIS_INSTRUCTIONS: dict[str, str] = {
+    "R": (
+        "[AXIS: Requirements] Focus exclusively on requirements: intake, clarification, "
+        "prioritization, and acceptance criteria. Do not generate code or architecture "
+        "decisions in this thread."
+    ),
+    "I": (
+        "[AXIS: Infrastructure] Focus on infrastructure, deployment, IaC, and canvas "
+        "wiring. Do not modify business logic or data models."
+    ),
+    "C": (
+        "[AXIS: Compliance] Focus on compliance controls, STIG findings, POA&M entries, "
+        "and evidence collection. Reference live control catalog above."
+    ),
+    "O": (
+        "[AXIS: Operations] Focus on health monitoring, incident response, SLOs, and "
+        "runbooks. Prioritize non-destructive actions."
+    ),
+    "A": (
+        "[AXIS: Architecture] Focus on system design, component dependencies, and "
+        "KG-driven architectural decisions. Reference KG context above."
+    ),
+    "S": (
+        "[AXIS: Security] Focus on security findings, CVE triage, ZTA controls, and "
+        "threat modeling. Never suggest bypassing security gates."
+    ),
+}
+
+
+def _axis_instruction(axis: str) -> str:
+    return _AXIS_INSTRUCTIONS.get(axis.upper(), "")
+
+
+# ---------------------------------------------------------------------------
+# RICOAS Adaptation — error spiral circuit breaker (wires to ctx.set_intervention)
+# ---------------------------------------------------------------------------
+
+_ERROR_SPIRAL_THRESHOLD = 3  # consecutive identical/error responses before auto-intervene
+_ERROR_FINGERPRINT_LEN = 80  # chars to compare for duplicate detection
+
+
+def _is_error_response(response: str) -> bool:
+    """Heuristic: treat echo-fallback or leading error markers as error responses."""
+    stripped = response.strip()
+    return (
+        stripped.startswith("[Agent ") and "Acknowledged:" in stripped
+    ) or stripped.lower().startswith("error:")
+
+
+def _response_fingerprint(response: str) -> str:
+    return response.strip()[:_ERROR_FINGERPRINT_LEN]
+
+
+def _check_error_spiral(ctx, response: str) -> bool:
+    """Update spiral counter; return True if threshold crossed (caller should intervene)."""
+    fp = _response_fingerprint(response)
+    is_err = _is_error_response(response)
+    is_dup = fp == ctx._last_response_fingerprint and fp != ""
+
+    if is_err or is_dup:
+        ctx._consecutive_error_count += 1
+    else:
+        ctx._consecutive_error_count = 0
+
+    ctx._last_response_fingerprint = fp
+    return ctx._consecutive_error_count >= _ERROR_SPIRAL_THRESHOLD
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +658,16 @@ class ChatContext:
         # Intake session link (RICOAS integration)
         self._intake_session_id: str = ""
 
+        # RICOAS Adaptation 6 — axis-separated focus (R/I/C/O/A/S or "")
+        self.ricoas_axis: str = ""
+
+        # RICOAS Adaptation 5 — two-phase inception state
+        self._inception_complete: bool = False
+
+        # RICOAS Adaptation 1 — error spiral circuit breaker
+        self._consecutive_error_count: int = 0
+        self._last_response_fingerprint: str = ""
+
         # Agent thread
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -286,8 +738,14 @@ class ChatManager:
         project_id: str = "",
         agent_model: str = "sonnet",
         system_prompt: str = "",
+        ricoas_axis: str = "",
     ) -> dict:
-        """Create a new chat context. Returns context dict."""
+        """Create a new chat context. Returns context dict.
+
+        Args:
+            ricoas_axis: Optional RICOAS dimension focus (R/I/C/O/A/S).
+                         Injects axis-specific instructions and restricts scope.
+        """
         with self._lock:
             # Check concurrent limit per user
             user_contexts = [c for c in self._contexts.values() if c.user_id == user_id and c.status == "active"]
@@ -298,6 +756,12 @@ class ChatManager:
                 }
 
         context_id = f"ctx-{uuid.uuid4().hex[:12]}"
+
+        # RICOAS: IaC context injection at session start
+        iac_block = _build_iac_context(project_id)
+        if iac_block:
+            system_prompt = iac_block + "\n" + system_prompt if system_prompt else iac_block
+
         ctx = ChatContext(
             context_id=context_id,
             user_id=user_id,
@@ -307,6 +771,7 @@ class ChatManager:
             agent_model=agent_model,
             system_prompt=system_prompt,
         )
+        ctx.ricoas_axis = ricoas_axis.upper()[:1] if ricoas_axis else ""
 
         with self._lock:
             self._contexts[context_id] = ctx
@@ -349,20 +814,52 @@ class ChatManager:
             return results
 
     def get_context(self, context_id: str) -> Optional[dict]:
-        """Get a single context by ID."""
+        """Get a single context by ID (memory-first, DB fallback for post-restart lookups)."""
         with self._lock:
             ctx = self._contexts.get(context_id)
-            return ctx.to_dict() if ctx else None
+            if ctx:
+                return ctx.to_dict()
+        return self._db_get_context(context_id)
+
+    def _db_get_context(self, context_id: str) -> Optional[dict]:
+        """Reconstruct a minimal context dict from DB for contexts not in memory."""
+        try:
+            conn = self._get_db()
+            row = conn.execute(
+                "SELECT id, user_id, tenant_id, title, status, project_id, "
+                "agent_model, system_prompt, dirty_version, message_count, "
+                "classification, created_at, updated_at "
+                "FROM chat_contexts WHERE id = ?",
+                (context_id,),
+            ).fetchone()
+            conn.close()
+            if not row:
+                return None
+            return {
+                "context_id": row["id"],
+                "user_id": row["user_id"] or "",
+                "tenant_id": row["tenant_id"] or "",
+                "title": row["title"] or "",
+                "project_id": row["project_id"] or "",
+                "agent_model": row["agent_model"] or "sonnet",
+                "status": row["status"] or "active",
+                "message_count": row["message_count"] or 0,
+                "dirty_version": row["dirty_version"] or 0,
+                "queue_depth": 0,
+                "state_updates": {"up_to_date": True, "changes": []},
+            }
+        except Exception:
+            return None
 
     def close_context(self, context_id: str) -> dict:
         """Close/archive a chat context."""
         with self._lock:
             ctx = self._contexts.get(context_id)
-            if not ctx:
-                return {"error": "Context not found"}
-            ctx.status = "completed"
-            ctx._stop_event.set()
+            if ctx:
+                ctx.status = "completed"
+                ctx._stop_event.set()
 
+        # Always persist to DB — handles contexts not in memory (e.g. after restart)
         self._db_update_status(context_id, "completed")
         _dispatch_hook("agent_end", {"context_id": context_id})
         _mark_dirty(context_id, "context_closed")
@@ -417,6 +914,15 @@ class ChatManager:
 
         if role == "user":
             _fire_intake_hook(context_id, content)
+            # RICOAS Adaptation 3: detect and persist corrections
+            _detect_and_store_correction(context_id, content, turn_number=turn)
+            # RICOAS: if user confirms inception interpretation, mark complete
+            with self._lock:
+                _ctx = self._contexts.get(context_id)
+            if _ctx and not _ctx._inception_complete:
+                _confirm = content.strip().lower()
+                if any(_confirm.startswith(w) for w in ("yes", "correct", "looks good", "proceed", "go ahead", "that's right")):
+                    _mark_inception_complete(_ctx)
 
         _mark_dirty(
             context_id,
@@ -596,6 +1102,17 @@ class ChatManager:
                     response,
                 )
 
+                # --- RICOAS: error spiral circuit breaker ---
+                if _check_error_spiral(ctx, response):
+                    spiral_msg = (
+                        f"[Auto-Intervention] Error spiral detected after "
+                        f"{ctx._consecutive_error_count} consecutive identical/error responses. "
+                        "Stopping to prevent runaway loop. Please rephrase your request."
+                    )
+                    logger.warning("[RICOAS] Error spiral on context %s — auto-intervening", context_id)
+                    ctx._consecutive_error_count = 0
+                    ctx.set_intervention(spiral_msg)
+
                 # Dispatch post-hook — check for advisories (D325, D327)
                 hook_result = _dispatch_hook(
                     "chat_message_after",
@@ -669,6 +1186,16 @@ class ChatManager:
             conversation = []
             system_content = ctx.system_prompt or ""
 
+            # --- RICOAS: full constitution (state + scope + axis) ---
+            constitution = _build_full_constitution(ctx)
+            if constitution:
+                system_content = constitution + "\n" + system_content
+
+            # --- RICOAS Adaptation 3: prepend recent corrections ---
+            corrections_block = _get_recent_corrections(ctx.context_id)
+            if corrections_block:
+                system_content = corrections_block + "\n" + system_content
+
             # --- RAG context injection (D-RAG-2) ---
             user_content = msg.get("content", "")
             rag_results = []
@@ -683,6 +1210,20 @@ class ChatManager:
                     for i, r in enumerate(rag_results, 1):
                         rag_context += f"  [{i}] ({r['source_type']}, score={r['score']}): {r['content'][:400]}\n"
                     system_content += rag_context
+
+                # --- RICOAS: KG invisible context ---
+                kg_block = _kg_context_retrieve(user_content)
+                if kg_block:
+                    system_content += "\n" + kg_block
+
+                # --- RICOAS: live compliance doc injection ---
+                compliance_block = _live_compliance_context(user_content)
+                if compliance_block:
+                    system_content += "\n" + compliance_block
+
+                # --- RICOAS: two-phase inception instruction ---
+                if _check_inception_needed(ctx, user_content):
+                    system_content += "\n" + _INCEPTION_INSTRUCTION + "\n"
 
             if system_content:
                 conversation.append({"role": "system", "content": system_content})

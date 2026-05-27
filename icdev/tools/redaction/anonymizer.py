@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Redaction Anonymizer — applies anonymization operators to detected PII.
 
@@ -19,7 +21,6 @@ CLI:
 import argparse
 import hashlib
 import json
-import logging
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -32,7 +33,7 @@ sys.path.insert(0, str(BASE_DIR))
 from tools.redaction.detector import RedactionDetector, DetectionResult  # noqa: E402
 from tools.redaction.registry import RedactionRegistry  # noqa: E402
 
-logger = logging.getLogger("icdev.redaction.anonymizer")
+logger = get_logger("icdev.redaction.anonymizer")
 
 
 def _load_config() -> Dict[str, Any]:

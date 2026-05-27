@@ -11,6 +11,8 @@ const StudioWF = (() => {
   let dragState = null; // {nodeId, offsetX, offsetY} or {type:'tool', data}
   let connectState = null; // {fromId, fromPort}
   let zoom = 1;
+  let panX = 0, panY = 0;
+  let isPanning = false, panStart = null;
   let nextNodeY = 60;
   let _nodeSeq = 0;
   const GRID = 24;
@@ -22,6 +24,7 @@ const StudioWF = (() => {
   // ── DOM refs ──
   const $ = id => document.getElementById(id);
   const canvas = () => $('wf-canvas');
+  const world  = () => $('wf-world');
   const nodesEl = () => $('wf-nodes');
   const edgesSvg = () => $('wf-edges');
   const emptyState = () => $('wf-empty-state');
@@ -108,7 +111,7 @@ const StudioWF = (() => {
       deploy: '&#9729;', devsecops: '&#128737;&#128274;', requirements: '&#128203;',
       mbse: '&#128208;', modernization: '&#128260;', maintenance: '&#128295;',
       monitoring: '&#128200;', analysis: '&#128161;', knowledge: '&#128218;',
-      govcon: '&#128188;', test: '&#9888;'
+      govcon: '&#128188;', telecom: '&#128225;', test: '&#9888;'
     };
     return icons[color] || '&#9632;';
   }
@@ -151,8 +154,8 @@ const StudioWF = (() => {
     try {
       const data = JSON.parse(e.dataTransfer.getData('application/json'));
       const canvasRect = canvas().getBoundingClientRect();
-      const x = snap((e.clientX - canvasRect.left) / zoom);
-      const y = snap((e.clientY - canvasRect.top) / zoom);
+      const x = snap((e.clientX - canvasRect.left - panX) / zoom);
+      const y = snap((e.clientY - canvasRect.top  - panY) / zoom);
       addNode(data, x, y);
     } catch (err) {
       console.warn('Drop parse error:', err);
@@ -403,13 +406,20 @@ const StudioWF = (() => {
     crumbEl.innerHTML = html;
   }
 
-  // ── Node dragging ──
+  // ── Node dragging / panning ──
   document.addEventListener('mousemove', (e) => {
+    // Canvas pan
+    if (isPanning) {
+      panX = e.clientX - panStart.x;
+      panY = e.clientY - panStart.y;
+      applyZoom();
+      return;
+    }
     // Node drag
     if (dragState && dragState.nodeId) {
       const canvasRect = canvas().getBoundingClientRect();
-      const x = snap((e.clientX - canvasRect.left - dragState.offsetX) / zoom);
-      const y = snap((e.clientY - canvasRect.top - dragState.offsetY) / zoom);
+      const x = snap((e.clientX - canvasRect.left - panX - dragState.offsetX) / zoom);
+      const y = snap((e.clientY - canvasRect.top  - panY - dragState.offsetY) / zoom);
       const node = nodes.find(n => n.id === dragState.nodeId);
       if (node) {
         node.x = Math.max(0, x);
@@ -434,8 +444,8 @@ const StudioWF = (() => {
       const fromH = fromEl.offsetHeight || 72;
       const x1 = fromNode.x + fromW - 8;
       const y1 = fromNode.y + fromH / 2;
-      const x2 = (e.clientX - canvasRect.left + canvasEl.scrollLeft) / zoom;
-      const y2 = (e.clientY - canvasRect.top  + canvasEl.scrollTop)  / zoom;
+      const x2 = (e.clientX - canvasRect.left - panX) / zoom;
+      const y2 = (e.clientY - canvasRect.top  - panY) / zoom;
       const dx = Math.max(Math.abs(x2 - x1) * 0.5, 60);
       const svg = edgesSvg();
       // Ensure SVG covers cursor position
@@ -459,6 +469,11 @@ const StudioWF = (() => {
     if (old) old.remove();
     dragState = null;
     connectState = null;
+    if (isPanning) {
+      isPanning = false;
+      panStart = null;
+      canvas().classList.remove('is-panning');
+    }
   });
 
   // ── Selection ──
@@ -1208,15 +1223,80 @@ const StudioWF = (() => {
     return m[cat] || m.general;
   }
 
-  // ── Zoom ──
-  function zoomIn() { zoom = Math.min(2, zoom + 0.1); applyZoom(); }
-  function zoomOut() { zoom = Math.max(0.3, zoom - 0.1); applyZoom(); }
-  function fitView() { zoom = 1; applyZoom(); }
-
+  // ── Zoom & Pan ──
   function applyZoom() {
-    const c = nodesEl();
-    if (c) c.style.transform = `scale(${zoom})`;
+    const w = world();
+    if (w) w.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`;
+    const lbl = $('wf-zoom-label');
+    if (lbl) lbl.textContent = Math.round(zoom * 100) + '%';
   }
+
+  function zoomAtPoint(screenX, screenY, newZoom) {
+    const r = canvas().getBoundingClientRect();
+    const wx = (screenX - r.left - panX) / zoom;
+    const wy = (screenY - r.top  - panY) / zoom;
+    zoom = Math.min(2, Math.max(0.25, newZoom));
+    panX = screenX - r.left - wx * zoom;
+    panY = screenY - r.top  - wy * zoom;
+    applyZoom();
+  }
+
+  function zoomIn() {
+    const r = canvas().getBoundingClientRect();
+    zoomAtPoint(r.left + r.width / 2, r.top + r.height / 2, zoom + 0.1);
+  }
+  function zoomOut() {
+    const r = canvas().getBoundingClientRect();
+    zoomAtPoint(r.left + r.width / 2, r.top + r.height / 2, zoom - 0.1);
+  }
+  function fitView() {
+    if (!nodes.length) { zoom = 1; panX = 0; panY = 0; applyZoom(); return; }
+    const c = canvas();
+    if (!c) return;
+    const vw = c.clientWidth  || 800;
+    const vh = c.clientHeight || 600;
+    const PAD = 60;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodes.forEach(n => {
+      const el = document.getElementById(n.id);
+      const w = (el && el.offsetWidth)  || 220;
+      const h = (el && el.offsetHeight) || 120;
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + w);
+      maxY = Math.max(maxY, n.y + h);
+    });
+    const cw = maxX - minX || 1;
+    const ch = maxY - minY || 1;
+    zoom = Math.min((vw - PAD * 2) / cw, (vh - PAD * 2) / ch, 1);
+    zoom = Math.max(zoom, 0.1);
+    panX = (vw - cw * zoom) / 2 - minX * zoom;
+    panY = (vh - ch * zoom) / 2 - minY * zoom;
+    applyZoom();
+  }
+
+  // Mouse-wheel zoom (zoom toward cursor)
+  document.addEventListener('DOMContentLoaded', () => {
+    const c = canvas();
+    if (!c) return;
+
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.1 : -0.1;
+      zoomAtPoint(e.clientX, e.clientY, zoom + delta);
+    }, { passive: false });
+
+    // Click-drag on empty canvas → pan
+    c.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('.wf-node')) return;
+      if (e.target.closest('#wf-empty-state')) return;
+      e.preventDefault();
+      isPanning = true;
+      panStart = { x: e.clientX - panX, y: e.clientY - panY };
+      c.classList.add('is-panning');
+    });
+  });
 
   // ── Validate ──
   function validate() {
@@ -1346,7 +1426,79 @@ const StudioWF = (() => {
   // Stubs for future features
   function undo() { toast('Undo not yet implemented', 'info'); }
   function redo() { toast('Redo not yet implemented', 'info'); }
-  function loadWorkflow(id) { toast('Loading workflow...', 'info'); }
+
+  async function loadWorkflow(id) {
+    if (!id) return;
+    try {
+      toast('Loading workflow...', 'info');
+      // Fetch metadata (name) and parsed steps (composer format) in parallel
+      const [metaResp, stepsResp] = await Promise.all([
+        fetch('/api/studio/workflows/' + encodeURIComponent(id)),
+        fetch('/api/studio/workflows/' + encodeURIComponent(id) + '/composer'),
+      ]);
+      if (!metaResp.ok) { toast('Workflow not found', 'error'); return; }
+      const wf   = await metaResp.json();
+      const data = stepsResp.ok ? await stepsResp.json() : {};
+      const steps = data.steps || [];
+
+      // Clear canvas
+      nodes = []; edges = []; selectedNode = null; nextNodeY = 60;
+      nodesEl().innerHTML = '';
+      edgesSvg().innerHTML = '';
+      $('wf-name').value = wf.name || 'Untitled Workflow';
+      updateCounts();
+      showEmptyState();
+
+      if (!steps.length) {
+        toast(`Workflow "${wf.name}" loaded (no steps)`, 'warning');
+        return;
+      }
+
+      const positions = computeDagLayout(steps);
+      const idMap = {};
+      for (const s of steps) {
+        const pos = positions[s.id] || { x: 60, y: 60 };
+        const node = addNode({
+          toolId: s.id,
+          toolName: s.name || s.id,
+          toolPath: s.tool || '',
+          toolDesc: s.description || '',
+          toolColor: guessColor(s.tool || ''),
+          node_type: s.node_type || 'tool',
+          role: s.role || null,
+          human_required: s.human_required || false,
+          approval_policy: s.approval_policy || null,
+          doc_template: s.doc_template || null,
+          sub_steps: s.sub_steps || [],
+        }, pos.x, pos.y);
+        idMap[s.id] = node.id;
+      }
+
+      for (const s of steps) {
+        if (!s.depends_on) continue;
+        const depList = Array.isArray(s.depends_on) ? s.depends_on : [s.depends_on];
+        for (const dep of depList) {
+          const fromId = idMap[dep];
+          const toId   = idMap[s.id];
+          if (fromId && toId) {
+            edges.push({ from: fromId, to: toId });
+            const target = nodes.find(n => n.id === toId);
+            if (target && !target.dependsOn.includes(fromId)) target.dependsOn.push(fromId);
+          }
+        }
+      }
+
+      const editorTab = document.querySelector('[data-tab="editor"]');
+      if (editorTab) switchTab(editorTab);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        renderEdges();
+        requestAnimationFrame(() => setTimeout(fitView, 80));
+      }));
+      toast(`Workflow "${wf.name}" loaded — ${steps.length} steps`, 'success');
+    } catch (e) {
+      toast('Failed to load workflow: ' + e.message, 'error');
+    }
+  }
 
   async function useTemplate(id) {
     try {
@@ -1406,7 +1558,10 @@ const StudioWF = (() => {
       // Switch to editor first so nodes are visible, then render edges after paint
       const editorTab = document.querySelector('[data-tab="editor"]');
       if (editorTab) switchTab(editorTab);
-      requestAnimationFrame(() => requestAnimationFrame(() => renderEdges()));
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        renderEdges();
+        requestAnimationFrame(() => setTimeout(fitView, 80));
+      }));
 
       toast(`Template "${data.name}" loaded — ${steps.length} steps`, 'success');
     } catch (e) {
@@ -1440,9 +1595,32 @@ const StudioWF = (() => {
       if (e.key === 'Delete' && selectedNode) deleteNode(selectedNode);
       if (e.key === 'Escape') { closeModal(); connectState = null; }
     });
+    // Auto-load workflow if ?load= is in the URL (e.g. from canvas bridge redirect)
+    const loadId = new URLSearchParams(window.location.search).get('load');
+    if (loadId) loadWorkflow(loadId);
   }
 
   document.addEventListener('DOMContentLoaded', init);
+
+  // ── More menu (toolbar overflow) ──
+  function toggleMoreMenu(e) {
+    if (e) e.stopPropagation();
+    const menu = $('wf-more-menu');
+    if (!menu) return;
+    if (menu.hidden) {
+      menu.hidden = false;
+      setTimeout(() => document.addEventListener('click', function _close() {
+        menu.hidden = true;
+        document.removeEventListener('click', _close);
+      }), 0);
+    } else {
+      menu.hidden = true;
+    }
+  }
+  function closeMoreMenu() {
+    const menu = $('wf-more-menu');
+    if (menu) menu.hidden = true;
+  }
 
   // ── Public API ──
   return {
@@ -1453,5 +1631,7 @@ const StudioWF = (() => {
     openNodeConfig: openNodeConfig, closeModal, saveNodeConfig, deleteNode, onNodeTypeChange,
     zoomIn, zoomOut, fitView, undo, redo, togglePalette, toggleGroup,
     drillInto, drillBack, drillBackTo, hideContextMenu,
+    toggleMoreMenu, closeMoreMenu,
+    _exportToYAMLInternal: exportToYAML,
   };
 })();

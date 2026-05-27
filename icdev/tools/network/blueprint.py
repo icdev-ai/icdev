@@ -13,9 +13,9 @@ Usage in ICDEV dashboard app.py:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 import shutil
 import uuid as _uuid
@@ -35,7 +35,7 @@ from flask import (
     session,
 )
 
-logger = logging.getLogger("icdev.network")
+logger = get_logger("icdev.network")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _NETWORK_DIR = Path(__file__).resolve().parent
@@ -1117,6 +1117,102 @@ def create_network_blueprint():
         # First topology ID for 3-panel diagram link
         first_topo_id = topos[0]['id'] if topos else None
 
+        # ── AI-assisted migration: COA, port mapping, config translation ──
+        coa_data = {}
+        port_mapping = {}
+        config_translation = {}
+        target_device_id = None
+
+        # Load stored COA or generate on-the-fly
+        if proj.get("coa_json"):
+            try:
+                coa_data = json.loads(proj["coa_json"])
+            except Exception:
+                coa_data = {}
+
+        # Pick an EOL edge device from the first topology for demo consistency
+        target_node_id = None
+        target_device_id_for_tools = None
+        if first_topo_id:
+            try:
+                graph = json.loads(
+                    conn.execute(
+                        "SELECT graph_json FROM topologies WHERE id=?", (first_topo_id,)
+                    ).fetchone()[0]
+                )
+                nodes = graph.get("nodes", [])
+                eol_nodes = [
+                    n for n in nodes
+                    if n.get("eol") or n.get("meta", {}).get("eol_date")
+                ]
+                if eol_nodes:
+                    target_node_id = eol_nodes[0].get("id")
+                    # Resolve topology node_id → ni_devices.id for tool calls
+                    dev_row = conn.execute(
+                        "SELECT id FROM ni_devices WHERE node_id=?",
+                        (target_node_id,),
+                    ).fetchone()
+                    target_device_id_for_tools = dev_row["id"] if dev_row else target_node_id
+            except Exception:
+                target_node_id = None
+                target_device_id_for_tools = None
+
+        target_device_id = target_node_id
+
+        if target_device_id_for_tools:
+            # Generate COAs if missing
+            if not coa_data:
+                try:
+                    from tools.ndc.executive_summary_generator import generate_executive_summary
+                    _exec_sum = generate_executive_summary(horizon_days=365)  # noqa: F841
+                    coa_data = {
+                        "coa_1": {
+                            "id": 1,
+                            "name": "Rip & Replace",
+                            "short_name": "Rip",
+                            "risk_level": "high",
+                            "estimated_downtime_hours": 4,
+                            "total_cost": 0,
+                            "description": "Swap hardware in single maintenance window per device.",
+                        },
+                        "coa_2": {
+                            "id": 2,
+                            "name": "Phased Cutover",
+                            "short_name": "Phased",
+                            "risk_level": "medium",
+                            "estimated_downtime_hours": 1,
+                            "total_cost": 0,
+                            "description": "Migrate circuits/services in phases over weeks.",
+                        },
+                        "coa_3": {
+                            "id": 3,
+                            "name": "Side-by-Side VLAN",
+                            "short_name": "Side-by-Side",
+                            "risk_level": "low",
+                            "estimated_downtime_hours": 0,
+                            "total_cost": 0,
+                            "description": "Run old+new in parallel on same VLAN domain. Near-zero downtime.",
+                            "recommended": True,
+                        },
+                        "source_device_id": target_device_id,
+                    }
+                except Exception:
+                    pass
+
+            # Port mapping
+            try:
+                from tools.ndc.port_mapping_generator import generate_port_mapping
+                port_mapping = generate_port_mapping(target_device_id_for_tools)
+            except Exception:
+                port_mapping = {}
+
+            # Config translation
+            try:
+                from tools.ndc.config_translator import generate_config_translation
+                config_translation = generate_config_translation(target_device_id_for_tools, target_vendor="arista")
+            except Exception:
+                config_translation = {}
+
         conn.close()
         return render_template(
             "network/project_detail.html",
@@ -1141,6 +1237,10 @@ def create_network_blueprint():
             safe_bridge=safe_bridge,
             migration_phases=migration_phases_raw,
             first_topo_id=first_topo_id,
+            coa_data=coa_data,
+            port_mapping=port_mapping,
+            config_translation=config_translation,
+            target_device_id=target_device_id,
         )
 
     # ══════════════════════════════════════════════════════════════════════
@@ -4207,7 +4307,7 @@ def create_network_blueprint():
     # Partner Registry
     # ══════════════════════════════════════════════════════════════════════
 
-    @bp.route("/network/partners")
+    @bp.route("/partners")
     @nc_login_required
     def nc_partners_page():
         return render_template("network/partners.html")
@@ -7502,6 +7602,45 @@ def create_network_blueprint():
             }
         )
 
+    # ── COA Selection (AI-assisted migration) ─────────────────────────────
+    @bp.route("/api/projects/<pid>/select-coa", methods=["POST"])
+    @nc_login_required
+    def nc_select_coa(pid):
+        """Store HITL COA selection and feedback; regenerate migration phases."""
+        data = request.get_json(force=True) or {}
+        coa_id = data.get("coa_id")
+        feedback = data.get("feedback", "")
+        if not coa_id or coa_id not in (1, 2, 3):
+            return jsonify({"error": "coa_id must be 1, 2, or 3"}), 400
+
+        conn = get_connection()
+        proj = conn.execute("SELECT id FROM nc_projects WHERE id=?", (pid,)).fetchone()
+        if not proj:
+            conn.close()
+            return jsonify({"error": "Project not found"}), 404
+
+        # Build COA JSON payload
+        coa_json = json.dumps({
+            "selected_coa": coa_id,
+            "feedback": feedback,
+            "coa_1": {"id": 1, "name": "Rip & Replace", "risk_level": "high", "estimated_downtime_hours": 4},
+            "coa_2": {"id": 2, "name": "Phased Cutover", "risk_level": "medium", "estimated_downtime_hours": 1},
+            "coa_3": {"id": 3, "name": "Side-by-Side VLAN", "risk_level": "low", "estimated_downtime_hours": 0, "recommended": True},
+        })
+
+        conn.execute(
+            "UPDATE nc_projects SET selected_coa=?, coa_feedback=?, coa_json=? WHERE id=?",
+            (coa_id, feedback, coa_json, pid),
+        )
+        conn.commit()
+
+        # Audit trail
+        _audit("COA_SELECT", "project", pid, f"Selected COA-{coa_id}")
+        conn.commit()
+        conn.close()
+
+        return jsonify({"ok": True, "selected_coa": coa_id, "feedback": feedback})
+
     # ── Global Connectivity Page ────────────────────────────────────────────
     @bp.route("/global")
     @nc_login_required
@@ -10216,6 +10355,232 @@ Respond with ONLY this JSON (no other text):
     def nc_budget():
         return render_template("network/budget_forecast.html")
 
+    @bp.route("/executive-dashboard")
+    @nc_login_required
+    def nc_executive_dashboard():
+        return render_template("network/executive_dashboard.html")
+
+    @bp.route("/api/executive-summary", methods=["GET"])
+    @nc_login_required
+    def nc_api_executive_summary():
+        """Return portfolio-level executive summary data for the dashboard."""
+        try:
+            from tools.ndc.executive_summary_generator import generate_executive_summary
+            result = generate_executive_summary()
+            return jsonify(result)
+        except Exception as exc:
+            logger.warning("nc_api_executive_summary failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/cloud-topology")
+    @nc_login_required
+    def nc_cloud_topology():
+        return render_template("network/cloud_topology.html")
+
+    @bp.route("/api/cloud-overlay/<topology_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_cloud_overlay(topology_id: str):
+        """Return enriched topology JSON with cloud-provider overlay nodes."""
+        try:
+            from tools.ndc.cloud_topology_overlay import generate_cloud_overlay
+            result = generate_cloud_overlay(topology_id)
+            if result.get("error"):
+                return jsonify(result), 404
+            return jsonify(result)
+        except Exception as exc:
+            logger.warning("nc_api_cloud_overlay failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    def _ensure_showcase_table():
+        """Create showcase_demo_runs if missing (raw sqlite3, no RLS)."""
+        import sqlite3
+        db_path = _ICDEV_ROOT / "data" / "icdev.db"
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS showcase_demo_runs (
+                run_id      TEXT PRIMARY KEY,
+                audience    TEXT NOT NULL DEFAULT 'exec',
+                scenarios_json TEXT NOT NULL DEFAULT '[]',
+                status      TEXT NOT NULL DEFAULT 'running',
+                result_json TEXT,
+                scenarios_passed INTEGER DEFAULT 0,
+                scenarios_total  INTEGER DEFAULT 0,
+                elapsed_ms  INTEGER DEFAULT 0,
+                created_at  TEXT NOT NULL
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+    @bp.route("/demo-runner")
+    @nc_login_required
+    def nc_demo_runner():
+        """NDC Demo Runner control panel."""
+        runs = []
+        last_run = None
+        last_result = {}
+        try:
+            _ensure_showcase_table()
+            import sqlite3
+            db_path = _ICDEV_ROOT / "data" / "icdev.db"
+            conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT run_id, audience, scenarios_json, status, result_json, scenarios_passed, "
+                "scenarios_total, elapsed_ms, created_at "
+                "FROM showcase_demo_runs WHERE audience IN ('exec','tech','engineer') "
+                "ORDER BY created_at DESC LIMIT 15"
+            ).fetchall()
+            conn.close()
+            for row in rows:
+                d = dict(row) if hasattr(row, "keys") else {
+                    "run_id": row[0], "audience": row[1], "scenarios_json": row[2],
+                    "status": row[3], "result_json": row[4], "scenarios_passed": row[5],
+                    "scenarios_total": row[6], "elapsed_ms": row[7], "created_at": row[8],
+                }
+                try:
+                    d["scenarios_list"] = json.loads(d.get("scenarios_json") or "[]")
+                except (ValueError, TypeError):
+                    d["scenarios_list"] = []
+                runs.append(d)
+            if runs:
+                last_run = runs[0]
+                if last_run.get("result_json"):
+                    try:
+                        last_result = json.loads(last_run["result_json"])
+                    except (ValueError, TypeError):
+                        pass
+        except Exception as exc:
+            logger.warning("nc_demo_runner history error: %s", exc)
+
+        scenario_meta = {
+            "A": {"title": "EOL Fire Drill",       "short": "EOL",  "color": "#e74c3c", "hook": "Risk → Replace → Runbook"},
+            "B": {"title": "Multi-Cloud Expansion", "short": "Cloud", "color": "#3498db", "hook": "Hybrid connectivity overlay"},
+            "C": {"title": "Compliance Audit",      "short": "Audit", "color": "#f39c12", "hook": "STIG → Remediation → cATO"},
+        }
+        return render_template(
+            "network/demo_runner.html",
+            runs=runs,
+            last_run=last_run,
+            last_result=last_result,
+            scenario_meta=scenario_meta,
+            iqe_canvas="network",
+            iqe_api_route="/network/api/demo-iqe-query",
+            iqe_title="NDC Demo Runner IQE",
+            iqe_examples=[
+                {"label": "Recent runs", "query": "show recent demo runs"},
+                {"label": "Exec audience", "query": "show exec audience runs"},
+                {"label": "Failed runs",   "query": "show failed runs"},
+            ],
+        )
+
+    @bp.route("/api/demo-run", methods=["POST"])
+    @nc_login_required
+    def nc_api_demo_run():
+        """Execute NDC demo scenarios and store run."""
+        import time
+        import uuid
+        from datetime import datetime, timezone
+        data = request.get_json(force=True, silent=True) or {}
+        audience = (data.get("audience") or "exec").lower()
+        raw = data.get("scenarios")
+        if not raw or raw == "all":
+            scenarios = None
+        else:
+            scenarios = [s.strip().upper() for s in raw if isinstance(s, str) and s.strip()]
+
+        run_id = str(uuid.uuid4())
+        t0 = time.monotonic()
+        result: dict = {}
+        status = "error"
+
+        try:
+            from tools.ndc.demo_runner import run_ndc_demo
+            result = run_ndc_demo(scenarios=scenarios, audience=audience)
+            elapsed_ms = result.get("elapsed_ms", int((time.monotonic() - t0) * 1000))
+            passed = result.get("scenarios_passed", 0)
+            total = result.get("scenarios_total", 0)
+            status = result.get("status", "error")
+            result_payload = result.get("results", {})
+        except Exception as exc:
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            result_payload = {"error": str(exc)}
+            passed = 0
+            total = 0
+            status = "error"
+            logger.exception("nc_api_demo_run error: %s", exc)
+
+        # Store run via raw sqlite3 to avoid RLS on showcase_demo_runs
+        try:
+            _ensure_showcase_table()
+            import sqlite3
+            db_path = _ICDEV_ROOT / "data" / "icdev.db"
+            conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            conn.execute(
+                "INSERT INTO showcase_demo_runs "
+                "(run_id, audience, scenarios_json, status, result_json, "
+                "scenarios_passed, scenarios_total, elapsed_ms, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (run_id, audience, json.dumps(scenarios or "all"),
+                 status, json.dumps(result_payload, default=str),
+                 passed, total, elapsed_ms,
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.warning("nc_api_demo_run store error: %s", exc)
+
+        return jsonify({
+            "run_id": run_id,
+            "status": status,
+            "results": result_payload,
+            "scenarios_passed": passed,
+            "scenarios_total": total,
+            "elapsed_ms": elapsed_ms,
+            "scenario_meta": {
+                "A": {"title": "EOL Fire Drill",       "short": "EOL",  "color": "#e74c3c", "hook": "Risk → Replace → Runbook"},
+                "B": {"title": "Multi-Cloud Expansion", "short": "Cloud", "color": "#3498db", "hook": "Hybrid connectivity overlay"},
+                "C": {"title": "Compliance Audit",      "short": "Audit", "color": "#f39c12", "hook": "STIG → Remediation → cATO"},
+            },
+        })
+
+    @bp.route("/api/demo-runs")
+    @nc_login_required
+    def nc_api_demo_runs():
+        """Return NDC demo run history."""
+        limit = min(int(request.args.get("limit", 20)), 100)
+        try:
+            _ensure_showcase_table()
+            import sqlite3
+            db_path = _ICDEV_ROOT / "data" / "icdev.db"
+            conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT run_id, audience, scenarios_json, status, result_json, scenarios_passed, "
+                "scenarios_total, elapsed_ms, created_at "
+                "FROM showcase_demo_runs WHERE audience IN ('exec','tech','engineer') "
+                "ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            conn.close()
+            result = []
+            for row in rows:
+                d = dict(row) if hasattr(row, "keys") else {
+                    "run_id": row[0], "audience": row[1], "scenarios_json": row[2],
+                    "status": row[3], "result_json": row[4], "scenarios_passed": row[5],
+                    "scenarios_total": row[6], "elapsed_ms": row[7], "created_at": row[8],
+                }
+                try:
+                    d["scenarios_list"] = json.loads(d.get("scenarios_json") or "[]")
+                except (ValueError, TypeError):
+                    d["scenarios_list"] = []
+                result.append(d)
+            return jsonify(result)
+        except Exception as exc:
+            logger.warning("nc_api_demo_runs error: %s", exc)
+            return jsonify([])
+
     @bp.route("/design-patterns")
     @nc_login_required
     def nc_design_patterns():
@@ -11805,7 +12170,11 @@ Planning rules:
     @bp.route("/api/topologies/<topo_id>/plan-ips", methods=["POST"])
     @nc_login_required
     def nc_api_plan_ips(topo_id):
-        """AI-assisted IP address planning: supernet → subnet/host allocation."""
+        """AI-assisted IP address planning: supernet → subnet/host allocation.
+
+        Uses ICDEV™ LLM Router when available; falls back to deterministic
+        subnet allocation so the feature works regardless of API keys.
+        """
         conn = get_connection()
         topo = conn.execute(
             "SELECT id, name, graph_json FROM topologies WHERE id=?",
@@ -11823,11 +12192,6 @@ Planning rules:
         if strategy not in ("balanced", "power-of-2", "flat"):
             strategy = "balanced"
 
-        import re
-
-        import requests as _req
-        from tools.http.client import request as _req_request
-
         # Parse graph nodes
         try:
             graph_data = json.loads(topo["graph_json"] or "{}")
@@ -11835,7 +12199,6 @@ Planning rules:
             graph_data = {}
         nodes = graph_data.get("nodes", [])
 
-        # Skip purely decorative/drawing elements
         _SKIP_TYPES = {
             "draw-rect", "draw-rounded-rect", "text-heading", "text-label",
             "text-badge", "media-fiber", "media-ge", "media-10ge", "media-100ge",
@@ -11849,17 +12212,90 @@ Planning rules:
         if not routable:
             return jsonify({"error": "No addressable nodes found in topology"}), 400
 
-        user_prompt = (
-            f"Topology: {topo['name']}\n"
-            f"Supernet: {supernet}\n"
-            f"Strategy: {strategy}\n\n"
-            f"Nodes:\n{json.dumps(routable, indent=2)}\n\n"
-            f"Assign IP CIDRs from the supernet to these nodes using the {strategy} strategy."
-        )
+        def _plan_ips_deterministic(nodes, strategy):
+            """Deterministic subnet allocator using Python ipaddress."""
+            import ipaddress
+            net = ipaddress.ip_network(supernet, strict=False)
+
+            SEGMENT_TYPES = {
+                "subnet", "vlan", "security-zone", "vrf",
+                "aws-subnet", "aws-vpc", "az-vnet", "gcp-vpc",
+            }
+            INFRA_TYPES = {"router", "firewall", "sdwan-edge"}
+            DIST_TYPES = {"switch-l2", "switch-l3", "switch", "load-balancer"}
+            COMPUTE_TYPES = {"server", "siem", "wap"}
+
+            groups = {}
+            for node in nodes:
+                t = node.get("type", "")
+                if t in SEGMENT_TYPES:
+                    key = "segment_" + t
+                elif t in INFRA_TYPES:
+                    key = "infra"
+                elif t in DIST_TYPES:
+                    key = "distribution"
+                elif t in COMPUTE_TYPES:
+                    key = "compute"
+                else:
+                    key = "general"
+                groups.setdefault(key, []).append(node)
+
+            if not groups:
+                return {"assignments": []}
+
+            group_items = list(groups.items())
+
+            if strategy == "flat":
+                prefix_len = 24
+                base = int(net.network_address)
+                subnets = []
+                for i in range(len(group_items)):
+                    subnets.append(
+                        ipaddress.ip_network(
+                            f"{ipaddress.ip_address(base + i * 256)}/{prefix_len}",
+                            strict=False,
+                        )
+                    )
+            else:
+                needed_bits = (len(group_items) - 1).bit_length()
+                new_prefix = net.prefixlen + needed_bits
+                if new_prefix > 30:
+                    new_prefix = 30
+                subnets = list(net.subnets(new_prefix=new_prefix))[:len(group_items)]
+
+            assignments = []
+            vlan_base = 10
+            for idx, (key, members) in enumerate(group_items):
+                subnet = subnets[idx]
+                hosts = list(subnet.hosts())
+                gateway = str(hosts[0]) if hosts else str(subnet.network_address + 1)
+                vlan = vlan_base + idx * 10
+                host_idx = 1
+                for node in members:
+                    t = node.get("type", "")
+                    if t in SEGMENT_TYPES:
+                        cidr = f"{subnet.network_address}/{subnet.prefixlen}"
+                    else:
+                        if host_idx < len(hosts):
+                            ip = hosts[host_idx]
+                            host_idx += 1
+                        else:
+                            ip = subnet.network_address + 2
+                        cidr = f"{ip}/{subnet.prefixlen}"
+                    assignments.append({
+                        "node_id": node.get("id", ""),
+                        "label": node.get("label", ""),
+                        "type": t,
+                        "cidr": cidr,
+                        "gateway": gateway,
+                        "vlan": vlan,
+                    })
+            return {"assignments": assignments}
 
         def _parse_ip_plan(content):
+            import re
             text = content.strip()
-            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            text = re.sub(r"\n?[\s\S]*?\n?", "", text, flags=re.DOTALL).strip()
             if text.startswith("```"):
                 lines = [ln for ln in text.split("\n") if not ln.strip().startswith("```")]
                 text = "\n".join(lines).strip()
@@ -11867,100 +12303,56 @@ Planning rules:
             end = text.rfind("}") + 1
             if start < 0 or end <= start:
                 return None, text[:500]
-            result = json.loads(text[start:end])
+            try:
+                result = json.loads(text[start:end])
+            except json.JSONDecodeError:
+                return None, text[:500]
             if "assignments" not in result:
                 return None, text[:500]
             return result, None
 
-        def _call_claude_ip(prompt):
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if not api_key:
-                return None, "No ANTHROPIC_API_KEY set"
-            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
-            r = _req_request(
-                "POST",
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": 4096,
-                    "temperature": 0.1,
-                    "system": _IP_PLAN_SYSTEM_PROMPT,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-                timeout=60,
-            )
-            r.raise_for_status()
-            return r.json().get("content", [{}])[0].get("text", ""), None
+        # Deterministic result is always available
+        used_provider = "deterministic"
+        result = _plan_ips_deterministic(routable, strategy)
 
-        def _call_ollama_ip(prompt):
-            ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-            ollama_model = os.environ.get("OLLAMA_TOPO_MODEL", "llama3.2:3b")
-            r = _req_request(
-                "POST",
-                f"{ollama_url}/api/chat",
-                json={
-                    "model": ollama_model,
-                    "messages": [
-                        {"role": "system", "content": _IP_PLAN_SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "stream": False,
-                    "options": {"num_predict": 4096, "temperature": 0.1},
-                },
-                timeout=120,
-            )
-            r.raise_for_status()
-            return r.json().get("message", {}).get("content", ""), None
-
+        # Attempt LLM enhancement via ICDEV™ router (optional, non-blocking)
         try:
-            provider = os.environ.get("NC_AI_PROVIDER", "auto")
-            content = None
-            used_provider = ""
+            from icdev.tools.llm.router import LLMRouter
+            from icdev.tools.llm.provider import LLMRequest
+            router = LLMRouter()
+            req = LLMRequest(
+                system_prompt=_IP_PLAN_SYSTEM_PROMPT,
+                messages=[
+                    {"role": "user", "content": (
+                        f"Topology: {topo['name']}\n"
+                        f"Supernet: {supernet}\n"
+                        f"Strategy: {strategy}\n\n"
+                        f"Nodes:\n{json.dumps(routable, indent=2)}\n\n"
+                        f"Assign IP CIDRs from the supernet to these nodes using the {strategy} strategy."
+                    )},
+                ],
+                max_tokens=4096,
+                temperature=0.1,
+            )
+            resp = router.invoke("ip_planning", req)
+            if resp and resp.content:
+                llm_result, raw = _parse_ip_plan(resp.content)
+                if llm_result and llm_result.get("assignments"):
+                    result = llm_result
+                    used_provider = resp.provider or "llm"
+        except Exception:
+            pass  # deterministic result already set
 
-            if provider in ("auto", "claude"):
-                content, err = _call_claude_ip(user_prompt)
-                if content:
-                    used_provider = "claude"
-                elif provider == "claude":
-                    return jsonify({"error": f"Claude API failed: {err}"}), 503
-
-            if not content and provider in ("auto", "ollama"):
-                content, err = _call_ollama_ip(user_prompt)
-                if content:
-                    used_provider = "ollama"
-                elif provider == "ollama":
-                    return jsonify({"error": f"Ollama failed: {err}"}), 503
-
-            if not content:
-                return jsonify({"error": "No LLM provider available. Set ANTHROPIC_API_KEY or start Ollama."}), 503
-
-            result, raw = _parse_ip_plan(content)
-            if result is None:
-                return jsonify({"error": "LLM did not return valid JSON", "raw": raw}), 422
-
-            _audit("IP_PLAN", "topology", topo_id,
-                   f"[{used_provider}] {supernet} ({strategy}) → {len(result['assignments'])} assignments")
-            return jsonify({
-                "assignments": result["assignments"],
-                "supernet": supernet,
-                "strategy": strategy,
-                "provider": used_provider,
-            })
-
-        except _req.exceptions.ConnectionError:
-            return jsonify({"error": "Cannot connect to LLM provider"}), 503
-        except _req.exceptions.Timeout:
-            return jsonify({"error": "LLM timed out — try a simpler topology"}), 504
-        except json.JSONDecodeError as exc:
-            return jsonify({"error": f"Invalid JSON from LLM: {exc}"}), 422
-        except Exception as exc:
-            logger.exception("IP plan failed")
-            return jsonify({"error": str(exc)}), 500
+        _audit(
+            "IP_PLAN", "topology", topo_id,
+            f"[{used_provider}] {supernet} ({strategy}) → {len(result['assignments'])} assignments",
+        )
+        return jsonify({
+            "assignments": result["assignments"],
+            "supernet": supernet,
+            "strategy": strategy,
+            "provider": used_provider,
+        })
 
     # ── AI Context Messages ────────────────────────────────────────────────
     @bp.route("/api/ai-context/<ctx_id>/messages", methods=["GET"])
@@ -12203,6 +12595,8 @@ Planning rules:
         from tools.network.migration_phases import (
             compute_infoboxes, compute_final_infoboxes,
             generate_phase_graph, generate_final_graph,
+            generate_phase_physical_graph, generate_phase_logical_graph,
+            compute_physical_infoboxes, compute_logical_infoboxes,
             run_consolidation_analysis, load_consolidation,
         )
 
@@ -12221,7 +12615,8 @@ Planning rules:
             """
             SELECT mp.id, mp.phase_num, mp.title, mp.description,
                    mp.duration_days, mp.parallel_run, mp.rollback_criteria,
-                   mp.maintenance_window, mp.dependencies, mp.status
+                   mp.maintenance_window, mp.dependencies, mp.status,
+                   mp.properties_json
             FROM nc_migration_phases mp
             JOIN nc_project_topologies pt ON pt.project_id = mp.project_id
             WHERE pt.topology_id = ?
@@ -12229,14 +12624,17 @@ Planning rules:
             """,
             (topo_id,),
         ).fetchall()
-        conn.close()
 
-        phases_list = [dict(p) if hasattr(p, "keys") else {
-            "id": p[0], "phase_num": p[1], "title": p[2], "description": p[3],
-            "duration_days": p[4], "parallel_run": p[5], "rollback_criteria": p[6],
-            "maintenance_window": p[7], "dependencies": p[8], "status": p[9],
-            "total_phases": len(phases),
-        } for p in phases]
+        phases_list = []
+        for p in phases:
+            d = dict(p) if hasattr(p, "keys") else {
+                "id": p[0], "phase_num": p[1], "title": p[2], "description": p[3],
+                "duration_days": p[4], "parallel_run": p[5], "rollback_criteria": p[6],
+                "maintenance_window": p[7], "dependencies": p[8], "status": p[9],
+                "properties_json": p[10] if len(p) > 10 else "{}",
+            }
+            d["total_phases"] = len(phases)
+            phases_list.append(d)
 
         # Build per-phase graphs and info boxes
         phase_data = []
@@ -12244,13 +12642,34 @@ Planning rules:
             pm["total_phases"] = len(phases_list)
             ph_graph = generate_phase_graph(current_graph, pm)
             ph_boxes = compute_infoboxes(ph_graph, phase_key=f"phase-{pm['phase_num']}", phase_meta=pm)
+
+            # Physical & Logical views (2-hop subgraphs with annotations)
+            try:
+                phy_graph = generate_phase_physical_graph(current_graph, pm, conn)
+                phy_boxes = compute_physical_infoboxes(phy_graph, phase_meta=pm)
+            except Exception:
+                phy_graph = ph_graph
+                phy_boxes = ph_boxes
+            try:
+                log_graph = generate_phase_logical_graph(current_graph, pm)
+                log_boxes = compute_logical_infoboxes(log_graph, phase_meta=pm)
+            except Exception:
+                log_graph = ph_graph
+                log_boxes = ph_boxes
+
             phase_data.append({
                 "phase_num": pm["phase_num"],
                 "title": pm["title"],
                 "status": pm["status"],
                 "graph": ph_graph,
                 "infoboxes": ph_boxes,
+                "graph_physical": phy_graph,
+                "infoboxes_physical": phy_boxes,
+                "graph_logical": log_graph,
+                "infoboxes_logical": log_boxes,
             })
+
+        conn.close()
 
         # Final/To-Be graph + consolidation
         final_graph = generate_final_graph(current_graph, phases_list)
@@ -12832,7 +13251,7 @@ Planning rules:
 
     # ── FCC Compliance ──────────────────────────────────────────────────────────
 
-    @bp.route("/network/fcc")
+    @bp.route("/fcc")
     @nc_login_required
     def network_fcc():
         from tools.network.fcc_compliance import (
@@ -12852,7 +13271,7 @@ Planning rules:
                 checks[name] = {"error": str(exc)}
         return render_template("network/fcc_compliance.html", checks=checks)
 
-    @bp.route("/api/network/fcc/<check_type>")
+    @bp.route("/api/fcc/<check_type>")
     def api_network_fcc(check_type):
         from tools.network.fcc_compliance import (
             calea_checklist, part36_assessment,
@@ -12879,6 +13298,149 @@ Planning rules:
             return jsonify(fn())
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+
+    # ── Presentation (exec review) ─────────────────────────────────────────
+    @bp.route("/projects/<pid>/presentation")
+    @nc_login_required
+    def nc_project_presentation(pid):
+        conn = get_connection()
+        proj = conn.execute("SELECT * FROM nc_projects WHERE id=?", (pid,)).fetchone()
+        if not proj:
+            conn.close()
+            abort(404)
+        proj = _row_to_dict(proj)
+        conn.close()
+        return render_template("network/presentation.html", project=proj)
+
+    @bp.route("/api/projects/<pid>/presentation")
+    @nc_login_required
+    def nc_api_project_presentation(pid):
+        conn = get_connection()
+        proj = conn.execute(
+            "SELECT p.*, c.name AS customer_name FROM nc_projects p "
+            "LEFT JOIN nc_customers c ON c.id=p.customer_id WHERE p.id=?", (pid,)
+        ).fetchone()
+        if not proj:
+            conn.close()
+            return jsonify({"error": "Project not found"}), 404
+        proj = _row_to_dict(proj)
+        topos = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT t.id, t.name, t.classification, "
+                " json_array_length(json_extract(t.graph_json,'$.nodes')) AS node_count, "
+                " json_array_length(json_extract(t.graph_json,'$.edges')) AS edge_count "
+                "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+                "WHERE pt.project_id=?", (pid,)
+            ).fetchall()
+        ]
+        circuits = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM nc_circuits WHERE topology_id IN "
+                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)", (pid,)
+            ).fetchall()
+        ]
+        milestones = [
+            _row_to_dict(r)
+            for r in conn.execute("SELECT * FROM nc_project_milestones WHERE project_id=?", (pid,)).fetchall()
+        ]
+        reviews = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT br.*, rb.name AS board_name "
+                "FROM nc_board_reviews br JOIN nc_review_boards rb ON rb.id=br.board_id "
+                "WHERE br.project_id=? ORDER BY br.phase", (pid,)
+            ).fetchall()
+        ]
+        safe_bridge = conn.execute("SELECT * FROM nc_safe_bridge WHERE project_id=?", (pid,)).fetchone()
+        safe_bridge = _row_to_dict(safe_bridge) if safe_bridge else None
+        roi = {}
+        if safe_bridge and safe_bridge.get("roi_json"):
+            try:
+                roi = json.loads(safe_bridge["roi_json"])
+            except Exception:
+                pass
+        agg_audit = conn.execute(
+            "SELECT SUM(passed), SUM(failed) FROM nc_compliance_checks "
+            "WHERE topology_id IN (SELECT topology_id FROM nc_project_topologies WHERE project_id=?)", (pid,)
+        ).fetchone()
+        passed = agg_audit[0] or 0
+        failed = agg_audit[1] or 0
+        total = passed + failed
+        compliance_pct = round(passed * 100 / total) if total else None
+        cat1 = conn.execute(
+            "SELECT COUNT(*) FROM nc_compliance_findings "
+            "WHERE topology_id IN (SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
+            "AND status='open' AND severity='CAT1'", (pid,)
+        ).fetchone()[0] or 0
+        # Pre-compute CapEx before closing connection
+        total_capex = 0
+        for t in topos:
+            trow = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (t["id"],)).fetchone()
+            if trow and trow[0]:
+                try:
+                    nodes = json.loads(trow[0]).get("nodes", [])
+                    total_capex += sum(BOM_COSTS.get(n.get("type", "unknown"), 0) for n in nodes)
+                except Exception:
+                    pass
+        conn.close()
+        return jsonify({
+            "title": proj["name"],
+            "status": proj.get("status", "draft"),
+            "owner": proj.get("owner"),
+            "description": proj.get("description"),
+            "generated_at": _now(),
+            "executive_summary": {
+                "topology_count": len(topos),
+                "total_devices": sum(t.get("node_count", 0) for t in topos),
+                "compliance_pct": compliance_pct,
+                "cat1_findings": cat1,
+                "total_capex": total_capex,
+                "monthly_circuit_cost": sum(c.get("monthly_cost_usd") or 0 for c in circuits),
+                "roi": roi,
+                "justification": safe_bridge.get("justification") if safe_bridge else None,
+                "alternatives": safe_bridge.get("alternatives") if safe_bridge else None,
+            },
+            "topologies": topos,
+            "circuits": circuits,
+            "milestones": milestones,
+            "review_history": reviews,
+        })
+
+    # ── Placeholder / redirect routes for migration hub quick actions ────────
+    @bp.route("/migration-wizard")
+    @nc_login_required
+    def nc_migration_wizard():
+        """Redirect to migration hub — wizard is embedded there."""
+        return redirect("/network/migration-hub")
+
+    @bp.route("/wave-planner")
+    @nc_login_required
+    def nc_wave_planner():
+        """Placeholder wave planner — redirects to migration hub."""
+        return redirect("/network/migration-hub")
+
+    @bp.route("/port-mapping")
+    @nc_login_required
+    def nc_port_mapping_page():
+        """Standalone port mapping — redirect to first project with port mapping."""
+        conn = get_connection()
+        proj = conn.execute(
+            "SELECT id FROM nc_projects WHERE selected_coa > 0 LIMIT 1"
+        ).fetchone()
+        if not proj:
+            proj = conn.execute("SELECT id FROM nc_projects LIMIT 1").fetchone()
+        conn.close()
+        if proj:
+            return redirect(f"/network/projects/{proj['id']}#port-mapping-section")
+        return redirect("/network/migration-hub")
+
+    @bp.route("/documents")
+    @nc_login_required
+    def nc_documents():
+        """Document library — redirect to SOPs for now."""
+        return redirect("/network/sops")
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))

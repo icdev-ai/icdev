@@ -8,13 +8,14 @@ below (target − 0.5%).
 
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 4
 
@@ -75,7 +76,7 @@ def _watch_sla(conn, dry_run: bool, result: Dict[str, Any]) -> None:
             conn,
             "SELECT id, circuit_id, carrier, customer, sla_type, target_value, "
             "measured_value, breach, period_start, period_end "
-            "FROM noc_sla_records WHERE breach = FALSE OR breach = 0",
+            "FROM noc_sla_records WHERE breach = FALSE",
             "SELECT id, circuit_id, carrier, customer, sla_type, target_value, "
             "measured_value, breach, period_start, period_end "
             "FROM noc_sla_records WHERE breach = 0",

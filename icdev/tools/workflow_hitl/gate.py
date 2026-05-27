@@ -1,12 +1,12 @@
 # CUI // SP-CTI
 """HITLGate — hooks into the Kanban state machine to block in_progress→done."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class HITLGate:
@@ -22,7 +22,7 @@ class HITLGate:
             row = conn.execute(
                 """SELECT wa.* FROM wf_approvals wa
                    JOIN wf_instances wi ON wi.id = wa.instance_id
-                   WHERE wi.task_id=?
+                   WHERE wi.task_id=%s
                      AND wa.status='pending'
                      AND wi.status IN ('active','waiting_external')
                    ORDER BY wa.created_at DESC LIMIT 1""",
@@ -38,7 +38,7 @@ class HITLGate:
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT * FROM wf_instances WHERE task_id=? AND status IN ('active','waiting_external') LIMIT 1",
+                "SELECT * FROM wf_instances WHERE task_id=%s AND status IN ('active','waiting_external') LIMIT 1",
                 (task_id,),
             ).fetchone()
             return dict(row) if row else None

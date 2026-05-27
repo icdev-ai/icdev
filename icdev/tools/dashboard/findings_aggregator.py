@@ -26,15 +26,15 @@ Architecture:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
-import logging
 import sqlite3
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.dashboard.findings")
+logger = get_logger("icdev.dashboard.findings")
 
 # ---------------------------------------------------------------------------
 # Module-level connection cache for the 7 canvas SQLite DBs.

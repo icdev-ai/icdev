@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Embedding provider implementations.
 
@@ -6,13 +8,12 @@ and Google Gemini embeddings through a unified EmbeddingProvider interface.
 """
 
 import json
-import logging
 import os
 from typing import List, Optional
 
 from tools.llm.provider import EmbeddingProvider
 
-logger = logging.getLogger("icdev.llm.embedding")
+logger = get_logger("icdev.llm.embedding")
 
 try:
     import openai as openai_sdk

@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Direct Anthropic API LLM Provider.
 
@@ -6,7 +8,6 @@ Useful when not on AWS or for on-prem with internet access.
 """
 
 import json
-import logging
 import time
 from typing import Any, Dict
 
@@ -18,7 +19,7 @@ from tools.llm.provider import (
     tools_to_anthropic,
 )
 
-logger = logging.getLogger("icdev.llm.anthropic")
+logger = get_logger("icdev.llm.anthropic")
 
 try:
     import anthropic as anthropic_sdk
@@ -29,12 +30,23 @@ except ImportError:
     HAS_ANTHROPIC = False
 
 
+_CACHE_BREAKPOINT_MARKER = "<!-- cache_breakpoint -->"
+
+
 class AnthropicLLMProvider(LLMProvider):
     """Direct Anthropic API provider using the anthropic SDK.
 
     Supports thinking, tools, structured output — same capabilities
     as Bedrock but via the direct Anthropic API.
+
+    D-CACHE-RAG-1: Multi-breakpoint support.
+    System prompts containing '<!-- cache_breakpoint -->' markers are split
+    into separate text blocks, each with cache_control={'type':'ephemeral'}.
+    Up to MAX_CACHE_BREAKPOINTS breakpoints are honoured (Anthropic limit).
     """
+
+    # Anthropic hard limit: max 4 cache_control blocks per request (D-CACHE-RAG-2)
+    MAX_CACHE_BREAKPOINTS: int = 4
 
     def __init__(self, api_key: str = "", base_url: str = "https://api.anthropic.com"):
         self._api_key = api_key
@@ -90,7 +102,41 @@ class AnthropicLLMProvider(LLMProvider):
         # system text as a top-level parameter.
         system_parts = [s for s in (request.system_prompt, extracted_system) if s]
         if system_parts:
-            kwargs["system"] = "\n\n".join(system_parts)
+            system_text = "\n\n".join(system_parts)
+            # D-CACHE-6 / D-CACHE-RAG-1: Multi-breakpoint Anthropic prompt caching.
+            # Split system_text on '<!-- cache_breakpoint -->' markers to create
+            # separate blocks with cache_control. Cap at MAX_CACHE_BREAKPOINTS (4).
+            if request.cache_control == "ephemeral" and HAS_ANTHROPIC:
+                if _CACHE_BREAKPOINT_MARKER in system_text:
+                    raw_segments = system_text.split(_CACHE_BREAKPOINT_MARKER)
+                    # Cap total blocks to MAX_CACHE_BREAKPOINTS; merge extras into last
+                    max_blocks = self.MAX_CACHE_BREAKPOINTS
+                    if len(raw_segments) > max_blocks:
+                        # Keep first (max_blocks-1) segments, merge remainder into last
+                        segments = raw_segments[: max_blocks - 1] + [
+                            _CACHE_BREAKPOINT_MARKER.join(raw_segments[max_blocks - 1 :])
+                        ]
+                    else:
+                        segments = raw_segments
+                    # Build block list: all but last get cache_control
+                    system_blocks = []
+                    for i, seg in enumerate(segments):
+                        block: Dict[str, Any] = {"type": "text", "text": seg}
+                        if i < len(segments) - 1:
+                            block["cache_control"] = {"type": "ephemeral"}
+                        system_blocks.append(block)
+                    kwargs["system"] = system_blocks
+                else:
+                    # Single block with cache_control (existing D-CACHE-6 behaviour)
+                    kwargs["system"] = [
+                        {
+                            "type": "text",
+                            "text": system_text,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ]
+            else:
+                kwargs["system"] = system_text
 
         if request.temperature is not None:
             kwargs["temperature"] = request.temperature
@@ -100,6 +146,17 @@ class AnthropicLLMProvider(LLMProvider):
 
         if request.tools:
             kwargs["tools"] = tools_to_anthropic(request.tools)
+
+        # D-CACHE-7: Mark last user message with cache_control for Anthropic
+        if request.cache_control == "ephemeral" and messages:
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    content = msg.get("content", [])
+                    if isinstance(content, list) and content:
+                        last_block = content[-1]
+                        if isinstance(last_block, dict) and last_block.get("type") == "text":
+                            last_block["cache_control"] = {"type": "ephemeral"}
+                    break
 
         # Thinking support — skip if route config sets disable_thinking: true
         route_config = getattr(request, "_route_config", {}) or {}
@@ -117,6 +174,28 @@ class AnthropicLLMProvider(LLMProvider):
         try:
             message = client.messages.create(**kwargs)
         except Exception as exc:
+            exc_str = str(exc).lower()
+            is_rate_limit = (
+                "rate limit" in exc_str
+                or "ratelimit" in exc_str
+                or "429" in exc_str
+                or "too many requests" in exc_str
+                or "token limit" in exc_str
+                or "quota exceeded" in exc_str
+                or "usage limit" in exc_str
+                or "billing" in exc_str
+                or "capacity" in exc_str
+                or "please try again" in exc_str
+                or "exceeded" in exc_str
+            )
+            if is_rate_limit:
+                from tools.llm.provider import LLMRateLimitError
+
+                raise LLMRateLimitError(
+                    f"Anthropic rate limit: {exc}",
+                    provider="anthropic",
+                    model_id=model_id,
+                ) from exc
             if use_thinking:
                 # Model or endpoint doesn't support extended thinking — retry without it
                 logger.warning("Extended thinking not supported, retrying without: %s", exc)
@@ -141,6 +220,8 @@ class AnthropicLLMProvider(LLMProvider):
         if usage:
             resp.input_tokens = getattr(usage, "input_tokens", 0)
             resp.output_tokens = getattr(usage, "output_tokens", 0)
+            resp.cache_creation_input_tokens = getattr(usage, "cache_creation_input_tokens", 0)
+            resp.cache_read_input_tokens = getattr(usage, "cache_read_input_tokens", 0)
 
         text_parts = []
         tool_calls = []
@@ -178,11 +259,12 @@ class AnthropicLLMProvider(LLMProvider):
             return False
         try:
             client = self._get_client()
-            # Minimal request to verify credentials
+            # Minimal request — hard 8-second timeout to prevent dashboard hangs
             client.messages.create(
                 model=model_id,
                 max_tokens=1,
                 messages=[{"role": "user", "content": "ping"}],
+                timeout=8.0,
             )
             return True
         except Exception:

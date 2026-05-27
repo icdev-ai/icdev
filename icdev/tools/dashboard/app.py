@@ -12,7 +12,6 @@ Usage:
 
 import argparse
 import json
-import logging
 import os  # noqa: F811 — needed directly (not just as _os)
 import sys
 import time
@@ -28,6 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
 
 from flask import (
@@ -163,6 +163,8 @@ _CANVAS_DEFS = [
     ("pmc", "ICDEV_PMC_ENABLED", "tools.pmc_canvas.blueprint", "create_pmc_blueprint"),
     ("ccc", "ICDEV_CCC_ENABLED", "tools.ccc_canvas.blueprint", "create_ccc_blueprint"),
     ("dsoc", "ICDEV_DSOC_ENABLED", "tools.dsoc_canvas.blueprint", "create_dsoc_blueprint"),
+    ("aac",  "ICDEV_AAC_ENABLED",  "tools.ai_augmentation.blueprint", "aac_bp"),
+    ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
 ]
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
@@ -180,7 +182,7 @@ for _key, _env, _mod, _attr in _CANVAS_DEFS:
                 _CANVAS_BLUEPRINTS[_key] = _bp
                 _CANVAS_FLAGS[_key] = True
         except Exception as _exc:
-            logging.getLogger("icdev.dashboard").warning(
+            get_logger("icdev.dashboard").warning(
                 "Canvas %s import failed (%s): %s", _key.upper(), _mod, _exc
             )
 
@@ -209,7 +211,7 @@ for _key, _env, _mod, _attr in _APP_DEFS:
                 _APP_BLUEPRINTS[_key] = _bp
                 _APP_FLAGS[_key] = True
         except Exception as _exc:
-            logging.getLogger("icdev.dashboard").warning(
+            get_logger("icdev.dashboard").warning(
                 "App module %s import failed (%s): %s", _key, _mod, _exc
             )
 
@@ -719,6 +721,101 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 ).fetchall()
             ]
             return render_template("proposals/section_detail.html", section=section, opp_title=opp_title)
+        finally:
+            conn.close()
+
+    @app.route("/proposals/reviews-dashboard")
+    def proposals_reviews_dashboard():
+        """Executive cross-proposal review dashboard (prop-rev-07)."""
+        from datetime import date
+
+        conn = _get_db()
+        try:
+            raw_opps = conn.execute(
+                "SELECT * FROM proposal_opportunities WHERE status NOT IN ('won','lost','no_bid','cancelled') ORDER BY due_date ASC"
+            ).fetchall()
+            opps = []
+            unresolved_critical = 0
+            passed = 0
+            pass_with_findings = 0
+            failed = 0
+            today = date.today()
+            for row in raw_opps:
+                opp = dict(row)
+                reviews = conn.execute(
+                    "SELECT * FROM proposal_reviews WHERE opportunity_id = ?", (opp["id"],)
+                ).fetchall()
+                rev_map = {r["review_type"]: dict(r) for r in reviews}
+                opp["review_map"] = rev_map
+                # Count outcomes
+                for r in rev_map.values():
+                    if r.get("overall_rating") == "pass":
+                        passed += 1
+                    elif r.get("overall_rating") == "pass_with_findings":
+                        pass_with_findings += 1
+                    elif r.get("overall_rating") == "fail":
+                        failed += 1
+                # Critical open findings
+                crit = conn.execute(
+                    """SELECT COUNT(*) as cnt FROM proposal_review_findings f
+                       JOIN proposal_reviews r ON f.review_id = r.id
+                       WHERE r.opportunity_id = ? AND f.severity = 'critical' AND f.status IN ('open','in_progress')""",
+                    (opp["id"],),
+                ).fetchone()
+                opp["critical_open"] = crit["cnt"] if crit else 0
+                unresolved_critical += opp["critical_open"]
+                try:
+                    opp["days_left"] = (date.fromisoformat(opp["due_date"]) - today).days
+                except Exception:
+                    opp["days_left"] = None
+                opps.append(opp)
+            return render_template(
+                "proposals/reviews_dashboard.html",
+                opportunities=opps,
+                unresolved_critical=unresolved_critical,
+                passed=passed,
+                pass_with_findings=pass_with_findings,
+                failed=failed,
+            )
+        finally:
+            conn.close()
+
+    @app.route("/proposals/<opp_id>/compliance/gaps")
+    def proposals_compliance_gaps(opp_id):
+        """Compliance gap drill-down — all not_addressed requirements (prop-cmp-10)."""
+        conn = _get_db()
+        try:
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            if not opp:
+                return render_template("404.html", message="Opportunity not found"), 404
+            opp = dict(opp)
+            orphaned = conn.execute(
+                """SELECT * FROM proposal_compliance_matrix
+                   WHERE opportunity_id = ? AND (proposal_section_id IS NULL OR proposal_section_id = '')
+                     AND compliance_status != 'not_applicable'
+                   ORDER BY sort_order""",
+                (opp_id,),
+            ).fetchall()
+            orphaned = [dict(r) for r in orphaned]
+            compliance_total = conn.execute(
+                "SELECT COUNT(*) as cnt FROM proposal_compliance_matrix WHERE opportunity_id = ?",
+                (opp_id,),
+            ).fetchone()["cnt"]
+            sections = conn.execute(
+                """SELECT s.id, s.section_number, s.title FROM proposal_sections s
+                   WHERE s.opportunity_id = ? ORDER BY s.section_number""",
+                (opp_id,),
+            ).fetchall()
+            sections = [dict(s) for s in sections]
+            gap_pct = round(len(orphaned) / compliance_total * 100, 1) if compliance_total > 0 else 0
+            return render_template(
+                "proposals/compliance_gaps.html",
+                opp=opp,
+                orphaned=orphaned,
+                compliance_total=compliance_total,
+                sections=sections,
+                gap_pct=gap_pct,
+            )
         finally:
             conn.close()
 
@@ -1426,6 +1523,8 @@ def create_app() -> Flask:
             "pmc_enabled": _CANVAS_FLAGS.get("pmc", False),
             "ccc_enabled": _CANVAS_FLAGS.get("ccc", False),
             "dsoc_enabled": _CANVAS_FLAGS.get("dsoc", False),
+            "aac_enabled": _CANVAS_FLAGS.get("aac", False),
+            "demo_runner_enabled": _CANVAS_FLAGS.get("demo_runner", False),
             "govlift_enabled": _CANVAS_FLAGS.get("govlift", False),
             "info_ops_enabled": _CANVAS_FLAGS.get("iop", False),
             "mission_canvas_enabled": _CANVAS_FLAGS.get("mission_canvas", False),
@@ -1907,6 +2006,10 @@ def create_app() -> Flask:
                     ("Data", BASE_DIR / "data" / "data_canvas.db"),
                     ("Boundary", BASE_DIR / "data" / "boundary_canvas.db"),
                     ("Observability", BASE_DIR / "data" / "observability_canvas.db"),
+                    ("Agentic AI", BASE_DIR / "data" / "agentic_ai_canvas.db"),
+                    ("AI/ML", BASE_DIR / "data" / "aiml_canvas.db"),
+                    ("QDC", BASE_DIR / "data" / "qdc_canvas.db"),
+                    ("Migration", BASE_DIR / "data" / "migration_canvas.db"),
                 ]
 
                 canvas_compliance = []
@@ -2021,6 +2124,46 @@ def create_app() -> Flask:
                                 score = round(_latest_per_design_avg(cconn, "od_assessments"), 1)
                                 open_f = 0
                                 closed_f = 0
+                            elif canvas_name == "Agentic AI":
+                                score = round(_latest_per_design_avg(cconn, "aadc_assessments"), 1)
+                                open_f = 0
+                                closed_f = 0
+                            elif canvas_name == "AI/ML":
+                                score = round(_latest_per_design_avg(cconn, "aiml_assessments"), 1)
+                                open_f = 0
+                                closed_f = 0
+                            elif canvas_name == "QDC":
+                                score = round(_latest_per_design_avg(cconn, "qdc_assessments"), 1)
+                                open_f = 0
+                                closed_f = 0
+                            elif canvas_name == "Migration":
+                                # Validation rows always write score=0 (engine bug); derive
+                                # score from CAT findings using migration_engine formula:
+                                # score = max(0, 100 - cat1*20 - cat2*10 - cat3*5)
+                                try:
+                                    cat_row = cconn.execute(
+                                        "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
+                                        "SUM(cat3_findings) as c3 FROM mc_assessments a1 "
+                                        "WHERE assessment_type = 'validation' "
+                                        "AND created_at = (SELECT MAX(created_at) FROM mc_assessments a2 "
+                                        "WHERE a2.design_id = a1.design_id AND a2.assessment_type = 'validation')"
+                                    ).fetchone()
+                                    c1 = int(cat_row["c1"] or 0)
+                                    c2 = int(cat_row["c2"] or 0)
+                                    c3 = int(cat_row["c3"] or 0)
+                                    score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                                    open_f = c1 + c2 + c3
+                                except Exception:
+                                    row = cconn.execute(
+                                        "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
+                                        "SUM(cat3_findings) as cat3 FROM mc_assessments"
+                                    ).fetchone()
+                                    c1 = int(row["cat1"] or 0)
+                                    c2 = int(row["cat2"] or 0)
+                                    c3 = int(row["cat3"] or 0)
+                                    score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                                    open_f = c1 + c2 + c3
+                                closed_f = 0
                             else:
                                 continue
 
@@ -2038,6 +2181,30 @@ def create_app() -> Flask:
                             cconn.close()
                     except Exception:
                         pass  # Graceful if canvas DB has no data yet
+
+                # GovLift STIG checks (stored in main icdev.db, not a canvas DB)
+                try:
+                    stig_row = conn.execute(
+                        "SELECT "
+                        "SUM(CASE WHEN status = 'not_a_finding' THEN 1 ELSE 0 END) as passed, "
+                        "SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_cnt, "
+                        "COUNT(*) as total FROM govlift_stig_checks"
+                    ).fetchone()
+                    stig_total = int(stig_row["total"] or 0)
+                    if stig_total > 0:
+                        stig_passed = int(stig_row["passed"] or 0)
+                        stig_open = int(stig_row["open_cnt"] or 0)
+                        stig_score = round(stig_passed / stig_total * 100, 1)
+                        canvas_compliance.append({
+                            "name": "GovLift",
+                            "score": stig_score,
+                            "open_findings": stig_open,
+                            "closed_findings": stig_passed,
+                        })
+                        if stig_score > 0:
+                            overall_scores.append(stig_score)
+                except Exception:
+                    pass  # GovLift tables may not be initialized yet
 
                 overall_score = round(sum(overall_scores) / len(overall_scores), 1) if overall_scores else 0.0
                 _CANVAS_COMPLIANCE_CACHE["entry"] = {
@@ -2139,6 +2306,18 @@ def create_app() -> Flask:
                 "created_at",
                 "direct",
             ),
+            (
+                "Agentic AI",
+                BASE_DIR / "data" / "agentic_ai_canvas.db",
+                "aadc_assessments",
+                "score",
+                "created_at",
+                "direct",
+            ),
+            ("AI/ML", BASE_DIR / "data" / "aiml_canvas.db", "aiml_assessments", "score", "created_at", "direct"),
+            ("QDC", BASE_DIR / "data" / "qdc_canvas.db", "qdc_assessments", "score", "created_at", "direct"),
+            ("Migration", None, None, None, None, "skip"),
+            ("GovLift", None, None, None, None, "skip"),
         ]
 
         results = []
@@ -2556,6 +2735,9 @@ def create_app() -> Flask:
             "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
             "strategos":      ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
             "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
+            "aac":            ("tools.iqe.adapters.ai_augmentation", ["ai_augmentation.opportunities", "ai_augmentation.scans", "ai_augmentation.roadmaps"]),
+            "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
+            "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
@@ -2681,7 +2863,26 @@ def create_app() -> Flask:
     @app.route("/wizard")
     def wizard_page():
         """Getting Started wizard — guides new users to the right workflow."""
-        return render_template("wizard.html")
+        import yaml as _yaml
+        uc_meta = {}
+        try:
+            uc_path = BASE_DIR / "args" / "use_cases.yaml"
+            if uc_path.exists():
+                with open(uc_path, "r", encoding="utf-8") as _fh:
+                    data = _yaml.safe_load(_fh) or {}
+                for uc in data.get("use_cases", []):
+                    uc_meta[uc["id"]] = {
+                        "label": uc.get("label", ""),
+                        "description": uc.get("description", "").strip(),
+                        "canvas_wiring": uc.get("canvas_wiring", []),
+                        "req_count": len(uc.get("template_requirements", [])),
+                        "fast_track": uc.get("fast_track", False),
+                        "badge": uc.get("badge", ""),
+                        "category": uc.get("category", ""),
+                    }
+        except Exception as _e:
+            app.logger.warning("wizard_page: failed to load use_cases.yaml: %s", _e)
+        return render_template("wizard.html", use_case_meta=uc_meta)
 
     @app.route("/chat")
     def chat_new():
@@ -2692,6 +2893,9 @@ def create_app() -> Flask:
         frameworks = flask_request.args.get("frameworks", "")
         custom_role_name = flask_request.args.get("custom_role_name", "")
         custom_role_desc = flask_request.args.get("custom_role_desc", "")
+        use_case_id = flask_request.args.get("use_case", "")
+        skip_fast_track = flask_request.args.get("skip_fast_track", "") == "1"
+        from_wizard = flask_request.args.get("from_wizard", "") == "1"
         # ?canvas= deep link — pre-selects canvas mode (forwarded from /simulate/chat redirect)
         canvas = flask_request.args.get("canvas", "") or flask_request.args.get("canvas_type", "")
         _allowed = {"cam", "ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
@@ -2708,6 +2912,9 @@ def create_app() -> Flask:
             wizard_custom_role_name=custom_role_name,
             wizard_custom_role_desc=custom_role_desc,
             wizard_canvas=wizard_canvas,
+            wizard_use_case=use_case_id,
+            wizard_skip_fast_track=skip_fast_track,
+            from_wizard=from_wizard,
             llm_models=llm_models,
             llm_default_model=llm_default_model,
         )
@@ -3727,12 +3934,16 @@ def create_app() -> Flask:
     # ---- Database helper ----
     def _get_db():
         import os
+        from flask import has_request_context
         if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
             conn = get_connection()
         else:
             conn = get_connection(db_path=str(DB_PATH))
         try:
-            conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
+            if not has_request_context():
+                conn.set_security_context(None)  # rls-bypass: CLI / background tasks run without a user session; no tenant context available.
+            # In a request context: _attach_flask_security_context() already wired
+            # g.security_context (set by auth middleware) into the connection.
         except Exception:
             pass
         return conn
@@ -9804,6 +10015,8 @@ def create_app() -> Flask:
 
     return app
 
+
+app = create_app()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ICDEV™ Dashboard")

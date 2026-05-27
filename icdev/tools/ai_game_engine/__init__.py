@@ -1,6 +1,8 @@
 # CUI // SP-CTI
 """AI GameDay Engine — ontology tagging for scenarios, roles, and events."""
 
+from .agent import AIGameAgent
+from .chain_bridge import GameDayChainBridge
 from .ontology import (
     SCENARIO_ONTOLOGY,
     ROLE_ONTOLOGY,
@@ -17,6 +19,8 @@ from .scenario_registry import (
 )
 
 __all__ = [
+    "AIGameAgent",
+    "GameDayChainBridge",
     "SCENARIO_ONTOLOGY",
     "ROLE_ONTOLOGY",
     "EVENT_ONTOLOGY",

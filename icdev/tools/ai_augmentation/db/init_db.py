@@ -43,7 +43,9 @@ def get_connection():
     return conn
 
 
-SCHEMA_PG = f"""
+# Static DDL — no dynamic expressions; must appear as plain string literals so
+# the gap-detector AST scanner can find the CREATE TABLE declarations.
+_SCHEMA_PG_PRE = """
 CREATE TABLE IF NOT EXISTS aac_scans (
     scan_id          SERIAL PRIMARY KEY,
     input_type       TEXT NOT NULL,
@@ -52,10 +54,16 @@ CREATE TABLE IF NOT EXISTS aac_scans (
     total_files      INTEGER DEFAULT 0,
     total_loc        INTEGER DEFAULT 0,
     status           TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed')),
+    project_summary  TEXT,
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at     TIMESTAMP
-);
+)"""
 
+# aac_opportunities uses CHECK constraints derived from Python constants, so
+# this table's DDL must be an f-string.  It is placed between _SCHEMA_PG_PRE
+# and _SCHEMA_PG_POST so that foreign-key dependency order is preserved:
+# aac_scans → aac_opportunities → aac_scores.
+_SCHEMA_PG_OPPS = f"""
 CREATE TABLE IF NOT EXISTS aac_opportunities (
     opportunity_id       SERIAL PRIMARY KEY,
     scan_id              INTEGER NOT NULL REFERENCES aac_scans(scan_id) ON DELETE CASCADE,
@@ -70,8 +78,10 @@ CREATE TABLE IF NOT EXISTS aac_opportunities (
     il_recommended_model TEXT,
     data_requirements    JSONB,
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+)"""
 
+# Static DDL — plain string so the gap-detector finds all CREATE TABLE names.
+_SCHEMA_PG_POST = """
 CREATE TABLE IF NOT EXISTS aac_scores (
     score_id          SERIAL PRIMARY KEY,
     opportunity_id    INTEGER NOT NULL REFERENCES aac_opportunities(opportunity_id) ON DELETE CASCADE,
@@ -102,8 +112,9 @@ CREATE TABLE IF NOT EXISTS aac_audit_log (
     actor      TEXT NOT NULL DEFAULT 'system',
     detail     JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-"""
+)"""
+
+SCHEMA_PG = _SCHEMA_PG_PRE + ";\n" + _SCHEMA_PG_OPPS + ";\n" + _SCHEMA_PG_POST
 
 SCHEMA_SQLITE = (
     SCHEMA_PG
@@ -122,6 +133,12 @@ def init_db() -> None:
             if stmt:
                 conn.execute(stmt)
         conn.commit()
+        # Lazy migration: add project_summary column if missing (existing DBs)
+        try:
+            conn.execute("ALTER TABLE aac_scans ADD COLUMN project_summary TEXT")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
         print(f"[init_db] AAC schema ready ({_AAC_BACKEND})")
     finally:
         conn.close()

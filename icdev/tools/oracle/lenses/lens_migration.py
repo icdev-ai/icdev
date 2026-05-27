@@ -8,15 +8,15 @@ Three-phase pipeline: analyze → score → propose
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
 from tools.oracle.base_lens import BaseLens, OraclePrediction
 
-logger = logging.getLogger("icdev.oracle.migration")
+logger = get_logger("icdev.oracle.migration")
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 

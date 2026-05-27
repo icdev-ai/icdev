@@ -6,11 +6,11 @@ to auto-discover and visualize mission-relevant components.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import Optional
 
-logger = logging.getLogger("icdev.mission_canvas.discovery")
+logger = get_logger("icdev.mission_canvas.discovery")
 
 
 def discover_components(mission_id: str, scope: Optional[str] = None) -> dict:

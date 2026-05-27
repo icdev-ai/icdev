@@ -5,10 +5,10 @@ Accepts PDF, DOCX, HTML, and Markdown files. Extracts text with section structur
 chunks via the RAG chunker, embeds, and stores in rag_chunks with source_type='wf_doc'.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
-import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -16,7 +16,7 @@ from pathlib import Path
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _STORAGE_DIR = Path("data/wf_ingested_files")
 
@@ -63,7 +63,7 @@ def ingest_file(
                (id, doc_template_id, filename, file_type, file_size_bytes,
                 content_hash, storage_path, ingestion_status, ingested_by,
                 ingested_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,'processing',?,?,?)""",
+               VALUES (%s,?,?,?,?,?,?,'processing',?,?,%s)""",
             (ingest_id, doc_template_id, fname, file_type, file_size,
              content_hash, str(storage_path), ingested_by, now, now),
         )
@@ -95,7 +95,7 @@ def get_ingested_files(doc_template_id: str) -> list[dict]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM wf_ingested_files WHERE doc_template_id=? ORDER BY ingested_at DESC",
+            "SELECT * FROM wf_ingested_files WHERE doc_template_id=%s ORDER BY ingested_at DESC",
             (doc_template_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -131,11 +131,11 @@ def delete_ingested_file(ingest_id: str) -> bool:
     """Delete an ingested file record and its rag_chunks."""
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM wf_ingested_files WHERE id=?", (ingest_id,)).fetchone()
+        row = conn.execute("SELECT * FROM wf_ingested_files WHERE id=%s", (ingest_id,)).fetchone()
         if not row:
             return False
-        conn.execute("DELETE FROM rag_chunks WHERE source_type='wf_doc' AND source_id=?", (ingest_id,))
-        conn.execute("DELETE FROM wf_ingested_files WHERE id=?", (ingest_id,))
+        conn.execute("DELETE FROM rag_chunks WHERE source_type='wf_doc' AND source_id=%s", (ingest_id,))
+        conn.execute("DELETE FROM wf_ingested_files WHERE id=%s", (ingest_id,))
         try:
             conn.commit()
         except Exception:
@@ -402,7 +402,7 @@ def _store_chunks(
                        (id, content, content_hash, source_type, source_id, source_table,
                         chunk_index, total_chunks, metadata, tier, classification,
                         created_at, updated_at)
-                       VALUES (?,?,?,'wf_doc',?,?,?,?,?,'warm','CUI',?,?)""",
+                       VALUES (%s,?,?,'wf_doc',?,?,?,?,?,'warm','CUI',?,%s)""",
                     (chunk_id, content, content_hash, ingest_id, "wf_ingested_files",
                      i, len(chunks), metadata, now, now),
                 )
@@ -475,7 +475,7 @@ def _find_existing(doc_template_id: str, content_hash: str) -> dict | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM wf_ingested_files WHERE doc_template_id=? AND content_hash=? LIMIT 1",
+            "SELECT * FROM wf_ingested_files WHERE doc_template_id=%s AND content_hash=%s LIMIT 1",
             (doc_template_id, content_hash),
         ).fetchone()
         return dict(row) if row else None
@@ -495,8 +495,8 @@ def _update_status(
     conn = get_connection()
     try:
         conn.execute(
-            """UPDATE wf_ingested_files SET ingestion_status=?, page_count=?, section_count=?,
-               chunk_count=?, error_message=?, updated_at=? WHERE id=?""",
+            """UPDATE wf_ingested_files SET ingestion_status=%s, page_count=%s, section_count=%s,
+               chunk_count=%s, error_message=%s, updated_at=%s WHERE id=%s""",
             (status, page_count, section_count, chunk_count, error_message, now, ingest_id),
         )
         try:

@@ -27,6 +27,7 @@ per-stage document conformance, AI citation/sourcing, and external step integrat
 | `tools/workflow_hitl/canvas_hooks.py` | `CANVAS_DEFAULT_TEMPLATES`; `auto_create_instance_if_assigned()` |
 | `tools/workflow_hitl/childapp_hooks.py` | `get_inherited_template(canvas_type, childapp_key)` — child app inherits parent canvas default |
 | `tools/workflow_hitl/blueprint.py` | Flask blueprint factory `create_wf_blueprint()`; 42 routes at `/api/v1/wf/` |
+| `tools/workflow_hitl/intake_promote_handler.py` | Post-HITL-approval callback: `maybe_promote(instance_id)` reads `hitl_intake_pending` mapping, calls `intake_kanban_promoter.promote()` when a chat-intake review instance reaches final approval |
 | `tools/workflow_hitl/report_schema.py` | `ReportSection` dataclass; `get_sections(report_type)`, `list_report_types()`, `create_custom_report_type()` |
 | `tools/workflow_hitl/document_ingestion.py` | `ingest_file()` (PDF/DOCX/HTML/MD/TXT → rag_chunks); SHA-256 dedup; `get_ingested_files()`, `delete_ingested_file()` |
 | `tools/workflow_hitl/section_router.py` | `SectionRouter.route()` — per-section RAG/text-search; greedy cross-section deduplication; `RoutedChunk`, `SectionRouteResult` |

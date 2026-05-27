@@ -256,3 +256,21 @@ QDC_UQS_DEFAULTS: dict[str, float] = {
     "runtime_health": 0.15,
     "compliance_readiness": 0.20,
 }
+
+_Q = "https://icdev.dev/ontology/quality#"
+
+QDC_ONTOLOGY_MAP: dict[str, str] = {
+    "gate-sast":      f"{_Q}QualityGate.SAST",
+    "gate-dast":      f"{_Q}QualityGate.DAST",
+    "gate-sca":       f"{_Q}QualityGate.SCA",
+    "gate-secret":    f"{_Q}QualityGate.SecretScan",
+    "gate-container": f"{_Q}QualityGate.ContainerScan",
+    "gate-unit":      f"{_Q}QualityGate.UnitTest",
+    "gate-bdd":       f"{_Q}QualityGate.BDD",
+    "gate-e2e":       f"{_Q}QualityGate.E2E",
+    "gate-fuzz":      f"{_Q}QualityGate.Fuzz",
+    "gate-review":    f"{_Q}QualityGate.CodeReview",
+    "gate-pentest":   f"{_Q}QualityGate.PenTest",
+    "gate-iast":      f"{_Q}QualityGate.IAST",
+    "gate-diagram":   f"{_Q}QualityGate.DiagramQuality",
+}

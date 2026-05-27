@@ -15,6 +15,7 @@ Key design decisions:
   - D-SYN-3: Max 3 goals per run — prevent flooding review queue
   - D-SYN-4: Deduplication via chain_hash in genesis_tool_patterns
 """
+IMPLEMENTATION_STATUS = "full"
 
 import hashlib
 import json
@@ -127,12 +128,41 @@ def run(config: Dict = None, trust: Any = None, **kwargs) -> Dict[str, Any]:
         )
 
         goals = []
+        confab_flags = 0
         for pattern in patterns[:max_goals]:
             goal = generate_goal_from_pattern(pattern, lookback_days=lookback_days)
             goal = polish_with_llm(goal)
+
+            # NIST AI 600-1 GAI.1: check generated content for confabulation risk
+            goal_text = goal.get("goal_markdown", "") or goal.get("llm_description", "")
+            if goal_text:
+                try:
+                    from tools.security.confabulation_detector import check_output as _confab_check
+                    confab = _confab_check("genesis-synthesize", goal_text)
+                    goal["confabulation_risk"] = confab.get("risk_score", 0.0)
+                    goal["confabulation_findings"] = confab.get("findings_count", 0)
+                    if confab.get("risk_score", 0.0) > 0.6:
+                        goal["confabulation_flagged"] = True
+                        confab_flags += 1
+                        try:
+                            from tools.canvas.ai_trace_mixin import record_canvas_decision as _rcd
+                            _rcd(
+                                canvas_type="genesis",
+                                decision_type="confabulation_flag",
+                                decision=f"High confabulation risk ({confab['risk_score']:.2f}) in synthesized goal",
+                                rationale=f"{confab['findings_count']} finding(s): {confab.get('risk_level', 'high')}",
+                                confidence=confab["risk_score"],
+                                project_id="icdev",
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
             goals.append(goal)
 
         result["goals_generated"] = len(goals)
+        result["confabulation_flags"] = confab_flags
 
     except Exception as exc:
         result["errors"].append(f"goal_generation: {exc}")

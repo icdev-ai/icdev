@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """AgentSHAP — Monte Carlo Shapley value tool attribution (D288).
 
@@ -19,7 +21,6 @@ CLI:
 
 import argparse
 import json
-import logging
 import math
 import random
 import sqlite3
@@ -27,7 +28,7 @@ from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-logger = logging.getLogger("icdev.observability.shap")
+logger = get_logger("icdev.observability.shap")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

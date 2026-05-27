@@ -13,6 +13,10 @@ Routes:
   POST /api/strategos/darkweb/run            → Trigger monitor scan (async)
 
   GET  /wargame/<id>/lanchester/monte-carlo  → Monte Carlo percentile bands JSON
+
+  GET  /strategos/intel-brief               → Predictive Intelligence Briefings page
+  GET  /strategos/briefs                    → Full intelligence briefs history page
+  POST /api/strategos/intel-brief/run       → Trigger predictive pipeline → brief JSON
 """
 
 from __future__ import annotations
@@ -423,6 +427,266 @@ def api_strategos_chat_poll(context_id: str):
         "turn_number": ctx.get("turn_number", 0),
         "messages": messages,
     }))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Diplomatic Activity Tracker (DAT)
+# ---------------------------------------------------------------------------
+
+
+def _dat():
+    from tools.strategos.dat import (
+        get_cables, get_unsc_events, get_backchannels,
+        get_latest_dti, get_dti_history,
+        ingest_cable, ingest_unsc_event, ingest_backchannel,
+        refresh_dti, compute_dti,
+    )
+    return (
+        get_cables, get_unsc_events, get_backchannels,
+        get_latest_dti, get_dti_history,
+        ingest_cable, ingest_unsc_event, ingest_backchannel,
+        refresh_dti, compute_dti,
+    )
+
+
+@bp.route("/strategos/dat")
+@bp.route("/strategos/dat/")
+def strategos_dat_page():
+    (get_cables, get_unsc_events, get_backchannels,
+     get_latest_dti, get_dti_history, *_) = _dat()
+    theater = request.args.get("theater", "global")
+    latest = get_latest_dti(theater) or {}
+    history = list(reversed(get_dti_history(theater, limit=48)))
+    cables = get_cables(theater, limit=20)
+    unsc_events = get_unsc_events(theater, limit=15)
+    backchannels = get_backchannels(theater, limit=15)
+    import json as _json
+    return render_template(
+        "strategos/dat.html",
+        theater=theater,
+        latest=latest,
+        history=history,
+        cables=cables,
+        unsc_events=unsc_events,
+        backchannels=backchannels,
+        history_json=_json.dumps(history),
+    )
+
+
+@bp.route("/api/strategos/dat/score")
+def api_dat_score():
+    (_, _, _, get_latest_dti, _, _, _, _, _, compute_dti) = _dat()
+    theater = request.args.get("theater", "global")
+    live = request.args.get("live", "false").lower() == "true"
+    if live:
+        result = compute_dti(theater)
+    else:
+        result = get_latest_dti(theater) or compute_dti(theater)
+    resp = make_response(jsonify(result))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/api/strategos/dat/history")
+def api_dat_history():
+    (_, _, _, _, get_dti_history, *_) = _dat()
+    theater = request.args.get("theater", "global")
+    limit = min(int(request.args.get("limit", 48)), 200)
+    history = get_dti_history(theater, limit=limit)
+    resp = make_response(jsonify({"theater": theater, "history": history, "total": len(history)}))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/api/strategos/dat/ingest/cable", methods=["POST"])
+def api_dat_ingest_cable():
+    (_, _, _, _, _, ingest_cable, *_) = _dat()
+    data = request.get_json(silent=True) or {}
+    try:
+        result = ingest_cable(
+            theater_id=data.get("theater_id", "global"),
+            cable_ref=data.get("cable_ref"),
+            origin=data.get("origin"),
+            subject=data.get("subject"),
+            tension_level=data.get("tension_level", "low"),
+            keywords=data.get("keywords"),
+            summary=data.get("summary"),
+            received_at=data.get("received_at"),
+            classification=data.get("classification", "CUI"),
+        )
+        resp = make_response(jsonify({"status": "ok", "cable": result}), 201)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/api/strategos/dat/ingest/unsc", methods=["POST"])
+def api_dat_ingest_unsc():
+    (_, _, _, _, _, _, ingest_unsc_event, *_) = _dat()
+    data = request.get_json(silent=True) or {}
+    try:
+        result = ingest_unsc_event(
+            theater_id=data.get("theater_id", "global"),
+            event_type=data.get("event_type", "scheduled"),
+            topic=data.get("topic"),
+            agenda_item=data.get("agenda_item"),
+            emergency=bool(data.get("emergency", False)),
+            veto_cast=bool(data.get("veto_cast", False)),
+            walkout=bool(data.get("walkout", False)),
+            participating_states=data.get("participating_states"),
+            scheduled_at=data.get("scheduled_at"),
+            outcome=data.get("outcome"),
+        )
+        resp = make_response(jsonify({"status": "ok", "event": result}), 201)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/api/strategos/dat/ingest/backchannel", methods=["POST"])
+def api_dat_ingest_backchannel():
+    (_, _, _, _, _, _, _, ingest_backchannel, *_) = _dat()
+    data = request.get_json(silent=True) or {}
+    try:
+        result = ingest_backchannel(
+            theater_id=data.get("theater_id", "global"),
+            channel_type=data.get("channel_type", "diplomatic"),
+            parties=data.get("parties"),
+            frequency_delta=float(data.get("frequency_delta", 0.0)),
+            escalation_flag=bool(data.get("escalation_flag", False)),
+            communication_breakdown=bool(data.get("communication_breakdown", False)),
+            metadata=data.get("metadata"),
+            observed_at=data.get("observed_at"),
+        )
+        resp = make_response(jsonify({"status": "ok", "backchannel": result}), 201)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/api/strategos/dat/refresh", methods=["POST"])
+def api_dat_refresh():
+    (_, _, _, _, _, _, _, _, refresh_dti, _) = _dat()
+    data = request.get_json(silent=True) or {}
+    theater = data.get("theater_id", request.args.get("theater", "global"))
+    try:
+        result = refresh_dti(theater)
+        resp = make_response(jsonify({"status": "ok", "snapshot": result}), 201)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Predictive Intel Brief — page + run API
+# ---------------------------------------------------------------------------
+
+
+def _intel_brief_engine():
+    from tools.strategos.predictive_intel_engine import (
+        generate_leadership_brief,
+        list_leadership_briefs,
+        get_leadership_brief,
+    )
+    return generate_leadership_brief, list_leadership_briefs, get_leadership_brief
+
+
+@bp.route("/strategos/intel-brief")
+@bp.route("/strategos/intel-brief/")
+def strategos_intel_brief_page():
+    """Predictive Intelligence Briefings dashboard page."""
+    import json as _json
+    _, list_briefs, _ = _intel_brief_engine()
+    theater = request.args.get("theater", "global")
+    briefs = list_briefs(theater=theater, limit=20)
+
+    # Normalise forecast fields so template can access them as attributes
+    for b in briefs:
+        for key in ("forecast_24h_json", "forecast_72h_json", "forecast_7d_json"):
+            if isinstance(b.get(key), str):
+                try:
+                    b[key] = _json.loads(b[key])
+                except Exception:
+                    b[key] = {}
+            elif b.get(key) is None:
+                b[key] = {}
+
+    latest_brief = briefs[0] if briefs else None
+    resp = make_response(render_template(
+        "strategos/intel_brief.html",
+        theater=theater,
+        briefs=briefs,
+        latest_brief=latest_brief,
+        briefs_json=_json.dumps(briefs),
+    ))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/strategos/briefs")
+@bp.route("/strategos/briefs/")
+def strategos_briefs_page():
+    """Full history listing of all leadership intelligence briefs."""
+    import json as _json
+    _, list_briefs, _ = _intel_brief_engine()
+    theater = request.args.get("theater", "global")
+    limit = min(int(request.args.get("limit", 50)), 200)
+    briefs = list_briefs(theater=theater, limit=limit)
+    for b in briefs:
+        for key in ("forecast_24h_json", "forecast_72h_json", "forecast_7d_json"):
+            if isinstance(b.get(key), str):
+                try:
+                    b[key] = _json.loads(b[key])
+                except Exception:
+                    b[key] = {}
+            elif b.get(key) is None:
+                b[key] = {}
+    resp = make_response(render_template(
+        "strategos/briefs.html",
+        theater=theater,
+        briefs=briefs,
+        briefs_json=_json.dumps(briefs),
+    ))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/api/strategos/intel-brief/run", methods=["POST"])
+def api_strategos_intel_brief_run():
+    """Trigger the predictive intelligence pipeline and return the brief."""
+    gen_brief, _, _ = _intel_brief_engine()
+    data = request.get_json(silent=True) or {}
+    theater = data.get("theater", "global") or "global"
+    try:
+        result = gen_brief(theater=theater, save=True)
+    except Exception as exc:
+        resp = make_response(
+            jsonify({"ok": False, "error": str(exc)}), 500
+        )
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    payload = {
+        "ok": True,
+        "brief_id": result.get("brief_id"),
+        "theater": result.get("theater"),
+        "wri": result.get("sio_composite_score"),
+        "threat_tier": result.get("threat_tier"),
+        "iw_triggered": result.get("iw_triggered"),
+        "signal_count_24h": result.get("signal_count_24h"),
+        "signal_velocity": result.get("signal_velocity"),
+        "p_war_posterior": result.get("p_war") or result.get("p_war_posterior"),
+        "narrative_md": result.get("narrative_md", ""),
+        "generated_at": result.get("generated_at"),
+        "latency_ms": result.get("latency_ms"),
+    }
+    resp = make_response(jsonify(payload))
     resp.headers["X-Classification"] = "CUI"
     return resp
 

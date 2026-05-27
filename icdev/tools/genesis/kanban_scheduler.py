@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Kanban Scheduler -- standalone process that runs the kanban reflex on a loop.
 
@@ -44,7 +46,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
     stream=_stderr_utf8,
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def main():

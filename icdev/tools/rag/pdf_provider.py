@@ -10,15 +10,15 @@ Uses D66 ABC provider pattern.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
-import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.rag.pdf_provider")
+logger = get_logger("icdev.rag.pdf_provider")
 
 
 @dataclass
