@@ -128,6 +128,43 @@ def _create_review_card() -> None:
         LOG.warning("[harness] Failed to create review card: %s", exc)
 
 
+def _create_meta_review_card(meta_result: dict) -> None:
+    """Create a kanban card asking a human to review meta-harness proposals."""
+    import uuid
+    title = "[harness] Review meta-harness structural proposals"
+    try:
+        conn = _conn()
+        row = conn.execute(
+            "SELECT id FROM kanban_tasks WHERE title = ? AND status NOT IN ('done','dismissed') LIMIT 1",
+            (title,),
+        ).fetchone()
+        if row:
+            return
+        n_oracle = len(meta_result.get("oracle_proposals", []))
+        n_heal = len(meta_result.get("heal_proposals", []))
+        task_id = f"harness-meta-review-{uuid.uuid4().hex[:6]}"
+        body = (
+            "**Meta-Harness Structural Proposals Ready for Review**\n\n"
+            f"- Oracle heuristic retirements proposed: {n_oracle}\n"
+            f"- Heal constitution tightenings proposed: {n_heal}\n\n"
+            f"Review `{meta_result.get('proposals_path', 'args/meta_harness_proposals.yaml')}`, "
+            "then apply changes manually to `args/oracle_heuristics.yaml` and/or "
+            "`args/heal_constitution.yaml`. Delete the proposals file after review."
+        )
+        conn.execute(
+            """
+            INSERT INTO kanban_tasks
+                (id, title, description, status, priority, source, created_at, updated_at)
+            VALUES (?, ?, ?, 'backlog', 'high', 'harness_reflex', ?, ?)
+            """,
+            (task_id, title, body, _utcnow(), _utcnow()),
+        )
+        conn.commit()
+        LOG.info("[harness] Created meta review card: %s", task_id)
+    except Exception as exc:
+        LOG.warning("[harness] Failed to create meta review card: %s", exc)
+
+
 def run(config: dict[str, Any], trust: Any) -> dict[str, Any]:
     """Execute the Harness Reflex."""
     import os
@@ -177,6 +214,21 @@ def run(config: dict[str, Any], trust: Any) -> dict[str, Any]:
 
     status = "ok" if not alerts else ("degraded" if new_cards else "cards_exist")
 
+    # Meta-harness: run once per day to propose structural amendments
+    meta_result: dict = {}
+    try:
+        from tools.genesis.harness.meta_harness import should_run_today, run_meta_review
+        if should_run_today():
+            meta_result = run_meta_review(dry_run=dry_run)
+            if meta_result.get("proposals_written"):
+                LOG.info(
+                    "[harness] meta-harness wrote proposals to %s",
+                    meta_result.get("proposals_path"),
+                )
+                _create_meta_review_card(meta_result)
+    except Exception as exc:
+        LOG.warning("[harness] meta-harness pass failed: %s", exc)
+
     return {
         "success": True,
         "metric_value": float(len(new_cards)),
@@ -188,5 +240,6 @@ def run(config: dict[str, Any], trust: Any) -> dict[str, Any]:
             "metrics": metrics_summary,
             "dry_run": dry_run,
             "colearn": colearn_results,
+            "meta": meta_result,
         },
     }

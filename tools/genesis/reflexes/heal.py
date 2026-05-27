@@ -543,6 +543,8 @@ def _apply_remediation(pattern: Dict, failure: Dict) -> Tuple[bool, str]:
     try:
         success, message = handler(params)
         print(f"  Heal: {'SUCCESS' if success else 'FAILED'} — {message[:100]}")
+        if success and action_name == "reset_circuit_breaker":
+            _cb_reset_increment()
         return success, message
     except Exception as e:
         msg = f"Handler exception: {e}"
@@ -554,6 +556,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Heal Reflex."""
     confidence_threshold = config.get("confidence_threshold", 0.7)
     max_heals = config.get("max_auto_heals_per_hour", 5)
+
+    # Read current false-heal rate for constitution enforcement
+    false_heal_rate = 0.0
+    try:
+        from tools.genesis.harness.eval_harness import compute_metrics as _compute_metrics
+        false_heal_rate = _compute_metrics("heal", window_days=30).get("false_heal_rate", 0.0)
+    except Exception:
+        pass
 
     # Get recent failures
     failures = _get_recent_failures(lookback_hours=6)
@@ -585,6 +595,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             continue
 
         if match.get("confidence", 0) < confidence_threshold:
+            continue
+
+        # Constitution enforcement
+        allowed, block_reason = _check_constitution(match, false_heal_rate)
+        if not allowed:
+            matches.append({
+                "failure_id": failure.get("id"),
+                "pattern": match.get("pattern_name"),
+                "status": "constitution_blocked",
+                "reason": block_reason,
+            })
             continue
 
         if healed >= max_heals:
