@@ -127,6 +127,228 @@ def _rag_retrieve(query: str, project_id: str = "", tenant_id: str = "") -> list
 
 
 # ---------------------------------------------------------------------------
+# RICOAS Adaptation 1 — Constitution preamble (live system state, ~600 tokens)
+# ---------------------------------------------------------------------------
+
+_RICOAS_CONSTITUTION_ENABLED = True  # gate: set ICDEV_RICOAS_CONSTITUTION=false to disable
+
+
+def _build_ricoas_constitution(
+    context_id: str,
+    project_id: str = "",
+    tenant_id: str = "",
+) -> str:
+    """Build a ~600-token RICOAS state block injected into the system prompt each turn.
+
+    Queries live DB state across all 6 RICOAS dimensions. Failures per dimension
+    are silently skipped — the block degrades gracefully to only populated dimensions.
+    """
+    import os
+    if os.getenv("ICDEV_RICOAS_CONSTITUTION", "true").lower() in ("false", "0"):
+        return ""
+
+    lines: list[str] = ["[RICOAS CONTEXT — live system state]"]
+    conn = None
+    try:
+        conn = get_connection()
+    except Exception:
+        return ""
+
+    # R — Requirements: open intake_requirements count
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM intake_requirements WHERE status NOT IN ('done','dismissed')"
+        ).fetchone()
+        n = row[0] if row else 0
+        if project_id:
+            row2 = conn.execute(
+                "SELECT COUNT(*) FROM intake_requirements WHERE status NOT IN ('done','dismissed') AND session_id LIKE %s",
+                (f"%{project_id}%",),
+            ).fetchone()  # noqa: S608
+            n = row2[0] if row2 else n
+        lines.append(f"R (Requirements): {n} open requirement(s)")
+    except Exception:
+        pass
+
+    # I — Infrastructure: active canvas instances
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*), array_agg(DISTINCT status) FROM canvas_instances WHERE status != 'disabled'"
+        ).fetchone()
+        if row and row[0]:
+            statuses = row[1] or []
+            lines.append(f"I (Infrastructure): {row[0]} canvas instance(s) active — statuses: {', '.join(str(s) for s in statuses[:4])}")
+    except Exception:
+        pass
+
+    # C — Compliance: catalogued controls by family (top 3 families)
+    try:
+        rows = conn.execute(
+            "SELECT family, COUNT(*) as cnt FROM compliance_controls GROUP BY family ORDER BY cnt DESC LIMIT 3"
+        ).fetchall()
+        if rows:
+            summary = "; ".join(f"{r[0]}:{r[1]}" for r in rows)
+            lines.append(f"C (Compliance): controls catalogued — {summary}")
+    except Exception:
+        pass
+
+    # O — Operational health: latest health metrics
+    try:
+        rows = conn.execute(
+            "SELECT component, level, count FROM log_health_metrics ORDER BY ts DESC LIMIT 3"
+        ).fetchall()
+        if rows:
+            parts = [f"{r[0]}={r[1]}({r[2]})" for r in rows]
+            lines.append(f"O (Operational): {'; '.join(parts)}")
+    except Exception:
+        pass
+
+    # A — Architecture: top KG entity types
+    try:
+        rows = conn.execute(
+            "SELECT entity_type, COUNT(*) as cnt FROM kg_nodes GROUP BY entity_type ORDER BY cnt DESC LIMIT 3"
+        ).fetchall()
+        if rows:
+            parts = [f"{r[0]}({r[1]})" for r in rows]
+            lines.append(f"A (Architecture): KG node types — {', '.join(parts)}")
+    except Exception:
+        pass
+
+    # S — Security: open STIG findings by severity + CVE count
+    try:
+        rows = conn.execute(
+            "SELECT severity, COUNT(*) FROM stig_findings WHERE status IN ('Open','Not_Reviewed') GROUP BY severity"
+        ).fetchall()
+        cve_row = conn.execute("SELECT COUNT(*) FROM cve_triage").fetchone()
+        stig_parts = [f"{r[0]}:{r[1]}" for r in rows] if rows else []
+        cve_count = cve_row[0] if cve_row else 0
+        sec_parts = []
+        if stig_parts:
+            sec_parts.append(f"STIG open — {', '.join(stig_parts)}")
+        if cve_count:
+            sec_parts.append(f"CVEs triaged: {cve_count}")
+        if sec_parts:
+            lines.append(f"S (Security): {'; '.join(sec_parts)}")
+    except Exception:
+        pass
+
+    if len(lines) <= 1:
+        return ""  # Nothing populated — skip injection
+
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# RICOAS Adaptation 2 — KG-backed invisible context retrieval (~400 tokens)
+# ---------------------------------------------------------------------------
+
+
+def _kg_context_retrieve(user_message: str, top_k: int = 5) -> str:
+    """Return a hidden KG context block for the user message.
+
+    Uses awareness_kg_nodes (self-awareness graph) with keyword matching.
+    Returns empty string if KG is unavailable.
+    """
+    import os
+    if os.getenv("ICDEV_KG_CONTEXT", "true").lower() in ("false", "0"):
+        return ""
+    if not user_message.strip():
+        return ""
+
+    try:
+        from tools.knowledge_graph.graph_rag import retrieve
+
+        result = retrieve(query=user_message, top_k=top_k, compress=False)
+        ctx_text = result.get("context", "")
+        if not ctx_text or result.get("status") == "error":
+            return ""
+        # Trim to ~400 tokens (~1600 chars)
+        trimmed = ctx_text[:1600]
+        return f"[KG CONTEXT]\n{trimmed}\n"
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# RICOAS Adaptation 3 — Persistent corrections store
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+_CORRECTION_PATTERNS = [
+    _re.compile(r"\bactually\b", _re.IGNORECASE),
+    _re.compile(r"\bno,?\s+(?:we|our|it|that|this)\b", _re.IGNORECASE),
+    _re.compile(r"\bthat(?:'s| is) (?:wrong|incorrect|not right|not what)\b", _re.IGNORECASE),
+    _re.compile(r"\byou(?:'re| are) (?:wrong|incorrect|mistaken)\b", _re.IGNORECASE),
+    _re.compile(r"\bI (?:meant|mean|said)\b", _re.IGNORECASE),
+    _re.compile(r"\bcorrection[:\s]\b", _re.IGNORECASE),
+]
+
+_CORRECTIONS_TABLE_CREATED = False
+
+
+def _ensure_corrections_table() -> None:
+    global _CORRECTIONS_TABLE_CREATED
+    if _CORRECTIONS_TABLE_CREATED:
+        return
+    try:
+        conn = get_connection()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS chat_corrections (
+                id SERIAL PRIMARY KEY,
+                context_id TEXT NOT NULL,
+                correction_text TEXT NOT NULL,
+                turn_number INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chat_corrections_ctx ON chat_corrections(context_id, created_at DESC)"
+        )
+        conn.commit()
+        _CORRECTIONS_TABLE_CREATED = True
+    except Exception:
+        _CORRECTIONS_TABLE_CREATED = True  # don't retry on failure
+
+
+def _detect_and_store_correction(context_id: str, content: str, turn_number: int = 0) -> None:
+    """If content matches a correction signal, persist it to chat_corrections."""
+    if not any(p.search(content) for p in _CORRECTION_PATTERNS):
+        return
+    try:
+        _ensure_corrections_table()
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO chat_corrections (context_id, correction_text, turn_number, created_at) VALUES (%s, %s, %s, %s)",
+            (context_id, content[:500], turn_number, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+        conn.commit()
+        logger.debug("[RICOAS] Stored correction for context %s", context_id)
+    except Exception as exc:
+        logger.debug("[RICOAS] Could not store correction: %s", exc)
+
+
+def _get_recent_corrections(context_id: str, limit: int = 5) -> str:
+    """Return last N corrections for this context, formatted for system prompt prepend."""
+    try:
+        _ensure_corrections_table()
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT correction_text, created_at FROM chat_corrections WHERE context_id = %s ORDER BY created_at DESC LIMIT %s",
+            (context_id, limit),
+        ).fetchall()
+        if not rows:
+            return ""
+        corrections = [
+            f"  • {r[0] if isinstance(r, (list,tuple)) else r['correction_text']}"
+            for r in reversed(rows)
+        ]
+        return "[CORRECTIONS FROM THIS SESSION]\n" + "\n".join(corrections) + "\n"
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
 # History compression (D271-D274)
 # ---------------------------------------------------------------------------
 
@@ -450,6 +672,8 @@ class ChatManager:
 
         if role == "user":
             _fire_intake_hook(context_id, content)
+            # RICOAS Adaptation 3: detect and persist corrections
+            _detect_and_store_correction(context_id, content, turn_number=turn)
 
         _mark_dirty(
             context_id,
@@ -702,6 +926,20 @@ class ChatManager:
             conversation = []
             system_content = ctx.system_prompt or ""
 
+            # --- RICOAS Adaptation 1: constitution preamble ---
+            ricoas_block = _build_ricoas_constitution(
+                context_id=ctx.context_id,
+                project_id=ctx.project_id,
+                tenant_id=ctx.tenant_id,
+            )
+            if ricoas_block:
+                system_content = ricoas_block + "\n" + system_content
+
+            # --- RICOAS Adaptation 3: prepend recent corrections ---
+            corrections_block = _get_recent_corrections(ctx.context_id)
+            if corrections_block:
+                system_content = corrections_block + "\n" + system_content
+
             # --- RAG context injection (D-RAG-2) ---
             user_content = msg.get("content", "")
             rag_results = []
@@ -716,6 +954,11 @@ class ChatManager:
                     for i, r in enumerate(rag_results, 1):
                         rag_context += f"  [{i}] ({r['source_type']}, score={r['score']}): {r['content'][:400]}\n"
                     system_content += rag_context
+
+                # --- RICOAS Adaptation 2: KG invisible context ---
+                kg_block = _kg_context_retrieve(user_content)
+                if kg_block:
+                    system_content += "\n" + kg_block
 
             if system_content:
                 conversation.append({"role": "system", "content": system_content})
