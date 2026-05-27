@@ -3941,8 +3941,7 @@ def create_app() -> Flask:
             conn = get_connection(db_path=str(DB_PATH))
         try:
             if not has_request_context():
-                # CLI / background tasks: no user session, bypass RLS safely.
-                conn.set_security_context(None)
+                conn.set_security_context(None)  # rls-bypass: CLI / background tasks run without a user session; no tenant context available.
             # In a request context: _attach_flask_security_context() already wired
             # g.security_context (set by auth middleware) into the connection.
         except Exception:

@@ -415,7 +415,6 @@ def handle_kg_expand(arguments: Dict[str, Any]) -> Dict[str, Any]:
 def handle_kg_to_rag_chunks(arguments: Dict[str, Any]) -> Dict[str, Any]:
     """Convert KG node IDs to their originating RAG source chunks via source_chunk_id."""
     node_ids = arguments.get("node_ids", [])
-    tenant_id = arguments.get("tenant_id", "")
 
     if not node_ids or not isinstance(node_ids, list):
         return {"error": "node_ids must be a non-empty list"}

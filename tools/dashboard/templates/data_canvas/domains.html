@@ -1,0 +1,238 @@
+<!-- CUI // SP-CTI — Data Mesh: Domain Registry -->
+{% extends "base.html" %}
+{% block title %}Data Mesh Domains — ICDEV{% endblock %}
+{% block content %}
+<style>
+.dm-nav { display:flex; gap:4px; padding:10px 30px 0; border-bottom:1px solid #1e3a6e; flex-wrap:wrap; align-items:flex-end; }
+.dm-nav a { padding:5px 11px; border-radius:6px 6px 0 0; font-size:11px; font-weight:600; text-decoration:none; color:#7a8cb0; background:#0f1e36; border:1px solid #1e3a6e; border-bottom:none; }
+.dm-nav a.active { color:#ff9800; background:#16213e; border-color:#ff9800; }
+.dm-nav a:hover:not(.active) { color:#eaeaea; }
+
+.dm-hero { padding:16px 30px 12px; display:flex; justify-content:space-between; align-items:flex-start; }
+.dm-hero h1 { font-size:20px; margin:0 0 4px; color:#ff9800; }
+.dm-hero p { color:#7a8cb0; font-size:12px; margin:0; max-width:560px; }
+.btn-primary { padding:8px 18px; background:#ff9800; color:#0a1628; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; }
+.btn-primary:hover { background:#e68900; }
+
+.dm-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px; padding:16px 30px; }
+.domain-card { background:#16213e; border:1px solid #1e3a6e; border-radius:8px; padding:16px; cursor:pointer; transition:border-color .2s, box-shadow .2s; }
+.domain-card:hover { border-color:#ff9800; box-shadow:0 0 0 1px #ff980033; }
+.domain-card.expanded { border-color:#ff9800; }
+.card-header { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.card-name { font-size:14px; font-weight:700; color:#eaeaea; flex:1; }
+.maturity-badge { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; font-weight:700; }
+.maturity-0 { background:#2a1a0a; color:#ff9800; }
+.maturity-1 { background:#0a2a1a; color:#66bb6a; }
+.maturity-2 { background:#0a1a3a; color:#4fc3f7; }
+.maturity-3 { background:#1a0a3a; color:#ce93d8; }
+.maturity-4 { background:#1a2a0a; color:#ffeb3b; }
+.card-owner { font-size:11px; color:#5a6e8c; margin-top:6px; }
+.card-email { font-size:10px; color:#3a5e8c; }
+.breakdown { display:none; border-top:1px solid #1e3a6e; margin-top:12px; padding-top:12px; }
+.breakdown.show { display:block; }
+.breakdown-row { display:flex; justify-content:space-between; padding:4px 0; font-size:11px; color:#7a8cb0; }
+.breakdown-val { font-size:13px; font-weight:700; color:#eaeaea; }
+
+.empty-state { grid-column:1/-1; text-align:center; padding:60px 20px; color:#5a6e8c; font-size:13px; }
+.empty-icon { font-size:40px; margin-bottom:12px; opacity:.4; }
+
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:300; display:flex; align-items:center; justify-content:center; }
+.modal-box { background:#16213e; border:1px solid #1e3a6e; border-radius:10px; padding:24px; width:460px; max-width:95vw; }
+.modal-box h3 { margin:0 0 16px; font-size:16px; color:#ff9800; }
+.form-group { margin-bottom:12px; }
+.form-group label { display:block; font-size:10px; color:#7a8cb0; margin-bottom:4px; text-transform:uppercase; letter-spacing:.4px; }
+.form-group input, .form-group textarea, .form-group select {
+  width:100%; padding:7px 10px; background:#0a1628; border:1px solid #1e3a6e;
+  border-radius:5px; color:#eaeaea; font-size:12px; box-sizing:border-box; }
+.form-group input:focus, .form-group select:focus { outline:none; border-color:#ff9800; }
+.modal-footer { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+.btn-cancel { padding:7px 18px; background:transparent; border:1px solid #1e3a6e; color:#7a8cb0; border-radius:6px; font-size:12px; cursor:pointer; }
+.btn-cancel:hover { border-color:#ef5350; color:#ef5350; }
+.msg-area { min-height:16px; font-size:12px; margin-bottom:6px; }
+.msg-area.error { color:#ef5350; }
+.msg-area.ok { color:#66bb6a; }
+</style>
+
+<!-- Tab nav -->
+<div class="dm-nav">
+  <a href="/data/">Design Canvas</a>
+  <a href="/data/domains" class="active">Domains</a>
+  <a href="/data/products">Data Products</a>
+  <a href="/data/templates">Templates</a>
+  <a href="/data/quality">Quality</a>
+  <a href="/data/lineage">Lineage</a>
+</div>
+
+<!-- Hero -->
+<div class="dm-hero">
+  <div>
+    <h1>Domain Registry</h1>
+    <p>Federated data domains — ownership, maturity, and bounded context mapping for the Data Mesh.</p>
+  </div>
+  <button class="btn-primary" onclick="openModal()">+ New Domain</button>
+</div>
+
+<!-- IQE query widget -->
+{% include "includes/iqe_query_widget.html" %}
+
+<!-- Domain grid -->
+<div class="dm-grid" id="dm-grid">
+  {% if domains %}
+    {% for d in domains %}
+    <div class="domain-card" id="card-{{ d.id }}" onclick="toggleBreakdown('{{ d.id }}')">
+      <div class="card-header">
+        <div class="card-name">{{ d.name }}</div>
+        <span class="maturity-badge maturity-{{ d.maturity_level | default(0) }}">
+          {{ maturity_map.get(d.maturity_level | default(0) | int, 'Initial') }}
+        </span>
+      </div>
+      {% if d.owner_team or d.owner %}
+      <div class="card-owner">Owner: {{ d.owner_team or d.owner }}</div>
+      {% endif %}
+      {% if d.owner_email %}
+      <div class="card-email">{{ d.owner_email }}</div>
+      {% endif %}
+      <div class="breakdown" id="breakdown-{{ d.id }}">
+        <div class="breakdown-row"><span>Products</span><span class="breakdown-val" id="pc-{{ d.id }}">—</span></div>
+        <div class="breakdown-row"><span>Contracts</span><span class="breakdown-val" id="cc-{{ d.id }}">—</span></div>
+        <div class="breakdown-row"><span>Policies</span><span class="breakdown-val" id="polc-{{ d.id }}">—</span></div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty-state" id="empty-state">
+    <div class="empty-icon">&#9689;</div>
+    <div>No domains yet</div>
+    <div style="margin-top:8px;font-size:11px;">Click <strong style="color:#ff9800;">+ New Domain</strong> to register your first data domain.</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- New Domain Modal -->
+<div class="modal-overlay" id="modal" style="display:none;" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <h3>Register New Domain</h3>
+    <div class="msg-area" id="modal-msg"></div>
+    <div class="form-group">
+      <label>Domain Name *</label>
+      <input type="text" id="f-name" placeholder="e.g. Logistics Domain" maxlength="200" />
+    </div>
+    <div class="form-group">
+      <label>Owner Team</label>
+      <input type="text" id="f-owner-team" placeholder="e.g. ops-team" maxlength="200" />
+    </div>
+    <div class="form-group">
+      <label>Owner Email</label>
+      <input type="email" id="f-owner-email" placeholder="e.g. ops@example.gov" maxlength="200" />
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <input type="text" id="f-desc" placeholder="Short description" maxlength="500" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" id="submit-btn" onclick="submitDomain()">Create Domain</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openModal() {
+  document.getElementById('modal').style.display = 'flex';
+  document.getElementById('f-name').focus();
+  document.getElementById('modal-msg').textContent = '';
+  document.getElementById('modal-msg').className = 'msg-area';
+}
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+  ['f-name','f-owner-team','f-owner-email','f-desc'].forEach(id => document.getElementById(id).value = '');
+}
+
+function toggleBreakdown(domainId) {
+  var bd = document.getElementById('breakdown-' + domainId);
+  var card = document.getElementById('card-' + domainId);
+  if (bd.classList.contains('show')) {
+    bd.classList.remove('show');
+    card.classList.remove('expanded');
+    return;
+  }
+  bd.classList.add('show');
+  card.classList.add('expanded');
+  // Lazy-load counts
+  fetch('/data/api/domains/' + domainId)
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('pc-' + domainId).textContent = d.product_count !== undefined ? d.product_count : '—';
+      document.getElementById('cc-' + domainId).textContent = d.contract_count !== undefined ? d.contract_count : '—';
+      document.getElementById('polc-' + domainId).textContent = d.policy_count !== undefined ? d.policy_count : '—';
+    })
+    .catch(() => {});
+}
+
+function renderCard(d) {
+  var maturityClass = 'maturity-' + (d.maturity_level || 0);
+  var maturityLabel = d.maturity_label || 'Defined';
+  var ownerLine = d.owner_team || d.owner ? '<div class="card-owner">Owner: ' + escHtml(d.owner_team || d.owner) + '</div>' : '';
+  var emailLine = d.owner_email ? '<div class="card-email">' + escHtml(d.owner_email) + '</div>' : '';
+  var html = '<div class="domain-card" id="card-' + d.id + '" onclick="toggleBreakdown(\'' + d.id + '\')">' +
+    '<div class="card-header"><div class="card-name">' + escHtml(d.name) + '</div>' +
+    '<span class="maturity-badge ' + maturityClass + '">' + escHtml(maturityLabel) + '</span></div>' +
+    ownerLine + emailLine +
+    '<div class="breakdown" id="breakdown-' + d.id + '">' +
+      '<div class="breakdown-row"><span>Products</span><span class="breakdown-val" id="pc-' + d.id + '">0</span></div>' +
+      '<div class="breakdown-row"><span>Contracts</span><span class="breakdown-val" id="cc-' + d.id + '">0</span></div>' +
+      '<div class="breakdown-row"><span>Policies</span><span class="breakdown-val" id="polc-' + d.id + '">0</span></div>' +
+    '</div></div>';
+  return html;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function submitDomain() {
+  var name = document.getElementById('f-name').value.trim();
+  if (!name) { showMsg('Domain name is required.', true); return; }
+  var payload = {
+    name: name,
+    owner_team: document.getElementById('f-owner-team').value.trim(),
+    owner_email: document.getElementById('f-owner-email').value.trim(),
+    description: document.getElementById('f-desc').value.trim(),
+  };
+  var btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Creating…';
+  fetch('/data/api/domains', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  })
+  .then(r => r.json().then(d => ({ status: r.status, data: d })))
+  .then(({ status, data }) => {
+    btn.disabled = false;
+    btn.textContent = 'Create Domain';
+    if (status !== 201) { showMsg(data.error || 'Error creating domain.', true); return; }
+    closeModal();
+    var grid = document.getElementById('dm-grid');
+    var empty = document.getElementById('empty-state');
+    if (empty) empty.remove();
+    grid.insertAdjacentHTML('afterbegin', renderCard(data));
+  })
+  .catch(e => {
+    btn.disabled = false;
+    btn.textContent = 'Create Domain';
+    showMsg('Network error.', true);
+  });
+}
+
+function showMsg(msg, isError) {
+  var el = document.getElementById('modal-msg');
+  el.textContent = msg;
+  el.className = 'msg-area ' + (isError ? 'error' : 'ok');
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeModal();
+});
+</script>
+{% endblock %}

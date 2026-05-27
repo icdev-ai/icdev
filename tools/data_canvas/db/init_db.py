@@ -498,6 +498,48 @@ CREATE TRIGGER IF NOT EXISTS dm_audit_no_delete
     BEGIN
         SELECT RAISE(ABORT, 'dm_audit records cannot be deleted');
     END;
+
+CREATE TABLE IF NOT EXISTS dm_opa_policies (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT,
+    name            TEXT NOT NULL,
+    rego_text       TEXT DEFAULT '',
+    policy_path     TEXT DEFAULT 'datamesh/allow',
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_opa_policies_domain ON dm_opa_policies(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_opa_policies_enabled ON dm_opa_policies(enabled);
+
+CREATE TABLE IF NOT EXISTS dm_policy_audit_log (
+    id              TEXT PRIMARY KEY,
+    policy_id       TEXT,
+    user            TEXT DEFAULT 'system',
+    resource        TEXT DEFAULT '{}',
+    decision        INTEGER DEFAULT 0,
+    reason          TEXT DEFAULT '',
+    method          TEXT DEFAULT 'local',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_policy_audit_created ON dm_policy_audit_log(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS dm_csp_sync_log (
+    id              TEXT PRIMARY KEY,
+    provider        TEXT NOT NULL,
+    domain_id       TEXT DEFAULT '',
+    product_id      TEXT DEFAULT '',
+    operation       TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    synced_count    INTEGER DEFAULT 0,
+    error_detail    TEXT DEFAULT '',
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_csp_provider ON dm_csp_sync_log(provider, created_at);
 """
 
 
@@ -2423,6 +2465,18 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_design ON dd_migration_jobs(des
 CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(status);
 """)
         conn.commit()
+
+        # Migration: add owner_team and owner_email to dm_domains if missing
+        for _col, _default in [("owner_team", "''"), ("owner_email", "''")]:
+            try:
+                conn.execute(f"ALTER TABLE dm_domains ADD COLUMN {_col} TEXT DEFAULT {_default}")
+                conn.commit()
+                print(f"[init_db] Migration applied: dm_domains.{_col} added.")
+            except Exception as _e:
+                if "duplicate column" in str(_e).lower() or "already exists" in str(_e).lower():
+                    pass
+                else:
+                    raise
 
         # Migration: add anomaly_json to dd_explore_profiles if missing
         try:

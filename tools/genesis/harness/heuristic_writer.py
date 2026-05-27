@@ -17,7 +17,8 @@ oracle_triage cycle.
 """
 from __future__ import annotations
 
-import logging
+
+from tools.logging.icdev_logger import get_logger
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -25,7 +26,7 @@ from typing import Any
 
 import yaml
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 HEURISTICS_FILE = BASE_DIR / "args" / "oracle_heuristics.yaml"

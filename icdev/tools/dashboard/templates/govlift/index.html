@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}GovLift — DoD Cloud Migration{% endblock %}
+{% block extra_css %}
+<style>
+.gl-header{background:linear-gradient(135deg,#0f172a 0%,#1a3a2a 40%,#0c2340 100%);padding:28px 32px 24px;border-radius:12px;margin-bottom:28px;}
+.gl-header h1{margin:0;font-size:1.6rem;font-weight:700;color:#d1fae5;letter-spacing:.3px;}
+.gl-header p{margin:6px 0 0;color:#6ee7b7;font-size:.9rem;}
+.classification-banner{background:#1e3a1a;border:1px solid #166534;color:#86efac;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-align:center;padding:6px 12px;border-radius:6px;margin-bottom:18px;}
+.gl-progress-bar{background:#1e293b;border-radius:8px;height:18px;overflow:hidden;margin-top:10px;}
+.gl-progress-fill{height:100%;border-radius:8px;background:linear-gradient(90deg,#10b981,#34d399);transition:width .4s;}
+.stat-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px 22px;text-align:center;}
+.stat-card .val{font-size:1.8rem;font-weight:700;color:#d1fae5;}
+.stat-card .lbl{font-size:.75rem;color:#64748b;margin-top:2px;}
+.summary-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px 24px;height:100%;}
+.summary-card h5{font-size:.9rem;color:#94a3b8;margin-bottom:14px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;}
+.summary-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1e293b;font-size:.82rem;}
+.summary-row:last-child{border-bottom:none;}
+.summary-row .sr-label{color:#94a3b8;}
+.summary-row .sr-val{color:#e2e8f0;font-weight:600;}
+.nav-btn{padding:7px 16px;border-radius:8px;font-size:.82rem;font-weight:600;text-decoration:none;background:#0f172a;border:1px solid #334155;color:#94a3b8;display:inline-block;}
+.nav-btn:hover{border-color:#10b981;color:#10b981;}
+.nav-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+.risk-critical{color:#f87171;}
+.risk-high{color:#fbbf24;}
+.risk-medium{color:#60a5fa;}
+.risk-low{color:#34d399;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="classification-banner">{{ classification }}</div>
+
+<div class="gl-header">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+    <div>
+      <h1>GovLift</h1>
+      <p>DoD IL4 Cloud Migration Command Center</p>
+    </div>
+    <div style="text-align:right;">
+      {% set total = data.scanner.get('total_workloads', 0) %}
+      {% set migrated = data.scanner.get('migrated', 0) %}
+      {% set pct = ((migrated / total * 100)|round(1)|int) if total > 0 else 0 %}
+      <div style="font-size:.8rem;color:#6ee7b7;margin-bottom:4px;">Overall Migration Progress</div>
+      <div style="font-size:1.8rem;font-weight:700;color:#d1fae5;">{{ pct }}%</div>
+      <div style="font-size:.75rem;color:#64748b;">{{ migrated }} of {{ total }} workloads</div>
+      <div class="gl-progress-bar" style="width:220px;margin-top:8px;">
+        <div class="gl-progress-fill" style="width:{{ pct }}%;"></div>
+      </div>
+    </div>
+  </div>
+  <div class="nav-links">
+    <a class="nav-btn" href="/govlift/workloads">Workloads</a>
+    <a class="nav-btn" href="/govlift/waves">Wave Planner</a>
+    <a class="nav-btn" href="/govlift/executor">Executor</a>
+    <a class="nav-btn" href="/govlift/stig">STIG</a>
+    <a class="nav-btn" href="/govlift/audit">Audit Log</a>
+  </div>
+</div>
+
+<!-- Key Metrics -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="val">{{ data.scanner.get('total_workloads', 0) }}</div>
+      <div class="lbl">Total Workloads</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="val" style="color:#34d399;">{{ data.scanner.get('migrated', 0) }}</div>
+      <div class="lbl">Migrated</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="val" style="color:#fbbf24;">{{ data.scanner.get('in_migration', 0) }}</div>
+      <div class="lbl">In Migration</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="val" style="color:#f87171;">{{ data.scanner.get('failed', 0) }}</div>
+      <div class="lbl">Failed</div>
+    </div>
+  </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+  <!-- Workload Discovery -->
+  <div class="col-12 col-md-6">
+    <div class="summary-card">
+      <h5>Workload Discovery</h5>
+      <div class="summary-row"><span class="sr-label">Total Workloads</span><span class="sr-val">{{ data.scanner.get('total_workloads', 0) }}</span></div>
+      <div class="summary-row"><span class="sr-label">Discovered</span><span class="sr-val"><span class="badge bg-secondary">{{ data.scanner.get('discovered', 0) }}</span></span></div>
+      <div class="summary-row"><span class="sr-label">Assessed</span><span class="sr-val"><span class="badge bg-info">{{ data.scanner.get('assessed', 0) }}</span></span></div>
+      <div class="summary-row"><span class="sr-label">Wave Assigned</span><span class="sr-val"><span class="badge bg-primary">{{ data.scanner.get('wave_assigned', 0) }}</span></span></div>
+      <div class="summary-row"><span class="sr-label">In Migration</span><span class="sr-val"><span class="badge bg-warning text-dark">{{ data.scanner.get('in_migration', 0) }}</span></span></div>
+      <div class="summary-row"><span class="sr-label">Migrated</span><span class="sr-val"><span class="badge bg-success">{{ data.scanner.get('migrated', 0) }}</span></span></div>
+      {% if data.scanner.get('by_risk') %}
+      <div class="mt-3 pt-2" style="border-top:1px solid #334155;">
+        <div style="font-size:.75rem;color:#64748b;margin-bottom:6px;">By Risk Level</div>
+        {% for risk, count in data.scanner.by_risk.items() %}
+        <div class="summary-row">
+          <span class="sr-label risk-{{ risk }}">{{ risk|capitalize }}</span>
+          <span class="sr-val">{{ count }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="mt-3"><a href="/govlift/workloads" class="nav-btn" style="font-size:.78rem;padding:5px 12px;">View Workloads →</a></div>
+    </div>
+  </div>
+
+  <!-- Wave Status -->
+  <div class="col-12 col-md-6">
+    <div class="summary-card">
+      <h5>Wave Status</h5>
+      <div class="summary-row"><span class="sr-label">Total Waves</span><span class="sr-val">{{ data.waves.get('total', 0) }}</span></div>
+      <div class="summary-row"><span class="sr-label">Planned</span><span class="sr-val"><span class="badge bg-primary">{{ data.waves.get('planned', 0) }}</span></span></div>
+      <div class="summary-row"><span class="sr-label">In Progress</span><span class="sr-val"><span class="badge bg-warning text-dark">{{ data.waves.get('in_progress', 0) }}</span></span></div>
+      <div class="summary-row"><span class="sr-label">Completed</span><span class="sr-val"><span class="badge bg-success">{{ data.waves.get('completed', 0) }}</span></span></div>
+      {% if data.waves.get('by_wave') %}
+      <div class="mt-3 pt-2" style="border-top:1px solid #334155;">
+        <div style="font-size:.75rem;color:#64748b;margin-bottom:6px;">Wave Breakdown</div>
+        {% for wave in data.waves.by_wave[:5] %}
+        <div class="summary-row">
+          <span class="sr-label">{{ wave.get('name', 'Wave') }}</span>
+          <span class="sr-val">{{ wave.get('workload_count', 0) }} workloads</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="mt-3"><a href="/govlift/waves" class="nav-btn" style="font-size:.78rem;padding:5px 12px;">View Waves →</a></div>
+    </div>
+  </div>
+
+  <!-- Migration Jobs -->
+  <div class="col-12 col-md-6">
+    <div class="summary-card">
+      <h5>Migration Jobs</h5>
+      <div class="summary-row"><span class="sr-label">Total Jobs</span><span class="sr-val">{{ data.migrations.get('total', 0) }}</span></div>
+      <div class="summary-row"><span class="sr-label">Pending</span><span class="sr-val"><span class="badge bg-secondary">{{ data.migrations.get('pending', 0) }}</span></span></div>
+      <div class="summary-row"><span class="sr-label">Running</span><span class="sr-val"><span class="badge bg-warning text-dark">{{ data.migrations.get('running', 0) }}</span></span></div>
+      <div class="summary-row"><span class="sr-label">Completed</span><span class="sr-val"><span class="badge bg-success">{{ data.migrations.get('completed', 0) }}</span></span></div>
+      <div class="summary-row"><span class="sr-label">Failed</span><span class="sr-val"><span class="badge bg-danger">{{ data.migrations.get('failed', 0) }}</span></span></div>
+      <div class="summary-row"><span class="sr-label">Avg Duration</span><span class="sr-val">{{ data.migrations.get('avg_duration_h', 0)|round(1) }}h</span></div>
+      <div class="mt-3"><a href="/govlift/executor" class="nav-btn" style="font-size:.78rem;padding:5px 12px;">View Jobs →</a></div>
+    </div>
+  </div>
+
+  <!-- STIG Compliance -->
+  <div class="col-12 col-md-6">
+    <div class="summary-card">
+      <h5>STIG Compliance</h5>
+      {% set cat1 = data.audit.get('by_action', {}).get('stig_cat1_open', 0) %}
+      <div class="summary-row"><span class="sr-label">Total Events</span><span class="sr-val">{{ data.audit.get('total_events', 0) }}</span></div>
+      <div class="summary-row"><span class="sr-label">Unique Users</span><span class="sr-val">{{ data.audit.get('unique_users', 0) }}</span></div>
+      {% if data.audit.get('by_action') %}
+      <div class="mt-3 pt-2" style="border-top:1px solid #334155;">
+        <div style="font-size:.75rem;color:#64748b;margin-bottom:6px;">Actions</div>
+        {% for action, count in data.audit.by_action.items() %}
+        <div class="summary-row">
+          <span class="sr-label">{{ action }}</span>
+          <span class="sr-val">{{ count }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="mt-3">
+        <a href="/govlift/stig" class="nav-btn" style="font-size:.78rem;padding:5px 12px;margin-right:6px;">View STIG →</a>
+        <a href="/govlift/audit" class="nav-btn" style="font-size:.78rem;padding:5px 12px;">Audit Log →</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

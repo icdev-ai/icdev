@@ -7,11 +7,12 @@ already exists for the same reflex+metric pair.
 """
 from __future__ import annotations
 
-import logging
+
+from tools.logging.icdev_logger import get_logger
 from datetime import datetime, timezone
 from typing import Any
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def _utcnow() -> str:

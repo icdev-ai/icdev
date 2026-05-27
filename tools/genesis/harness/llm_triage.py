@@ -11,11 +11,12 @@ Min confidence: 0.65 — below this the original "skip" is preserved.
 from __future__ import annotations
 
 import json
-import logging
+
+from tools.logging.icdev_logger import get_logger
 import os
 from typing import Any
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 _MIN_CONFIDENCE = 0.65
 

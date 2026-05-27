@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Simulate — GovLift{% endblock %}
+{% block content %}
+<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:6px 12px;color:#86efac;font-size:.72rem;font-weight:700;letter-spacing:.08em;text-align:center;margin-bottom:16px;">{{ classification }}</div>
+<a href="/govlift" style="color:#6ee7b7;text-decoration:none;font-size:.85rem;">← GovLift</a>
+<div style="background:linear-gradient(135deg,#0f172a,#1a3a2a);padding:20px 26px;border-radius:10px;margin:16px 0 20px;">
+  <h1 style="margin:0;font-size:1.35rem;font-weight:700;color:#d1fae5;">Migration Simulator</h1>
+  <p style="margin:4px 0 0;color:#6ee7b7;font-size:.83rem;">Digital Twin Wave Simulations — Risk Assessment &amp; Timeline Modeling</p>
+</div>
+<div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px;margin-bottom:20px;">
+  <h3 style="color:#d1fae5;font-size:.95rem;margin:0 0 14px;">Run New Simulation</h3>
+  <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+    <div>
+      <label style="color:#94a3b8;font-size:.75rem;display:block;margin-bottom:5px;">Wave ID</label>
+      <input id="sim_wave_id" type="text" placeholder="wave-..." style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:7px 12px;font-size:.83rem;width:220px;">
+    </div>
+    <div>
+      <label style="color:#94a3b8;font-size:.75rem;display:block;margin-bottom:5px;">Initiated By</label>
+      <input id="sim_operator" type="text" placeholder="operator" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:7px 12px;font-size:.83rem;width:180px;">
+    </div>
+    <button onclick="runSim()" style="background:#10b981;border:none;color:#fff;border-radius:6px;padding:8px 20px;font-size:.83rem;font-weight:600;cursor:pointer;">Run Simulation</button>
+  </div>
+  <div id="sim-result" style="margin-top:14px;"></div>
+</div>
+<h3 style="color:#d1fae5;font-size:1rem;margin-bottom:12px;">Past Simulations ({{ simulations|length }})</h3>
+<div style="background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;">
+  <table style="width:100%;border-collapse:collapse;">
+    <thead><tr style="background:#0f172a;">
+      <th style="padding:10px 14px;text-align:left;color:#94a3b8;font-size:.73rem;text-transform:uppercase;">Wave</th>
+      <th style="padding:10px 14px;text-align:left;color:#94a3b8;font-size:.73rem;text-transform:uppercase;">Status</th>
+      <th style="padding:10px 14px;text-align:left;color:#94a3b8;font-size:.73rem;text-transform:uppercase;">Est. Duration</th>
+      <th style="padding:10px 14px;text-align:left;color:#94a3b8;font-size:.73rem;text-transform:uppercase;">Initiated By</th>
+      <th style="padding:10px 14px;text-align:left;color:#94a3b8;font-size:.73rem;text-transform:uppercase;">Created</th>
+    </tr></thead>
+    <tbody>
+    {% for sim in simulations %}
+    <tr style="border-bottom:1px solid #1e293b;">
+      <td style="padding:10px 14px;color:#6ee7b7;font-size:.83rem;">{{ sim.wave_name or sim.wave_id or '—' }}</td>
+      <td style="padding:10px 14px;">
+        <span style="padding:2px 8px;border-radius:10px;font-size:.72rem;border:1px solid {% if sim.status=='completed' %}#10b981{% elif sim.status=='running' %}#fbbf24{% elif sim.status=='failed' %}#f87171{% else %}#334155{% endif %};color:{% if sim.status=='completed' %}#10b981{% elif sim.status=='running' %}#fbbf24{% elif sim.status=='failed' %}#f87171{% else %}#94a3b8{% endif %};">{{ sim.status }}</span>
+      </td>
+      <td style="padding:10px 14px;color:#94a3b8;font-size:.8rem;">{{ sim.estimated_duration_hrs }}h</td>
+      <td style="padding:10px 14px;color:#94a3b8;font-size:.8rem;">{{ sim.initiated_by }}</td>
+      <td style="padding:10px 14px;color:#64748b;font-size:.78rem;">{{ sim.created_at or 'N/A' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" style="padding:20px;text-align:center;color:#64748b;font-size:.83rem;">No simulations run yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<script>
+function runSim() {
+  const wave_id = document.getElementById('sim_wave_id').value;
+  const op = document.getElementById('sim_operator').value || 'operator';
+  if (!wave_id) { alert('Wave ID required'); return; }
+  fetch('/api/govlift/simulate', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({wave_id, initiated_by: op})
+  }).then(r => r.json()).then(d => {
+    document.getElementById('sim-result').innerHTML =
+      '<div style="background:#1e293b;border:1px solid #10b981;border-radius:8px;padding:12px;color:#10b981;font-size:.83rem;">Simulation queued: ' + (d.id || JSON.stringify(d)) + '</div>';
+    setTimeout(() => location.reload(), 2000);
+  }).catch(e => {
+    document.getElementById('sim-result').innerHTML =
+      '<div style="background:#1e293b;border:1px solid #f87171;border-radius:8px;padding:12px;color:#f87171;font-size:.83rem;">Error: ' + e + '</div>';
+  });
+}
+</script>
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

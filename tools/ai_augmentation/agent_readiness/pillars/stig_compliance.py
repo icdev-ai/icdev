@@ -78,7 +78,8 @@ def _nlp_extract_stig_refs(text: str, task: str) -> Optional[dict]:
     if not api_key:
         return None
     try:
-        import anthropic
+        from tools.llm.anthropic_provider import AnthropicLLMProvider
+        from tools.llm.provider import LLMRequest
     except ImportError:
         return None
 
@@ -92,13 +93,15 @@ def _nlp_extract_stig_refs(text: str, task: str) -> Optional[dict]:
         'Set found to false and refs to [] when nothing is detected.'
     )
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model=thresholds["nlp_extractor_model"],
-            max_tokens=thresholds["nlp_extractor_max_tokens"],
+        provider = AnthropicLLMProvider(api_key=api_key)
+        request = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
+            max_tokens=thresholds["nlp_extractor_max_tokens"],
         )
-        result_text = response.content[0].text.strip()
+        model_id = thresholds["nlp_extractor_model"]
+        model_cfg = {"max_output_tokens": thresholds["nlp_extractor_max_tokens"]}
+        response = provider.invoke(request, model_id, model_cfg)
+        result_text = response.content.strip()
         json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
         if json_match:
             return json.loads(json_match.group())
