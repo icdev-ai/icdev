@@ -3,6 +3,33 @@
 # Anomaly detection: values below min thresholds are flagged as anomalously low
 # for a project claiming task automation / CI readiness.
 
+scoring:
+  # Pillar weights used in the weighted-average overall readiness score.
+  # Moved here from checker.py to allow tuning without code changes.
+  # ICDEV pillars (il-classification, nist-controls, etc.) are weighted higher
+  # because compliance gaps are the typical blocker for IL4/IL5 deployments.
+  pillar_weights:
+    code-quality: 1.0
+    documentation: 1.0
+    testing: 1.2          # testing slightly higher — automation depends on test coverage
+    structure: 0.8
+    dependencies: 1.0
+    configuration: 0.8
+    security: 1.2         # security slightly higher — agentic tasks must meet security gate
+    il-classification: 1.5   # ICDEV: IL compliance is high-priority
+    nist-controls: 1.5        # ICDEV: NIST compliance is high-priority
+    stig-compliance: 1.3      # ICDEV: STIG compliance matters
+    append-only-audit: 1.3    # ICDEV: audit integrity matters
+
+  anomaly_detection:
+    # Flag a pillar score as anomalously low when it falls below this threshold.
+    # A project with any fully-evaluated pillar below 25% is a readiness concern
+    # regardless of overall score — a single weak area can block agentic task execution.
+    floor_threshold: 0.25
+    # Flag a pillar as a statistical outlier when its z-score (vs all pillar scores)
+    # exceeds this value. 2.0 is roughly the bottom 2.3% of a symmetric distribution.
+    zscore_threshold: 2.0
+
 pillars:
   documentation:
     readme:
