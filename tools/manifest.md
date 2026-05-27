@@ -849,3 +849,9 @@
 | Meta Harness | tools\genesis\harness\meta_harness.py | Auto-registered: harness/meta_harness.py | --json | JSON |
 | Iceberg | tools\data_canvas\exporters\iceberg.py | Auto-registered: exporters/iceberg.py | --json | JSON |
 | Lake Zones | tools\data_canvas\exporters\lake_zones.py | Auto-registered: exporters/lake_zones.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Data Mesh | tools\data_canvas\data_mesh.py | Auto-registered: data_canvas/data_mesh.py | --json | JSON |

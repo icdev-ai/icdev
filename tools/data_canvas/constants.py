@@ -467,6 +467,20 @@ DATA_NIST_FAMILIES = {
     "PT": "PII Processing and Transparency",
 }
 
+# ── Data Mesh Constants ───────────────────────────────────────────────────────
+
+DM_DOMAIN_MATURITY_LEVELS = [
+    {"level": 0, "label": "Initial",    "description": "Ad-hoc data practices, no formal ownership or governance"},
+    {"level": 1, "label": "Defined",    "description": "Domains identified, ownership assigned, basic data products exist"},
+    {"level": 2, "label": "Managed",    "description": "Contracts published, SLAs tracked, quality gates active"},
+    {"level": 3, "label": "Optimized",  "description": "Federated governance active, cross-domain lineage, schema drift alerts"},
+    {"level": 4, "label": "Autonomous", "description": "Self-service, automated quality gates, AI-assisted governance"},
+]
+
+DM_PORT_TYPES = ["cdc", "api", "batch", "stream", "file"]
+DM_CONTRACT_STATUSES = ["draft", "active", "deprecated", "archived"]
+DM_GOVERNANCE_POLICY_TYPES = ["opa", "rbac", "classification", "retention", "dlp"]
+
 _D = "https://icdev.dev/ontology/data#"
 
 DATA_ONTOLOGY_MAP: dict[str, str] = {

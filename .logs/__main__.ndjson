@@ -128,3 +128,8 @@
 {"ts": "2026-05-27T01:16:27.154566+00:00", "level": "INFO", "component": "__main__", "message": "Another kanban scheduler is alive (pid=10792). Exiting to avoid duplicate dispatch.", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-27T01:17:34.706767+00:00", "level": "INFO", "component": "__main__", "message": "Kanban scheduler started (interval=60s)", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-27T01:17:34.706909+00:00", "level": "INFO", "component": "__main__", "message": "Press Ctrl+C to stop", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T01:32:18.143811+00:00", "level": "INFO", "component": "__main__", "message": "Kanban scheduler started (interval=60s)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T01:32:18.143961+00:00", "level": "INFO", "component": "__main__", "message": "Press Ctrl+C to stop", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T01:38:20.250702+00:00", "level": "INFO", "component": "__main__", "message": "Kanban scheduler started (interval=60s)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T01:38:20.250971+00:00", "level": "INFO", "component": "__main__", "message": "Press Ctrl+C to stop", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T01:38:36.824386+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1: status=ok activated=3 completed=0 running=0", "trace_id": null, "session_id": null, "extra": {}}

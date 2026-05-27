@@ -351,6 +351,153 @@ CREATE TABLE IF NOT EXISTS dd_freshness_alerts (
     classification  TEXT DEFAULT 'CUI // SP-CTI',
     created_at      TEXT
 );
+
+-- ── Data Mesh Foundation Tables ───────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS dm_domains (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    owner           TEXT DEFAULT '',
+    steward         TEXT DEFAULT '',
+    bounded_context TEXT DEFAULT '',
+    maturity_level  INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    status          TEXT DEFAULT 'active',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_domains_status ON dm_domains(status);
+
+CREATE TABLE IF NOT EXISTS dm_data_products (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT REFERENCES dm_domains(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    owner           TEXT DEFAULT '',
+    version         TEXT DEFAULT '1.0.0',
+    availability_sla REAL DEFAULT 99.9,
+    latency_sla_ms  INTEGER DEFAULT 500,
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_data_products_domain ON dm_data_products(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_data_products_status ON dm_data_products(status);
+
+CREATE TABLE IF NOT EXISTS dm_contracts (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    title           TEXT NOT NULL,
+    version         TEXT DEFAULT '1.0.0',
+    schema_json     TEXT DEFAULT '{}',
+    sla_json        TEXT DEFAULT '{}',
+    quality_rules_json TEXT DEFAULT '[]',
+    status          TEXT DEFAULT 'draft',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_product ON dm_contracts(product_id);
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_status  ON dm_contracts(status);
+
+CREATE TABLE IF NOT EXISTS dm_input_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    port_type       TEXT DEFAULT 'cdc',
+    schema_json     TEXT DEFAULT '{}',
+    source_system   TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_input_ports_product ON dm_input_ports(product_id);
+
+CREATE TABLE IF NOT EXISTS dm_output_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    port_type       TEXT DEFAULT 'api',
+    schema_json     TEXT DEFAULT '{}',
+    endpoint        TEXT DEFAULT '',
+    sla_json        TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_output_ports_product ON dm_output_ports(product_id);
+
+CREATE TABLE IF NOT EXISTS dm_domain_maturity (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT REFERENCES dm_domains(id) ON DELETE CASCADE,
+    maturity_level  INTEGER NOT NULL DEFAULT 0,
+    scores_json     TEXT DEFAULT '{}',
+    assessed_by     TEXT DEFAULT '',
+    notes           TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_domain_maturity_domain ON dm_domain_maturity(domain_id);
+
+CREATE TABLE IF NOT EXISTS dm_governance_policies (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    policy_type     TEXT DEFAULT 'opa',
+    rules_json      TEXT DEFAULT '[]',
+    applies_to      TEXT DEFAULT 'all',
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_governance_policies_status ON dm_governance_policies(status);
+
+CREATE TABLE IF NOT EXISTS dm_catalog_entries (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    catalog_name    TEXT NOT NULL,
+    tags_json       TEXT DEFAULT '[]',
+    metadata_json   TEXT DEFAULT '{}',
+    lineage_json    TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_catalog_entries_product ON dm_catalog_entries(product_id);
+
+CREATE TABLE IF NOT EXISTS dm_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain_id       TEXT,
+    product_id      TEXT,
+    user            TEXT DEFAULT '',
+    action          TEXT NOT NULL,
+    detail          TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_audit_domain  ON dm_audit(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_audit_product ON dm_audit(product_id);
+
+CREATE TRIGGER IF NOT EXISTS dm_audit_no_update
+    BEFORE UPDATE ON dm_audit
+    BEGIN
+        SELECT RAISE(ABORT, 'dm_audit records are immutable — NIST AU-6');
+    END;
+
+CREATE TRIGGER IF NOT EXISTS dm_audit_no_delete
+    BEFORE DELETE ON dm_audit
+    BEGIN
+        SELECT RAISE(ABORT, 'dm_audit records cannot be deleted');
+    END;
 """
 
 
