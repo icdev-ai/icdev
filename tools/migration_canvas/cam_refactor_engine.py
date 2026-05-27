@@ -34,6 +34,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from tools.logging.icdev_logger import get_logger
+
 logger = get_logger("icdev.cam_refactor_engine")
 
 _ROOT = Path(__file__).resolve().parents[2]
