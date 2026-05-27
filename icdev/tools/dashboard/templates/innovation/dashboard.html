@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% block title %}Innovation Dashboard — FORGE IGNITE{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --ig-gold:#FFB800;--ig-green:#00FF88;--ig-blue:#4A90E2;
+  --ig-red:#FF4444;--ig-card:#12192b;--ig-border:rgba(74,144,217,0.25);
+}
+.ig-dash { padding:0 0 3rem; }
+.ig-hero {
+  background:linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  border-bottom:1px solid var(--ig-border); padding:2rem 2rem 1.5rem;
+}
+.ig-hero h1 { font-size:1.6rem;font-weight:700;color:var(--ig-gold);margin:0 0 .25rem; }
+.ig-hero p  { color:#8899aa;margin:0;font-size:.9rem; }
+.ig-kpi-grid {
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1rem;
+  padding:1.5rem 2rem;
+}
+.ig-kpi {
+  background:var(--ig-card);border:1px solid var(--ig-border);
+  border-radius:12px;padding:1.1rem;text-align:center;
+}
+.ig-kpi-val { font-size:2rem;font-weight:700;color:var(--ig-gold); }
+.ig-kpi-lbl { font-size:.75rem;color:#8899aa;text-transform:uppercase;letter-spacing:.06em;margin-top:.2rem; }
+.ig-charts-row {
+  display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;padding:0 2rem 1.25rem;
+}
+.ig-chart-card {
+  background:var(--ig-card);border:1px solid var(--ig-border);border-radius:12px;padding:1.25rem;
+}
+.ig-chart-title { font-size:.9rem;font-weight:700;color:var(--ig-gold);margin:0 0 1rem; }
+.ig-readiness-card {
+  background:var(--ig-card);border:1px solid var(--ig-border);
+  border-radius:12px;padding:1.5rem;margin:0 2rem 1.25rem;
+}
+.ig-readiness-title { font-size:1rem;font-weight:700;color:var(--ig-gold);margin:0 0 1rem; }
+.ig-readiness-score {
+  font-size:3.5rem;font-weight:700;text-align:center;margin-bottom:.5rem;
+}
+.ig-readiness-guidance { text-align:center;color:#8899aa;font-size:.9rem;margin-bottom:1.25rem; }
+.ig-readiness-grid {
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.75rem;
+}
+.ig-comp-bar { margin-bottom:.1rem; }
+.ig-comp-label { display:flex;justify-content:space-between;font-size:.8rem;color:#ccd;margin-bottom:.3rem; }
+.ig-bar-bg { background:rgba(255,255,255,.06);border-radius:4px;height:8px; }
+.ig-bar-fill { height:8px;border-radius:4px;transition:width .5s; }
+.ig-cohort-row {
+  display:flex;gap:1rem;flex-wrap:wrap;padding:.5rem 0;margin-top:.75rem;
+}
+.ig-cohort-chip {
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
+  border-radius:8px;padding:.4rem .85rem;font-size:.8rem;color:#ccd;text-align:center;
+}
+.ig-cohort-chip strong { display:block;font-size:1.3rem;font-weight:700; }
+.ig-skill-gap-list { list-style:none;padding:0;margin:0; }
+.ig-skill-gap-list li {
+  display:flex;justify-content:space-between;padding:.35rem 0;
+  border-bottom:1px solid rgba(255,255,255,.04);font-size:.85rem;
+}
+.ig-skill-gap-list li:last-child { border-bottom:none; }
+.ig-ideas-table { padding:0 2rem; }
+.ig-table {
+  width:100%;border-collapse:collapse;background:var(--ig-card);
+  border:1px solid var(--ig-border);border-radius:12px;overflow:hidden;
+}
+.ig-table th {
+  background:rgba(255,255,255,.04);padding:.6rem .85rem;text-align:left;
+  font-size:.78rem;color:#8899aa;text-transform:uppercase;letter-spacing:.05em;
+  border-bottom:1px solid var(--ig-border);
+}
+.ig-table td { padding:.6rem .85rem;font-size:.85rem;color:#ccd;border-bottom:1px solid rgba(255,255,255,.04); }
+.ig-table tr:last-child td { border-bottom:none; }
+.ig-table a { color:var(--ig-blue);text-decoration:none; }
+.ig-table a:hover { text-decoration:underline; }
+.ig-phase-dot { width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:.3rem; }
+.ig-section-header {
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.75rem 2rem;margin-bottom:.5rem;
+}
+.ig-section-header h3 { margin:0;font-size:1rem;font-weight:700;color:var(--ig-gold); }
+
+/* Simple bar chart using pure CSS/HTML */
+.ig-bar-chart { display:flex;flex-direction:column;gap:.5rem; }
+.ig-bar-row { display:flex;align-items:center;gap:.5rem; }
+.ig-bar-label { width:90px;font-size:.78rem;color:#8899aa;text-align:right;flex-shrink:0; }
+.ig-bar-wrap { flex:1;background:rgba(255,255,255,.05);border-radius:4px;height:20px;position:relative; }
+.ig-bar-segment { position:absolute;left:0;top:0;height:100%;border-radius:4px;transition:width .5s; }
+.ig-bar-count { position:absolute;right:-28px;top:50%;transform:translateY(-50%);font-size:.75rem;color:#ccd; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ig-dash">
+
+  <div class="ig-hero">
+    <div style="font-size:.78rem;color:#FFB800;letter-spacing:.1em;text-transform:uppercase;margin-bottom:.25rem;">
+      FORGE IGNITE
+    </div>
+    <h1>Innovation Dashboard</h1>
+    <p>AI innovation pipeline health, team readiness, and portfolio status for leadership.</p>
+  </div>
+
+  <!-- KPI strip -->
+  <div class="ig-kpi-grid">
+    <div class="ig-kpi">
+      <div class="ig-kpi-val">{{ stats.total }}</div>
+      <div class="ig-kpi-lbl">Total Ideas</div>
+    </div>
+    <div class="ig-kpi">
+      <div class="ig-kpi-val" style="color:#00FF88;">{{ stats.stage_counts.get('pilot',0) + stats.stage_counts.get('measure',0) }}</div>
+      <div class="ig-kpi-lbl">Active Pilots</div>
+    </div>
+    <div class="ig-kpi">
+      <div class="ig-kpi-val" style="color:#FF6B35;">{{ stats.stage_counts.get('scale',0) }}</div>
+      <div class="ig-kpi-lbl">Scaled</div>
+    </div>
+    <div class="ig-kpi">
+      <div class="ig-kpi-val">{{ stats.submitted_this_month }}</div>
+      <div class="ig-kpi-lbl">Ideas This Month</div>
+    </div>
+    <div class="ig-kpi">
+      <div class="ig-kpi-val" style="color:#4A90E2;">{{ stats.avg_score }}</div>
+      <div class="ig-kpi-lbl">Avg Score</div>
+    </div>
+    <div class="ig-kpi">
+      <div class="ig-kpi-val" style="color:{{ readiness.tier_color }};">{{ readiness.score }}</div>
+      <div class="ig-kpi-lbl">AI Readiness</div>
+    </div>
+  </div>
+
+  <!-- Charts row -->
+  <div class="ig-charts-row">
+
+    <!-- Pipeline funnel -->
+    <div class="ig-chart-card">
+      <div class="ig-chart-title">Pipeline Funnel</div>
+      {% set max_count = funnel_data | map(attribute='count') | max | default(1) %}
+      <div class="ig-bar-chart">
+        {% for item in funnel_data %}
+        <div class="ig-bar-row">
+          <div class="ig-bar-label">{{ item.stage }}</div>
+          <div class="ig-bar-wrap">
+            <div class="ig-bar-segment"
+                 style="width:{{ (item.count / [max_count,1]|max * 100) | round(0) | int }}%;background:{{ item.color }}44;border:1px solid {{ item.color }}66;">
+            </div>
+            <span class="ig-bar-count">{{ item.count }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Phase distribution -->
+    <div class="ig-chart-card">
+      <div class="ig-chart-title">Portfolio by Modernization Phase</div>
+      {% set max_phase = phase_data | map(attribute='value') | max | default(1) %}
+      <div class="ig-bar-chart">
+        {% for item in phase_data %}
+        <div class="ig-bar-row">
+          <div class="ig-bar-label" style="font-size:.75rem;">{{ item.label }}</div>
+          <div class="ig-bar-wrap">
+            <div class="ig-bar-segment"
+                 style="width:{{ (item.value / [max_phase,1]|max * 100) | round(0) | int }}%;background:{{ item.color }}44;border:1px solid {{ item.color }}66;">
+            </div>
+            <span class="ig-bar-count">{{ item.value }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <p style="font-size:.78rem;color:#8899aa;margin:.75rem 0 0;">
+        ⚠ If Phase 3 (Transformation) dominates, your team may be reaching before the foundation is ready.
+      </p>
+    </div>
+
+  </div>
+
+  <!-- Org AI Readiness -->
+  <div class="ig-readiness-card">
+    <div class="ig-readiness-title">Org AI Readiness Score
+      <a href="/academy/org-readiness" style="font-size:.8rem;font-weight:400;color:var(--ig-blue);margin-left:.5rem;">Full View →</a>
+    </div>
+    <div class="ig-readiness-score" style="color:{{ readiness.tier_color }};">{{ readiness.score }}<span style="font-size:1.5rem;color:#8899aa;">/100</span></div>
+    <div class="ig-readiness-guidance">{{ readiness.guidance }}</div>
+
+    <div class="ig-readiness-grid">
+      {% for comp_key, comp in readiness.components.items() %}
+      <div>
+        <div class="ig-comp-label">
+          <span>{{ comp.label }}</span>
+          <span style="color:var(--ig-gold);">{{ comp.value }}%</span>
+        </div>
+        <div class="ig-bar-bg">
+          <div class="ig-bar-fill"
+               style="width:{{ comp.value | round(0) | int }}%;background:{% if comp.value >= 80 %}var(--ig-green){% elif comp.value >= 50 %}var(--ig-gold){% else %}var(--ig-red){% endif %};">
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Cohort breakdown -->
+    {% if readiness.cohort.total_users %}
+    <div class="ig-cohort-row">
+      <div class="ig-cohort-chip">
+        <strong>{{ readiness.cohort.total_users }}</strong>Total Learners
+      </div>
+      <div class="ig-cohort-chip">
+        <strong style="color:#888;">{{ readiness.cohort.l1 }}</strong>L1 Aware
+      </div>
+      <div class="ig-cohort-chip">
+        <strong style="color:#4A90E2;">{{ readiness.cohort.l2 }}</strong>L2 Capable
+      </div>
+      <div class="ig-cohort-chip">
+        <strong style="color:#00D4FF;">{{ readiness.cohort.l3 }}</strong>L3 Proficient
+      </div>
+      <div class="ig-cohort-chip">
+        <strong style="color:#FF6B35;">{{ readiness.cohort.l4 }}</strong>L4 Expert
+      </div>
+      <div class="ig-cohort-chip">
+        <strong style="color:#FFB800;">{{ readiness.cohort.l5 }}</strong>L5 Architect
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Skill gaps -->
+    {% if readiness.skill_gaps %}
+    <div style="margin-top:1rem;">
+      <div style="font-size:.85rem;font-weight:600;color:#8899aa;margin-bottom:.5rem;">Skills with &lt;30% unlock (top gaps)</div>
+      <ul class="ig-skill-gap-list">
+        {% for gap in readiness.skill_gaps %}
+        <li>
+          <span>{{ gap.skill }}</span>
+          <span style="color:var(--ig-red);">{{ gap.unlock_pct }}% unlocked</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Top scored ideas -->
+  {% if stats.top_ideas %}
+  <div class="ig-section-header">
+    <h3>Top Scored Ideas in Queue</h3>
+    <a href="/innovation" style="color:#4A90E2;font-size:.85rem;text-decoration:none;">View All →</a>
+  </div>
+  <div class="ig-ideas-table">
+    <table class="ig-table">
+      <thead>
+        <tr>
+          <th>Idea</th><th>Phase</th><th>Score</th><th>Status</th><th>Role</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for idea in stats.top_ideas %}
+        {% set phase_colors = {'phase1':'#00FF88','phase2':'#FFB800','phase3':'#FF4444','deferred':'#888'} %}
+        {% set phase_emojis = {'phase1':'🟢','phase2':'🟡','phase3':'🔴','deferred':'⚪'} %}
+        <tr>
+          <td><a href="/innovation/{{ idea.id }}">{{ idea.title | truncate(55) }}</a></td>
+          <td>
+            <span class="ig-phase-dot" style="background:{{ phase_colors.get(idea.phase_tag,'#888') }};"></span>
+            {{ phase_emojis.get(idea.phase_tag,'') }} {{ (idea.phase_tag or '').replace('_',' ').title() }}
+          </td>
+          <td style="color:var(--ig-gold);font-weight:700;">{{ idea.score_total | round(0) | int }}</td>
+          <td style="text-transform:uppercase;font-size:.78rem;color:#8899aa;">{{ idea.status }}</td>
+          <td style="font-size:.8rem;color:#8899aa;">{{ idea.submitter_role or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- Department activity -->
+  {% if top_depts %}
+  <div class="ig-section-header" style="margin-top:1.25rem;">
+    <h3>Most Active Departments</h3>
+  </div>
+  <div style="padding:0 2rem;">
+    <div class="ig-bar-chart">
+      {% set max_dept = top_depts | map(attribute=1) | max | default(1) %}
+      {% for dept, count in top_depts %}
+      <div class="ig-bar-row">
+        <div class="ig-bar-label">{{ dept | truncate(12) }}</div>
+        <div class="ig-bar-wrap">
+          <div class="ig-bar-segment"
+               style="width:{{ (count / [max_dept,1]|max * 100) | round(0) | int }}%;background:rgba(74,144,226,.35);border:1px solid rgba(74,144,226,.5);">
+          </div>
+          <span class="ig-bar-count">{{ count }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- CUI footer -->
+  <div style="text-align:center;padding:2rem;font-size:.75rem;color:#555;margin-top:2rem;">
+    CUI // SP-CTI — FORGE IGNITE Innovation Dashboard — {{ readiness.score }}/100 Org AI Readiness
+  </div>
+
+</div>
+{% endblock %}

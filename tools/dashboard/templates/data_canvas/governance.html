@@ -1,0 +1,210 @@
+<!-- CUI // SP-CTI — Data Mesh Governance Dashboard -->
+{% extends "base.html" %}
+{% block title %}Governance — Data Mesh — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .gov-hero { padding: 20px 30px 12px; }
+  .gov-hero h1 { font-size: 22px; margin: 0 0 4px; }
+  .gov-hero p { color: #7a8cb0; font-size: 13px; margin: 0; }
+  .gov-section { padding: 0 30px 20px; }
+  .gov-score-card { display: inline-flex; align-items: center; gap: 20px; background: #0f1e36; border: 1px solid #1e3a6e; border-radius: 8px; padding: 16px 24px; margin-bottom: 20px; }
+  .score-circle { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; }
+  .grade-a { background: #1b5e20; color: #4caf50; }
+  .grade-b { background: #1a3a1a; color: #81c784; }
+  .grade-c { background: #e65100; color: #ff9800; }
+  .grade-d { background: #5d2a00; color: #ffb74d; }
+  .grade-f { background: #b71c1c; color: #ef5350; }
+  .grade-na { background: #1e2a3e; color: #7a8cb0; }
+  .score-meta { font-size: 13px; color: #7a8cb0; line-height: 1.7; }
+  .score-meta strong { color: #cfd8dc; }
+  .gov-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .gov-table th { text-align: left; padding: 10px 12px; font-size: 11px; color: #7a8cb0; border-bottom: 1px solid #1e3a6e; text-transform: uppercase; }
+  .gov-table td { padding: 10px 12px; border-bottom: 1px solid #0f1e36; }
+  .gov-table tr:hover { background: #16213e; }
+  .score-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 12px; }
+  .score-high { background: #1b5e20; color: #4caf50; }
+  .score-med { background: #e65100; color: #ff9800; }
+  .score-low { background: #b71c1c; color: #ef5350; }
+  .section-title { font-size: 14px; font-weight: 600; color: #cfd8dc; margin: 0 0 12px; }
+  .accent { color: #ff9800; }
+  .back-btn { display: inline-block; padding: 6px 16px; background: transparent; border: 1px solid #1e3a6e; color: #7a8cb0; border-radius: 4px; text-decoration: none; font-size: 12px; margin-top: 12px; }
+  .add-btn { display: inline-block; padding: 6px 16px; background: #1565c0; color: #fff; border-radius: 4px; text-decoration: none; font-size: 12px; cursor: pointer; border: none; margin-bottom: 12px; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; background: #1e3a6e; color: #90caf9; }
+  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 100; align-items: center; justify-content: center; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 24px; width: 480px; max-width: 95vw; }
+  .modal h3 { margin: 0 0 16px; font-size: 16px; color: #cfd8dc; }
+  .form-group { margin-bottom: 12px; }
+  .form-group label { display: block; font-size: 11px; color: #7a8cb0; margin-bottom: 4px; }
+  .form-group input, .form-group select, .form-group textarea { width: 100%; background: #0a1628; border: 1px solid #1e3a6e; color: #cfd8dc; border-radius: 4px; padding: 7px 10px; font-size: 13px; box-sizing: border-box; }
+  .form-row { display: flex; gap: 8px; }
+  .form-row .form-group { flex: 1; }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .btn-cancel { padding: 7px 16px; background: transparent; border: 1px solid #1e3a6e; color: #7a8cb0; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .btn-save { padding: 7px 16px; background: #1565c0; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+</style>
+
+<div class="gov-hero">
+  <h1 class="accent">Data Mesh Governance</h1>
+  <p>Federated governance policies, domain compliance scores, and OPA-style access control.</p>
+  <a href="/data/" class="back-btn">Back to Dashboard</a>
+</div>
+
+<div class="gov-section">
+  <div class="gov-score-card">
+    {% set g = governance_score.grade or 'N/A' %}
+    <div class="score-circle grade-{{ g|lower if g != 'N/A' else 'na' }}">{{ g }}</div>
+    <div class="score-meta">
+      <strong>Overall Governance Score: {{ governance_score.score }}/100</strong><br>
+      Domains: {{ governance_score.domain_count }} &nbsp;|&nbsp;
+      Active Policies: {{ governance_score.policy_count }}<br>
+      Pillars: data products · policies · maturity · ownership
+    </div>
+  </div>
+</div>
+
+{% if governance_score.domains %}
+<div class="gov-section">
+  <p class="section-title">Domain Scores</p>
+  <table class="gov-table">
+    <thead>
+      <tr>
+        <th>Domain</th>
+        <th>Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in governance_score.domains %}
+      <tr>
+        <td>{{ d.name }}</td>
+        <td><span class="score-badge {% if d.score >= 75 %}score-high{% elif d.score >= 50 %}score-med{% else %}score-low{% endif %}">{{ d.score }}/100</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="gov-section">
+  <p class="section-title">Governance Policies</p>
+  <button class="add-btn" onclick="openModal()">+ New Policy</button>
+  <table class="gov-table" id="policies-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Applies To</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="policies-tbody">
+      <tr><td colspan="5" style="color:#5a6e8c;">Loading policies…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- New Policy Modal -->
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal">
+    <h3>New Governance Policy</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Name *</label>
+        <input id="pol-name" type="text" placeholder="e.g. Classification Required">
+      </div>
+      <div class="form-group">
+        <label>Type</label>
+        <select id="pol-type">
+          <option value="opa">OPA</option>
+          <option value="rbac">RBAC</option>
+          <option value="abac">ABAC</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Applies To (domain_id or "all")</label>
+        <input id="pol-applies" type="text" value="all" placeholder="all">
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="pol-status">
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="draft">Draft</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Rules (JSON array)</label>
+      <textarea id="pol-rules" rows="4" placeholder='[{"attr":"classification","op":"eq","value":"CUI"}]'></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="savePolicy()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openModal() {
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('modal-backdrop').classList.remove('open');
+  document.getElementById('pol-name').value = '';
+  document.getElementById('pol-rules').value = '';
+}
+
+async function loadPolicies() {
+  const res = await fetch('/data/api/dm/policies');
+  const policies = await res.json();
+  const tbody = document.getElementById('policies-tbody');
+  if (!policies.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#5a6e8c;">No policies yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = policies.map(p => `
+    <tr>
+      <td>${p.name}</td>
+      <td><span class="pill">${p.policy_type || 'opa'}</span></td>
+      <td>${p.applies_to || 'all'}</td>
+      <td><span class="pill">${p.status || 'active'}</span></td>
+      <td>
+        <button onclick="deletePolicy('${p.id}')" style="background:transparent;border:none;color:#ef5350;cursor:pointer;font-size:12px;">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function savePolicy() {
+  const name = document.getElementById('pol-name').value.trim();
+  if (!name) { alert('Name is required'); return; }
+  let rules = [];
+  const rulesRaw = document.getElementById('pol-rules').value.trim();
+  if (rulesRaw) {
+    try { rules = JSON.parse(rulesRaw); } catch { alert('Rules must be valid JSON'); return; }
+  }
+  const body = {
+    name,
+    policy_type: document.getElementById('pol-type').value,
+    applies_to: document.getElementById('pol-applies').value.trim() || 'all',
+    status: document.getElementById('pol-status').value,
+    rules,
+  };
+  const res = await fetch('/data/api/dm/policies', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+  });
+  if (res.ok) { closeModal(); loadPolicies(); } else { alert('Failed to create policy'); }
+}
+
+async function deletePolicy(id) {
+  if (!confirm('Delete this policy?')) return;
+  await fetch(`/data/api/dm/policies/${id}`, {method: 'DELETE'});
+  loadPolicies();
+}
+
+loadPolicies();
+</script>
+{% endblock %}

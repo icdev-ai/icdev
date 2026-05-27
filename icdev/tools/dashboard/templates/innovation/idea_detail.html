@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+{% block title %}{{ idea.title }} — FORGE IGNITE{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --ig-gold:#FFB800; --ig-green:#00FF88; --ig-blue:#4A90E2;
+  --ig-red:#FF4444;  --ig-card:#12192b; --ig-border:rgba(74,144,217,0.25);
+}
+.ig-detail { max-width:960px; margin:0 auto; padding:0 1.5rem 4rem; }
+.ig-detail-hero {
+  background:linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  border-bottom:1px solid var(--ig-border); padding:2rem 1.5rem 1.5rem; margin-bottom:1.5rem;
+}
+.ig-breadcrumb { font-size:.8rem; color:#8899aa; margin-bottom:.5rem; }
+.ig-breadcrumb a { color:var(--ig-gold); text-decoration:none; }
+.ig-detail-title { font-size:1.5rem; font-weight:700; color:#e0e0e0; margin:0 0 .5rem; }
+.ig-meta-row { display:flex; gap:1rem; flex-wrap:wrap; align-items:center; }
+.ig-badge {
+  padding:.25rem .65rem; border-radius:12px; font-size:.78rem; font-weight:600;
+}
+.ig-status-badge { background:rgba(255,255,255,.08); color:#ccd; }
+.ig-phase-badge { }
+.ig-section {
+  background:var(--ig-card); border:1px solid var(--ig-border);
+  border-radius:12px; padding:1.5rem; margin-bottom:1.25rem;
+}
+.ig-section-title {
+  font-size:1rem; font-weight:700; color:var(--ig-gold);
+  margin:0 0 1rem; padding-bottom:.5rem; border-bottom:1px solid var(--ig-border);
+}
+.ig-score-grid {
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:.75rem;
+}
+.ig-score-card {
+  background:rgba(255,255,255,.03); border:1px solid var(--ig-border);
+  border-radius:8px; padding:.75rem; text-align:center;
+}
+.ig-score-val { font-size:1.6rem; font-weight:700; color:var(--ig-gold); }
+.ig-score-lbl { font-size:.75rem; color:#8899aa; margin-top:.2rem; }
+.ig-score-src { font-size:.65rem; color:#555; margin-top:.15rem; }
+.ig-total-score {
+  font-size:2.5rem; font-weight:700; color:var(--ig-green);
+  text-align:center; margin-bottom:.25rem;
+}
+.ig-brief-body { color:#ccd; font-size:.9rem; line-height:1.7; }
+.ig-brief-body h2 { color:var(--ig-gold); font-size:1rem; margin:1rem 0 .4rem; }
+.ig-brief-body h3 { color:var(--ig-blue); font-size:.9rem; margin:.8rem 0 .3rem; }
+.ig-brief-body ul { padding-left:1.25rem; }
+.ig-brief-body table { width:100%; border-collapse:collapse; font-size:.85rem; }
+.ig-brief-body th { background:rgba(255,255,255,.05); padding:.4rem .6rem; text-align:left; color:#aab; }
+.ig-brief-body td { padding:.35rem .6rem; border-bottom:1px solid rgba(255,255,255,.05); }
+.ig-btn {
+  padding:.5rem 1.1rem; border-radius:8px; font-size:.85rem; font-weight:600;
+  border:none; cursor:pointer; text-decoration:none; display:inline-block; margin-right:.5rem;
+}
+.ig-btn-primary { background:var(--ig-gold); color:#000; }
+.ig-btn-success { background:var(--ig-green); color:#000; }
+.ig-btn-secondary { background:rgba(255,255,255,.08); color:#e0e0e0; }
+.ig-btn-danger  { background:rgba(255,68,68,.15); color:var(--ig-red); border:1px solid rgba(255,68,68,.3); }
+.ig-btn:hover { opacity:.85; }
+.ig-stage-stepper { display:flex; gap:.5rem; flex-wrap:wrap; margin:1rem 0; }
+.ig-stage-step {
+  padding:.35rem .8rem; border-radius:20px; font-size:.78rem; font-weight:600;
+  border:1px solid transparent; background:rgba(255,255,255,.05); color:#8899aa;
+  cursor:pointer;
+}
+.ig-stage-step.current {
+  background:var(--ig-blue); color:#fff; border-color:var(--ig-blue);
+}
+.ig-stage-step.done {
+  background:rgba(0,255,136,.1); color:var(--ig-green); border-color:rgba(0,255,136,.3);
+}
+.ig-qa-item { margin-bottom:.85rem; }
+.ig-qa-q { font-size:.8rem; color:#8899aa; margin-bottom:.2rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+.ig-qa-a { font-size:.9rem; color:#ccd; background:rgba(255,255,255,.03); padding:.5rem .75rem; border-radius:6px; border-left:2px solid var(--ig-blue); }
+.ig-comment { border-bottom:1px solid var(--ig-border); padding:.75rem 0; }
+.ig-comment-author { font-size:.8rem; color:var(--ig-gold); font-weight:600; }
+.ig-comment-body { font-size:.875rem; color:#ccd; margin-top:.25rem; }
+.ig-comment-time { font-size:.72rem; color:#555; }
+.ig-comment-form textarea {
+  width:100%; background:#0a0a14; border:1px solid rgba(74,144,217,.3);
+  border-radius:8px; color:#e0e0e0; padding:.6rem .75rem; font-size:.9rem;
+  resize:vertical; min-height:70px; box-sizing:border-box; margin-bottom:.5rem;
+}
+.ig-pilot-card {
+  background:rgba(0,255,136,.05); border:1px solid rgba(0,255,136,.2);
+  border-radius:8px; padding:.85rem; margin-bottom:.75rem;
+}
+.ig-pilot-title { font-weight:600; color:var(--ig-green); margin-bottom:.25rem; }
+.ig-pilot-meta { font-size:.8rem; color:#8899aa; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ig-detail-hero">
+  <div style="max-width:960px;margin:0 auto;">
+    <div class="ig-breadcrumb"><a href="/innovation">← Pipeline</a> / {{ idea.title | truncate(50) }}</div>
+    <h1 class="ig-detail-title">{{ idea.title }}</h1>
+    <div class="ig-meta-row">
+      {% set status_colors = {'spark':'#FFB800','assess':'#4A90E2','score':'#00D4FF','pilot':'#00FF88','measure':'#9b59b6','scale':'#FF6B35','archive':'#555'} %}
+      <span class="ig-badge ig-status-badge" style="background:{{ status_colors.get(idea.status,'#888') }}22;color:{{ status_colors.get(idea.status,'#888') }};">
+        {{ idea.status | upper }}
+      </span>
+      {% set phase_colors = {'phase1':'#00FF88','phase2':'#FFB800','phase3':'#FF4444','deferred':'#888'} %}
+      {% set phase_emojis = {'phase1':'🟢','phase2':'🟡','phase3':'🔴','deferred':'⚪'} %}
+      {% if idea.phase_tag %}
+      <span class="ig-badge ig-phase-badge"
+            style="background:{{ phase_colors.get(idea.phase_tag,'#888') }}22;color:{{ phase_colors.get(idea.phase_tag,'#888') }};border:1px solid {{ phase_colors.get(idea.phase_tag,'#888') }}44;">
+        {{ phase_emojis.get(idea.phase_tag,'') }} {{ idea.phase_tag.replace('_',' ').title() }}
+      </span>
+      {% endif %}
+      {% if idea.submitter_name %}<span style="font-size:.82rem;color:#8899aa;">by {{ idea.submitter_name }}</span>{% endif %}
+      {% if idea.department %}<span style="font-size:.82rem;color:#8899aa;">· {{ idea.department }}</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="ig-detail">
+
+  <!-- Stage stepper -->
+  <div class="ig-section">
+    <div class="ig-section-title">Pipeline Stage</div>
+    <div class="ig-stage-stepper" id="stageStepper">
+      {% set stage_order = ['spark','assess','score','pilot','measure','scale','archive'] %}
+      {% for stage in stages %}
+      {% if stage.id != 'archive' %}
+      <div class="ig-stage-step {% if idea.status == stage.id %}current{% elif idea.status in stage_order and stage_order.index(stage.id) < stage_order.index(idea.status) %}done{% endif %}"
+           onclick="moveToStage('{{ stage.id }}')">
+        {{ stage.label }}
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem;">
+      {% if idea.status == 'score' %}
+      <button class="ig-btn ig-btn-success" onclick="showPilotModal()">▶ Move to Pilot</button>
+      {% endif %}
+      {% if idea.status not in ('scale','archive') %}
+      <button class="ig-btn ig-btn-danger" onclick="moveToStage('archive')">Archive Idea</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Score summary -->
+  {% if idea.score_total %}
+  <div class="ig-section">
+    <div class="ig-section-title">Feasibility Score</div>
+    <div class="ig-total-score">{{ idea.score_total | round(0) | int }}<span style="font-size:1.2rem;color:#8899aa;">/100</span></div>
+    <div style="text-align:center;margin-bottom:1rem;">
+      <span class="ig-badge"
+            style="background:{{ phase_colors.get(idea.phase_tag,'#888') }}22;color:{{ phase_colors.get(idea.phase_tag,'#888') }};border:1px solid {{ phase_colors.get(idea.phase_tag,'#888') }}44;font-size:.85rem;">
+        {{ phase_emojis.get(idea.phase_tag,'') }} {{ idea.phase_tag.replace('_',' ').title() if idea.phase_tag else 'Unknown' }}
+      </span>
+    </div>
+    {% if score_breakdown and score_breakdown.get('dimensions') %}
+    <div class="ig-score-grid">
+      {% for dim_key, dim_val in score_breakdown.dimensions.items() %}
+      <div class="ig-score-card">
+        <div class="ig-score-val">{{ dim_val.score | round(1) }}</div>
+        <div class="ig-score-lbl">{{ dim_val.label or dim_key.replace('_',' ').title() }}</div>
+        <div class="ig-score-src">Source: {{ dim_val.get('source','intake') }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- AI Opportunity Brief -->
+  {% if idea.opportunity_brief %}
+  <div class="ig-section">
+    <div class="ig-section-title">AI Opportunity Brief</div>
+    <div class="ig-brief-body" id="briefBody"></div>
+    <script>
+    document.getElementById('briefBody').innerHTML = mdToHtml({{ idea.opportunity_brief | tojson }});
+    </script>
+  </div>
+  {% else %}
+  <div class="ig-section">
+    <div class="ig-section-title">AI Opportunity Brief</div>
+    <p style="color:#8899aa;font-size:.9rem;">Brief not yet generated.</p>
+    <button class="ig-btn ig-btn-primary" onclick="generateFeasibility()">Generate Feasibility Study</button>
+    <div id="studySpinner" style="display:none;color:#8899aa;margin-top:.75rem;">Generating...</div>
+    <div id="studyResult" class="ig-brief-body" style="margin-top:1rem;"></div>
+  </div>
+  {% endif %}
+
+  <!-- Feasibility Study -->
+  {% if assessment and assessment.feasibility_study_text %}
+  <div class="ig-section">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem;">
+      <div class="ig-section-title" style="margin:0;border:none;padding:0;">Detailed Feasibility Study</div>
+      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;">
+        {% if idea.aadc_design_id %}
+        <a href="/agentic-ai/canvas/{{ idea.aadc_design_id }}/ops-config"
+           style="background:#FFB800;color:#000;padding:.35rem .9rem;border-radius:6px;font-size:.8rem;font-weight:600;text-decoration:none;">
+          ⚙️ Generate Ops Config →
+        </a>
+        {% endif %}
+        {% if not assessment.human_approved %}
+        <button class="ig-btn ig-btn-success" onclick="approveAssessment()">✓ Approve</button>
+        {% else %}
+        <span style="color:var(--ig-green);font-size:.85rem;">✓ Approved</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="ig-brief-body" id="studyBody"></div>
+    <script>
+    document.getElementById('studyBody').innerHTML = mdToHtml({{ assessment.feasibility_study_text | tojson }});
+    </script>
+  </div>
+  {% endif %}
+
+  <!-- Intake Answers -->
+  {% if intake_answers %}
+  <div class="ig-section">
+    <div class="ig-section-title">Intake Answers</div>
+    {% set q_labels = {
+      'q1_bottleneck': "What's slow/manual/error-prone?",
+      'q2_frequency': "How often does this happen?",
+      'q3_impact': "Who is affected?",
+      'q4_improvement': "What would 2x vs 10x look like?",
+      'q5_pattern': "Is this a repeating pattern?",
+      'q6_data': "What data exists today?",
+      'q7_simple_solution': "Could a non-AI solution solve 80%?",
+      'q8_judgment': "What judgment makes this hard to automate?",
+      'q9_failure_cost': "What does a wrong answer cost?",
+      'q10_data_available': "Do we have training data?",
+      'q11_mvp': "What's the minimum viable version?",
+      'q12_integration': "What needs to change in the existing system?"
+    } %}
+    {% for key, label in q_labels.items() %}
+    {% if intake_answers.get(key) %}
+    <div class="ig-qa-item">
+      <div class="ig-qa-q">{{ label }}</div>
+      <div class="ig-qa-a">{{ intake_answers[key] }}</div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Pilots -->
+  {% if pilots %}
+  <div class="ig-section">
+    <div class="ig-section-title">Pilots</div>
+    {% for pilot in pilots %}
+    <div class="ig-pilot-card">
+      <div class="ig-pilot-title">{{ pilot.pilot_name }}</div>
+      {% if pilot.hypothesis %}
+      <div class="ig-pilot-meta">Hypothesis: {{ pilot.hypothesis }}</div>
+      {% endif %}
+      {% if pilot.success_criteria %}
+      <div class="ig-pilot-meta">Success: {{ pilot.success_criteria }}</div>
+      {% endif %}
+      {% if pilot.kanban_epic_id %}
+      <div class="ig-pilot-meta" style="margin-top:.25rem;">
+        <a href="/kanban" style="color:var(--ig-blue);">Kanban Task #{{ pilot.kanban_epic_id }}</a>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Comments -->
+  <div class="ig-section">
+    <div class="ig-section-title">Discussion</div>
+    {% if comments %}
+    {% for c in comments %}
+    <div class="ig-comment">
+      <div style="display:flex;justify-content:space-between;">
+        <span class="ig-comment-author">{{ c.author_name or 'Anonymous' }}</span>
+        <span class="ig-comment-time">{{ c.created_at[:16] if c.created_at else '' }}</span>
+      </div>
+      <div class="ig-comment-body">{{ c.body }}</div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p style="color:#555;font-size:.85rem;">No comments yet.</p>
+    {% endif %}
+    <div class="ig-comment-form" style="margin-top:1rem;">
+      <input type="text" id="commentAuthor" placeholder="Your name"
+             style="background:#0a0a14;border:1px solid rgba(74,144,217,.3);border-radius:8px;color:#e0e0e0;padding:.5rem .75rem;font-size:.85rem;width:200px;box-sizing:border-box;margin-bottom:.5rem;">
+      <textarea id="commentBody" placeholder="Add a comment..."></textarea>
+      <button class="ig-btn ig-btn-secondary" onclick="addComment()">Post Comment</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Pilot modal -->
+<div id="pilotModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#12192b;border:1px solid rgba(74,144,217,.3);border-radius:12px;padding:1.75rem;max-width:480px;width:90%;">
+    <h3 style="color:var(--ig-green);margin:0 0 1rem;">Move to Pilot</h3>
+    <input type="text" id="pilotName" placeholder="Pilot name *"
+           style="width:100%;background:#0a0a14;border:1px solid rgba(74,144,217,.3);border-radius:8px;color:#e0e0e0;padding:.6rem .75rem;font-size:.9rem;box-sizing:border-box;margin-bottom:.75rem;">
+    <textarea id="pilotHypothesis" placeholder="Hypothesis: if we apply X, then Y because Z" rows="2"
+              style="width:100%;background:#0a0a14;border:1px solid rgba(74,144,217,.3);border-radius:8px;color:#e0e0e0;padding:.6rem .75rem;font-size:.9rem;resize:vertical;box-sizing:border-box;margin-bottom:.75rem;"></textarea>
+    <textarea id="pilotCriteria" placeholder="Success criteria (one measurable metric)" rows="2"
+              style="width:100%;background:#0a0a14;border:1px solid rgba(74,144,217,.3);border-radius:8px;color:#e0e0e0;padding:.6rem .75rem;font-size:.9rem;resize:vertical;box-sizing:border-box;margin-bottom:1rem;"></textarea>
+    <div style="display:flex;gap:.75rem;justify-content:flex-end;">
+      <button class="ig-btn ig-btn-secondary" onclick="closePilotModal()">Cancel</button>
+      <button class="ig-btn ig-btn-success" onclick="createPilot()">Create Pilot + Kanban Task</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ideaId = {{ idea.id }};
+
+function mdToHtml(md) {
+  if (!md) return '';
+  return md
+    .replace(/^## (.+)$/gm,'<h2>$1</h2>')
+    .replace(/^### (.+)$/gm,'<h3>$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/^\- (.+)$/gm,'<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g,'<ul>$&</ul>')
+    .replace(/^\|(.+)\|$/gm,(_,row)=>{
+      const cells=row.split('|').map(c=>c.trim());
+      return '<tr>'+cells.map(c=>/^[-:]+$/.test(c)?'':'<td>'+c+'</td>').join('')+'</tr>';
+    })
+    .replace(/(<tr>.*<\/tr>\n?)+/g,'<table>$&</table>')
+    .replace(/\n\n/g,'<br><br>');
+}
+
+async function moveToStage(status) {
+  if (status === 'archive' && !confirm('Archive this idea?')) return;
+  const resp = await fetch('/api/innovation/ideas/'+ideaId+'/status', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({status})
+  });
+  if (resp.ok) location.reload();
+}
+
+async function generateFeasibility() {
+  document.getElementById('studySpinner').style.display='block';
+  const resp = await fetch('/api/innovation/ideas/'+ideaId+'/feasibility', {method:'POST'});
+  document.getElementById('studySpinner').style.display='none';
+  if (resp.ok) {
+    const data = await resp.json();
+    document.getElementById('studyResult').innerHTML = mdToHtml(data.study || '');
+  }
+}
+
+async function approveAssessment() {
+  const resp = await fetch('/api/innovation/ideas/'+ideaId+'/approve-assessment', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({notes:''})
+  });
+  if (resp.ok) location.reload();
+}
+
+async function addComment() {
+  const body = document.getElementById('commentBody').value.trim();
+  if (!body) return;
+  const author = document.getElementById('commentAuthor').value.trim() || 'Anonymous';
+  const resp = await fetch('/api/innovation/ideas/'+ideaId+'/comments', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({author_name: author, body})
+  });
+  if (resp.ok) location.reload();
+}
+
+function showPilotModal() {
+  document.getElementById('pilotModal').style.display='flex';
+}
+function closePilotModal() {
+  document.getElementById('pilotModal').style.display='none';
+}
+
+async function createPilot() {
+  const name = document.getElementById('pilotName').value.trim();
+  if (!name) { alert('Pilot name required'); return; }
+  const resp = await fetch('/api/innovation/ideas/'+ideaId+'/pilot', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      pilot_name: name,
+      hypothesis: document.getElementById('pilotHypothesis').value,
+      success_criteria: document.getElementById('pilotCriteria').value,
+    })
+  });
+  if (resp.ok) { closePilotModal(); location.reload(); }
+}
+</script>
+{% endblock %}

@@ -92,6 +92,14 @@ pyais>=2.0               # AIS (Automatic Identification System) NMEA decoder â€
 hvac>=2.0                    # HashiCorp Vault KV client (vault_resolver.py)
 cachetools>=5.3              # TTLCache for vault_resolver 5-min secret cache
 
+# === Data Mesh optional deps (install as needed) ===
+# datacontract-cli>=0.10.0          # ODCS contract linting/testing
+# openlineage-python>=1.16.0        # OpenLineage standard emission
+# pyiceberg>=0.7.0                  # Apache Iceberg table format (requires pyarrow)
+# boto3>=1.34.0                     # AWS DataZone CSP bridge
+# azure-purview-catalog>=1.0.0      # Azure Purview CSP bridge
+# google-cloud-dataplex>=2.0.0      # GCP Dataplex CSP bridge
+
 # === Billing (FathomDesk Phase 5B) â€” OPTIONAL ===
 # Stripe Checkout + webhooks + invoices. Lazy-imported; the /api/billing/*
 # endpoints degrade gracefully with a 501 when stripe isn't installed.

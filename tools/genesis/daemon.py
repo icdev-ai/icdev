@@ -18,13 +18,14 @@ Usage:
 
 import importlib
 import json
-import logging
+
+from tools.logging.icdev_logger import get_logger
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Path bootstrapping

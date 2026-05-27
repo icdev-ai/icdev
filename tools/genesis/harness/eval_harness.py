@@ -22,12 +22,13 @@ Usage (from any reflex):
 from __future__ import annotations
 
 import json
-import logging
+
+from tools.logging.icdev_logger import get_logger
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 # Thresholds that trigger a degradation alert
 _GATE_PRECISION_MIN = 0.80

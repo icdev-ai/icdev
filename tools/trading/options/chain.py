@@ -2,12 +2,14 @@
 """Options chain utilities — IV rank and percentile computation."""
 
 import logging
+
+from tools.logging.icdev_logger import get_logger
 import time
 import math
 from datetime import datetime, timezone
 from typing import Optional
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 import yfinance as yf
 

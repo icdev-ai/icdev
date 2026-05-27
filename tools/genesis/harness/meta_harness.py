@@ -12,12 +12,13 @@ invoking run_meta_review(). State is persisted in .tmp/meta_harness_last_run.txt
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
-LOG = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+LOG = get_logger(__name__)
 
 PRECISION_HARD_FLOOR = 0.70
 FALSE_HEAL_CEILING = 0.25
@@ -207,11 +208,6 @@ def _propose_constitution_tightening(
         return []
 
     proposals = []
-    existing_rules = {
-        r.get("name"): r
-        for r in constitution.get("rules", [])
-        if r.get("applies_to_types")
-    }
 
     for res_type, fail_count in sorted(error_types.items(), key=lambda x: -x[1]):
         if fail_count < 2:

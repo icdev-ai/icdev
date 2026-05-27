@@ -255,6 +255,291 @@ CREATE TABLE IF NOT EXISTS ddc_sop_approvals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ddc_sop_approvals_sop ON ddc_sop_approvals(sop_id);
+
+-- ── Data Science: Explore (Profiler) ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dd_explore_sessions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    user            TEXT DEFAULT '',
+    db_conn_json    TEXT DEFAULT '{}',
+    status          TEXT DEFAULT 'completed',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS dd_explore_profiles (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    session_id      TEXT REFERENCES dd_explore_sessions(id) ON DELETE SET NULL,
+    db_conn_json    TEXT DEFAULT '{}',
+    profile_json    TEXT DEFAULT '{}',
+    table_count     INTEGER DEFAULT 0,
+    anomaly_json    TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS dd_anomaly_runs (
+    id              TEXT PRIMARY KEY,
+    profile_id      TEXT,
+    findings_json   TEXT,
+    overall_risk    TEXT,
+    classification  TEXT,
+    created_at      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_explore_profiles_design ON dd_explore_profiles(design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_explore_sessions_design ON dd_explore_sessions(design_id);
+
+-- ── Data Science: Query Sandbox ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dd_query_history (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    user            TEXT DEFAULT '',
+    sql_text        TEXT NOT NULL,
+    db_conn_json    TEXT DEFAULT '{}',
+    row_count       INTEGER DEFAULT 0,
+    exec_ms         INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_query_history_design ON dd_query_history(design_id);
+
+-- ── Data Science: Quality Rules ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dd_quality_rules (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    name            TEXT NOT NULL,
+    table_name      TEXT NOT NULL,
+    column_name     TEXT DEFAULT '',
+    check_type      TEXT NOT NULL,
+    threshold       REAL DEFAULT 90.0,
+    params_json     TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    CHECK (check_type IN ('completeness', 'uniqueness', 'range', 'pattern', 'freshness'))
+);
+
+CREATE TABLE IF NOT EXISTS dd_quality_runs (
+    id              TEXT PRIMARY KEY,
+    rule_id         TEXT REFERENCES dd_quality_rules(id) ON DELETE CASCADE,
+    db_conn_json    TEXT DEFAULT '{}',
+    passed          INTEGER DEFAULT 0,
+    actual_value    REAL DEFAULT 0.0,
+    threshold       REAL DEFAULT 0.0,
+    detail          TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_quality_rules_design ON dd_quality_rules(design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_quality_runs_rule ON dd_quality_runs(rule_id);
+
+CREATE TABLE IF NOT EXISTS dd_freshness_alerts (
+    id              TEXT PRIMARY KEY,
+    rule_id         TEXT NOT NULL REFERENCES dd_quality_rules(id),
+    design_id       TEXT,
+    db_conn_json    TEXT,
+    last_checked    TEXT,
+    passed          INTEGER,
+    actual_max_value TEXT,
+    cutoff_value    TEXT,
+    detail          TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT
+);
+
+-- ── Data Mesh Foundation Tables ───────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS dm_domains (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    owner           TEXT DEFAULT '',
+    steward         TEXT DEFAULT '',
+    bounded_context TEXT DEFAULT '',
+    maturity_level  INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    status          TEXT DEFAULT 'active',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_domains_status ON dm_domains(status);
+
+CREATE TABLE IF NOT EXISTS dm_data_products (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT REFERENCES dm_domains(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    owner           TEXT DEFAULT '',
+    version         TEXT DEFAULT '1.0.0',
+    availability_sla REAL DEFAULT 99.9,
+    latency_sla_ms  INTEGER DEFAULT 500,
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_data_products_domain ON dm_data_products(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_data_products_status ON dm_data_products(status);
+
+CREATE TABLE IF NOT EXISTS dm_contracts (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    title           TEXT NOT NULL,
+    version         TEXT DEFAULT '1.0.0',
+    schema_json     TEXT DEFAULT '{}',
+    sla_json        TEXT DEFAULT '{}',
+    quality_rules_json TEXT DEFAULT '[]',
+    status          TEXT DEFAULT 'draft',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_product ON dm_contracts(product_id);
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_status  ON dm_contracts(status);
+
+CREATE TABLE IF NOT EXISTS dm_input_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    port_type       TEXT DEFAULT 'cdc',
+    schema_json     TEXT DEFAULT '{}',
+    source_system   TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_input_ports_product ON dm_input_ports(product_id);
+
+CREATE TABLE IF NOT EXISTS dm_output_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    port_type       TEXT DEFAULT 'api',
+    schema_json     TEXT DEFAULT '{}',
+    endpoint        TEXT DEFAULT '',
+    sla_json        TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_output_ports_product ON dm_output_ports(product_id);
+
+CREATE TABLE IF NOT EXISTS dm_domain_maturity (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT REFERENCES dm_domains(id) ON DELETE CASCADE,
+    maturity_level  INTEGER NOT NULL DEFAULT 0,
+    scores_json     TEXT DEFAULT '{}',
+    assessed_by     TEXT DEFAULT '',
+    notes           TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_domain_maturity_domain ON dm_domain_maturity(domain_id);
+
+CREATE TABLE IF NOT EXISTS dm_governance_policies (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    policy_type     TEXT DEFAULT 'opa',
+    rules_json      TEXT DEFAULT '[]',
+    applies_to      TEXT DEFAULT 'all',
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_governance_policies_status ON dm_governance_policies(status);
+
+CREATE TABLE IF NOT EXISTS dm_catalog_entries (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    catalog_name    TEXT NOT NULL,
+    tags_json       TEXT DEFAULT '[]',
+    metadata_json   TEXT DEFAULT '{}',
+    lineage_json    TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_catalog_entries_product ON dm_catalog_entries(product_id);
+
+CREATE TABLE IF NOT EXISTS dm_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain_id       TEXT,
+    product_id      TEXT,
+    user            TEXT DEFAULT '',
+    action          TEXT NOT NULL,
+    detail          TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_audit_domain  ON dm_audit(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_audit_product ON dm_audit(product_id);
+
+CREATE TRIGGER IF NOT EXISTS dm_audit_no_update
+    BEFORE UPDATE ON dm_audit
+    BEGIN
+        SELECT RAISE(ABORT, 'dm_audit records are immutable — NIST AU-6');
+    END;
+
+CREATE TRIGGER IF NOT EXISTS dm_audit_no_delete
+    BEFORE DELETE ON dm_audit
+    BEGIN
+        SELECT RAISE(ABORT, 'dm_audit records cannot be deleted');
+    END;
+
+CREATE TABLE IF NOT EXISTS dm_opa_policies (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT,
+    name            TEXT NOT NULL,
+    rego_text       TEXT DEFAULT '',
+    policy_path     TEXT DEFAULT 'datamesh/allow',
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_opa_policies_domain ON dm_opa_policies(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_opa_policies_enabled ON dm_opa_policies(enabled);
+
+CREATE TABLE IF NOT EXISTS dm_policy_audit_log (
+    id              TEXT PRIMARY KEY,
+    policy_id       TEXT,
+    user            TEXT DEFAULT 'system',
+    resource        TEXT DEFAULT '{}',
+    decision        INTEGER DEFAULT 0,
+    reason          TEXT DEFAULT '',
+    method          TEXT DEFAULT 'local',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_policy_audit_created ON dm_policy_audit_log(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS dm_csp_sync_log (
+    id              TEXT PRIMARY KEY,
+    provider        TEXT NOT NULL,
+    domain_id       TEXT DEFAULT '',
+    product_id      TEXT DEFAULT '',
+    operation       TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    synced_count    INTEGER DEFAULT 0,
+    error_detail    TEXT DEFAULT '',
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_csp_provider ON dm_csp_sync_log(provider, created_at);
 """
 
 
@@ -960,6 +1245,396 @@ TEMPLATES = [
             }
         ),
     },
+    # ── Data Science Templates ──────────────────────────────────────────────────
+    # 7 — ML Feature Store
+    {
+        "id": "tpl-ddc-ml-feature-store",
+        "name": "ML Feature Store",
+        "category": "Data Science",
+        "description": "Feature engineering pipeline: raw event tables → computed feature store → model registry with quality gates, freshness guardian, and data lineage.",
+        "tags": json.dumps(["ml", "feature-store", "data-science", "mlops", "lineage"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("raw-events", "raw_events", "ent-table", 100, 150),
+                    _node("feat-store", "feature_store", "ent-feature-store", 350, 150),
+                    _node("model-reg", "model_registry", "ent-model-registry", 600, 150),
+                    _node("feat-pk", "feature_id (PK)", "col-pk", 270, 80),
+                    _node("feat-name", "feature_name", "col-data", 270, 150),
+                    _node("feat-val", "feature_value", "col-data", 270, 220),
+                    _node("feat-ts", "computed_at", "col-audit", 270, 290),
+                    _node("model-pk", "model_id (PK)", "col-pk", 720, 80),
+                    _node("model-ver", "version", "col-data", 720, 150),
+                    _node("model-uri", "artifact_uri", "col-data", 720, 220),
+                    _node("feat-eng", "Feature Engineering", "flow-etl", 225, 370),
+                    _node("train-pipe", "Training Pipeline", "flow-etl", 475, 370),
+                    _node("quality", "Quality Gate", "twin-quality-gate", 350, 450),
+                    _node("freshness", "Freshness Guardian", "ctrl-retention", 100, 350),
+                    _node("lineage", "Data Lineage", "twin-lineage", 600, 350),
+                    _node("rbac", "RBAC Policy", "ctrl-rbac", 350, 50),
+                ],
+                "edges": [
+                    _edge("feat-store", "feat-pk"),
+                    _edge("feat-store", "feat-name"),
+                    _edge("feat-store", "feat-val"),
+                    _edge("feat-store", "feat-ts"),
+                    _edge("model-reg", "model-pk"),
+                    _edge("model-reg", "model-ver"),
+                    _edge("model-reg", "model-uri"),
+                    _edge("raw-events", "feat-store", "feature engineer", "flow-etl"),
+                    _edge("feat-store", "model-reg", "train", "flow-etl"),
+                    _edge("raw-events", "freshness"),
+                    _edge("feat-store", "quality"),
+                    _edge("feat-store", "lineage"),
+                    _edge("model-reg", "lineage"),
+                    _edge("rbac", "feat-store", "policy"),
+                    _edge("rbac", "model-reg", "policy"),
+                ],
+                "boundaries": [
+                    _boundary(
+                        "ml-zone",
+                        "ML Platform Zone",
+                        "bnd-schema",
+                        ["raw-events", "feat-store", "model-reg"],
+                        x=50,
+                        y=30,
+                        width=730,
+                        height=320,
+                    ),
+                    _boundary(
+                        "cui-zone",
+                        "CUI // SP-CTI Zone",
+                        "bnd-classification",
+                        ["raw-events"],
+                        x=60,
+                        y=100,
+                        width=150,
+                        height=150,
+                    ),
+                ],
+            }
+        ),
+    },
+    # 8 — ML Training Pipeline
+    {
+        "id": "tpl-ddc-ds-pipeline",
+        "name": "ML Training Pipeline",
+        "category": "Data Science",
+        "description": "End-to-end supervised learning: ingest → profile → feature extraction → train/test split → model store → drift monitoring.",
+        "tags": json.dumps(["ml", "pipeline", "training", "data-science", "mlops"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("ingest-lake", "raw_data_lake", "ent-datalake", 80, 180),
+                    _node("profile-tbl", "explore_profiles", "ent-table", 230, 180),
+                    _node("feat-tbl", "feature_set", "ent-dataset", 380, 180),
+                    _node("split-tbl", "train_test_split", "ent-dataset", 530, 180),
+                    _node("model-store", "model_store", "ent-model-registry", 680, 180),
+                    _node("drift-mon", "drift_monitor", "ent-topic", 680, 360),
+                    _node("pii-col", "raw_pii (PII)", "col-pii", 80, 80),
+                    _node("feat-col", "feature_vector", "col-data", 380, 80),
+                    _node("label-col", "target_label", "col-data", 380, 130),
+                    _node("quality-gate", "Quality Gate", "twin-quality-gate", 230, 370),
+                    _node("schema-drift", "Schema Drift Detector", "twin-schema-drift", 530, 370),
+                    _node("lineage", "Column Lineage", "twin-lineage", 380, 450),
+                    _node("pii-scan", "PII Scanner", "ctrl-masking", 80, 370),
+                    _node("rbac", "RBAC Policy", "ctrl-rbac", 480, 80),
+                ],
+                "edges": [
+                    _edge("ingest-lake", "pii-col"),
+                    _edge("feat-tbl", "feat-col"),
+                    _edge("feat-tbl", "label-col"),
+                    _edge("ingest-lake", "profile-tbl", "profile", "flow-etl"),
+                    _edge("profile-tbl", "feat-tbl", "extract", "flow-etl"),
+                    _edge("feat-tbl", "split-tbl", "split", "flow-etl"),
+                    _edge("split-tbl", "model-store", "train", "flow-etl"),
+                    _edge("model-store", "drift-mon", "monitor", "flow-api"),
+                    _edge("ingest-lake", "pii-scan"),
+                    _edge("profile-tbl", "quality-gate"),
+                    _edge("split-tbl", "schema-drift"),
+                    _edge("feat-tbl", "lineage"),
+                    _edge("rbac", "feat-tbl", "policy"),
+                    _edge("rbac", "model-store", "policy"),
+                ],
+                "boundaries": [
+                    _boundary(
+                        "pipeline-zone",
+                        "ML Training Pipeline",
+                        "bnd-schema",
+                        ["ingest-lake", "profile-tbl", "feat-tbl", "split-tbl", "model-store"],
+                        x=30,
+                        y=140,
+                        width=730,
+                        height=150,
+                    ),
+                    _boundary(
+                        "cui-zone",
+                        "CUI // SP-CTI Zone",
+                        "bnd-classification",
+                        ["ingest-lake", "pii-col"],
+                        x=40,
+                        y=50,
+                        width=140,
+                        height=170,
+                    ),
+                ],
+            }
+        ),
+    },
+    # 9 — Jupyter Lakehouse (DuckDB + Parquet)
+    {
+        "id": "tpl-ddc-jupyter-lakehouse",
+        "name": "Jupyter Lakehouse (DuckDB + Parquet)",
+        "category": "Data Science",
+        "description": "Interactive analytics lakehouse: Parquet data lake → DuckDB in-process engine → profiler → query sandbox → quality checks with CUI zone and audit trail.",
+        "tags": json.dumps(["duckdb", "parquet", "lakehouse", "jupyter", "data-science", "analytics"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("parquet-lake", "Parquet Lake", "ent-datalake", 100, 150),
+                    _node("duckdb", "DuckDB (Compute)", "ent-warehouse", 350, 150),
+                    _node("profile", "explore_profiles", "ent-table", 100, 350),
+                    _node("query-hist", "query_history", "ent-table", 350, 350),
+                    _node("quality-rules", "quality_rules", "ent-table", 600, 350),
+                    _node("pii-col", "pii_field (PII)", "col-pii", 50, 250),
+                    _node("enc", "AES-256 TDE", "ctrl-encryption", 600, 150),
+                    _node("audit-log", "Audit Logging", "ctrl-audit-log", 100, 500),
+                    _node("retention", "NARA Retention", "ctrl-retention", 350, 500),
+                    _node("rbac", "RBAC Policy", "ctrl-rbac", 600, 50),
+                    _node("quality-gate", "Quality Gate", "twin-quality-gate", 600, 250),
+                    _node("schema-drift", "Schema Drift Detector", "twin-schema-drift", 350, 50),
+                    _node("lineage", "Column Lineage", "flow-column-lineage", 350, 250),
+                    _node("etl-ingest", "Ingest ETL", "flow-etl", 225, 250),
+                ],
+                "edges": [
+                    _edge("parquet-lake", "pii-col"),
+                    _edge("parquet-lake", "duckdb", "query", "flow-etl"),
+                    _edge("duckdb", "profile", "profile run", "flow-api"),
+                    _edge("duckdb", "query-hist", "query log", "flow-api"),
+                    _edge("duckdb", "quality-rules", "quality check", "flow-api"),
+                    _edge("duckdb", "enc"),
+                    _edge("duckdb", "quality-gate"),
+                    _edge("duckdb", "schema-drift"),
+                    _edge("duckdb", "lineage"),
+                    _edge("parquet-lake", "audit-log"),
+                    _edge("duckdb", "audit-log"),
+                    _edge("parquet-lake", "retention"),
+                    _edge("duckdb", "retention"),
+                    _edge("rbac", "duckdb", "policy"),
+                ],
+                "boundaries": [
+                    _boundary(
+                        "lakehouse-zone",
+                        "Lakehouse Zone",
+                        "bnd-schema",
+                        ["parquet-lake", "duckdb", "profile", "query-hist", "quality-rules"],
+                        x=40,
+                        y=90,
+                        width=650,
+                        height=330,
+                    ),
+                    _boundary(
+                        "cui-zone",
+                        "CUI // SP-CTI Zone",
+                        "bnd-classification",
+                        ["parquet-lake"],
+                        x=50,
+                        y=110,
+                        width=140,
+                        height=160,
+                    ),
+                ],
+            }
+        ),
+    },
+    # ── Data Mesh Templates ─────────────────────────────────────────────────────
+    # 10 — Data Mesh Domain
+    {
+        "id": "tpl-ddc-data-mesh-domain",
+        "name": "Data Mesh Domain",
+        "category": "Data Mesh",
+        "description": "Data Mesh domain with two data products, ODCS contracts, federated governance policy, domain catalog, and SLA quality gates.",
+        "tags": json.dumps(["data-mesh", "domain", "data-product", "governance", "odcs"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("prod-1", "Telemetry Product", "ent-data-product", 150, 200),
+                    _node("prod-2", "Analytics Product", "ent-data-product", 450, 200),
+                    _node("contract-1", "ODCS Contract (Telemetry)", "ent-contract", 150, 380),
+                    _node("contract-2", "ODCS Contract (Analytics)", "ent-contract", 450, 380),
+                    _node("catalog", "Domain Catalog", "twin-catalog", 300, 480),
+                    _node("policy", "Governance Policy", "ctrl-classification", 300, 80),
+                    _node("rbac", "Domain RBAC", "ctrl-rbac", 100, 80),
+                    _node("quality-1", "Quality Gate (Telemetry)", "twin-quality-gate", 150, 490),
+                    _node("quality-2", "Quality Gate (Analytics)", "twin-quality-gate", 450, 490),
+                    _node("lineage", "Lineage Twin", "twin-lineage", 300, 570),
+                    _node("sla-col-1", "availability_sla", "col-data", 80, 280),
+                    _node("sla-col-2", "latency_sla_ms", "col-data", 530, 280),
+                    _node("input-port", "Input Port (CDC)", "ent-input-port", 0, 200),
+                    _node("output-port-1", "Output Port (API)", "ent-output-port", 150, 100),
+                    _node("output-port-2", "Output Port (Export)", "ent-output-port", 450, 100),
+                ],
+                "edges": [
+                    _edge("prod-1", "contract-1"),
+                    _edge("prod-2", "contract-2"),
+                    _edge("prod-1", "sla-col-1"),
+                    _edge("prod-2", "sla-col-2"),
+                    _edge("contract-1", "catalog"),
+                    _edge("contract-2", "catalog"),
+                    _edge("catalog", "lineage"),
+                    _edge("prod-1", "quality-1"),
+                    _edge("prod-2", "quality-2"),
+                    _edge("quality-1", "lineage"),
+                    _edge("quality-2", "lineage"),
+                    _edge("policy", "prod-1", "enforce"),
+                    _edge("policy", "prod-2", "enforce"),
+                    _edge("rbac", "prod-1", "policy"),
+                    _edge("rbac", "prod-2", "policy"),
+                    _edge("input-port", "prod-1", "ingest", "flow-cdc"),
+                    _edge("prod-1", "output-port-1", "serve", "flow-api"),
+                    _edge("prod-2", "output-port-2", "export", "flow-export"),
+                ],
+                "boundaries": [
+                    _boundary(
+                        "domain-zone",
+                        "Domain: Telemetry & Analytics",
+                        "bnd-tenant",
+                        ["prod-1", "prod-2", "contract-1", "contract-2"],
+                        x=80,
+                        y=140,
+                        width=490,
+                        height=310,
+                    ),
+                ],
+            }
+        ),
+    },
+    # 11 — Data Product
+    {
+        "id": "tpl-ddc-data-product",
+        "name": "Data Product",
+        "category": "Data Mesh",
+        "description": "Self-contained data product: input ports (CDC/API), storage, output ports (API/export/stream), ODCS contract, SLA quality gate, and catalog registration.",
+        "tags": json.dumps(["data-mesh", "data-product", "sla", "odcs", "catalog"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("input-cdc", "Input Port (CDC)", "ent-input-port", 50, 200),
+                    _node("input-api", "Input Port (API)", "ent-input-port", 50, 300),
+                    _node("storage", "Product Storage", "ent-data-product", 280, 230),
+                    _node("output-api", "Output Port (API)", "ent-output-port", 510, 150),
+                    _node("output-export", "Output Port (Export)", "ent-output-port", 510, 280),
+                    _node("output-stream", "Output Port (Stream)", "ent-output-port", 510, 400),
+                    _node("contract", "ODCS Contract", "ent-contract", 280, 430),
+                    _node("quality", "SLA Quality Gate", "twin-quality-gate", 280, 80),
+                    _node("catalog", "Catalog Entry", "twin-catalog", 510, 530),
+                    _node("lineage", "Lineage Twin", "twin-lineage", 50, 430),
+                    _node("pk-col", "product_id (PK)", "col-pk", 200, 180),
+                    _node("sla-col", "availability_pct", "col-data", 360, 180),
+                    _node("owner-col", "domain_owner", "col-data", 200, 280),
+                    _node("rbac", "Product RBAC", "ctrl-rbac", 280, 560),
+                    _node("retention", "Retention Policy", "ctrl-retention", 510, 620),
+                ],
+                "edges": [
+                    _edge("input-cdc", "storage", "ingest", "flow-cdc"),
+                    _edge("input-api", "storage", "ingest", "flow-api"),
+                    _edge("storage", "output-api", "serve", "flow-api"),
+                    _edge("storage", "output-export", "export", "flow-export"),
+                    _edge("storage", "output-stream", "stream", "flow-etl"),
+                    _edge("storage", "pk-col"),
+                    _edge("storage", "sla-col"),
+                    _edge("storage", "owner-col"),
+                    _edge("storage", "contract"),
+                    _edge("contract", "catalog"),
+                    _edge("storage", "quality"),
+                    _edge("storage", "lineage"),
+                    _edge("contract", "lineage"),
+                    _edge("rbac", "storage", "policy"),
+                    _edge("retention", "storage"),
+                ],
+                "boundaries": [
+                    _boundary(
+                        "product-zone",
+                        "Data Product Boundary",
+                        "bnd-tenant",
+                        ["storage", "contract", "quality", "catalog"],
+                        x=160,
+                        y=40,
+                        width=430,
+                        height=560,
+                    ),
+                ],
+            }
+        ),
+    },
+    # 12 — Federated Governance
+    {
+        "id": "tpl-ddc-federated-governance",
+        "name": "Federated Governance",
+        "category": "Data Mesh",
+        "description": "Federated governance hub: OPA policy engine, global metadata catalog, cross-domain audit, domain maturity scoring, and OpenLineage emitter.",
+        "tags": json.dumps(["data-mesh", "governance", "opa", "openlineage", "catalog", "federated"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("opa-engine", "OPA Policy Engine", "ctrl-classification", 300, 100),
+                    _node("global-cat", "Global Metadata Catalog", "twin-catalog", 300, 280),
+                    _node("domain-a", "Domain A (Products)", "ent-domain", 80, 440),
+                    _node("domain-b", "Domain B (Analytics)", "ent-domain", 300, 440),
+                    _node("domain-c", "Domain C (ML)", "ent-domain", 520, 440),
+                    _node("audit", "Cross-Domain Audit Log", "ctrl-audit-log", 300, 550),
+                    _node("lineage", "OpenLineage Emitter", "twin-lineage", 550, 280),
+                    _node("schema-drift", "Schema Drift Detector", "twin-schema-drift", 50, 280),
+                    _node("quality-hub", "Quality Score Hub", "twin-quality-gate", 300, 190),
+                    _node("dlp", "DLP Egress Filter", "ctrl-dlp", 550, 100),
+                    _node("retention", "Global Retention Policy", "ctrl-retention", 50, 100),
+                    _node("rbac", "Federation RBAC", "ctrl-rbac", 300, 640),
+                ],
+                "edges": [
+                    _edge("opa-engine", "domain-a", "enforce policy"),
+                    _edge("opa-engine", "domain-b", "enforce policy"),
+                    _edge("opa-engine", "domain-c", "enforce policy"),
+                    _edge("global-cat", "domain-a", "catalog sync"),
+                    _edge("global-cat", "domain-b", "catalog sync"),
+                    _edge("global-cat", "domain-c", "catalog sync"),
+                    _edge("global-cat", "lineage"),
+                    _edge("schema-drift", "domain-a"),
+                    _edge("schema-drift", "domain-b"),
+                    _edge("quality-hub", "domain-a"),
+                    _edge("quality-hub", "domain-b"),
+                    _edge("quality-hub", "domain-c"),
+                    _edge("domain-a", "audit"),
+                    _edge("domain-b", "audit"),
+                    _edge("domain-c", "audit"),
+                    _edge("dlp", "domain-c", "egress filter"),
+                    _edge("retention", "global-cat"),
+                    _edge("rbac", "opa-engine", "admin policy"),
+                ],
+                "boundaries": [
+                    _boundary(
+                        "federation-zone",
+                        "Federation Layer",
+                        "bnd-classification",
+                        ["opa-engine", "global-cat", "quality-hub", "lineage"],
+                        x=200,
+                        y=60,
+                        width=420,
+                        height=270,
+                    ),
+                    _boundary(
+                        "domain-ring",
+                        "Domain Ring",
+                        "bnd-tenant",
+                        ["domain-a", "domain-b", "domain-c"],
+                        x=20,
+                        y=400,
+                        width=570,
+                        height=110,
+                    ),
+                ],
+            }
+        ),
+    },
 ]
 
 
@@ -1202,6 +1877,347 @@ SNIPPETS = [
             }
         ),
     },
+    # ── Data Science Snippets ───────────────────────────────────────────────────
+    # 9 — Feature Table
+    {
+        "id": "snp-ddc-feature-table",
+        "name": "Feature Table",
+        "category": "Data Science",
+        "description": "ML feature table with freshness guardian, quality gate, and data lineage.",
+        "tags": json.dumps(["feature-store", "ml", "freshness", "data-science"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("feat-tbl", "feature_store", "ent-feature-store", 100, 100),
+                    _node("feat-pk", "feature_id (PK)", "col-pk", 30, 60),
+                    _node("feat-val", "feature_value", "col-data", 30, 120),
+                    _node("feat-ts", "computed_at", "col-audit", 30, 180),
+                    _node("freshness", "Freshness Guardian", "ctrl-retention", 250, 70),
+                    _node("quality", "Quality Gate", "twin-quality-gate", 250, 160),
+                    _node("lineage", "Lineage Twin", "twin-lineage", 100, 250),
+                ],
+                "edges": [
+                    _edge("feat-tbl", "feat-pk"),
+                    _edge("feat-tbl", "feat-val"),
+                    _edge("feat-tbl", "feat-ts"),
+                    _edge("feat-tbl", "freshness"),
+                    _edge("feat-tbl", "quality"),
+                    _edge("feat-tbl", "lineage"),
+                ],
+                "boundaries": [],
+            }
+        ),
+    },
+    # 10 — Training Dataset
+    {
+        "id": "snp-ddc-training-dataset",
+        "name": "Training Dataset",
+        "category": "Data Science",
+        "description": "Labeled training dataset with PII scan, column lineage, quality gate, and RBAC.",
+        "tags": json.dumps(["training", "ml", "dataset", "pii", "data-science"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("ds-tbl", "training_dataset", "ent-dataset", 100, 80),
+                    _node("label-col", "target_label", "col-data", 30, 60),
+                    _node("feat-col", "feature_vector", "col-data", 30, 120),
+                    _node("pii-col", "raw_pii (PII)", "col-pii", 30, 180),
+                    _node("pii-scan", "PII Scanner", "ctrl-masking", 250, 60),
+                    _node("quality", "Quality Gate", "twin-quality-gate", 250, 150),
+                    _node("lineage", "Column Lineage", "flow-column-lineage", 100, 220),
+                    _node("rbac", "RBAC Policy", "ctrl-rbac", 250, 230),
+                ],
+                "edges": [
+                    _edge("ds-tbl", "label-col"),
+                    _edge("ds-tbl", "feat-col"),
+                    _edge("ds-tbl", "pii-col"),
+                    _edge("ds-tbl", "pii-scan"),
+                    _edge("ds-tbl", "quality"),
+                    _edge("ds-tbl", "lineage"),
+                    _edge("rbac", "ds-tbl", "policy"),
+                ],
+                "boundaries": [],
+            }
+        ),
+    },
+    # 11 — Model Registry
+    {
+        "id": "snp-ddc-model-registry",
+        "name": "Model Registry",
+        "category": "Data Science",
+        "description": "Model version store with artifact URI tracking, audit log, RBAC, and schema drift detection.",
+        "tags": json.dumps(["model-registry", "mlops", "versioning", "data-science"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("model-tbl", "model_registry", "ent-model-registry", 100, 80),
+                    _node("model-pk", "model_id (PK)", "col-pk", 30, 60),
+                    _node("model-ver", "version", "col-data", 30, 120),
+                    _node("model-uri", "artifact_uri", "col-data", 30, 180),
+                    _node("model-ts", "trained_at", "col-audit", 30, 240),
+                    _node("drift", "Schema Drift Detector", "twin-schema-drift", 260, 80),
+                    _node("audit", "Audit Log", "ctrl-audit-log", 260, 180),
+                    _node("rbac", "RBAC Policy", "ctrl-rbac", 100, 300),
+                ],
+                "edges": [
+                    _edge("model-tbl", "model-pk"),
+                    _edge("model-tbl", "model-ver"),
+                    _edge("model-tbl", "model-uri"),
+                    _edge("model-tbl", "model-ts"),
+                    _edge("model-tbl", "drift"),
+                    _edge("model-tbl", "audit"),
+                    _edge("rbac", "model-tbl", "policy"),
+                ],
+                "boundaries": [],
+            }
+        ),
+    },
+    # 12 — Anomaly Detection Loop
+    {
+        "id": "snp-ddc-anomaly-detect",
+        "name": "Anomaly Detection Loop",
+        "category": "Data Science",
+        "description": "CUSUM anomaly detection: source table → profiler → detector → alert stream.",
+        "tags": json.dumps(["anomaly-detection", "cusum", "monitoring", "data-science"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("src-tbl", "source_table", "ent-table", 50, 100),
+                    _node("profile", "explore_profile", "ent-table", 200, 100),
+                    _node("anomaly", "CUSUM Anomaly Detector", "twin-schema-drift", 350, 100),
+                    _node("alert-stream", "alert_stream", "ent-topic", 500, 100),
+                    _node("freshness", "Freshness Guardian", "ctrl-retention", 50, 230),
+                    _node("audit", "Audit Log", "ctrl-audit-log", 350, 230),
+                ],
+                "edges": [
+                    _edge("src-tbl", "profile", "profile run", "flow-etl"),
+                    _edge("profile", "anomaly", "detect"),
+                    _edge("anomaly", "alert-stream", "alert", "flow-api"),
+                    _edge("src-tbl", "freshness"),
+                    _edge("anomaly", "audit"),
+                ],
+                "boundaries": [],
+            }
+        ),
+    },
+    # ── Data Mesh Snippets ──────────────────────────────────────────────────────
+    # 13 — Data Product Ports
+    {
+        "id": "snp-ddc-data-product-port",
+        "name": "Data Product Ports",
+        "category": "Data Mesh",
+        "description": "Input/output port wiring for a data mesh product: CDC input, API output, export output, and SLA contract.",
+        "tags": json.dumps(["data-mesh", "data-product", "ports", "sla", "cdc"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("input-cdc", "Input Port (CDC)", "ent-input-port", 30, 130),
+                    _node("product", "Data Product", "ent-data-product", 200, 130),
+                    _node("output-api", "Output Port (API)", "ent-output-port", 370, 80),
+                    _node("output-exp", "Output Port (Export)", "ent-output-port", 370, 180),
+                    _node("contract", "SLA Contract", "ent-contract", 200, 280),
+                    _node("quality", "SLA Quality Gate", "twin-quality-gate", 370, 280),
+                ],
+                "edges": [
+                    _edge("input-cdc", "product", "ingest", "flow-cdc"),
+                    _edge("product", "output-api", "serve", "flow-api"),
+                    _edge("product", "output-exp", "export", "flow-export"),
+                    _edge("product", "contract"),
+                    _edge("contract", "quality"),
+                ],
+                "boundaries": [
+                    _boundary(
+                        "product-zone",
+                        "Data Product",
+                        "bnd-tenant",
+                        ["product", "contract"],
+                        x=140,
+                        y=80,
+                        width=200,
+                        height=260,
+                    ),
+                ],
+            }
+        ),
+    },
+    # 14 — Domain Data Contract
+    {
+        "id": "snp-ddc-domain-contract",
+        "name": "Domain Data Contract",
+        "category": "Data Mesh",
+        "description": "ODCS data contract with governance policy, domain boundary, and catalog registration.",
+        "tags": json.dumps(["data-mesh", "odcs", "contract", "governance", "domain"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("product", "Data Product", "ent-data-product", 150, 100),
+                    _node("contract", "ODCS Contract", "ent-contract", 150, 250),
+                    _node("policy", "Governance Policy", "ctrl-classification", 320, 100),
+                    _node("catalog", "Catalog Entry", "twin-catalog", 320, 250),
+                    _node("lineage", "Lineage Twin", "twin-lineage", 230, 370),
+                ],
+                "edges": [
+                    _edge("product", "contract"),
+                    _edge("policy", "product", "enforce"),
+                    _edge("policy", "contract", "enforce"),
+                    _edge("contract", "catalog"),
+                    _edge("catalog", "lineage"),
+                ],
+                "boundaries": [
+                    _boundary(
+                        "domain-zone",
+                        "Domain Boundary",
+                        "bnd-tenant",
+                        ["product", "contract"],
+                        x=80,
+                        y=60,
+                        width=200,
+                        height=260,
+                    ),
+                ],
+            }
+        ),
+    },
+    # 15 — Mesh Governance Policy
+    {
+        "id": "snp-ddc-mesh-governance",
+        "name": "Mesh Governance Policy",
+        "category": "Data Mesh",
+        "description": "Federated governance: OPA policy engine, cross-domain audit, DLP, and global catalog sync.",
+        "tags": json.dumps(["data-mesh", "governance", "opa", "federated", "audit"]),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("opa", "OPA Policy Engine", "ctrl-classification", 200, 80),
+                    _node("catalog", "Global Catalog", "twin-catalog", 200, 230),
+                    _node("audit", "Cross-Domain Audit", "ctrl-audit-log", 200, 370),
+                    _node("dlp", "DLP Egress Filter", "ctrl-dlp", 380, 150),
+                    _node("lineage", "OpenLineage Emitter", "twin-lineage", 380, 300),
+                    _node("rbac", "Federation RBAC", "ctrl-rbac", 30, 150),
+                ],
+                "edges": [
+                    _edge("opa", "catalog", "policy sync"),
+                    _edge("opa", "dlp", "enforce"),
+                    _edge("catalog", "audit"),
+                    _edge("catalog", "lineage"),
+                    _edge("dlp", "audit"),
+                    _edge("rbac", "opa", "admin"),
+                ],
+                "boundaries": [],
+            }
+        ),
+    },
+
+    # Data Mesh Snippet 1: Multi-Domain Hub
+    {
+        "id": "snp-dm-multi-domain-hub",
+        "name": "Multi-Domain Hub",
+        "category": "Data Mesh",
+        "description": "Central analytics domain consuming products from two upstream domains via typed output ports and ODCS contracts.",
+        "tags": json.dumps(["data-mesh", "multi-domain", "hub", "contracts", "ports"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("dom-a", "Sales Domain", "ent-domain", 100, 100),
+                _node("prod-a", "Sales Data Product", "ent-data-product", 100, 220),
+                _node("port-a-out", "daily_orders output", "ent-output-port", 100, 320),
+                _node("dom-b", "Finance Domain", "ent-domain", 400, 100),
+                _node("prod-b", "Revenue Data Product", "ent-data-product", 400, 220),
+                _node("port-b-out", "revenue_feed output", "ent-output-port", 400, 320),
+                _node("dom-hub", "Analytics Domain Hub", "ent-domain", 250, 500),
+                _node("prod-hub", "Unified Analytics Product", "ent-data-product", 250, 620),
+                _node("port-hub-in-a", "orders_input", "ent-input-port", 160, 720),
+                _node("port-hub-in-b", "revenue_input", "ent-input-port", 340, 720),
+                _node("contract-a", "Sales-Analytics Contract v1", "ent-contract", 160, 420),
+                _node("contract-b", "Finance-Analytics Contract v1", "ent-contract", 340, 420),
+                _node("policy-hub", "Cross-Domain Access Policy", "ctrl-rbac", 250, 820),
+            ],
+            "edges": [
+                _edge("dom-a", "prod-a"),
+                _edge("prod-a", "port-a-out"),
+                _edge("dom-b", "prod-b"),
+                _edge("prod-b", "port-b-out"),
+                _edge("port-a-out", "contract-a"),
+                _edge("port-b-out", "contract-b"),
+                _edge("contract-a", "port-hub-in-a"),
+                _edge("contract-b", "port-hub-in-b"),
+                _edge("port-hub-in-a", "prod-hub"),
+                _edge("port-hub-in-b", "prod-hub"),
+                _edge("dom-hub", "prod-hub"),
+                _edge("prod-hub", "policy-hub"),
+            ],
+            "boundaries": [],
+        }),
+    },
+    # Data Mesh Snippet 2: Cross-Domain Contract SLA
+    {
+        "id": "snp-dm-cross-domain-sla",
+        "name": "Cross-Domain Contract SLA",
+        "category": "Data Mesh",
+        "description": "Two domains sharing a data product via a gold-tier SLA contract with retention and quality policies.",
+        "tags": json.dumps(["data-mesh", "sla", "contract", "gold", "cross-domain"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("provider-dom", "Provider Domain", "ent-domain", 120, 80),
+                _node("provider-prod", "Customer 360 Product", "ent-data-product", 120, 200),
+                _node("c360-out", "c360_profiles REST output", "ent-output-port", 120, 320),
+                _node("sla-contract", "C360 SLA Contract v2 Gold", "ent-contract", 280, 420),
+                _node("consumer-dom", "Consumer Domain", "ent-domain", 440, 80),
+                _node("consumer-prod", "Personalisation Engine", "ent-data-product", 440, 200),
+                _node("c360-in", "c360_input REST input", "ent-input-port", 440, 320),
+                _node("quality-pol", "Data Quality Policy", "ctrl-validation", 120, 500),
+                _node("retention-pol", "7-Year Retention Policy", "ctrl-retention", 440, 500),
+                _node("enc-pol", "Encryption in Transit", "ctrl-encryption", 280, 580),
+            ],
+            "edges": [
+                _edge("provider-dom", "provider-prod"),
+                _edge("provider-prod", "c360-out"),
+                _edge("c360-out", "sla-contract"),
+                _edge("sla-contract", "c360-in"),
+                _edge("consumer-dom", "consumer-prod"),
+                _edge("c360-in", "consumer-prod"),
+                _edge("provider-prod", "quality-pol"),
+                _edge("consumer-prod", "retention-pol"),
+                _edge("sla-contract", "enc-pol"),
+            ],
+            "boundaries": [],
+        }),
+    },
+    # Data Mesh Snippet 3: Federated Data Product
+    {
+        "id": "snp-dm-federated-data-product",
+        "name": "Federated Data Product",
+        "category": "Data Mesh",
+        "description": "Single data product with full port matrix REST plus Kafka plus batch, OPA governance, and CUI classification.",
+        "tags": json.dumps(["data-mesh", "federated", "opa", "kafka", "rest", "cui"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("fed-dom", "Federated Domain", "ent-domain", 300, 60),
+                _node("fed-prod", "Telemetry Data Product", "ent-data-product", 300, 180),
+                _node("in-batch", "s3_raw_events batch input", "ent-input-port", 100, 300),
+                _node("in-stream", "kafka_telemetry stream input", "ent-input-port", 300, 300),
+                _node("out-rest", "metrics_api REST output", "ent-output-port", 500, 300),
+                _node("out-kafka", "telemetry_enriched Kafka output", "ent-output-port", 300, 420),
+                _node("contract-rest", "Metrics API Contract v3", "ent-contract", 500, 420),
+                _node("opa-pol", "OPA Governance Policy", "ctrl-rbac", 100, 420),
+                _node("cui-ctrl", "CUI Boundary Control", "ctrl-encryption", 500, 520),
+                _node("audit-ctrl", "Federated Audit Log", "ctrl-audit-log", 100, 520),
+                _node("datalake", "Telemetry Lake Zone", "ent-datalake", 300, 540),
+            ],
+            "edges": [
+                _edge("fed-dom", "fed-prod"),
+                _edge("in-batch", "fed-prod"),
+                _edge("in-stream", "fed-prod"),
+                _edge("fed-prod", "out-rest"),
+                _edge("fed-prod", "out-kafka"),
+                _edge("out-rest", "contract-rest"),
+                _edge("fed-prod", "datalake"),
+                _edge("fed-prod", "opa-pol"),
+                _edge("fed-prod", "audit-ctrl"),
+                _edge("out-rest", "cui-ctrl"),
+            ],
+            "boundaries": [],
+        }),
+    },
 ]
 
 
@@ -1420,6 +2436,58 @@ def init_db():
             conn.commit()
             print(f"[init_db] Data Canvas schema created at {DB_PATH}")
 
+        # CAM extension: dd_migration_jobs — tracks live data migration job status
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS dd_migration_jobs (
+    id                  TEXT PRIMARY KEY,
+    design_id           TEXT REFERENCES data_designs(id) ON DELETE CASCADE,
+    source_type         TEXT NOT NULL
+        CHECK(source_type IN ('oracle','mysql','mssql','mongodb','elasticsearch',
+                              'redis','postgres','s3','cassandra','dynamodb','other')),
+    target_type         TEXT NOT NULL,
+    migration_tool      TEXT DEFAULT 'dms'
+        CHECK(migration_tool IN ('dms','sct','pgloader','mongodump','snapshot_restore',
+                                 'aws_glue','manual','other')),
+    status              TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending','running','validating','complete','failed','paused')),
+    row_count_source    INTEGER DEFAULT 0,
+    row_count_target    INTEGER DEFAULT 0,
+    validation_query    TEXT DEFAULT '',
+    validation_status   TEXT DEFAULT 'pending'
+        CHECK(validation_status IN ('pending','pass','fail','skipped')),
+    config_json         TEXT DEFAULT '{}',
+    notes               TEXT DEFAULT '',
+    started_at          TEXT,
+    completed_at        TEXT,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_design ON dd_migration_jobs(design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(status);
+""")
+        conn.commit()
+
+        # Migration: add anomaly_json to dd_explore_profiles if missing
+        try:
+            conn.execute("ALTER TABLE dd_explore_profiles ADD COLUMN anomaly_json TEXT")
+            conn.commit()
+            print("[init_db] Migration applied: dd_explore_profiles.anomaly_json added.")
+        except Exception as e:
+            if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
+                pass  # column already present — idempotent
+            else:
+                raise
+
+        # Migration: add reflex_run to dd_quality_runs if missing
+        try:
+            conn.execute("ALTER TABLE dd_quality_runs ADD COLUMN reflex_run TEXT")
+            conn.commit()
+            print("[init_db] Migration applied: dd_quality_runs.reflex_run added.")
+        except Exception as e:
+            if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
+                pass  # column already present — idempotent
+            else:
+                raise
+
         # Seed templates (upsert)
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM dd_templates")
@@ -1533,4 +2601,7 @@ def init_db():
 
 
 if __name__ == "__main__":
+    import sys
+    if "--reinit" in sys.argv:
+        print("[init_db] --reinit: applying schema migrations...")
     init_db()
