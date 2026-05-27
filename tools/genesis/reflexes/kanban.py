@@ -6057,19 +6057,27 @@ def _decompose_one_task(task: dict) -> None:
     )
 
     try:
+        import concurrent.futures as _cf
         router = LLMRouter()
         req = LLMRequest(
             system_prompt=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
             max_tokens=1200,
         )
-        raw = router.invoke("kanban_decompose", req)
+        with _cf.ThreadPoolExecutor(max_workers=1) as _pool:
+            _future = _pool.submit(router.invoke, "kanban_decompose", req)
+            try:
+                raw = _future.result(timeout=45)
+            except _cf.TimeoutError:
+                raise RuntimeError("LLM invoke timed out after 45s") from None
         if isinstance(raw, str):
             response_text = raw
         elif hasattr(raw, "content"):
             response_text = raw.content
         else:
             response_text = str(raw)
+    except RuntimeError:
+        raise
     except Exception as exc:
         raise RuntimeError(f"LLM invoke failed: {exc}") from exc
 
