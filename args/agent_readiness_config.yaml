@@ -74,3 +74,14 @@ pillars:
       # Minimum npm script entries required to pass the task-runner criterion.
       # Fewer scripts indicate an underdeveloped automation setup.
       min_npm_scripts: 3
+
+  dependencies:
+    lock_file_freshness:
+      # Maximum age in months for a lock file to be considered fresh.
+      # A lock file older than this is anomalously stale for a project claiming dependency hygiene.
+      max_age_months: 6
+
+    pinned_versions:
+      # Minimum ratio (0.0–1.0) of requirements.txt entries that must use == pinning.
+      # A ratio below this is anomalously low for a project claiming reproducible builds.
+      min_pin_ratio: 0.8
