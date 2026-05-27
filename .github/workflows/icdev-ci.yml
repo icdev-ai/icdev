@@ -145,6 +145,8 @@ jobs:
         run: npm ci
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
+      - name: Initialize database
+        run: python tools/db/init_icdev_db.py
       - name: Start dashboard server
         run: |
           python tools/dashboard/app.py &

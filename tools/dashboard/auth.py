@@ -507,6 +507,10 @@ def _auto_provision_env_key():
                 (user_id, email, "Admin", "admin", "auto_provision"),
             )
             conn.commit()
+    except Exception:
+        # Tables not yet initialized — skip auto-provision; server will work in
+        # unauthenticated mode until db is initialized and the process restarts.
+        return
     finally:
         conn.close()
 
