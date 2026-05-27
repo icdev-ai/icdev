@@ -834,3 +834,18 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Runbook Engine | tools\govlift\runbook_engine.py | Auto-registered: govlift/runbook_engine.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Agent Entrypoint | tools\a2a\agent_entrypoint.py | Auto-registered: a2a/agent_entrypoint.py | --json | JSON |
+| Provision Dev Certs | tools\a2a\provision_dev_certs.py | Auto-registered: a2a/provision_dev_certs.py | --json | JSON |
+| Signal Ingester | tools\ai_augmentation\signal_ingester.py | Auto-registered: ai_augmentation/signal_ingester.py | --json | JSON |
+| Agentic Runner | tools\anvil\agentic_runner.py | Auto-registered: anvil/agentic_runner.py | --json | JSON |
+| Eval Harness | tools\genesis\harness\eval_harness.py | Auto-registered: harness/eval_harness.py | --json | JSON |
+| Heuristic Writer | tools\genesis\harness\heuristic_writer.py | Auto-registered: harness/heuristic_writer.py | --json | JSON |
+| Llm Triage | tools\genesis\harness\llm_triage.py | Auto-registered: harness/llm_triage.py | --json | JSON |
+| Meta Harness | tools\genesis\harness\meta_harness.py | Auto-registered: harness/meta_harness.py | --json | JSON |
+| Iceberg | tools\data_canvas\exporters\iceberg.py | Auto-registered: exporters/iceberg.py | --json | JSON |
+| Lake Zones | tools\data_canvas\exporters\lake_zones.py | Auto-registered: exporters/lake_zones.py | --json | JSON |

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""RAG MCP server — 9 tools for the RAG subsystem (Phase 64).
+"""RAG MCP server — 14 tools for the RAG subsystem.
+
+Phase A (12 tools): added kg_search, kg_expand, kg_to_rag_chunks
+Phase B (13 tools): added rag_decompose — query decomposition planner
+Phase C (14 tools): added rag_evaluate — per-chunk grading + self-eval loop
 
 Each tool is registered via MCPServer.register_tool() and is also callable
 from the unified MCP gateway via tool_registry.py.
@@ -297,7 +301,454 @@ def handle_rag_providers(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# MCPServer — register all 9 RAG tools
+# Phase A — KG bridge tools (kg_search, kg_expand, kg_to_rag_chunks)
+# ---------------------------------------------------------------------------
+
+
+def handle_kg_search(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Search the knowledge graph by keyword/semantic query and return top nodes."""
+    query = arguments.get("query", "")
+    top_k = int(arguments.get("top_k", 10))
+    project_id = arguments.get("project_id", "")
+    profile = arguments.get("profile") or None
+    compress = bool(arguments.get("compress", False))
+
+    if not query:
+        return {"error": "query is required"}
+
+    try:
+        from tools.knowledge_graph.graph_rag import retrieve
+
+        result = retrieve(
+            query=query,
+            project_id=project_id or None,
+            profile=profile,
+            top_k=top_k,
+            compress=compress,
+        )
+        return {"classification": "CUI // SP-CTI", **result}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_kg_expand(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Expand a KG node by N hops and return all reachable nodes and edges."""
+    node_id = arguments.get("node_id", "")
+    hops = int(arguments.get("hops", 2))
+    max_nodes = int(arguments.get("max_nodes", 50))
+
+    if not node_id:
+        return {"error": "node_id is required"}
+
+    try:
+        conn = _get_db()
+        # BFS expansion
+        visited_nodes: dict = {}
+        visited_edges: list = []
+        frontier = {node_id}
+        seen_edges: set = set()
+
+        for _ in range(hops):
+            if not frontier:
+                break
+            placeholders = ",".join("?" for _ in frontier)
+            node_rows = conn.execute(
+                f"SELECT id, entity_type, label, properties FROM kg_nodes WHERE id IN ({placeholders})",
+                list(frontier),
+            ).fetchall()
+            for r in node_rows:
+                nid = r[0] if isinstance(r, (list, tuple)) else r["id"]
+                if nid not in visited_nodes:
+                    visited_nodes[nid] = {
+                        "id": nid,
+                        "entity_type": r[1] if isinstance(r, (list, tuple)) else r["entity_type"],
+                        "label": r[2] if isinstance(r, (list, tuple)) else r["label"],
+                        "properties": r[3] if isinstance(r, (list, tuple)) else r["properties"],
+                    }
+
+            if len(visited_nodes) >= max_nodes:
+                break
+
+            edge_rows = conn.execute(
+                f"""
+                SELECT id, source_id, target_id, relation_type, weight
+                FROM kg_edges
+                WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})
+                """,
+                list(frontier) + list(frontier),
+            ).fetchall()
+
+            next_frontier: set = set()
+            for r in edge_rows:
+                eid = r[0] if isinstance(r, (list, tuple)) else r["id"]
+                if eid in seen_edges:
+                    continue
+                seen_edges.add(eid)
+                src = r[1] if isinstance(r, (list, tuple)) else r["source_id"]
+                tgt = r[2] if isinstance(r, (list, tuple)) else r["target_id"]
+                visited_edges.append({
+                    "id": eid,
+                    "source_id": src,
+                    "target_id": tgt,
+                    "relation_type": r[3] if isinstance(r, (list, tuple)) else r["relation_type"],
+                    "weight": r[4] if isinstance(r, (list, tuple)) else r["weight"],
+                })
+                for n in (src, tgt):
+                    if n not in visited_nodes:
+                        next_frontier.add(n)
+
+            frontier = next_frontier
+
+        return {
+            "classification": "CUI // SP-CTI",
+            "root_node_id": node_id,
+            "hops": hops,
+            "node_count": len(visited_nodes),
+            "edge_count": len(visited_edges),
+            "nodes": list(visited_nodes.values())[:max_nodes],
+            "edges": visited_edges,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_kg_to_rag_chunks(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert KG node IDs to their originating RAG source chunks via source_chunk_id."""
+    node_ids = arguments.get("node_ids", [])
+    tenant_id = arguments.get("tenant_id", "")
+
+    if not node_ids or not isinstance(node_ids, list):
+        return {"error": "node_ids must be a non-empty list"}
+
+    try:
+        conn = _get_db()
+        placeholders = ",".join("?" for _ in node_ids)
+        kg_rows = conn.execute(
+            f"SELECT id, label, source_chunk_id FROM kg_nodes WHERE id IN ({placeholders})",
+            node_ids,
+        ).fetchall()
+
+        chunk_ids = []
+        node_to_chunk: dict = {}
+        for r in kg_rows:
+            nid = r[0] if isinstance(r, (list, tuple)) else r["id"]
+            cid = r[2] if isinstance(r, (list, tuple)) else r.get("source_chunk_id")
+            if cid:
+                chunk_ids.append(cid)
+                node_to_chunk[nid] = cid
+
+        chunks = []
+        if chunk_ids:
+            chunk_placeholders = ",".join("?" for _ in chunk_ids)
+            rag_rows = conn.execute(
+                f"""
+                SELECT id, content, source_type, source_id, created_at
+                FROM rag_chunks
+                WHERE id IN ({chunk_placeholders})
+                """,
+                chunk_ids,
+            ).fetchall()
+            for r in rag_rows:
+                chunks.append({
+                    "id": r[0] if isinstance(r, (list, tuple)) else r["id"],
+                    "content": r[1] if isinstance(r, (list, tuple)) else r["content"],
+                    "source_type": r[2] if isinstance(r, (list, tuple)) else r["source_type"],
+                    "source_id": r[3] if isinstance(r, (list, tuple)) else r["source_id"],
+                    "created_at": r[4] if isinstance(r, (list, tuple)) else r["created_at"],
+                })
+
+        return {
+            "classification": "CUI // SP-CTI",
+            "node_ids_requested": len(node_ids),
+            "nodes_with_chunk_link": len(node_to_chunk),
+            "chunks_found": len(chunks),
+            "node_to_chunk_map": node_to_chunk,
+            "chunks": chunks,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Phase B — rag_decompose: query decomposition planner
+# ---------------------------------------------------------------------------
+
+_DECOMPOSE_PROMPT = """You are a query decomposition planner for a RAG system.
+
+Given a complex query, break it into 2-4 atomic sub-queries. Each sub-query should:
+- Be self-contained and answerable independently
+- Map to ONE of these retrieval strategies:
+  - rag_search: vector similarity search (facts, documents, summaries)
+  - kg_search: knowledge graph traversal (entities, relationships, compliance controls)
+  - corrective_rag: parallel multi-strategy (multi-hop reasoning, cross-domain)
+
+Return ONLY a JSON array of objects: [{\"query\": \"...\", \"strategy\": \"...\", \"label\": \"...\"}]
+Labels: fact_single | summary | reasoning | entity_lookup
+
+Query: {query}
+"""
+
+
+def handle_rag_decompose(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Classify and decompose a complex query into atomic sub-queries with retrieval strategies."""
+    query = arguments.get("query", "")
+    context = arguments.get("context", "")
+    max_sub_queries = int(arguments.get("max_sub_queries", 4))
+
+    if not query:
+        return {"error": "query is required"}
+
+    try:
+        from tools.rag.query_classifier import classify_query
+
+        classification = classify_query(query, context)
+        label = classification.get("label", "fact_single")
+        confidence = classification.get("confidence", 0.5)
+
+        # fact_single and unanswerable don't need decomposition
+        needs_decomposition = label in ("reasoning", "summary")
+
+        sub_queries = []
+        method = "passthrough"
+
+        if needs_decomposition:
+            # Try scanner-tier LLM decomposition
+            try:
+                from tools.llm.router import LLMRouter
+                import json as _json
+
+                router = LLMRouter()
+                prompt = _DECOMPOSE_PROMPT.format(query=query)
+                raw = router.complete(
+                    prompt=prompt,
+                    function_name="rag_decompose",
+                    temperature=0.0,
+                    max_tokens=512,
+                )
+                # Extract JSON array from response
+                text = raw.strip()
+                start = text.find("[")
+                end = text.rfind("]") + 1
+                if start >= 0 and end > start:
+                    parsed = _json.loads(text[start:end])
+                    sub_queries = [
+                        {
+                            "query": str(item.get("query", "")),
+                            "strategy": item.get("strategy", "rag_search"),
+                            "label": item.get("label", "fact_single"),
+                        }
+                        for item in parsed
+                        if item.get("query")
+                    ][:max_sub_queries]
+                    method = "llm"
+            except Exception:
+                pass
+
+        # Fallback: single sub-query = original query
+        if not sub_queries:
+            strategy = "kg_search" if label == "reasoning" else "rag_search"
+            sub_queries = [{"query": query, "strategy": strategy, "label": label}]
+            method = "passthrough" if not needs_decomposition else "llm_fallback"
+
+        # Determine retrieval plan
+        strategies = {sq["strategy"] for sq in sub_queries}
+        if len(sub_queries) == 1:
+            retrieval_plan = "single"
+        elif len(strategies) > 1:
+            retrieval_plan = "parallel"
+        else:
+            retrieval_plan = "sequential"
+
+        return {
+            "classification": "CUI // SP-CTI",
+            "query": query,
+            "label": label,
+            "confidence": confidence,
+            "needs_decomposition": needs_decomposition,
+            "sub_queries": sub_queries,
+            "retrieval_plan": retrieval_plan,
+            "method": method,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Phase C — rag_evaluate: per-chunk grading + self-evaluating retrieval loop
+# ---------------------------------------------------------------------------
+
+_CHUNK_GRADE_PROMPT = """Rate the relevance of this context chunk to the query.
+
+Query: {query}
+
+Chunk:
+{chunk}
+
+Return JSON: {{"score": 0.0-1.0, "reason": "one sentence"}}
+Score guide: 1.0=directly answers, 0.7=relevant context, 0.4=tangential, 0.1=irrelevant.
+"""
+
+
+def _grade_chunk(query: str, chunk_text: str) -> Dict[str, Any]:
+    """Grade a single chunk's relevance to the query using scanner-tier LLM."""
+    try:
+        from tools.llm.router import LLMRouter
+        import json as _json
+
+        router = LLMRouter()
+        prompt = _CHUNK_GRADE_PROMPT.format(query=query, chunk=chunk_text[:800])
+        raw = router.complete(
+            prompt=prompt,
+            function_name="rag_evaluate",
+            temperature=0.0,
+            max_tokens=80,
+        )
+        text = raw.strip()
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start >= 0 and end > start:
+            data = _json.loads(text[start:end])
+            return {
+                "score": float(data.get("score", 0.5)),
+                "reason": str(data.get("reason", "")),
+                "method": "llm",
+            }
+    except Exception:
+        pass
+    # Heuristic fallback: keyword overlap
+    q_terms = set(query.lower().split())
+    c_terms = set(chunk_text.lower().split())
+    overlap = len(q_terms & c_terms) / max(len(q_terms), 1)
+    return {"score": min(1.0, overlap * 2), "reason": "keyword_overlap", "method": "heuristic"}
+
+
+def handle_rag_evaluate(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Evaluate RAG quality: grade chunks, score an answer, or run self-evaluating retrieval.
+
+    Modes (select by providing the relevant arguments):
+      - grade_chunks: provide query + chunks → per-chunk relevance scores
+      - score_answer: provide query + answer + ground_truth → CRAG score
+      - self_eval_retrieve: provide query → iterative retrieve-grade loop (max 3 iterations)
+    """
+    query = arguments.get("query", "")
+    if not query:
+        return {"error": "query is required"}
+
+    mode = arguments.get("mode", "")
+    chunks = arguments.get("chunks", [])
+    answer = arguments.get("answer", "")
+    ground_truth = arguments.get("ground_truth", "")
+    max_iterations = int(arguments.get("max_iterations", 3))
+    confidence_threshold = float(arguments.get("confidence_threshold", 0.7))
+
+    # Auto-detect mode
+    if not mode:
+        if ground_truth:
+            mode = "score_answer"
+        elif chunks:
+            mode = "grade_chunks"
+        else:
+            mode = "self_eval_retrieve"
+
+    try:
+        if mode == "score_answer":
+            from tools.rag.crag_evaluator import CRAGScorer
+
+            scorer = CRAGScorer()
+            result = scorer.score_answer(
+                answer=answer,
+                ground_truth=ground_truth,
+                question_type=arguments.get("question_type", "simple"),
+                is_false_premise=bool(arguments.get("is_false_premise", False)),
+            )
+            return {
+                "classification": "CUI // SP-CTI",
+                "mode": "score_answer",
+                "query": query,
+                **result,
+            }
+
+        elif mode == "grade_chunks":
+            if not chunks:
+                return {"error": "chunks required for grade_chunks mode"}
+            graded = []
+            for i, chunk in enumerate(chunks):
+                text = chunk.get("content", chunk) if isinstance(chunk, dict) else str(chunk)
+                grade = _grade_chunk(query, text)
+                graded.append({
+                    "chunk_index": i,
+                    "chunk_id": chunk.get("id", "") if isinstance(chunk, dict) else "",
+                    **grade,
+                })
+            avg_score = sum(g["score"] for g in graded) / len(graded) if graded else 0.0
+            return {
+                "classification": "CUI // SP-CTI",
+                "mode": "grade_chunks",
+                "query": query,
+                "chunk_count": len(graded),
+                "average_relevance": round(avg_score, 3),
+                "meets_threshold": avg_score >= confidence_threshold,
+                "graded_chunks": graded,
+            }
+
+        else:  # self_eval_retrieve
+            from tools.rag.retriever import RAGRetriever
+
+            retriever = RAGRetriever()
+            history = []
+            current_query = query
+            final_chunks: list = []
+            final_score = 0.0
+
+            for iteration in range(1, max_iterations + 1):
+                results = retriever.retrieve(query=current_query, top_k=5)
+                iter_chunks = [r.to_dict() if hasattr(r, "to_dict") else r for r in results]
+
+                if not iter_chunks:
+                    history.append({"iteration": iteration, "query": current_query,
+                                    "chunks_retrieved": 0, "avg_relevance": 0.0})
+                    break
+
+                graded = [
+                    _grade_chunk(current_query, c.get("content", str(c)))
+                    for c in iter_chunks
+                ]
+                avg = sum(g["score"] for g in graded) / len(graded)
+                history.append({
+                    "iteration": iteration,
+                    "query": current_query,
+                    "chunks_retrieved": len(iter_chunks),
+                    "avg_relevance": round(avg, 3),
+                })
+
+                final_chunks = iter_chunks
+                final_score = avg
+
+                if avg >= confidence_threshold:
+                    break
+
+                # Refine query for next iteration: append "detailed" or use KG
+                if iteration < max_iterations:
+                    current_query = f"{query} detailed explanation"
+
+            return {
+                "classification": "CUI // SP-CTI",
+                "mode": "self_eval_retrieve",
+                "query": query,
+                "iterations_run": len(history),
+                "final_avg_relevance": round(final_score, 3),
+                "converged": final_score >= confidence_threshold,
+                "threshold": confidence_threshold,
+                "iteration_history": history,
+                "final_chunks": final_chunks,
+            }
+
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# MCPServer — register all 14 RAG tools
 # ---------------------------------------------------------------------------
 
 
@@ -441,6 +892,129 @@ def build_server() -> MCPServer:
         description="List available vector store backends (SQLite, ChromaDB, FAISS) and embedding provider status.",
         input_schema={"type": "object", "properties": {}, "required": []},
         handler=handle_rag_providers,
+    )
+
+    # ── Phase A — KG bridge ──────────────────────────────────────────────────
+
+    server.register_tool(
+        name="kg_search",
+        description=(
+            "Search the knowledge graph by keyword/semantic query. Returns scored nodes "
+            "with optional LLM context compression. Use profile='compliance' for control mapping, "
+            "'security' for threat context, 'exploratory' for open-ended discovery."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Natural language search query"},
+                "top_k": {"type": "integer", "default": 10},
+                "project_id": {"type": "string"},
+                "profile": {
+                    "type": "string",
+                    "description": "Scoring profile: compliance | security | exploratory | provenance",
+                },
+                "compress": {"type": "boolean", "default": False,
+                             "description": "Apply scanner-tier LLM context compression"},
+            },
+            "required": ["query"],
+        },
+        handler=handle_kg_search,
+    )
+
+    server.register_tool(
+        name="kg_expand",
+        description=(
+            "Expand a knowledge graph node by N hops (BFS), returning all reachable nodes and edges. "
+            "Use after kg_search to explore entity neighborhoods for multi-hop reasoning."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "Root KG node ID to expand from"},
+                "hops": {"type": "integer", "default": 2, "description": "BFS depth (1-4)"},
+                "max_nodes": {"type": "integer", "default": 50},
+            },
+            "required": ["node_id"],
+        },
+        handler=handle_kg_expand,
+    )
+
+    server.register_tool(
+        name="kg_to_rag_chunks",
+        description=(
+            "Convert KG node IDs to their originating RAG source chunks via source_chunk_id linkage. "
+            "Use after kg_expand to retrieve the original document context for KG-anchored nodes."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "node_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of KG node IDs to resolve",
+                },
+                "tenant_id": {"type": "string"},
+            },
+            "required": ["node_ids"],
+        },
+        handler=handle_kg_to_rag_chunks,
+    )
+
+    # ── Phase B — Query decomposition ────────────────────────────────────────
+
+    server.register_tool(
+        name="rag_decompose",
+        description=(
+            "Classify a query and decompose complex queries into atomic sub-queries with "
+            "per-sub-query retrieval strategy assignments (rag_search / kg_search / corrective_rag). "
+            "Returns the retrieval plan: single | sequential | parallel."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Query to classify and decompose"},
+                "context": {"type": "string", "description": "Optional retrieved context for answerability check"},
+                "max_sub_queries": {"type": "integer", "default": 4},
+            },
+            "required": ["query"],
+        },
+        handler=handle_rag_decompose,
+    )
+
+    # ── Phase C — Evaluation ─────────────────────────────────────────────────
+
+    server.register_tool(
+        name="rag_evaluate",
+        description=(
+            "Evaluate RAG quality in one of three modes:\n"
+            "• grade_chunks — score each retrieved chunk's relevance to the query (0-1)\n"
+            "• score_answer — CRAG rubric scoring against ground truth (perfect/acceptable/missing/incorrect)\n"
+            "• self_eval_retrieve — iterative retrieve-grade loop: retrieves, grades, refines query, "
+            "  stops when avg relevance ≥ threshold (default 0.7) or max_iterations reached"
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "mode": {
+                    "type": "string",
+                    "description": "grade_chunks | score_answer | self_eval_retrieve (auto-detected if omitted)",
+                },
+                "chunks": {
+                    "type": "array",
+                    "description": "Chunks to grade (grade_chunks mode)",
+                    "items": {"type": ["object", "string"]},
+                },
+                "answer": {"type": "string", "description": "Answer to score (score_answer mode)"},
+                "ground_truth": {"type": "string", "description": "Reference answer (score_answer mode)"},
+                "question_type": {"type": "string", "default": "simple"},
+                "is_false_premise": {"type": "boolean", "default": False},
+                "max_iterations": {"type": "integer", "default": 3},
+                "confidence_threshold": {"type": "number", "default": 0.7},
+            },
+            "required": ["query"],
+        },
+        handler=handle_rag_evaluate,
     )
 
     return server
