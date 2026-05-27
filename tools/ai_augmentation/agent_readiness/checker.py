@@ -16,7 +16,8 @@ Returns:
 from __future__ import annotations
 
 import pathlib
-from typing import Union
+from functools import lru_cache
+from typing import Any, Union
 
 from tools.ai_augmentation.agent_readiness.pillars import (
     append_only_audit,
@@ -50,23 +51,52 @@ _ALL_PILLARS: list[Pillar] = [
     append_only_audit.PILLAR,  # 11 — Append-Only Audit Tables (ICDEV)
 ]
 
-# Weight each pillar in the overall score.
-# ICDEV pillars (8–11) are weighted equally to the core pillars.
-_PILLAR_WEIGHTS: dict[str, float] = {
-    "code-quality":     1.0,
-    "documentation":    1.0,
-    "testing":          1.2,   # testing weighted slightly higher
-    "structure":        0.8,
-    "dependencies":     1.0,
-    "configuration":    0.8,
-    "security":         1.2,   # security weighted slightly higher
-    "il-classification": 1.5,  # ICDEV: IL classification is high-priority
-    "nist-controls":    1.5,   # ICDEV: NIST compliance is high-priority
-    "stig-compliance":  1.3,   # ICDEV: STIG compliance matters
-    "append-only-audit": 1.3,  # ICDEV: audit integrity matters
-}
-
 _ICDEV_PILLAR_IDS = {"il-classification", "nist-controls", "stig-compliance", "append-only-audit"}
+
+# ---------------------------------------------------------------------------
+# Anomaly-detection weight loader — reads from args/agent_readiness_config.yaml
+# ---------------------------------------------------------------------------
+_ARGS_PATH = pathlib.Path(__file__).parents[3] / "args" / "agent_readiness_config.yaml"
+
+_WEIGHT_DEFAULTS: dict[str, Any] = {
+    "code-quality":      1.0,
+    "documentation":     1.0,
+    "testing":           1.2,
+    "structure":         0.8,
+    "dependencies":      1.0,
+    "configuration":     0.8,
+    "security":          1.2,
+    "il-classification": 1.5,
+    "nist-controls":     1.5,
+    "stig-compliance":   1.3,
+    "append-only-audit": 1.3,
+}
+# Minimum weight accepted from config — values below this are anomalously low.
+_MIN_WEIGHT = 0.1
+
+
+@lru_cache(maxsize=1)
+def _load_pillar_weights() -> dict[str, float]:
+    """Load pillar weights from args/agent_readiness_config.yaml.
+
+    Falls back to built-in defaults if the file is absent or malformed.
+    Values below _MIN_WEIGHT are clamped to prevent anomalously low weights
+    from distorting the overall score.
+    """
+    try:
+        import yaml  # optional dep — present in all ICDEV environments
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) or {}
+        cfg = data.get("pillar_weights", {})
+        if not cfg:
+            return dict(_WEIGHT_DEFAULTS)
+        merged = dict(_WEIGHT_DEFAULTS)
+        for pillar_id, raw_weight in cfg.items():
+            weight = float(raw_weight)
+            merged[pillar_id] = max(_MIN_WEIGHT, weight)
+        return merged
+    except Exception:  # noqa: BLE001
+        return dict(_WEIGHT_DEFAULTS)
 
 
 def run_readiness_check(repo_path: Union[str, pathlib.Path]) -> dict:
@@ -87,6 +117,7 @@ def run_readiness_check(repo_path: Union[str, pathlib.Path]) -> dict:
     pillar_scores: dict[str, dict] = {}
     icdev_checks: dict[str, list] = {}
     all_results: list[tuple[str, float, float]] = []  # (pillar_id, weighted_pct, weight)
+    weights = _load_pillar_weights()
 
     for pillar in _ALL_PILLARS:
         results = pillar.run(repo)
@@ -106,7 +137,7 @@ def run_readiness_check(repo_path: Union[str, pathlib.Path]) -> dict:
         ]
         icdev_checks[pillar.id] = result_dicts
 
-        weight = _PILLAR_WEIGHTS.get(pillar.id, 1.0)
+        weight = weights.get(pillar.id, 1.0)
         all_results.append((pillar.id, score["percentage"], weight))
 
     # Weighted average overall score
