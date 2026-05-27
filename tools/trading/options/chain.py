@@ -1,8 +1,6 @@
 # CUI // SP-CTI
 """Options chain utilities — IV rank and percentile computation."""
 
-import logging
-
 from tools.logging.icdev_logger import get_logger
 import time
 import math
