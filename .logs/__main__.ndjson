@@ -98,3 +98,25 @@
 {"ts": "2026-05-26T21:48:31.665157+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 43: status=executing activated=0 completed=0 running=3", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-26T21:49:32.432179+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 44: status=executing activated=0 completed=0 running=3", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-26T21:50:33.325948+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 45: status=executing activated=0 completed=0 running=3", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:00:03.914828+00:00", "level": "INFO", "component": "__main__", "message": "Kanban scheduler started (interval=60s)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:00:03.915055+00:00", "level": "INFO", "component": "__main__", "message": "Press Ctrl+C to stop", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:06:42.160768+00:00", "level": "INFO", "component": "__main__", "message": "Another kanban scheduler is alive (pid=11084). Exiting to avoid duplicate dispatch.", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:09:09.068229+00:00", "level": "INFO", "component": "__main__", "message": "Running single kanban cycle...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:11:28.761408+00:00", "level": "INFO", "component": "__main__", "message": "Running single kanban cycle...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:12:16.821994+00:00", "level": "INFO", "component": "__main__", "message": "Running single kanban cycle...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:13:15.326013+00:00", "level": "INFO", "component": "__main__", "message": "Running single kanban cycle...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:30:31.224481+00:00", "level": "INFO", "component": "__main__", "message": "Kanban scheduler started (interval=60s)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:30:31.224671+00:00", "level": "INFO", "component": "__main__", "message": "Press Ctrl+C to stop", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:31:12.586508+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1: status=ok activated=3 completed=0 running=0", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:32:12.921073+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 2: status=executing activated=0 completed=0 running=3", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:33:13.287826+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 3: status=executing activated=0 completed=0 running=3", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:34:13.735250+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 4: status=executing activated=0 completed=0 running=3", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:40:56.858866+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 5: status=executing activated=0 completed=2 running=1", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:44:12.733989+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 6: status=ok activated=3 completed=1 running=0", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:45:18.664135+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 7: idle (no due tasks)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:46:19.080297+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 8: status=executing activated=0 completed=0 running=2", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:47:19.434895+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 9: status=executing activated=0 completed=0 running=2", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:49:16.875001+00:00", "level": "INFO", "component": "__main__", "message": "Cycle complete: activated=1, completed=0, running=0", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:49:23.475746+00:00", "level": "INFO", "component": "__main__", "message": "Cycle complete: activated=0, completed=0, running=0", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:49:37.143255+00:00", "level": "INFO", "component": "__main__", "message": "Cycle complete: activated=0, completed=0, running=0", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-27T00:49:57.112126+00:00", "level": "INFO", "component": "__main__", "message": "Cycle complete: activated=0, completed=0, running=0", "trace_id": null, "session_id": null, "extra": {}}

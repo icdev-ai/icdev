@@ -48,8 +48,9 @@ Genesis daemon
     Registered under the ``awareness`` cycle (runs every 3 h alongside
     gap detection so fresh Oracle cards are triaged in the same cycle).
 """
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+
+IMPLEMENTATION_STATUS = "full"
 from tools.logging.icdev_logger import get_logger
 
 import argparse
@@ -72,6 +73,13 @@ try:
     from tools.db.storage import get_connection
 except ImportError:
     get_connection = None  # type: ignore[assignment]
+
+try:
+    from tools.genesis.harness.llm_triage import llm_triage_task as _llm_triage_task
+    from tools.genesis.harness.eval_harness import record_decision as _harness_record_decision
+except ImportError:
+    _llm_triage_task = None  # type: ignore[assignment]
+    _harness_record_decision = None  # type: ignore[assignment]
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -331,6 +339,10 @@ def _verify_no_lens(task: Dict[str, Any]) -> Tuple[str, str]:
     if title.startswith("[FR]"):
         return "backlog", "Feature request — real value, promote to backlog for scoping"
 
+    if _llm_triage_task is not None:
+        _a, _r, _c = _llm_triage_task(task)
+        if _a != "skip":
+            return _a, _r
     return "skip", "No heuristic matched — leaving for human judgment"
 
 
@@ -436,7 +448,11 @@ def _triage_one(task: Dict[str, Any]) -> Tuple[str, str]:
     if lens is None:
         return _verify_no_lens(task)
 
-    # Unknown lens — skip and let human decide
+    # Unknown lens — try LLM fallback before giving up
+    if _llm_triage_task is not None:
+        _a, _r, _c = _llm_triage_task(task)
+        if _a != "skip":
+            return _a, _r
     return "skip", f"Unrecognised oracle_lens={lens!r} — no verifier registered"
 
 
@@ -551,6 +567,17 @@ def triage(
             entry["api_message"] = "no action taken"
 
         decisions.append(entry)
+
+        if _harness_record_decision is not None:
+            _harness_record_decision(
+                task_id, "oracle_triage", action,
+                confidence=task.get("oracle_confidence"),
+                metadata={
+                    "lens": task.get("oracle_lens"),
+                    "reason": reason[:200],
+                    "source": "llm_fallback" if reason.startswith("[llm]") else "deterministic",
+                },
+            )
 
     summary: Dict[str, Any] = {
         "success": counts["errors"] == 0,
