@@ -18,6 +18,8 @@ from __future__ import annotations
 import pathlib
 from typing import Union
 
+import yaml
+
 from tools.ai_augmentation.agent_readiness.pillars import (
     append_only_audit,
     code_quality,
@@ -50,23 +52,45 @@ _ALL_PILLARS: list[Pillar] = [
     append_only_audit.PILLAR,  # 11 — Append-Only Audit Tables (ICDEV)
 ]
 
-# Weight each pillar in the overall score.
-# ICDEV pillars (8–11) are weighted equally to the core pillars.
-_PILLAR_WEIGHTS: dict[str, float] = {
-    "code-quality":     1.0,
-    "documentation":    1.0,
-    "testing":          1.2,   # testing weighted slightly higher
-    "structure":        0.8,
-    "dependencies":     1.0,
-    "configuration":    0.8,
-    "security":         1.2,   # security weighted slightly higher
-    "il-classification": 1.5,  # ICDEV: IL classification is high-priority
-    "nist-controls":    1.5,   # ICDEV: NIST compliance is high-priority
-    "stig-compliance":  1.3,   # ICDEV: STIG compliance matters
-    "append-only-audit": 1.3,  # ICDEV: audit integrity matters
+_DEFAULT_PILLAR_WEIGHTS: dict[str, float] = {
+    "code-quality":      1.0,
+    "documentation":     1.0,
+    "testing":           1.2,
+    "structure":         0.8,
+    "dependencies":      1.0,
+    "configuration":     0.8,
+    "security":          1.2,
+    "il-classification": 1.5,
+    "nist-controls":     1.5,
+    "stig-compliance":   1.3,
+    "append-only-audit": 1.3,
 }
+_DEFAULT_ANOMALY_THRESHOLD = 0.5
 
 _ICDEV_PILLAR_IDS = {"il-classification", "nist-controls", "stig-compliance", "append-only-audit"}
+
+
+def _load_scoring_config() -> tuple[dict[str, float], float]:
+    """Load pillar weights and anomaly threshold from args/agent_readiness_config.yaml.
+
+    Falls back to defaults if the file is missing or the scoring section is absent.
+    """
+    config_path = pathlib.Path(__file__).resolve().parents[4] / "args" / "agent_readiness_config.yaml"
+    try:
+        with config_path.open(encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+        scoring = cfg.get("scoring", {})
+        weights = {str(k): float(v) for k, v in scoring.get("pillar_weights", {}).items()}
+        threshold = float(scoring.get("anomaly_threshold", _DEFAULT_ANOMALY_THRESHOLD))
+        if not weights:
+            weights = _DEFAULT_PILLAR_WEIGHTS
+    except (OSError, ValueError, KeyError, TypeError):
+        weights = _DEFAULT_PILLAR_WEIGHTS
+        threshold = _DEFAULT_ANOMALY_THRESHOLD
+    return weights, threshold
+
+
+_PILLAR_WEIGHTS, _ANOMALY_THRESHOLD = _load_scoring_config()
 
 
 def run_readiness_check(repo_path: Union[str, pathlib.Path]) -> dict:
@@ -90,7 +114,7 @@ def run_readiness_check(repo_path: Union[str, pathlib.Path]) -> dict:
 
     for pillar in _ALL_PILLARS:
         results = pillar.run(repo)
-        score = pillar.score(results)
+        score = pillar.score(results, anomaly_threshold=_ANOMALY_THRESHOLD)
         pillar_scores[pillar.id] = score
 
         # Serialise criterion results
@@ -113,8 +137,12 @@ def run_readiness_check(repo_path: Union[str, pathlib.Path]) -> dict:
     total_weight = sum(w for _, _, w in all_results)
     overall = sum(pct * w for _, pct, w in all_results) / total_weight if total_weight > 0 else 0.0
 
+    anomalous_pillars = [pid for pid, score in pillar_scores.items() if score.get("anomalous")]
+
     return {
         "pillar_scores": pillar_scores,
         "overall_readiness_score": round(overall, 4),
         "icdev_checks": icdev_checks,
+        "anomalous_pillars": anomalous_pillars,
+        "anomaly_threshold": _ANOMALY_THRESHOLD,
     }
