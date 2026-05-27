@@ -6069,12 +6069,18 @@ def _decompose_one_task(task: dict) -> None:
             messages=[{"role": "user", "content": user_prompt}],
             max_tokens=1200,
         )
-        with _cf.ThreadPoolExecutor(max_workers=1) as _pool:
-            _future = _pool.submit(router.invoke, "kanban_decompose", req)
-            try:
-                raw = _future.result(timeout=45)
-            except _cf.TimeoutError:
-                raise RuntimeError("LLM invoke timed out after 45s") from None
+        _pool = _cf.ThreadPoolExecutor(max_workers=1)
+        _future = _pool.submit(router.invoke, "kanban_decompose", req)
+        try:
+            raw = _future.result(timeout=45)
+        except _cf.TimeoutError:
+            # shutdown(wait=False) releases the thread without blocking — the
+            # context-manager form calls shutdown(wait=True) which blocks
+            # forever if the underlying LLM network call never returns.
+            _pool.shutdown(wait=False)
+            raise RuntimeError("LLM invoke timed out after 45s") from None
+        finally:
+            _pool.shutdown(wait=False)
         if isinstance(raw, str):
             response_text = raw
         elif hasattr(raw, "content"):

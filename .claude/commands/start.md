@@ -82,7 +82,7 @@ with get_connection() as conn:
 
 8. Always start the Kanban Scheduler fresh (kill any stale instance first, then launch via module):
    ```bash
-   pkill -f "tools.genesis.kanban_scheduler" 2>/dev/null; pkill -f "kanban_scheduler" 2>/dev/null; sleep 1; PYTHONPATH="$(pwd)" nohup python -m tools.genesis.kanban_scheduler > .tmp/kanban_scheduler.log 2>&1 & echo "Kanban scheduler PID: $!"
+   pkill -f "tools.genesis.kanban_scheduler" 2>/dev/null; pkill -f "kanban_scheduler" 2>/dev/null; sleep 1; nohup python tools/genesis/kanban_scheduler.py > .tmp/kanban_scheduler.log 2>&1 & echo "Kanban scheduler PID: $!"
    ```
 
 9. Check if the Genesis daemon (failure_triage, oracle_triage, awareness, heal, and 20+ other reflexes) is running:
