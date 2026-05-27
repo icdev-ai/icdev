@@ -1263,19 +1263,24 @@ def _get_due_tasks() -> list:
                 )
         result = filtered_result
 
-        # Rate-limit backlog auto-promotion
+        # Rate-limit both scheduled dispatch and backlog auto-promotion.
+        # Cap scheduled tasks by available slots so we never exceed MAX_IN_PROGRESS.
         current_in_progress = _count_in_progress()
         pending_prompts = _count_pending_prompts()
 
-        if current_in_progress >= MAX_IN_PROGRESS:
-            return result  # Too many in-progress, only return scheduled
+        available_slots = MAX_IN_PROGRESS - current_in_progress
+        if available_slots <= 0:
+            return []  # At capacity — don't dispatch any scheduled or backlog tasks
+
+        # Cap scheduled results to available slots (prevents burst on restart)
+        result = result[:available_slots]
 
         if pending_prompts >= MAX_AUTO_PROMOTE:
-            return result  # Prompt files waiting, don't add more
+            return result  # Prompt files waiting, don't add more backlog
 
         slots = min(
             MAX_AUTO_PROMOTE,
-            MAX_IN_PROGRESS - current_in_progress,
+            MAX_IN_PROGRESS - current_in_progress - len(result),
         )
         if slots <= 0:
             return result
