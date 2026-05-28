@@ -4,7 +4,7 @@
 import json
 from datetime import datetime, timezone, timedelta
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_canvas_connection as get_connection
 
 # ---------------------------------------------------------------------------
 # Schema

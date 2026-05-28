@@ -61,6 +61,14 @@ export default defineConfig({
     reuseExistingServer: true,
     timeout: 60000,
     cwd: ROOT,
+    env: {
+      ICDEV_GOVCON_ENABLED: '1',
+      ICDEV_STORAGE_BACKEND: 'sqlite',
+      ICDEV_AAC_ENABLED: 'true',
+      ICDEV_CUI_BANNER_ENABLED: 'true',
+      ICDEV_MISSION_CANVAS_ENABLED: 'true',
+      ICDEV_AUTH_BYPASS: 'true',
+    },
   },
 });
 // CUI // SP-CTI

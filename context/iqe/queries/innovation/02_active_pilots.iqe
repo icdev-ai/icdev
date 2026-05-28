@@ -1,0 +1,6 @@
+// IQE-INNOV-002: Active pilots — pilots currently in flight
+foreach p in innovation.pilots
+where p.status = "active"
+select p.id, p.idea_id, p.pilot_name, p.hypothesis, p.success_criteria, p.start_date, p.end_date
+order by p.start_date desc
+limit 50

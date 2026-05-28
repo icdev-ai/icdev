@@ -1445,6 +1445,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     resolved_at TIMESTAMP,
     auto_healed BOOLEAN DEFAULT FALSE,
     healing_event_id INTEGER REFERENCES self_healing_events(id),
+    watchcon_tier INTEGER DEFAULT 4 CHECK(watchcon_tier IN (2,3,4)),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

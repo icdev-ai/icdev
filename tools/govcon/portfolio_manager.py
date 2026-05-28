@@ -313,10 +313,13 @@ def get_portfolio_summary():
         "evm.cpi, evm.spi "
         "FROM cpmp_contracts c "
         "LEFT JOIN ("
-        "  SELECT contract_id, cpi, spi, "
-        "  ROW_NUMBER() OVER (PARTITION BY contract_id ORDER BY period_date DESC) as rn "
-        "  FROM cpmp_evm_periods"
-        ") evm ON evm.contract_id = c.id AND evm.rn = 1 "
+        "  SELECT e1.contract_id, e1.cpi, e1.spi "
+        "  FROM cpmp_evm_periods e1 "
+        "  WHERE e1.period_date = ("
+        "    SELECT MAX(e2.period_date) FROM cpmp_evm_periods e2"
+        "    WHERE e2.contract_id = e1.contract_id"
+        "  )"
+        ") evm ON evm.contract_id = c.id "
         "ORDER BY c.updated_at DESC"
     ).fetchall()
 

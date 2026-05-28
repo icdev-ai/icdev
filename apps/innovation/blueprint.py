@@ -240,8 +240,8 @@ def api_generate_feasibility(idea_id: int):
     # Persist to assessment
     assessment = get_latest_assessment(idea_id)
     if assessment:
-        from tools.db.storage import get_connection
-        with get_connection() as conn:
+        from tools.db.storage import get_canvas_connection
+        with get_canvas_connection() as conn:
             conn.execute(
                 "UPDATE innov_assessments SET feasibility_study_text=? WHERE id=?",
                 (study, assessment["id"]),
@@ -301,8 +301,8 @@ def api_create_pilot(idea_id: int):
     # Attempt Kanban epic creation
     kanban_link = _try_create_kanban_epic(idea_id, pilot_name, data)
     if kanban_link:
-        from tools.db.storage import get_connection
-        with get_connection() as conn:
+        from tools.db.storage import get_canvas_connection
+        with get_canvas_connection() as conn:
             conn.execute(
                 "UPDATE innov_pilots SET kanban_epic_id=? WHERE id=?",
                 (kanban_link, pilot["id"]),

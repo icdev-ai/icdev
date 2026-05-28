@@ -55,6 +55,9 @@ logs/
 agents/
 # Exception: FathomDesk analyst agent source is tracked
 !tools/fathomdesk/agents/
+# Exception: dashboard template sub-directories named agents/ are source code
+!tools/dashboard/templates/agents/
+!icdev/tools/dashboard/templates/agents/
 
 # Claude Code output
 claude-max-output.json
