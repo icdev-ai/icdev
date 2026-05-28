@@ -462,7 +462,12 @@ def _auth_before_request():
     # Auto-login via .env API key if configured
     env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
     if env_key:
-        user = bootstrap_env_user(env_key)
+        try:
+            user = bootstrap_env_user(env_key)
+        except Exception:
+            # DB tables not yet initialized (e.g. CI first-run before init_db).
+            # Fall through to the login redirect instead of propagating a 500.
+            user = None
         if user:
             g.current_user = dict(user)
             _attach_security_context(g.current_user)
