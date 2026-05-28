@@ -85,3 +85,17 @@ pillars:
       # Minimum ratio (0.0–1.0) of requirements.txt entries that must use == pinning.
       # A ratio below this is anomalously low for a project claiming reproducible builds.
       min_pin_ratio: 0.8
+
+  il_classification:
+    cui_file_headers:
+      # Maximum number of Python source files sampled for CUI header detection.
+      # Actual sample is adaptive: min(sample_size, max(10, total_files // 5)).
+      # Raise for large repos where a fixed cap under-samples; lower to trade accuracy for speed.
+      sample_size: 30
+      # Minimum ratio (0.0–1.0) of sampled files that must carry CUI/classification headers
+      # to pass the criterion. Files below this are anomalously unmarked for IL4+ compliance.
+      min_header_ratio: 0.5
+      # Ratio below which the result is still a failure but the message is downgraded from
+      # "anomalously low" to a softer warning. Set equal to min_header_ratio to collapse
+      # the warning zone and always emit the stronger anomaly message below min_header_ratio.
+      warn_header_ratio: 0.3
