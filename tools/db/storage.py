@@ -659,8 +659,24 @@ class StorageCursor:
         return self
 
     def executemany(self, sql: str, params_list):
-        sql = translate_sql(sql, self._backend)
-        self._cursor.executemany(sql, params_list)
+        self._table_name = _extract_table_name(sql)
+        # Inject RLS once — modified SQL + the extra predicate params.
+        # params=None so _inject_rls returns only the RLS extra tuple.
+        modified_sql, rls_params = self._inject_rls(sql, None)
+        modified_sql = translate_sql(modified_sql, self._backend)
+
+        if rls_params:
+            from tools.security.row_security import _RE_UPDATE, _RE_DELETE
+            is_write = bool(_RE_UPDATE.match(sql) or _RE_DELETE.match(sql))
+            if is_write:
+                # UPDATE/DELETE: RLS params go at the END (after SET + WHERE slots)
+                augmented = [tuple(row) + tuple(rls_params) for row in params_list]
+            else:
+                # SELECT (rare in executemany): RLS params go at the START
+                augmented = [tuple(rls_params) + tuple(row) for row in params_list]
+            self._cursor.executemany(modified_sql, augmented)
+        else:
+            self._cursor.executemany(modified_sql, params_list)
         return self
 
     def fetchone(self):
