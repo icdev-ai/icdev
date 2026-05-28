@@ -2,7 +2,7 @@
 """Unit tests for the IQE NDC adapter: tools/iqe/adapters/ndc.py
 
 Tests cover:
-  - NDCAdapter.list_collections()  — returns all 13 registered collections
+  - NDCAdapter.list_collections()  — returns all registered collections
   - NDCAdapter._query()            — routes to correct SQL for each collection
   - topology_id filtering          — WHERE clause applied when provided
   - config_json expansion          — auto-expands into 'config' dict key
@@ -129,7 +129,7 @@ def adapter() -> NDCAdapter:
 
 
 def test_list_collections_count(adapter: NDCAdapter) -> None:
-    assert len(adapter.list_collections()) == 13
+    assert len(adapter.list_collections()) == len(_COLLECTIONS)
 
 
 def test_list_collections_contains_all_expected(adapter: NDCAdapter) -> None:

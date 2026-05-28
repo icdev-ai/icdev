@@ -512,3 +512,88 @@ def generate_contract_assertions(
             )
 
     return assertions
+
+
+# ── External IQE provenance recording ────────────────────────────────────────
+
+_EXT_PROVENANCE_DESIGN_ID = "ext-iqe-provenance"
+
+
+def _ensure_ext_provenance_design(conn) -> None:
+    existing = conn.execute(
+        "SELECT id FROM data_designs WHERE id = ?", (_EXT_PROVENANCE_DESIGN_ID,)
+    ).fetchone()
+    if not existing:
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "INSERT INTO data_designs"
+            " (id, name, description, classification, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?)",
+            (
+                _EXT_PROVENANCE_DESIGN_ID,
+                "External IQE Query Provenance",
+                "System-managed design for tracking IQE external source lineage edges.",
+                "CUI // SP-CTI",
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+
+
+def record_external_fetch(
+    connector_name: str,
+    table: str,
+    row_count: int,
+    classification: str = "CUI // SP-CTI",
+) -> "dict | None":
+    """Append a dd_lineage edge recording that IQE fetched rows from an external source."""
+    import uuid as _uuid
+
+    try:
+        from tools.data_canvas.db.init_db import get_connection  # noqa: PLC0415
+
+        conn = get_connection()
+        _ensure_ext_provenance_design(conn)
+
+        edge_id = f"ext-lin-{_uuid.uuid4().hex[:10]}"
+        now = datetime.now(timezone.utc).isoformat()
+        source_node = f"ext.{connector_name}.{table}"
+        target_node = "iqe.query.result"
+
+        conn.execute(
+            "INSERT INTO dd_lineage"
+            " (id, design_id, source_node_id, target_node_id,"
+            "  lineage_type, column_name, transform_desc, classification, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                edge_id,
+                _EXT_PROVENANCE_DESIGN_ID,
+                source_node,
+                target_node,
+                "col-passthrough",
+                "*",
+                f"IQE external fetch — {row_count} rows",
+                classification,
+                now,
+            ),
+        )
+        conn.commit()
+
+        return {
+            "id": edge_id,
+            "design_id": _EXT_PROVENANCE_DESIGN_ID,
+            "source_node_id": source_node,
+            "target_node_id": target_node,
+            "lineage_type": "col-passthrough",
+            "classification": classification,
+            "row_count": row_count,
+            "created_at": now,
+        }
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("data_canvas.lineage").warning(
+            "record_external_fetch failed for ext.%s.%s: %s", connector_name, table, exc
+        )
+        return None

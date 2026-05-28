@@ -1,0 +1,7 @@
+# IQE-EXT-008: GDELT Global Knowledge Graph events
+# Returns recent GDELT event records for geopolitical intelligence.
+# Use: threat context enrichment, strategic intelligence briefs, OSINT correlation.
+# Requires: gdelt connector configured (public API — no auth needed).
+
+foreach e in ext.gdelt.events
+select e.EventCode, e.Actor1Name, e.Actor2Name, e.ActionGeo_CountryCode, e.GoldsteinScale

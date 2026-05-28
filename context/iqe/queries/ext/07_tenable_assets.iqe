@@ -1,0 +1,7 @@
+# IQE-EXT-007: Tenable managed asset inventory
+# Returns all assets currently tracked in Tenable.
+# Use: asset discovery, coverage gap analysis, ATO boundary validation.
+# Requires: tenable connector configured with access_key + secret_key.
+
+foreach a in ext.tenable.assets
+select a.id, a.fqdn, a.ipv4, a.operating_system, a.last_seen
