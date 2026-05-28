@@ -109,7 +109,7 @@ def _check_cd_deployment(repo: pathlib.Path) -> CriterionResult:
     if _exists(repo, "Makefile"):
         mk = _read(repo, "Makefile") or ""
         makefile_pattern = r"^(?:" + "|".join(re.escape(k) if not any(c in k for c in r".*+?[](){}^$|\\") else k for k in keywords) + r")\b"
-        if _search(mk, makefile_pattern, flags=0):
+        if _search(mk, makefile_pattern, flags=re.MULTILINE):
             return CriterionResult(cid, True, "Deploy target found in Makefile")
     return CriterionResult(cid, False, "No CD deployment step found.",
                            "Add a deployment step to your CI pipeline for automated releases.")

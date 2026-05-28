@@ -9,6 +9,7 @@ import textwrap
 
 from tools.ai_augmentation.agent_readiness.pillars.configuration import (
     PILLAR,
+    _check_cd_deployment,
     _check_ci_pipeline,
     _check_iac_present,
     _check_makefile_or_taskfile,
@@ -223,6 +224,75 @@ class TestCheckIacPresent:
         self._patch_thresholds(monkeypatch)
         result = _check_iac_present(tmp_path)
         assert not result.passed
+
+
+# ---------------------------------------------------------------------------
+# _check_cd_deployment — anomaly detection for CD deployment step
+# ---------------------------------------------------------------------------
+
+class TestCheckCdDeployment:
+    _DEFAULT_THRESHOLDS = {
+        "min_makefile_targets": 3,
+        "min_npm_scripts": 3,
+        "min_ci_workflows": 1,
+        "min_iac_files": 1,
+        "deploy_keywords": ["deploy", "release", "publish", r"push.*image", r"helm\s+upgrade", r"kubectl\s+apply"],
+    }
+
+    def _patch_thresholds(self, monkeypatch, **overrides):
+        thresholds = {**self._DEFAULT_THRESHOLDS, **overrides}
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_load_thresholds", lambda: thresholds)
+
+    def test_passes_when_deploy_keyword_in_github_workflow(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch)
+        _write(tmp_path, ".github/workflows/cd.yml",
+               "name: CD\non: push\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: kubectl apply -f k8s/\n")
+        result = _check_cd_deployment(tmp_path)
+        assert result.passed
+        assert "cd.yml" in result.message
+
+    def test_passes_with_custom_deploy_keyword_from_yaml(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch, deploy_keywords=["ship", "publish"])
+        _write(tmp_path, ".github/workflows/release.yml",
+               "name: Release\non: push\njobs:\n  publish:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ship now\n")
+        result = _check_cd_deployment(tmp_path)
+        assert result.passed
+
+    def test_fails_when_no_deploy_keyword_in_ci(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch)
+        _write(tmp_path, ".github/workflows/ci.yml",
+               "name: CI\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: pytest\n")
+        result = _check_cd_deployment(tmp_path)
+        assert not result.passed
+        assert "No CD deployment" in result.message
+
+    def test_passes_when_deploy_target_in_makefile(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch)
+        _write(tmp_path, "Makefile", "build:\n\techo build\ndeploy:\n\t./deploy.sh\n")
+        result = _check_cd_deployment(tmp_path)
+        assert result.passed
+        assert "Makefile" in result.message
+
+    def test_fails_when_no_ci_and_no_makefile_deploy(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch)
+        result = _check_cd_deployment(tmp_path)
+        assert not result.passed
+
+    def test_keyword_list_from_yaml_overrides_defaults(self, tmp_path, monkeypatch):
+        # Only "custom-release" is a keyword — default "deploy" should NOT trigger a pass.
+        self._patch_thresholds(monkeypatch, deploy_keywords=["custom-release"])
+        _write(tmp_path, ".github/workflows/ci.yml",
+               "name: CI\non: push\njobs:\n  build:\n    steps:\n      - run: deploy\n")
+        result = _check_cd_deployment(tmp_path)
+        assert not result.passed
+
+    def test_passes_when_gitlab_ci_has_deploy_step(self, tmp_path, monkeypatch):
+        self._patch_thresholds(monkeypatch)
+        _write(tmp_path, ".gitlab-ci.yml",
+               "stages:\n  - deploy\ndeploy-prod:\n  stage: deploy\n  script:\n    - helm upgrade myapp ./chart\n")
+        result = _check_cd_deployment(tmp_path)
+        assert result.passed
 
 
 # ---------------------------------------------------------------------------
