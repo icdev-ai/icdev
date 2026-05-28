@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pathlib
+from functools import lru_cache
+from typing import Any
 
 from tools.ai_augmentation.agent_readiness.pillars._base import (
     Criterion,
@@ -13,13 +15,38 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
     _search,
 )
 
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
+_DEFAULTS: dict[str, Any] = {
+    "min_gitignore_lines": 5,
+}
+
+
+@lru_cache(maxsize=1)
+def _load_thresholds() -> dict[str, Any]:
+    """Load structure pillar anomaly-detection thresholds from args/agent_readiness_config.yaml.
+
+    Falls back to hard-coded defaults if the config file is absent or malformed,
+    so the pillar degrades gracefully in air-gap or stripped environments.
+    """
+    try:
+        import yaml  # optional dep — present in all ICDEV environments
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) or {}
+        cfg = data.get("pillars", {}).get("structure", {}).get("gitignore", {})
+        return {
+            "min_gitignore_lines": int(cfg.get("min_lines", _DEFAULTS["min_gitignore_lines"])),
+        }
+    except Exception:  # noqa: BLE001
+        return dict(_DEFAULTS)
+
 
 def _check_gitignore(repo: pathlib.Path) -> CriterionResult:
     cid = "gitignore-present"
+    min_lines = _load_thresholds()["min_gitignore_lines"]
     found = _exists(repo, ".gitignore")
     if found:
         content = _read(repo, ".gitignore") or ""
-        if len(content.splitlines()) >= 5:
+        if len(content.splitlines()) >= min_lines:
             return CriterionResult(cid, True, ".gitignore found with meaningful rules")
         return CriterionResult(cid, False, ".gitignore found but very sparse.",
                                "Expand .gitignore to cover build artifacts, secrets, and IDE files.")
