@@ -978,7 +978,6 @@ _JAVA_RE_MODEL_VIEW     = re.compile(r'\bnew\s+ModelAndView\s*\(')
 _JAVA_RE_ADD_ATTR       = re.compile(r'\bmodel\.addAttribute\s*\(|\bmodel\.put\s*\(')
 _JAVA_RE_SCHEDULED      = re.compile(r'@Scheduled\s*\(')
 _JAVA_RE_PAGEREQUEST    = re.compile(r'PageRequest\.of\s*\([^,)]+,\s*(\d+)\s*\)')
-_JAVA_RE_STATIC_INT     = re.compile(r'(?:private|protected|public)?\s+(?:static\s+)?(?:final\s+)?int\s+\w+\s*=\s*(\d{1,4})\s*;')
 _JAVA_RE_FINDBY_KEYWORD = re.compile(r'\b(findBy\w+(?:StartingWith|Containing|Like))\s*\(')
 _JAVA_RE_EQUALS_IC      = re.compile(r'\.equalsIgnoreCase\s*\(')
 _JAVA_RE_STREAM_FILTER  = re.compile(r'\.stream\s*\(\s*\)\s*\.\s*filter\s*\(')
@@ -987,6 +986,12 @@ _JAVA_RE_CASE           = re.compile(r'^\s*case\s+\S')
 _JAVA_RE_MODEL_ATTR     = re.compile(r'@ModelAttribute\b')
 _JAVA_RE_REPO_FIND      = re.compile(r'\.\s*find(?:All|By\w+)\s*\(')
 _JAVA_MIN_IF_DEPTH: int = int(_cfg.get("java_min_if_depth", 2))
+_JAVA_STATIC_INT_MAX_DIGITS: int = max(1, int(_cfg.get("java_static_int_max_digits", 4)))
+_JAVA_STATIC_INT_MIN_VALUE: int = int(_cfg.get("java_static_int_min_value", 1))
+_JAVA_RE_STATIC_INT: re.Pattern = re.compile(
+    r'(?:private|protected|public)?\s+(?:static\s+)?(?:final\s+)?int\s+\w+\s*=\s*'
+    rf'(\d{{1,{_JAVA_STATIC_INT_MAX_DIGITS}}})\s*;'
+)
 
 
 def _cs_walk_scoped(root: Any, src: bytes):
@@ -1722,7 +1727,7 @@ def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
             })
         else:
             m = _JAVA_RE_STATIC_INT.search(line)
-            if m and int(m.group(1)) > 0:
+            if m and int(m.group(1)) >= _JAVA_STATIC_INT_MIN_VALUE:
                 val = int(m.group(1))
                 java_should_flag = (
                     not _AD_ENABLED
