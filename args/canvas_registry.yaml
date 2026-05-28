@@ -1,0 +1,159 @@
+# CUI // SP-CTI
+# Canvas Registry — canonical list of all ICDEV™ canvases and child apps.
+# Used by canvas_access.py @require_canvas_access decorator and canvas_access_grants table.
+# Every entry here must have a corresponding blueprint route protected by the decorator.
+#
+# Format:
+#   name:          unique canvas identifier (matches canvas_name in canvas_access_grants)
+#   display_name:  human-readable label
+#   min_il:        minimum impact level required (IL2 / IL4 / IL5 / IL6)
+#   default_roles: roles auto-granted access on tenant creation (empty = no auto-grant)
+#   description:   purpose of the canvas
+
+canvases:
+
+  # ── Core Dashboard ──────────────────────────────────────────────────────────
+  - name: dashboard
+    display_name: "Dashboard Home"
+    min_il: IL2
+    default_roles: [tenant_admin, developer, compliance_officer, auditor, viewer]
+    description: "Main dashboard landing page — accessible to all active users."
+
+  - name: admin
+    display_name: "Admin Panel"
+    min_il: IL4
+    default_roles: [tenant_admin]
+    description: "User management, key management, system settings."
+
+  # ── GovCon & Capture ────────────────────────────────────────────────────────
+  - name: proposals
+    display_name: "Proposal Genesis"
+    min_il: IL4
+    default_roles: []
+    description: "GovCon capture-to-delivery proposal lifecycle management."
+
+  - name: cpmp
+    display_name: "Contract Performance Management Portal"
+    min_il: IL4
+    default_roles: []
+    description: "Post-award lifecycle management: EVM, CPARS, subcontractor, CDRL."
+
+  - name: govcon
+    display_name: "GovCon Intelligence"
+    min_il: IL4
+    default_roles: []
+    description: "SAM.gov scanning, requirement mining, competitive intelligence."
+
+  # ── Compliance ──────────────────────────────────────────────────────────────
+  - name: aac
+    display_name: "AI Augmentation Canvas"
+    min_il: IL4
+    default_roles: [compliance_officer]
+    description: "ATO acceleration, compliance automation, OSCAL artifacts."
+
+  - name: dsoc
+    display_name: "DevSecOps Canvas"
+    min_il: IL4
+    default_roles: [compliance_officer, developer]
+    description: "Pipeline security, ZTA posture, DevSecOps maturity."
+
+  - name: ccc
+    display_name: "Cloud Compliance Canvas"
+    min_il: IL4
+    default_roles: [compliance_officer]
+    description: "Multi-framework compliance: FedRAMP, CMMC, NIST."
+
+  - name: boundary
+    display_name: "Boundary & Supply Chain Canvas"
+    min_il: IL4
+    default_roles: [compliance_officer, isso]
+    description: "ATO boundary impact, supply chain SCRM, ISA lifecycle."
+
+  # ── Security & Operations ────────────────────────────────────────────────────
+  - name: network
+    display_name: "Network Intelligence Canvas"
+    min_il: IL4
+    default_roles: []
+    description: "Network diagram ingestion, redundancy, blast radius, EOL analysis."
+
+  - name: observability
+    display_name: "Observability Canvas"
+    min_il: IL4
+    default_roles: [developer]
+    description: "Distributed tracing, XAI, agent observability."
+
+  - name: pipeline
+    display_name: "Pipeline Canvas"
+    min_il: IL4
+    default_roles: [developer]
+    description: "CI/CD pipeline management, worktree isolation, GitLab integration."
+
+  - name: infra
+    display_name: "Infrastructure Canvas"
+    min_il: IL4
+    default_roles: [developer]
+    description: "IaC generation, Terraform, K8s manifest management."
+
+  # ── Knowledge & Learning ─────────────────────────────────────────────────────
+  - name: knowledge
+    display_name: "Knowledge Canvas"
+    min_il: IL2
+    default_roles: [tenant_admin, developer, compliance_officer]
+    description: "Knowledge base, pattern search, hybrid RAG retrieval."
+
+  - name: forge_academy
+    display_name: "FORGE Academy"
+    min_il: IL2
+    default_roles: []
+    description: "Gamified developer training — XP, levels, challenges."
+
+  - name: ai_gameday
+    display_name: "AI GameDay"
+    min_il: IL4
+    default_roles: []
+    description: "AI-driven tabletop exercise and threat simulation."
+
+  # ── Research & Innovation ────────────────────────────────────────────────────
+  - name: research
+    display_name: "Research Canvas"
+    min_il: IL4
+    default_roles: [developer, compliance_officer]
+    description: "Industry research engine, dossier generation, competitor analysis."
+
+  - name: innovation
+    display_name: "Innovation Canvas"
+    min_il: IL4
+    default_roles: [developer]
+    description: "Innovation engine, creative feature discovery, self-improvement."
+
+  # ── Agent Control ────────────────────────────────────────────────────────────
+  - name: agents
+    display_name: "Agent Control"
+    min_il: IL4
+    default_roles: [tenant_admin]
+    description: "A2A agent lifecycle, task routing, orchestration dashboard."
+
+  # ── Data Canvases ────────────────────────────────────────────────────────────
+  - name: data_canvas
+    display_name: "Data Canvas"
+    min_il: IL4
+    default_roles: [developer]
+    description: "Data lineage, ingestion pipeline, synthetic data."
+
+  - name: migration
+    display_name: "Migration Canvas"
+    min_il: IL4
+    default_roles: [developer]
+    description: "App modernization, 7Rs assessment, cross-language translation."
+
+  - name: simulation
+    display_name: "Simulation Canvas"
+    min_il: IL4
+    default_roles: [compliance_officer, developer]
+    description: "Digital Program Twin — Monte Carlo simulation, COA generation."
+
+  - name: blockchain
+    display_name: "GovChain Blockchain Canvas"
+    min_il: IL5
+    default_roles: []
+    description: "Hyperledger Fabric anchor lifecycle, Merkle batching, tokenization."
