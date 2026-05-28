@@ -65,7 +65,9 @@ CREATE TABLE IF NOT EXISTS agents (
     status TEXT NOT NULL DEFAULT 'inactive' CHECK(status IN ('active', 'inactive', 'error')),
     capabilities TEXT,
     last_heartbeat TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT
 );
 
 -- ============================================================
