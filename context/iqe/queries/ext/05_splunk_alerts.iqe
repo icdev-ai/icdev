@@ -1,0 +1,8 @@
+# IQE-EXT-005: High-urgency Splunk notable events
+# Returns Splunk alerts flagged as high urgency for SOC triage.
+# Use: security operations, incident detection, SIEM correlation.
+# Requires: splunk connector configured with credentials.
+
+foreach a in ext.splunk.alerts
+  where a.urgency == "high"
+  select a.event_id, a.source, a.urgency, a.status, a.dest

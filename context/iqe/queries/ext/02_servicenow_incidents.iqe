@@ -1,0 +1,7 @@
+# IQE-EXT-002: All ServiceNow ITSM incidents
+# Returns the full incident list from the ServiceNow ITSM connector.
+# Use: ITSM pipeline review, incident volume baseline.
+# Requires: servicenow_itsm connector configured with credentials.
+
+foreach i in ext.servicenow.incidents
+select i.number, i.short_description, i.priority, i.state, i.assigned_to

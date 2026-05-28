@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 # Federated Query via IQE + DataBridge + DDC Data Mesh
 
-> **Status:** Phase I ✅ COMPLETE | Phase II ✅ COMPLETE | Phases III–V — PLANNED
+> **Status:** Phase I ✅ COMPLETE | Phase II ✅ COMPLETE | Phase III ✅ COMPLETE | Phases IV–V — PLANNED
 
 Extends IQE with an `ext.*` namespace that routes queries through DataBridge
 connectors, wires DDC lineage tagging, and enforces Data Mesh OPA governance
