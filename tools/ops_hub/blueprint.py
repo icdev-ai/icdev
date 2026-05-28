@@ -34,6 +34,14 @@ from flask import Blueprint, jsonify, render_template, request
 def create_ops_hub_blueprint() -> Blueprint:
     bp = Blueprint("ohc", __name__, url_prefix="")
 
+    # Init OHC canvas DB on first import so all route handlers find required tables
+    try:
+        from tools.ops_hub.db.init_db import init_db
+        init_db()
+    except Exception as exc:  # pragma: no cover
+        import logging
+        logging.getLogger(__name__).warning("OHC DB init failed: %s", exc)
+
     # ── Page Routes ──────────────────────────────────────────────────────────
 
     @bp.route("/ops")

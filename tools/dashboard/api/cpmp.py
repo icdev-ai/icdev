@@ -655,8 +655,22 @@ def record_negative_event(contract_id):
         from tools.govcon.negative_event_tracker import record_event as _record
 
         data = request.get_json(silent=True) or {}
-        data["contract_id"] = contract_id
-        result = _record(contract_id, data)
+        event_type = data.get("event_type")
+        if not event_type:
+            return jsonify({"status": "error", "message": "event_type required"}), 400
+        severity = data.get("severity", "medium")
+        description = data.get("description", "")
+        result = _record(
+            contract_id,
+            event_type,
+            severity,
+            description,
+            corrective_action=data.get("corrective_action"),
+            deliverable_id=data.get("deliverable_id"),
+            subcontractor_id=data.get("subcontractor_id"),
+            event_date=data.get("event_date"),
+            corrective_action_taken=data.get("corrective_action_taken", False),
+        )
         return jsonify(result), 201 if result.get("status") == "ok" else 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

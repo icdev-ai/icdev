@@ -93,9 +93,17 @@ def api_get_workflow(workflow_id: str):
 
 @studio_api.route("/workflows", methods=["POST"])
 def api_create_workflow():
+    import yaml as _yaml
     data = request.get_json(silent=True) or {}
     name = data.get("name", "").strip()
     template_yaml = data.get("template_yaml", "").strip()
+    # Accept {steps:[]} format (e.g. from E2E tests) when template_yaml is absent
+    if not template_yaml and "steps" in data:
+        template_yaml = _yaml.dump({
+            "name": name,
+            "description": data.get("description", ""),
+            "steps": data.get("steps", []),
+        })
     if not name or not template_yaml:
         return jsonify({"error": "name and template_yaml are required"}), 400
     result = create_workflow(

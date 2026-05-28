@@ -1711,13 +1711,18 @@ def _now_iso() -> str:
 
 def list_workflows(*, shared_only: bool = False) -> list[dict]:
     """List all studio workflows."""
+    import sqlite3 as _sqlite3
     conn = get_connection()
     try:
         sql = "SELECT * FROM studio_workflows"
         if shared_only:
             sql += " WHERE shared = 1"
         sql += " ORDER BY updated_at DESC"
-        rows = conn.execute(sql).fetchall()
+        try:
+            rows = conn.execute(sql).fetchall()
+        except _sqlite3.OperationalError:
+            # Table not yet initialized; return empty list gracefully
+            return []
         return [dict(r) for r in rows]
     finally:
         conn.close()

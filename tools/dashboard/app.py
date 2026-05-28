@@ -161,8 +161,11 @@ _CANVAS_DEFS = [
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
 ]
 
+_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas"}
+
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
-    _enabled = os.environ.get(_env, "false").lower() in ("true", "1", "yes")
+    _default = "true" if _key in _CANVAS_DEFAULTS_TRUE else "false"
+    _enabled = os.environ.get(_env, _default).lower() in ("true", "1", "yes")
     _CANVAS_FLAGS[_key] = False
     if _enabled:
         try:
@@ -1600,6 +1603,13 @@ def create_app() -> Flask:
     # See tools/dashboard/api/__init__.py for the full registration sequence.
     register_api_blueprints(app)
 
+    # ---- Studio DB init (kanban/ci-fix-26594490171) ----
+    try:
+        from tools.studio.init_db import init_studio_tables
+        init_studio_tables()
+    except Exception as _exc:
+        app.logger.warning("Studio DB init skipped: %s", _exc)
+
     # ---- Geospatial Dashboard (task-a866147c27-d4) ----
     try:
         from src.routes.dashboard import bp as _geo_bp
@@ -1849,6 +1859,14 @@ def create_app() -> Flask:
         app.logger.info("JISE Portal blueprint registered at /api/v1/jise")
     except Exception as _exc:
         app.logger.warning("JISE Portal blueprint failed to register: %s", _exc)
+
+    # ---- SaaS Tenant Admin Portal Blueprint ----
+    try:
+        from tools.saas.portal.app import portal_bp as _portal_bp
+        app.register_blueprint(_portal_bp)
+        app.logger.info("SaaS Portal blueprint registered at /portal")
+    except Exception as _exc:
+        app.logger.warning("SaaS Portal blueprint failed to register: %s", _exc)
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -2716,6 +2734,8 @@ def create_app() -> Flask:
             "aac":            ("tools.iqe.adapters.ai_augmentation", ["ai_augmentation.opportunities", "ai_augmentation.scans", "ai_augmentation.roadmaps"]),
             "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
             "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
+            "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),
+            "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
@@ -2797,6 +2817,19 @@ def create_app() -> Flask:
                 resolved_count=resolved,
                 unresolved_failures=unresolved_failures,
                 health_status=health,
+            )
+        except Exception as exc:  # noqa: BLE001
+            import logging as _mon_log
+            _mon_log.getLogger(__name__).error("monitoring_overview DB error: %s", exc)
+            return render_template(
+                "monitoring/overview.html",
+                firing_alerts=[],
+                alerts=[],
+                healing_events=[],
+                firing_count=0,
+                resolved_count=0,
+                unresolved_failures=0,
+                health_status="unknown",
             )
         finally:
             conn.close()

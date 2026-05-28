@@ -1,0 +1,161 @@
+<!-- [TEMPLATE: CUI // SP-CTI] -->
+{% extends "base.html" %}
+{% block title %}Agents — ICDEV™ Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/">Home</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Agents</li>
+        </ol>
+    </nav>
+
+    <h1>Agent Registry</h1>
+    <p class="text-muted">Multi-agent system health, status, and active task counts across all tiers.</p>
+
+    <!-- Stat bar -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div style="font-size:2em;font-weight:bold;">{{ agents | length }}</div>
+                    <div class="text-muted">Total Agents</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div style="font-size:2em;font-weight:bold;color:var(--success,#28a745);">{{ active_count }}</div>
+                    <div class="text-muted">Active</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div style="font-size:2em;font-weight:bold;color:var(--warning,#ffc107);">{{ inactive_count }}</div>
+                    <div class="text-muted">Inactive</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div style="font-size:2em;font-weight:bold;">
+                        {{ agents | sum(attribute='active_task_count') }}
+                    </div>
+                    <div class="text-muted">Running Tasks</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agent grid -->
+    {% if agents %}
+    <div class="row" id="agent-grid">
+        {% for agent in agents %}
+        <div class="col-md-4 col-lg-3 mb-4">
+            <div class="card agent-card h-100" data-agent="{{ agent.id }}" data-status="{{ agent.status }}">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong>{{ agent.name }}</strong>
+                    {% if agent.status == 'active' %}
+                        <span class="badge bg-success" role="status">active</span>
+                    {% elif agent.status == 'idle' %}
+                        <span class="badge bg-secondary" role="status">idle</span>
+                    {% elif agent.status == 'running' %}
+                        <span class="badge bg-primary" role="status">running</span>
+                    {% elif agent.status == 'stopped' %}
+                        <span class="badge bg-danger" role="status">stopped</span>
+                    {% else %}
+                        <span class="badge bg-warning text-dark" role="status">{{ agent.status }}</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if agent.type %}
+                    <div class="mb-1 small text-muted">Type: {{ agent.type }}</div>
+                    {% endif %}
+                    {% if agent.port %}
+                    <div class="mb-1 small">
+                        <span class="text-muted">Port:</span>
+                        <span class="agent-port">{{ agent.port }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="mb-1 small">
+                        <span class="text-muted">Health:</span>
+                        <span class="status-indicator
+                            {% if agent.status == 'active' %}text-success{% elif agent.status == 'stopped' %}text-danger{% else %}text-warning{% endif %}">
+                            {{ agent.status | capitalize }}
+                        </span>
+                    </div>
+                    <div class="mb-1 small">
+                        <span class="text-muted">Active Tasks:</span>
+                        <span class="badge bg-secondary">{{ agent.active_task_count }}</span>
+                    </div>
+                    {% if agent.last_heartbeat %}
+                    <div class="mt-2 small text-muted">Last heartbeat: {{ agent.last_heartbeat }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <!-- No agents in DB yet — display the canonical core agent list so page always shows agent names -->
+    <div class="row" id="agent-grid">
+        {% set core_agents = [
+            {"name": "Orchestrator", "port": 8443, "tier": "Core"},
+            {"name": "Architect",    "port": 8444, "tier": "Core"},
+            {"name": "Builder",      "port": 8445, "tier": "Domain"},
+            {"name": "Compliance",   "port": 8446, "tier": "Domain"},
+            {"name": "Security",     "port": 8447, "tier": "Domain"},
+            {"name": "Infrastructure","port": 8448, "tier": "Domain"},
+            {"name": "Knowledge",    "port": 8449, "tier": "Support"},
+            {"name": "Monitor",      "port": 8450, "tier": "Support"},
+        ] %}
+        {% for agent in core_agents %}
+        <div class="col-md-4 col-lg-3 mb-4">
+            <div class="card agent-card h-100" data-agent="{{ agent.name | lower }}">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong>{{ agent.name }}</strong>
+                    <span class="badge bg-secondary" role="status">idle</span>
+                </div>
+                <div class="card-body">
+                    <div class="mb-1 small text-muted">Tier: {{ agent.tier }}</div>
+                    <div class="mb-1 small">
+                        <span class="text-muted">Port:</span>
+                        <span class="agent-port">{{ agent.port }}</span>
+                    </div>
+                    <div class="mb-1 small">
+                        <span class="text-muted">Health:</span>
+                        <span class="status-indicator text-warning">Unregistered</span>
+                    </div>
+                    <div class="mb-1 small">
+                        <span class="text-muted">Active Tasks:</span>
+                        <span class="badge bg-secondary">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="alert alert-info mt-2">
+        No agents are registered in the database yet. Showing canonical core agent definitions.
+        Run <code>python tools/db/init_icdev_db.py</code> to populate the registry.
+    </div>
+    {% endif %}
+
+    <!-- IQE Query Widget -->
+    {% set iqe_canvas = "agents" %}
+    {% set iqe_api_route = "/api/core/iqe-query" %}
+    {% set iqe_title = "IQE Agent Query" %}
+    {% set iqe_examples = [
+        {"label": "Active agents", "query": "show all active agents"},
+        {"label": "Running tasks", "query": "which agents have running tasks"},
+        {"label": "Inactive agents", "query": "list all stopped or idle agents"},
+    ] %}
+    {% include "includes/iqe_query_widget.html" %}
+
+</div>
+{% endblock %}

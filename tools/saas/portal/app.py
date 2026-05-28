@@ -70,7 +70,8 @@ logger = get_logger("saas.portal")
 # ---------------------------------------------------------------------------
 # CUI Banner Configuration (matches Dashboard config.py pattern)
 # ---------------------------------------------------------------------------
-_CUI_YAML = BASE_DIR / "args" / "cui_markings.yaml"
+_PORTAL_CUI_YAML = Path(__file__).resolve().parent / "args" / "cui_markings.yaml"
+_CUI_YAML = _PORTAL_CUI_YAML if _PORTAL_CUI_YAML.exists() else BASE_DIR / "args" / "cui_markings.yaml"
 
 
 def _load_yaml(filepath: Path) -> dict:
