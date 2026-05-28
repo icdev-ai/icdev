@@ -20,7 +20,7 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
 # ---------------------------------------------------------------------------
 # Anomaly-detection threshold loader
 # ---------------------------------------------------------------------------
-_ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_config.yaml"
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 _DEFAULTS: dict[str, Any] = {
     "min_makefile_targets": 3,
     "min_npm_scripts": 3,
@@ -36,7 +36,7 @@ _DEFAULTS: dict[str, Any] = {
 
 
 @lru_cache(maxsize=1)
-def _load_thresholds() -> dict[str, int]:
+def _load_thresholds() -> dict[str, Any]:
     """Load all configuration-pillar anomaly-detection thresholds from args/agent_readiness_config.yaml.
 
     Falls back to hard-coded defaults if the config file is absent or malformed,
