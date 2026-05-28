@@ -45,6 +45,9 @@ _FALLBACK_ANOMALY_THRESHOLDS = {
         "p3_min_score": 0.30,
     },
     "priority_high_min_score": 0.70,
+    "value_feasibility_max_delta": 0.50,
+    "component_outlier_floor": 0.05,
+    "component_outlier_ceiling": 0.95,
 }
 
 
@@ -446,6 +449,73 @@ def _promote_phase_opportunities(
         icdev_conn.close()
 
     return inserted
+
+
+def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
+    """Detect statistical anomalies in a batch of scored opportunities.
+
+    Uses thresholds from the ``anomaly_detection`` section of aac_config.yaml
+    so that sensitivity can be tuned without touching source code.
+
+    Args:
+        rows:       List of score row dicts with ``opportunity_id``,
+                    ``value_score``, ``feasibility_score``, ``risk_score``,
+                    ``composite_score``.
+        thresholds: Optional threshold dict; defaults to the
+                    ``anomaly_detection`` section from aac_config.yaml.
+
+    Returns:
+        List of anomaly dicts; empty means no anomalies.  Each dict has:
+            ``opportunity_id``, ``anomaly_type``, ``detail``.
+    """
+    if thresholds is None:
+        thresholds = _load_anomaly_thresholds()
+
+    max_delta = float(thresholds.get("value_feasibility_max_delta", 0.50))
+    floor = float(thresholds.get("component_outlier_floor", 0.05))
+    ceiling = float(thresholds.get("component_outlier_ceiling", 0.95))
+
+    anomalies: list = []
+    for row in rows:
+        opp_id = row.get("opportunity_id")
+        value = float(row.get("value_score", 0.0))
+        feasibility = float(row.get("feasibility_score", 0.0))
+        risk = float(row.get("risk_score", 0.0))
+        composite = float(row.get("composite_score", 0.0))
+
+        delta = abs(value - feasibility)
+        if delta > max_delta:
+            anomalies.append({
+                "opportunity_id": opp_id,
+                "anomaly_type": "value_feasibility_imbalance",
+                "detail": {
+                    "value_score": value,
+                    "feasibility_score": feasibility,
+                    "delta": round(delta, 4),
+                    "threshold": max_delta,
+                },
+            })
+
+        for comp_name, comp_val in [
+            ("value_score", value),
+            ("feasibility_score", feasibility),
+            ("risk_score", risk),
+            ("composite_score", composite),
+        ]:
+            if comp_val < floor:
+                anomalies.append({
+                    "opportunity_id": opp_id,
+                    "anomaly_type": "component_outlier_low",
+                    "detail": {"component": comp_name, "value": comp_val, "floor": floor},
+                })
+            elif comp_val > ceiling:
+                anomalies.append({
+                    "opportunity_id": opp_id,
+                    "anomaly_type": "component_outlier_high",
+                    "detail": {"component": comp_name, "value": comp_val, "ceiling": ceiling},
+                })
+
+    return anomalies
 
 
 def _is_git_url(ref: str) -> bool:
