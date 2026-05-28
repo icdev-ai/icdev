@@ -12,6 +12,7 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
     _glob_files,
     _read,
     _search,
+    load_pillar_config,
 )
 
 # Patterns that indicate audit table mutation (forbidden)
@@ -64,11 +65,16 @@ def _check_pre_tool_use_protection(repo: pathlib.Path) -> CriterionResult:
                            "Add APPEND_ONLY_TABLES list to .claude/hooks/pre_tool_use.py to block audit mutations.")
 
 
+_AUDIT_INSERT_DEFAULTS = {"scan_sample_size": 40}
+
+
 def _check_audit_log_inserts(repo: pathlib.Path) -> CriterionResult:
     cid = "audit-log-inserts"
+    cfg = load_pillar_config("append_only_audit").get("audit_log_inserts", {})
+    scan_limit = int(cfg.get("scan_sample_size", _AUDIT_INSERT_DEFAULTS["scan_sample_size"]))
     py_files = _glob_files(repo, "**/*.py")
     inserts_found = []
-    for f in py_files[:40]:
+    for f in py_files[:scan_limit]:
         content = f.read_text(encoding="utf-8", errors="replace")
         if re.search(_AUDIT_INSERT_PATTERN, content, re.IGNORECASE):
             inserts_found.append(f.name)

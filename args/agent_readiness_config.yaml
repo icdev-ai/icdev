@@ -120,6 +120,13 @@ pillars:
       # artifact/secret hygiene. Raise to 10+ for stricter gates; lower to 3 for minimal repos.
       min_lines: 5
 
+  append_only_audit:
+    audit_log_inserts:
+      # Maximum Python files scanned when searching for audit INSERT operations.
+      # Values below ~10 are anomalously low and risk missing insert coverage.
+      # Raise for very large repos; lower to trade accuracy for speed.
+      scan_sample_size: 40
+
   il_classification:
     cui_file_headers:
       # Maximum number of Python source files sampled for CUI header detection.

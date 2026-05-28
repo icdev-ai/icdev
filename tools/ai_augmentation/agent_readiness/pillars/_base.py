@@ -5,7 +5,36 @@ from __future__ import annotations
 import pathlib
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from functools import lru_cache
+from typing import Any, Callable, Optional
+
+# ---------------------------------------------------------------------------
+# Shared YAML config loader — used by all pillars that define configurable
+# anomaly-detection thresholds in args/agent_readiness_config.yaml.
+# ---------------------------------------------------------------------------
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
+
+
+@lru_cache(maxsize=1)
+def _load_agent_readiness_config() -> dict:
+    """Load the full args/agent_readiness_config.yaml once, cached for the process lifetime."""
+    try:
+        import yaml  # optional dep — present in all ICDEV environments
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        return yaml.safe_load(raw) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def load_pillar_config(pillar_key: str) -> dict[str, Any]:
+    """Return the pillars.<pillar_key> sub-dict from the config, or {} if absent/malformed.
+
+    Pillar files use this instead of duplicating the YAML-load boilerplate:
+
+        cfg = load_pillar_config("append_only_audit")
+        sample_size = int(cfg.get("audit_log_inserts", {}).get("scan_sample_size", 40))
+    """
+    return _load_agent_readiness_config().get("pillars", {}).get(pillar_key, {})
 
 
 @dataclass
