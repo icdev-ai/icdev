@@ -112,20 +112,19 @@ CREATE TABLE IF NOT EXISTS abac_decisions (
 );
 CREATE TABLE IF NOT EXISTS user_mfa (
     user_id TEXT PRIMARY KEY,
-    secret TEXT NOT NULL,
-    backup_codes TEXT NOT NULL DEFAULT '[]',
+    totp_secret TEXT NOT NULL,
     enrolled_at TEXT NOT NULL,
-    last_used_at TEXT,
-    disabled_at TEXT,
-    disabled_by TEXT
+    backup_codes TEXT NOT NULL DEFAULT '[]',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_used_at TEXT
 );
 CREATE TABLE IF NOT EXISTS mfa_attempts (
-    id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
     success INTEGER NOT NULL DEFAULT 0,
     method TEXT NOT NULL DEFAULT 'totp',
     ip_address TEXT,
-    attempted_at TEXT NOT NULL
+    recorded_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS audit_trail (
     id TEXT PRIMARY KEY,
@@ -136,6 +135,30 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     details TEXT,
     classification TEXT DEFAULT 'CUI',
     recorded_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS session_risk_log (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    risk_score REAL,
+    details TEXT,
+    recorded_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gateway_rate_limits (
+    key TEXT NOT NULL,
+    window_start INTEGER NOT NULL,
+    request_count INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (key, window_start)
+);
+CREATE TABLE IF NOT EXISTS zta_drift_alerts (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    previous_score REAL NOT NULL,
+    current_score REAL NOT NULL,
+    drift_pct REAL NOT NULL,
+    alert_level TEXT NOT NULL DEFAULT 'warning',
+    acknowledged INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
 );
 """
 

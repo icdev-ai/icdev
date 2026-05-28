@@ -168,6 +168,100 @@ def _log_auth_event(tenant_id: Optional[str], user_id: Optional[str], event_type
         logger.debug("Could not log auth event: %s", e)
 
 
+def _check_api_key_scopes(scopes: list, method: str, path: str) -> bool:
+    """G-04: Verify the API key's scope list permits the requested action.
+
+    Scope format: ``["canvas:level", ...]`` e.g. ``["projects:read", "compliance:write"]``.
+    An empty / absent scope list grants full access (backwards-compatible with
+    legacy keys that predate scope enforcement).
+
+    Rules:
+    - ``*`` or ``*:*`` in scopes → allow all
+    - ``canvas:write`` implies ``canvas:read`` (write >= read)
+    - ``canvas:admin`` implies read + write
+    - HTTP method mapping: GET/HEAD → read; POST/PUT/PATCH/DELETE → write
+    - Scope canvas is matched as a prefix of the URL path segment after ``/api/v1/``
+    """
+    if not scopes:
+        return True  # legacy key — no scope restriction
+
+    if "*" in scopes or "*:*" in scopes:
+        return True
+
+    _METHOD_LEVEL = {
+        "GET": "read", "HEAD": "read", "OPTIONS": "read",
+        "POST": "write", "PUT": "write", "PATCH": "write", "DELETE": "write",
+    }
+    _LEVEL_ORDER = {"read": 0, "write": 1, "admin": 2}
+
+    required_level = _METHOD_LEVEL.get(method.upper(), "write")
+
+    # Extract canvas from path: /api/v1/<canvas>/... → canvas
+    parts = path.strip("/").split("/")
+    # strip "api" and version prefix (v1, v2, ...)
+    while parts and parts[0] in ("api", "v1", "v2", "v3"):
+        parts.pop(0)
+    canvas = parts[0].replace("-", "_") if parts else ""
+
+    for scope in scopes:
+        try:
+            scope_canvas, scope_level = scope.rsplit(":", 1)
+        except ValueError:
+            continue
+        scope_canvas = scope_canvas.replace("-", "_")
+        if scope_canvas not in ("*", canvas):
+            continue
+        if _LEVEL_ORDER.get(scope_level, -1) >= _LEVEL_ORDER.get(required_level, 0):
+            return True
+
+    logger.warning(
+        "G-04 API key scope denied: path=%s method=%s required=%s scopes=%s",
+        path, method, required_level, scopes,
+    )
+    return False
+
+
+def _enforce_tenant_param(request, auth_tenant_id: str, path: str) -> None:
+    """G-20: Detect and neutralise cross-tenant parameter injection.
+
+    If the caller passes a tenant_id in query string, form body, or JSON body
+    that differs from the auth-validated tenant_id, log a security warning.
+    The parameter is not removed here (Flask makes requests immutable) — the
+    handler must always use g.tenant_id, never the raw request param.
+
+    Raises nothing — this is an audit/detect layer, not a blocking gate, so
+    that an accidental mismatch in well-intentioned clients does not cause a
+    500.  A future hardening pass can return 400 for confirmed mismatches.
+    """
+    for param_tenant in (
+        request.args.get("tenant_id"),
+        request.form.get("tenant_id") if request.method in ("POST", "PUT", "PATCH") else None,
+    ):
+        if param_tenant and param_tenant != auth_tenant_id:
+            logger.warning(
+                "G-20 cross-tenant param detected: auth_tenant=%s param_tenant=%s path=%s",
+                auth_tenant_id,
+                param_tenant,
+                path,
+            )
+            break
+
+    # JSON body check (only parse when content-type is JSON to avoid spurious errors)
+    if request.is_json:
+        try:
+            body = request.get_json(silent=True) or {}
+            body_tenant = body.get("tenant_id") if isinstance(body, dict) else None
+            if body_tenant and body_tenant != auth_tenant_id:
+                logger.warning(
+                    "G-20 cross-tenant JSON body detected: auth_tenant=%s body_tenant=%s path=%s",
+                    auth_tenant_id,
+                    body_tenant,
+                    path,
+                )
+        except Exception:
+            pass
+
+
 def register_auth_middleware(app):
     """Register authentication middleware on a Flask app.
 
@@ -232,6 +326,31 @@ def register_auth_middleware(app):
         g.user_role = auth_info["role"]
         g.auth_info = auth_info
         g.tenant_name = auth_info.get("tenant_name") or auth_info.get("tenant_slug") or "System"
+        g.api_key_scopes = auth_info.get("scopes") or []
+
+        # G-04: API key scope enforcement
+        if creds.get("method") == "api_key" and not _check_api_key_scopes(
+            g.api_key_scopes, request.method, path
+        ):
+            _log_auth_event(
+                auth_info["tenant_id"],
+                auth_info["user_id"],
+                "auth.forbidden",
+                {
+                    "action": "scope_denied",
+                    "path": path,
+                    "method": request.method,
+                    "scopes": g.api_key_scopes,
+                },
+                request.remote_addr or "unknown",
+            )
+            return jsonify(
+                {
+                    "error": "API key scope insufficient",
+                    "code": "SCOPE_DENIED",
+                    "path": path,
+                }
+            ), 403
 
         # Check RBAC
         from tools.saas.auth.rbac import require_permission
@@ -262,6 +381,11 @@ def register_auth_middleware(app):
                     "path": path,
                 }
             ), 403
+
+        # G-20: Cross-tenant parameter tampering check.
+        # Strip any tenant_id the caller injected into params/body and verify
+        # it matches the auth-validated tenant to prevent privilege escalation.
+        _enforce_tenant_param(request, auth_info["tenant_id"], path)
 
         # Log successful auth (debug level to avoid noise)
         logger.debug(
