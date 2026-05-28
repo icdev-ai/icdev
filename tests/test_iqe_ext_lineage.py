@@ -7,8 +7,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # Ensure repo root on path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -60,7 +58,7 @@ class TestRecordExternalFetch:
 
         conn = _make_in_memory_conn()
         with patch("tools.data_canvas.db.init_db.get_connection", return_value=conn):
-            result = record_external_fetch("splunk", "alerts", 42)
+            record_external_fetch("splunk", "alerts", 42)
 
         rows = conn.execute("SELECT * FROM dd_lineage").fetchall()
         assert len(rows) == 1
