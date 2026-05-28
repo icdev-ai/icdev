@@ -206,6 +206,7 @@ def _build_prd(
     regulatory_items: list[dict],
     pain_points: list[dict],
     roadmap_title: str,
+    innovation_signals: list[dict] | None = None,
 ) -> str:
     label = phase.get("label", phase_id)
     opps = phase.get("opportunities", [])
@@ -240,21 +241,43 @@ def _build_prd(
         lines.append(f"\n**Project context:** {project_summary}")
     lines.append("")
 
+    if innovation_signals:
+        lines.append("## Innovation Signals")
+        for sig in innovation_signals:
+            score = float(sig.get("composite_score") or 0)
+            title = sig.get("title") or sig.get("source_type") or ""
+            desc  = (sig.get("description") or "")[:120]
+            mark  = " ✓" if sig.get("hitl_accepted") else ""
+            lines.append(f"- [{score:.2f}]{mark} **{title}**: {desc}")
+        lines.append("")
+
     if regulatory_items:
         lines.append("## Market & Regulatory Context")
         for r in regulatory_items:
-            reg = r.get("regulation_name", "")
-            dl = r.get("deadline", "")
-            req = r.get("requirements", "")[:120]
-            lines.append(f"- **{reg}** (deadline: {dl or 'TBD'}): {req}…")
+            reg  = r.get("regulation_name", "")
+            body = r.get("regulatory_body", "") or ""
+            dl   = r.get("deadline", "")
+            raw  = r.get("nist_controls", "") or ""
+            if isinstance(raw, str) and raw.startswith("["):
+                try:
+                    import json as _j
+                    raw = ", ".join(_j.loads(raw)[:5])
+                except Exception:
+                    pass
+            mark = " ✓" if r.get("hitl_accepted") else ""
+            lines.append(
+                f"- **{reg}**{mark}{' [' + body + ']' if body else ''} "
+                f"(deadline: {dl or 'TBD'}): NIST controls: {raw}"
+            )
         lines.append("")
 
     if pain_points:
         lines.append("## Customer Pain Points (Creative Engine)")
         for pp in pain_points:
-            score = pp.get("composite_score", 0)
-            desc = pp.get("description", "")[:120]
-            lines.append(f"- [{score:.2f}] {desc}")
+            score = float(pp.get("composite_score") or 0)
+            desc  = (pp.get("description") or "")[:120]
+            mark  = " ✓" if pp.get("hitl_accepted") else ""
+            lines.append(f"- [{score:.2f}]{mark} {desc}")
         lines.append("")
 
     lines.append("## Opportunities")
@@ -403,6 +426,30 @@ def api_send_to_kanban():
         phases  = _parse_phases(rm["phases"])
     finally:
         conn.close()
+
+    # PRD HITL gate: block send if PRD for this phase was rejected
+    if phase_id != "all":
+        try:
+            aac = _conn()
+            try:
+                prd_key = f"{roadmap_id}:{phase_id}"
+                row = aac.execute(
+                    "SELECT decision FROM aac_hitl_decisions "
+                    "WHERE source_type='prd' AND source_id=?",
+                    (prd_key,),
+                ).fetchone()
+                if row and row["decision"] == "reject":
+                    return jsonify({
+                        "error": (
+                            f"PRD for {phase_id} was rejected — "
+                            "update your HITL decision before sending to Kanban"
+                        ),
+                        "blocked": True,
+                    }), 403
+            finally:
+                aac.close()
+        except Exception:
+            pass
 
     # Filter to requested phase(s)
     target_phases = [
@@ -603,7 +650,30 @@ def api_generate_prd():
         finally:
             conn.close()
 
-    # Option B: Enrich with Research + Creative engine data (best-effort)
+    # Load HITL decisions from AAC canvas DB
+    hitl: dict[tuple, str] = {}
+    prd_key = f"{roadmap_id}:{phase_id}"
+    prd_hitl_decision: str | None = None
+    try:
+        aac = _conn()
+        try:
+            for row in aac.execute(
+                "SELECT source_type, source_id, decision FROM aac_hitl_decisions"
+            ).fetchall():
+                hitl[(row["source_type"], str(row["source_id"]))] = row["decision"]
+            prd_row = aac.execute(
+                "SELECT decision FROM aac_hitl_decisions WHERE source_type='prd' AND source_id=?",
+                (prd_key,),
+            ).fetchone()
+            if prd_row:
+                prd_hitl_decision = prd_row["decision"]
+        finally:
+            aac.close()
+    except Exception:
+        pass
+
+    # Enrich with Innovation + Research + Creative engine data (HITL-filtered, best-effort)
+    innovation_signals: list[dict] = []
     regulatory_items: list[dict] = []
     pain_points: list[dict] = []
     try:
@@ -612,20 +682,47 @@ def api_generate_prd():
         try:
             try:
                 rows = icdev.execute(
-                    "SELECT regulation_name, deadline, requirements FROM research_regulatory_map "
-                    "WHERE LOWER(requirements) LIKE '%ai%' OR LOWER(requirements) LIKE '%automat%' "
-                    "OR LOWER(requirements) LIKE '%threshold%' LIMIT 3"
+                    "SELECT id, source_type, title, description, composite_score "
+                    "FROM innovation_signals ORDER BY id DESC LIMIT 10"
                 ).fetchall()
-                regulatory_items = [dict(r) for r in rows]
+                for r in rows:
+                    if hitl.get(("innovation", str(r["id"]))) == "reject":
+                        continue
+                    item = dict(r)
+                    item["hitl_accepted"] = hitl.get(("innovation", str(r["id"]))) == "accept"
+                    innovation_signals.append(item)
+                    if len(innovation_signals) == 3:
+                        break
             except Exception:
                 pass
             try:
                 rows = icdev.execute(
-                    "SELECT description, composite_score FROM creative_pain_points "
-                    "WHERE category IN ('automation','integration','api') "
-                    "ORDER BY composite_score DESC LIMIT 3"
+                    "SELECT id, regulation_name, regulatory_body, deadline, nist_controls "
+                    "FROM research_regulatory_map LIMIT 10"
                 ).fetchall()
-                pain_points = [dict(r) for r in rows]
+                for r in rows:
+                    if hitl.get(("research", str(r["id"]))) == "reject":
+                        continue
+                    item = dict(r)
+                    item["hitl_accepted"] = hitl.get(("research", str(r["id"]))) == "accept"
+                    regulatory_items.append(item)
+                    if len(regulatory_items) == 3:
+                        break
+            except Exception:
+                pass
+            try:
+                rows = icdev.execute(
+                    "SELECT id, description, composite_score "
+                    "FROM creative_pain_points ORDER BY composite_score DESC LIMIT 10"
+                ).fetchall()
+                for r in rows:
+                    if hitl.get(("creative", str(r["id"]))) == "reject":
+                        continue
+                    item = dict(r)
+                    item["hitl_accepted"] = hitl.get(("creative", str(r["id"]))) == "accept"
+                    pain_points.append(item)
+                    if len(pain_points) == 3:
+                        break
             except Exception:
                 pass
         finally:
@@ -633,9 +730,157 @@ def api_generate_prd():
     except Exception:
         pass
 
-    prd = _build_prd(phase_id, target_phase, scan_dict, score_map,
-                     regulatory_items, pain_points, roadmap_title)
-    return jsonify({"prd": prd, "phase_id": phase_id, "roadmap_id": roadmap_id})
+    prd = _build_prd(
+        phase_id, target_phase, scan_dict, score_map,
+        regulatory_items, pain_points, roadmap_title, innovation_signals,
+    )
+    return jsonify({
+        "prd": prd,
+        "phase_id": phase_id,
+        "roadmap_id": roadmap_id,
+        "hitl_decision": prd_hitl_decision,
+    })
+
+
+@aac_bp.route("/api/intelligence-feed", methods=["GET"])
+def api_intelligence_feed():
+    """Return signals from Innovation, Creative, and Research engines with HITL state."""
+    result: dict = {"innovation": [], "creative": [], "research": []}
+
+    # Fetch HITL decisions from AAC canvas DB
+    decisions: dict = {}
+    try:
+        aac = _conn()
+        try:
+            for row in aac.execute(
+                "SELECT source_type, source_id, decision FROM aac_hitl_decisions"
+            ).fetchall():
+                decisions[f"{row['source_type']}:{row['source_id']}"] = row["decision"]
+        finally:
+            aac.close()
+    except Exception:
+        pass
+
+    # Fetch engine data from main ICDEV DB
+    try:
+        from tools.db.storage import get_connection as _icdev_conn
+        icdev = _icdev_conn()
+        try:
+            try:
+                rows = icdev.execute(
+                    "SELECT id, source_type, title, description, composite_score, source "
+                    "FROM innovation_signals ORDER BY id DESC LIMIT 3"
+                ).fetchall()
+                for r in rows:
+                    item = dict(r)
+                    item["hitl_decision"] = decisions.get(f"innovation:{r['id']}")
+                    result["innovation"].append(item)
+            except Exception:
+                pass
+            try:
+                rows = icdev.execute(
+                    "SELECT id, category, title, description, composite_score "
+                    "FROM creative_pain_points ORDER BY composite_score DESC LIMIT 3"
+                ).fetchall()
+                for r in rows:
+                    item = dict(r)
+                    item["hitl_decision"] = decisions.get(f"creative:{r['id']}")
+                    result["creative"].append(item)
+            except Exception:
+                pass
+            try:
+                rows = icdev.execute(
+                    "SELECT id, regulation_name, regulatory_body, deadline, "
+                    "nist_controls, gap_analysis "
+                    "FROM research_regulatory_map ORDER BY id DESC LIMIT 3"
+                ).fetchall()
+                for r in rows:
+                    item = dict(r)
+                    raw = item.get("nist_controls") or ""
+                    if isinstance(raw, str) and raw.startswith("["):
+                        try:
+                            parsed = json.loads(raw)
+                            raw = ", ".join(parsed[:5])
+                        except Exception:
+                            pass
+                    body = item.get("regulatory_body") or ""
+                    item["title"] = item.get("regulation_name") or ""
+                    item["description"] = (
+                        f"{body + ' — ' if body else ''}NIST: {raw}" if raw else body
+                    )
+                    item["hitl_decision"] = decisions.get(f"research:{r['id']}")
+                    result["research"].append(item)
+            except Exception:
+                pass
+        finally:
+            icdev.close()
+    except Exception:
+        pass
+
+    return jsonify(result)
+
+
+@aac_bp.route("/api/hitl-decision", methods=["POST"])
+def api_hitl_decision():
+    """Record an accept / reject / clear HITL decision for an engine signal or PRD."""
+    data = request.get_json(force=True, silent=True) or {}
+    source_type = (data.get("source_type") or "").strip()
+    source_id   = str(data.get("source_id") or "").strip()
+    decision    = (data.get("decision") or "").strip()
+    reason      = (data.get("reason") or "").strip() or None
+    phase_id    = (data.get("phase_id") or "").strip() or None
+
+    if source_type not in ("innovation", "creative", "research", "prd"):
+        return jsonify({"error": "invalid source_type"}), 400
+    if not source_id:
+        return jsonify({"error": "source_id required"}), 400
+    if decision not in ("accept", "reject", "clear"):
+        return jsonify({"error": "decision must be accept, reject, or clear"}), 400
+
+    conn = _conn()
+    try:
+        conn.execute(
+            "DELETE FROM aac_hitl_decisions WHERE source_type=? AND source_id=?",
+            (source_type, source_id),
+        )
+        if decision != "clear":
+            conn.execute(
+                "INSERT INTO aac_hitl_decisions "
+                "(source_type, source_id, phase_id, decision, reason) "
+                "VALUES (?,?,?,?,?)",
+                (source_type, source_id, phase_id, decision, reason),
+            )
+        conn.execute(
+            "INSERT INTO aac_audit_log (event_type, actor, detail) VALUES (?,?,?)",
+            (
+                "hitl_decision",
+                "user",
+                json.dumps({
+                    "source_type": source_type,
+                    "source_id": source_id,
+                    "decision": decision,
+                    "reason": reason,
+                }),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"status": "ok", "decision": decision})
+
+
+@aac_bp.route("/api/run-innovation", methods=["POST"])
+def api_run_innovation():
+    """Trigger the Innovation engine pipeline asynchronously."""
+    import threading
+    try:
+        from tools.innovation.pipeline import run_full_pipeline
+        t = threading.Thread(target=run_full_pipeline, daemon=True)
+        t.start()
+        return jsonify({"status": "started"})
+    except Exception as exc:
+        return jsonify({"status": "error", "detail": str(exc)}), 500
 
 
 @aac_bp.route("/api/iqe-query", methods=["POST"])
