@@ -82,6 +82,16 @@ _ML_NC_MODEL: str = str(_ml_nc_cfg.get("model", "claude-haiku-4-5-20251001"))
 _ML_NC_MAX_TOKENS: int = int(_ml_nc_cfg.get("max_tokens", 256))
 _ML_NC_CONTEXT_LINES: int = int(_ml_nc_cfg.get("context_lines", 5))
 
+_ml_rui_cfg: dict[str, Any] = _cfg.get("ml_regex_user_input", {})
+# Env var ICDEV_AAC_NLP_REGEX takes precedence over yaml config.
+_ML_RUI_ENABLED: bool = (
+    os.environ.get("ICDEV_AAC_NLP_REGEX", "").lower() in ("1", "true", "yes")
+    or bool(_ml_rui_cfg.get("enabled", False))
+)
+_ML_RUI_MODEL: str = str(_ml_rui_cfg.get("model", "claude-haiku-4-5-20251001"))
+_ML_RUI_MAX_TOKENS: int = int(_ml_rui_cfg.get("max_tokens", 256))
+_ML_RUI_CONTEXT_LINES: int = int(_ml_rui_cfg.get("context_lines", 5))
+
 _ML_NC_PROMPT = """\
 You are a code analyst evaluating whether a nested conditional block is a \
 strong candidate for replacement with an ML classifier.
@@ -100,6 +110,26 @@ Rate the AI augmentation potential:
 
 Respond with JSON only (no markdown):
 {{"label": "high", "score": 0.85, "rationale": "one sentence"}}"""
+
+_ML_RUI_PROMPT = """\
+You are a code analyst evaluating whether a regex-based user input pattern is a \
+strong candidate for replacement with an NLP or ML approach.
+
+Function : {function_name}
+Call     : {call}
+Snippet  :
+```python
+{snippet}
+```
+
+Classify the NLP extraction opportunity:
+- intent        — one of: validation, extraction, parsing, sanitization, unknown
+- nlp_candidate — e.g. "email classifier", "NER", "intent classifier", "none"
+- score         — 0.0–1.0 confidence that an NLP/ML approach adds value over regex
+- rationale     — one sentence
+
+Respond with JSON only (no markdown):
+{{"intent": "validation", "nlp_candidate": "email classifier", "score": 0.75, "rationale": "one sentence"}}"""
 
 # ── Language detection ────────────────────────────────────────────────────────
 
@@ -477,6 +507,11 @@ def _ast_detect_file(file_path: str) -> list[dict]:
     if _ML_NC_ENABLED:
         raw = _enrich_nested_conditionals_with_ml(raw, source_text.splitlines())
 
+    # Optional NLP enrichment: annotate regex_user_input hits with intent and
+    # NLP candidate classification when ICDEV_AAC_NLP_REGEX is set.
+    if _ML_RUI_ENABLED:
+        raw = _enrich_regex_user_input_with_nlp(raw, source_text.splitlines())
+
     # Inject language field for consistency with Semgrep output schema.
     for hit in raw:
         hit.setdefault("language", "python")
@@ -592,6 +627,107 @@ def _enrich_nested_conditionals_with_ml(
                 "ml_label": ml["label"],
                 "ml_score": ml["score"],
                 "ml_rationale": ml["rationale"],
+            }}}
+        enriched.append(p)
+    return enriched
+
+
+# ── NLP extractor for regex_user_input ───────────────────────────────────────
+
+_ML_RUI_VALID_INTENTS: frozenset[str] = frozenset(
+    {"validation", "extraction", "parsing", "sanitization", "unknown"}
+)
+
+
+def _classify_regex_nlp(
+    function_name: str,
+    call: str,
+    snippet: str,
+) -> dict[str, Any]:
+    """Call LLMRouter (claude-haiku) to classify a regex_user_input pattern.
+
+    Returns a dict with keys ``intent``, ``nlp_candidate``, ``score``, and
+    ``rationale``, or an empty dict if the API call fails or NLP is disabled.
+    """
+    try:
+        from tools.llm.provider import LLMRequest  # lazy import — optional dep
+        from tools.llm.router import LLMRouter
+    except ImportError:
+        return {}
+
+    try:
+        router = LLMRouter()
+        request = LLMRequest(
+            messages=[{
+                "role": "user",
+                "content": _ML_RUI_PROMPT.format(
+                    function_name=function_name or "<unknown>",
+                    call=call,
+                    snippet=snippet,
+                ),
+            }],
+            system_prompt=(
+                "You are a code analysis assistant. "
+                "Reply only with the JSON object specified — no prose."
+            ),
+            agent_id="regex-nlp-extractor",
+            classification="CUI",
+            max_tokens=_ML_RUI_MAX_TOKENS,
+            effort="low",
+            preferred_model=_ML_RUI_MODEL,
+        )
+        response = router.invoke("code_generation", request)
+        raw = re.sub(r"```(?:json)?|```", "", response.content or "").strip()
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        data: dict[str, Any] = json.loads(m.group(0)) if m else {}
+    except Exception:  # network error, parse error — degrade gracefully
+        return {}
+
+    intent = str(data.get("intent", "")).lower()
+    if intent not in _ML_RUI_VALID_INTENTS:
+        intent = "unknown"
+    return {
+        "intent": intent,
+        "nlp_candidate": str(data.get("nlp_candidate", "")),
+        "score": float(data.get("score", 0.0)),
+        "rationale": str(data.get("rationale", "")),
+    }
+
+
+def _enrich_regex_user_input_with_nlp(
+    patterns: list[dict],
+    source_lines: list[str],
+) -> list[dict]:
+    """Enrich ``regex_user_input`` hits with NLP classification metadata.
+
+    Non-regex_user_input patterns are returned unchanged.  When NLP
+    classification is disabled or fails, original pattern dicts are returned
+    without modification.
+    """
+    if not _ML_RUI_ENABLED:
+        return patterns
+
+    enriched: list[dict] = []
+    for p in patterns:
+        if p.get("pattern_type") != "regex_user_input":
+            enriched.append(p)
+            continue
+
+        start = max(0, p["line_start"] - 1 - _ML_RUI_CONTEXT_LINES)
+        end = min(len(source_lines), p["line_end"] + _ML_RUI_CONTEXT_LINES)
+        snippet = "\n".join(source_lines[start:end])
+
+        nlp = _classify_regex_nlp(
+            function_name=p.get("function_name", "<unknown>"),
+            call=p.get("pattern_detail", {}).get("call", ""),
+            snippet=snippet,
+        )
+        if nlp:
+            p = {**p, "pattern_detail": {**p["pattern_detail"], **{
+                "nlp_intent": nlp["intent"],
+                "nlp_candidate": nlp["nlp_candidate"],
+                "nlp_score": nlp["score"],
+                "nlp_rationale": nlp["rationale"],
             }}}
         enriched.append(p)
     return enriched
