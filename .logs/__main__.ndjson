@@ -868,3 +868,10 @@
 {"ts": "2026-05-28T20:30:07.284201+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1154: status=executing activated=0 completed=0 running=3", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-28T20:31:08.044797+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1155: status=executing activated=0 completed=0 running=3", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-28T20:32:08.879184+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1156: status=executing activated=0 completed=0 running=3", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-28T20:33:17.365341+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1157: idle (no due tasks)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-28T20:34:18.135974+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1158: status=executing activated=0 completed=0 running=2", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-28T20:35:18.960138+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1159: status=executing activated=0 completed=0 running=2", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-28T20:36:19.825636+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1160: status=executing activated=0 completed=0 running=2", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-28T20:37:20.523720+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1161: status=executing activated=0 completed=0 running=2", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-28T20:38:21.286258+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1162: status=executing activated=0 completed=0 running=2", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-28T20:43:21.305460+00:00", "level": "ERROR", "component": "__main__", "message": "Cycle 1163: HUNG for 240s \u2014 abandoning cycle and continuing. A stuck LLM/DB call is likely. Check orphaned threads.", "trace_id": null, "session_id": null, "extra": {}}
