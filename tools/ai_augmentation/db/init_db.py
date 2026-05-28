@@ -112,6 +112,17 @@ CREATE TABLE IF NOT EXISTS aac_audit_log (
     actor      TEXT NOT NULL DEFAULT 'system',
     detail     JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS aac_hitl_decisions (
+    id          SERIAL PRIMARY KEY,
+    source_type TEXT NOT NULL CHECK(source_type IN ('innovation','creative','research','prd')),
+    source_id   TEXT NOT NULL,
+    phase_id    TEXT,
+    decision    TEXT NOT NULL CHECK(decision IN ('accept','reject')),
+    reason      TEXT,
+    actor       TEXT NOT NULL DEFAULT 'user',
+    decided_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"""
 
 SCHEMA_PG = _SCHEMA_PG_PRE + ";\n" + _SCHEMA_PG_OPPS + ";\n" + _SCHEMA_PG_POST
