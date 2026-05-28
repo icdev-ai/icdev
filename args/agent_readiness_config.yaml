@@ -101,6 +101,13 @@ pillars:
       # A ratio below this is anomalously low for a project claiming reproducible builds.
       min_pin_ratio: 0.8
 
+  structure:
+    gitignore:
+      # Minimum number of lines a .gitignore must contain to be considered non-trivial.
+      # A .gitignore with fewer lines is anomalously sparse for a project claiming
+      # artifact/secret hygiene. Raise to 10+ for stricter gates; lower to 3 for minimal repos.
+      min_lines: 5
+
   il_classification:
     cui_file_headers:
       # Maximum number of Python source files sampled for CUI header detection.
