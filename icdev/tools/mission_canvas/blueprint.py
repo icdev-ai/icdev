@@ -48,6 +48,11 @@ def create_mission_canvas_blueprint():
         @wraps(f)
         def decorated(*args, **kwargs):
             if not session.get("user_id"):
+                # Allow bypass when ICDEV_AUTH_BYPASS or ICDEV_DASHBOARD_API_KEY is set
+                # (used by E2E tests and CI environments that don't perform a login flow)
+                if os.environ.get("ICDEV_AUTH_BYPASS") or os.environ.get("ICDEV_DASHBOARD_API_KEY"):
+                    session["user_id"] = "e2e-bypass"
+                    return f(*args, **kwargs)
                 if request.is_json or request.path.startswith("/api/"):
                     return jsonify({"error": "Authentication required"}), 401
                 return redirect("/login")

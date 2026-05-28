@@ -875,7 +875,7 @@ def api_run_innovation():
     """Trigger the Innovation engine pipeline asynchronously."""
     import threading
     try:
-        from tools.innovation.pipeline import run_full_pipeline
+        from tools.innovation.innovation_manager import run_full_pipeline
         t = threading.Thread(target=run_full_pipeline, daemon=True)
         t.start()
         return jsonify({"status": "started"})
