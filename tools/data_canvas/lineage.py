@@ -591,9 +591,9 @@ def record_external_fetch(
             "created_at": now,
         }
     except Exception as exc:  # noqa: BLE001
-        import logging
+        from tools.logging.icdev_logger import get_logger
 
-        logging.getLogger("data_canvas.lineage").warning(
+        get_logger("data_canvas.lineage").warning(
             "record_external_fetch failed for ext.%s.%s: %s", connector_name, table, exc
         )
         return None

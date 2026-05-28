@@ -856,3 +856,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Data Mesh | tools\data_canvas\data_mesh.py | Auto-registered: data_canvas/data_mesh.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Ext Databridge | tools\iqe\adapters\ext_databridge.py | Auto-registered: adapters/ext_databridge.py | --json | JSON |
