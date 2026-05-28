@@ -2,6 +2,7 @@
 """Pillar 6 — Configuration: CI/CD, dev environment, IaC, env var management."""
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 from functools import lru_cache
@@ -35,12 +36,41 @@ _DEFAULTS: dict[str, Any] = {
 }
 
 
+# Env var names that override YAML thresholds — useful in CI/CD and air-gap environments.
+# Set these without modifying files: ICDEV_CONFIG_MIN_CI_WORKFLOWS=2 pytest ...
+_ENV_OVERRIDES: dict[str, str] = {
+    "min_ci_workflows": "ICDEV_CONFIG_MIN_CI_WORKFLOWS",
+    "min_iac_files": "ICDEV_CONFIG_MIN_IAC_FILES",
+    "min_makefile_targets": "ICDEV_CONFIG_MIN_MAKEFILE_TARGETS",
+    "min_npm_scripts": "ICDEV_CONFIG_MIN_NPM_SCRIPTS",
+}
+
+
+def _apply_env_overrides(thresholds: dict[str, Any]) -> dict[str, Any]:
+    """Apply ICDEV_CONFIG_* environment variable overrides to loaded thresholds.
+
+    Env vars take highest priority (above YAML and _DEFAULTS) so that CI/CD
+    pipelines can tune anomaly-detection limits without touching config files.
+    """
+    result = dict(thresholds)
+    for key, env_var in _ENV_OVERRIDES.items():
+        raw = os.environ.get(env_var)
+        if raw is not None:
+            try:
+                result[key] = int(raw)
+            except ValueError:
+                pass  # ignore malformed env var, keep YAML/default value
+    return result
+
+
 @lru_cache(maxsize=1)
 def _load_thresholds() -> dict[str, Any]:
     """Load all configuration-pillar anomaly-detection thresholds from args/agent_readiness_config.yaml.
 
-    Falls back to hard-coded defaults if the config file is absent or malformed,
-    so the pillar degrades gracefully in air-gap or stripped environments.
+    Priority (highest to lowest):
+      1. ICDEV_CONFIG_* environment variables (CI/CD and air-gap overrides)
+      2. args/agent_readiness_config.yaml pillars.configuration section
+      3. _DEFAULTS fallback (graceful degradation when config is absent/malformed)
     """
     try:
         import yaml  # optional dep — present in all ICDEV environments
@@ -53,7 +83,7 @@ def _load_thresholds() -> dict[str, Any]:
         cd = cfg.get("cd_deployment", {})
         raw_keywords = cd.get("deploy_keywords", _DEFAULTS["deploy_keywords"])
         deploy_keywords = [str(k) for k in raw_keywords] if raw_keywords else list(_DEFAULTS["deploy_keywords"])
-        return {
+        thresholds = {
             "min_makefile_targets": int(tr.get("min_makefile_targets", _DEFAULTS["min_makefile_targets"])),
             "min_npm_scripts": int(tr.get("min_npm_scripts", _DEFAULTS["min_npm_scripts"])),
             "min_ci_workflows": int(ci.get("min_workflows", _DEFAULTS["min_ci_workflows"])),
@@ -61,7 +91,8 @@ def _load_thresholds() -> dict[str, Any]:
             "deploy_keywords": deploy_keywords,
         }
     except Exception:  # noqa: BLE001
-        return dict(_DEFAULTS)
+        thresholds = dict(_DEFAULTS)
+    return _apply_env_overrides(thresholds)
 
 
 def _check_ci_pipeline(repo: pathlib.Path) -> CriterionResult:
