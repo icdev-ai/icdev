@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -64,6 +65,35 @@ _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
 )
 _SEMGREP_TIMEOUT: int = int(_semgrep_cfg.get("timeout_seconds", 60))
 _SEMGREP_METRICS: str = str(_semgrep_cfg.get("metrics", "off"))
+
+_ml_nc_cfg: dict[str, Any] = _cfg.get("ml_nested_conditionals", {})
+# Env var ICDEV_AAC_ML_CLASSIFY takes precedence over yaml config.
+_ML_NC_ENABLED: bool = (
+    os.environ.get("ICDEV_AAC_ML_CLASSIFY", "").lower() in ("1", "true", "yes")
+    or bool(_ml_nc_cfg.get("enabled", False))
+)
+_ML_NC_MODEL: str = str(_ml_nc_cfg.get("model", "claude-haiku-4-5-20251001"))
+_ML_NC_MAX_TOKENS: int = int(_ml_nc_cfg.get("max_tokens", 256))
+_ML_NC_CONTEXT_LINES: int = int(_ml_nc_cfg.get("context_lines", 5))
+
+_ML_NC_PROMPT = """\
+You are a code analyst evaluating whether a nested conditional block is a \
+strong candidate for replacement with an ML classifier.
+
+Function  : {function_name}
+If-depth  : {depth}
+Snippet   :
+```python
+{snippet}
+```
+
+Rate the AI augmentation potential:
+- high   — encodes complex, data-driven business rules that an ML model could learn
+- medium — some potential but contains validation/structural logic that may not generalise
+- low    — guard clauses, error handling, or structural necessity
+
+Respond with JSON only (no markdown):
+{{"label": "high", "score": 0.85, "rationale": "one sentence"}}"""
 
 # ── Language detection ────────────────────────────────────────────────────────
 
@@ -369,6 +399,11 @@ def _ast_detect_file(file_path: str) -> list[dict]:
     raw.extend(_detect_keyword_list_search(file_path, tree, scope_map))
     raw.extend(_detect_large_rule_table(file_path, tree, scope_map))
 
+    # Optional ML enrichment: annotate nested_conditionals hits with a
+    # Claude Haiku classification score when ICDEV_AAC_ML_CLASSIFY is set.
+    if _ML_NC_ENABLED:
+        raw = _enrich_nested_conditionals_with_ml(raw, source_text.splitlines())
+
     # Inject language field for consistency with Semgrep output schema.
     for hit in raw:
         hit.setdefault("language", "python")
@@ -392,6 +427,101 @@ def _detect_via_ast_fallback(target_path: str) -> list[dict]:
     for cs_file in sorted(p.rglob("*.cs")):
         results.extend(_cs_detect_file(str(cs_file)))
     return results
+
+
+# ── ML classifier for nested_conditionals ────────────────────────────────────
+
+
+def _classify_nested_conditional_ml(
+    function_name: str,
+    depth: int,
+    snippet: str,
+) -> dict[str, Any]:
+    """Call LLMRouter (claude-haiku) to classify a nested conditional pattern.
+
+    Returns a dict with keys ``label``, ``score``, and ``rationale``, or an
+    empty dict if the API call fails or ML classification is disabled.
+    """
+    try:
+        from tools.llm.provider import LLMRequest  # lazy import — optional dep
+        from tools.llm.router import LLMRouter
+    except ImportError:
+        return {}
+
+    try:
+        router = LLMRouter()
+        request = LLMRequest(
+            messages=[{
+                "role": "user",
+                "content": _ML_NC_PROMPT.format(
+                    function_name=function_name or "<unknown>",
+                    depth=depth,
+                    snippet=snippet,
+                ),
+            }],
+            system_prompt=(
+                "You are a code analysis assistant. "
+                "Reply only with the JSON object specified — no prose."
+            ),
+            agent_id="nested-conditional-ml-classifier",
+            classification="CUI",
+            max_tokens=_ML_NC_MAX_TOKENS,
+            effort="low",
+            preferred_model=_ML_NC_MODEL,
+        )
+        response = router.invoke("code_generation", request)
+        raw = re.sub(r"```(?:json)?|```", "", response.content or "").strip()
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        data: dict[str, Any] = json.loads(m.group(0)) if m else {}
+    except Exception:  # network error, parse error — degrade gracefully
+        return {}
+
+    label = str(data.get("label", "")).lower()
+    if label not in ("high", "medium", "low"):
+        label = ""
+    return {
+        "label": label,
+        "score": float(data.get("score", 0.0)),
+        "rationale": str(data.get("rationale", "")),
+    }
+
+
+def _enrich_nested_conditionals_with_ml(
+    patterns: list[dict],
+    source_lines: list[str],
+) -> list[dict]:
+    """Enrich ``nested_conditionals`` hits with ML classification metadata.
+
+    Non-nested_conditionals patterns are returned unchanged.  When ML
+    classification is disabled or fails, the original pattern dicts are returned
+    without modification.
+    """
+    if not _ML_NC_ENABLED:
+        return patterns
+
+    enriched: list[dict] = []
+    for p in patterns:
+        if p.get("pattern_type") != "nested_conditionals":
+            enriched.append(p)
+            continue
+
+        start = max(0, p["line_start"] - 1 - _ML_NC_CONTEXT_LINES)
+        end = min(len(source_lines), p["line_end"] + _ML_NC_CONTEXT_LINES)
+        snippet = "\n".join(source_lines[start:end])
+
+        ml = _classify_nested_conditional_ml(
+            function_name=p.get("function_name", "<unknown>"),
+            depth=p.get("pattern_detail", {}).get("max_depth", 0),
+            snippet=snippet,
+        )
+        if ml:
+            p = {**p, "pattern_detail": {**p["pattern_detail"], **{
+                "ml_label": ml["label"],
+                "ml_score": ml["score"],
+                "ml_rationale": ml["rationale"],
+            }}}
+        enriched.append(p)
+    return enriched
 
 
 # ── AST pattern detectors ─────────────────────────────────────────────────────
