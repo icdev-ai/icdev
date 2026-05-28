@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body { margin: 0; background: white; }
+        #diagram { padding: 20px; }
+    </style>
+</head>
+<body>
+    <div id="diagram">
+        <pre class="mermaid">
+graph TB
+    subgraph OPS["Operators & Decision Makers"]
+        NETENG["Network Engineer"]
+        CISO["CISO / Comp Officer"]
+        PM["Program Manager"]
+        OPSENG["Ops / NOC Engineer"]
+    end
+
+    subgraph ACOIC["Autonomous Compliance & Ops Intelligence Canvas"]
+        direction TB
+        INGEST["Document Intelligence<br/>(RAG/KG Ingestion, Chunking,<br/>Versioned Storage)"]
+        DRIFT["Drift Detection Engine<br/>(Topology Diffs, Config Changes,<br/>Impact Scoring)"]
+        REGEN["Auto-Regeneration Layer<br/>(SOP/Runbook/SSP Rewrite,<br/>Human-in-the-Loop Approval)"]
+        COMP["RICOAS Compliance Bridge<br/>(NIST/FedRAMP Auto-Map,<br/>Control Re-Validation)"]
+        WARGAME["AI GameDay Validation<br/>(Scenario Injection, Runbook<br/>Accuracy Scoring, Gap Report)"]
+    end
+
+    subgraph SOURCES["Live Infrastructure Sources"]
+        FWD["Forward Network<br/>(Topology Exports)"]
+        GNS3["GNS3 / Lab Emulators"]
+        CSP["CSP Enclaves<br/>(AWS/Azure Config APIs)"]
+        NVD["NVD / CISA KEV / STIG"]
+    end
+
+    subgraph DOCS["Document Repositories"]
+        SHAREPOINT["SharePoint / Confluence<br/>(Legacy Static Docs)"]
+        SOP["SOP Library"]
+        RUNBOOK["Incident Runbooks"]
+        SSP["SSP Fragments & ATO Artifacts"]
+    end
+
+    NETENG -->|Design / What-If| INGEST
+    CISO -->|Review ATO Artifacts| COMP
+    PM -->|Approve Roadmap| REGEN
+    OPSENG -->|Drift Alert Triage| DRIFT
+
+    SHAREPOINT -->|Ingest / Chunk / Vectorize| INGEST
+    SOP --> INGEST
+    RUNBOOK --> INGEST
+    SSP --> INGEST
+
+    FWD -->|Topology Diff Feed| DRIFT
+    GNS3 -->|Lab State Changes| DRIFT
+    CSP -->|Config Drift Events| DRIFT
+    NVD -->|Control Updates| COMP
+
+    DRIFT -->|Impacted Documents| REGEN
+    INGEST -->|KG Context| REGEN
+    REGEN -->|Updated SOPs| SOP
+    REGEN -->|Updated Runbooks| RUNBOOK
+    REGEN -->|Updated SSP Fragments| SSP
+
+    REGEN -->|Control Delta| COMP
+    COMP -->|Compliance Score| CISO
+    WARGAME -->|Scenario Results| REGEN
+    WARGAME -->|Resilience Score| NETENG
+
+    DRIFT -->|Drift Alert| OPSENG
+    REGEN -->|Approval Queue| PM
+    INGEST -->|Document Freshness Dashboard| CISO
+        </pre>
+    </div>
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'default' });
+    </script>
+</body>
+</html>
