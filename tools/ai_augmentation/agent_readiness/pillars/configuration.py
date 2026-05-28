@@ -26,6 +26,11 @@ _DEFAULTS: dict[str, Any] = {
     # Values below these are anomalously low for a repo claiming CI/IaC readiness.
     "min_ci_workflows": 1,
     "min_iac_files": 1,
+    # Deployment keyword patterns for CD detection — configurable via agent_readiness_config.yaml.
+    "deploy_keywords": [
+        "deploy", "release", "publish",
+        r"push.*image", r"helm\s+upgrade", r"kubectl\s+apply",
+    ],
 }
 
 
@@ -44,11 +49,15 @@ def _load_thresholds() -> dict[str, int]:
         tr = cfg.get("task_runner", {})
         ci = cfg.get("ci_pipeline", {})
         iac = cfg.get("iac", {})
+        cd = cfg.get("cd_deployment", {})
+        raw_keywords = cd.get("deploy_keywords", _DEFAULTS["deploy_keywords"])
+        deploy_keywords = [str(k) for k in raw_keywords] if raw_keywords else list(_DEFAULTS["deploy_keywords"])
         return {
             "min_makefile_targets": int(tr.get("min_makefile_targets", _DEFAULTS["min_makefile_targets"])),
             "min_npm_scripts": int(tr.get("min_npm_scripts", _DEFAULTS["min_npm_scripts"])),
             "min_ci_workflows": int(ci.get("min_workflows", _DEFAULTS["min_ci_workflows"])),
             "min_iac_files": int(iac.get("min_files", _DEFAULTS["min_iac_files"])),
+            "deploy_keywords": deploy_keywords,
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
@@ -83,13 +92,15 @@ def _check_ci_pipeline(repo: pathlib.Path) -> CriterionResult:
 
 def _check_cd_deployment(repo: pathlib.Path) -> CriterionResult:
     cid = "cd-deployment"
+    thresholds = _load_thresholds()
+    keywords = thresholds.get("deploy_keywords", _DEFAULTS["deploy_keywords"])
+    deploy_patterns = r"\b(?:" + "|".join(keywords) + r")\b"
     # Look for deployment steps in CI
     ci_files = (
         _glob_files(repo, ".github/workflows/*.yml")
         + _glob_files(repo, ".github/workflows/*.yaml")
         + ([repo / ".gitlab-ci.yml"] if (repo / ".gitlab-ci.yml").exists() else [])
     )
-    deploy_patterns = r"\bdeploy\b|\brelease\b|\bpublish\b|\bpush.*image\b|\bhelm\s+upgrade\b|\bkubectl\s+apply\b"
     for f in ci_files:
         content = pathlib.Path(f).read_text(encoding="utf-8", errors="replace")
         if _search(content, deploy_patterns):
