@@ -296,6 +296,67 @@ class TestCheckCdDeployment:
 
 
 # ---------------------------------------------------------------------------
+# _apply_env_overrides — env var priority layer
+# ---------------------------------------------------------------------------
+
+class TestApplyEnvOverrides:
+    def test_env_var_overrides_min_ci_workflows(self, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_CI_WORKFLOWS", "5")
+        result = mod._apply_env_overrides({"min_ci_workflows": 1, "min_iac_files": 1, "min_makefile_targets": 3, "min_npm_scripts": 3})
+        assert result["min_ci_workflows"] == 5
+
+    def test_env_var_overrides_min_iac_files(self, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_IAC_FILES", "4")
+        result = mod._apply_env_overrides({"min_ci_workflows": 1, "min_iac_files": 1, "min_makefile_targets": 3, "min_npm_scripts": 3})
+        assert result["min_iac_files"] == 4
+
+    def test_env_var_overrides_min_makefile_targets(self, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_MAKEFILE_TARGETS", "10")
+        result = mod._apply_env_overrides({"min_ci_workflows": 1, "min_iac_files": 1, "min_makefile_targets": 3, "min_npm_scripts": 3})
+        assert result["min_makefile_targets"] == 10
+
+    def test_env_var_overrides_min_npm_scripts(self, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_NPM_SCRIPTS", "7")
+        result = mod._apply_env_overrides({"min_ci_workflows": 1, "min_iac_files": 1, "min_makefile_targets": 3, "min_npm_scripts": 3})
+        assert result["min_npm_scripts"] == 7
+
+    def test_malformed_env_var_is_ignored(self, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_CI_WORKFLOWS", "not-a-number")
+        result = mod._apply_env_overrides({"min_ci_workflows": 2, "min_iac_files": 1, "min_makefile_targets": 3, "min_npm_scripts": 3})
+        assert result["min_ci_workflows"] == 2  # original value preserved
+
+    def test_unset_env_vars_leave_values_unchanged(self, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.delenv("ICDEV_CONFIG_MIN_CI_WORKFLOWS", raising=False)
+        monkeypatch.delenv("ICDEV_CONFIG_MIN_IAC_FILES", raising=False)
+        monkeypatch.delenv("ICDEV_CONFIG_MIN_MAKEFILE_TARGETS", raising=False)
+        monkeypatch.delenv("ICDEV_CONFIG_MIN_NPM_SCRIPTS", raising=False)
+        base = {"min_ci_workflows": 1, "min_iac_files": 1, "min_makefile_targets": 3, "min_npm_scripts": 3}
+        result = mod._apply_env_overrides(base)
+        assert result == base
+
+    def test_env_var_takes_priority_over_yaml(self, tmp_path, monkeypatch):
+        """Env var must win over both YAML and _DEFAULTS."""
+        cfg = tmp_path / "agent_readiness_config.yaml"
+        cfg.write_text(
+            "pillars:\n  configuration:\n    ci_pipeline:\n      min_workflows: 2\n",
+            encoding="utf-8",
+        )
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_CI_WORKFLOWS", "9")
+        mod._load_thresholds.cache_clear()
+        result = mod._load_thresholds()
+        assert result["min_ci_workflows"] == 9
+        mod._load_thresholds.cache_clear()
+
+
+# ---------------------------------------------------------------------------
 # PILLAR integration — run all criteria
 # ---------------------------------------------------------------------------
 
