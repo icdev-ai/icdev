@@ -61,6 +61,8 @@ _AD_FALLBACK_TO_ALL: bool = bool(_threshold_ad_cfg.get("fallback_to_all", True))
 _AD_MIN_CONSTANT_MAGNITUDE: float = float(
     _threshold_ad_cfg.get("min_constant_magnitude", 1.0)
 )
+_AD_Q1_PERCENTILE: float = float(_threshold_ad_cfg.get("q1_percentile", 25.0))
+_AD_Q3_PERCENTILE: float = float(_threshold_ad_cfg.get("q3_percentile", 75.0))
 
 _semgrep_cfg: dict[str, Any] = _cfg.get("semgrep", {})
 _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
@@ -263,6 +265,18 @@ def _collect_all_numeric_thresholds(tree: ast.AST) -> list[float]:
     return values
 
 
+def _compute_percentile_bounds(sorted_pop: list[float], n: int) -> tuple[float, float, float]:
+    """Return (q1, q3, iqr) using _AD_Q1_PERCENTILE and _AD_Q3_PERCENTILE.
+
+    Default 25/75 reproduces the prior hardcoded Q1/Q3 (n//4, 3n//4) exactly.
+    """
+    q1_idx = max(0, min(n - 1, int(n * _AD_Q1_PERCENTILE / 100)))
+    q3_idx = max(0, min(n - 1, int(n * _AD_Q3_PERCENTILE / 100)))
+    q1 = sorted_pop[q1_idx]
+    q3 = sorted_pop[q3_idx]
+    return q1, q3, q3 - q1
+
+
 def _is_threshold_anomalous(value: float, population: list[float]) -> bool:
     """Return True if value is a statistical outlier in population.
 
@@ -281,9 +295,7 @@ def _is_threshold_anomalous(value: float, population: list[float]) -> bool:
             return True
 
     sorted_pop = sorted(population)
-    q1 = sorted_pop[n // 4]
-    q3 = sorted_pop[(3 * n) // 4]
-    iqr = q3 - q1
+    q1, q3, iqr = _compute_percentile_bounds(sorted_pop, n)
     if iqr > 0:
         lower = q1 - _AD_IQR_MULTIPLIER * iqr
         upper = q3 + _AD_IQR_MULTIPLIER * iqr
@@ -314,9 +326,7 @@ def _anomaly_score(value: float, population: list[float]) -> float:
         return z / _AD_Z_SCORE_THRESHOLD  # >= 1.0 when anomalous
 
     sorted_pop = sorted(population)
-    q1 = sorted_pop[n // 4]
-    q3 = sorted_pop[(3 * n) // 4]
-    iqr = q3 - q1
+    q1, q3, iqr = _compute_percentile_bounds(sorted_pop, n)
     if iqr > 0:
         lower = q1 - _AD_IQR_MULTIPLIER * iqr
         upper = q3 + _AD_IQR_MULTIPLIER * iqr

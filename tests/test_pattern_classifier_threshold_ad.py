@@ -433,3 +433,79 @@ class TestAnomalyScoresInDetail:
         ]
         assert hits
         assert "anomaly_score" in hits[0]["pattern_detail"]
+
+
+# ── _compute_percentile_bounds / configurable Q1-Q3 ──────────────────────────
+
+class TestConfigurablePercentileBounds:
+    """IQR bounds are driven by _AD_Q1_PERCENTILE / _AD_Q3_PERCENTILE."""
+
+    def _pop(self) -> list[float]:
+        return [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+
+    def test_default_25_75_flags_extreme_outlier(self, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 25.0)
+        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 75.0)
+        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
+        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 100.0)  # disable z-score path
+        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
+        assert pc._is_threshold_anomalous(100.0, self._pop()) is True
+
+    def test_wider_percentiles_expand_fence(self, monkeypatch):
+        # With Q1=10 and Q3=90, the IQR fence is wider: fewer values are flagged.
+        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 10.0)
+        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 90.0)
+        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
+        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 100.0)
+        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
+        # 100 is still clearly outside even a wide fence around [1-10]
+        assert pc._is_threshold_anomalous(100.0, self._pop()) is True
+        # A value just outside the 25/75 fence should be within the 10/90 fence
+        # Q1(10%)=1, Q3(90%)=9, IQR=8, lower=1-12=-11, upper=9+12=21 → 11 is inlier
+        assert pc._is_threshold_anomalous(11.0, self._pop()) is False
+
+    def test_narrower_percentiles_shrink_fence(self, monkeypatch):
+        # With Q1=40, Q3=60: IQR fence is [2.0, 10.0] for pop [1-10].
+        # With Q1=25, Q3=75: IQR fence is [-4.5, 15.5] for the same pop.
+        # 11.0 is outside the narrow (40/60) fence but inside the wide (25/75) fence.
+        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
+        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 100.0)  # disable z-score path
+        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
+
+        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 40.0)
+        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 60.0)
+        assert pc._is_threshold_anomalous(11.0, self._pop()) is True, "narrow fence should flag 11.0"
+
+        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 25.0)
+        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 75.0)
+        assert pc._is_threshold_anomalous(11.0, self._pop()) is False, "wide fence should not flag 11.0"
+
+    def test_compute_percentile_bounds_default_matches_legacy(self, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 25.0)
+        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 75.0)
+        n = 10
+        sorted_pop = sorted(self._pop())
+        q1, q3, iqr = pc._compute_percentile_bounds(sorted_pop, n)
+        # Legacy: q1=sorted[n//4]=sorted[2]=3, q3=sorted[(3*n)//4]=sorted[7]=8
+        assert q1 == sorted_pop[n // 4]
+        assert q3 == sorted_pop[(3 * n) // 4]
+        assert iqr == q3 - q1
+
+    def test_anomaly_score_consistent_with_configurable_percentiles(self, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 25.0)
+        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 75.0)
+        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
+        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
+        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
+        pop = self._pop()
+        for v in [2.0, 5.0, 9.0, 100.0]:
+            flagged = pc._is_threshold_anomalous(v, pop)
+            score = pc._anomaly_score(v, pop)
+            if flagged:
+                assert score >= 1.0, f"score {score} < 1.0 for flagged value {v}"
+            else:
+                assert score < 1.0, f"score {score} >= 1.0 for non-flagged value {v}"
