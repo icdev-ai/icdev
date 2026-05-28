@@ -10738,6 +10738,27 @@ def init_db(db_path=None):
     except Exception as _exc:
         print(f"Warning: workflow template seed skipped — {_exc}")
 
+    # Seed E2E demo session (ME conflict intelligence) — idempotent INSERT OR IGNORE
+    try:
+        _seed_conn = sqlite3.connect(str(path))
+        _seed_conn.execute(
+            "INSERT OR IGNORE INTO intake_sessions "
+            "(id, customer_name, customer_org, session_status, classification, context_summary) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "sess-9cc6891cb548",
+                "E2E Test User",
+                "ICDEV CI",
+                "active",
+                "CUI",
+                "{}",
+            ),
+        )
+        _seed_conn.commit()
+        _seed_conn.close()
+    except Exception as _exc:
+        print(f"Warning: demo session seed skipped — {_exc}")
+
     # Verify tables
     conn = sqlite3.connect(str(path))
     c = conn.cursor()
