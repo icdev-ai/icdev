@@ -106,12 +106,6 @@ if _CANVAS_KG_ENABLED:
     except ImportError:
         _HAS_CANVAS_KG = False
 
-# RAG-KG hybrid search blueprint (always enabled)
-try:
-    from tools.knowledge_graph.blueprint import rag_kg_api as _rag_kg_api  # noqa: E402
-    _HAS_RAG_KG_API = True
-except ImportError:
-    _HAS_RAG_KG_API = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded.
 # Opt-in: default is OFF. Operators set ICDEV_GOVCON_ENABLED=true to enable.
 # Air-gap installs (ICDEV_AIRGAP=true) force this off regardless so the
@@ -1624,14 +1618,6 @@ def create_app() -> Flask:
     def ndc_sops_page():
         return render_template("ndc_sops.html")
 
-    # ---- RAG-KG Hybrid Search Blueprint ----
-    if _HAS_RAG_KG_API:
-        try:
-            app.register_blueprint(_rag_kg_api, url_prefix="/api/rag-kg")
-            app.logger.info("RAG-KG hybrid search registered at /api/rag-kg")
-        except Exception as exc:
-            app.logger.warning("RAG-KG blueprint failed to register: %s", exc)
-
     # ---- Canvas Knowledge Graph Blueprint ----
     if _HAS_CANVAS_KG:
         try:
@@ -1801,14 +1787,6 @@ def create_app() -> Flask:
         app.logger.info("HITL Workflow API blueprint registered at /api/wf")
     except Exception as _exc:
         app.logger.warning("HITL Workflow API blueprint failed to register: %s", _exc)
-
-    # ---- AISG Setup Wizard Blueprint ----
-    try:
-        from tools.aisg.blueprint import bp as _aisg_bp
-        app.register_blueprint(_aisg_bp)
-        app.logger.info("AISG Wizard blueprint registered at /ai-wizard")
-    except Exception as _exc:
-        app.logger.warning("AISG Wizard blueprint failed to register: %s", _exc)
 
     # ---- Autonomous Coder Blueprint ----
     try:
