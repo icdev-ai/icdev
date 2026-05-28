@@ -19,7 +19,7 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
 # ---------------------------------------------------------------------------
 # Anomaly-detection threshold loader
 # ---------------------------------------------------------------------------
-_ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_config.yaml"
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 _DEFAULTS: dict[str, Any] = {
     "readme_min_content_length": 80,
     "inline_docs_sample_size": 20,
