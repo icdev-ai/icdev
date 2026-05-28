@@ -43,8 +43,10 @@ pillars:
 
   nist_controls:
     nlp_extractor:
-      # Enable Claude Haiku NLP extraction as a secondary pass when regex finds nothing.
-      # Set to false to run regex-only (no API calls, faster but less accurate for prose).
+      # Enable Claude Haiku NLP extraction as the PRIMARY detection method.
+      # When true and ANTHROPIC_API_KEY is set, NLP runs first on user-provided content;
+      # regex is used only as a fallback when NLP is unavailable.
+      # Set to false to run regex-only (no API calls, faster but misses natural-language prose).
       enabled: true
       # Model used for NLP extraction. claude-haiku-4-5-20251001 balances speed and accuracy.
       model: claude-haiku-4-5-20251001
@@ -55,6 +57,11 @@ pillars:
       confidence_threshold: 0.7
       # Characters of file content sampled per NLP call to control token cost.
       text_sample_chars: 2000
+      # Max Python source files checked with NLP as primary method.
+      # Increase for larger repos; keep low to limit API calls.
+      nlp_primary_scan_limit: 20
+      # Max documentation files checked with NLP as primary method.
+      nlp_primary_doc_scan_limit: 10
 
   stig_compliance:
     nlp_extractor:
