@@ -72,6 +72,8 @@ def _safe_fetch(connector_name: str, table: str, limit: int = _DEFAULT_LIMIT) ->
 
         data = resp.data or []
         rows = list(data) if isinstance(data, (list, tuple)) else []
+        if rows and not _apply_governance_gate(connector_name, table):
+            return []
         if rows:
             try:
                 _record_lineage(connector_name, table, len(rows))
@@ -92,6 +94,27 @@ def _record_lineage(connector_name: str, table: str, row_count: int) -> None:
         record_external_fetch(connector_name, table, row_count)
     except Exception as exc:  # noqa: BLE001
         _logger.debug("lineage record skipped for ext.%s.%s: %s", connector_name, table, exc)
+
+
+def _apply_governance_gate(connector_name: str, table: str) -> bool:
+    """Return True when the Data Mesh OPA governance gate allows the read.
+
+    Fail-open: any error in the gate itself is logged and the read proceeds.
+    """
+    try:
+        from tools.data_canvas.data_mesh.governance_engine import check_ext_access  # noqa: PLC0415
+
+        decision = check_ext_access(connector_name, table)
+        if not decision.get("allowed", True):
+            _logger.warning(
+                "ext.%s.%s: access DENIED by OPA governance gate — %s",
+                connector_name, table, decision.get("reason"),
+            )
+            return False
+        return True
+    except Exception as exc:  # noqa: BLE001
+        _logger.debug("governance gate skipped for ext.%s.%s: %s", connector_name, table, exc)
+        return True
 
 
 # ---------------------------------------------------------------------------

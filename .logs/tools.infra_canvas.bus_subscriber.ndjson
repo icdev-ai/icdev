@@ -147,3 +147,5 @@
 {"ts": "2026-05-28T02:13:28.772199+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-28T02:14:08.904328+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-28T02:18:39.510257+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-28T02:21:48.614050+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-28T02:22:16.119336+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
