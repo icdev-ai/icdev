@@ -1,0 +1,8 @@
+# IQE-EXT-009: Union ServiceNow incidents and Splunk alerts
+# Merges two external sources into a single result set for cross-system triage.
+# Use: unified SOC queue, cross-system correlation, escalation review.
+# Phase II — requires union() fan-out executor.
+
+foreach x in union("ext.servicenow.incidents", "ext.splunk.alerts")
+  where x.priority == "1"
+  select x.number, x.event_id, x.priority, x.urgency, x.hostname
