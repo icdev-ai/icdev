@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 from functools import lru_cache
 from typing import Any
 
@@ -107,7 +108,8 @@ def _check_cd_deployment(repo: pathlib.Path) -> CriterionResult:
             return CriterionResult(cid, True, f"Deployment step found in CI: {pathlib.Path(f).name}")
     if _exists(repo, "Makefile"):
         mk = _read(repo, "Makefile") or ""
-        if _search(mk, r"^deploy\b|^release\b", flags=0):
+        makefile_pattern = r"^(?:" + "|".join(re.escape(k) if not any(c in k for c in r".*+?[](){}^$|\\") else k for k in keywords) + r")\b"
+        if _search(mk, makefile_pattern, flags=0):
             return CriterionResult(cid, True, "Deploy target found in Makefile")
     return CriterionResult(cid, False, "No CD deployment step found.",
                            "Add a deployment step to your CI pipeline for automated releases.")
