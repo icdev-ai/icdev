@@ -50,6 +50,93 @@ CREATE TABLE IF NOT EXISTS studio_workflow_run_steps (
     finished_at TEXT,
     FOREIGN KEY (run_id) REFERENCES studio_workflow_runs(id)
 );
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'viewer',
+    classification TEXT DEFAULT 'CUI',
+    status TEXT DEFAULT 'active',
+    created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS groups (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    status TEXT DEFAULT 'active',
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS group_members (
+    group_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    added_by TEXT,
+    added_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS group_roles (
+    group_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    canvas_scope TEXT,
+    granted_by TEXT,
+    granted_at TEXT,
+    PRIMARY KEY (group_id, role, canvas_scope)
+);
+CREATE TABLE IF NOT EXISTS canvas_access_grants (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    principal_type TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    canvas_name TEXT NOT NULL,
+    access_level TEXT NOT NULL DEFAULT 'read',
+    granted_by TEXT NOT NULL,
+    granted_at TEXT NOT NULL,
+    expires_at TEXT,
+    revoked_at TEXT,
+    UNIQUE (tenant_id, principal_type, principal_id, canvas_name)
+);
+CREATE TABLE IF NOT EXISTS abac_decisions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    role TEXT,
+    tenant_id TEXT,
+    resource TEXT,
+    action TEXT,
+    policy_matched TEXT,
+    decision TEXT,
+    reason TEXT,
+    evaluated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_mfa (
+    user_id TEXT PRIMARY KEY,
+    secret TEXT NOT NULL,
+    backup_codes TEXT NOT NULL DEFAULT '[]',
+    enrolled_at TEXT NOT NULL,
+    last_used_at TEXT,
+    disabled_at TEXT,
+    disabled_by TEXT
+);
+CREATE TABLE IF NOT EXISTS mfa_attempts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    success INTEGER NOT NULL DEFAULT 0,
+    method TEXT NOT NULL DEFAULT 'totp',
+    ip_address TEXT,
+    attempted_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS audit_trail (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    user_id TEXT,
+    action TEXT NOT NULL,
+    resource TEXT,
+    details TEXT,
+    classification TEXT DEFAULT 'CUI',
+    recorded_at TEXT NOT NULL
+);
 """
 
 
