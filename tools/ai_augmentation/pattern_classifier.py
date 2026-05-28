@@ -63,6 +63,7 @@ _AD_MIN_CONSTANT_MAGNITUDE: float = float(
 )
 _AD_Q1_PERCENTILE: float = float(_threshold_ad_cfg.get("q1_percentile", 25.0))
 _AD_Q3_PERCENTILE: float = float(_threshold_ad_cfg.get("q3_percentile", 75.0))
+_AD_PERCENTILE_SCALE: float = float(_threshold_ad_cfg.get("percentile_scale", 100.0))
 
 _semgrep_cfg: dict[str, Any] = _cfg.get("semgrep", {})
 _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
@@ -270,8 +271,8 @@ def _compute_percentile_bounds(sorted_pop: list[float], n: int) -> tuple[float, 
 
     Default 25/75 reproduces the prior hardcoded Q1/Q3 (n//4, 3n//4) exactly.
     """
-    q1_idx = max(0, min(n - 1, int(n * _AD_Q1_PERCENTILE / 100)))
-    q3_idx = max(0, min(n - 1, int(n * _AD_Q3_PERCENTILE / 100)))
+    q1_idx = max(0, min(n - 1, int(n * _AD_Q1_PERCENTILE / _AD_PERCENTILE_SCALE)))
+    q3_idx = max(0, min(n - 1, int(n * _AD_Q3_PERCENTILE / _AD_PERCENTILE_SCALE)))
     q1 = sorted_pop[q1_idx]
     q3 = sorted_pop[q3_idx]
     return q1, q3, q3 - q1

@@ -509,3 +509,20 @@ class TestConfigurablePercentileBounds:
                 assert score >= 1.0, f"score {score} < 1.0 for flagged value {v}"
             else:
                 assert score < 1.0, f"score {score} >= 1.0 for non-flagged value {v}"
+
+    def test_percentile_scale_fraction_mode(self, monkeypatch):
+        # percentile_scale=1.0 lets q1/q3 be expressed as fractions (0.25, 0.75)
+        # and should produce the same index results as percentage mode (25, 75) / 100.
+        monkeypatch.setattr(pc, "_AD_PERCENTILE_SCALE", 1.0)
+        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 0.25)
+        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 0.75)
+        n = 10
+        sorted_pop = sorted(self._pop())
+        q1, q3, iqr = pc._compute_percentile_bounds(sorted_pop, n)
+        assert q1 == sorted_pop[n // 4]
+        assert q3 == sorted_pop[(3 * n) // 4]
+        assert iqr == q3 - q1
+
+    def test_percentile_scale_default_100_loads_from_config(self):
+        # Default config has percentile_scale: 100 — verify module-level constant.
+        assert pc._AD_PERCENTILE_SCALE == 100.0
