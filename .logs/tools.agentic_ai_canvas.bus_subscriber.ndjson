@@ -1,1 +1,1 @@
-{"ts": "2026-05-26T20:34:22.925025+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.bus_subscriber", "message": "aadc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-28T14:40:23.076731+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.bus_subscriber", "message": "aadc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}

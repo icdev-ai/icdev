@@ -34,3 +34,4 @@
 {"ts": "2026-05-28T02:18:56.425419+00:00", "level": "WARNING", "component": "tools.kanban.state_machine", "message": "backfill_auto_close pass-1 failed: near \"%\": syntax error", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-28T03:11:43.537621+00:00", "level": "WARNING", "component": "tools.kanban.state_machine", "message": "backfill_auto_close pass-1 failed: near \"%\": syntax error", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-28T03:11:59.021759+00:00", "level": "WARNING", "component": "tools.kanban.state_machine", "message": "backfill_auto_close pass-1 failed: near \"%\": syntax error", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-28T08:47:26.144267+00:00", "level": "WARNING", "component": "tools.kanban.state_machine", "message": "backfill_auto_close pass-1 failed: near \"%\": syntax error", "trace_id": null, "session_id": null, "extra": {}}
