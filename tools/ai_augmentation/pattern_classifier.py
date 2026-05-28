@@ -236,6 +236,10 @@ _CRON_DEC_KEYWORDS: frozenset[str] = frozenset(
 )
 _THRESHOLD_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
 
+# Compiled pattern for extracting numeric literals from source lines (used by
+# C# and Java regex fallback paths to build the anomaly-detection population).
+_RE_NUMERIC_LITERAL: re.Pattern = re.compile(r'\b\d+(?:\.\d+)?\b')
+
 
 # ── Anomaly detection for hardcoded thresholds ────────────────────────────────
 
@@ -284,6 +288,26 @@ def _is_threshold_anomalous(value: float, population: list[float]) -> bool:
             return True
 
     return False
+
+
+def _collect_numeric_from_lines(lines: list[str]) -> list[float]:
+    """Collect all numeric literals from source lines for anomaly detection.
+
+    Used by the C# and Java regex-fallback paths to build the population that
+    ``_is_threshold_anomalous`` needs to decide whether a given constant is an
+    outlier.  Comment lines are skipped so doc-strings don't skew the sample.
+    """
+    values: list[float] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(("//", "*", "#")):
+            continue
+        for m in _RE_NUMERIC_LITERAL.finditer(line):
+            try:
+                values.append(float(m.group()))
+            except ValueError:
+                pass
+    return values
 
 
 def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
@@ -838,6 +862,7 @@ _CS_METHOD_NODE_TYPES: frozenset[str] = frozenset({
     "local_function_statement",
     "lambda_expression",
 })
+_CS_CMP_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">=", "==", "!="})
 
 _CS_REGEX_METHODS: frozenset[str] = frozenset({
     "Match", "IsMatch", "Replace", "Split", "Matches", "Escape",
@@ -1059,9 +1084,28 @@ def _cs_detect_scheduled_cron_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     return results
 
 
+def _cs_collect_all_numeric_thresholds_ts(root: Any, src: bytes) -> list[float]:
+    """Collect every numeric literal from a C# tree-sitter tree."""
+    values: list[float] = []
+    stack: list[Any] = [root]
+    while stack:
+        node = stack.pop()
+        if node.type in ("integer_literal", "real_literal"):
+            text = src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+            try:
+                values.append(float(text.rstrip("fFdDmMuUlL")))
+            except ValueError:
+                pass
+        for child in node.children:
+            stack.append(child)
+    return values
+
+
 def _cs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     results: list[dict] = []
-    _CMP_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">=", "==", "!="})
+    population: list[float] = (
+        _cs_collect_all_numeric_thresholds_ts(root, src) if _AD_ENABLED else []
+    )
     for node, _, scope in _cs_walk_scoped(root, src):
         if node.type != "binary_expression":
             continue
@@ -1071,7 +1115,7 @@ def _cs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[di
                 text = src[child.start_byte:child.end_byte].decode(
                     "utf-8", errors="replace"
                 ).strip()
-                if text in _CMP_OPS:
+                if text in _CS_CMP_OPS:
                     op_token = text
                     break
         if not op_token:
@@ -1082,15 +1126,31 @@ def _cs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[di
             for c in named_parts
             if c.type in ("integer_literal", "real_literal")
         ]
-        if numeric_literals:
-            results.append({
-                "pattern_type": "hardcoded_threshold",
-                "module_path": fp,
-                "function_name": scope,
-                "line_start": node.start_point[0] + 1,
-                "line_end": node.end_point[0] + 1,
-                "pattern_detail": {"kind": "binary_expression", "constants": numeric_literals},
-            })
+        if not numeric_literals:
+            continue
+        if _AD_ENABLED:
+            numeric_floats: list[float] = []
+            for lit in numeric_literals:
+                try:
+                    numeric_floats.append(float(lit.rstrip("fFdDmMuUlL")))
+                except ValueError:
+                    pass
+            if numeric_floats and not any(
+                _is_threshold_anomalous(v, population) for v in numeric_floats
+            ):
+                continue
+        results.append({
+            "pattern_type": "hardcoded_threshold",
+            "module_path": fp,
+            "function_name": scope,
+            "line_start": node.start_point[0] + 1,
+            "line_end": node.end_point[0] + 1,
+            "pattern_detail": {
+                "kind": "binary_expression",
+                "constants": numeric_literals,
+                "anomaly_detected": _AD_ENABLED,
+            },
+        })
     return results
 
 
@@ -1272,6 +1332,7 @@ def _cs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
     """Regex-based C# pattern detection when tree-sitter-languages is unavailable."""
     results: list[dict] = []
     lines = source_text.splitlines()
+    population: list[float] = _collect_numeric_from_lines(lines) if _AD_ENABLED else []
 
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
@@ -1335,14 +1396,23 @@ def _cs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
         m = _CS_RE_THRESHOLD.search(line)
         if m:
             const = m.group(1) or m.group(2) or "?"
-            results.append({
-                "pattern_type": "hardcoded_threshold",
-                "module_path": file_path,
-                "function_name": "<unknown>",
-                "line_start": i,
-                "line_end": i,
-                "pattern_detail": {"kind": "binary_expression", "constants": [const]},
-            })
+            try:
+                const_float: float | None = float(const)
+            except ValueError:
+                const_float = None
+            if not _AD_ENABLED or const_float is None or _is_threshold_anomalous(const_float, population):
+                results.append({
+                    "pattern_type": "hardcoded_threshold",
+                    "module_path": file_path,
+                    "function_name": "<unknown>",
+                    "line_start": i,
+                    "line_end": i,
+                    "pattern_detail": {
+                        "kind": "binary_expression",
+                        "constants": [const],
+                        "anomaly_detected": _AD_ENABLED,
+                    },
+                })
 
         # keyword_list_search
         if _CS_RE_CONTAINS.search(line):
@@ -1487,6 +1557,7 @@ def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
     """Regex-based Java pattern detection for all 8 AAC pattern types."""
     results: list[dict] = []
     lines = source_text.splitlines()
+    population: list[float] = _collect_numeric_from_lines(lines) if _AD_ENABLED else []
 
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
@@ -1554,6 +1625,7 @@ def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
         # hardcoded_threshold — PageRequest literal or static int constant
         m = _JAVA_RE_PAGEREQUEST.search(line)
         if m:
+            # PageRequest page-size is always a business threshold — always flag.
             results.append({
                 "pattern_type": "hardcoded_threshold",
                 "module_path": file_path,
@@ -1564,13 +1636,19 @@ def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
         else:
             m = _JAVA_RE_STATIC_INT.search(line)
             if m and int(m.group(1)) > 0:
-                results.append({
-                    "pattern_type": "hardcoded_threshold",
-                    "module_path": file_path,
-                    "function_name": "<unknown>",
-                    "line_start": i, "line_end": i,
-                    "pattern_detail": {"kind": "static_int_const", "value": int(m.group(1))},
-                })
+                val = int(m.group(1))
+                if not _AD_ENABLED or _is_threshold_anomalous(float(val), population):
+                    results.append({
+                        "pattern_type": "hardcoded_threshold",
+                        "module_path": file_path,
+                        "function_name": "<unknown>",
+                        "line_start": i, "line_end": i,
+                        "pattern_detail": {
+                            "kind": "static_int_const",
+                            "value": val,
+                            "anomaly_detected": _AD_ENABLED,
+                        },
+                    })
 
         # keyword_list_search — Spring Data method or manual equalsIgnoreCase loop
         m = _JAVA_RE_FINDBY_KEYWORD.search(line)
