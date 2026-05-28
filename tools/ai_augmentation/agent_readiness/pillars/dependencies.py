@@ -141,7 +141,7 @@ PILLAR = Pillar(
     description="Lock files, freshness, pinned versions, and SBOM generation.",
     criteria=[
         Criterion("lock-file", "Lock file present", "A dependency lock file is committed.", "dependencies", 1, _check_lock_file),
-        Criterion("lock-file-freshness", "Lock file freshness", f"The lock file was updated within the configured freshness window.", "dependencies", 3, _check_lock_file_freshness),
+        Criterion("lock-file-freshness", "Lock file freshness", "The lock file was updated within the configured freshness window.", "dependencies", 3, _check_lock_file_freshness),
         Criterion("pinned-versions", "Pinned versions", "Dependency versions are pinned for reproducibility.", "dependencies", 2, _check_pinned_versions),
         Criterion("sbom-present", "SBOM present", "A Software Bill of Materials (SBOM) is generated.", "dependencies", 4, _check_sbom),
     ],
