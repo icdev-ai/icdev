@@ -58,6 +58,9 @@ _AD_Z_SCORE_THRESHOLD: float = float(_threshold_ad_cfg.get("z_score_threshold", 
 _AD_IQR_MULTIPLIER: float = float(_threshold_ad_cfg.get("iqr_multiplier", 1.5))
 _AD_MIN_SAMPLE_SIZE: int = int(_threshold_ad_cfg.get("min_sample_size", 5))
 _AD_FALLBACK_TO_ALL: bool = bool(_threshold_ad_cfg.get("fallback_to_all", True))
+_AD_MIN_CONSTANT_MAGNITUDE: float = float(
+    _threshold_ad_cfg.get("min_constant_magnitude", 1.0)
+)
 
 _semgrep_cfg: dict[str, Any] = _cfg.get("semgrep", {})
 _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
@@ -288,6 +291,41 @@ def _is_threshold_anomalous(value: float, population: list[float]) -> bool:
             return True
 
     return False
+
+
+def _anomaly_score(value: float, population: list[float]) -> float:
+    """Return a continuous anomaly score for *value* within *population*.
+
+    0.0 = value is within the normal range.
+    1.0 = value is exactly at the anomaly threshold.
+    >1.0 = value is anomalous (corresponds to _is_threshold_anomalous → True).
+
+    Uses the same z-score / IQR logic as _is_threshold_anomalous so the two
+    functions always agree on the anomaly boundary.
+    """
+    n = len(population)
+    if n < _AD_MIN_SAMPLE_SIZE:
+        return 1.0 if _AD_FALLBACK_TO_ALL else 0.0
+
+    mean = sum(population) / n
+    variance = sum((x - mean) ** 2 for x in population) / n
+    if variance > 0:
+        z = abs(value - mean) / (variance ** 0.5)
+        return z / _AD_Z_SCORE_THRESHOLD  # >= 1.0 when anomalous
+
+    sorted_pop = sorted(population)
+    q1 = sorted_pop[n // 4]
+    q3 = sorted_pop[(3 * n) // 4]
+    iqr = q3 - q1
+    if iqr > 0:
+        lower = q1 - _AD_IQR_MULTIPLIER * iqr
+        upper = q3 + _AD_IQR_MULTIPLIER * iqr
+        if value < lower:
+            return (lower - value) / (_AD_IQR_MULTIPLIER * iqr) + 1.0
+        if value > upper:
+            return (value - upper) / (_AD_IQR_MULTIPLIER * iqr) + 1.0
+
+    return 0.0
 
 
 def _collect_numeric_from_lines(lines: list[str]) -> list[float]:
@@ -709,21 +747,35 @@ def _detect_hardcoded_threshold(
             ]
             if not numeric_consts:
                 continue
+            # When AD is on, skip trivially small constants (zero/one boundary checks).
+            flaggable = (
+                [v for v in numeric_consts if abs(float(v)) > _AD_MIN_CONSTANT_MAGNITUDE]
+                if _AD_ENABLED else numeric_consts
+            )
+            if not flaggable:
+                continue
             if _AD_ENABLED and not any(
-                _is_threshold_anomalous(float(v), population) for v in numeric_consts
+                _is_threshold_anomalous(float(v), population) for v in flaggable
             ):
                 continue
+            scores = (
+                {str(v): round(_anomaly_score(float(v), population), 3) for v in flaggable}
+                if _AD_ENABLED else {}
+            )
+            detail: dict[str, Any] = {
+                "kind": "compare",
+                "constants": numeric_consts,
+                "anomaly_detected": _AD_ENABLED,
+            }
+            if scores:
+                detail["anomaly_scores"] = scores
             results.append({
                 "pattern_type": "hardcoded_threshold",
                 "module_path": file_path,
                 "function_name": scope_map.get(id(node), "<module>"),
                 "line_start": node.lineno,
                 "line_end": node.end_lineno,
-                "pattern_detail": {
-                    "kind": "compare",
-                    "constants": numeric_consts,
-                    "anomaly_detected": _AD_ENABLED,
-                },
+                "pattern_detail": detail,
             })
         elif isinstance(node, ast.BinOp):
             left_const = (
@@ -737,20 +789,26 @@ def _detect_hardcoded_threshold(
             if not (left_const or right_const):
                 continue
             const_val = node.left.value if left_const else node.right.value  # type: ignore[union-attr]
+            if _AD_ENABLED and abs(float(const_val)) <= _AD_MIN_CONSTANT_MAGNITUDE:
+                continue
             if _AD_ENABLED and not _is_threshold_anomalous(float(const_val), population):
                 continue
+            binop_score = _anomaly_score(float(const_val), population) if _AD_ENABLED else 0.0
+            binop_detail: dict[str, Any] = {
+                "kind": "binop",
+                "op": type(node.op).__name__,
+                "constants": [const_val],
+                "anomaly_detected": _AD_ENABLED,
+            }
+            if _AD_ENABLED:
+                binop_detail["anomaly_score"] = round(binop_score, 3)
             results.append({
                 "pattern_type": "hardcoded_threshold",
                 "module_path": file_path,
                 "function_name": scope_map.get(id(node), "<module>"),
                 "line_start": node.lineno,
                 "line_end": node.end_lineno,
-                "pattern_detail": {
-                    "kind": "binop",
-                    "op": type(node.op).__name__,
-                    "constants": [const_val],
-                    "anomaly_detected": _AD_ENABLED,
-                },
+                "pattern_detail": binop_detail,
             })
     return results
 
@@ -1128,6 +1186,7 @@ def _cs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[di
         ]
         if not numeric_literals:
             continue
+        cs_scores: dict[str, float] = {}
         if _AD_ENABLED:
             numeric_floats: list[float] = []
             for lit in numeric_literals:
@@ -1135,21 +1194,26 @@ def _cs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[di
                     numeric_floats.append(float(lit.rstrip("fFdDmMuUlL")))
                 except ValueError:
                     pass
-            if numeric_floats and not any(
-                _is_threshold_anomalous(v, population) for v in numeric_floats
+            flaggable_floats = [v for v in numeric_floats if abs(v) > _AD_MIN_CONSTANT_MAGNITUDE]
+            if not flaggable_floats or not any(
+                _is_threshold_anomalous(v, population) for v in flaggable_floats
             ):
                 continue
+            cs_scores = {str(v): round(_anomaly_score(v, population), 3) for v in flaggable_floats}
+        cs_detail: dict[str, Any] = {
+            "kind": "binary_expression",
+            "constants": numeric_literals,
+            "anomaly_detected": _AD_ENABLED,
+        }
+        if cs_scores:
+            cs_detail["anomaly_scores"] = cs_scores
         results.append({
             "pattern_type": "hardcoded_threshold",
             "module_path": fp,
             "function_name": scope,
             "line_start": node.start_point[0] + 1,
             "line_end": node.end_point[0] + 1,
-            "pattern_detail": {
-                "kind": "binary_expression",
-                "constants": numeric_literals,
-                "anomaly_detected": _AD_ENABLED,
-            },
+            "pattern_detail": cs_detail,
         })
     return results
 
@@ -1400,18 +1464,31 @@ def _cs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
                 const_float: float | None = float(const)
             except ValueError:
                 const_float = None
-            if not _AD_ENABLED or const_float is None or _is_threshold_anomalous(const_float, population):
+            cs_rx_should_flag = (
+                not _AD_ENABLED
+                or const_float is None
+                or (abs(const_float) > _AD_MIN_CONSTANT_MAGNITUDE
+                    and _is_threshold_anomalous(const_float, population))
+            )
+            if cs_rx_should_flag:
+                cs_rx_score = (
+                    _anomaly_score(const_float, population)
+                    if _AD_ENABLED and const_float is not None else 0.0
+                )
+                cs_rx_detail: dict[str, Any] = {
+                    "kind": "binary_expression",
+                    "constants": [const],
+                    "anomaly_detected": _AD_ENABLED,
+                }
+                if _AD_ENABLED and const_float is not None:
+                    cs_rx_detail["anomaly_score"] = round(cs_rx_score, 3)
                 results.append({
                     "pattern_type": "hardcoded_threshold",
                     "module_path": file_path,
                     "function_name": "<unknown>",
                     "line_start": i,
                     "line_end": i,
-                    "pattern_detail": {
-                        "kind": "binary_expression",
-                        "constants": [const],
-                        "anomaly_detected": _AD_ENABLED,
-                    },
+                    "pattern_detail": cs_rx_detail,
                 })
 
         # keyword_list_search
@@ -1637,17 +1714,28 @@ def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
             m = _JAVA_RE_STATIC_INT.search(line)
             if m and int(m.group(1)) > 0:
                 val = int(m.group(1))
-                if not _AD_ENABLED or _is_threshold_anomalous(float(val), population):
+                java_should_flag = (
+                    not _AD_ENABLED
+                    or (abs(float(val)) > _AD_MIN_CONSTANT_MAGNITUDE
+                        and _is_threshold_anomalous(float(val), population))
+                )
+                if java_should_flag:
+                    java_score = (
+                        _anomaly_score(float(val), population) if _AD_ENABLED else 0.0
+                    )
+                    java_detail: dict[str, Any] = {
+                        "kind": "static_int_const",
+                        "value": val,
+                        "anomaly_detected": _AD_ENABLED,
+                    }
+                    if _AD_ENABLED:
+                        java_detail["anomaly_score"] = round(java_score, 3)
                     results.append({
                         "pattern_type": "hardcoded_threshold",
                         "module_path": file_path,
                         "function_name": "<unknown>",
                         "line_start": i, "line_end": i,
-                        "pattern_detail": {
-                            "kind": "static_int_const",
-                            "value": val,
-                            "anomaly_detected": _AD_ENABLED,
-                        },
+                        "pattern_detail": java_detail,
                     })
 
         # keyword_list_search — Spring Data method or manual equalsIgnoreCase loop

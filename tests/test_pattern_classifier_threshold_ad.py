@@ -271,3 +271,165 @@ class TestJavaDetectViaRegexThresholdAD:
             and h["pattern_detail"]["kind"] == "static_int_const"
         ]
         assert all(h["pattern_detail"].get("anomaly_detected") is True for h in hits)
+
+
+# ── _anomaly_score ────────────────────────────────────────────────────────────
+
+class TestAnomalyScore:
+    def test_small_population_fallback_true_returns_one(self, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
+        assert pc._anomaly_score(42.0, [1.0, 2.0]) == 1.0
+
+    def test_small_population_fallback_false_returns_zero(self, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
+        assert pc._anomaly_score(42.0, [1.0, 2.0]) == 0.0
+
+    def test_outlier_score_exceeds_one(self, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
+        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
+        pop = [1.0, 2.0, 1.5, 1.0, 2.0, 1.0, 2.0]
+        score = pc._anomaly_score(1000.0, pop)
+        assert score > 1.0
+
+    def test_inlier_score_below_one(self, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
+        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
+        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
+        pop = [1.0, 2.0, 1.5, 1.0, 2.0, 1.0, 2.0]
+        score = pc._anomaly_score(1.5, pop)
+        assert score < 1.0
+
+    def test_score_consistent_with_is_threshold_anomalous(self, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
+        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
+        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
+        pop = [1.0, 2.0, 1.5, 1.0, 2.0, 1.0, 2.0]
+        for v in [1.0, 1.5, 2.0, 1000.0]:
+            flagged = pc._is_threshold_anomalous(v, pop)
+            score = pc._anomaly_score(v, pop)
+            if flagged:
+                assert score >= 1.0, f"score {score} < 1.0 for flagged value {v}"
+            else:
+                assert score < 1.0, f"score {score} >= 1.0 for non-flagged value {v}"
+
+    def test_zero_variance_iqr_fallback(self, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
+        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
+        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
+        # Identical population → zero variance and zero IQR → score = 0
+        pop = [5.0] * 10
+        assert pc._anomaly_score(5.0, pop) == 0.0
+
+
+# ── min_constant_magnitude filter ────────────────────────────────────────────
+
+class TestMagnitudeFilter:
+    """AD-enabled detection skips constants with |value| <= _AD_MIN_CONSTANT_MAGNITUDE."""
+
+    def test_zero_constant_skipped_when_ad_enabled(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_ENABLED", True)
+        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
+        source = "if x > 0:\n    pass\n"
+        f = tmp_path / "s.py"
+        f.write_text(source, encoding="utf-8")
+        import ast as _ast
+        tree = _ast.parse(source)
+        scope_map = pc._build_scope_map(tree)
+        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
+        assert hits == [], "zero-boundary check should be filtered"
+
+    def test_one_constant_skipped_when_ad_enabled(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_ENABLED", True)
+        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
+        source = "if n < 1:\n    pass\n"
+        f = tmp_path / "s.py"
+        f.write_text(source, encoding="utf-8")
+        import ast as _ast
+        tree = _ast.parse(source)
+        scope_map = pc._build_scope_map(tree)
+        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
+        assert hits == [], "magnitude-1 boundary check should be filtered"
+
+    def test_zero_constant_flagged_when_ad_disabled(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_ENABLED", False)
+        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
+        source = "if x > 0:\n    pass\n"
+        f = tmp_path / "s.py"
+        f.write_text(source, encoding="utf-8")
+        import ast as _ast
+        tree = _ast.parse(source)
+        scope_map = pc._build_scope_map(tree)
+        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
+        assert len(hits) == 1, "magnitude filter must not apply when AD is disabled"
+
+    def test_large_constant_still_flagged(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_ENABLED", True)
+        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
+        source = "if score > 100:\n    pass\n"
+        f = tmp_path / "s.py"
+        f.write_text(source, encoding="utf-8")
+        import ast as _ast
+        tree = _ast.parse(source)
+        scope_map = pc._build_scope_map(tree)
+        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
+        constants = [v for h in hits for v in h["pattern_detail"].get("constants", [])]
+        assert 100 in constants
+
+
+# ── anomaly_scores in pattern_detail ─────────────────────────────────────────
+
+class TestAnomalyScoresInDetail:
+    def test_anomaly_scores_present_when_ad_enabled(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_ENABLED", True)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
+        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
+        source = "if limit > 500:\n    pass\n"
+        f = tmp_path / "s.py"
+        f.write_text(source, encoding="utf-8")
+        import ast as _ast
+        tree = _ast.parse(source)
+        scope_map = pc._build_scope_map(tree)
+        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
+        assert hits, "should detect limit > 500"
+        assert "anomaly_scores" in hits[0]["pattern_detail"]
+
+    def test_anomaly_scores_absent_when_ad_disabled(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_ENABLED", False)
+        source = "if limit > 500:\n    pass\n"
+        f = tmp_path / "s.py"
+        f.write_text(source, encoding="utf-8")
+        import ast as _ast
+        tree = _ast.parse(source)
+        scope_map = pc._build_scope_map(tree)
+        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
+        assert hits
+        assert "anomaly_scores" not in hits[0]["pattern_detail"]
+
+    def test_cs_regex_anomaly_score_present_when_ad_enabled(self, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_ENABLED", True)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
+        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
+        hits = [
+            h for h in pc._cs_detect_via_regex("f.cs", "if (limit > 500) { }")
+            if h["pattern_type"] == "hardcoded_threshold"
+        ]
+        assert hits
+        assert "anomaly_score" in hits[0]["pattern_detail"]
+
+    def test_java_anomaly_score_present_when_ad_enabled(self, monkeypatch):
+        monkeypatch.setattr(pc, "_AD_ENABLED", True)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
+        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
+        hits = [
+            h for h in pc._java_detect_via_regex("F.java", "private static final int MAX = 500;")
+            if h["pattern_type"] == "hardcoded_threshold"
+            and h["pattern_detail"]["kind"] == "static_int_const"
+        ]
+        assert hits
+        assert "anomaly_score" in hits[0]["pattern_detail"]

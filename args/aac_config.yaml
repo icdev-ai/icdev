@@ -44,6 +44,7 @@ threshold_anomaly_detection:
   iqr_multiplier: 1.5     # IQR fence: Q1 - m*IQR to Q3 + m*IQR
   min_sample_size: 5      # minimum distinct constants before z-score is applied
   fallback_to_all: true   # when sample < min_sample_size, flag all constants
+  min_constant_magnitude: 1.0  # skip constants with |value| ≤ this when AD enabled (filters out zero/one boundary checks)
 
 semgrep:
   rules_dir: context/ai_augmentation/semgrep_rules
