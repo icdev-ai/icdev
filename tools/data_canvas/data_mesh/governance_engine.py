@@ -183,6 +183,53 @@ def _log_audit(user_attrs: dict, resource: dict, result: dict) -> None:
         pass
 
 
+# ── External IQE resource access check ───────────────────────────────────────
+
+_EXT_RESOURCE_CLASSIFICATION = "CUI // SP-CTI"
+
+
+def check_ext_access(
+    connector_name: str,
+    table: str,
+    user_attrs: dict | None = None,
+) -> dict:
+    """Governance gate for IQE ext.* collection reads.
+
+    Local mode (ICDEV_OPA_URL blank): always allows and writes a pass-through
+    audit entry — no OPA server is configured.
+    OPA mode: evaluates the datamesh policy and writes an audit entry.
+
+    Args:
+        connector_name: DataBridge connector name (e.g. ``"splunk"``).
+        table: Logical table name (e.g. ``"alerts"``).
+        user_attrs: Optional caller identity dict (``user``, ``clearance``, …).
+                    Defaults to ``{"user": "system", "clearance": "CUI"}`` so
+                    OPA mode local-fallback still evaluates correctly.
+
+    Returns:
+        Standard ``check_access`` result dict:
+        ``{"allowed": bool, "reason": str, "method": str, "policy_id": str|None}``
+    """
+    resource = {
+        "resource": f"ext.{connector_name}.{table}",
+        "action": "ext_resource_read",
+        "classification": _EXT_RESOURCE_CLASSIFICATION,
+    }
+    effective_user = user_attrs or {"user": "system", "clearance": "CUI"}
+
+    if not _OPA_URL:
+        result: dict = {
+            "allowed": True,
+            "reason": "local pass-through — no OPA server configured",
+            "method": "local",
+            "policy_id": None,
+        }
+        _log_audit(effective_user, resource, result)
+        return result
+
+    return check_access(effective_user, resource)
+
+
 # ── Governance Score ──────────────────────────────────────────────────────────
 
 def compute_governance_score(domain_id: str | None = None) -> dict:
