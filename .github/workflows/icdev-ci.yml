@@ -134,6 +134,12 @@ jobs:
       ICDEV_AAC_ENABLED: "true"
       ICDEV_INNOVATION_ENABLED: "true"
       ICDEV_GOVCON_ENABLED: "true"
+      ICDEV_MIGRATION_CANVAS_ENABLED: "true"
+      ICDEV_MISSION_CANVAS_ENABLED: "true"
+      ICDEV_OPS_HUB_ENABLED: "true"
+      ICDEV_AIML_CANVAS_ENABLED: "true"
+      ICDEV_NDC_ENABLED: "true"
+      ICDEV_SDC_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
