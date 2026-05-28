@@ -37,6 +37,8 @@ pattern_min_depth: 3        # min if-depth for conditional pattern detection
 rule_min_keys: 10           # min dict keys for rule-table pattern detection
 keyword_list_min_strings: 3 # min string literals for keyword-list-search detection
 java_min_if_depth: 2        # min if-depth for Java nested-conditional detection
+java_static_int_max_digits: 4   # max digit count for Java static-int threshold detection (captures values up to 10^N - 1)
+java_static_int_min_value: 1    # skip Java static int constants below this value (filters out zero sentinel checks)
 
 threshold_anomaly_detection:
   enabled: true
