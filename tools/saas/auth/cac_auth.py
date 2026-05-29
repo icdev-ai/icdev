@@ -167,8 +167,8 @@ def verify_ocsp(serial: str, issuer_cn: str = "", ocsp_url: Optional[str] = None
         return True
 
     try:
-        from cryptography import x509  # type: ignore[import-untyped]
-        from cryptography.x509 import ocsp as _ocsp  # type: ignore[import-untyped]
+        import cryptography.x509  # noqa: F401  # type: ignore[import-untyped]
+        import cryptography.x509.ocsp  # noqa: F401  # type: ignore[import-untyped]
     except ImportError:
         logger.warning("cryptography library not available; falling back to CRL")
         return verify_crl(serial)
