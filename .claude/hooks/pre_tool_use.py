@@ -467,6 +467,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "user_mfa",
         "mfa_attempts",
         "gateway_rate_limits",
+        # DoD/IC PKI + Continuous Auth (G-05/G-11/G-14, NIST AU-2/AU-12/IA-11)
+        "abac_audit",
+        "session_risk_log",
     ]
 
     if tool_name == "Bash":

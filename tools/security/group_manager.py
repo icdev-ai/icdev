@@ -21,7 +21,6 @@ Public API:
 NIST 800-53: AC-3, AC-6, AC-16.
 """
 
-import json
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
