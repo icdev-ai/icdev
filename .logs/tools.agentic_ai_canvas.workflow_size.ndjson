@@ -8,3 +8,4 @@
 {"ts": "2026-05-26T00:26:46.607842+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.workflow", "message": "aadc.workflow: HITL templates seeded", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-26T20:34:22.922896+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.workflow", "message": "aadc.workflow: HITL templates seeded", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-28T14:40:23.074173+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.workflow", "message": "aadc.workflow: HITL templates seeded", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T01:28:06.127406+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.workflow", "message": "aadc.workflow: HITL templates seeded", "trace_id": null, "session_id": null, "extra": {}}

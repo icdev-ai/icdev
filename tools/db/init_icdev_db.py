@@ -10571,6 +10571,16 @@ def init_db(db_path=None):
             "instead: `python -m icdev.tools.db.migrate --up` (or "
             "`python tools/db/migrate.py --up` from a checkout)."
         )
+        # G-06: Apply PostgreSQL column-level GRANTs after schema is up
+        try:
+            from tools.security.column_security import apply_column_grants
+            grant_result = apply_column_grants()
+            print(
+                f"Column GRANTs: {grant_result['grants_applied']} applied, "
+                f"{grant_result['grants_skipped']} skipped."
+            )
+        except Exception as _cg_exc:
+            print(f"Warning: column grant application failed: {_cg_exc}")
         return []
 
     path = Path(db_path) if db_path and not isinstance(db_path, Path) else (db_path or DB_PATH)

@@ -1,1 +1,2 @@
 {"ts": "2026-05-28T14:40:23.074025+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.workflow", "message": "aadc.workflow: HITL templates seeded", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T01:28:06.110414+00:00", "level": "INFO", "component": "tools.agentic_ai_canvas.workflow", "message": "aadc.workflow: HITL templates seeded", "trace_id": null, "session_id": null, "extra": {}}
