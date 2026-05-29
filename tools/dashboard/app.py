@@ -1610,6 +1610,13 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Studio DB init skipped: %s", _exc)
 
+    # ---- Kanban DB init (kanban/ci-fix-26590745782) ----
+    try:
+        from tools.kanban.init_db import init_kanban_tables
+        init_kanban_tables()
+    except Exception as _exc:
+        app.logger.warning("Kanban DB init skipped: %s", _exc)
+
     # ---- Geospatial Dashboard (task-a866147c27-d4) ----
     try:
         from src.routes.dashboard import bp as _geo_bp
