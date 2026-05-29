@@ -278,6 +278,76 @@ def score_all_pillars(project_id: str) -> dict:
     }
 
 
+def run_scheduled_assessment(project_id: str, drift_threshold: float = 0.1) -> dict:
+    """Run a scheduled ZTA assessment and detect score drift (G-18).
+
+    Compares the current all-pillar score against the most recent previous
+    assessment. If overall score drops by more than drift_threshold, a drift
+    alert is emitted.
+
+    Args:
+        project_id: Project identifier.
+        drift_threshold: Fractional drop (e.g. 0.1 = 10%) that triggers a drift alert.
+
+    Returns:
+        Dict with current score, previous score, drift, and alert flag.
+    """
+    from tools.logging.icdev_logger import get_logger as _gl
+    _log = _gl("devsecops.zta_scheduler")
+
+    # Run current assessment
+    current = score_all_pillars(project_id)
+    current_score = current.get("overall_score", 0.0)
+
+    # Retrieve the previous assessment (the row before the one just inserted)
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            """SELECT score, created_at
+               FROM zta_maturity_scores
+               WHERE project_id = ? AND pillar = 'overall'
+               ORDER BY created_at DESC
+               LIMIT 2""",
+            (project_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    previous_score: float | None = None
+    if len(rows) >= 2:
+        # rows[0] is the one just written, rows[1] is the previous
+        previous_score = float(rows[1]["score"])
+
+    drift = 0.0
+    drift_alert = False
+    if previous_score is not None:
+        drift = previous_score - current_score  # positive = score dropped
+        drift_alert = drift >= drift_threshold
+
+    if drift_alert:
+        _log.warning(
+            "ZTA maturity drift detected: project=%s previous=%.3f current=%.3f drop=%.3f (threshold=%.3f)",
+            project_id, previous_score, current_score, drift, drift_threshold,
+        )
+    else:
+        _log.info(
+            "ZTA scheduled assessment: project=%s score=%.3f maturity=%s drift=%.3f",
+            project_id, current_score, current.get("overall_maturity"), drift,
+        )
+
+    return {
+        "project_id": project_id,
+        "current_score": current_score,
+        "previous_score": previous_score,
+        "drift": round(drift, 4),
+        "drift_alert": drift_alert,
+        "drift_threshold": drift_threshold,
+        "overall_maturity": current.get("overall_maturity"),
+        "assessed_at": current.get("assessed_at", datetime.now(timezone.utc).isoformat()),
+        "pillar_scores": current.get("pillar_scores", {}),
+    }
+
+
 def get_trend(project_id: str, days: int = 90) -> dict:
     """Get ZTA maturity score trend over time.
 
@@ -353,6 +423,8 @@ def main():
     parser.add_argument("--pillar", choices=PILLARS, help="Score a specific pillar")
     parser.add_argument("--all", action="store_true", help="Score all 7 pillars + aggregate")
     parser.add_argument("--trend", action="store_true", help="Show maturity trend")
+    parser.add_argument("--schedule", action="store_true", help="Run scheduled assessment with drift detection (G-18)")
+    parser.add_argument("--drift-threshold", type=float, default=0.1, help="Drift alert threshold (default 0.1)")
     parser.add_argument("--days", type=int, default=90, help="Trend window in days")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
@@ -364,6 +436,8 @@ def main():
         result = score_all_pillars(args.project_id)
     elif args.trend:
         result = get_trend(args.project_id, args.days)
+    elif args.schedule:
+        result = run_scheduled_assessment(args.project_id, drift_threshold=args.drift_threshold)
     else:
         result = score_all_pillars(args.project_id)
 

@@ -51,8 +51,9 @@ AGENT_NAMES: List[str] = [
     "integration",
 ]
 
-DAYS_VALID = 365
+DAYS_VALID = 90  # G-19: reduced from 365 to 90-day validity
 KEY_SIZE = 2048
+INTERMEDIATE_CA_DAYS = 180  # Intermediate CA valid for 2x agent cert lifetime
 
 
 try:
@@ -90,9 +91,11 @@ def _build_name(common_name: str) -> x509.Name:
 
 
 def _make_ca() -> tuple:
-    """Generate CA key and self-signed certificate. Returns (key, cert)."""
+    """Generate root CA key and self-signed certificate. Returns (key, cert)."""
     key = _generate_key()
-    subject = _build_name("ICDEV Dev CA")
+    subject = _build_name("ICDEV Dev Root CA")
+    # Root CA valid for 3x intermediate CA lifetime
+    root_days = INTERMEDIATE_CA_DAYS * 3
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -100,8 +103,8 @@ def _make_ca() -> tuple:
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1))
-        .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=DAYS_VALID))
-        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=root_days))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=1), critical=True)
         .add_extension(
             x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
             critical=False,
@@ -111,7 +114,33 @@ def _make_ca() -> tuple:
     return key, cert
 
 
-def _make_agent_cert(agent_name: str, ca_key, ca_cert) -> tuple:
+def _make_intermediate_ca(root_key, root_cert) -> tuple:
+    """Generate an intermediate CA signed by the root CA (G-19). Returns (key, cert)."""
+    key = _generate_key()
+    subject = _build_name("ICDEV Dev Intermediate CA")
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(root_cert.subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1))
+        .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=INTERMEDIATE_CA_DAYS))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
+            critical=False,
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(root_key.public_key()),
+            critical=False,
+        )
+        .sign(root_key, hashes.SHA256(), default_backend())
+    )
+    return key, cert
+
+
+def _make_agent_cert(agent_name: str, ca_key, ca_cert, signing_key=None, signing_cert=None) -> tuple:
     """Generate an agent key and cert signed by the CA. Returns (key, cert)."""
     key = _generate_key()
     subject = _build_name(f"{agent_name}.icdev.local")
@@ -125,10 +154,14 @@ def _make_agent_cert(agent_name: str, ca_key, ca_cert) -> tuple:
         ]
     )
 
+    # G-19: Sign with intermediate CA if provided, else fall back to root CA
+    signer_key = signing_key if signing_key is not None else ca_key
+    signer_cert = signing_cert if signing_cert is not None else ca_cert
+
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
-        .issuer_name(ca_cert.subject)
+        .issuer_name(signer_cert.subject)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1))
@@ -139,11 +172,11 @@ def _make_agent_cert(agent_name: str, ca_key, ca_cert) -> tuple:
             critical=False,
         )
         .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(signer_key.public_key()),
             critical=False,
         )
         .add_extension(san, critical=False)
-        .sign(ca_key, hashes.SHA256(), default_backend())
+        .sign(signer_key, hashes.SHA256(), default_backend())
     )
     return key, cert
 
@@ -210,16 +243,27 @@ def provision(check: bool = False, clean: bool = False) -> dict:
                 result["all_exist"] = False
         return result
 
-    # Generate CA
-    logger.info("Generating CA certificate...")
+    # Generate root CA
+    logger.info("Generating root CA certificate (G-19)...")
     ca_key, ca_cert = _make_ca()
     _write_pem(CERTS_DIR / "ca.key", _key_to_pem(ca_key))
     _write_pem(CERTS_DIR / "ca.crt", _cert_to_pem(ca_cert))
 
-    # Generate per-agent certs
+    # Generate intermediate CA (G-19)
+    logger.info("Generating intermediate CA certificate (G-19, 90-day validity)...")
+    int_key, int_cert = _make_intermediate_ca(ca_key, ca_cert)
+    _write_pem(CERTS_DIR / "intermediate-ca.key", _key_to_pem(int_key))
+    _write_pem(CERTS_DIR / "intermediate-ca.crt", _cert_to_pem(int_cert))
+    # Write chain bundle: intermediate + root (in TLS chain order)
+    chain_pem = _cert_to_pem(int_cert) + _cert_to_pem(ca_cert)
+    _write_pem(CERTS_DIR / "ca-chain.crt", chain_pem)
+    result["intermediate_ca_cert"] = str(CERTS_DIR / "intermediate-ca.crt")
+    result["ca_chain"] = str(CERTS_DIR / "ca-chain.crt")
+
+    # Generate per-agent certs (signed by intermediate CA)
     for name in AGENT_NAMES:
-        logger.info("Generating certificate for %s...", name)
-        key, cert = _make_agent_cert(name, ca_key, ca_cert)
+        logger.info("Generating certificate for %s (signed by intermediate CA)...", name)
+        key, cert = _make_agent_cert(name, ca_key, ca_cert, signing_key=int_key, signing_cert=int_cert)
         _write_pem(CERTS_DIR / f"{name}.key", _key_to_pem(key))
         _write_pem(CERTS_DIR / f"{name}.crt", _cert_to_pem(cert))
         result["agents"][name] = {
@@ -239,8 +283,13 @@ def main() -> None:
     )
     parser.add_argument("--check", action="store_true", help="Verify existing certs")
     parser.add_argument("--clean", action="store_true", help="Remove and regenerate")
+    parser.add_argument("--rotate", action="store_true", help="Rotate certs: remove existing and regenerate with new 90-day validity (G-19)")
     parser.add_argument("--json", action="store_true", help="Output JSON")
     args = parser.parse_args()
+
+    # --rotate is an alias for --clean (remove + regenerate)
+    if args.rotate:
+        args.clean = True
 
     try:
         result = provision(check=args.check, clean=args.clean)
