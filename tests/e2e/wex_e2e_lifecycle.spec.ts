@@ -243,7 +243,10 @@ test.describe('Scenario 3 — Run History', () => {
     expect([200, 404]).toContain(apiResp.status);
 
     await page.locator('[data-tab="runs"]').click();
-    await page.waitForTimeout(1500);
+    // Wait for the panel to actually become visible (switchTab sets display:'') before asserting children.
+    await page.waitForSelector('#panel-runs:not([style*="display: none"])', { timeout: 5000 }).catch(() => {
+      // Fallback: if the selector never matches (e.g. display removed entirely), continue.
+    });
     await page.screenshot({ path: shot('s3_02_run_history_api'), fullPage: true });
 
     const runsBody = page.locator('#wf-runs-body');

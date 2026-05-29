@@ -137,6 +137,7 @@ jobs:
       ICDEV_MIGRATION_CANVAS_ENABLED: "true"
       ICDEV_AUTH_BYPASS: "true"
       ICDEV_MISSION_CANVAS_ENABLED: "true"
+      ICDEV_OPS_HUB_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

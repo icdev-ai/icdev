@@ -34,7 +34,7 @@ _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")
 
 
 def _get_db():
-    conn = get_connection()
+    conn = get_connection(db_path=str(_DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
