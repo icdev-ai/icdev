@@ -34,7 +34,7 @@ def _get_clearance_order(cls: str) -> int:
         from tools.compliance.classification_manager import get_clearance_order as _go
         return _go(cls)
     except Exception:
-        return {"PUBLIC": 0, "CUI": 1, "SECRET": 2, "TOP SECRET": 3, "TOP SECRET//SCI": 4}.get(
+        return {"PUBLIC": 0, "CUI": 1, "ECI": 2, "SECRET": 3, "TOP SECRET": 4, "TOP SECRET//SCI": 5}.get(
             (cls or "CUI").upper(), 1
         )
 
