@@ -15,4 +15,5 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Task Lease | tools/a2a/task_lease.py | Task lease management for agent coordination | --json | Lease status |
+| A2A Agent Entrypoint | tools/a2a/agent_entrypoint.py | Container-aware agent bootstrap — reads agent card JSON + args/agent_config.yaml, registers all declared skills (stub or wired via `.agents/skills/` scan), auto-registers agent in DB for orchestrator discovery, and starts the A2A Flask server with optional mutual TLS | `--agent-id <id> --port <port> [--host 0.0.0.0] [--tls-cert <path>] [--tls-key <path>] [--tls-ca <path>] [--no-tls] [--debug] [--no-auto-register]` | Running A2A agent server |
 
