@@ -290,7 +290,7 @@ def require_canvas_access(canvas_name: str, min_level: str = "read"):
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
             try:
-                from flask import g, jsonify, make_response, abort, request
+                from flask import g, request
             except ImportError:
                 return f(*args, **kwargs)
 
@@ -357,7 +357,7 @@ def _audit(action: str, tenant_id: str, principal_type: str, principal_id: str,
         with get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO audit_trail (event_type, actor, details, recorded_at)
+                INSERT INTO audit_trail (event_type, actor, details, created_at)
                 VALUES (?, ?, ?, ?)
                 """,
                 (
@@ -389,7 +389,8 @@ def _row_to_dict(row) -> dict:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    import argparse, json
+    import argparse
+    import json
 
     parser = argparse.ArgumentParser(description="ICDEV™ Canvas Access CLI")
     parser.add_argument("--check", nargs=3, metavar=("USER_ID", "TENANT_ID", "CANVAS"),

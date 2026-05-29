@@ -39,8 +39,8 @@ def create_ops_hub_blueprint() -> Blueprint:
         from tools.ops_hub.db.init_db import init_db
         init_db()
     except Exception as exc:  # pragma: no cover
-        import logging
-        logging.getLogger(__name__).warning("OHC DB init failed: %s", exc)
+        from tools.logging.icdev_logger import get_logger
+        get_logger(__name__).warning("OHC DB init failed: %s", exc)
 
     # ── Page Routes ──────────────────────────────────────────────────────────
 
