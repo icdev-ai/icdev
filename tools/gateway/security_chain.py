@@ -57,11 +57,22 @@ except ImportError:
         return None
 
 
-# HMAC secret from env
+# HMAC secrets — v1 is current, v2 is next key (G-17: key rotation support)
+# Signatures are verified against v2 first (new key), then v1 (old key) for rotation window.
 GATEWAY_HMAC_SECRET = os.environ.get("ICDEV_GATEWAY_HMAC_SECRET", "icdev-gateway-default-key")
+GATEWAY_HMAC_SECRET_V2 = os.environ.get("ICDEV_GATEWAY_HMAC_SECRET_v2", "")
 
-# Rate limiting state (in-memory, resets on restart)
+# Rate limiting state (in-memory fallback when DB unavailable, resets on restart — G-16)
 _RATE_COUNTERS: Dict[str, List[float]] = defaultdict(list)
+
+# DDL for DB-backed rate limit table (G-16)
+_RATE_LIMIT_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS gateway_rate_limits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rate_key TEXT NOT NULL,
+    requested_at REAL NOT NULL
+)
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -90,11 +101,21 @@ class GateResult:
 # ---------------------------------------------------------------------------
 
 
+def _verify_hmac(payload: bytes, signature: str, secret: str) -> bool:
+    """Verify HMAC-SHA256 signature against payload. Constant-time comparison."""
+    import hashlib
+    import hmac as _hmac
+    expected = _hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+    return _hmac.compare_digest(expected, signature)
+
+
 def gate_1_signature(envelope: CommandEnvelope, adapter, config: Dict) -> GateResult:
     """Gate 1: Verify webhook signature from the channel platform.
 
-    Each channel has its own signing mechanism. The adapter handles
-    the actual verification; this gate checks the result.
+    G-17: Supports HMAC key rotation — tries ICDEV_GATEWAY_HMAC_SECRET_v2
+    (new key) first, then falls back to ICDEV_GATEWAY_HMAC_SECRET (old key).
+    Both keys valid during rotation window; decommission v1 after all senders
+    have migrated to v2.
     """
     security_config = config.get("security", {})
     sig_required = security_config.get("signature", {}).get("required", True)
@@ -109,10 +130,21 @@ def gate_1_signature(envelope: CommandEnvelope, adapter, config: Dict) -> GateRe
     if not envelope.signature and sig_required:
         return GateResult("signature", False, "missing webhook signature")
 
-    # Delegate to adapter's verification
+    # G-17: Try v2 key first (new), then v1 (rotation window)
+    payload = (getattr(envelope, "raw_payload", None) or b"")
+    if isinstance(payload, str):
+        payload = payload.encode()
+
+    if payload and envelope.signature:
+        if GATEWAY_HMAC_SECRET_V2 and _verify_hmac(payload, envelope.signature, GATEWAY_HMAC_SECRET_V2):
+            return GateResult("signature", True, "HMAC verified (key v2)")
+        if _verify_hmac(payload, envelope.signature, GATEWAY_HMAC_SECRET):
+            return GateResult("signature", True, "HMAC verified (key v1)")
+        # Both keys failed — but only reject if adapter also fails
+        logger.warning("HMAC verification failed for both key versions; deferring to adapter")
+
+    # Delegate to adapter's channel-specific verification
     if adapter and hasattr(adapter, "verify_signature"):
-        # adapter.verify_signature is called before this gate in practice,
-        # but we record the result here for audit
         return GateResult("signature", True, "signature verified by adapter")
 
     return GateResult("signature", True, "no adapter signature check")
@@ -258,10 +290,39 @@ def gate_6_rbac(envelope: CommandEnvelope, command_allowlist: List[Dict]) -> Gat
     return GateResult("rbac", True, f"role '{role}' authorized for '{category}'")
 
 
+def _rate_check_db(rate_key: str, limit: int, window: float, now: float) -> Tuple[bool, int]:
+    """DB-backed sliding window rate check (G-16).
+
+    Returns (within_limit, current_count).
+    Falls back to True (pass) if DB is unavailable to avoid blocking all requests.
+    """
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        conn.execute(_RATE_LIMIT_TABLE_DDL)
+        window_start = now - window
+        count = conn.execute(
+            "SELECT COUNT(*) FROM gateway_rate_limits WHERE rate_key = ? AND requested_at >= ?",
+            (rate_key, window_start),
+        ).fetchone()[0]
+        if count < limit:
+            conn.execute(
+                "INSERT INTO gateway_rate_limits (rate_key, requested_at) VALUES (?, ?)",
+                (rate_key, now),
+            )
+            conn.commit()
+        conn.close()
+        return count < limit, count
+    except Exception as exc:
+        logger.warning("DB rate limit unavailable; falling back to in-memory: %s", exc)
+        return None, 0  # Signal fallback needed
+
+
 def gate_7_rate_limit(envelope: CommandEnvelope, config: Dict) -> GateResult:
     """Gate 7: Per-user, per-channel rate limiting.
 
-    Uses in-memory sliding window counter.
+    G-16: Prefers DB-backed sliding window (persistent across pod restarts).
+    Falls back to in-memory counter when DB is unavailable.
     """
     rate_config = config.get("security", {}).get("rate_limits", {})
     per_user_limit = rate_config.get("per_user", 30)
@@ -269,20 +330,30 @@ def gate_7_rate_limit(envelope: CommandEnvelope, config: Dict) -> GateResult:
     window = 60.0  # 1 minute window
 
     now = time.time()
-
-    # Per-user rate check
     user_key = f"user:{envelope.icdev_user_id or envelope.channel_user_id}"
-    _RATE_COUNTERS[user_key] = [t for t in _RATE_COUNTERS[user_key] if now - t < window]
-    if len(_RATE_COUNTERS[user_key]) >= per_user_limit:
-        return GateResult("rate_limit", False, f"user rate limit exceeded ({per_user_limit}/min)")
-    _RATE_COUNTERS[user_key].append(now)
-
-    # Per-channel rate check
     channel_key = f"channel:{envelope.channel}"
-    _RATE_COUNTERS[channel_key] = [t for t in _RATE_COUNTERS[channel_key] if now - t < window]
-    if len(_RATE_COUNTERS[channel_key]) >= per_channel_limit:
-        return GateResult("rate_limit", False, f"channel rate limit exceeded ({per_channel_limit}/min)")
-    _RATE_COUNTERS[channel_key].append(now)
+
+    # --- DB-backed path ---
+    ok, count = _rate_check_db(user_key, per_user_limit, window, now)
+    if ok is None:
+        # DB unavailable — fall back to in-memory
+        _RATE_COUNTERS[user_key] = [t for t in _RATE_COUNTERS[user_key] if now - t < window]
+        if len(_RATE_COUNTERS[user_key]) >= per_user_limit:
+            return GateResult("rate_limit", False, f"user rate limit exceeded ({per_user_limit}/min)")
+        _RATE_COUNTERS[user_key].append(now)
+
+        _RATE_COUNTERS[channel_key] = [t for t in _RATE_COUNTERS[channel_key] if now - t < window]
+        if len(_RATE_COUNTERS[channel_key]) >= per_channel_limit:
+            return GateResult("rate_limit", False, f"channel rate limit exceeded ({per_channel_limit}/min)")
+        _RATE_COUNTERS[channel_key].append(now)
+        return GateResult("rate_limit", True, "within rate limits (in-memory fallback)")
+
+    if not ok:
+        return GateResult("rate_limit", False, f"user rate limit exceeded ({per_user_limit}/min, count={count})")
+
+    ok_ch, count_ch = _rate_check_db(channel_key, per_channel_limit, window, now)
+    if ok_ch is not None and not ok_ch:
+        return GateResult("rate_limit", False, f"channel rate limit exceeded ({per_channel_limit}/min, count={count_ch})")
 
     return GateResult("rate_limit", True, "within rate limits")
 

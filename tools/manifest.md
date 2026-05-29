@@ -862,3 +862,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Ext Databridge | tools\iqe\adapters\ext_databridge.py | Auto-registered: adapters/ext_databridge.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Ste Validator | tools\airgap\ste_validator.py | Auto-registered: airgap/ste_validator.py | --json | JSON |
