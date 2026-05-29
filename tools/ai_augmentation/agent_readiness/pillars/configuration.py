@@ -16,12 +16,12 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
     _glob_files,
     _read,
     _search,
+    load_pillar_config,
 )
 
 # ---------------------------------------------------------------------------
 # Anomaly-detection threshold loader
 # ---------------------------------------------------------------------------
-_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 _DEFAULTS: dict[str, Any] = {
     "min_makefile_targets": 3,
     "min_npm_scripts": 3,
@@ -72,26 +72,20 @@ def _load_thresholds() -> dict[str, Any]:
       2. args/agent_readiness_config.yaml pillars.configuration section
       3. _DEFAULTS fallback (graceful degradation when config is absent/malformed)
     """
-    try:
-        import yaml  # optional dep — present in all ICDEV environments
-        raw = _ARGS_PATH.read_text(encoding="utf-8")
-        data = yaml.safe_load(raw) or {}
-        cfg = data.get("pillars", {}).get("configuration", {})
-        tr = cfg.get("task_runner", {})
-        ci = cfg.get("ci_pipeline", {})
-        iac = cfg.get("iac", {})
-        cd = cfg.get("cd_deployment", {})
-        raw_keywords = cd.get("deploy_keywords", _DEFAULTS["deploy_keywords"])
-        deploy_keywords = [str(k) for k in raw_keywords] if raw_keywords else list(_DEFAULTS["deploy_keywords"])
-        thresholds = {
-            "min_makefile_targets": int(tr.get("min_makefile_targets", _DEFAULTS["min_makefile_targets"])),
-            "min_npm_scripts": int(tr.get("min_npm_scripts", _DEFAULTS["min_npm_scripts"])),
-            "min_ci_workflows": int(ci.get("min_workflows", _DEFAULTS["min_ci_workflows"])),
-            "min_iac_files": int(iac.get("min_files", _DEFAULTS["min_iac_files"])),
-            "deploy_keywords": deploy_keywords,
-        }
-    except Exception:  # noqa: BLE001
-        thresholds = dict(_DEFAULTS)
+    cfg = load_pillar_config("configuration")
+    tr = cfg.get("task_runner", {})
+    ci = cfg.get("ci_pipeline", {})
+    iac = cfg.get("iac", {})
+    cd = cfg.get("cd_deployment", {})
+    raw_keywords = cd.get("deploy_keywords", _DEFAULTS["deploy_keywords"])
+    deploy_keywords = [str(k) for k in raw_keywords] if raw_keywords else list(_DEFAULTS["deploy_keywords"])
+    thresholds = {
+        "min_makefile_targets": int(tr.get("min_makefile_targets", _DEFAULTS["min_makefile_targets"])),
+        "min_npm_scripts": int(tr.get("min_npm_scripts", _DEFAULTS["min_npm_scripts"])),
+        "min_ci_workflows": int(ci.get("min_workflows", _DEFAULTS["min_ci_workflows"])),
+        "min_iac_files": int(iac.get("min_files", _DEFAULTS["min_iac_files"])),
+        "deploy_keywords": deploy_keywords,
+    }
     return _apply_env_overrides(thresholds)
 
 
