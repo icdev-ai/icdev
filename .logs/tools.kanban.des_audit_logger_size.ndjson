@@ -312,3 +312,4 @@
 {"ts": "2026-05-29T03:59:22.689865+00:00", "level": "WARNING", "component": "tools.kanban.des_audit_logger", "message": "des_execution_events table missing \u2014 skipping audit log", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-29T03:59:22.699861+00:00", "level": "WARNING", "component": "tools.kanban.des_audit_logger", "message": "des_execution_events table missing \u2014 skipping audit log", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-29T04:01:17.332762+00:00", "level": "ERROR", "component": "tools.kanban.des_audit_logger", "message": "DESAuditLogger insert failed \u2014 degrading gracefully", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T04:04:40.176093+00:00", "level": "ERROR", "component": "tools.kanban.des_audit_logger", "message": "DESAuditLogger insert failed \u2014 degrading gracefully", "trace_id": null, "session_id": null, "extra": {}}
