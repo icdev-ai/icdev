@@ -1515,6 +1515,17 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
             "or method overlap on structural diff."
         ),
     },
+    "kodustech/agent-readiness": {
+        "url": "https://github.com/kodustech/agent-readiness",
+        "license": "MIT",
+        "audit_status": (
+            "2026-05-28 verified — kodustech/agent-readiness is MIT-licensed. "
+            "tools/ai_augmentation/agent_readiness/checker.py cites it as structural "
+            "inspiration for the readiness check architecture. Structural diff confirmed "
+            "no class or method overlap; ICDEV implementation uses its own scoring model, "
+            "DB schema, and LLMRouter integration."
+        ),
+    },
 }
 
 # Licenses that block the gate if cited without an explicit audit exemption.

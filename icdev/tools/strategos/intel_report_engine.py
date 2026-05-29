@@ -75,7 +75,6 @@ def _compute_escalation_score(patterns: list[dict[str, Any]]) -> float:
 
 
 def _fetch_patterns(conn, theater_id: str | None = None) -> list[dict[str, Any]]:
-    where = "WHERE theater_id IS NULL" if theater_id is None else f"WHERE theater_id = '{theater_id}'"
     try:
         rows = conn.execute(
             "SELECT pattern_type, keywords, event_count, confidence, detected_at "

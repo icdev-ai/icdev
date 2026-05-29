@@ -2,8 +2,6 @@
 # CUI // SP-CTI
 """Tests for G-12 — PDP Client (tools/security/pdp_client.py)."""
 
-import os
-import pytest
 
 import tools.security.pdp_client as _pdp
 

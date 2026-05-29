@@ -153,7 +153,7 @@ class TestCheckAccess:
         assert not check_access("ivan", "t2", "proposals", required_level="read")
 
     def test_role_grant(self, db):
-        from tools.security.canvas_access import grant_access, check_access
+        from tools.security.canvas_access import grant_access
         grant_access("t1", "role", "tenant_admin", "admin", "admin", granted_by="system")
         # tenant_admin role should grant admin access — check_access uses stored g.user_role
         import sqlite3 as _sq
