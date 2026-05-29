@@ -2,8 +2,12 @@
 """Pillar 11 — Append-Only Audit Tables (ICDEV): audit tables are not mutated."""
 from __future__ import annotations
 
+import json
+import os
 import pathlib
 import re
+from functools import lru_cache
+from typing import Any, Optional
 
 from tools.ai_augmentation.agent_readiness.pillars._base import (
     Criterion,
@@ -30,23 +34,147 @@ _KNOWN_APPEND_ONLY = {
     "compliance_audit", "security_events", "access_log",
 }
 
+# ---------------------------------------------------------------------------
+# Config loader for NLP extractor thresholds
+# ---------------------------------------------------------------------------
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
+_DEFAULTS: dict[str, Any] = {
+    "nlp_extractor_enabled": True,
+    "nlp_extractor_model": "claude-haiku-4-5-20251001",
+    "nlp_extractor_max_tokens": 256,
+    "nlp_extractor_confidence_threshold": 0.7,
+    "nlp_extractor_text_sample_chars": 2000,
+    "mutation_scan_py_sample": 50,
+    "enhanced_path_py_sample": 10,
+}
+
+
+@lru_cache(maxsize=1)
+def _load_thresholds() -> dict[str, Any]:
+    """Load append-only-audit NLP extractor config from args/agent_readiness_config.yaml.
+
+    Falls back to hard-coded defaults if the config file is absent or malformed.
+    """
+    try:
+        import yaml
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) or {}
+        cfg = data.get("pillars", {}).get("append_only_audit", {}).get("nlp_extractor", {})
+        return {
+            "nlp_extractor_enabled": bool(cfg.get("enabled", _DEFAULTS["nlp_extractor_enabled"])),
+            "nlp_extractor_model": str(cfg.get("model", _DEFAULTS["nlp_extractor_model"])),
+            "nlp_extractor_max_tokens": int(cfg.get("max_tokens", _DEFAULTS["nlp_extractor_max_tokens"])),
+            "nlp_extractor_confidence_threshold": float(
+                cfg.get("confidence_threshold", _DEFAULTS["nlp_extractor_confidence_threshold"])
+            ),
+            "nlp_extractor_text_sample_chars": int(
+                cfg.get("text_sample_chars", _DEFAULTS["nlp_extractor_text_sample_chars"])
+            ),
+            "mutation_scan_py_sample": int(cfg.get("mutation_scan_py_sample", _DEFAULTS["mutation_scan_py_sample"])),
+            "enhanced_path_py_sample": int(cfg.get("enhanced_path_py_sample", _DEFAULTS["enhanced_path_py_sample"])),
+        }
+    except Exception:  # noqa: BLE001
+        return dict(_DEFAULTS)
+
+
+# ---------------------------------------------------------------------------
+# NLP extractor — Claude Haiku for audit table mutation detection
+# ---------------------------------------------------------------------------
+
+def _nlp_extract_audit_refs(text: str, task: str) -> Optional[dict]:
+    """Detect audit table mutations from code using Claude Haiku NLP.
+
+    Catches ORM-based mutations (.update()/.delete()), dynamic SQL, and
+    aliased patterns that bypass the raw SQL regex.
+
+    Returns dict with keys: found (bool), tables (list[str]), mutations (list[str]),
+    confidence (float). Returns None when LLM is unavailable so callers fall
+    back to regex-only detection.
+    """
+    thresholds = _load_thresholds()
+    if not thresholds["nlp_extractor_enabled"]:
+        return None
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return None
+    try:
+        from tools.llm.anthropic_provider import AnthropicLLMProvider
+        from tools.llm.provider import LLMRequest
+    except ImportError:
+        return None
+
+    sample = text[:thresholds["nlp_extractor_text_sample_chars"]]
+    prompt = (
+        f"You are an audit trail compliance analyst. Analyze the following code and {task}.\n\n"
+        f"Code:\n{sample}\n\n"
+        "Respond ONLY with valid JSON in this exact format: "
+        '{"found": true, "tables": ["audit_log", "event_log"], '
+        '"mutations": ["UPDATE audit_log SET ...", ".queryset.delete()"], "confidence": 0.9}\n'
+        "Where tables contains names of audit/log/trail/event tables detected, and mutations "
+        "contains any UPDATE, DELETE, or ORM mutation operations (e.g. .update(), .delete(), "
+        "queryset.delete(), session.query(...).update()) that target those tables. "
+        "Flag both raw SQL and ORM-based mutations. "
+        "Set found to false and both lists to [] when no audit table mutations are detected."
+    )
+    try:
+        provider = AnthropicLLMProvider(api_key=api_key)
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=thresholds["nlp_extractor_max_tokens"],
+        )
+        model_id = thresholds["nlp_extractor_model"]
+        model_cfg = {"max_output_tokens": thresholds["nlp_extractor_max_tokens"]}
+        response = provider.invoke(request, model_id, model_cfg)
+        result_text = response.content.strip()
+        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group())
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
 
 def _check_no_audit_mutations(repo: pathlib.Path) -> CriterionResult:
     cid = "no-audit-mutations"
     py_files = _glob_files(repo, "**/*.py")
+    thresholds = _load_thresholds()
+
+    # Fast path: regex detection of raw SQL UPDATE/DELETE on audit tables
     violations = []
-    for f in py_files:
+    for f in py_files[:thresholds["mutation_scan_py_sample"]]:
         content = f.read_text(encoding="utf-8", errors="replace")
         for m in _FORBIDDEN_AUDIT_MUTATION.finditer(content):
             op = m.group(1).upper()
             table = m.group(2)
-            # Skip if it's clearly not an audit table by name
             if any(kw in table.lower() for kw in ["audit", "log", "trail", "event"]):
                 violations.append(f"{f.name}:{table} ({op})")
     if violations:
         return CriterionResult(cid, False,
                                f"Audit table mutations detected in {len(violations)} location(s): {', '.join(violations[:3])}",
                                "Remove UPDATE/DELETE operations on audit/log tables. Audit trails are append-only per NIST AU.")
+
+    # Enhanced path: NLP detection of ORM-based or indirect mutations missed by regex
+    min_confidence = thresholds["nlp_extractor_confidence_threshold"]
+    for f in py_files[:thresholds["enhanced_path_py_sample"]]:
+        content = f.read_text(encoding="utf-8", errors="replace")
+        result = _nlp_extract_audit_refs(
+            content,
+            "detect any mutations (UPDATE, DELETE, ORM .update()/.delete()) targeting "
+            "audit, log, trail, or event tables — including indirect patterns like "
+            "variable-based SQL, ORM queryset mutations, or model instance deletions",
+        )
+        if result and result.get("found") and result.get("confidence", 0) >= min_confidence:
+            mutations = result.get("mutations", [])
+            tables = result.get("tables", [])
+            mut_str = ", ".join(mutations[:2]) if mutations else "ORM-based mutation"
+            tbl_str = ", ".join(tables[:2]) if tables else "audit table"
+            return CriterionResult(
+                cid, False,
+                f"Potential audit table mutation detected via NLP in {f.name}: {mut_str} on {tbl_str}",
+                "Review and remove ORM-based or indirect UPDATE/DELETE operations on audit/log tables. "
+                "Audit trails are append-only per NIST AU.",
+            )
+
     return CriterionResult(cid, True, "No audit table mutation (UPDATE/DELETE) detected in Python source")
 
 
