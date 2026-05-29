@@ -48,11 +48,10 @@ networkx>=3.2            # Graph analysis for topology NL query engine
 # === Monitoring ===
 requests>=2.31           # HTTP client for ELK/Splunk/Prometheus APIs
 
-# === SaaS Multi-Tenancy (Phase 21) — OPTIONAL, not needed for air-gap/local ===
-# All imports are guarded with try/except; code falls back to SQLite without PG.
-# Install only if running SaaS multi-tenant mode with PostgreSQL + Redis:
-#   pip install psycopg2-binary PyJWT cryptography gunicorn redis
-# psycopg2-binary>=2.9   # PostgreSQL adapter for per-tenant databases
+# === SaaS Multi-Tenancy (Phase 21) ===
+# PostgreSQL is the primary backend (ICDEV_STORAGE_BACKEND=postgresql).
+# SQLite is a local fallback only. psycopg2-binary is required.
+psycopg2-binary>=2.9        # PostgreSQL adapter — primary DB backend
 # PyJWT>=2.12.0          # JWT validation for OAuth 2.0/OIDC auth (CVE-2026-32597)
 # cryptography>=42.0     # RSA license keys, artifact signing, TLS
 # gunicorn>=22.0         # Production WSGI server for API gateway (Linux only)
