@@ -41,7 +41,7 @@ IL_PROFILES_PATH = BASE_DIR / "context" / "compliance" / "impact_level_profiles.
 MARKINGS_PATH = BASE_DIR / "args" / "classification_markings.yaml"
 CUI_MARKINGS_PATH = BASE_DIR / "args" / "cui_markings.yaml"
 
-VALID_CLASSIFICATIONS = ("PUBLIC", "CUI", "SECRET", "TOP SECRET", "TOP SECRET//SCI")
+VALID_CLASSIFICATIONS = ("PUBLIC", "CUI", "ECI", "SECRET", "TOP SECRET", "TOP SECRET//SCI")
 VALID_IMPACT_LEVELS = ("IL2", "IL4", "IL5", "IL6")
 
 # Module-level caches (populated on first call)
@@ -52,7 +52,7 @@ _MARKINGS_CACHE: Optional[Dict] = None
 _CLASSIFICATION_MAP = {
     "IL2": "PUBLIC",
     "IL4": "CUI",
-    "IL5": "CUI",
+    "IL5": "ECI",
     "IL6": "SECRET",
 }
 
@@ -76,6 +76,7 @@ _COMMENT_STYLES = {
 _PORTION_MARKS = {
     "PUBLIC": "",
     "CUI": "(CUI)",
+    "ECI": "(ECI)",
     "SECRET": "(S)",
     "TOP SECRET": "(TS)",
     "TOP SECRET//SCI": "(TS//SCI)",
@@ -660,9 +661,10 @@ def get_clearance_order(classification: str) -> int:
     return {
         "PUBLIC": 0,
         "CUI": 1,
-        "SECRET": 2,
-        "TOP SECRET": 3,
-        "TOP SECRET//SCI": 4,
+        "ECI": 2,
+        "SECRET": 3,
+        "TOP SECRET": 4,
+        "TOP SECRET//SCI": 5,
     }.get(classification.upper(), 1)
 
 
