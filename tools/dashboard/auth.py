@@ -235,7 +235,7 @@ def list_users(status=None, tenant_id=None):
         else:
             clauses.append("(tenant_id IS NULL OR tenant_id = '')")
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
-        rows = conn.execute(
+        rows = conn.execute(  # nosec B608 — where built from hardcoded clause strings + parameterized values only
             f"SELECT * FROM dashboard_users {where} ORDER BY created_at DESC",
             params,
         ).fetchall()
