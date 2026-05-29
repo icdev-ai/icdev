@@ -4,6 +4,18 @@
 # for a project claiming task automation / CI readiness.
 
 # ---------------------------------------------------------------------------
+# Global glob-file helper settings — used by _base._glob_files()
+# ---------------------------------------------------------------------------
+glob_files:
+  # Directories skipped during **/* pattern expansion across all pillars.
+  # Add project-specific vendor dirs (e.g. "third_party") without touching code.
+  # Values below 1 entry are anomalously sparse for a real project repo.
+  ignore_dirs:
+    - node_modules
+    - vendor
+    - .git
+
+# ---------------------------------------------------------------------------
 # Score reporting
 # ---------------------------------------------------------------------------
 score:
@@ -63,6 +75,16 @@ pillars:
       confidence_threshold: 0.7
       # Characters of file content sampled per NLP call to control token cost.
       text_sample_chars: 2000
+      # Maximum Python files scanned in the fast regex pass for NIST control IDs.
+      # Values below ~10 risk missing coverage; raise for very large monorepos.
+      fast_path_py_sample: 50
+      # Maximum Python files passed to the NLP enhanced pass (slower, uses API).
+      # Keep ≤ fast_path_py_sample; raising beyond 20 has diminishing returns.
+      enhanced_path_py_sample: 10
+      # Maximum doc files (*.md, *.rst) passed to the NLP enhanced pass.
+      doc_sample: 5
+      # Maximum Python files scanned when searching for crosswalk engine usage.
+      crosswalk_py_sample: 30
 
   stig_compliance:
     nlp_extractor:
@@ -78,6 +100,23 @@ pillars:
       confidence_threshold: 0.7
       # Characters of file content sampled per NLP call to control token cost.
       text_sample_chars: 2000
+      # Maximum Python files included in the STIG V-ID code scan (regex fast path).
+      # Raise for larger repos; combined with yaml_sample below to form the scan set.
+      code_scan_py_sample: 30
+      # Maximum YAML/YML files included in the STIG V-ID code scan (regex fast path).
+      code_scan_yaml_sample: 20
+      # Maximum files from the combined code-scan set passed to NLP enhanced path.
+      enhanced_path_sample: 10
+      # Maximum doc files (*.md, *.txt) passed to NLP enhanced path for STIG doc refs.
+      doc_sample: 5
+      # Maximum checklist files (.ckl, .xml, stig*.yaml, etc.) passed to NLP.
+      checklist_nlp_sample: 3
+      # Maximum compliance docs (docs/compliance/*.md) passed to NLP.
+      compliance_nlp_sample: 3
+      # Maximum Python files scanned for CAT I remediation evidence.
+      cat_remediation_py_sample: 20
+      # Maximum doc files passed to NLP for CAT I natural-language evidence.
+      cat_remediation_doc_sample: 5
 
   configuration:
     ci_pipeline:
@@ -138,7 +177,7 @@ pillars:
   il_classification:
     cui_file_headers:
       # Maximum number of Python source files sampled for CUI header detection.
-      # Actual sample is adaptive: min(sample_size, max(10, total_files // 5)).
+      # Actual sample is adaptive: min(sample_size, max(min_adaptive_sample, total_files // adaptive_denominator)).
       # Raise for large repos where a fixed cap under-samples; lower to trade accuracy for speed.
       sample_size: 30
       # Minimum ratio (0.0–1.0) of sampled files that must carry CUI/classification headers
@@ -148,3 +187,9 @@ pillars:
       # "anomalously low" to a softer warning. Set equal to min_header_ratio to collapse
       # the warning zone and always emit the stronger anomaly message below min_header_ratio.
       warn_header_ratio: 0.3
+      # Floor for the adaptive sample: guarantees at least this many files are checked even
+      # in tiny repos. Values below 3 are anomalously low for a meaningful coverage sample.
+      min_adaptive_sample: 10
+      # Denominator for adaptive percentage: sample ≈ total_files // adaptive_denominator.
+      # At 5, approximately 20% of the corpus is sampled. Lower = broader coverage, higher = faster.
+      adaptive_denominator: 5

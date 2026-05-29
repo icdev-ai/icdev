@@ -32,6 +32,14 @@ _DEFAULTS: dict[str, Any] = {
     "nlp_extractor_max_tokens": 256,
     "nlp_extractor_confidence_threshold": 0.7,
     "nlp_extractor_text_sample_chars": 2000,
+    "code_scan_py_sample": 30,
+    "code_scan_yaml_sample": 20,
+    "enhanced_path_sample": 10,
+    "doc_sample": 5,
+    "checklist_nlp_sample": 3,
+    "compliance_nlp_sample": 3,
+    "cat_remediation_py_sample": 20,
+    "cat_remediation_doc_sample": 5,
 }
 
 
@@ -56,6 +64,14 @@ def _load_thresholds() -> dict[str, Any]:
             "nlp_extractor_text_sample_chars": int(
                 cfg.get("text_sample_chars", _DEFAULTS["nlp_extractor_text_sample_chars"])
             ),
+            "code_scan_py_sample": int(cfg.get("code_scan_py_sample", _DEFAULTS["code_scan_py_sample"])),
+            "code_scan_yaml_sample": int(cfg.get("code_scan_yaml_sample", _DEFAULTS["code_scan_yaml_sample"])),
+            "enhanced_path_sample": int(cfg.get("enhanced_path_sample", _DEFAULTS["enhanced_path_sample"])),
+            "doc_sample": int(cfg.get("doc_sample", _DEFAULTS["doc_sample"])),
+            "checklist_nlp_sample": int(cfg.get("checklist_nlp_sample", _DEFAULTS["checklist_nlp_sample"])),
+            "compliance_nlp_sample": int(cfg.get("compliance_nlp_sample", _DEFAULTS["compliance_nlp_sample"])),
+            "cat_remediation_py_sample": int(cfg.get("cat_remediation_py_sample", _DEFAULTS["cat_remediation_py_sample"])),
+            "cat_remediation_doc_sample": int(cfg.get("cat_remediation_doc_sample", _DEFAULTS["cat_remediation_doc_sample"])),
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
@@ -114,7 +130,8 @@ def _check_stig_vids_in_code(repo: pathlib.Path) -> CriterionResult:
     cid = "stig-vids-in-code"
     py_files = _glob_files(repo, "**/*.py")
     yaml_files = _glob_files(repo, "**/*.yaml") + _glob_files(repo, "**/*.yml")
-    all_files = py_files[:30] + yaml_files[:20]
+    thresholds = _load_thresholds()
+    all_files = py_files[:thresholds["code_scan_py_sample"]] + yaml_files[:thresholds["code_scan_yaml_sample"]]
 
     # Fast path: regex detection
     hits = []
@@ -126,9 +143,8 @@ def _check_stig_vids_in_code(repo: pathlib.Path) -> CriterionResult:
         return CriterionResult(cid, True, f"STIG V-IDs found in {len(hits)} file(s): {', '.join(hits[:5])}")
 
     # Enhanced path: NLP for natural-language V-ID references missed by regex
-    thresholds = _load_thresholds()
     min_confidence = thresholds["nlp_extractor_confidence_threshold"]
-    for f in all_files[:10]:
+    for f in all_files[:thresholds["enhanced_path_sample"]]:
         content = f.read_text(encoding="utf-8", errors="replace")
         result = _nlp_extract_stig_refs(
             content,
@@ -159,7 +175,7 @@ def _check_stig_in_docs(repo: pathlib.Path) -> CriterionResult:
     # Enhanced path: NLP for natural-language STIG references missed by regex
     thresholds = _load_thresholds()
     min_confidence = thresholds["nlp_extractor_confidence_threshold"]
-    for f in doc_files[:5]:
+    for f in doc_files[:thresholds["doc_sample"]]:
         content = f.read_text(encoding="utf-8", errors="replace")
         result = _nlp_extract_stig_refs(
             content,
@@ -204,7 +220,7 @@ def _check_stig_checklist(repo: pathlib.Path) -> CriterionResult:
     # Covers both standard checklist files AND compliance docs not caught by regex above.
     thresholds = _load_thresholds()
     min_confidence = thresholds["nlp_extractor_confidence_threshold"]
-    nlp_candidates = list(checklist_files[:3]) + list(compliance_files[:3])
+    nlp_candidates = list(checklist_files[:thresholds["checklist_nlp_sample"]]) + list(compliance_files[:thresholds["compliance_nlp_sample"]])
     for f in nlp_candidates:
         content = f.read_text(encoding="utf-8", errors="replace")
         result = _nlp_extract_stig_refs(
@@ -223,7 +239,8 @@ def _check_stig_checklist(repo: pathlib.Path) -> CriterionResult:
 
 def _check_cat1_remediation(repo: pathlib.Path) -> CriterionResult:
     cid = "cat1-remediation"
-    all_files = _glob_files(repo, "**/*.py")[:20] + _glob_files(repo, "docs/**/*.md")
+    thresholds = _load_thresholds()
+    all_files = _glob_files(repo, "**/*.py")[:thresholds["cat_remediation_py_sample"]] + _glob_files(repo, "docs/**/*.md")
 
     # Fast path: regex — co-occurrence of V-IDs and CAT severity markers
     for f in all_files:
@@ -237,10 +254,9 @@ def _check_cat1_remediation(repo: pathlib.Path) -> CriterionResult:
         return CriterionResult(cid, True, f"STIG checklist present; CAT I tracking assumed: {checklist_files[0].name}")
 
     # Enhanced path: NLP for natural-language CAT severity descriptions missed by regex co-occurrence
-    thresholds = _load_thresholds()
     min_confidence = thresholds["nlp_extractor_confidence_threshold"]
     doc_files = _glob_files(repo, "docs/**/*.md") + _glob_files(repo, "*.md")
-    for f in doc_files[:5]:
+    for f in doc_files[:thresholds["cat_remediation_doc_sample"]]:
         content = f.read_text(encoding="utf-8", errors="replace")
         result = _nlp_extract_stig_refs(
             content,

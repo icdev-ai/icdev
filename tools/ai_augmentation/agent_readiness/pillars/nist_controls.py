@@ -33,6 +33,10 @@ _DEFAULTS: dict[str, Any] = {
     "nlp_extractor_max_tokens": 256,
     "nlp_extractor_confidence_threshold": 0.7,
     "nlp_extractor_text_sample_chars": 2000,
+    "fast_path_py_sample": 50,
+    "enhanced_path_py_sample": 10,
+    "doc_sample": 5,
+    "crosswalk_py_sample": 30,
 }
 
 
@@ -57,6 +61,10 @@ def _load_thresholds() -> dict[str, Any]:
             "nlp_extractor_text_sample_chars": int(
                 cfg.get("text_sample_chars", _DEFAULTS["nlp_extractor_text_sample_chars"])
             ),
+            "fast_path_py_sample": int(cfg.get("fast_path_py_sample", _DEFAULTS["fast_path_py_sample"])),
+            "enhanced_path_py_sample": int(cfg.get("enhanced_path_py_sample", _DEFAULTS["enhanced_path_py_sample"])),
+            "doc_sample": int(cfg.get("doc_sample", _DEFAULTS["doc_sample"])),
+            "crosswalk_py_sample": int(cfg.get("crosswalk_py_sample", _DEFAULTS["crosswalk_py_sample"])),
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
@@ -117,8 +125,9 @@ def _check_control_ids_in_code(repo: pathlib.Path) -> CriterionResult:
     py_files = _glob_files(repo, "**/*.py")
 
     # Fast path: regex detection
+    thresholds = _load_thresholds()
     hits = []
-    for f in py_files[:50]:
+    for f in py_files[:thresholds["fast_path_py_sample"]]:
         content = f.read_text(encoding="utf-8", errors="replace")
         if re.search(_NIST_CONTROL_PATTERN, content):
             hits.append(f.name)
@@ -127,9 +136,8 @@ def _check_control_ids_in_code(repo: pathlib.Path) -> CriterionResult:
                                f"NIST 800-53 control IDs found in {len(hits)} file(s): {', '.join(hits[:5])}")
 
     # Enhanced path: NLP for natural-language control references missed by regex
-    thresholds = _load_thresholds()
     min_confidence = thresholds["nlp_extractor_confidence_threshold"]
-    for f in py_files[:10]:
+    for f in py_files[:thresholds["enhanced_path_py_sample"]]:
         content = f.read_text(encoding="utf-8", errors="replace")
         result = _nlp_extract_nist_refs(
             content,
@@ -162,7 +170,7 @@ def _check_nist_in_docs(repo: pathlib.Path) -> CriterionResult:
     # Enhanced path: NLP for natural-language NIST references missed by regex
     thresholds = _load_thresholds()
     min_confidence = thresholds["nlp_extractor_confidence_threshold"]
-    for f in doc_files[:5]:
+    for f in doc_files[:thresholds["doc_sample"]]:
         content = f.read_text(encoding="utf-8", errors="replace")
         result = _nlp_extract_nist_refs(
             content,
@@ -207,7 +215,8 @@ def _check_crosswalk_config(repo: pathlib.Path) -> CriterionResult:
         return CriterionResult(cid, True, f"NIST crosswalk config found: {crosswalk_files[0].name}")
     # Check for crosswalk engine usage in Python
     py_files = _glob_files(repo, "**/*.py")
-    for f in py_files[:30]:
+    thresholds = _load_thresholds()
+    for f in py_files[:thresholds["crosswalk_py_sample"]]:
         content = f.read_text(encoding="utf-8", errors="replace")
         if _search(content, r"crosswalk|CrosswalkEngine|fedramp|cmmc"):
             return CriterionResult(cid, True, f"Crosswalk engine referenced in {f.name}")
