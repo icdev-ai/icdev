@@ -1,2 +1,4 @@
 {"ts": "2026-05-29T21:39:28.780221+00:00", "level": "INFO", "component": "pulse.capability_scanner", "message": "Loaded 57 capabilities from 18 domain files", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-29T21:39:31.139487+00:00", "level": "INFO", "component": "pulse.capability_scanner", "message": "Loaded 57 capabilities from 18 domain files", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T21:40:33.665468+00:00", "level": "INFO", "component": "pulse.capability_scanner", "message": "Loaded 57 capabilities from 18 domain files", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T21:40:36.928441+00:00", "level": "INFO", "component": "pulse.capability_scanner", "message": "Loaded 57 capabilities from 18 domain files", "trace_id": null, "session_id": null, "extra": {}}

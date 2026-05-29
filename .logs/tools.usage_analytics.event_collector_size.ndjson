@@ -1236,3 +1236,4 @@
 {"ts": "2026-05-29T21:15:55.524680+00:00", "level": "WARNING", "component": "tools.usage_analytics.event_collector", "message": "EventCollector.record failed: no such table: usage_events", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-29T21:15:57.623780+00:00", "level": "WARNING", "component": "tools.usage_analytics.event_collector", "message": "EventCollector.record failed: no such table: usage_events", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-29T21:15:58.565031+00:00", "level": "WARNING", "component": "tools.usage_analytics.event_collector", "message": "EventCollector.record failed: no such table: usage_events", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T22:01:42.886264+00:00", "level": "WARNING", "component": "tools.usage_analytics.event_collector", "message": "EventCollector.record failed: no such table: usage_events", "trace_id": null, "session_id": null, "extra": {}}
