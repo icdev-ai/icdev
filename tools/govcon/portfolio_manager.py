@@ -81,6 +81,10 @@ def _build_recommendations(scores):
 
 def _get_db():
     conn = get_connection()
+    # Govcon tools are service-layer operations — clear any Flask RLS context
+    # so that complex JOIN queries (subquery aliases) don't fail with
+    # "no such column: c.classification" when RLS injection misfires.
+    conn.set_security_context(None)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

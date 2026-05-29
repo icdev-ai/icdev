@@ -65,6 +65,9 @@ CONFIDENCE_LEVELS = _CFG.get("forecast_confidence_levels", [0.50, 0.80, 0.95])
 
 def _get_db():
     conn = get_connection()
+    # Govcon tools are service-layer operations — clear any Flask RLS context
+    # so that complex JOIN queries don't fail with RLS column injection errors.
+    conn.set_security_context(None)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

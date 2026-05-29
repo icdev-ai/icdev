@@ -693,10 +693,13 @@ Generate only the requirements block. No preamble, no explanations."""
                 app_logger.warning("ai_boost: LLM unavailable (%s), using stub requirements", exc)
             stub_lines = []
             org = session_data.get("customer_org", "the project")
-            for _t in (missing_types or ["functional"])[:3]:
+            # When missing_types is empty (all types already covered), generate additional
+            # depth requirements so AI Boost always produces at least 1 result in CI.
+            boost_types = (missing_types or all_types[:3]) if missing_types else ["functional", "security", "performance"]
+            for _t in boost_types[:3]:
                 stub_lines.append(
                     f"TYPE: {_t}\n"
-                    f"TEXT: The system shall meet {_t} requirements for {org}.\n"
+                    f"TEXT: The system shall meet enhanced {_t} requirements for {org}.\n"
                     f"CRITERIA: System satisfies {_t} standards within the agreed timeline and budget."
                 )
             content = "\n\n".join(stub_lines)

@@ -21,34 +21,124 @@ os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
 
 MINIMAL_ICDEV_SCHEMA = """
 CREATE TABLE IF NOT EXISTS studio_workflows (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    template_yaml TEXT DEFAULT '',
-    category TEXT DEFAULT 'custom',
-    shared INTEGER DEFAULT 0,
-    created_at TEXT,
-    updated_at TEXT
+    workflow_id   TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    description   TEXT DEFAULT '',
+    template_yaml TEXT NOT NULL DEFAULT '',
+    category      TEXT DEFAULT 'custom',
+    shared        INTEGER DEFAULT 0,
+    created_by    TEXT,
+    version       INTEGER DEFAULT 1,
+    created_at    TEXT,
+    updated_at    TEXT
 );
 CREATE TABLE IF NOT EXISTS studio_workflow_runs (
-    id TEXT PRIMARY KEY,
-    workflow_id TEXT NOT NULL,
-    status TEXT DEFAULT 'pending',
-    started_at TEXT,
-    finished_at TEXT,
-    error TEXT DEFAULT '',
-    FOREIGN KEY (workflow_id) REFERENCES studio_workflows(id)
+    run_id         TEXT PRIMARY KEY,
+    workflow_id    TEXT NOT NULL,
+    workflow_name  TEXT,
+    status         TEXT DEFAULT 'pending',
+    started_at     TEXT,
+    completed_at   TEXT,
+    triggered_by   TEXT,
+    project_id     TEXT DEFAULT 'default',
+    summary_json   TEXT,
+    FOREIGN KEY (workflow_id) REFERENCES studio_workflows(workflow_id)
 );
 CREATE TABLE IF NOT EXISTS studio_workflow_run_steps (
-    id TEXT PRIMARY KEY,
-    run_id TEXT NOT NULL,
-    step_name TEXT DEFAULT '',
-    status TEXT DEFAULT 'pending',
-    output TEXT DEFAULT '',
-    error TEXT DEFAULT '',
-    started_at TEXT,
+    step_run_id  TEXT PRIMARY KEY,
+    run_id       TEXT NOT NULL,
+    step_id      TEXT NOT NULL DEFAULT '',
+    step_name    TEXT DEFAULT '',
+    tool         TEXT,
+    status       TEXT DEFAULT 'pending',
+    exit_code    INTEGER,
+    stdout       TEXT DEFAULT '',
+    stderr       TEXT DEFAULT '',
+    duration_ms  INTEGER DEFAULT 0,
+    started_at   TEXT,
+    completed_at TEXT,
+    FOREIGN KEY (run_id) REFERENCES studio_workflow_runs(run_id)
+);
+CREATE TABLE IF NOT EXISTS kanban_tasks (
+    id                    TEXT PRIMARY KEY,
+    title                 TEXT NOT NULL,
+    description           TEXT,
+    task_type             TEXT DEFAULT 'build',
+    priority              TEXT DEFAULT 'high',
+    status                TEXT DEFAULT 'backlog',
+    scheduled_at          TEXT,
+    created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+    completed_at          TEXT,
+    executor_type         TEXT DEFAULT 'claude_cli',
+    execution_id          TEXT,
+    executor_url          TEXT,
+    depends_on_task_id    TEXT,
+    source_prediction_id  TEXT,
+    failure_count         INTEGER DEFAULT 0,
+    last_failure_reason   TEXT,
+    last_failure_at       TEXT,
+    dispatch_source       TEXT DEFAULT 'unknown',
+    hitl_stage            TEXT,
+    start_date            TEXT,
+    target_date           TEXT,
+    files_changed         INTEGER DEFAULT 0,
+    lines_added           INTEGER DEFAULT 0,
+    lines_removed         INTEGER DEFAULT 0,
+    completed_via_bypass  INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS kanban_task_deps (
+    task_id         TEXT NOT NULL,
+    depends_on_id   TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    PRIMARY KEY (task_id, depends_on_id),
+    FOREIGN KEY (task_id)       REFERENCES kanban_tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (depends_on_id) REFERENCES kanban_tasks(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS kanban_executions (
+    id          TEXT PRIMARY KEY,
+    task_id     TEXT NOT NULL,
+    status      TEXT DEFAULT 'pending',
+    started_at  TEXT,
     finished_at TEXT,
-    FOREIGN KEY (run_id) REFERENCES studio_workflow_runs(id)
+    output      TEXT,
+    error       TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS kanban_verifications (
+    id                    TEXT PRIMARY KEY,
+    task_id               TEXT NOT NULL,
+    verified_at           TEXT NOT NULL,
+    result                TEXT NOT NULL,
+    reason                TEXT,
+    output_length         INTEGER DEFAULT 0,
+    fail_markers_found    TEXT,
+    claimed_paths         INTEGER DEFAULT 0,
+    existing_paths        INTEGER DEFAULT 0,
+    phantom_ratio         REAL DEFAULT 0,
+    git_commits           INTEGER DEFAULT 0,
+    specific_checks       TEXT,
+    codelens_passed       INTEGER,
+    ruff_issues           INTEGER,
+    bandit_issues         INTEGER,
+    pytest_passed         INTEGER,
+    failed_tests          TEXT,
+    coherence_passed      INTEGER,
+    coherence_violations  TEXT,
+    e2e_ran               INTEGER,
+    e2e_passed            INTEGER,
+    e2e_errors            TEXT,
+    companion_synced      INTEGER,
+    created_at            TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS kanban_status_transitions (
+    id           TEXT PRIMARY KEY,
+    task_id      TEXT NOT NULL,
+    from_status  TEXT,
+    to_status    TEXT NOT NULL,
+    actor        TEXT,
+    reason       TEXT,
+    recorded_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,

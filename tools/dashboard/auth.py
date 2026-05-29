@@ -403,6 +403,22 @@ def _auth_before_request():
     """Flask before_request hook for authentication."""
     g.current_user = None
 
+    # E2E / CI bypass: ICDEV_AUTH_BYPASS=true skips all auth checks and
+    # injects a synthetic admin user so Playwright tests can exercise every
+    # API route without needing a real session or API key.
+    if os.environ.get("ICDEV_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
+        bypass_user = {
+            "id": "e2e-bypass",
+            "email": "e2e@icdev.local",
+            "role": "admin",
+            "status": "active",
+            "tenant_id": None,
+            "classification": "CUI",
+        }
+        g.current_user = bypass_user
+        _attach_security_context(bypass_user)
+        return None
+
     # Defer /api/v1/* to the new JWT middleware (tools.dashboard.api.auth,
     # Phase C / P1.3). This hook stays authoritative for legacy /api/* and
     # Jinja page routes; it only steps aside for the versioned surface.

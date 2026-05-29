@@ -111,7 +111,7 @@ if _CANVAS_KG_ENABLED:
 # Air-gap installs (ICDEV_AIRGAP=true) force this off regardless so the
 # GovCon Python modules are never imported, not just route-blocked.
 _GOVCON_ENABLED = (
-    os.environ.get("ICDEV_GOVCON_ENABLED", "false").lower() == "true"
+    os.environ.get("ICDEV_GOVCON_ENABLED", "false").lower() in ("true", "1", "yes")
     and not _AIRGAP_MODE
 )
 # Feature flags for page-route registration (blueprints registered via register_api_blueprints)
@@ -161,7 +161,7 @@ _CANVAS_DEFS = [
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
 ]
 
-_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas"}
+_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc"}
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
     _default = "true" if _key in _CANVAS_DEFAULTS_TRUE else "false"
@@ -2670,9 +2670,10 @@ def create_app() -> Flask:
     @app.route("/agents")
     def agents_list():
         """Agent status page."""
-        conn = _get_db()
         agents: list = []
+        conn = None
         try:
+            conn = _get_db()
             rows = conn.execute("SELECT * FROM agents ORDER BY name").fetchall()
             agent_ids = [r["id"] for r in rows]
             task_counts: dict = {}
@@ -2693,7 +2694,8 @@ def create_app() -> Flask:
         except Exception:
             agents = []
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
 
         active = sum(1 for a in agents if a.get("status") == "active")
         inactive = len(agents) - active

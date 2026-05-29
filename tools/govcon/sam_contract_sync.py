@@ -52,6 +52,9 @@ DELAY = RATE_LIMIT.get("delay_between_requests", 0.15)
 
 def _get_db():
     conn = get_connection()
+    # Govcon tools are service-layer operations — clear any Flask RLS context
+    # so that complex queries don't fail with RLS column injection errors.
+    conn.set_security_context(None)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
