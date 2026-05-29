@@ -1863,13 +1863,17 @@ def update_workflow(
 def delete_workflow(workflow_id: str) -> dict:
     conn = get_connection()
     try:
-        cur = conn.execute(
+        row = conn.execute(
+            "SELECT workflow_id FROM studio_workflows WHERE workflow_id = ?",
+            (workflow_id,),
+        ).fetchone()
+        if not row:
+            return {"status": "error", "error": "Workflow not found"}
+        conn.execute(
             "DELETE FROM studio_workflows WHERE workflow_id = ?",
             (workflow_id,),
         )
         conn.commit()
-        if cur.rowcount == 0:
-            return {"status": "error", "error": "Workflow not found"}
         return {"status": "ok", "deleted": workflow_id}
     finally:
         conn.close()

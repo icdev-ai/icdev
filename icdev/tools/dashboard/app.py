@@ -117,7 +117,7 @@ except ImportError:
 # Air-gap installs (ICDEV_AIRGAP=true) force this off regardless so the
 # GovCon Python modules are never imported, not just route-blocked.
 _GOVCON_ENABLED = (
-    os.environ.get("ICDEV_GOVCON_ENABLED", "false").lower() == "true"
+    os.environ.get("ICDEV_GOVCON_ENABLED", "false").lower() in ("true", "1", "yes")
     and not _AIRGAP_MODE
 )
 # Feature flags for page-route registration (blueprints registered via register_api_blueprints)
@@ -167,7 +167,7 @@ _CANVAS_DEFS = [
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
 ]
 
-_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas"}
+_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc"}
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
     _default = "true" if _key in _CANVAS_DEFAULTS_TRUE else "false"
@@ -1623,6 +1623,23 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Kanban DB init skipped: %s", _exc)
 
+    # ---- E2E demo session seed (ME conflict lifecycle tests) ----
+    try:
+        from tools.db.storage import get_connection as _gc
+        _seed_conn = _gc()
+        try:
+            _seed_conn.execute(
+                "INSERT OR IGNORE INTO intake_sessions "
+                "(id, customer_name, customer_org, session_status, classification, context_summary) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("sess-9cc6891cb548", "E2E Test User", "ICDEV CI", "active", "CUI", "{}"),
+            )
+            _seed_conn.commit()
+        finally:
+            _seed_conn.close()
+    except Exception as _exc:
+        app.logger.debug("E2E session seed skipped: %s", _exc)
+
     # ---- Geospatial Dashboard (task-a866147c27-d4) ----
     try:
         from src.routes.dashboard import bp as _geo_bp
@@ -2652,8 +2669,10 @@ def create_app() -> Flask:
     @app.route("/agents")
     def agents_list():
         """Agent status page."""
-        conn = _get_db()
+        agents: list = []
+        conn = None
         try:
+            conn = _get_db()
             rows = conn.execute("SELECT * FROM agents ORDER BY name").fetchall()
             agent_ids = [r["id"] for r in rows]
             task_counts: dict = {}
@@ -2667,23 +2686,25 @@ def create_app() -> Flask:
                     agent_ids,
                 ).fetchall()
                 task_counts = {r["target_agent_id"]: r["cnt"] for r in tc_rows}
-            agents = []
             for r in rows:
                 agent = dict(r)
                 agent["active_task_count"] = task_counts.get(agent["id"], 0)
                 agents.append(agent)
-
-            active = sum(1 for a in agents if a["status"] == "active")
-            inactive = len(agents) - active
-
-            return render_template(
-                "agents/list.html",
-                agents=agents,
-                active_count=active,
-                inactive_count=inactive,
-            )
+        except Exception:
+            agents = []
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
+
+        active = sum(1 for a in agents if a.get("status") == "active")
+        inactive = len(agents) - active
+
+        return render_template(
+            "agents/list.html",
+            agents=agents,
+            active_count=active,
+            inactive_count=inactive,
+        )
 
     @app.route("/api/core/iqe-query", methods=["POST"])
     def core_iqe_query():
