@@ -128,8 +128,27 @@ jobs:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
     needs: [test]
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: icdev
+          POSTGRES_PASSWORD: icdev_ci
+          POSTGRES_DB: icdev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
-      ICDEV_STORAGE_BACKEND: sqlite
+      ICDEV_STORAGE_BACKEND: postgresql
+      ICDEV_PG_HOST: localhost
+      ICDEV_PG_PORT: "5432"
+      ICDEV_PG_USER: icdev
+      ICDEV_PG_PASSWORD: icdev_ci
+      ICDEV_PG_DATABASE: icdev
       ICDEV_NO_SERVER: "1"
       ICDEV_AAC_ENABLED: "true"
       ICDEV_INNOVATION_ENABLED: "true"
@@ -137,6 +156,9 @@ jobs:
       ICDEV_MIGRATION_CANVAS_ENABLED: "true"
       ICDEV_AUTH_BYPASS: "true"
       ICDEV_MISSION_CANVAS_ENABLED: "true"
+      ICDEV_OPS_HUB_ENABLED: "true"
+      ICDEV_AIML_CANVAS_ENABLED: "true"
+      ICDEV_NDC_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

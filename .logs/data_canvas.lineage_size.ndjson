@@ -1,0 +1,1 @@
+{"ts": "2026-05-28T02:40:19.215471+00:00", "level": "WARNING", "component": "data_canvas.lineage", "message": "record_external_fetch failed for ext.gdelt.events: no DB", "trace_id": null, "session_id": null, "extra": {}}

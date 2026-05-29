@@ -1,0 +1,2 @@
+{"ts": "2026-05-29T10:27:29.666546+00:00", "level": "INFO", "component": "migration.168_seed_canvas_grants", "message": "Seeded canvas grants for tenant acme-defense (tenant-a891eacda3e2)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:27:29.752680+00:00", "level": "INFO", "component": "migration.168_seed_canvas_grants", "message": "Seeded canvas grants for tenant icdev-demo (f63db8a2-bb74-4f3f-8c87-bcd428fa127f)", "trace_id": null, "session_id": null, "extra": {}}

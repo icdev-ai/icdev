@@ -1,0 +1,1 @@
+{"ts": "2026-05-26T00:12:37.616506+00:00", "level": "WARNING", "component": "icdev.mission_canvas.security_posture", "message": "Security posture scoring failed: column \"status\" does not exist\nLINE 1: SELECT control_id, status FROM project_controls\n                           ^\n", "trace_id": null, "session_id": null, "extra": {}}

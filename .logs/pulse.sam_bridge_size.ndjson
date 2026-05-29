@@ -1,0 +1,10 @@
+{"ts": "2026-05-25T12:00:41.211437+00:00", "level": "INFO", "component": "pulse.sam_bridge", "message": "Description backfill: 0 updated, 0 checked", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T12:00:41.324700+00:00", "level": "INFO", "component": "pulse.sam_bridge", "message": "Found 0 unprocessed SAM.gov opportunities", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T12:18:01.539068+00:00", "level": "INFO", "component": "pulse.sam_bridge", "message": "Description backfill: 0 updated, 0 checked", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T12:18:01.669804+00:00", "level": "INFO", "component": "pulse.sam_bridge", "message": "Found 0 unprocessed SAM.gov opportunities", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-26T09:34:12.496255+00:00", "level": "INFO", "component": "pulse.sam_bridge", "message": "Description backfill: 0 updated, 0 checked", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-26T09:34:12.626976+00:00", "level": "INFO", "component": "pulse.sam_bridge", "message": "Found 0 unprocessed SAM.gov opportunities", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-26T19:50:48.495836+00:00", "level": "INFO", "component": "pulse.sam_bridge", "message": "Description backfill: 0 updated, 0 checked", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-26T19:50:48.548354+00:00", "level": "INFO", "component": "pulse.sam_bridge", "message": "Found 0 unprocessed SAM.gov opportunities", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-26T20:05:11.954538+00:00", "level": "INFO", "component": "pulse.sam_bridge", "message": "Description backfill: 0 updated, 0 checked", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-26T20:05:11.964208+00:00", "level": "INFO", "component": "pulse.sam_bridge", "message": "Found 0 unprocessed SAM.gov opportunities", "trace_id": null, "session_id": null, "extra": {}}

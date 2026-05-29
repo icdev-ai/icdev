@@ -1,0 +1,4 @@
+{"ts": "2026-05-29T09:34:55.604304+00:00", "level": "INFO", "component": "platform_db", "message": "Initializing platform database (backend=sqlite, force=False)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T09:34:55.609563+00:00", "level": "INFO", "component": "platform_db", "message": "Platform DB initialized: 8 tables (sqlite)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T21:16:56.158485+00:00", "level": "INFO", "component": "platform_db", "message": "Initializing platform database (backend=sqlite, force=False)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T21:16:56.162344+00:00", "level": "INFO", "component": "platform_db", "message": "Platform DB initialized: 8 tables (sqlite)", "trace_id": null, "session_id": null, "extra": {}}

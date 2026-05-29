@@ -1,0 +1,2 @@
+{"ts": "2026-05-29T10:12:28.365430+00:00", "level": "ERROR", "component": "gap_detector", "message": "rule route_not_listed raised: kaboom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:24:42.062290+00:00", "level": "ERROR", "component": "gap_detector", "message": "rule route_not_listed raised: kaboom", "trace_id": null, "session_id": null, "extra": {}}
