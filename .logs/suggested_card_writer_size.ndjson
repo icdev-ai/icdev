@@ -1,4 +1,0 @@
-{"ts": "2026-05-26T20:13:18.816147+00:00", "level": "INFO", "component": "suggested_card_writer", "message": "dedup: resetting done batch card task-879ab3adc9 to backlog (gap still open)", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-26T20:13:18.818501+00:00", "level": "INFO", "component": "suggested_card_writer", "message": "dedup: reset done card task-879ab3adc9 back to backlog (gap still open)", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-29T10:12:28.512447+00:00", "level": "INFO", "component": "suggested_card_writer", "message": "dedup: skipping pred p2 \u2014 open card card-p2 (suggested) already exists", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-29T10:24:42.148746+00:00", "level": "INFO", "component": "suggested_card_writer", "message": "dedup: skipping pred p2 \u2014 open card card-p2 (suggested) already exists", "trace_id": null, "session_id": null, "extra": {}}

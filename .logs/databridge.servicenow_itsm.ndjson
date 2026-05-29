@@ -1,2 +1,0 @@
-{"ts": "2026-05-29T10:08:17.913357+00:00", "level": "ERROR", "component": "databridge.servicenow_itsm", "message": "ITSM health check failed: Connection refused", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-29T10:20:17.687709+00:00", "level": "ERROR", "component": "databridge.servicenow_itsm", "message": "ITSM health check failed: Connection refused", "trace_id": null, "session_id": null, "extra": {}}
