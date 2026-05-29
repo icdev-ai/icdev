@@ -118,6 +118,108 @@ def revoke_column_select(table: str, columns: List[str], role: str) -> str:
     return f"REVOKE SELECT ({cols}) ON {table} FROM {role};"  # nosec B608 — DDL generator, not user input
 
 
+def apply_column_grants(conn=None) -> dict:
+    """Execute PostgreSQL column-level GRANTs for all policies in security_config.yaml (G-06).
+
+    Reads ``column_policies`` from ``args/security_config.yaml``. For each policy,
+    executes a ``GRANT SELECT (cols) ON table TO role`` statement via the provided
+    connection or a new connection from ``tools.db.storage.get_connection()``.
+
+    SQLite silently skips column GRANT DDL (not supported); this function is a
+    no-op on SQLite backends, which is intentional — masking is applied
+    application-side there.
+
+    Args:
+        conn: Optional existing DB connection. If None, opens one via get_connection().
+
+    Returns:
+        Dict with keys:
+          - backend (str): 'postgresql' or 'sqlite'
+          - grants_applied (int): number of GRANT statements executed
+          - grants_skipped (int): number skipped (DDL error or no columns)
+          - details (list[dict]): per-grant outcome
+    """
+    import os
+
+    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+    result: dict = {
+        "backend": backend,
+        "grants_applied": 0,
+        "grants_skipped": 0,
+        "details": [],
+    }
+
+    config = _load_config()
+    policies = config.get("column_policies", [])
+
+    if not policies:
+        logger.debug("No column_policies in security_config.yaml; nothing to grant")
+        return result
+
+    owned_conn = conn is None
+    if owned_conn:
+        try:
+            from tools.db.storage import get_connection  # type: ignore[import-untyped]
+            conn = get_connection()
+        except ImportError as exc:
+            logger.warning("Cannot import get_connection; skipping column grants: %s", exc)
+            return result
+
+    try:
+        for policy in policies:
+            table = policy.get("table", "")
+            role = policy.get("role", "")
+            columns_cfg = policy.get("columns", {})
+
+            if not table or not role or not columns_cfg:
+                result["grants_skipped"] += 1
+                result["details"].append({"table": table, "role": role, "status": "skipped_empty"})
+                continue
+
+            # columns_cfg is a dict of {column_name: masking_strategy}
+            permitted_cols = list(columns_cfg.keys()) if isinstance(columns_cfg, dict) else []
+            if not permitted_cols:
+                result["grants_skipped"] += 1
+                result["details"].append({"table": table, "role": role, "status": "skipped_no_cols"})
+                continue
+
+            ddl = grant_column_select(table, permitted_cols, role)
+            try:
+                conn.execute(ddl)
+                result["grants_applied"] += 1
+                result["details"].append({"table": table, "role": role, "columns": permitted_cols, "status": "granted"})
+                logger.info("Column GRANT applied: %s role=%s cols=%s", table, role, permitted_cols)
+            except Exception as exc:
+                err_msg = str(exc)
+                if backend == "sqlite":
+                    # SQLite doesn't support column-level GRANTs — expected, skip silently
+                    result["grants_skipped"] += 1
+                    result["details"].append({"table": table, "role": role, "status": "sqlite_skip"})
+                else:
+                    logger.warning("Column GRANT failed: table=%s role=%s err=%s", table, role, err_msg)
+                    result["grants_skipped"] += 1
+                    result["details"].append({"table": table, "role": role, "status": "error", "error": err_msg})
+
+        if result["grants_applied"] > 0:
+            try:
+                conn.commit()
+            except Exception:
+                pass
+
+    finally:
+        if owned_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    logger.info(
+        "apply_column_grants: backend=%s applied=%d skipped=%d",
+        backend, result["grants_applied"], result["grants_skipped"],
+    )
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Audit logging
 # ---------------------------------------------------------------------------
