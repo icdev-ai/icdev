@@ -1,0 +1,16 @@
+{"ts": "2026-05-29T09:59:08.735046+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL URL not configured; strict mode denies", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T09:59:08.742103+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL fetch failed for http://x.example: network down", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T09:59:08.743417+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL fetch failed for http://x.example: network down", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T09:59:08.748707+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "No serial provided; strict mode denies", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:12:32.547382+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL URL not configured; strict mode denies", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:12:32.555013+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL fetch failed for http://x.example: network down", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:12:32.556446+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL fetch failed for http://x.example: network down", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:12:32.561678+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "No serial provided; strict mode denies", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:24:45.322877+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL URL not configured; strict mode denies", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:24:45.330519+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL fetch failed for http://x.example: network down", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:24:45.332433+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL fetch failed for http://x.example: network down", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:24:45.339740+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "No serial provided; strict mode denies", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:27:57.391142+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL URL not configured; strict mode denies", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:27:57.395493+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL fetch failed for http://x.example: network down", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:27:57.396424+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "CRL fetch failed for http://x.example: network down", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:27:57.399784+00:00", "level": "WARNING", "component": "saas.auth.cac", "message": "No serial provided; strict mode denies", "trace_id": null, "session_id": null, "extra": {}}

@@ -1,0 +1,6 @@
+{"ts": "2026-05-29T10:09:15.300421+00:00", "level": "INFO", "component": "tools.pulse.writeguard", "message": "Running full WriteGuard quality check...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:09:23.084971+00:00", "level": "INFO", "component": "tools.pulse.writeguard", "message": "Running full WriteGuard quality check...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:09:30.698330+00:00", "level": "INFO", "component": "tools.pulse.writeguard", "message": "Running full WriteGuard quality check...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:21:50.993256+00:00", "level": "INFO", "component": "tools.pulse.writeguard", "message": "Running full WriteGuard quality check...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:21:58.537210+00:00", "level": "INFO", "component": "tools.pulse.writeguard", "message": "Running full WriteGuard quality check...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:22:05.913796+00:00", "level": "INFO", "component": "tools.pulse.writeguard", "message": "Running full WriteGuard quality check...", "trace_id": null, "session_id": null, "extra": {}}

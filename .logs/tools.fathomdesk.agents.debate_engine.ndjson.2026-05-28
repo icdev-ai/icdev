@@ -1,0 +1,2 @@
+{"ts": "2026-05-29T01:58:20.810263+00:00", "level": "WARNING", "component": "tools.fathomdesk.agents.debate_engine", "message": "DebateEngine: analyst 'fundamentals' raised: Simulated analyst failure", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T02:32:43.149965+00:00", "level": "WARNING", "component": "tools.fathomdesk.agents.debate_engine", "message": "DebateEngine: analyst 'fundamentals' raised: Simulated analyst failure", "trace_id": null, "session_id": null, "extra": {}}

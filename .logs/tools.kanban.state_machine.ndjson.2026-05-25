@@ -1,0 +1,4 @@
+{"ts": "2026-05-25T14:52:23.133455+00:00", "level": "WARNING", "component": "tools.kanban.state_machine", "message": "backfill_auto_close pass-1 failed: near \"%\": syntax error", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T14:52:49.646557+00:00", "level": "WARNING", "component": "tools.kanban.state_machine", "message": "backfill_auto_close pass-1 failed: near \"%\": syntax error", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T14:57:49.347555+00:00", "level": "WARNING", "component": "tools.kanban.state_machine", "message": "backfill_auto_close pass-1 failed: near \"%\": syntax error", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T14:58:15.641911+00:00", "level": "WARNING", "component": "tools.kanban.state_machine", "message": "backfill_auto_close pass-1 failed: near \"%\": syntax error", "trace_id": null, "session_id": null, "extra": {}}

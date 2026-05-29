@@ -1,0 +1,7 @@
+{"ts": "2026-05-29T10:07:53.967332+00:00", "level": "WARNING", "component": "tools.ci.modules.workflow_ops", "message": "extract_icdev_info: agent invocation raised: agent down", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:07:53.987236+00:00", "level": "INFO", "component": "tools.ci.modules.workflow_ops", "message": "workflow_ops.ensure_run_id: reusing R1", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:07:53.990206+00:00", "level": "INFO", "component": "tools.ci.modules.workflow_ops", "message": "workflow_ops.ensure_run_id: created abcd1234", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:19:53.934173+00:00", "level": "WARNING", "component": "tools.ci.modules.workflow_ops", "message": "extract_icdev_info: agent invocation raised: agent down", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:19:53.951075+00:00", "level": "INFO", "component": "tools.ci.modules.workflow_ops", "message": "workflow_ops.ensure_run_id: reusing R1", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:19:53.953635+00:00", "level": "INFO", "component": "tools.ci.modules.workflow_ops", "message": "workflow_ops.ensure_run_id: created abcd1234", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:28:22.433539+00:00", "level": "INFO", "component": "tools.ci.modules.workflow_ops", "message": "workflow_ops.ensure_run_id: reusing 08c7f5a9", "trace_id": null, "session_id": null, "extra": {}}

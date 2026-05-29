@@ -1,0 +1,2 @@
+{"ts": "2026-05-29T02:32:40.189118+00:00", "level": "WARNING", "component": "tools.trading.data.market_data", "message": "alpaca bars failed for AAPL (simulated outage); using sample fallback", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T02:32:40.192663+00:00", "level": "WARNING", "component": "tools.trading.data.market_data", "message": "alpaca quote failed for AAPL (x); using sample fallback", "trace_id": null, "session_id": null, "extra": {}}

@@ -1,0 +1,4 @@
+{"ts": "2026-05-26T00:05:15.853580+00:00", "level": "INFO", "component": "icdev.redaction.detector", "message": "Presidio not available (ModuleNotFoundError) \u2014 using built-in detection", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-26T00:05:15.865228+00:00", "level": "INFO", "component": "icdev.redaction.detector", "message": "Ollama NER recognizer initialized (use_ollama=True)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-26T00:25:57.321435+00:00", "level": "INFO", "component": "icdev.redaction.detector", "message": "Presidio not available (ModuleNotFoundError) \u2014 using built-in detection", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-26T00:25:57.323983+00:00", "level": "INFO", "component": "icdev.redaction.detector", "message": "Ollama NER recognizer initialized (use_ollama=True)", "trace_id": null, "session_id": null, "extra": {}}

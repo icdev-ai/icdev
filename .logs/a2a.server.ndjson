@@ -1,0 +1,39 @@
+{"ts": "2026-05-29T10:08:18.239005+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: route-task", "trace_id": null, "session_id": null, "extra": {}}
+}
+{"ts": "2026-05-29T10:08:18.239251+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: check-stig", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239278+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: aggregate-results", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239349+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: write-tests", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239551+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: generate-sbom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239616+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: generate-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239686+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: scaffold-project", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239708+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: apply-cui-markings", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239732+00:00", "level": "INFO", "component": "a2a.server", "message": "Starting ICDEV\u2122 Orchestrator on 0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239754+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: lint-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239804+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: map-controls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239848+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: format-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239905+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: echo", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.239916+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: echo", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.240047+00:00", "level": "INFO", "component": "a2a.server", "message": "Starting ICDEV\u2122 Compliance on 0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.240053+00:00", "level": "INFO", "component": "a2a.server", "message": "Starting ICDEV\u2122 Builder on 0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:08:18.725874+00:00", "level": "INFO", "component": "a2a.server", "message": "Async task 8f610861-d624-40ae-aacb-47931b525bb0 completed with status: completed", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.988838+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: write-tests", "trace_id": null, "session_id": null, "extra": {}}
+
+{"ts": "2026-05-29T10:20:17.988830+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: orchestrate-workflow", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989068+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: generate-poam", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989113+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: generate-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989135+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: route-task", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989145+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: check-stig", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989197+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: scaffold-project", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989250+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: aggregate-results", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989265+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: lint-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989286+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: generate-sbom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989320+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: echo", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989328+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: format-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989355+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: apply-cui-markings", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989394+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: echo", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989419+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: map-controls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989440+00:00", "level": "INFO", "component": "a2a.server", "message": "Starting ICDEV\u2122 Orchestrator on 0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989511+00:00", "level": "INFO", "component": "a2a.server", "message": "Starting ICDEV\u2122 Builder on 0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989525+00:00", "level": "INFO", "component": "a2a.server", "message": "Registered skill: echo", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:17.989669+00:00", "level": "INFO", "component": "a2a.server", "message": "Starting ICDEV\u2122 Compliance on 0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T10:20:18.477310+00:00", "level": "INFO", "component": "a2a.server", "message": "Async task 13f780da-d579-474e-8b74-66ced1e709a2 completed with status: completed", "trace_id": null, "session_id": null, "extra": {}}
