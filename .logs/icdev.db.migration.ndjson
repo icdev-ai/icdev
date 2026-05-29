@@ -1,2 +1,0 @@
-{"ts": "2026-05-25T15:54:17.865099+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 162 (rls_column_backfill)...", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-25T15:54:18.236256+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Migration 162 applied in 340ms", "trace_id": null, "session_id": null, "extra": {}}

@@ -1,2 +1,0 @@
-{"ts": "2026-05-29T10:24:53.893041+00:00", "level": "WARNING", "component": "icdev.rag.crag_evaluator", "message": "Test set file not found: \\nonexistent\\path\\test.json", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-29T10:24:54.180609+00:00", "level": "ERROR", "component": "icdev.rag.crag_evaluator", "message": "Failed to load test set: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)", "trace_id": null, "session_id": null, "extra": {}}

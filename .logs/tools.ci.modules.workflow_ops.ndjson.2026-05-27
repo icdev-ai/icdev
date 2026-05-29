@@ -1,3 +1,0 @@
-{"ts": "2026-05-28T02:18:33.582676+00:00", "level": "WARNING", "component": "tools.ci.modules.workflow_ops", "message": "extract_icdev_info: agent invocation raised: agent down", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-28T02:18:33.602329+00:00", "level": "INFO", "component": "tools.ci.modules.workflow_ops", "message": "workflow_ops.ensure_run_id: reusing R1", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-28T02:18:33.605347+00:00", "level": "INFO", "component": "tools.ci.modules.workflow_ops", "message": "workflow_ops.ensure_run_id: created abcd1234", "trace_id": null, "session_id": null, "extra": {}}
