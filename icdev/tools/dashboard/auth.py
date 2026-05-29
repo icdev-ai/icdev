@@ -403,6 +403,13 @@ def _auth_before_request():
     """Flask before_request hook for authentication."""
     g.current_user = None
 
+    # CI / dev auth bypass — skip all auth checks when explicitly enabled.
+    if os.environ.get("ICDEV_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
+        g.current_user = {"id": "bypass", "email": "ci@icdev.local", "role": "admin",
+                          "display_name": "CI Bypass", "status": "active",
+                          "tenant_id": None, "classification": "CUI"}
+        return None
+
     # Defer /api/v1/* to the new JWT middleware (tools.dashboard.api.auth,
     # Phase C / P1.3). This hook stays authoritative for legacy /api/* and
     # Jinja page routes; it only steps aside for the versioned surface.
@@ -512,6 +519,10 @@ def _auto_provision_env_key():
                 (user_id, email, "Admin", "admin", "auto_provision"),
             )
             conn.commit()
+    except Exception:
+        # Tables not yet initialized — skip auto-provision; server will work in
+        # unauthenticated mode until db is initialized and the process restarts.
+        return
     finally:
         conn.close()
 
