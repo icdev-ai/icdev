@@ -540,6 +540,58 @@ CREATE TABLE IF NOT EXISTS dm_csp_sync_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dm_csp_provider ON dm_csp_sync_log(provider, created_at);
+
+CREATE TABLE IF NOT EXISTS dm_product_slas (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    sla_type        TEXT NOT NULL,
+    target_value    REAL NOT NULL,
+    unit            TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_product_slas_product ON dm_product_slas(product_id);
+
+CREATE TABLE IF NOT EXISTS dm_product_subscriptions (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    subscriber_team TEXT NOT NULL,
+    purpose         TEXT DEFAULT '',
+    approved        INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_subscriptions_product ON dm_product_subscriptions(product_id);
+
+CREATE TABLE IF NOT EXISTS dm_data_contracts (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT DEFAULT '',
+    product_id      TEXT DEFAULT '',
+    name            TEXT NOT NULL,
+    contract_yaml   TEXT DEFAULT '',
+    version         TEXT DEFAULT '1.0.0',
+    status          TEXT DEFAULT 'draft',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_domain ON dm_data_contracts(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_product ON dm_data_contracts(product_id);
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_status  ON dm_data_contracts(status);
+
+CREATE TABLE IF NOT EXISTS dm_contract_test_runs (
+    id              TEXT PRIMARY KEY,
+    contract_id     TEXT REFERENCES dm_data_contracts(id) ON DELETE CASCADE,
+    passed          INTEGER DEFAULT 0,
+    error_count     INTEGER DEFAULT 0,
+    warnings        INTEGER DEFAULT 0,
+    result_json     TEXT DEFAULT '{}',
+    method          TEXT DEFAULT 'internal',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_test_runs_contract ON dm_contract_test_runs(contract_id);
 """
 
 
@@ -2472,6 +2524,21 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
                 conn.execute(f"ALTER TABLE dm_domains ADD COLUMN {_col} TEXT DEFAULT {_default}")
                 conn.commit()
                 print(f"[init_db] Migration applied: dm_domains.{_col} added.")
+            except Exception as _e:
+                if "duplicate column" in str(_e).lower() or "already exists" in str(_e).lower():
+                    pass
+                else:
+                    raise
+
+        for _col, _default in [
+            ("output_port_type", "'table'"),
+            ("sla_tier", "'standard'"),
+            ("owner_team", "''"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE dm_data_products ADD COLUMN {_col} TEXT DEFAULT {_default}")
+                conn.commit()
+                print(f"[init_db] Migration applied: dm_data_products.{_col} added.")
             except Exception as _e:
                 if "duplicate column" in str(_e).lower() or "already exists" in str(_e).lower():
                     pass

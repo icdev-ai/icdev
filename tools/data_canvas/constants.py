@@ -481,6 +481,15 @@ DM_PORT_TYPES = ["cdc", "api", "batch", "stream", "file"]
 DM_CONTRACT_STATUSES = ["draft", "active", "deprecated", "archived"]
 DM_GOVERNANCE_POLICY_TYPES = ["opa", "rbac", "classification", "retention", "dlp"]
 
+# Data Mesh v2 constants (dm-found-02 — used by data_mesh/* modules)
+DM_MATURITY_LEVELS = ["defined", "managed", "optimizing"]       # simple validation list
+DM_PRODUCT_STATUS = ["draft", "published", "deprecated"]
+DM_OUTPUT_PORT_TYPES = ["table", "api", "stream", "file", "lakehouse"]
+DM_SLA_TIERS = ["bronze", "silver", "gold", "platinum"]
+DM_CONTRACT_STATUS = ["draft", "active", "violated", "deprecated"]
+DM_CSP_PROVIDERS = ["aws_datazone", "azure_purview", "gcp_dataplex"]
+DM_GOVERNANCE_SCORE_GATE: float = 0.6  # fraction of domains needing active policy
+
 _D = "https://icdev.dev/ontology/data#"
 
 DATA_ONTOLOGY_MAP: dict[str, str] = {
