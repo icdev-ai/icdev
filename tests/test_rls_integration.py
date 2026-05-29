@@ -23,6 +23,7 @@ import pytest
 class _Ctx:
     tenant_id: Optional[str] = None
     classification: Optional[str] = None  # None = no classification filter
+    compartments: frozenset = frozenset()  # LAC_* / COI_* tags
 
 
 # ---------------------------------------------------------------------------
@@ -259,3 +260,228 @@ class TestRLSNoOp:
         sql, params = inject_row_predicate("PRAGMA table_info(projects)", "tenant_a")
         assert sql == "PRAGMA table_info(projects)"
         assert params == ()
+
+
+# ---------------------------------------------------------------------------
+# LAC integration — Label-Based Access Control predicate via compartments
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def lac_db():
+    """In-memory DB with a lac_label column on the projects table."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        """CREATE TABLE projects (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            tenant_id TEXT,
+            classification TEXT,
+            lac_label TEXT
+        )"""
+    )
+    conn.executemany(
+        "INSERT INTO projects VALUES (?, ?, ?, ?, ?)",
+        [
+            ("p1", "Public",      "tenant_a", "CUI",    None),
+            ("p2", "DC East",     "tenant_a", "CUI",    "LAC_DC_EAST"),
+            ("p3", "NOFORN",      "tenant_a", "CUI",    "LAC_NOFORN"),
+            ("p4", "Other tenant","tenant_b", "CUI",    None),
+        ],
+    )
+    conn.commit()
+    yield conn
+    conn.close()
+
+
+class TestLAC:
+    def test_null_lac_rows_always_visible(self, lac_db):
+        """Rows with lac_label=NULL are world-readable within the tenant."""
+        ctx = _Ctx(tenant_id="tenant_a", compartments=frozenset({"LAC_DC_EAST"}))
+        cur = _cursor_with_ctx(lac_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert "p1" in ids  # NULL lac_label → visible
+
+    def test_matching_lac_label_visible(self, lac_db):
+        """Row with matching lac_label is returned."""
+        ctx = _Ctx(tenant_id="tenant_a", compartments=frozenset({"LAC_DC_EAST"}))
+        cur = _cursor_with_ctx(lac_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert "p2" in ids  # LAC_DC_EAST matches caller's compartment
+
+    def test_non_matching_lac_label_filtered(self, lac_db):
+        """Row with a label the caller doesn't hold is hidden."""
+        ctx = _Ctx(tenant_id="tenant_a", compartments=frozenset({"LAC_DC_EAST"}))
+        cur = _cursor_with_ctx(lac_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert "p3" not in ids  # LAC_NOFORN not in caller's compartments
+
+    def test_multiple_lac_labels_union(self, lac_db):
+        """Caller with multiple LAC labels sees all matching rows."""
+        ctx = _Ctx(
+            tenant_id="tenant_a",
+            compartments=frozenset({"LAC_DC_EAST", "LAC_NOFORN"}),
+        )
+        cur = _cursor_with_ctx(lac_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert "p2" in ids
+        assert "p3" in ids
+
+    def test_no_lac_compartments_hides_labeled_rows(self, lac_db):
+        """Caller with no LAC_* compartments sees only NULL-label rows."""
+        ctx = _Ctx(tenant_id="tenant_a", compartments=frozenset())
+        cur = _cursor_with_ctx(lac_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert ids == {"p1"}  # only the NULL-label row is visible
+
+    def test_cross_tenant_still_blocked(self, lac_db):
+        """tenant_b rows are never returned to a tenant_a context, even with matching label."""
+        ctx = _Ctx(tenant_id="tenant_a", compartments=frozenset({"LAC_DC_EAST"}))
+        cur = _cursor_with_ctx(lac_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert "p4" not in ids  # tenant_b row always excluded
+
+    def test_lac_update_scoped(self, lac_db):
+        """Batch UPDATE only touches rows the caller's LAC label permits."""
+        ctx = _Ctx(tenant_id="tenant_a", compartments=frozenset({"LAC_DC_EAST"}))
+        cur = _cursor_with_ctx(lac_db, ctx)
+        cur.execute("UPDATE projects SET name = ?", ("touched",))
+        lac_db.commit()
+
+        rows = {r[0]: r[1] for r in lac_db.execute("SELECT id, name FROM projects").fetchall()}
+        assert rows["p1"] == "touched"       # NULL lac_label → visible → updated
+        assert rows["p2"] == "touched"       # LAC_DC_EAST matches → updated
+        assert rows["p3"] == "DC East" or rows["p3"] == "NOFORN"  # LAC_NOFORN blocked
+        # p3 name should be unchanged (LAC_NOFORN not in caller's set)
+        assert rows["p3"] != "touched"
+
+
+# ---------------------------------------------------------------------------
+# COI integration — Community of Interest predicate via compartments
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def coi_db():
+    """In-memory DB with a coi_tag column on the projects table."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        """CREATE TABLE projects (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            tenant_id TEXT,
+            classification TEXT,
+            coi_tag TEXT
+        )"""
+    )
+    conn.executemany(
+        "INSERT INTO projects VALUES (?, ?, ?, ?, ?)",
+        [
+            ("p1", "Open",        "tenant_a", "CUI", None),
+            ("p2", "Finance",     "tenant_a", "CUI", "COI_FINANCE"),
+            ("p3", "Intel",       "tenant_a", "CUI", "COI_INTEL"),
+            ("p4", "Other tenant","tenant_b", "CUI", None),
+        ],
+    )
+    conn.commit()
+    yield conn
+    conn.close()
+
+
+class TestCOI:
+    def test_null_coi_rows_always_visible(self, coi_db):
+        """Rows with coi_tag=NULL are accessible to all within tenant."""
+        ctx = _Ctx(tenant_id="tenant_a", compartments=frozenset({"COI_FINANCE"}))
+        cur = _cursor_with_ctx(coi_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert "p1" in ids
+
+    def test_matching_coi_tag_visible(self, coi_db):
+        """Row with matching COI tag is returned."""
+        ctx = _Ctx(tenant_id="tenant_a", compartments=frozenset({"COI_FINANCE"}))
+        cur = _cursor_with_ctx(coi_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert "p2" in ids
+
+    def test_non_matching_coi_tag_filtered(self, coi_db):
+        """Row with a COI tag the caller doesn't hold is hidden."""
+        ctx = _Ctx(tenant_id="tenant_a", compartments=frozenset({"COI_FINANCE"}))
+        cur = _cursor_with_ctx(coi_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert "p3" not in ids  # COI_INTEL not in caller's compartments
+
+    def test_multiple_coi_tags_union(self, coi_db):
+        """Caller with multiple COI tags sees all matching rows."""
+        ctx = _Ctx(
+            tenant_id="tenant_a",
+            compartments=frozenset({"COI_FINANCE", "COI_INTEL"}),
+        )
+        cur = _cursor_with_ctx(coi_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert "p2" in ids
+        assert "p3" in ids
+
+    def test_no_coi_compartments_hides_tagged_rows(self, coi_db):
+        """Caller with no COI_* compartments sees only NULL-tag rows."""
+        ctx = _Ctx(tenant_id="tenant_a", compartments=frozenset())
+        cur = _cursor_with_ctx(coi_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert ids == {"p1"}
+
+    def test_coi_cross_tenant_blocked(self, coi_db):
+        """COI membership never grants cross-tenant access."""
+        ctx = _Ctx(tenant_id="tenant_a", compartments=frozenset({"COI_FINANCE"}))
+        cur = _cursor_with_ctx(coi_db, ctx)
+        cur.execute("SELECT id FROM projects", ())
+        ids = {r[0] for r in cur.fetchall()}
+        assert "p4" not in ids
+
+    def test_lac_and_coi_combined(self):
+        """Both LAC and COI predicates injected simultaneously."""
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            """CREATE TABLE docs (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT,
+                classification TEXT,
+                lac_label TEXT,
+                coi_tag TEXT
+            )"""
+        )
+        conn.executemany(
+            "INSERT INTO docs VALUES (?, ?, ?, ?, ?)",
+            [
+                ("d1", "t1", "CUI", None,           None),
+                ("d2", "t1", "CUI", "LAC_DC_EAST",  None),
+                ("d3", "t1", "CUI", None,            "COI_FINANCE"),
+                ("d4", "t1", "CUI", "LAC_DC_EAST",  "COI_FINANCE"),
+                ("d5", "t1", "CUI", "LAC_NOFORN",   "COI_INTEL"),
+            ],
+        )
+        conn.commit()
+
+        ctx = _Ctx(
+            tenant_id="t1",
+            compartments=frozenset({"LAC_DC_EAST", "COI_FINANCE"}),
+        )
+        from tools.db.storage import StorageCursor
+        cur = StorageCursor(conn.cursor(), backend="sqlite")
+        cur.set_security_context(ctx)
+        cur.execute("SELECT id FROM docs", ())
+        ids = {r[0] for r in cur.fetchall()}
+
+        assert "d1" in ids   # NULL lac + NULL coi → visible
+        assert "d2" in ids   # LAC_DC_EAST matches, NULL coi → visible
+        assert "d3" in ids   # NULL lac, COI_FINANCE matches → visible
+        assert "d4" in ids   # both match → visible
+        assert "d5" not in ids  # LAC_NOFORN and COI_INTEL both absent → hidden
+        conn.close()

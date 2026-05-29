@@ -771,10 +771,18 @@ class StorageCursor:
             from tools.security.row_security import inject_row_predicate, _RE_UPDATE, _RE_DELETE
             tenant_id = getattr(ctx, "tenant_id", None)
             classification = getattr(ctx, "classification", None)
+            # Derive LAC and COI label sets from the compartments frozenset.
+            # LAC_* prefixed tags → label-based access control predicate.
+            # COI_* prefixed tags → community-of-interest predicate.
+            compartments = getattr(ctx, "compartments", frozenset()) or frozenset()
+            lac_labels = {c for c in compartments if c.upper().startswith("LAC_")} or None
+            coi_tags = {c for c in compartments if c.upper().startswith("COI_")} or None
             new_sql, extra = inject_row_predicate(
                 sql,
                 tenant_id=tenant_id,
                 classification=classification,
+                lac_labels=lac_labels,
+                coi_tags=coi_tags,
             )
             if extra:
                 # UPDATE/DELETE: predicate is at the END of the WHERE clause,
