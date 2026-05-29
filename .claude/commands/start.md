@@ -6,88 +6,112 @@ PORTAL_PORT: 8443
 
 ## Workflow
 
+> **Windows PowerShell note:** All commands below use PowerShell syntax. Set `$env:PYTHONPATH = "C:\AI\ICDev"` before any `python` call that imports `tools.*` or `icdev.*`. Use `2>$null` (not `2>/dev/null`), `Start-Sleep -Seconds N` (not `sleep N`), `Start-Process` (not `nohup`), and `Stop-Process` (not `pkill`).
+
 0. Kill all running Python processes to ensure a clean start:
-   ```bash
-   taskkill /f /im python.exe 2>/dev/null; echo "Cleared Python processes"
+   ```powershell
+   taskkill /f /im python.exe 2>$null; echo "Cleared Python processes"
    ```
 
-0. Reset any stuck IN PROGRESS tasks back to backlog (orphaned by the taskkill above):
-   ```bash
-   python -c "
+0. Reset any stuck IN PROGRESS tasks back to backlog (orphaned by the taskkill above).
+   Write a temp script then run it (avoids PowerShell quote-escaping issues with `python -c`):
+   ```powershell
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   @'
 from tools.db.storage import get_connection
 with get_connection() as conn:
     cur = conn.cursor()
-    cur.execute(\"UPDATE kanban_tasks SET status='backlog', updated_at=datetime('now') WHERE status='in_progress'\")
+    sql = "UPDATE kanban_tasks SET status='backlog', updated_at=datetime('now') WHERE status='in_progress'"
+    cur.execute(sql)
     n = cur.rowcount
     conn.commit()
-    print(f'Reset {n} stuck in_progress task(s) to backlog')
-"
+    print(f"Reset {n} stuck in_progress task(s) to backlog")
+'@ | Set-Content .tmp\reset_tasks.py
+   python .tmp\reset_tasks.py
    ```
 
 0. Read the dashboard port from `.env` (uses `ICDEV_DASHBOARD_PORT`, defaults to 5050):
-   ```bash
-   DASHBOARD_PORT=$(python -c "from dotenv import dotenv_values; print(dotenv_values('.env').get('ICDEV_DASHBOARD_PORT', '5050'))")
+   ```powershell
+   $DASHBOARD_PORT = python -c "from dotenv import dotenv_values; print(dotenv_values('.env').get('ICDEV_DASHBOARD_PORT', '5050'))"
    ```
    Use `$DASHBOARD_PORT` for all subsequent dashboard URL references.
 
-1. Check if the dashboard is already running on port `DASHBOARD_PORT`:
-   ```bash
-   python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import urllib.request; urllib.request.urlopen(f'http://localhost:{p}/health', timeout=2); print('RUNNING')" 2>/dev/null || echo "NOT_RUNNING"
+1. Check if the dashboard is already running on port `$DASHBOARD_PORT`:
+   ```powershell
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   $dashStatus = python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import urllib.request; urllib.request.urlopen(f'http://localhost:{p}/health', timeout=2); print('RUNNING')" 2>$null
+   if (-not $dashStatus) { $dashStatus = "NOT_RUNNING" }
+   echo $dashStatus
    ```
 
 2. If **RUNNING**: Open it in the browser and report status.
-   ```bash
+   ```powershell
+   $env:PYTHONPATH = "C:\AI\ICDev"
    python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import webbrowser; webbrowser.open(f'http://localhost:{p}')"
    ```
 
 3. If **NOT_RUNNING**: Initialize the database if needed, start the dashboard, and open the browser:
-   ```bash
-   python tools/db/init_icdev_db.py 2>/dev/null
+   ```powershell
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   python tools/db/init_icdev_db.py 2>$null
    ```
-   ```bash
-   nohup python tools/dashboard/app.py > .tmp/dashboard.log 2>&1 &
+   ```powershell
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   $proc = Start-Process python -ArgumentList "tools/dashboard/app.py" -RedirectStandardOutput ".tmp/dashboard.log" -RedirectStandardError ".tmp/dashboard_err.log" -WindowStyle Hidden -PassThru
+   echo "Dashboard PID: $($proc.Id)"
    ```
-   ```bash
-   sleep 2
+   ```powershell
+   Start-Sleep -Seconds 3
    ```
-   ```bash
+   ```powershell
+   $env:PYTHONPATH = "C:\AI\ICDev"
    python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import webbrowser; webbrowser.open(f'http://localhost:{p}')"
    ```
 
 4. Check if the SaaS API Gateway / Portal is already running on port `PORTAL_PORT`:
-   ```bash
-   python -c "import urllib.request; urllib.request.urlopen('http://localhost:8443/health', timeout=2); print('RUNNING')" 2>/dev/null || echo "NOT_RUNNING"
+   ```powershell
+   $portalStatus = python -c "import urllib.request; urllib.request.urlopen('http://localhost:8443/health', timeout=2); print('RUNNING')" 2>$null
+   if (-not $portalStatus) { $portalStatus = "NOT_RUNNING" }
+   echo $portalStatus
    ```
 
 5. If **NOT_RUNNING**: Initialize the platform database if needed, start the API gateway, and open the portal:
-   ```bash
-   python tools/saas/platform_db.py --init 2>/dev/null
+   ```powershell
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   python tools/saas/platform_db.py --init 2>$null
    ```
-   ```bash
-   nohup python tools/saas/api_gateway.py --port 8443 --debug > .tmp/api_gateway.log 2>&1 &
-   ```
-   ```bash
-   sleep 2
+   ```powershell
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   $gw = Start-Process python -ArgumentList "tools/saas/api_gateway.py", "--port", "8443", "--debug" -RedirectStandardOutput ".tmp/api_gateway.log" -RedirectStandardError ".tmp/api_gateway_err.log" -WindowStyle Hidden -PassThru
+   echo "API Gateway PID: $($gw.Id)"
+   Start-Sleep -Seconds 3
    ```
 
 6. Open the portal in the browser:
-   ```bash
-   python -m webbrowser "http://localhost:8443/portal/"
+   ```powershell
+   Start-Process "http://localhost:8443/portal/"
    ```
 
 7. Start the CI/CD poll trigger (polls GitHub/GitLab issues every 20s for ICDEV™-BOT automation):
-   ```bash
-   nohup python tools/ci/triggers/poll_trigger.py > .tmp/poll_trigger.log 2>&1 &
+   ```powershell
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   $pt = Start-Process python -ArgumentList "tools/ci/triggers/poll_trigger.py" -RedirectStandardOutput ".tmp/poll_trigger.log" -RedirectStandardError ".tmp/poll_trigger_err.log" -WindowStyle Hidden -PassThru
+   echo "Poll trigger PID: $($pt.Id)"
    ```
 
-8. Always start the Kanban Scheduler fresh (kill any stale instance first, then launch via module):
-   ```bash
-   pkill -f "tools.genesis.kanban_scheduler" 2>/dev/null; pkill -f "kanban_scheduler" 2>/dev/null; sleep 1; nohup python tools/genesis/kanban_scheduler.py > .tmp/kanban_scheduler.log 2>&1 & echo "Kanban scheduler PID: $!"
+8. Always start the Kanban Scheduler fresh (kill any stale instance first, then launch):
+   ```powershell
+   Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*kanban_scheduler*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+   Start-Sleep -Seconds 1
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   $ks = Start-Process python -ArgumentList "tools/genesis/kanban_scheduler.py" -RedirectStandardOutput ".tmp/kanban_scheduler.log" -RedirectStandardError ".tmp/kanban_scheduler_err.log" -WindowStyle Hidden -PassThru
+   echo "Kanban scheduler PID: $($ks.Id)"
    ```
 
-9. Check if the Genesis daemon (failure_triage, oracle_triage, awareness, heal, and 20+ other reflexes) is running:
-   ```bash
-   python -c "
+9. Check if the Genesis daemon (failure_triage, oracle_triage, awareness, heal, and 20+ other reflexes) is running.
+   Write a temp check script (avoids PowerShell quote-escaping):
+   ```powershell
+   @'
 import os, pathlib
 pid_file = pathlib.Path('.tmp/genesis/daemon.pid')
 if pid_file.exists():
@@ -99,12 +123,16 @@ if pid_file.exists():
         print('NOT_RUNNING')
 else:
     print('NOT_RUNNING')
-" 2>/dev/null || echo NOT_RUNNING
+'@ | Set-Content .tmp\check_daemon.py
+   python .tmp\check_daemon.py
    ```
 
    If **NOT_RUNNING**: start it (Task Scheduler will handle it on next reboot; start manually now):
-   ```bash
-   mkdir -p .tmp/genesis && nohup python tools/genesis/daemon.py > .tmp/genesis_daemon.log 2>&1 &
+   ```powershell
+   New-Item -ItemType Directory -Force -Path .tmp\genesis | Out-Null
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   $gd = Start-Process python -ArgumentList "tools/genesis/daemon.py" -RedirectStandardOutput ".tmp/genesis_daemon.log" -RedirectStandardError ".tmp/genesis_daemon_err.log" -WindowStyle Hidden -PassThru
+   echo "Genesis daemon PID: $($gd.Id)"
    ```
 
 10. Report to the user:
@@ -120,11 +148,12 @@ else:
    - **Poll Trigger**: `.tmp/poll_trigger.log`
    - **Kanban Scheduler**: `.tmp/kanban_scheduler.log` (promotes backlog → in_progress, dispatches to Claude CLI every 60s)
    - **Genesis Daemon**: `.tmp/genesis_daemon.log` (failure_triage every 30m, oracle_triage/awareness every 3h, heal every 5m, 20+ reflexes)
-   - To stop dashboard: `kill $(lsof -ti:$DASHBOARD_PORT)` or `pkill -f "tools/dashboard/app.py"`
-   - To stop portal: `kill $(lsof -ti:8443)` or `pkill -f "tools/saas/api_gateway.py"`
-   - To stop poll trigger: `pkill -f "tools/ci/triggers/poll_trigger.py"`
-   - To stop kanban scheduler: `pkill -f "tools/genesis/kanban_scheduler.py"`
-   - To stop genesis daemon: `python -c "import os,pathlib; os.kill(int(pathlib.Path('.tmp/genesis/daemon.pid').read_text().strip()), 15)"`
+   - To stop dashboard: `Get-Process python | Where-Object { $_.CommandLine -like "*dashboard/app*" } | Stop-Process -Force`
+   - To stop portal: `Get-Process python | Where-Object { $_.CommandLine -like "*api_gateway*" } | Stop-Process -Force`
+   - To stop poll trigger: `Get-Process python | Where-Object { $_.CommandLine -like "*poll_trigger*" } | Stop-Process -Force`
+   - To stop kanban scheduler: `Get-Process python | Where-Object { $_.CommandLine -like "*kanban_scheduler*" } | Stop-Process -Force`
+   - To stop genesis daemon: `Get-Process python | Where-Object { $_.CommandLine -like "*daemon.py*" } | Stop-Process -Force`
+   - To stop all Python processes: `taskkill /f /im python.exe 2>$null`
 
 ## Kanban Auto-Pickup
 

@@ -14,8 +14,6 @@ For live PostgreSQL integration, set ICDEV_STORAGE_BACKEND=postgresql and run wi
 a real PG connection: pytest tests/test_column_security_pg.py -v
 """
 
-import os
-import pytest
 
 import tools.security.column_security as _cs
 
@@ -117,8 +115,6 @@ class TestApplyColumnGrantsInjectedConn:
 
     def test_sqlite_skips_grant_silently(self, monkeypatch):
         """On SQLite, GRANTs that fail are counted as skipped, not errors."""
-        errors_logged = []
-
         class FailingConn:
             def execute(self, sql, *args):
                 raise Exception("near 'SELECT': syntax error")  # SQLite GRANT error

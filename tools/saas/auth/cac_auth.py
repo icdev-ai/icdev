@@ -167,11 +167,12 @@ def verify_ocsp(serial: str, issuer_cn: str = "", ocsp_url: Optional[str] = None
         return True
 
     try:
-        from cryptography import x509  # type: ignore[import-untyped]
-        from cryptography.x509 import ocsp as _ocsp  # type: ignore[import-untyped]
-    except ImportError:
-        logger.warning("cryptography library not available; falling back to CRL")
-        return verify_crl(serial)
+        import importlib.util
+        if importlib.util.find_spec("cryptography") is None:
+            logger.warning("cryptography library not available; falling back to CRL")
+            return verify_crl(serial)
+    except Exception:
+        pass
 
     # Without the full issuer cert object (only the CN is available from the
     # CAC header), we cannot build a complete OCSP request. Fall through to CRL.

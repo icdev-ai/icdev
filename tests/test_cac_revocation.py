@@ -2,9 +2,7 @@
 # CUI // SP-CTI
 """Tests for G-11 — CAC/PIV CRL/OCSP revocation checking in cac_auth.py."""
 
-import os
 import time
-import pytest
 
 import tools.saas.auth.cac_auth as _cac
 
@@ -98,7 +96,6 @@ class TestCRLCache:
         fetch_count = [0]
 
         def counting_fetch(url):
-            import urllib.request
             raise OSError("should not reach here")
 
         # Pre-populate cache

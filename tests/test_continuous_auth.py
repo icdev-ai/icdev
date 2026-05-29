@@ -2,10 +2,8 @@
 # CUI // SP-CTI
 """Tests for G-14 — Continuous Authentication (tools/security/continuous_auth.py)."""
 
-import os
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 import tools.security.continuous_auth as _ca
 

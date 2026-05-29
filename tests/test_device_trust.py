@@ -2,8 +2,6 @@
 # CUI // SP-CTI
 """Tests for G-15 — Device Trust (tools/security/device_trust.py)."""
 
-import time
-import pytest
 
 import tools.security.device_trust as _dt
 

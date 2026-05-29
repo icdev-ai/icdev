@@ -100,9 +100,6 @@ def _call_crowdstrike_api(device_fingerprint: str) -> dict:
     # --- Live HTTP path ---
     # Try the lightweight session helper first; fall back to urllib.
     url = f"{base_url.rstrip('/')}/devices/entities/devices/v1?filter=device_fingerprint%3A%27{device_fingerprint}%27"
-    headers = {
-        "Accept": "application/json",
-    }
     # CrowdStrike uses OAuth2 client-credentials; for a production adapter
     # you would exchange client_id/client_secret for a bearer token here.
     # This stub logs a warning and returns a simulated healthy device to avoid
