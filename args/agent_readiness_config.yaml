@@ -168,6 +168,25 @@ pillars:
       min_lines: 5
 
   append_only_audit:
+    nlp_extractor:
+      # Enable Claude Haiku NLP extraction as a secondary pass when regex finds nothing.
+      # Set to false to run regex-only (no API calls, faster but misses ORM/indirect mutations).
+      enabled: true
+      # Model used for NLP extraction. claude-haiku-4-5-20251001 balances speed and accuracy.
+      model: claude-haiku-4-5-20251001
+      # Max output tokens for the JSON response; 256 is sufficient for structured extraction.
+      max_tokens: 256
+      # Minimum confidence score (0.0–1.0) required to accept an NLP-detected mutation.
+      # Lower values increase recall but risk false positives on ambiguous ORM patterns.
+      confidence_threshold: 0.7
+      # Characters of file content sampled per NLP call to control token cost.
+      text_sample_chars: 2000
+      # Maximum Python files scanned in the fast regex pass for raw SQL mutations.
+      # Values below ~10 risk missing coverage; raise for very large monorepos.
+      mutation_scan_py_sample: 50
+      # Maximum Python files passed to the NLP enhanced pass (slower, uses API).
+      # Keep ≤ mutation_scan_py_sample; raising beyond 20 has diminishing returns.
+      enhanced_path_py_sample: 10
     audit_log_inserts:
       # Maximum Python files scanned when searching for audit INSERT operations.
       # Values below ~10 are anomalously low and risk missing insert coverage.
