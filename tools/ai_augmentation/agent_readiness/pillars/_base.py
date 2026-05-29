@@ -83,11 +83,12 @@ class Pillar:
         evaluated = [r for r in results if not r.skipped]
         passed = sum(1 for r in evaluated if r.passed)
         total = len(evaluated)
+        precision = int(_load_agent_readiness_config().get("score", {}).get("precision", 4))
         return {
             "pillar_id": self.id,
             "passed": passed,
             "total": total,
-            "percentage": round(passed / total, 4) if total > 0 else 0.0,
+            "percentage": round(passed / total, precision) if total > 0 else 0.0,
         }
 
 

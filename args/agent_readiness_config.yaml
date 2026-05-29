@@ -4,6 +4,14 @@
 # for a project claiming task automation / CI readiness.
 
 # ---------------------------------------------------------------------------
+# Score reporting
+# ---------------------------------------------------------------------------
+score:
+  # Decimal places for pillar percentage scores (0.0–1.0 scale).
+  # Values below 0 are treated as 0 at load time.
+  precision: 4
+
+# ---------------------------------------------------------------------------
 # Pillar weights — used by checker.py to compute the overall readiness score.
 # Weights are relative multipliers; a pillar with weight 1.5 contributes 50%
 # more than one with weight 1.0 to the weighted average.
