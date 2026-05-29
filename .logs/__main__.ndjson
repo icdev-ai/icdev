@@ -987,3 +987,4 @@
 {"ts": "2026-05-29T01:20:25.265742+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 68: status=executing activated=0 completed=0 running=1", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-29T01:24:13.399373+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 69: status=ok activated=3 completed=1 running=0", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-29T01:25:14.347047+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 70: status=executing activated=0 completed=0 running=3", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T01:32:41.108601+00:00", "level": "INFO", "component": "__main__", "message": "Another kanban scheduler is alive (pid=21564). Exiting to avoid duplicate dispatch.", "trace_id": null, "session_id": null, "extra": {}}
