@@ -1053,3 +1053,10 @@
 {"ts": "2026-05-29T22:53:38.574255+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-29T22:54:14.093046+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-29T22:55:22.111231+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T22:56:03.943580+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T23:11:34.962547+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T23:20:55.191736+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T23:24:15.683041+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T23:24:54.357321+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T23:25:34.507317+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-29T23:29:06.657650+00:00", "level": "INFO", "component": "tools.infra_canvas.bus_subscriber", "message": "idc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
