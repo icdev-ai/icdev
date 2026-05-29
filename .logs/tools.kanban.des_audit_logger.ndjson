@@ -1,0 +1,1 @@
+{"ts": "2026-05-29T04:04:40.175929+00:00", "level": "ERROR", "component": "tools.kanban.des_audit_logger", "message": "DESAuditLogger insert failed \u2014 degrading gracefully", "trace_id": null, "session_id": null, "extra": {}}

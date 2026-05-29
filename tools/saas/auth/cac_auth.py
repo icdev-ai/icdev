@@ -55,8 +55,10 @@ def _get_platform_conn():
 
 def _fetch_crl_revoked_serials(crl_url: str) -> Set[str]:
     """Fetch a CRL from crl_url and return the set of revoked hex serials (upper-case, no leading zeros)."""
+    if not crl_url.startswith(("http://", "https://", "ldap://")):
+        raise ValueError(f"CRL URL has disallowed scheme: {crl_url!r}")
     try:
-        with urllib.request.urlopen(crl_url, timeout=10) as resp:
+        with urllib.request.urlopen(crl_url, timeout=10) as resp:  # nosec B310
             data: bytes = resp.read()
     except Exception as exc:
         raise ConnectionError(f"Failed to fetch CRL from {crl_url}: {exc}") from exc

@@ -67,13 +67,14 @@ class TestClearanceOrder:
     def test_known_levels(self):
         assert _get_clearance_order("PUBLIC") == 0
         assert _get_clearance_order("CUI") == 1
-        assert _get_clearance_order("SECRET") == 2
-        assert _get_clearance_order("TOP SECRET") == 3
-        assert _get_clearance_order("TOP SECRET//SCI") == 4
+        assert _get_clearance_order("ECI") == 2      # G-10: IL5 sensitive unclassified
+        assert _get_clearance_order("SECRET") == 3
+        assert _get_clearance_order("TOP SECRET") == 4
+        assert _get_clearance_order("TOP SECRET//SCI") == 5
 
     def test_case_insensitive(self):
         assert _get_clearance_order("cui") == 1
-        assert _get_clearance_order("Secret") == 2
+        assert _get_clearance_order("Secret") == 3
 
     def test_unknown_defaults_cui(self):
         assert _get_clearance_order("foobar") == 1
@@ -105,7 +106,7 @@ class TestFromRequest:
         assert ctx.user_id == "u1"
         assert ctx.role == "admin"
         assert ctx.tenant_id == "t1"
-        assert ctx.clearance_level == 2
+        assert ctx.clearance_level == 3   # SECRET → order 3 after ECI inserted at 2
         assert ctx.compartments == frozenset({"COI_FINANCE", "LAC_DC_EAST"})
 
     def test_defaults_when_no_headers(self):

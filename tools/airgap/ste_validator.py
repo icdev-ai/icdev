@@ -100,8 +100,14 @@ def _check_no_cloud_llm() -> STECheck:
 
 def _check_ollama_reachable() -> STECheck:
     ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    if not ollama_url.startswith(("http://", "https://")):
+        return STECheck(
+            name="ollama_reachable",
+            passed=False,
+            detail=f"Invalid OLLAMA_BASE_URL scheme: {ollama_url!r}",
+        )
     try:
-        with urllib.request.urlopen(f"{ollama_url}/api/tags", timeout=5) as resp:
+        with urllib.request.urlopen(f"{ollama_url}/api/tags", timeout=5) as resp:  # nosec B310
             if resp.status == 200:
                 return STECheck(name="ollama_reachable", passed=True, detail=f"Ollama reachable at {ollama_url}")
             return STECheck(name="ollama_reachable", passed=False, detail=f"Ollama HTTP {resp.status} at {ollama_url}")
