@@ -2881,7 +2881,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/domains")
     @dc_login_required
-    def dm_domains_page():
+    def dc_domains():
         """Data Mesh domain registry page."""
         from tools.data_canvas.constants import DM_DOMAIN_MATURITY_LEVELS
         conn = get_connection()
