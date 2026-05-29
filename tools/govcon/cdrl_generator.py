@@ -88,9 +88,9 @@ def _uuid():
 def _audit(conn, action, details="", actor="cdrl_generator"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), _now(), "cpmp.cdrl_generator", actor, action, details, "cpmp"),
+            "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
         pass
@@ -123,8 +123,8 @@ def generate_cdrl(deliverable_id, project_id=None):
 
     contract_id = deliv["contract_id"]
 
-    # Determine CDRL type from deliverable cdrl_type or type column
-    cdrl_type = deliv["cdrl_type"] or deliv["type"]
+    # Determine CDRL type from deliverable deliverable_type column
+    cdrl_type = deliv["deliverable_type"]
 
     tool_path = TOOL_MAPPING.get(cdrl_type)
     if not tool_path:

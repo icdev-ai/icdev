@@ -25,7 +25,6 @@ from pathlib import Path
 from flask import Blueprint, g, jsonify, request
 
 from tools.dashboard.auth import require_role
-from tools.common.helpers import now_isoformat
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -51,9 +50,9 @@ def _uuid():
 def _audit(conn, action, details="", actor="cpmp_api"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), now_isoformat(), "cpmp.api", actor, action, details, "cpmp"),
+            "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
         pass

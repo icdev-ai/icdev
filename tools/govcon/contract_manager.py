@@ -103,9 +103,9 @@ def _uuid():
 def _audit(conn, action, details="", actor="contract_manager"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), _now(), "cpmp.contract_manager", actor, action, details, "cpmp"),
+            "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
         pass
@@ -303,7 +303,7 @@ def create_clin(contract_id, data):
 
     clin_id = _uuid()
     conn.execute(
-        "INSERT INTO cpmp_clins (id, contract_id, clin_number, description, type, "
+        "INSERT INTO cpmp_clins (id, contract_id, clin_number, description, clin_type, "
         "total_value, funded_value, billed_value, status, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
@@ -311,7 +311,7 @@ def create_clin(contract_id, data):
             contract_id,
             data.get("clin_number", ""),
             data.get("description"),
-            data.get("type", "labor"),
+            data.get("clin_type", data.get("type", "labor")),
             data.get("total_value", 0.0),
             data.get("funded_value", 0.0),
             data.get("billed_value", 0.0),
@@ -344,7 +344,7 @@ def update_clin(clin_id, data):
         conn.close()
         return {"status": "error", "message": f"CLIN {clin_id} not found"}
 
-    updatable = ["clin_number", "description", "type", "total_value", "funded_value", "billed_value", "status"]
+    updatable = ["clin_number", "description", "clin_type", "total_value", "funded_value", "billed_value", "status"]
     sets, params = [], []
     for field in updatable:
         if field in data:
@@ -494,9 +494,9 @@ def create_deliverable(contract_id, data):
     conn.execute(
         "INSERT INTO cpmp_deliverables "
         "(id, contract_id, cdrl_number, did_number, title, description, "
-        "type, cdrl_type, frequency, due_date, status, wbs_id, notes, "
+        "deliverable_type, frequency, due_date, status, wbs_id, notes, "
         "created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             deliv_id,
             contract_id,
@@ -504,8 +504,7 @@ def create_deliverable(contract_id, data):
             data.get("did_number"),
             data.get("title", ""),
             data.get("description"),
-            data.get("type", "cdrl"),
-            data.get("cdrl_type"),
+            data.get("deliverable_type", data.get("type", "cdrl")),
             data.get("frequency"),
             data.get("due_date"),
             "not_started",
@@ -533,7 +532,7 @@ def list_deliverables(contract_id, status=None, deliverable_type=None):
         query += " AND status = ?"
         params.append(status)
     if deliverable_type:
-        query += " AND type = ?"
+        query += " AND deliverable_type = ?"
         params.append(deliverable_type)
     query += " ORDER BY due_date ASC"
 
@@ -579,8 +578,7 @@ def update_deliverable(deliverable_id, data):
         "did_number",
         "title",
         "description",
-        "type",
-        "cdrl_type",
+        "deliverable_type",
         "frequency",
         "due_date",
         "submitted_date",

@@ -81,9 +81,9 @@ def _uuid():
 def _audit(conn, action, details="", actor="evm_engine"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), _now(), "cpmp.evm_engine", actor, action, details, "cpmp"),
+            "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
         pass
