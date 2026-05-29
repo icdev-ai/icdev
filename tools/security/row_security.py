@@ -69,12 +69,24 @@ def inject_row_predicate(
     classifications: Optional[Set[str]] = None,
     tenant_column: str = "tenant_id",
     classification_column: str = "classification",
+    lac_labels: Optional[Set[str]] = None,
+    lac_column: str = "lac_label",
+    coi_tags: Optional[Set[str]] = None,
+    coi_column: str = "coi_tag",
 ) -> Tuple[str, Tuple[Any, ...]]:
-    """Inject tenant and classification predicates into a SQLite SQL string.
+    """Inject tenant, classification, LAC, and COI predicates into a SQL string.
+
+    LAC (Label-Based Access Control, G-03): rows with lac_label=NULL are
+    world-readable within the tenant; rows with a label must match the caller's
+    set of allowed labels.
+
+    COI (Community of Interest, G-09): rows with coi_tag=NULL are accessible
+    to all within tenant+classification; rows with a tag must match the caller.
 
     Returns:
         (modified_sql, extra_params) where extra_params should be prepended
-        to the caller's existing parameter tuple.
+        to the caller's existing parameter tuple (for SELECT) or appended
+        (for UPDATE/DELETE — see _inject_rls in storage.py).
     """
     extra_clauses: list[str] = []
     extra_params: list[Any] = []
@@ -87,11 +99,15 @@ def inject_row_predicate(
         if alias:
             tenant_column = f"{alias}.{tenant_column}"
             classification_column = f"{alias}.{classification_column}"
+            lac_column = f"{alias}.{lac_column}"
+            coi_column = f"{alias}.{coi_column}"
 
     # Tenant predicate
     if tenant_id is not None:
         extra_clauses.append(f"{tenant_column} = ?")
         extra_params.append(tenant_id)
+    else:
+        logger.debug("inject_row_predicate called with tenant_id=None; tenant filter skipped")
 
     # Classification predicate — rows with NULL/empty classification are always
     # visible (unclassified data is world-readable within the tenant).
@@ -110,6 +126,24 @@ def inject_row_predicate(
             f"OR {classification_column} = ?)"
         )
         extra_params.append(classification)
+
+    # LAC predicate — NULL means world-readable within tenant+classification.
+    if lac_labels:
+        sorted_lac = sorted(lac_labels)
+        placeholders = ", ".join(["?"] * len(sorted_lac))
+        extra_clauses.append(
+            f"({lac_column} IS NULL OR {lac_column} IN ({placeholders}))"
+        )
+        extra_params.extend(sorted_lac)
+
+    # COI predicate — NULL means accessible to all within tenant+classification.
+    if coi_tags:
+        sorted_coi = sorted(coi_tags)
+        placeholders = ", ".join(["?"] * len(sorted_coi))
+        extra_clauses.append(
+            f"({coi_column} IS NULL OR {coi_column} IN ({placeholders}))"
+        )
+        extra_params.extend(sorted_coi)
 
     if not extra_clauses:
         return sql, ()

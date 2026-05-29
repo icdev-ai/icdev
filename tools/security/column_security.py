@@ -115,7 +115,7 @@ def grant_column_select(table: str, columns: List[str], role: str) -> str:
 def revoke_column_select(table: str, columns: List[str], role: str) -> str:
     """Emit ``REVOKE SELECT(col1, col2) ON table FROM role``."""
     cols = ", ".join(columns)
-    return f"REVOKE SELECT ({cols}) ON {table} FROM {role};"
+    return f"REVOKE SELECT ({cols}) ON {table} FROM {role};"  # nosec B608 — DDL generator, not user input
 
 
 # ---------------------------------------------------------------------------

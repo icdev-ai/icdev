@@ -145,13 +145,14 @@ def check_access(
     tenant_id: str,
     canvas_name: str,
     required_level: str = "read",
+    user_role: Optional[str] = None,
 ) -> bool:
     """Return True if the user has at least *required_level* access to *canvas_name*.
 
     Resolution order:
     1. Direct user grant
     2. Group grants (user's group membership in tenant)
-    3. Role grant (user's platform role)
+    3. Role grant (user's platform role — resolved from users table or user_role param)
     """
     if required_level not in _LEVEL_ORDER:
         required_level = "read"
@@ -198,28 +199,31 @@ def check_access(
                     return True
 
             # 3 — Role grant (resolve user's direct platform role)
-            user_row = conn.execute(
-                "SELECT role FROM users WHERE id = ? AND tenant_id = ?",
-                (user_id, tenant_id),
-            ).fetchone()
-            if user_row:
-                user_role = user_row[0] if isinstance(user_row, (tuple, list)) else user_row.get("role", "")
-                if user_role:
-                    role_row = conn.execute(
-                        """
-                        SELECT access_level FROM canvas_access_grants
-                        WHERE tenant_id = ? AND canvas_name = ?
-                          AND principal_type = 'role' AND principal_id = ?
-                          AND revoked_at IS NULL
-                          AND (expires_at IS NULL OR expires_at > ?)
-                        LIMIT 1
-                        """,
-                        (tenant_id, canvas_name, user_role, now),
-                    ).fetchone()
-                    if role_row:
-                        level = role_row[0] if isinstance(role_row, (tuple, list)) else role_row["access_level"]
-                        if _LEVEL_ORDER.get(level, -1) >= required_order:
-                            return True
+            # Use caller-supplied role first; fall back to users table lookup.
+            resolved_role = user_role
+            if not resolved_role:
+                user_row = conn.execute(
+                    "SELECT role FROM users WHERE id = ? AND tenant_id = ?",
+                    (user_id, tenant_id),
+                ).fetchone()
+                if user_row:
+                    resolved_role = user_row[0] if isinstance(user_row, (tuple, list)) else user_row.get("role", "")
+            if resolved_role:
+                role_row = conn.execute(
+                    """
+                    SELECT access_level FROM canvas_access_grants
+                    WHERE tenant_id = ? AND canvas_name = ?
+                      AND principal_type = 'role' AND principal_id = ?
+                      AND revoked_at IS NULL
+                      AND (expires_at IS NULL OR expires_at > ?)
+                    LIMIT 1
+                    """,
+                    (tenant_id, canvas_name, resolved_role, now),
+                ).fetchone()
+                if role_row:
+                    level = role_row[0] if isinstance(role_row, (tuple, list)) else role_row["access_level"]
+                    if _LEVEL_ORDER.get(level, -1) >= required_order:
+                        return True
 
     except Exception as exc:
         logger.warning("Canvas access check error for %s/%s: %s", canvas_name, user_id, exc)
