@@ -113,8 +113,11 @@ SELF_HEALING = MONITORING_CONFIG.get("self_healing", {})
 HEALTH_CHECK = MONITORING_CONFIG.get("health_check", {})
 SLA = MONITORING_CONFIG.get("sla", {})
 
-# CUI banner toggle (D173)
-CUI_BANNER_ENABLED = os.environ.get("ICDEV_CUI_BANNER_ENABLED", "false").lower() in ("1", "true", "yes")
+# CUI banner toggle (D173) — env var takes precedence, then args/cui_markings.yaml `enabled` key
+CUI_BANNER_ENABLED = os.environ.get(
+    "ICDEV_CUI_BANNER_ENABLED",
+    CUI_CONFIG.get("enabled", "false"),
+).lower() in ("1", "true", "yes")
 
 # Dashboard auth (D169-D172)
 DASHBOARD_SECRET = os.environ.get(

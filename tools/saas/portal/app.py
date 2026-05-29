@@ -126,7 +126,7 @@ CUI_BANNER_BOTTOM = os.environ.get(
 )
 CUI_BANNER_ENABLED = os.environ.get(
     "ICDEV_CUI_BANNER_ENABLED",
-    _CUI_CONFIG.get("banner_enabled", "false"),
+    _CUI_CONFIG.get("enabled", "false"),
 ).lower() in ("1", "true", "yes")
 
 # ---------------------------------------------------------------------------
