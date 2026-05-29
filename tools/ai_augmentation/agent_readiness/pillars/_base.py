@@ -117,7 +117,19 @@ def _exists(repo: pathlib.Path, *globs: str) -> Optional[str]:
     return None
 
 
-def _glob_files(repo: pathlib.Path, pattern: str, ignore_dirs: tuple = ("node_modules", "vendor", ".git")) -> list[pathlib.Path]:
+_DEFAULT_IGNORE_DIRS = ("node_modules", "vendor", ".git")
+
+
+def _get_ignore_dirs() -> tuple:
+    """Return the configured ignore_dirs for glob scans, falling back to the built-in default."""
+    cfg = _load_agent_readiness_config()
+    dirs = cfg.get("glob_files", {}).get("ignore_dirs", list(_DEFAULT_IGNORE_DIRS))
+    return tuple(dirs) if dirs else _DEFAULT_IGNORE_DIRS
+
+
+def _glob_files(repo: pathlib.Path, pattern: str, ignore_dirs: Optional[tuple] = None) -> list[pathlib.Path]:
+    if ignore_dirs is None:
+        ignore_dirs = _get_ignore_dirs()
     results = []
     for p in repo.glob(pattern):
         parts = p.parts

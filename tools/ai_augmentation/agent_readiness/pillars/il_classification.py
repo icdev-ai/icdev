@@ -29,6 +29,8 @@ _DEFAULTS: dict[str, Any] = {
     "sample_size": 30,
     "min_header_ratio": 0.5,
     "warn_header_ratio": 0.3,
+    "min_adaptive_sample": 10,
+    "adaptive_denominator": 5,
 }
 
 
@@ -48,6 +50,8 @@ def _load_thresholds() -> dict[str, Any]:
             "sample_size": int(cfg.get("sample_size", _DEFAULTS["sample_size"])),
             "min_header_ratio": float(cfg.get("min_header_ratio", _DEFAULTS["min_header_ratio"])),
             "warn_header_ratio": float(cfg.get("warn_header_ratio", _DEFAULTS["warn_header_ratio"])),
+            "min_adaptive_sample": int(cfg.get("min_adaptive_sample", _DEFAULTS["min_adaptive_sample"])),
+            "adaptive_denominator": int(cfg.get("adaptive_denominator", _DEFAULTS["adaptive_denominator"])),
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
@@ -60,10 +64,14 @@ def _check_cui_file_headers(repo: pathlib.Path) -> CriterionResult:
         return CriterionResult(cid, True, "No Python source files; CUI header check skipped.", skipped=True)
 
     thresholds = _load_thresholds()
-    # Adaptive sample size: ~20 % of corpus, clamped to [10, configured cap].
-    # This avoids over-sampling tiny repos and under-sampling large ones.
+    # Adaptive sample size: ~(1/adaptive_denominator) of corpus, clamped to
+    # [min_adaptive_sample, sample_size]. Avoids over-sampling tiny repos and
+    # under-sampling large ones without touching code.
     total = len(py_files)
-    adaptive = max(10, min(thresholds["sample_size"], total // 5 + 1))
+    adaptive = max(
+        thresholds["min_adaptive_sample"],
+        min(thresholds["sample_size"], total // thresholds["adaptive_denominator"] + 1),
+    )
     sample = py_files[:adaptive]
 
     marked = [
