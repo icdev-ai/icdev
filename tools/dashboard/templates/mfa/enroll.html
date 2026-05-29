@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI #}
+{% block title %}MFA Enrollment — ICDEV™{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:520px;margin:3rem auto;">
+  <div class="card" style="padding:2rem;">
+    <h2 style="margin-top:0;">Set Up Multi-Factor Authentication</h2>
+    <p class="text-muted">Scan the QR code with your authenticator app (e.g. Google Authenticator, Authy), then enter the 6-digit code to confirm enrollment.</p>
+
+    {% if error %}
+    <div class="alert alert-danger" role="alert">{{ error }}</div>
+    {% endif %}
+
+    {% if qr_data_uri %}
+    <div style="text-align:center;margin:1.5rem 0;">
+      <img src="{{ qr_data_uri }}" alt="TOTP QR Code" style="width:180px;height:180px;border:4px solid #30363d;border-radius:8px;">
+    </div>
+    {% endif %}
+
+    {% if totp_secret %}
+    <details style="margin-bottom:1rem;">
+      <summary style="cursor:pointer;color:#58a6ff;">Can&#39;t scan? Enter key manually</summary>
+      <code style="display:block;margin-top:0.5rem;padding:0.5rem;background:#161b22;border-radius:4px;word-break:break-all;font-size:0.85rem;">{{ totp_secret }}</code>
+    </details>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('auth_mfa.enroll_confirm') }}">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+      <div class="form-group" style="margin-bottom:1rem;">
+        <label for="totp_code" style="display:block;margin-bottom:0.4rem;font-weight:600;">Verification Code</label>
+        <input type="text" id="totp_code" name="totp_code"
+               inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+               placeholder="000000" autocomplete="one-time-code"
+               style="width:100%;padding:0.6rem 0.8rem;font-size:1.25rem;letter-spacing:0.4rem;text-align:center;border:1px solid #30363d;border-radius:6px;background:#0d1117;color:#e6edf3;"
+               required autofocus>
+        <small class="text-muted">Enter the 6-digit code shown in your authenticator app.</small>
+      </div>
+
+      {% if backup_codes %}
+      <div style="background:#161b22;border:1px solid #f0883e;border-radius:6px;padding:1rem;margin-bottom:1rem;">
+        <strong style="color:#f0883e;">&#9888; Save your backup codes</strong>
+        <p style="font-size:0.85rem;margin:0.5rem 0;">Store these 10 single-use recovery codes securely. They will not be shown again.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.25rem;margin-top:0.5rem;">
+          {% for code in backup_codes %}
+          <code style="font-size:0.9rem;padding:0.2rem 0.4rem;background:#0d1117;border-radius:3px;">{{ code }}</code>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <button type="submit" class="btn btn-primary" style="width:100%;">Confirm Enrollment</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{# CUI // SP-CTI #}
