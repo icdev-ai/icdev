@@ -3028,4 +3028,199 @@ def create_data_canvas_blueprint():
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    # ══════════════════════════════════════════════════════════════════════
+    # DATA MESH — /api/dm/domains (domain_manager.py)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/dm/domains", methods=["GET"])
+    @dc_login_required
+    def dc_api_dm_domains_list():
+        from tools.data_canvas.data_mesh.domain_manager import list_domains as _list_domains
+        return jsonify(_list_domains())
+
+    @bp.route("/api/dm/domains", methods=["POST"])
+    @dc_login_required
+    def dc_api_dm_domains_create():
+        from tools.data_canvas.data_mesh.domain_manager import create_domain as _create_domain
+        data = request.get_json(force=True, silent=True) or {}
+        if not data.get("name"):
+            return jsonify({"error": "name is required"}), 400
+        result = _create_domain(data)
+        if "error" in result:
+            return jsonify(result), 400
+        return jsonify(result), 201
+
+    @bp.route("/api/dm/domains/<domain_id>", methods=["GET"])
+    @dc_login_required
+    def dc_api_dm_domain_get(domain_id):
+        from tools.data_canvas.data_mesh.domain_manager import get_domain as _get_domain
+        result = _get_domain(domain_id)
+        if result is None:
+            return jsonify({"error": "Not found"}), 404
+        if "error" in result:
+            return jsonify(result), 500
+        return jsonify(result)
+
+    @bp.route("/api/dm/domains/<domain_id>", methods=["PUT"])
+    @dc_login_required
+    def dc_api_dm_domain_update(domain_id):
+        from tools.data_canvas.data_mesh.domain_manager import update_domain as _update_domain
+        data = request.get_json(force=True, silent=True) or {}
+        result = _update_domain(domain_id, data)
+        if result is None:
+            return jsonify({"error": "Not found"}), 404
+        if "error" in result:
+            return jsonify(result), 400
+        return jsonify(result)
+
+    @bp.route("/api/dm/domains/<domain_id>", methods=["DELETE"])
+    @dc_login_required
+    def dc_api_dm_domain_delete(domain_id):
+        from tools.data_canvas.data_mesh.domain_manager import delete_domain as _delete_domain
+        ok = _delete_domain(domain_id)
+        if not ok:
+            return jsonify({"error": "Cannot delete domain with existing products, or domain not found"}), 409
+        return jsonify({"deleted": True})
+
+    @bp.route("/api/dm/domains/<domain_id>/maturity")
+    @dc_login_required
+    def dc_api_dm_domain_maturity(domain_id):
+        from tools.data_canvas.data_mesh.domain_manager import compute_domain_maturity as _maturity
+        result = _maturity(domain_id)
+        if "error" in result:
+            return jsonify(result), 404
+        return jsonify(result)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # DATA MESH — /api/dm/products (product_registry.py)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/dm/products", methods=["GET"])
+    @dc_login_required
+    def dc_api_dm_products_list():
+        from tools.data_canvas.data_mesh.product_registry import list_products as _list_products
+        domain_id = request.args.get("domain_id") or None
+        status = request.args.get("status") or None
+        return jsonify(_list_products(domain_id=domain_id, status=status))
+
+    @bp.route("/api/dm/products", methods=["POST"])
+    @dc_login_required
+    def dc_api_dm_products_create():
+        from tools.data_canvas.data_mesh.product_registry import create_product as _create_product
+        data = request.get_json(force=True, silent=True) or {}
+        if not data.get("name"):
+            return jsonify({"error": "name is required"}), 400
+        result = _create_product(data)
+        if "error" in result:
+            return jsonify(result), 400
+        return jsonify(result), 201
+
+    @bp.route("/api/dm/products/<product_id>", methods=["GET"])
+    @dc_login_required
+    def dc_api_dm_product_get(product_id):
+        from tools.data_canvas.data_mesh.product_registry import get_product as _get_product
+        result = _get_product(product_id)
+        if result is None:
+            return jsonify({"error": "Not found"}), 404
+        if "error" in result:
+            return jsonify(result), 500
+        return jsonify(result)
+
+    @bp.route("/api/dm/products/<product_id>", methods=["PUT"])
+    @dc_login_required
+    def dc_api_dm_product_update(product_id):
+        from tools.data_canvas.data_mesh.product_registry import update_product as _update_product
+        data = request.get_json(force=True, silent=True) or {}
+        result = _update_product(product_id, data)
+        if result is None:
+            return jsonify({"error": "Not found"}), 404
+        if "error" in result:
+            return jsonify(result), 400
+        return jsonify(result)
+
+    @bp.route("/api/dm/products/<product_id>", methods=["DELETE"])
+    @dc_login_required
+    def dc_api_dm_product_delete(product_id):
+        from tools.data_canvas.data_mesh.product_registry import delete_product as _delete_product
+        ok = _delete_product(product_id)
+        return jsonify({"deleted": ok})
+
+    @bp.route("/api/dm/products/<product_id>/subscribe", methods=["POST"])
+    @dc_login_required
+    def dc_api_dm_product_subscribe(product_id):
+        from tools.data_canvas.data_mesh.product_registry import subscribe_to_product as _subscribe
+        data = request.get_json(force=True, silent=True) or {}
+        if not data.get("subscriber_team"):
+            return jsonify({"error": "subscriber_team is required"}), 400
+        result = _subscribe(product_id, data)
+        if "error" in result:
+            return jsonify(result), 400
+        return jsonify(result), 201
+
+    @bp.route("/api/dm/products/<product_id>/score")
+    @dc_login_required
+    def dc_api_dm_product_score(product_id):
+        from tools.data_canvas.data_mesh.product_registry import (
+            compute_discoverability_score as _score,
+        )
+        result = _score(product_id)
+        if "error" in result:
+            return jsonify(result), 404
+        return jsonify(result)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # DATA MESH — /api/dm/contracts/<id> (contract_engine.py / ODCS)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/dm/contracts/<contract_id>", methods=["GET"])
+    @dc_login_required
+    def dc_api_dm_contract_get(contract_id):
+        from tools.data_canvas.data_mesh.contract_engine import get_contract as _get_contract
+        result = _get_contract(contract_id)
+        if result is None:
+            return jsonify({"error": "Not found"}), 404
+        if "error" in result:
+            return jsonify(result), 500
+        return jsonify(result)
+
+    @bp.route("/api/dm/contracts/<contract_id>", methods=["PUT"])
+    @dc_login_required
+    def dc_api_dm_contract_update(contract_id):
+        from tools.data_canvas.data_mesh.contract_engine import update_contract as _update_contract
+        data = request.get_json(force=True, silent=True) or {}
+        result = _update_contract(contract_id, data)
+        if result is None:
+            return jsonify({"error": "Not found"}), 404
+        if "error" in result:
+            return jsonify(result), 400
+        return jsonify(result)
+
+    @bp.route("/api/dm/contracts/<contract_id>", methods=["DELETE"])
+    @dc_login_required
+    def dc_api_dm_contract_delete(contract_id):
+        from tools.data_canvas.data_mesh.contract_engine import delete_contract as _delete_contract
+        ok = _delete_contract(contract_id)
+        return jsonify({"deleted": ok})
+
+    @bp.route("/api/dm/contracts/<contract_id>/lint", methods=["POST"])
+    @dc_login_required
+    def dc_api_dm_contract_lint(contract_id):
+        from tools.data_canvas.data_mesh.contract_engine import (
+            get_contract as _get_contract,
+            lint_contract as _lint,
+        )
+        contract = _get_contract(contract_id)
+        if contract is None:
+            return jsonify({"error": "Not found"}), 404
+        result = _lint(contract.get("contract_yaml", ""))
+        return jsonify(result)
+
+    @bp.route("/api/dm/contracts/<contract_id>/test", methods=["POST"])
+    @dc_login_required
+    def dc_api_dm_contract_test(contract_id):
+        from tools.data_canvas.data_mesh.contract_engine import test_contract as _test_contract
+        data = request.get_json(force=True, silent=True) or {}
+        result = _test_contract(contract_id, conn_params=data.get("conn_params"))
+        return jsonify(result)
+
     return bp
