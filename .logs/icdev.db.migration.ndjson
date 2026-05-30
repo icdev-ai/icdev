@@ -1,0 +1,15 @@
+{"ts": "2026-05-30T03:03:26.129973+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 155 (indicator_scores)...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.265195+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Migration 155 applied in 121ms", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.342900+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 157 (sg_osint_normalized)...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.354346+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Migration 157 applied in 9ms", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.356371+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 158 (sg_leadership_briefs)...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.361030+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Migration 158 applied in 2ms", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.363193+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 159 (osint_privacy_audit)...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.400178+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Migration 159 applied in 34ms", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.402379+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 160 (requirements)...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.409907+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Migration 160 applied in 5ms", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.411781+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 161 (sdc_compliance_timeline)...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.421638+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Migration 161 applied in 7ms", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.424285+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 161 (sdc_rag_stigs)...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.484425+00:00", "level": "ERROR", "component": "icdev.db.migration", "message": "Migration 161 failed: duplicate key value violates unique constraint \"schema_migrations_version_key\"\nDETAIL:  Key (version)=(161) already exists.\n", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:03:26.484538+00:00", "level": "ERROR", "component": "icdev.db.migration", "message": "Migration failed \u2014 stopping.", "trace_id": null, "session_id": null, "extra": {}}

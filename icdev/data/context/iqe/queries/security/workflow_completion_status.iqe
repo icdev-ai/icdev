@@ -1,0 +1,6 @@
+# Intent: Show the completion status of all 12 workflow steps for each design.
+# Useful for operational dashboards tracking SDC automation progress.
+
+foreach s in sdc_demo.workflow_steps
+  where s.status == "completed"
+  select s.design_id, s.step_id, s.step_name, s.status, s.approved_by

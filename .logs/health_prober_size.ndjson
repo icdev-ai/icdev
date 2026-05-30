@@ -1,0 +1,13 @@
+{"ts": "2026-05-30T03:12:31.843244+00:00", "level": "WARNING", "component": "health_prober", "message": "snapshot write failed (n1 http_head): boom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:19:03.802678+00:00", "level": "WARNING", "component": "health_prober", "message": "snapshot write failed (n1 http_head): boom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T03:35:17.829240+00:00", "level": "WARNING", "component": "health_prober", "message": "snapshot write failed (n1 http_head): boom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:12:11.838951+00:00", "level": "WARNING", "component": "health_prober", "message": "snapshot write failed (n1 http_head): boom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:20:28.877613+00:00", "level": "WARNING", "component": "health_prober", "message": "snapshot write failed (n1 http_head): boom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T12:18:01.890987+00:00", "level": "WARNING", "component": "health_prober", "message": "snapshot write failed (n1 http_head): boom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T13:24:04.495566+00:00", "level": "WARNING", "component": "health_prober", "message": "route introspection fetch failed: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T13:47:53.777812+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T13:48:17.339905+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T13:49:09.199391+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T13:50:15.676416+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T13:50:38.455875+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T13:54:26.429966+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}

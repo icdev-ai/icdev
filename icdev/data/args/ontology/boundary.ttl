@@ -1,0 +1,38 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix boundary: <https://icdev.dev/ns/boundary#> .
+@prefix core: <https://icdev.dev/ns/core#> .
+
+<https://icdev.dev/ontology/boundary>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:title "ICDEV BOUNDARY Domain Ontology" ;
+    dcterms:description "Class hierarchy for the boundary canvas domain." ;
+    dcterms:date "2026-05-15"^^xsd:date .
+
+boundary:SystemBoundary rdf:type owl:Class ;
+    rdfs:label "System Boundary" ;
+    rdfs:subClassOf core:Resource .
+
+boundary:AuthorizationBoundary rdf:type owl:Class ;
+    rdfs:label "Authorization Boundary" ;
+    rdfs:subClassOf boundary:SystemBoundary .
+
+boundary:Interconnection rdf:type owl:Class ;
+    rdfs:label "Interconnection" ;
+    rdfs:subClassOf core:Resource .
+
+boundary:BoundaryControl rdf:type owl:Class ;
+    rdfs:label "Boundary Control" ;
+    rdfs:subClassOf core:Concept .
+
+boundary:Document rdf:type owl:Class ;
+    rdfs:label "Boundary Document" ;
+    rdfs:subClassOf core:Concept .
+
+boundary:DigitalTwin rdf:type owl:Class ;
+    rdfs:label "Boundary Digital Twin" ;
+    rdfs:subClassOf core:Resource .

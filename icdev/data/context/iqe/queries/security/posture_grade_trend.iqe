@@ -1,0 +1,6 @@
+# Intent: Show posture grade trend from before to after state — the compliance story arc.
+# Use in executive brief to demonstrate measurable improvement: F → A.
+
+foreach t in sdc_demo.threat_summary
+  where t.design_id == "demo-design-001"
+  select t.snapshot_label, t.posture_grade, t.risk_score, t.controls_implemented

@@ -1,0 +1,7 @@
+# IQE-NDC-013: Low-confidence AI decisions requiring human review (NDC)
+# Decisions with confidence below 0.7 should be reviewed before acting.
+# Use: HITL review queue, self-healing gate, AI RMF MEASURE 2.5 evidence.
+
+foreach d in network.ai_decisions
+where d.confidence < 0.7
+select d.id, d.decision_type, d.decision, d.confidence, d.rationale, d.created_at

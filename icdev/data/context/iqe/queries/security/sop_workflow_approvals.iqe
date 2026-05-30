@@ -1,0 +1,6 @@
+# Intent: Show all workflow steps that required ISSO approval — audit trail for HITL gates.
+# Use during Scenario B to demonstrate live approval simulation.
+
+foreach s in sdc_demo.workflow_steps
+  where s.approved_by != null
+  select s.design_id, s.step_name, s.approved_by, s.approved_at, s.status

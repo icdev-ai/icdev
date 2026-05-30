@@ -1,0 +1,8 @@
+# IQE-NOCC-001: Active critical and major alarms not yet acknowledged
+# Use: NOC morning handoff, escalation triage, P1 bridge calls
+
+foreach a in noc.alarms
+  where a.cleared == false
+  where a.severity == "critical" or a.severity == "major"
+  select a.device_name, a.severity, a.alarm_type, a.description,
+         a.carrier, a.circuit_id, a.first_seen, a.acknowledged

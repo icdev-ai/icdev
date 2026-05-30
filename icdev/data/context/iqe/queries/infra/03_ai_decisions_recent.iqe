@@ -1,0 +1,6 @@
+# IQE-IDC-003: Recent AI decisions from the Infrastructure Design Canvas
+# Shows compliance findings and CSP-specific assessments recorded
+# by the IDC AI traceability layer.
+
+foreach d in infra.ai_decisions
+select d.id, d.decision_type, d.decision, d.model_used, d.confidence, d.created_at

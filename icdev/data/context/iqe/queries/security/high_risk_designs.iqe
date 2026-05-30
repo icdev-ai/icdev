@@ -1,0 +1,7 @@
+# Intent: Surface designs with risk_score >= 7.0 — requires immediate leadership attention.
+# Use during Scenario A executive brief to show portfolio risk severity.
+
+foreach t in sdc_demo.threat_summary
+  where t.snapshot_label == "before"
+  where t.risk_score >= 7.0
+  select t.design_id, t.risk_score, t.cat1_count, t.posture_grade, t.remediation_hours

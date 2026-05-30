@@ -1,0 +1,4 @@
+{"ts": "2026-05-30T04:09:06.040833+00:00", "level": "INFO", "component": "tools.regulatory_foresight.foresight_engine", "message": "foresight_engine: in quiet hours \u2014 skipping scan", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:09:06.057343+00:00", "level": "INFO", "component": "tools.regulatory_foresight.foresight_engine", "message": "foresight_engine: mock_source \u2192 1 signals", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:17:26.716104+00:00", "level": "INFO", "component": "tools.regulatory_foresight.foresight_engine", "message": "foresight_engine: in quiet hours \u2014 skipping scan", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:17:26.730215+00:00", "level": "INFO", "component": "tools.regulatory_foresight.foresight_engine", "message": "foresight_engine: mock_source \u2192 1 signals", "trace_id": null, "session_id": null, "extra": {}}

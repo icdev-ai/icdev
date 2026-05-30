@@ -1,0 +1,5 @@
+# IQE-DSOC-004: Scrubbing centers with high utilization (>70%)
+# Use: capacity planning, load-balancing mitigation traffic
+foreach s in dsoc.scrubbing_centers
+where s.current_load_gbps / s.capacity_gbps > 0.7
+select s.name, s.location, s.capacity_gbps, s.current_load_gbps, s.status

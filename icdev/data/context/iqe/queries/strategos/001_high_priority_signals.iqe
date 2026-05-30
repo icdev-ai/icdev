@@ -1,0 +1,10 @@
+# Intent: Find the top-scored OSINT signals that have not yet been read,
+#         representing the most urgent intelligence items requiring analyst attention.
+# Expected: rows ordered by composite_score desc where is_read == 0.
+
+foreach s in strategos.signals
+  where s.is_read == 0
+  where s.composite_score > 0.6
+  select s.id, s.title, s.source, s.composite_score, s.geo_hint, s.created_at
+  order_by s.composite_score desc
+  limit 20

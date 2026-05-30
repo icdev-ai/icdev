@@ -1,0 +1,3 @@
+foreach n in aimc.nodes
+  where n.node_type == "foundation-model"
+  select n.design_id, n.label, n.classification

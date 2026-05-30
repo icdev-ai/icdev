@@ -120,21 +120,58 @@ _KANBAN_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_kst_task_id ON kanban_status_transitions(task_id)",
 ]
 
-# Columns to ADD IF NOT EXISTS for already-created tables (ALTER TABLE is idempotent via try/except).
+# Columns to add for already-created tables, as (column_name, ALTER DDL) pairs.
+# We check existence BEFORE issuing the ALTER: an unconditional
+# `ALTER TABLE ... ADD COLUMN` acquires an ACCESS EXCLUSIVE lock on PostgreSQL
+# *before* it can detect the column already exists, so running it every init
+# queues a blocking exclusive-lock request behind readers and causes a
+# kanban_tasks lock storm. Gating on existence keeps steady-state init lock-free.
 _KANBAN_TASKS_EXTRA_COLUMNS = [
-    "ALTER TABLE kanban_tasks ADD COLUMN start_date          TEXT",
-    "ALTER TABLE kanban_tasks ADD COLUMN target_date         TEXT",
-    "ALTER TABLE kanban_tasks ADD COLUMN files_changed       INTEGER DEFAULT 0",
-    "ALTER TABLE kanban_tasks ADD COLUMN lines_added         INTEGER DEFAULT 0",
-    "ALTER TABLE kanban_tasks ADD COLUMN lines_removed       INTEGER DEFAULT 0",
-    "ALTER TABLE kanban_tasks ADD COLUMN completed_via_bypass INTEGER DEFAULT 0",
-    "ALTER TABLE kanban_tasks ADD COLUMN source_prediction_id TEXT",
-    "ALTER TABLE kanban_tasks ADD COLUMN failure_count       INTEGER DEFAULT 0",
-    "ALTER TABLE kanban_tasks ADD COLUMN last_failure_reason TEXT",
-    "ALTER TABLE kanban_tasks ADD COLUMN last_failure_at     TEXT",
-    "ALTER TABLE kanban_tasks ADD COLUMN dispatch_source     TEXT DEFAULT 'unknown'",
-    "ALTER TABLE kanban_tasks ADD COLUMN hitl_stage          TEXT",
+    ("start_date",           "ALTER TABLE kanban_tasks ADD COLUMN start_date          TEXT"),
+    ("target_date",          "ALTER TABLE kanban_tasks ADD COLUMN target_date         TEXT"),
+    ("files_changed",        "ALTER TABLE kanban_tasks ADD COLUMN files_changed       INTEGER DEFAULT 0"),
+    ("lines_added",          "ALTER TABLE kanban_tasks ADD COLUMN lines_added         INTEGER DEFAULT 0"),
+    ("lines_removed",        "ALTER TABLE kanban_tasks ADD COLUMN lines_removed       INTEGER DEFAULT 0"),
+    ("completed_via_bypass", "ALTER TABLE kanban_tasks ADD COLUMN completed_via_bypass INTEGER DEFAULT 0"),
+    ("source_prediction_id", "ALTER TABLE kanban_tasks ADD COLUMN source_prediction_id TEXT"),
+    ("failure_count",        "ALTER TABLE kanban_tasks ADD COLUMN failure_count       INTEGER DEFAULT 0"),
+    ("last_failure_reason",  "ALTER TABLE kanban_tasks ADD COLUMN last_failure_reason TEXT"),
+    ("last_failure_at",      "ALTER TABLE kanban_tasks ADD COLUMN last_failure_at     TEXT"),
+    ("dispatch_source",      "ALTER TABLE kanban_tasks ADD COLUMN dispatch_source     TEXT DEFAULT 'unknown'"),
+    ("hitl_stage",           "ALTER TABLE kanban_tasks ADD COLUMN hitl_stage          TEXT"),
 ]
+
+
+def _existing_columns(conn, table: str) -> set:
+    """Return existing column names for *table*.
+
+    Reads only the catalog (information_schema / PRAGMA), which never locks the
+    table itself — safe even while the table is under a write-lock storm.
+    """
+    try:
+        from tools.db.storage import is_pg
+        pg = is_pg(conn)
+    except Exception:
+        pg = False
+    try:
+        if pg:
+            rows = conn.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
+                (table,),
+            ).fetchall()
+            key, idx = "column_name", 0
+        else:
+            rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+            key, idx = "name", 1
+    except Exception:
+        return set()
+    out = set()
+    for r in rows:
+        try:
+            out.add(r[key])
+        except Exception:
+            out.add(r[idx])
+    return out
 
 
 def init_kanban_tables(conn=None) -> dict:
@@ -151,12 +188,17 @@ def init_kanban_tables(conn=None) -> dict:
         conn.execute(_KANBAN_STATUS_TRANSITIONS_DDL)
         for idx in _KANBAN_INDEXES:
             conn.execute(idx)
-        # Backfill missing columns on pre-existing tables (idempotent)
-        for alter in _KANBAN_TASKS_EXTRA_COLUMNS:
+        # Backfill missing columns — only ALTER when the column is actually
+        # absent, so steady-state init never requests an ACCESS EXCLUSIVE lock
+        # on kanban_tasks (catalog read first, then conditional ALTER).
+        existing = _existing_columns(conn, "kanban_tasks")
+        for col_name, alter in _KANBAN_TASKS_EXTRA_COLUMNS:
+            if col_name in existing:
+                continue
             try:
                 conn.execute(alter)
             except Exception:
-                pass  # column already exists
+                pass  # raced with another writer; column now exists
         conn.commit()
         return {"status": "ok"}
     finally:

@@ -1,0 +1,3 @@
+foreach w in mc.waves
+  where w.risk_score > 7
+  select w.design_name, w.wave_number, w.strategy, w.risk_score, w.status

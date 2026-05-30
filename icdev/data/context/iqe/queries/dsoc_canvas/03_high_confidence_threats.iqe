@@ -1,0 +1,5 @@
+# IQE-DSOC-003: High-confidence threats (>=80% confidence)
+# Use: prioritize mitigation actions, threat intel sharing
+foreach t in dsoc.threats
+where t.confidence_pct >= 80 and t.is_active == 1
+select t.source_prefix, t.threat_type, t.confidence_pct, t.feed_source, t.packets_per_sec, t.bits_per_sec, t.last_seen

@@ -1,0 +1,3 @@
+foreach w in mc.waves
+  where w.strategy == "rehost"
+  select w.design_name, w.wave_number, w.status, w.estimated_hours

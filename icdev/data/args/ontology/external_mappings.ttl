@@ -1,0 +1,48 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix icdev: <https://icdev.dev/ontology/core#> .
+@prefix security: <https://icdev.dev/ns/security#> .
+@prefix war: <https://icdev.dev/ns/war#> .
+@prefix geospatial: <https://icdev.dev/ns/geospatial#> .
+@prefix compliance: <https://icdev.dev/ns/compliance#> .
+@prefix stix: <http://docs.oasis-open.org/ns/cti/stix#> .
+@prefix mitre: <http://attack.mitre.org/ns#> .
+@prefix geo: <http://www.opengis.net/ont/geosparql#> .
+@prefix osacr: <http://csrc.nist.gov/ns/oscal/1.0#> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<https://icdev.dev/ontology/external-mappings>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:title "ICDEV External Standard Mappings" ;
+    dcterms:description "Mappings from ICDEV ontology to external standards: STIX 2.1, MITRE ATT&CK, GeoSPARQL, NIST OSCAL, DCAT. All URIs are stored locally; no external HTTP resolution is required." ;
+    dcterms:date "2026-05-15"^^xsd:date .
+
+# ── External standard prefixes (local resolution only) ──
+# STIX 2.1       — OASIS Cyber Threat Intelligence ( conceptual alignment )
+# MITRE ATT&CK   — technique taxonomy (distributed via STIX bundles)
+# GeoSPARQL      — OGC spatial ontology
+# NIST OSCAL     — control catalog and assessment framework
+# DCAT           — W3C Data Catalog Vocabulary
+
+# ── Class equivalences ──
+security:CyberOperation owl:equivalentClass stix:IntrusionSet .
+security:ThreatActor owl:equivalentClass stix:ThreatActor .
+geospatial:GeoEntity owl:equivalentClass geo:Feature .
+compliance:NISTControl owl:equivalentClass osacr:Control .
+icdev:Project owl:equivalentClass dcat:Dataset .
+
+# ── Property definitions for non-equivalence mappings ──
+icdev:hasTechnique rdf:type owl:ObjectProperty ;
+    rdfs:label "has technique" ;
+    rdfs:comment "Links an operation to a MITRE ATT&CK technique pattern (T-code mapping). No external HTTP resolution is required; the mitre: prefix is a locally stored namespace alias." ;
+    rdfs:domain war:CyberOperation ;
+    rdfs:range mitre:AttackPattern .
+
+
+# ── MITRE ATT&CK technique mapping ──
+war:CyberOperation icdev:hasTechnique mitre:AttackPattern .
+

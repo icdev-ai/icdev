@@ -4,6 +4,100 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: dic
+  name: Document Intelligence Canvas (DIC) — Enterprise RAG+KG Document Management
+  description: 'New canvas where users stand up their own RAG + Knowledge Graph over
+    their own documents (SOPs, contracts, runbooks, policies, procedures, guidelines)
+    and keep them alive. Multimodal ingest (PDF/DOCX/XLSX/PPTX/OCR/HTML-SharePoint)
+    -> RAG+KG; NO-LLM grounded search (BM25 + KG traversal) with MANDATORY citations;
+    built-in freshness check; multi-user collaboration with versioning + HITL approval
+    + explicit AI-content labeling; CoT/CoD-verified document generation (no hallucination,
+    abstains when unsupported); air-gap local fine-tuning/training option; templates
+    + snippets galleries. Flagship template = ACOIC (infra-drift -> impacted-doc regeneration
+    -> RICOAS NIST 800-53 bridge). Full RBAC + ABAC + RLS. PostgreSQL default. Fully
+    integrated with the ICDEV ecosystem (event bus, awareness engine, MCP, IQE, marketplace).
+
+    '
+  task_prefix: dic-
+  default_open: true
+  briefs:
+  - 'foundation: DIC package + db/init_db.py (PG dual-schema, RLS columns) + constants
+    + config + .env toggle + registry — dic-foundation-01/02'
+  - 'authz: access_control.py RBAC+ABAC+RLS + DIC roles + RBAC_MATRIX + documents permission
+    category — dic-authz-01'
+  - 'ingest: DOCX/XLSX/PPTX/OCR/HTML-SharePoint providers + orchestrator (reuse RAG
+    ingest + KG bridge) — dic-ingest-01..03'
+  - 'search: NO-LLM grounded BM25 + KG retrieval + mandatory citations + RLS/ABAC filter;
+    optional hybrid vector + provenance — dic-search-01/02'
+  - 'verify+generate: CoT/CoD verifier + citation gate + abstention; generation -> AI-labeled
+    PENDING version (HITL, no auto-publish) — dic-verify-01, dic-generate-01'
+  - 'freshness+collab: staleness engine + genesis reflex; versioning + locks + HITL
+    approval + AI-content labeling + audit — dic-freshness-01, dic-collab-01'
+  - 'acoic: drift events -> impact scoring -> regen queue -> RICOAS NIST SSP fragment
+    bridge (CoD-verified, HITL) — dic-acoic-01/02'
+  - 'finetune: air-gap local QLoRA/Ollama fine-tuning option (no cloud, no egress) —
+    dic-finetune-01'
+  - 'templates: ACOIC + SOP refresh + contract lifecycle + runbook validation + policy
+    library + onboarding/knowledge-handoff — dic-templates-01'
+  - 'blueprint+ui+iqe: Flask blueprint + 10 pages + icdev mirror + nav; IQE adapter/dispatch/seed
+    queries — dic-blueprint-01, dic-ui-01..03, dic-iqe-01'
+  - 'synergy+wiring+vv: event bus + awareness + MCP + marketplace; manifest/requirements/conftest/sync/coherence;
+    pytest + behave + Playwright E2E — dic-synergy-01, dic-wiring-01, dic-vv-01'
+  epics:
+  - key: disco
+    title: Discovery — Innovation/Creative/Research feature catalog
+    priority: high
+  - key: foundation
+    title: Foundation — DB (PG dual-schema, RLS) + constants + config + toggle
+    priority: critical
+  - key: authz
+    title: Access Control — RBAC + ABAC + RLS
+    priority: critical
+  - key: ingest
+    title: Multimodal Ingestion — DOCX/XLSX/PPTX/OCR/HTML-SharePoint + orchestrator
+    priority: critical
+  - key: search
+    title: Grounded NO-LLM Search — BM25 + KG + mandatory citations
+    priority: critical
+  - key: freshness
+    title: Freshness Engine + Genesis Reflex
+    priority: high
+  - key: collab
+    title: Collaboration — versioning, HITL approval, AI-content labeling
+    priority: high
+  - key: verify
+    title: CoT/CoD Verifier + Citation Gate + Abstention
+    priority: critical
+  - key: generate
+    title: Doc Generation — verified -> AI-labeled pending (HITL)
+    priority: high
+  - key: finetune
+    title: Air-Gap Local Fine-Tuning / Training (option)
+    priority: medium
+  - key: templates
+    title: Templates + Snippets Galleries (ACOIC, SOP, contract, runbook, policy, onboarding)
+    priority: high
+  - key: acoic
+    title: ACOIC Flagship — drift -> regen -> RICOAS NIST bridge
+    priority: high
+  - key: blueprint
+    title: Flask Blueprint + Routes + API
+    priority: critical
+  - key: ui
+    title: 10 Dashboard Pages + icdev mirror + nav
+    priority: critical
+  - key: iqe
+    title: IQE Adapter + dispatch + seed queries
+    priority: high
+  - key: synergy
+    title: Ecosystem Synergy — event bus + awareness + MCP + marketplace
+    priority: high
+  - key: wiring
+    title: Wiring — manifest + requirements + conftest + sync + coherence
+    priority: medium
+  - key: vv
+    title: V&V — pytest + behave + Playwright E2E + health + docs
+    priority: critical
 - key: ci
   name: Ci Project
   description: Auto-registered project for tasks with prefix 'ci-'. Update name and

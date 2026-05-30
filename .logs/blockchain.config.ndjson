@@ -1,0 +1,2 @@
+{"ts": "2026-05-30T04:12:13.615291+00:00", "level": "INFO", "component": "blockchain.config", "message": "[NO-OP] Would anchor: invoke:AuditContract:StoreMerkleRoot = ef2dfd72263287f26911840c99a657b8f24149df539621dba2f0aff1158ae641", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:20:30.544612+00:00", "level": "INFO", "component": "blockchain.config", "message": "[NO-OP] Would anchor: invoke:AuditContract:StoreMerkleRoot = ef2dfd72263287f26911840c99a657b8f24149df539621dba2f0aff1158ae641", "trace_id": null, "session_id": null, "extra": {}}

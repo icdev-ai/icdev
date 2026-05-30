@@ -1,0 +1,1 @@
+foreach p in cam.projects select p.name, p.customer, p.status, p.impact_level, p.phase_count, p.ai_opp_count

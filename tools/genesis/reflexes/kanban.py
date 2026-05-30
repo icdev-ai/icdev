@@ -3087,11 +3087,18 @@ def _poll_github_actions_completions() -> None:
 
     try:
         _conn = get_connection()
+    except Exception:
+        return
+    try:
         _rows = _conn.execute(
             "SELECT id, execution_id FROM kanban_tasks "
             "WHERE status='in_progress' AND executor_type='github_actions'"
         ).fetchall()
     except Exception:
+        try:
+            _conn.close()
+        except Exception:
+            pass
         return
 
     now = datetime.now(timezone.utc)
@@ -3147,6 +3154,13 @@ def _poll_github_actions_completions() -> None:
                 _ga_last_polled.pop(task_id, None)
         except Exception as _exc:
             logger.warning("kanban: GA poll error for %s: %s", task_id, _exc)
+
+    # Release the connection — the network poll loop above must not hold an
+    # open (idle-in-transaction) connection for its whole duration.
+    try:
+        _conn.close()
+    except Exception:
+        pass
 
 
 # Workflows to monitor for CI failures. Kanban runner is intentionally excluded.
@@ -3293,6 +3307,12 @@ def _detect_and_queue_ci_failures() -> None:
                 logger.info("kanban: queued CI fix task %s for run %s", task_id, run_id)
             except Exception as _ie:
                 logger.warning("kanban: failed to insert ci-fix task %s: %s", task_id, _ie)
+
+    # Release the connection held across the CI-failure network poll loop.
+    try:
+        _conn.close()
+    except Exception:
+        pass
 
 
 def _dispatch_ollama_local(task_id: str, task_desc: str, task_type: str) -> bool:

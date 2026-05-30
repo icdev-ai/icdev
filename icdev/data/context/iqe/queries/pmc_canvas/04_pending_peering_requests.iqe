@@ -1,0 +1,9 @@
+# PMC — Pending peering requests
+# Canvas: pmc | Collection: pmc.peering_requests
+# Description: Open/pending peering session requests awaiting response
+
+show pending peering requests
+list outstanding peering requests
+which peering requests are pending
+show peering requests not yet accepted
+open peering requests

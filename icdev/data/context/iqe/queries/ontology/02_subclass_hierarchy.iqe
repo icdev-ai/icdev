@@ -1,0 +1,7 @@
+# IQE-ONT-002: Transitive subclass closure — all parent-child pairs
+# Returns every (subclass, superclass) pair with path distance.
+# Use: hierarchy traversal, lineage checks, ontology depth analysis.
+
+foreach pair in ontology.closure
+select pair.subclass, pair.superclass, pair.distance
+where pair.distance = 1

@@ -868,3 +868,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Ste Validator | tools\airgap\ste_validator.py | Auto-registered: airgap/ste_validator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Dic Kanban | tools\kanban\seed_dic_kanban.py | Auto-registered: kanban/seed_dic_kanban.py | --json | JSON |

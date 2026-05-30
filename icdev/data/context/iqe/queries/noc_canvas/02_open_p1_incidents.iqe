@@ -1,0 +1,9 @@
+# IQE-NOCC-002: All open P1 incidents
+# Use: Executive bridge, SLA breach assessment, customer notification
+
+foreach i in noc.incidents
+  where i.status != "resolved"
+  where i.status != "closed"
+  where i.severity == "p1"
+  select i.incident_number, i.title, i.affected_circuit, i.affected_carrier,
+         i.assigned_to, i.created_at, i.sla_breach

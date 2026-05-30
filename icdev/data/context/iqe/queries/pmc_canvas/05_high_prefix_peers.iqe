@@ -1,0 +1,9 @@
+# PMC — High prefix count peers
+# Canvas: pmc | Collection: pmc.peers
+# Description: Peers advertising large numbers of prefixes (transit or route-server exposure)
+
+show peers with most prefixes
+list high prefix peers
+which peers advertise the most routes
+show transit peers
+peers with large routing tables

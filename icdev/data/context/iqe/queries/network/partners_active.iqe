@@ -1,0 +1,4 @@
+collection: network.partners
+query: active peering partners agreement status
+description: All active partners with agreement status, ASN, and cross-connect counts
+tags: [partners, peering, active, agreements]

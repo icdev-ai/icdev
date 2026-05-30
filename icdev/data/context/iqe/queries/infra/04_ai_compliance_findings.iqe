@@ -1,0 +1,7 @@
+# IQE-IDC-004: AI compliance findings from the Infrastructure Design Canvas
+# Captures infra compliance check decisions (score, findings, CSP info)
+# for FedRAMP CM-7 (Least Functionality) and NIST SA-9 audit evidence.
+
+foreach d in infra.ai_decisions
+where d.decision_type == "compliance_finding"
+select d.record_id, d.decision, d.rationale, d.model_used, d.confidence, d.trace_id

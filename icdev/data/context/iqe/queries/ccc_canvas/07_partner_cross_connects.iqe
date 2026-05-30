@@ -1,0 +1,4 @@
+collection: ccc.xc_orders
+query: partner cross-connect orders by facility
+description: Cross-connect orders grouped by partner and facility — Equinix, Megaport, Zayo, etc.
+tags: [orders, cross-connect, partner, facility]

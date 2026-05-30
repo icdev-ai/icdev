@@ -1,0 +1,5 @@
+# Intent: List all available SDC demo scenarios with their audience targets and key hooks.
+# Use as a quick reference during demo preparation.
+
+foreach s in sdc_demo.scenarios
+  select s.scenario_id, s.title, s.audience, s.hook, s.duration_min

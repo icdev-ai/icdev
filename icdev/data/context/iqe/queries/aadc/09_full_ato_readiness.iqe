@@ -1,0 +1,4 @@
+foreach d in aadc.designs
+  join a in aadc.ato_reports on a.design_id == d.id
+  join s in aadc.scorecard_snapshots on s.design_id == d.id
+  select d.name, d.domain, a.ato_ready, a.score_pct, a.passed, a.failed, a.critical_failed, s.overall_score, s.health

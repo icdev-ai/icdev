@@ -1,0 +1,3 @@
+foreach d in aimc.designs
+  where d.il_level == "IL5"
+  select d.name, d.il_level, d.adaptation_strategy, d.primary_use_case

@@ -1,0 +1,9 @@
+# Intent: Map all NIST 800-53 AC (Account Management) family control implementations
+#         across projects — surfaces gaps in account lifecycle governance for IL5 boundary.
+# AC-2 covers account types, group/role membership, conditions of use, and access enforcement.
+# Expected violation shape: rows where family == "AC" and implementation_status != "implemented";
+#   each row is an account-management control gap requiring corrective action before ATO.
+
+foreach c in compliance.controls
+  where c.family == "AC"
+  select c.project_id, c.control_id, c.title, c.implementation_status, c.responsible_role, c.impact_level

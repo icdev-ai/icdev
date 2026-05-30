@@ -1,0 +1,31 @@
+# CUI // SP-CTI
+# IDC Teardown Workflow — Destroy infrastructure provisioned by idc_workflow.yaml
+
+description: "IDC teardown: approval gate then terraform destroy for IDC infrastructure"
+category: teardown
+canvas: idc
+
+steps:
+  - id: step_1
+    name: Teardown Approval
+    node_type: human
+    required: true
+    role: infrastructure_approver
+    timeout: 3600
+    tool: ""
+    depends_on: []
+    description: >
+      Confirm destruction of ALL infrastructure provisioned in this run.
+      IRREVERSIBLE in aws mode. Dry-run mode shows plan only.
+      Telegram: /approve <step_run_id> or /reject <step_run_id> [reason].
+
+  - id: step_2
+    name: Terraform Destroy
+    tool: tools/studio/executors/terraform_destroy.py
+    node_type: tool
+    required: true
+    timeout: 900
+    depends_on: [step_1]
+    description: >
+      Locates state file from the apply run, runs terraform destroy
+      -auto-approve in Docker, then deletes the state file.

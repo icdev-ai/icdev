@@ -1,0 +1,1 @@
+foreach c in cam.app_components where c.migration_strategy == "rearchitect" select c.name, c.app_type, c.migration_strategy, c.migration_status

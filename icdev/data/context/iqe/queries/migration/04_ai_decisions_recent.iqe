@@ -1,0 +1,6 @@
+# IQE-MC-004: Recent AI decisions from the Migration Design Canvas
+# Shows readiness assessments and hardware recommendation decisions
+# recorded by the MC AI traceability layer.
+
+foreach d in mc.ai_decisions
+select d.id, d.decision_type, d.decision, d.model_used, d.confidence, d.created_at

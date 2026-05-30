@@ -1,0 +1,6 @@
+# IQE-AADC-004: Recent AI decisions from the Agentic AI Design Canvas
+# Shows risk scoring, NIST RMF compliance, and OMB M-25-21 assessments
+# recorded by the AADC AI traceability layer.
+
+foreach d in aadc.ai_decisions
+select d.id, d.decision_type, d.decision, d.model_used, d.confidence, d.created_at

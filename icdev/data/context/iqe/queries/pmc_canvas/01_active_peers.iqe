@@ -1,0 +1,8 @@
+# PMC — Active peering sessions
+# Canvas: pmc | Collection: pmc.peers
+# Description: List all active BGP peers with traffic ratio and prefix counts
+
+show active peers
+show all active peering sessions
+list active bgp peers with traffic ratio
+which peers are active

@@ -1,0 +1,6 @@
+# IQE-SC-002: High and critical risk suppliers
+# Returns vendors rated high or critical SCRM risk tier that require attention.
+
+foreach v in supply_chain.vendors
+where v.scrm_risk_tier == 'high' or v.scrm_risk_tier == 'critical'
+select v.vendor_name, v.country_of_origin, v.scrm_risk_tier, v.section_889_status, v.isa_required, v.last_assessed
