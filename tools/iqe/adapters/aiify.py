@@ -1,10 +1,10 @@
 # CUI // SP-CTI
-"""IQE AI Augmentation collection adapters.
+"""IQE AI-ify collection adapters.
 
 Importing this module registers three collections on the module-level Executor:
-  ai_augmentation.opportunities — AAC opportunities with scores (aac_opportunities JOIN aac_scores)
-  ai_augmentation.scans         — AAC scan records (aac_scans)
-  ai_augmentation.roadmaps      — AAC roadmap records (aac_roadmaps)
+  aiify.opportunities — AI-ify opportunities with scores (aiify_opportunities JOIN aiify_scores)
+  aiify.scans         — AI-ify scan records (aiify_scans)
+  aiify.roadmaps      — AI-ify roadmap records (aiify_roadmaps)
 """
 from __future__ import annotations
 
@@ -20,69 +20,89 @@ def _conn(conn: Any):
     return conn
 
 
+def _canvas_conn():
+    """AI-ify canvas tables live in the canvas DB, not the main ICDEV DB."""
+    from tools.aiify.db.init_db import get_connection as _aiify_conn  # noqa: PLC0415
+    return _aiify_conn()
+
+
 def opportunities_adapter(conn: Any) -> list[dict]:
-    """Return rows from aac_opportunities joined with aac_scores."""
-    conn = _conn(conn)
-    cur = conn.execute(
-        "SELECT o.id, o.scan_id, o.module_path, o.function_name, o.language, "
-        "o.pattern_type, o.ai_paradigm, o.il_recommended_model, "
-        "s.composite_score, s.value_score, s.feasibility_score, "
-        "s.risk_score, s.effort_days "
-        "FROM aac_opportunities o "
-        "LEFT JOIN aac_scores s ON s.opportunity_id = o.id "
-        "ORDER BY s.composite_score DESC"
-    )
-    cols = [d[0] for d in cur.description]
-    return [dict(zip(cols, row)) for row in cur.fetchall()]
+    """Return rows from aiify_opportunities joined with aiify_scores.
+
+    Reads from the canvas DB (ignores any main-DB conn passed by IQE). Selects
+    the canonical opportunity_id key and the new verdict/category columns.
+    """
+    canvas = _canvas_conn()
+    try:
+        cur = canvas.execute(
+            "SELECT o.opportunity_id, o.scan_id, o.module_path, o.function_name, o.language, "
+            "o.pattern_type, o.ai_paradigm, o.il_recommended_model, "
+            "s.composite_score, s.value_score, s.feasibility_score, s.risk_score, "
+            "s.verdict, s.ai_readiness, s.category "
+            "FROM aiify_opportunities o "
+            "LEFT JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
+            "ORDER BY s.composite_score DESC"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    finally:
+        canvas.close()
 
 
 def scans_adapter(conn: Any) -> list[dict]:
-    """Return rows from aac_scans."""
-    conn = _conn(conn)
-    cur = conn.execute(
-        "SELECT scan_id, input_type, input_ref, language_profile, "
-        "total_files, total_loc, status, created_at, completed_at "
-        "FROM aac_scans ORDER BY created_at DESC"
-    )
-    cols = [d[0] for d in cur.description]
-    return [dict(zip(cols, row)) for row in cur.fetchall()]
+    """Return rows from aiify_scans (canvas DB)."""
+    canvas = _canvas_conn()
+    try:
+        cur = canvas.execute(
+            "SELECT scan_id, input_type, input_ref, language_profile, total_files, "
+            "total_loc, status, overall_verdict, overall_ai_readiness, "
+            "created_at, completed_at "
+            "FROM aiify_scans ORDER BY created_at DESC"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    finally:
+        canvas.close()
 
 
 def roadmaps_adapter(conn: Any) -> list[dict]:
-    """Return rows from aac_roadmaps."""
-    conn = _conn(conn)
-    cur = conn.execute(
-        "SELECT scan_id, roadmap_id, title, total_effort_days, created_at "
-        "FROM aac_roadmaps ORDER BY created_at DESC"
-    )
-    cols = [d[0] for d in cur.description]
-    return [dict(zip(cols, row)) for row in cur.fetchall()]
+    """Return rows from aiify_roadmaps (canvas DB)."""
+    canvas = _canvas_conn()
+    try:
+        cur = canvas.execute(
+            "SELECT scan_id, roadmap_id, title, total_effort_days, created_at "
+            "FROM aiify_roadmaps ORDER BY created_at DESC"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    finally:
+        canvas.close()
 
 
-register_collection("ai_augmentation.opportunities", opportunities_adapter)
-register_collection("ai_augmentation.scans", scans_adapter)
-register_collection("ai_augmentation.roadmaps", roadmaps_adapter)
+register_collection("aiify.opportunities", opportunities_adapter)
+register_collection("aiify.scans", scans_adapter)
+register_collection("aiify.roadmaps", roadmaps_adapter)
 
 
 def opportunities_with_innovation_adapter(conn: Any) -> list[dict]:
-    """AAC opportunities enriched with matching innovation signals (Python join across DBs)."""
-    from tools.ai_augmentation.db.init_db import get_connection as _aac_conn
+    """AI-ify opportunities enriched with matching innovation signals (Python join across DBs)."""
+    from tools.aiify.db.init_db import get_connection as _aiify_conn
 
-    # Load AAC opportunities from the canvas DB
-    aac = _aac_conn()
+    # Load AI-ify opportunities from the canvas DB
+    aiify = _aiify_conn()
     try:
-        cur = aac.execute(
+        cur = aiify.execute(
             "SELECT o.opportunity_id, o.scan_id, o.module_path, o.function_name, "
             "o.pattern_type, o.ai_paradigm, o.il_recommended_model, "
             "s.composite_score "
-            "FROM aac_opportunities o "
-            "LEFT JOIN aac_scores s ON s.opportunity_id = o.opportunity_id "
+            "FROM aiify_opportunities o "
+            "LEFT JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
             "ORDER BY s.composite_score DESC"
         )
         cols = [d[0] for d in cur.description]
         opps = [dict(zip(cols, row)) for row in cur.fetchall()]
     finally:
-        aac.close()
+        aiify.close()
 
     # Load innovation signals from main ICDEV DB (best-effort)
     signal_map: dict[str, str] = {}
@@ -91,7 +111,7 @@ def opportunities_with_innovation_adapter(conn: Any) -> list[dict]:
         try:
             rows = icdev.execute(
                 "SELECT category, title FROM innovation_signals "
-                "WHERE category IN ('ai_tooling','agentic','external_framework_analysis','ai_augmentation_opportunity') "
+                "WHERE category IN ('ai_tooling','agentic','external_framework_analysis','aiify_opportunity') "
                 "AND innovation_score >= 0.60 ORDER BY innovation_score DESC LIMIT 100"
             ).fetchall()
             for r in rows:
@@ -110,7 +130,7 @@ def opportunities_with_innovation_adapter(conn: Any) -> list[dict]:
         "string_template_rendering": "agentic",
         "scheduled_cron": "agentic",
         "keyword_list_search": "external_framework_analysis",
-        "large_rule_table": "ai_augmentation_opportunity",
+        "large_rule_table": "aiify_opportunity",
     }
     for opp in opps:
         cat = _PATTERN_TO_CATEGORY.get(opp.get("pattern_type", ""), "")
@@ -120,19 +140,19 @@ def opportunities_with_innovation_adapter(conn: Any) -> list[dict]:
 
 
 def roadmap_with_research_adapter(conn: Any) -> list[dict]:
-    """AAC roadmap phases enriched with research regulatory milestones (Python join)."""
-    from tools.ai_augmentation.db.init_db import get_connection as _aac_conn
+    """AI-ify roadmap phases enriched with research regulatory milestones (Python join)."""
+    from tools.aiify.db.init_db import get_connection as _aiify_conn
     import json as _json
 
-    aac = _aac_conn()
+    aiify = _aiify_conn()
     try:
-        cur = aac.execute(
-            "SELECT roadmap_id, title, phases, total_effort_days, created_at FROM aac_roadmaps ORDER BY created_at DESC"
+        cur = aiify.execute(
+            "SELECT roadmap_id, title, phases, total_effort_days, created_at FROM aiify_roadmaps ORDER BY created_at DESC"
         )
         cols = [d[0] for d in cur.description]
         roadmaps = [dict(zip(cols, row)) for row in cur.fetchall()]
     finally:
-        aac.close()
+        aiify.close()
 
     # Load research regulatory map (best-effort)
     reg_rows: list[dict] = []
@@ -171,5 +191,5 @@ def roadmap_with_research_adapter(conn: Any) -> list[dict]:
     return results
 
 
-register_collection("ai_augmentation.opportunities_with_innovation", opportunities_with_innovation_adapter)
-register_collection("ai_augmentation.roadmap_with_research", roadmap_with_research_adapter)
+register_collection("aiify.opportunities_with_innovation", opportunities_with_innovation_adapter)
+register_collection("aiify.roadmap_with_research", roadmap_with_research_adapter)

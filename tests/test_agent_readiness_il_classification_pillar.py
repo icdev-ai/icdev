@@ -6,7 +6,7 @@ import pathlib
 import textwrap
 
 
-from tools.ai_augmentation.agent_readiness.pillars.il_classification import (
+from tools.aiify.agent_readiness.pillars.il_classification import (
     PILLAR,
     _check_cui_file_headers,
 )
@@ -26,7 +26,7 @@ def _write(tmp_path: pathlib.Path, rel: str, content: str) -> pathlib.Path:
 def _patch_thresholds(monkeypatch, **overrides):
     defaults = {"sample_size": 30, "min_header_ratio": 0.5, "warn_header_ratio": 0.3}
     defaults.update(overrides)
-    import tools.ai_augmentation.agent_readiness.pillars.il_classification as mod
+    import tools.aiify.agent_readiness.pillars.il_classification as mod
     monkeypatch.setattr(mod, "_load_thresholds", lambda: defaults)
 
 
@@ -47,7 +47,7 @@ class TestLoadThresholds:
             "      warn_header_ratio: 0.6\n",
             encoding="utf-8",
         )
-        import tools.ai_augmentation.agent_readiness.pillars.il_classification as mod
+        import tools.aiify.agent_readiness.pillars.il_classification as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -57,7 +57,7 @@ class TestLoadThresholds:
         mod._load_thresholds.cache_clear()
 
     def test_falls_back_to_defaults_when_file_absent(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.il_classification as mod
+        import tools.aiify.agent_readiness.pillars.il_classification as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", tmp_path / "nonexistent.yaml")
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -72,7 +72,7 @@ class TestLoadThresholds:
             "pillars:\n  il_classification:\n    cui_file_headers:\n      min_header_ratio: 0.9\n",
             encoding="utf-8",
         )
-        import tools.ai_augmentation.agent_readiness.pillars.il_classification as mod
+        import tools.aiify.agent_readiness.pillars.il_classification as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -84,7 +84,7 @@ class TestLoadThresholds:
     def test_falls_back_on_malformed_yaml(self, tmp_path, monkeypatch):
         cfg = tmp_path / "agent_readiness_config.yaml"
         cfg.write_text(":\tbad: yaml: [", encoding="utf-8")
-        import tools.ai_augmentation.agent_readiness.pillars.il_classification as mod
+        import tools.aiify.agent_readiness.pillars.il_classification as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()

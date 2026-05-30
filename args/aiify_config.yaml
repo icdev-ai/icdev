@@ -1,4 +1,4 @@
-# AAC (Autonomous Automation Candidate) Engine Configuration
+# AI-ify (Autonomous Automation Candidate) Engine Configuration
 # CUI // SP-CTI
 
 scoring_weights:
@@ -52,7 +52,7 @@ threshold_anomaly_detection:
   percentile_scale: 100   # divisor converting q1/q3 percentile values to fractions (default 100 = percentage scale)
 
 semgrep:
-  rules_dir: context/ai_augmentation/semgrep_rules
+  rules_dir: context/aiify/semgrep_rules
   timeout_seconds: 60
   metrics: "off"
 
@@ -79,7 +79,7 @@ anomaly_detection:
 
 ml_nested_conditionals:
   # ML classifier enrichment for nested_conditionals detections.
-  # Opt-in: set enabled: true here OR export ICDEV_AAC_ML_CLASSIFY=true.
+  # Opt-in: set enabled: true here OR export ICDEV_AIIFY_ML_CLASSIFY=true.
   enabled: false
   model: claude-haiku-4-5-20251001
   max_tokens: 256
@@ -87,7 +87,7 @@ ml_nested_conditionals:
 
 ml_regex_user_input:
   # NLP extractor enrichment for regex_user_input detections in pattern_classifier.py.
-  # Opt-in: set enabled: true here OR export ICDEV_AAC_NLP_REGEX=true.
+  # Opt-in: set enabled: true here OR export ICDEV_AIIFY_NLP_REGEX=true.
   enabled: false
   model: claude-haiku-4-5-20251001
   max_tokens: 256
@@ -97,7 +97,7 @@ nlp_ref_extractor:
   # NLP extractor for scan target ref classification in engine.py.
   # Replaces regex URL/path parsing with Claude Haiku NLP extraction for richer
   # project metadata (hosting platform, language hints, canonical project name).
-  # Opt-in: set enabled: true here OR export ICDEV_AAC_NLP_REF=true.
+  # Opt-in: set enabled: true here OR export ICDEV_AIIFY_NLP_REF=true.
   enabled: false
   model: claude-haiku-4-5-20251001
   max_tokens: 128

@@ -7,7 +7,7 @@ import textwrap
 from unittest.mock import MagicMock, patch
 
 
-from tools.ai_augmentation.agent_readiness.pillars.stig_compliance import (
+from tools.aiify.agent_readiness.pillars.stig_compliance import (
     PILLAR,
     _check_cat1_remediation,
     _check_stig_checklist,
@@ -59,7 +59,7 @@ class TestLoadThresholds:
             "      text_sample_chars: 4000\n",
             encoding="utf-8",
         )
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -71,7 +71,7 @@ class TestLoadThresholds:
         mod._load_thresholds.cache_clear()
 
     def test_falls_back_to_defaults_when_file_absent(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", tmp_path / "nonexistent.yaml")
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -85,7 +85,7 @@ class TestLoadThresholds:
     def test_falls_back_on_malformed_yaml(self, tmp_path, monkeypatch):
         cfg = tmp_path / "agent_readiness_config.yaml"
         cfg.write_text(":\tbad: yaml: [", encoding="utf-8")
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -98,7 +98,7 @@ class TestLoadThresholds:
             "pillars:\n  stig_compliance:\n    nlp_extractor:\n      max_tokens: 1024\n",
             encoding="utf-8",
         )
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -120,20 +120,20 @@ class TestNlpExtractStigRefs:
         return provider
 
     def test_returns_none_when_nlp_disabled(self, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds(nlp_extractor_enabled=False))
         result = _nlp_extract_stig_refs("some text with V-220938", "find STIG IDs")
         assert result is None
 
     def test_returns_none_when_api_key_missing(self, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds())
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         result = _nlp_extract_stig_refs("some text with V-220938", "find STIG IDs")
         assert result is None
 
     def test_returns_none_when_import_fails(self, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds())
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
         with patch.dict("sys.modules", {"tools.llm.anthropic_provider": None}):
@@ -141,7 +141,7 @@ class TestNlpExtractStigRefs:
         assert result is None
 
     def test_parses_valid_json_response(self, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds())
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
 
@@ -156,7 +156,7 @@ class TestNlpExtractStigRefs:
         assert result["confidence"] == 0.95
 
     def test_extracts_json_from_surrounding_text(self, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds())
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
 
@@ -171,7 +171,7 @@ class TestNlpExtractStigRefs:
         assert result["confidence"] == 0.1
 
     def test_returns_none_on_provider_exception(self, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds())
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
 
@@ -184,7 +184,7 @@ class TestNlpExtractStigRefs:
         assert result is None
 
     def test_truncates_text_to_sample_chars(self, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds(nlp_extractor_text_sample_chars=10))
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
 
@@ -212,7 +212,7 @@ class TestNlpExtractStigRefs:
 
 class TestCheckStigVidsInCode:
     def _patch(self, monkeypatch, **threshold_overrides):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds(**threshold_overrides))
 
     def test_passes_via_regex_when_vid_in_python_file(self, tmp_path, monkeypatch):
@@ -245,7 +245,7 @@ class TestCheckStigVidsInCode:
         _write(tmp_path, "notes.py", "# We comply with the vulnerability identified as V dash two-two-oh-nine-three-eight\n")
 
         nlp_result = {"found": True, "refs": ["V-220938"], "confidence": 0.9}
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_nlp_extract_stig_refs", lambda text, task: nlp_result)
 
         result = _check_stig_vids_in_code(tmp_path)
@@ -257,7 +257,7 @@ class TestCheckStigVidsInCode:
         _write(tmp_path, "app.py", "# no real STIG ref here\n")
 
         nlp_result = {"found": True, "refs": ["V-220938"], "confidence": 0.5}
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_nlp_extract_stig_refs", lambda text, task: nlp_result)
 
         result = _check_stig_vids_in_code(tmp_path)
@@ -267,7 +267,7 @@ class TestCheckStigVidsInCode:
         self._patch(monkeypatch)
         _write(tmp_path, "app.py", "# nothing here\n")
 
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_nlp_extract_stig_refs", lambda text, task: None)
 
         result = _check_stig_vids_in_code(tmp_path)
@@ -280,7 +280,7 @@ class TestCheckStigVidsInCode:
 
 class TestCheckStigInDocs:
     def _patch(self, monkeypatch, **threshold_overrides):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds(**threshold_overrides))
 
     def test_passes_via_regex_when_stig_word_in_md(self, tmp_path, monkeypatch):
@@ -311,7 +311,7 @@ class TestCheckStigInDocs:
         _write(tmp_path, "README.md", "We follow all applicable security technical guides from the Defense Information Systems Agency.\n")
 
         nlp_result = {"found": True, "refs": ["DISA STIG"], "confidence": 0.88}
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_nlp_extract_stig_refs", lambda text, task: nlp_result)
 
         result = _check_stig_in_docs(tmp_path)
@@ -320,7 +320,7 @@ class TestCheckStigInDocs:
 
     def test_nlp_skipped_when_no_docs(self, tmp_path, monkeypatch):
         self._patch(monkeypatch)
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         call_count = {"n": 0}
         def counting_nlp(text, task):
             call_count["n"] += 1
@@ -335,7 +335,7 @@ class TestCheckStigInDocs:
         _write(tmp_path, "README.md", "No security content here.\n")
 
         nlp_result = {"found": False, "refs": [], "confidence": 0.95}
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_nlp_extract_stig_refs", lambda text, task: nlp_result)
 
         result = _check_stig_in_docs(tmp_path)
@@ -348,7 +348,7 @@ class TestCheckStigInDocs:
 
 class TestCheckStigChecklist:
     def _patch(self, monkeypatch, **threshold_overrides):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds(**threshold_overrides))
 
     def test_passes_via_regex_when_ckl_has_vid(self, tmp_path, monkeypatch):
@@ -379,7 +379,7 @@ class TestCheckStigChecklist:
         _write(tmp_path, "checklist.ckl", "All Category One findings have been remediated per policy.\n")
 
         nlp_result = {"found": True, "refs": ["CAT I", "V-220938"], "confidence": 0.9}
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_nlp_extract_stig_refs", lambda text, task: nlp_result)
 
         result = _check_stig_checklist(tmp_path)
@@ -391,7 +391,7 @@ class TestCheckStigChecklist:
         _write(tmp_path, "checklist.ckl", "some checklist content\n")
 
         nlp_result = {"found": True, "refs": ["CAT I"], "confidence": 0.8}
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_nlp_extract_stig_refs", lambda text, task: nlp_result)
 
         result = _check_stig_checklist(tmp_path)
@@ -404,7 +404,7 @@ class TestCheckStigChecklist:
 
 class TestCheckCat1Remediation:
     def _patch(self, monkeypatch, **threshold_overrides):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds(**threshold_overrides))
 
     def test_passes_via_regex_when_vid_and_cat_cooccur(self, tmp_path, monkeypatch):
@@ -437,7 +437,7 @@ class TestCheckCat1Remediation:
         _write(tmp_path, "docs/compliance.md", "All Category One vulnerabilities have been addressed and closed in the security review.\n")
 
         nlp_result = {"found": True, "refs": ["CAT I"], "confidence": 0.92}
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_nlp_extract_stig_refs", lambda text, task: nlp_result)
 
         result = _check_cat1_remediation(tmp_path)
@@ -448,7 +448,7 @@ class TestCheckCat1Remediation:
         self._patch(monkeypatch)
         _write(tmp_path, "docs/notes.md", "No severity info.\n")
 
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_nlp_extract_stig_refs", lambda text, task: None)
 
         result = _check_cat1_remediation(tmp_path)
@@ -459,7 +459,7 @@ class TestCheckCat1Remediation:
         _write(tmp_path, "docs/security-review.md", "Severity categories tracked per policy.\n")
 
         nlp_result = {"found": True, "refs": ["CAT II"], "confidence": 0.65}
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_nlp_extract_stig_refs", lambda text, task: nlp_result)
 
         result = _check_cat1_remediation(tmp_path)
@@ -480,7 +480,7 @@ class TestStigCompliancePillarIntegration:
         assert "STIG" in PILLAR.name
 
     def test_score_all_pass(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds(nlp_extractor_enabled=False))
 
         # Create artifacts that satisfy all four criteria via regex alone
@@ -493,7 +493,7 @@ class TestStigCompliancePillarIntegration:
         assert score["passed"] == score["total"]
 
     def test_score_all_fail_with_empty_repo(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds(nlp_extractor_enabled=False))
 
         results = PILLAR.run(tmp_path)
@@ -501,7 +501,7 @@ class TestStigCompliancePillarIntegration:
         assert score["passed"] == 0
 
     def test_nlp_drives_all_pass(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.stig_compliance as mod
+        import tools.aiify.agent_readiness.pillars.stig_compliance as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: _default_thresholds(nlp_extractor_confidence_threshold=0.7))
 
         # No regex-detectable content — create placeholder files for NLP to scan

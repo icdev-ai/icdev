@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pathlib
 
-from tools.ai_augmentation.agent_readiness.pillars._base import (
+from tools.aiify.agent_readiness.pillars._base import (
     Criterion,
     CriterionResult,
     Pillar,

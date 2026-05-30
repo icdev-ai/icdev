@@ -157,7 +157,8 @@ _CANVAS_DEFS = [
     ("pmc", "ICDEV_PMC_ENABLED", "tools.pmc_canvas.blueprint", "create_pmc_blueprint"),
     ("ccc", "ICDEV_CCC_ENABLED", "tools.ccc_canvas.blueprint", "create_ccc_blueprint"),
     ("dsoc", "ICDEV_DSOC_ENABLED", "tools.dsoc_canvas.blueprint", "create_dsoc_blueprint"),
-    ("aac",  "ICDEV_AAC_ENABLED",  "tools.ai_augmentation.blueprint", "aac_bp"),
+    ("aiify",  "ICDEV_AIIFY_ENABLED",  "tools.aiify.blueprint", "aiify_bp"),
+    ("aiify_compat", "ICDEV_AIIFY_ENABLED", "tools.aiify.blueprint", "aiify_compat_bp"),
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
 ]
 
@@ -1541,7 +1542,7 @@ def create_app() -> Flask:
             "pmc_enabled": _CANVAS_FLAGS.get("pmc", False),
             "ccc_enabled": _CANVAS_FLAGS.get("ccc", False),
             "dsoc_enabled": _CANVAS_FLAGS.get("dsoc", False),
-            "aac_enabled": _CANVAS_FLAGS.get("aac", False),
+            "aiify_enabled": _CANVAS_FLAGS.get("aiify", False),
             "demo_runner_enabled": _CANVAS_FLAGS.get("demo_runner", False),
             "govlift_enabled": _CANVAS_FLAGS.get("govlift", False),
             "info_ops_enabled": _CANVAS_FLAGS.get("iop", False),
@@ -2760,7 +2761,7 @@ def create_app() -> Flask:
             "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
             "strategos":      ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
             "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
-            "aac":            ("tools.iqe.adapters.ai_augmentation", ["ai_augmentation.opportunities", "ai_augmentation.scans", "ai_augmentation.roadmaps"]),
+            "aiify":            ("tools.iqe.adapters.aiify", ["aiify.opportunities", "aiify.scans", "aiify.roadmaps"]),
             "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
             "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
             "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),

@@ -1,11 +1,11 @@
 # CUI // SP-CTI
-"""AI Canvas Demo Runner — 5-Act DoD/IC Demo for AADC, AIMC, AAC, and Observatory.
+"""AI Canvas Demo Runner — 5-Act DoD/IC Demo for AADC, AIMC, AI-ify, and Observatory.
 
 Acts (executive order):
   1. AI Observatory       — 200+ AI decisions, confabulation flags, HITL queue
   2. AADC                 — JADC2 + Insider Threat designs, HITL required, rights-impacting
   3. AIMC                 — SIGINT NLP (IL5 air-gap) + FAR/DFARS Q&A, IL filter
-  4. AAC                  — GCSS-Army + SIEM modernization, top opportunities
+  4. AI-ify                  — GCSS-Army + SIEM modernization, top opportunities
   5. Cross-Canvas         — Rights-impacting inventory, low-confidence queue, OMB M-25-21
 
 Usage:
@@ -61,8 +61,8 @@ def _obs_conn():
     return get_connection()
 
 
-def _aac_conn():
-    """Shared icdev.db — AAC canvas tables (no classification/tenant_id — RLS disabled)."""
+def _aiify_conn():
+    """Shared icdev.db — AI-ify canvas tables (no classification/tenant_id — RLS disabled)."""
     from tools.db.storage import get_canvas_connection
     return get_canvas_connection()
 
@@ -342,26 +342,26 @@ def scenario_3() -> dict:
 
 
 # =============================================================================
-# Act 4 — AAC: Modernizing Legacy Systems
+# Act 4 — AI-ify: Modernizing Legacy Systems
 # =============================================================================
 
 def scenario_4() -> dict:
-    _header("AAC  |  AI Code Augmentation — Modernizing Legacy DoD Systems", 4)
+    _header("AI-ify  |  AI Code Augmentation — Modernizing Legacy DoD Systems", 4)
     _print("  5 legacy system scans. 60+ AI augmentation opportunities identified.")
     _print("  GCSS-Army: 287K LOC. SIEM: 88K-entry IOC table — composite 0.85.")
     _print("  Hook: 'Has anyone done a systematic analysis of where AI can")
     _print("         replace brittle rule-based logic in your highest-cost system?'")
     time.sleep(0.3)
 
-    conn = _aac_conn()
+    conn = _aiify_conn()
     try:
         # Find the scans with the most opportunities (the fully-seeded batch)
         # Use HAVING to prefer scans that actually have opportunity data
         scans = conn.execute(
             """SELECT s.scan_id, s.input_ref, s.total_loc,
                       COUNT(o.opportunity_id) as opp_count
-               FROM aac_scans s
-               LEFT JOIN aac_opportunities o ON o.scan_id = s.scan_id
+               FROM aiify_scans s
+               LEFT JOIN aiify_opportunities o ON o.scan_id = s.scan_id
                WHERE s.input_ref LIKE 'git@%'
                GROUP BY s.scan_id, s.input_ref, s.total_loc
                ORDER BY opp_count DESC, s.scan_id ASC LIMIT 20"""
@@ -431,7 +431,7 @@ def scenario_4() -> dict:
             siem_scan_id = siem_row["scan_id"] if hasattr(siem_row, "keys") else siem_row[0]
             siem_opps = conn.execute(
                 "SELECT function_name, pattern_type, ai_paradigm, il_recommended_model "
-                "FROM aac_opportunities WHERE scan_id = %s ORDER BY opportunity_id LIMIT 5",
+                "FROM aiify_opportunities WHERE scan_id = %s ORDER BY opportunity_id LIMIT 5",
                 (siem_scan_id,)
             ).fetchall()
 
@@ -455,7 +455,7 @@ def scenario_4() -> dict:
             gcss_scan_id = gcss_row["scan_id"] if hasattr(gcss_row, "keys") else gcss_row[0]
             gcss_opps = conn.execute(
                 "SELECT function_name, pattern_type, ai_paradigm "
-                "FROM aac_opportunities WHERE scan_id = %s ORDER BY opportunity_id LIMIT 3",
+                "FROM aiify_opportunities WHERE scan_id = %s ORDER BY opportunity_id LIMIT 3",
                 (gcss_scan_id,)
             ).fetchall()
             _sub("Deep Dive: GCSS-Army Logistics (composite=0.77)")
@@ -471,8 +471,8 @@ def scenario_4() -> dict:
         total_opps = sum(
             (row["opp_count"] if hasattr(row, "keys") else row[3]) for row in latest
         )
-        _sub("IQE Query: IQE-AAC-001 — Top Opportunities Ranked")
-        _print("  foreach o in aac.opportunities join aac.scores")
+        _sub("IQE Query: IQE-AI-ify-001 — Top Opportunities Ranked")
+        _print("  foreach o in aiify.opportunities join aiify.scores")
         _print("  order by composite_score desc select top 10")
         _print(f"  -> {total_opps} total opportunities across {len(latest)} systems")
 
@@ -592,8 +592,8 @@ def scenario_5() -> dict:
 def print_executive_summary(results: dict) -> None:
     _header("EXECUTIVE SUMMARY — ICDEV AI Canvas Demo")
     _print("""
-  PLATFORM: ICDEV™ AI Governance Suite — AADC / AIMC / AAC / AI Observatory
-  DATA:     8 AADC designs, 8 AIMC designs, 5 AAC scans, 200+ Observatory decisions
+  PLATFORM: ICDEV™ AI Governance Suite — AADC / AIMC / AI-ify / AI Observatory
+  DATA:     8 AADC designs, 8 AIMC designs, 5 AI-ify scans, 200+ Observatory decisions
   AUDIENCE: CIO, CISO, PEO, Program Director — DoD/IC and Federal Government
     """)
     _print("  +----------------------------------------------------------------------+")
@@ -616,7 +616,7 @@ def print_executive_summary(results: dict) -> None:
          f"{r2.get('hitl_required',0)}/{r2.get('designs',0)} HITL, {r2.get('rights_impacting',0)} OMB rights-impact")
     _row(r3, "3. AIMC — Model Selection",
          f"{r3.get('il5_designs',0)} IL5 air-gap, 29x ROI on FAR/DFARS")
-    _row(r4, "4. AAC — Legacy Modernize",
+    _row(r4, "4. AI-ify — Legacy Modernize",
          f"{r4.get('total_opportunities',0)} opps across {r4.get('scans',0)} systems")
     _row(r5, "5. Cross-Canvas Governance",
          f"{r5.get('rights_impacting_total',0)} rights-impacting, CAIO queue visible")
@@ -639,7 +639,7 @@ def print_executive_summary(results: dict) -> None:
     FedRAMP High    IL4 boundary evidence (AADC + AIMC CSP selection)
 
   NEXT STEPS:
-    -> /ai-augmentation  — run top opportunities IQE on your legacy system
+    -> /ai-ify  — run top opportunities IQE on your legacy system
     -> /aadc             — load your AI agent design, run assessment
     -> /ai-ml            — evaluate model fitness for your IL level
     -> /ai-observatory   — connect your existing AI system audit trail
@@ -672,9 +672,9 @@ TECH_NOTES = {
         "Model card artifact: generated by aiml_engine.py::generate_model_card(), stored in aiml_artifacts",
     ],
     4: [
-        "Technical depth: AAC composite score = value×0.45 + feasibility×0.35 + (1-risk)×0.20",
+        "Technical depth: AI-ify composite score = value×0.45 + feasibility×0.35 + (1-risk)×0.20",
         "PATTERN_TYPES constant drives CHECK constraint — add new patterns to constants.py first",
-        "Cross-links: aac_roadmaps.aadc_design_id and aimc_design_id — must pre-exist for Phase 3+ roadmaps",
+        "Cross-links: aiify_roadmaps.aadc_design_id and aimc_design_id — must pre-exist for Phase 3+ roadmaps",
         "il_recommended_model: derived from ai_capability_mapper.py based on pattern + IL level",
         "JTRS Radio Firmware: Rust il_level → qwen3-local for IL5 signal processing",
     ],

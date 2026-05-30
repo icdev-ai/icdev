@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-from tools.ai_augmentation.agent_readiness.pillars import (  # noqa: F401
+from tools.aiify.agent_readiness.pillars import (  # noqa: F401
     append_only_audit,
     code_quality,
     configuration,
