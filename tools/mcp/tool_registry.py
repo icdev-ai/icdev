@@ -6606,6 +6606,23 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    "reasoned_codegen_advise": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_reasoned_codegen_advise",
+        "description": "Advise whether reasoned codegen (CoT/CoD + critique) is worth it for a task, and which mode.",
+        "input_schema": {
+            "type": "object",
+            "required": ["spec"],
+            "properties": {
+                "function": {"type": "string", "default": "code_generation", "description": "ICDEV function key"},
+                "spec": {"type": "string", "description": "Task spec / requirement text to assess"},
+                "file_count": {"type": "integer", "default": 0, "description": "Files in scope"},
+                "past_failures": {"type": "integer", "default": 0, "description": "Prior failures on this task"},
+                "use_llm": {"type": "boolean", "default": False, "description": "Allow optional cheap-tier LLM refine (heuristic if false)"},
+            },
+        },
+    },
     "cot_stats": {
         "category": "llmops",
         "module": "tools.llm.chain_orchestrator",
