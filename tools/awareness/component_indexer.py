@@ -770,12 +770,117 @@ def persist(nodes: List[Node], edges: List[Edge]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def prune_stale_nodes(
+    base: Optional[Path] = None, dry_run: bool = False
+) -> Dict[str, Any]:
+    """Reconcile the graph against disk — remove nodes whose backing file is gone.
+
+    The indexer is otherwise additive: ``persist`` only upserts, so when a tool
+    is deleted its kg_node lingers forever and every health probe keeps reporting
+    it as a ``module_import`` failure. This sweep deletes file-backed nodes whose
+    ``file_path`` no longer exists on disk, but ONLY when the node has zero edges
+    (so we never orphan a relationship). Each pruned node also has its
+    ``awareness_component_health`` snapshots removed so the latest-snapshot-per-node
+    view used by self_monitor stops surfacing the dead component.
+
+    Returns {"candidates": n, "pruned": n, "dry_run": bool, "nodes": [...]}.
+    """
+    base = base or BASE_DIR
+    if get_connection is None:
+        return {"pruned": 0, "candidates": 0, "error": "get_connection unavailable"}
+
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, entity_type, properties FROM kg_nodes WHERE graph_id = ?",
+            (GRAPH_ID,),
+        ).fetchall()
+    except Exception as exc:
+        LOG.error("prune: kg_nodes read failed: %s", exc)
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return {"pruned": 0, "candidates": 0, "error": str(exc)[:200]}
+
+    candidates: List[Dict[str, Any]] = []
+    for r in rows:
+        d = dict(r)
+        try:
+            props = json.loads(d.get("properties") or "{}")
+        except Exception:
+            props = {}
+        fp = props.get("file_path", "")
+        if not fp:
+            continue  # only file-backed nodes are reconciled against disk
+        # Symbol-qualified nodes carry "file.py::symbol" — existence is a
+        # property of the FILE, not the qualifier. Strip it before checking,
+        # otherwise every function/class node looks like a missing file.
+        file_part = fp.split("::", 1)[0]
+        if (base / file_part).exists():
+            continue  # backing file/dir still present — keep
+        # Backing file is gone. Only prune if nothing references this node.
+        try:
+            ec = conn.execute(
+                "SELECT COUNT(*) AS n FROM kg_edges WHERE source_id = ? OR target_id = ?",
+                (d["id"], d["id"]),
+            ).fetchone()
+            if (dict(ec).get("n", 0) if ec else 0) > 0:
+                continue  # has edges — skip to avoid orphaning relationships
+        except Exception:
+            continue  # if we can't verify edges, be conservative and skip
+        candidates.append({"id": d["id"], "entity_type": d["entity_type"], "file_path": fp})
+
+    pruned = 0
+    if not dry_run:
+        for c in candidates:
+            try:
+                # Snapshots first (best-effort; table may be absent in slim envs)
+                try:
+                    conn.execute(
+                        "DELETE FROM awareness_component_health WHERE node_id = ?",
+                        (c["id"],),
+                    )
+                except Exception:
+                    pass
+                conn.execute(
+                    "DELETE FROM kg_nodes WHERE id = ? AND graph_id = ?",
+                    (c["id"], GRAPH_ID),
+                )
+                conn.commit()
+                pruned += 1
+            except Exception as exc:
+                LOG.error("prune: delete failed for %s: %s", c["id"], exc)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+    return {
+        "candidates": len(candidates),
+        "pruned": pruned,
+        "dry_run": dry_run,
+        "nodes": candidates[:50],
+    }
+
+
 def scan(
     base: Optional[Path] = None,
     scope: Optional[Path] = None,
     dry_run: bool = False,
+    prune: bool = True,
 ) -> Dict[str, Any]:
-    """Full scan entry point — returns summary dict."""
+    """Full scan entry point — returns summary dict.
+
+    On a full (unscoped) non-dry-run scan, also reconciles the graph against
+    disk via ``prune_stale_nodes`` so deleted tools self-clean each cycle.
+    Scoped scans never prune (they only see part of the tree).
+    """
     base = base or BASE_DIR
     nodes = collect_nodes(base, scope=scope)
     edges = derive_edges(nodes)
@@ -793,6 +898,10 @@ def scan(
 
     if not dry_run:
         summary["persistence"] = persist(nodes, edges)
+        # Reconcile only on a full scan — a scoped scan can't tell a deleted
+        # node from one simply outside its scope.
+        if prune and scope is None:
+            summary["prune"] = prune_stale_nodes(base)
 
     return summary
 
@@ -926,6 +1035,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--stats", action="store_true", help="Show current graph stats"
     )
+    parser.add_argument(
+        "--prune", action="store_true",
+        help="Reconcile graph against disk: remove file-missing, zero-edge nodes "
+             "(+ their health snapshots). Combine with --dry-run to preview.",
+    )
+    parser.add_argument(
+        "--no-prune", action="store_true",
+        help="Skip the post-scan reconcile sweep on --scan",
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args(argv)
 
@@ -936,9 +1054,11 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.stats:
         result = get_stats()
+    elif args.prune and not args.scan:
+        result = prune_stale_nodes(dry_run=args.dry_run)
     elif args.scan or args.dry_run:
         scope = (BASE_DIR / args.scope) if args.scope else None
-        result = scan(scope=scope, dry_run=args.dry_run)
+        result = scan(scope=scope, dry_run=args.dry_run, prune=not args.no_prune)
     else:
         parser.print_help()
         return 1

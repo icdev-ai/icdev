@@ -1,0 +1,27 @@
+# IQE-GEO-001: Recent OSINT feeds — Eastern Mediterranean / Persian Gulf
+# Intent: Surface raw OSINT signals relevant to the Eastern Mediterranean and
+#         Persian Gulf operational areas, regardless of whether geo_hint was
+#         populated during ingestion.  osint_prestage.py and
+#         gitlab_osint_collector.py both write geo_hint = null, so an exact
+#         geo_hint match would silently return zero rows.  This query avoids
+#         that assumption by OR-combining a geo_hint prefix check with
+#         keyword searches across title and body, ensuring full coverage of
+#         both source tiers (INTERNET and GITLAB).
+# Expected shape: rows from geospatial.raw_signals whose content references
+#   the Eastern Mediterranean (Levant, Aegean, Suez corridor) or the Persian
+#   Gulf / Strait of Hormuz theater; each row is one candidate signal for
+#   downstream scoring or analyst review.
+# Collection: geospatial.raw_signals — backed by sg_raw_signals
+#   Relevant fields: id, title, source, signal_date, geo_hint, tier_used, created_at
+
+foreach r in geospatial.raw_signals
+  where r.geo_hint contains "mediterranean" or r.geo_hint contains "persian gulf"
+     or r.geo_hint contains "hormuz" or r.geo_hint contains "levant"
+     or r.title contains "mediterranean" or r.title contains "eastern med"
+     or r.title contains "persian gulf" or r.title contains "hormuz"
+     or r.title contains "strait of hormuz" or r.title contains "levant"
+     or r.title contains "aegean" or r.title contains "suez"
+     or r.body contains "eastern mediterranean" or r.body contains "persian gulf"
+     or r.body contains "strait of hormuz" or r.body contains "levant corridor"
+     or r.body contains "gulf of oman" or r.body contains "hormuz"
+  select r.id, r.title, r.source, r.signal_date, r.geo_hint, r.tier_used, r.created_at

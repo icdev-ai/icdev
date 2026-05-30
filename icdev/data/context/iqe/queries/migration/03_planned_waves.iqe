@@ -1,0 +1,3 @@
+foreach w in mc.waves
+  where w.status == "planned"
+  select w.design_name, w.wave_number, w.name, w.strategy, w.start_date, w.end_date

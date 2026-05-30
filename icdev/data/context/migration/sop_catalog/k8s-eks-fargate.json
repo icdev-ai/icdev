@@ -1,0 +1,17 @@
+{
+  "id": "idc-sop-k8s-eks-fargate-001",
+  "title": "K8s → EKS Fargate Migration",
+  "category": "container-migration",
+  "sop_target_canvas": "idc",
+  "platform": "aws",
+  "source_tech": "kubernetes",
+  "target_tech": "eks-fargate",
+  "description": "Migrate workloads from on-premises Kubernetes cluster to Amazon EKS with AWS Fargate for serverless compute.",
+  "steps": [
+    {"number": 1, "action": "Create EKS cluster with eksctl: eksctl create cluster --name analytics-eks --fargate --region us-east-1 --version 1.31 --vpc-nat-mode HighlyAvailable", "verify": "kubectl get nodes shows Fargate virtual nodes; kubectl cluster-info returns EKS API endpoint", "rollback": "eksctl delete cluster --name analytics-eks", "time_est": "20m"},
+    {"number": 2, "action": "Create Fargate profiles for each namespace: eksctl create fargateprofile --cluster analytics-eks --name fp-analytics --namespace analytics", "verify": "aws eks describe-fargate-profile shows ACTIVE status for each namespace", "rollback": "eksctl delete fargateprofile", "time_est": "15m"},
+    {"number": 3, "action": "Migrate Kubernetes manifests: replace resource requests/limits for Fargate vCPU/memory combos; remove hostPath volumes (use EFS CSI driver instead); update RBAC to use IAM roles for service accounts (IRSA)", "verify": "kubectl apply --dry-run=server -f manifests/ shows 0 validation errors", "rollback": "Restore original manifests", "time_est": "4h"},
+    {"number": 4, "action": "Install EFS CSI driver: helm install aws-efs-csi-driver aws-efs-csi-driver/aws-efs-csi-driver; create PersistentVolume claims pointing to EFS file system", "verify": "kubectl get pvc -A shows all Bound; pods mount EFS volumes successfully", "rollback": "Uninstall EFS CSI driver; revert PVC to NFS or EBS", "time_est": "2h"},
+    {"number": 5, "action": "Deploy workloads to EKS: kubectl apply -f manifests/ —namespace analytics; validate pod startup and liveness probes", "verify": "kubectl get pods -n analytics shows all Running; application health checks pass", "rollback": "kubectl delete -f manifests/; re-run on source K8s cluster", "time_est": "2h"}
+  ]
+}

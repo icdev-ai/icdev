@@ -1,0 +1,7 @@
+# Intent: Identify designs ready for Continuous ATO — 0 CAT1 findings and posture A.
+# Use in leadership close to show cATO pathway after SDC automation.
+
+foreach t in sdc_demo.threat_summary
+  where t.snapshot_label == "after"
+  where t.cat1_count == 0
+  select t.design_id, t.posture_grade, t.cat1_count, t.cat2_count, t.controls_implemented

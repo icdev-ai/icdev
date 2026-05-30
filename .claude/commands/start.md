@@ -21,23 +21,51 @@ PORTAL_PORT: 8443
 import os
 from dotenv import load_dotenv
 load_dotenv()
-db_url = os.environ.get("ICDEV_DATABASE_URL")
-if not db_url:
-    print("No ICDEV_DATABASE_URL — skipping PG cleanup")
-else:
-    try:
-        import psycopg2, psycopg2.extras
+try:
+    import psycopg2, psycopg2.extras
+    db_url = os.environ.get("ICDEV_DATABASE_URL")
+    dbname = None
+    if db_url:
         conn = psycopg2.connect(db_url, connect_timeout=5, cursor_factory=psycopg2.extras.RealDictCursor)
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute("SELECT pid FROM pg_stat_activity WHERE pid != pg_backend_pid() AND state IS DISTINCT FROM 'idle'")
-        pids = [r["pid"] for r in cur.fetchall()]
-        for pid in pids:
+    else:
+        # No DATABASE_URL — build the DSN from ICDEV_PG_* (this repo's convention).
+        host = os.environ.get("ICDEV_PG_HOST", "127.0.0.1")
+        if host == "localhost":
+            host = "127.0.0.1"  # avoid IPv6 connect penalty
+        dbname = os.environ.get("ICDEV_PG_DB", "icdev")
+        conn = psycopg2.connect(
+            host=host,
+            port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
+            dbname=dbname,
+            user=os.environ.get("ICDEV_PG_USER", "icdev"),
+            password=os.environ.get("ICDEV_PG_PASSWORD", ""),
+            connect_timeout=5,
+            cursor_factory=psycopg2.extras.RealDictCursor,
+        )
+    conn.autocommit = True
+    cur = conn.cursor()
+    # Conservative cleanup: ONLY stale 'idle in transaction' backends (>30s) in
+    # this DB. These are orphaned leaks holding ACCESS SHARE -> the kanban_tasks
+    # lock storm. Active queries and other sessions' fresh transactions are left
+    # untouched. Note: the earlier taskkill kills our own python; this releases
+    # the PG-side backends those processes orphaned.
+    base = ("SELECT pid FROM pg_stat_activity WHERE pid <> pg_backend_pid() "
+            "AND state IN ('idle in transaction', 'idle in transaction (aborted)') "
+            "AND (xact_start IS NULL OR xact_start < now() - interval '30 seconds')")
+    if dbname:
+        cur.execute(base + " AND datname = %s", (dbname,))
+    else:
+        cur.execute(base)
+    pids = [r["pid"] for r in cur.fetchall()]
+    for pid in pids:
+        try:
             cur.execute("SELECT pg_terminate_backend(%s)", (pid,))
-        conn.close()
-        print(f"PG cleanup: terminated {len(pids)} stale connection(s)")
-    except Exception as e:
-        print(f"PG cleanup skipped ({e})")
+        except Exception:
+            pass
+    conn.close()
+    print(f"PG cleanup: terminated {len(pids)} stale idle-in-transaction backend(s)")
+except Exception as e:
+    print(f"PG cleanup skipped ({e})")
 '@ | Set-Content .tmp\pg_cleanup.py
    python .tmp\pg_cleanup.py
    ```

@@ -1,0 +1,6 @@
+# Intent: Summarize CAT1 reduction across all designs from before to after state.
+# Executive metric: total critical findings resolved by SDC automation.
+
+foreach t in sdc_demo.threat_summary
+  where t.cat1_count >= 0
+  select t.design_id, t.snapshot_label, t.cat1_count, t.posture_grade, t.risk_score

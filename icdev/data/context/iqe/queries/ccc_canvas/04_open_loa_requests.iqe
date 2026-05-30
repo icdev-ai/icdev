@@ -1,0 +1,4 @@
+collection: ccc.loa
+query: open loa requests pending approval
+description: Draft, submitted, or approved LOA requests not yet completed
+tags: [loa, authorization, pending]

@@ -1,0 +1,63 @@
+# CUI // SP-CTI
+# OSINT Streaming Ingestion Service configuration
+# ──────────────────────────────────────────────
+# Governs real-time stream polling for social media, satellite imagery,
+# and open-source news APIs. Credentials are read from environment variables
+# to avoid hard-coding secrets.
+#
+# NIST 800-53: SC-28 (protection at rest), AU-2, AU-12 (audit)
+
+osint_stream:
+  enabled: true
+  # X API v2 Bearer token (env: X_BEARER_TOKEN)
+  bearer_token: "${X_BEARER_TOKEN}"
+  base_url: "https://api.twitter.com/2"
+  # Search query passed to tweets/search/recent
+  query: "ukraine lang:en -is:retweet"
+  # Poll interval in seconds (default: 300 = 5 minutes)
+  poll_interval_s: 300
+  # Max tweets per fetch (10–100)
+  max_results: 100
+
+satellite_stream:
+  enabled: true
+  # Copernicus Data Space OData endpoint
+  base_url: "https://catalogue.dataspace.copernicus.eu/odata/v1"
+  # Collection name (SENTINEL-2, SENTINEL-1, etc.)
+  collection: "SENTINEL-2"
+  # Maximum acceptable cloud cover percentage
+  cloud_cover_pct: 20
+  # Poll interval in seconds (default: 1800 = 30 minutes)
+  poll_interval_s: 1800
+  # Max scenes per fetch
+  max_results: 50
+  # Optional WKT geometry / bounding-box filter
+  region: null
+
+news_stream:
+  enabled: true
+  # NewsAPI key (env: NEWSAPI_KEY)
+  api_key: "${NEWSAPI_KEY}"
+  base_url: "https://newsapi.org/v2"
+  # Comma-separated NewsAPI source IDs; null = all sources
+  sources: null
+  # Free-text search query
+  query: "cybersecurity OR defence"
+  # ISO 639-1 language code
+  language: "en"
+  # Poll interval in seconds (default: 600 = 10 minutes)
+  poll_interval_s: 600
+  # Max articles per fetch (NewsAPI cap: 100)
+  max_results: 100
+
+buffer:
+  # Staging directory for timestamped JSON batch files
+  directory: "data/osint_stream_buffer"
+  # Max signals per batch file (0 = unlimited)
+  max_signals_per_batch: 500
+
+state:
+  # SQLite DB table for cursor / dedup persistence
+  table: "osint_stream_state"
+  # Max dedup hashes retained per source (0 = unlimited)
+  max_seen_hashes: 10000

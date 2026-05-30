@@ -1,0 +1,7 @@
+# Intent: Show all designs with open CAT1 (critical) STIG findings — blocks cATO.
+# Use during Scenario A to demonstrate before-state urgency.
+
+foreach t in sdc_demo.threat_summary
+  where t.snapshot_label == "before"
+  where t.cat1_count > 0
+  select t.design_id, t.cat1_count, t.cat2_count, t.cat3_count, t.risk_score, t.posture_grade

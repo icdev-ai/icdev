@@ -1,0 +1,1 @@
+foreach m in ohc.models where m.stage = "production" select m.model_name, m.version, m.framework, m.metrics, m.promoted_at

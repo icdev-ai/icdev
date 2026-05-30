@@ -1,0 +1,16 @@
+{
+  "id": "mc-sop-opensearch-template-001",
+  "title": "OpenSearch: Index Template + Alias Migration",
+  "category": "search-migration",
+  "sop_target_canvas": "mc",
+  "platform": "aws",
+  "source_tech": "elasticsearch",
+  "target_tech": "opensearch",
+  "description": "Migrate Elasticsearch index templates and aliases to OpenSearch, including ILM → ISM policy conversion.",
+  "steps": [
+    {"number": 1, "action": "Export ES index templates: GET /_index_template and GET /_template (legacy); save to templates.json", "verify": "templates.json contains all expected template names with mappings and settings", "rollback": "N/A — read-only", "time_est": "30m"},
+    {"number": 2, "action": "Convert ES ILM policies to OpenSearch ISM policies: map ES phases (hot/warm/cold/delete) to ISM states; use ISM API PUT _plugins/_ism/policies/<name>", "verify": "GET _plugins/_ism/policies returns all migrated policies with correct state transitions", "rollback": "DELETE _plugins/_ism/policies/<name>", "time_est": "2h"},
+    {"number": 3, "action": "Apply index templates to OpenSearch: PUT _index_template/<name> with updated API syntax (composable template format); attach ISM policy via index.plugins.index_state_management.policy_id", "verify": "GET _index_template/<name> returns correct mappings; test index creation uses template", "rollback": "DELETE _index_template/<name>", "time_est": "1h"},
+    {"number": 4, "action": "Recreate aliases: POST _aliases with add actions for each existing ES alias; update applications to use alias names instead of concrete index names", "verify": "GET _cat/aliases shows all aliases pointing to correct indices; application queries succeed via alias", "rollback": "POST _aliases with remove actions", "time_est": "1h"}
+  ]
+}

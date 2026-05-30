@@ -84,6 +84,32 @@
     </form>
 </div>
 
+<!-- Import from Cursor -->
+<div class="profile-section">
+    <h3>Import from Cursor AI</h3>
+    <p>Seed a new dev profile by scanning <code>.cursor/rules/*.mdc</code> files for best practices:</p>
+    <form id="import-cursor-form" onsubmit="importCursorProfile(event)">
+        <div class="form-row">
+            <label for="import-scope">Scope:</label>
+            <select id="import-scope" name="scope">
+                <option value="platform">Platform</option>
+                <option value="tenant">Tenant</option>
+                <option value="program">Program</option>
+                <option value="project">Project</option>
+                <option value="user">User</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label for="import-scope-id">Scope ID:</label>
+            <input type="text" id="import-scope-id" name="scope_id" value="default" required>
+        </div>
+        <div class="form-row">
+            <button type="submit" class="btn btn-primary">Import from Cursor</button>
+        </div>
+        <div id="import-result" style="margin-top: 1rem;"></div>
+    </form>
+</div>
+
 <!-- Resolve Profile (cascade viewer) -->
 <div class="profile-section">
     <h3>Resolve Cascade</h3>
@@ -219,10 +245,46 @@ function createProfile(event) {
         });
 }
 
+function importCursorProfile(event) {
+    event.preventDefault();
+    const scope = document.getElementById('import-scope').value;
+    const scopeId = document.getElementById('import-scope-id').value;
+
+    fetch('/dev-profiles/api/import/cursor', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            scope: scope,
+            scope_id: scopeId,
+            created_by: 'dashboard',
+        }),
+    })
+        .then(r => r.json())
+        .then(data => {
+            const div = document.getElementById('import-result');
+            if (data.error) {
+                div.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+            } else {
+                div.innerHTML = `<div class="alert alert-success">Profile seeded from Cursor: ${data.profile_id} (v${data.version}) — dimensions: ${(data.seeded_dimensions || []).join(', ')}</div>`;
+                loadProfiles();
+            }
+        })
+        .catch(e => {
+            document.getElementById('import-result').innerHTML =
+                `<div class="alert alert-danger">Error: ${e.message}</div>`;
+        });
+}
+
 function viewProfile(scope, scopeId) {
     document.getElementById('resolve-scope').value = scope;
     document.getElementById('resolve-scope-id').value = scopeId;
     resolveProfile(new Event('submit'));
+}
+
+function exportCursorProfile(scope, scopeId) {
+    const fmt = document.getElementById(`export-format-${scope}-${scopeId}`).value;
+    const url = `/dev-profiles/api/export/cursor/${scope}/${scopeId}?format=${fmt}&download=1`;
+    window.location.href = url;
 }
 
 function resolveProfile(event) {
@@ -243,6 +305,16 @@ function resolveProfile(event) {
             }
 
             let html = '<div class="resolved-profile">';
+
+            // Export to Cursor
+            html += `<div class="form-row" style="margin-bottom:1rem;">`;
+            html += `<label>Export to Cursor:</label>`;
+            html += `<select id="export-format-${scope}-${scopeId}" style="max-width:160px;">`;
+            html += `<option value="cursorrules">.cursorrules</option>`;
+            html += `<option value="mdc">.cursor/rules/*.mdc</option>`;
+            html += `</select>`;
+            html += `<button class="btn btn-sm" onclick="exportCursorProfile('${scope}', '${scopeId}')">Download</button>`;
+            html += `</div>`;
 
             // Ancestry
             html += '<h4>Cascade Ancestry</h4><ol>';

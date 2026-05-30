@@ -1,0 +1,1 @@
+foreach ai in cam.ai_opportunities where ai.effort_days > 14 select ai.project_name, ai.component_name, ai.opportunity_title, ai.aws_ai_service, ai.benefit_category, ai.effort_days

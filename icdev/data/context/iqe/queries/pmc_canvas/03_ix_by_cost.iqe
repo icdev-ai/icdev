@@ -1,0 +1,9 @@
+# PMC — IX memberships sorted by cost
+# Canvas: pmc | Collection: pmc.ix_memberships
+# Description: Internet exchange memberships ordered by monthly cost
+
+show ix by cost
+list internet exchanges by cost
+which ix is most expensive
+show ix memberships
+list all internet exchanges

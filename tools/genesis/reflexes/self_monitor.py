@@ -39,7 +39,7 @@ import argparse
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -77,12 +77,22 @@ DEFAULT_MIN_FAIL_TO_ALERT = 1
 # Cap failure_log inserts per cycle so a mass regression can't flood the log.
 DEFAULT_MAX_FAILURE_ROWS = 200
 
+# Ignore failures whose latest snapshot is older than this. A probe we haven't
+# confirmed in this long is not trustworthy as a CURRENT failure (e.g. a node
+# that stopped being probed because it was disabled/suppressed, or a deleted
+# tool whose last snapshot lingers). 7 days comfortably spans the awareness
+# reflex's 3h cadence while ageing out abandoned snapshots.
+DEFAULT_MAX_SNAPSHOT_AGE_HOURS = 168
+
 # probe_type → (severity, human label). Severity is constrained by the alerts
 # table CHECK to one of: critical | warning | info. Categories not listed
 # default to 'warning'.
 SEVERITY_MAP: Dict[str, Dict[str, str]] = {
     "module_import":            {"severity": "critical", "label": "tool(s) failing to import"},
-    "http_head":               {"severity": "warning",  "label": "dashboard route(s) returning errors"},
+    # http_head is informational: a single page returning 4xx/5xx is rarely an
+    # outage, and the probe now sources real mounted routes (a true app-down shows
+    # up as the dedicated 'dashboard::unreachable' failure instead).
+    "http_head":               {"severity": "info",     "label": "dashboard route(s) returning errors"},
     "coherence_status":        {"severity": "warning",  "label": "coherence check(s) failing"},
     "twin_probe":              {"severity": "warning",  "label": "digital twin probe(s) failing"},
     "gap::tool_not_in_manifest": {"severity": "info",   "label": "tool(s) missing from manifest"},
@@ -103,16 +113,31 @@ def _utcnow_iso() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _latest_failures(conn: Any) -> Dict[str, List[Dict[str, Any]]]:
+def _parse_ts(raw: Any) -> Optional[datetime]:
+    """Best-effort parse of a stored probed_at into an aware UTC datetime."""
+    if not raw:
+        return None
+    if isinstance(raw, datetime):
+        return raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+    s = str(raw).strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(s)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _latest_failures(conn: Any, max_age_hours: float) -> Dict[str, List[Dict[str, Any]]]:
     """Return current failures grouped by probe_type.
 
     Takes the most recent snapshot per node_id and keeps only those whose
     current status is 'fail' (not 'warn' — warn is pre-confirmation and not a
-    confirmed regression). Portable across SQLite + PostgreSQL (no DISTINCT ON
-    / window functions).
+    confirmed regression) AND whose snapshot is newer than ``max_age_hours``
+    (a stale snapshot is not a trustworthy current failure). Portable across
+    SQLite + PostgreSQL (no DISTINCT ON / window functions).
     """
     sql = (
-        "SELECT h.node_id, h.probe_type, h.status, h.detail "
+        "SELECT h.node_id, h.probe_type, h.status, h.detail, h.probed_at "
         "FROM awareness_component_health h "
         "JOIN (SELECT node_id, MAX(probed_at) AS mx "
         "      FROM awareness_component_health GROUP BY node_id) m "
@@ -125,10 +150,16 @@ def _latest_failures(conn: Any) -> Dict[str, List[Dict[str, Any]]]:
     except Exception as exc:
         LOG.warning("latest-failures query failed: %s", exc)
         return out
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    stale = 0
     for r in rows:
         d = dict(r) if hasattr(r, "keys") else {
-            "node_id": r[0], "probe_type": r[1], "status": r[2], "detail": r[3],
+            "node_id": r[0], "probe_type": r[1], "status": r[2], "detail": r[3], "probed_at": r[4],
         }
+        ts = _parse_ts(d.get("probed_at"))
+        if ts is not None and ts < cutoff:
+            stale += 1
+            continue  # snapshot too old to assert as a current failure
         detail: Dict[str, Any] = {}
         try:
             detail = json.loads(d.get("detail") or "{}")
@@ -136,6 +167,8 @@ def _latest_failures(conn: Any) -> Dict[str, List[Dict[str, Any]]]:
             detail = {}
         cat = d.get("probe_type") or "unknown"
         out.setdefault(cat, []).append({"node_id": d.get("node_id"), "detail": detail})
+    if stale:
+        LOG.info("self_monitor: ignored %d stale failure snapshot(s) (> %sh old)", stale, max_age_hours)
     return out
 
 
@@ -340,6 +373,7 @@ def run(config: Optional[Dict[str, Any]] = None, trust: Any = None) -> Dict[str,
     refresh_probes = config.get("refresh_probes", DEFAULT_REFRESH_PROBES)
     min_fail = int(config.get("min_fail_to_alert", DEFAULT_MIN_FAIL_TO_ALERT))
     cap = int(config.get("max_failure_rows", DEFAULT_MAX_FAILURE_ROWS))
+    max_age_hours = float(config.get("max_snapshot_age_hours", DEFAULT_MAX_SNAPSHOT_AGE_HOURS))
 
     start = time.time()
 
@@ -357,7 +391,7 @@ def run(config: Optional[Dict[str, Any]] = None, trust: Any = None) -> Dict[str,
         pass
 
     try:
-        failures_by_cat = _latest_failures(conn)
+        failures_by_cat = _latest_failures(conn, max_age_hours)
         total_failing = sum(len(v) for v in failures_by_cat.values())
         failures_logged = _record_failures(conn, failures_by_cat, cap)
         alert_counts = _sync_alerts(conn, failures_by_cat, min_fail)

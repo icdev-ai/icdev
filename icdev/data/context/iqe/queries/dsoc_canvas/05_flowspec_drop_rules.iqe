@@ -1,0 +1,5 @@
+# IQE-DSOC-005: Active flowspec DROP rules
+# Use: audit which traffic is being hard-dropped via BGP flowspec
+foreach f in dsoc.flowspec_rules
+where f.action == 'drop' and f.status == 'active'
+select f.rule_name, f.destination_prefix, f.source_prefix, f.protocol, f.community, f.created_at

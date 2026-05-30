@@ -56,6 +56,11 @@ CONFIG_PATH = BASE_DIR / "args" / "genesis_config.yaml"
 PID_FILE = BASE_DIR / ".tmp" / "genesis" / "daemon.pid"
 STATE_FILE = BASE_DIR / ".tmp" / "genesis" / "state.json"
 
+# Per-reflex watchdog timeout (seconds). A reflex exceeding this is abandoned so
+# one hang (e.g. a network fetch with no socket timeout) can't wedge the whole
+# sequential loop. Override per-reflex via reflexes.<name>.timeout_seconds.
+DEFAULT_REFLEX_TIMEOUT_SECONDS = 300
+
 REFLEX_NAMES = [
     "research",
     "scout",
@@ -308,7 +313,50 @@ class GenesisDaemon(DaemonBase):
             return {"success": False, "error": str(exc), "_observed": {"duration_ms": elapsed_ms, "timestamp": utcnow_iso()}}
 
     def run_reflex_impl(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
-        """Execute a single reflex via tools/genesis/reflexes/<name>.py."""
+        """Execute a reflex under a watchdog so a hung reflex can't wedge the daemon.
+
+        The daemon runs reflexes sequentially (base.run_due_reflexes), so a single
+        reflex that blocks forever — e.g. a network fetch with no socket timeout —
+        freezes EVERY reflex behind it. This has caused multi-day stalls where the
+        whole loop hung on an unresponsive HTTPS endpoint.
+
+        We run the real implementation in a daemon thread and join with a timeout.
+        On timeout we abandon the (leaked) thread and return a failure tuple; the
+        base records it as a failure, so a persistently-hanging reflex trips its
+        circuit breaker after `max_consecutive_failures` and stops being attempted.
+
+        Timeout is per-reflex via `reflexes.<name>.timeout_seconds`, default
+        ``DEFAULT_REFLEX_TIMEOUT_SECONDS``.
+        """
+        import threading
+
+        timeout = float(config.get("timeout_seconds", DEFAULT_REFLEX_TIMEOUT_SECONDS))
+        box: Dict[str, Any] = {}
+
+        def _target() -> None:
+            try:
+                box["result"] = self._run_reflex_impl_inner(name, config, trust)
+            except Exception as exc:  # noqa: BLE001 — surface to caller below
+                box["error"] = exc
+
+        worker = threading.Thread(target=_target, name=f"reflex-{name}", daemon=True)
+        worker.start()
+        worker.join(timeout)
+
+        if worker.is_alive():
+            logger.error(
+                "Reflex '%s' exceeded %.0fs watchdog timeout — abandoning (thread leaked) "
+                "so the daemon loop can continue. Repeated timeouts will trip its circuit breaker.",
+                name, timeout,
+            )
+            return False, 0.0, {"error": f"watchdog_timeout_{int(timeout)}s", "timeout": True}
+
+        if "error" in box:
+            return False, 0.0, {"error": str(box["error"]), "stage": "reflex_execution"}
+        return box.get("result", (False, 0.0, {"error": "no result from reflex thread"}))
+
+    def _run_reflex_impl_inner(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
+        """Actual reflex dispatch (wrapped by the watchdog in run_reflex_impl)."""
         risk_tier = config.get("risk_tier", RISK_GREEN)
 
         # ORANGE tier — log that human review is needed

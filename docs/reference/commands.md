@@ -1328,6 +1328,10 @@ python tools/builder/profile_detector.py --repo-path /path/to/repo --json       
 python tools/builder/profile_detector.py --text "We use Go, snake_case, 120-char lines" --json  # Detect from text
 python tools/builder/profile_md_generator.py --scope project --scope-id "proj-123" --json     # Generate PROFILE.md
 python tools/builder/profile_md_generator.py --scope project --scope-id "proj-123" --output /path/PROFILE.md --store  # Generate + store in DB
+python tools/builder/cursor_profile_generator.py --scope project --scope-id "proj-123" --format cursorrules                    # Export to .cursorrules
+python tools/builder/cursor_profile_generator.py --scope project --scope-id "proj-123" --format mdc --output .cursor/rules/icdev.mdc  # Export to .mdc
+python tools/builder/cursor_profile_importer.py --scan .cursor/rules/ --json                                              # Scan Cursor rules
+python tools/builder/cursor_profile_importer.py --scan .cursor/rules/ --create --scope platform --scope-id cursor-default --json   # Seed profile from Cursor
 
 # Universal AI Coding Companion (D194-D198)
 python tools/dx/companion.py --setup --write                              # Auto-detect tools + generate all configs

@@ -1,0 +1,6 @@
+# IQE-AIMC-005: Recent AI decisions from the AI/ML Model Canvas
+# Shows model risk assessments and IL-level compliance decisions
+# recorded by the AIMC AI traceability layer.
+
+foreach d in aimc.ai_decisions
+select d.id, d.decision_type, d.decision, d.model_used, d.confidence, d.created_at

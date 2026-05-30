@@ -1,0 +1,7 @@
+# IQE-BDC-007: BDC AI decisions classified at CUI or above
+# All boundary canvas AI decisions should be CUI minimum due to
+# interconnection topology sensitivity.
+
+foreach d in bdc.ai_decisions
+where d.classification == "CUI"
+select d.id, d.decision_type, d.decision, d.classification, d.actor, d.created_at

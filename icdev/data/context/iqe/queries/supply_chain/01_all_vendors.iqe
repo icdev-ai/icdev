@@ -1,0 +1,5 @@
+# IQE-SC-001: All supply chain vendors
+# Lists every vendor in the registry with their SCRM risk tier and 889 status.
+
+foreach v in supply_chain.vendors
+select v.vendor_name, v.vendor_type, v.country_of_origin, v.scrm_risk_tier, v.section_889_status, v.dod_approved, v.last_assessed

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ICDEV™ Executive Deliverables</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0A1628;
+      color: #E0E6F0;
+      font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 24px;
+    }
+    .gold-bar { width: 100%; max-width: 760px; height: 5px; background: #C8A951; border-radius: 2px; margin-bottom: 36px; }
+    h1 { font-size: 2.6rem; font-weight: 700; color: #C8A951; letter-spacing: 1px; margin-bottom: 6px; }
+    .subtitle { font-size: 1rem; color: #8A9BB0; font-style: italic; margin-bottom: 40px; }
+    .cards { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 760px; }
+    .card {
+      background: #1E3A5F;
+      border: 1px solid #C8A951;
+      border-radius: 10px;
+      padding: 28px 32px;
+      flex: 1 1 320px;
+      max-width: 360px;
+      text-decoration: none;
+      color: inherit;
+      transition: transform 0.15s, box-shadow 0.15s;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .card:hover { transform: translateY(-3px); box-shadow: 0 8px 28px rgba(200,169,81,0.25); }
+    .card-icon { font-size: 2.2rem; }
+    .card-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #C8A951;
+    }
+    .card-title { font-size: 1.18rem; font-weight: 700; color: #FFFFFF; line-height: 1.3; }
+    .card-desc { font-size: 0.88rem; color: #8A9BB0; line-height: 1.55; }
+    .card-meta { font-size: 0.78rem; color: #C8A951; margin-top: 4px; }
+    .divider { width: 100%; max-width: 760px; border: none; border-top: 1px solid #1E3A5F; margin: 40px 0; }
+    .toc { width: 100%; max-width: 760px; }
+    .toc h2 { font-size: 1rem; font-weight: 700; color: #C8A951; letter-spacing: 1px; margin-bottom: 16px; text-transform: uppercase; }
+    .toc-cols { display: flex; gap: 32px; flex-wrap: wrap; }
+    .toc-col { flex: 1 1 220px; }
+    .toc-col h3 { font-size: 0.8rem; font-weight: 700; color: #8A9BB0; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+    .toc-col ul { list-style: none; }
+    .toc-col li { font-size: 0.85rem; color: #C0CDD8; padding: 3px 0; }
+    .toc-col li::before { content: "▸ "; color: #C8A951; }
+    .footer { margin-top: 48px; font-size: 0.78rem; color: #3A5070; text-align: center; }
+    .badge {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(200,169,81,0.15);
+      color: #C8A951;
+      border: 1px solid rgba(200,169,81,0.3);
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="gold-bar"></div>
+
+  <h1>ICDEV&#8482;</h1>
+  <p class="subtitle">Executive Deliverables &nbsp;·&nbsp; AI Lab Sponsorship Package &nbsp;·&nbsp; May 2026</p>
+
+  <div class="cards">
+    <a class="card" href="ICDEV_Executive_Deck.pptx" download>
+      <div class="card-icon">📊</div>
+      <div class="card-label">PowerPoint Presentation</div>
+      <div class="card-title">ICDEV&#8482; Executive Deck</div>
+      <div class="card-desc">
+        20-slide executive briefing covering ICDEV core, 12 design canvases,
+        unified chat &amp; use cases, Digital Program Twin, FORGE Academy,
+        AI GameDay, and the AI Lab sponsorship ask.
+      </div>
+      <div class="card-meta">
+        <span class="badge">20 Slides</span>&nbsp;
+        <span class="badge">Dark-Navy Theme</span>&nbsp;
+        <span class="badge">.pptx</span>
+      </div>
+    </a>
+
+    <a class="card" href="ICDEV_AI_Lab_Documentation.docx" download>
+      <div class="card-icon">📄</div>
+      <div class="card-label">Word Document</div>
+      <div class="card-title">AI Lab Executive Documentation</div>
+      <div class="card-desc">
+        CBA with 3-year ROI, lab build-out requirements, FORGE Academy
+        playbook (4 cohorts &times; 25 devs), AI GameDay playbook (100+
+        participants), risk analysis, recommendation, and 6 appendices.
+      </div>
+      <div class="card-meta">
+        <span class="badge">9 Sections</span>&nbsp;
+        <span class="badge">CBA Included</span>&nbsp;
+        <span class="badge">.docx</span>
+      </div>
+    </a>
+  </div>
+
+  <hr class="divider" />
+
+  <div class="toc">
+    <h2>Contents at a Glance</h2>
+    <div class="toc-cols">
+
+      <div class="toc-col">
+        <h3>Presentation Slides</h3>
+        <ul>
+          <li>The Problem (3 realities)</li>
+          <li>Adopt vs. Build decision frame</li>
+          <li>ICDEV&#8482; — the meta-builder</li>
+          <li>FORGE Framework (6 layers)</li>
+          <li>ANVIL Workflow (5 phases)</li>
+          <li>12 Design Canvases</li>
+          <li>Unified Chat &amp; Use Cases</li>
+          <li>Digital Program Twin</li>
+          <li>42-Framework Compliance</li>
+          <li>15-Agent Ecosystem</li>
+          <li>FORGE Academy</li>
+          <li>AI GameDay</li>
+          <li>Build vs. Adopt table</li>
+          <li>Timeline compression</li>
+          <li>The AI Lab Vision</li>
+          <li>The Ask + Why Now + Next Steps</li>
+        </ul>
+      </div>
+
+      <div class="toc-col">
+        <h3>Word Document Sections</h3>
+        <ul>
+          <li>1. Executive Summary</li>
+          <li>2. Background &amp; Problem Statement</li>
+          <li>3. ICDEV&#8482; Platform Overview</li>
+          <li>4. Cost-Benefit Analysis (CBA)</li>
+          <li>5. AI Lab Build-Out Requirements</li>
+          <li>6. FORGE Academy Playbook</li>
+          <li>7. AI GameDay Playbook</li>
+          <li>8. Risk Analysis</li>
+          <li>9. Recommendation</li>
+        </ul>
+      </div>
+
+      <div class="toc-col">
+        <h3>Appendices</h3>
+        <ul>
+          <li>A: 42 Compliance Frameworks</li>
+          <li>B: Digital Twin COA Matrix</li>
+          <li>C: Chat Use Cases Reference</li>
+          <li>D: Sample Academy Mission M01</li>
+          <li>E: Sample GameDay AAR Template</li>
+          <li>F: Glossary</li>
+        </ul>
+        <h3 style="margin-top:20px">Key Numbers</h3>
+        <ul>
+          <li>Year-1 Investment: $570K–$880K</li>
+          <li>Year-1 Return: $4M–$6M+</li>
+          <li>3-Year ROI (5 programs): 9&times;</li>
+          <li>ATO: 12–18 mo &#8594; 1–3 mo</li>
+          <li>100 devs trained in Year 1</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <p class="footer">
+    CUI // SP-CTI &nbsp;·&nbsp; ICDEV&#8482; FORGE Framework &nbsp;·&nbsp; Apache 2.0 &nbsp;·&nbsp; IL4+ Ready &nbsp;·&nbsp; May 2026
+  </p>
+
+</body>
+</html>

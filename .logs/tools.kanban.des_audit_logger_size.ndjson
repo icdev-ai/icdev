@@ -469,3 +469,5 @@
 {"ts": "2026-05-30T11:41:41.596428+00:00", "level": "ERROR", "component": "tools.kanban.des_audit_logger", "message": "DESAuditLogger insert failed \u2014 degrading gracefully", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T11:45:29.494281+00:00", "level": "ERROR", "component": "tools.kanban.des_audit_logger", "message": "DESAuditLogger insert failed \u2014 degrading gracefully", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T11:51:09.325358+00:00", "level": "ERROR", "component": "tools.kanban.des_audit_logger", "message": "DESAuditLogger insert failed \u2014 degrading gracefully", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T12:02:40.945350+00:00", "level": "ERROR", "component": "tools.kanban.des_audit_logger", "message": "DESAuditLogger insert failed \u2014 degrading gracefully", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T14:14:35.726378+00:00", "level": "ERROR", "component": "tools.kanban.des_audit_logger", "message": "DESAuditLogger insert failed \u2014 degrading gracefully", "trace_id": null, "session_id": null, "extra": {}}

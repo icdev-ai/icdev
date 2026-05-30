@@ -1,0 +1,29 @@
+[2026-05-25 12:14:24,720] WARNING in app: RAG-KG blueprint failed to register: The name 'rag_kg_api' is already registered for this blueprint. Use 'name=' to provide a unique name.
+[2026-05-25 12:14:25,105] WARNING in app: TA Patterns blueprint failed to register: No module named 'tools.trading.ta.blueprint'
+[2026-05-25 12:14:25,135] WARNING in app: AISG Wizard blueprint failed to register: The name 'aisg' is already registered for this blueprint. Use 'name=' to provide a unique name.
+Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5050
+Press CTRL+C to quit
+127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:04] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:06] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:08] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:09] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:12] "GET /api/kanban/last-update HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:12] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:12] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:12] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:12] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:16] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:26:16] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -

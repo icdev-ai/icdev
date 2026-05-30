@@ -20,6 +20,8 @@
 | Goal Adapter | tools/builder/goal_adapter.py | Copy and adapt ICDEV™ goals for child applications | --source-goals, --output, --app-name, --json | Adapted goal paths |
 | DB Init Generator | tools/builder/db_init_generator.py | Generate standalone DB init scripts for child apps | --blueprint, --output, --app-name, --json | DB init script path |
 | Dev Profile Manager | tools/builder/dev_profile_manager.py | 5-layer cascade dev profiles (Platform→Tenant→Program→Project→User) with version immutability, role-based locks, LLM injection (D183-D188) | --scope, --scope-id, --create, --get, --update, --resolve, --lock, --inject, --diff, --rollback, --json | Profile + cascade |
+| Cursor Profile Generator | tools/builder/cursor_profile_generator.py | Export resolved dev profiles as Cursor AI .cursorrules or .mdc files | --scope, --scope-id, --format, --output, --json | Cursor rules content |
+| Cursor Profile Importer | tools/builder/cursor_profile_importer.py | Scan .cursor/rules/*.mdc files and seed ICDEV dev profiles with best practices | --scan, --create, --scope, --scope-id, --json | Seeded profile |
 | Profile Detector | tools/builder/profile_detector.py | Auto-detect dev profile from repo analysis or natural language text (D185 advisory-only) | --repo-path, --text, --json | Detected dimensions |
 | Profile MD Generator | tools/builder/profile_md_generator.py | Generate PROFILE.md from resolved dev profile via Jinja2 (D186) | --scope, --scope-id, --output, --store, --json | PROFILE.md path |
 | FORGE Validator | tools/builder/forge_validator.py | Validate FORGE framework compliance for child apps (6 layers + 4 meta checks) | --project-dir, --json, --human, --gate | Validation report |

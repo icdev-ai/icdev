@@ -1,0 +1,30 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix core: <https://icdev.dev/ns/core#> .
+@prefix infra: <https://icdev.dev/ns/infra#> .
+
+<https://icdev.dev/ontology/infra>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:title "ICDEV INFRA Domain Ontology" ;
+    dcterms:description "Class hierarchy for the infra canvas domain." ;
+    dcterms:date "2026-05-15"^^xsd:date .
+
+infra:ComputeInstance rdf:type owl:Class ;
+    rdfs:label "Compute Instance" ;
+    rdfs:subClassOf infra:InfrastructureResource .
+
+infra:Container rdf:type owl:Class ;
+    rdfs:label "Container" ;
+    rdfs:subClassOf infra:ComputeInstance .
+
+infra:InfrastructureResource rdf:type owl:Class ;
+    rdfs:label "Infrastructure Resource" ;
+    rdfs:subClassOf core:Resource .
+
+infra:StorageBucket rdf:type owl:Class ;
+    rdfs:label "Storage Bucket" ;
+    rdfs:subClassOf infra:InfrastructureResource .

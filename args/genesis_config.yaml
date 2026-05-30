@@ -135,6 +135,7 @@ reflexes:
   # ── GREEN tier (read-only, auto-approve) ─────────────────────────────────
 
   research:
+    timeout_seconds: 90   # network fetch — cut hangs fast so the loop proceeds
     enabled: true
     risk_tier: green
     schedule: "every 6h"
@@ -158,6 +159,7 @@ reflexes:
         since: daily
 
   scout:
+    timeout_seconds: 90   # network fetch — cut hangs fast so the loop proceeds
     enabled: true
     risk_tier: green
     schedule: "daily 10:30"
@@ -207,6 +209,7 @@ reflexes:
       operator: gte  # Informational — 0 violations is healthy, >0 triggers POAM
 
   ingest:
+    timeout_seconds: 90   # network fetch — cut hangs fast so the loop proceeds
     enabled: true
     risk_tier: green
     schedule: "every 4h"
@@ -550,6 +553,7 @@ reflexes:
   # ── Internal Awareness Engine (D-AWARE-1 through D-AWARE-5) ─────────────────
 
   awareness:
+    timeout_seconds: 900   # heavy reflex — needs > default 300s
     enabled: true
     risk_tier: green
     schedule: "every 3h"
@@ -579,6 +583,7 @@ reflexes:
     refresh_probes: [http_head]   # cheap probes re-run live each cycle; others reused from awareness
     min_fail_to_alert: 1          # per-category failing count before an alert fires
     max_failure_rows: 200         # cap failure_log inserts per cycle
+    max_snapshot_age_hours: 168   # ignore failures whose latest probe is >7d old (stale/abandoned)
 
   # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
 
@@ -598,6 +603,7 @@ reflexes:
   # ── Canvas Indexer (per-canvas /ask GraphRAG freshness) ─────────────────────
 
   canvas_indexer:
+    timeout_seconds: 600   # heavy reflex — needs > default 300s
     enabled: true
     risk_tier: green
     schedule: "every 6h"

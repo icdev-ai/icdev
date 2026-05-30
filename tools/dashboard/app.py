@@ -1232,6 +1232,27 @@ def create_app() -> Flask:
             200,
         )
 
+    @app.route("/api/_introspect/routes", methods=["GET"])
+    def _introspect_routes():
+        """Internal: real GET-able, parameter-free page routes for the health prober.
+
+        Sourced from the live Flask url_map so the prober tests the actual mounted
+        paths (with blueprint url_prefixes applied) instead of decorator-relative
+        paths. Excludes /static, /api/* (endpoints, not pages — many are POST/param),
+        and parameterized rules (can't HEAD without a real id).
+        """
+        routes = set()
+        for rule in app.url_map.iter_rules():
+            if rule.arguments:
+                continue  # parameterized — skip
+            if "GET" not in (rule.methods or set()):
+                continue  # not GET-probeable
+            path = rule.rule
+            if path.startswith("/static") or path.startswith("/api/"):
+                continue  # static assets / API endpoints, not user-facing pages
+            routes.add(path)
+        return jsonify({"routes": sorted(routes), "count": len(routes)})
+
     @app.route("/favicon.ico")
     def favicon():
         return make_response("", 204)
@@ -3645,6 +3666,59 @@ def create_app() -> Flask:
         except (ImportError, Exception) as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/dev-profiles/api/export/cursor/<scope>/<scope_id>")
+    def dev_profiles_api_export_cursor(scope, scope_id):
+        """Export a resolved dev profile as Cursor AI .cursorrules or .mdc."""
+        try:
+            from tools.builder.cursor_profile_generator import generate
+
+            fmt = flask_request.args.get("format", "cursorrules")
+            result = generate(scope, scope_id, fmt=fmt)
+            if "error" in result:
+                return jsonify(result), 404 if "not found" in result["error"].lower() else 400
+
+            content = result["content"]
+            filename = result["filename"]
+
+            if flask_request.args.get("download"):
+                response = Response(
+                    content,
+                    mimetype="text/plain",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+                )
+                return response
+            return jsonify({
+                "status": "generated",
+                "format": fmt,
+                "filename": filename,
+                "scope": scope,
+                "scope_id": scope_id,
+                "dimensions": result.get("dimensions", []),
+                "content": content,
+            })
+        except (ImportError, Exception) as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/dev-profiles/api/import/cursor", methods=["POST"])
+    def dev_profiles_api_import_cursor():
+        """Scan .cursor/rules/*.mdc files and seed a dev profile from them."""
+        try:
+            from tools.builder.cursor_profile_importer import seed_profile
+
+            data = flask_request.get_json(silent=True) or {}
+            scope = data.get("scope", "platform")
+            scope_id = data.get("scope_id", "default")
+            directory = data.get("directory")
+            result = seed_profile(
+                scope=scope,
+                scope_id=scope_id,
+                directory=directory,
+                created_by=data.get("created_by", "dashboard"),
+            )
+            return jsonify(result), 201 if "error" not in result else 400
+        except (ImportError, Exception) as e:
+            return jsonify({"error": str(e)}), 500
+
     # ---- Auth routes (D169-D172) ----
 
     @app.route("/login", methods=["GET", "POST"])
@@ -4103,35 +4177,47 @@ def create_app() -> Flask:
         conn = _get_db()
         result = {"controls_implemented": 0, "open_poams": 0, "cat1_findings": 0, "ato_status": "--", "frameworks": []}
         try:
+            # 1. Controls implemented — prefer ssp_controls, fall back to project_controls
             try:
                 row = conn.execute(
                     "SELECT COUNT(*) as cnt FROM ssp_controls WHERE implementation_status = 'implemented'"
                 ).fetchone()
                 result["controls_implemented"] = row["cnt"]
             except Exception:
-                pass
+                conn.rollback()
+                try:
+                    row = conn.execute(
+                        "SELECT COUNT(*) as cnt FROM project_controls WHERE implementation_status = 'implemented'"
+                    ).fetchone()
+                    result["controls_implemented"] = row["cnt"]
+                except Exception:
+                    conn.rollback()
+            # 2. Open POAMs
             try:
                 row = conn.execute(
                     "SELECT COUNT(*) as cnt FROM poam_items WHERE status NOT IN ('completed', 'closed')"
                 ).fetchone()
                 result["open_poams"] = row["cnt"]
             except Exception:
-                pass
+                conn.rollback()
+            # 3. CAT I STIG findings
             try:
                 row = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM stig_findings WHERE severity = 'CAT I' AND status = 'Open'"
+                    "SELECT COUNT(*) as cnt FROM stig_findings WHERE severity = 'CAT1' AND status = 'Open'"
                 ).fetchone()
                 result["cat1_findings"] = row["cnt"]
             except Exception:
-                pass
+                conn.rollback()
+            # 4. ATO status
             try:
                 row = conn.execute(
                     "SELECT authorization_status FROM ato_packages ORDER BY created_at DESC LIMIT 1"
                 ).fetchone()
                 result["ato_status"] = row["authorization_status"] if row else "Not Started"
             except Exception:
+                conn.rollback()
                 result["ato_status"] = "Not Started"
-            # Framework summaries
+            # 5. Framework summaries — prefer ssp_controls, fall back to project_controls
             frameworks = [
                 ("NIST 800-53", "ssp_controls", "implementation_status", "implemented"),
                 ("FedRAMP", "ssp_controls", "implementation_status", "implemented"),
@@ -4145,7 +4231,16 @@ def create_app() -> Flask:
                     ).fetchone()["cnt"]
                     result["frameworks"].append({"name": name, "total": total, "implemented": impl, "status": "Active"})
                 except Exception:
-                    pass
+                    conn.rollback()
+                    try:
+                        total = conn.execute("SELECT COUNT(*) as cnt FROM project_controls").fetchone()["cnt"]
+                        impl = conn.execute(
+                            "SELECT COUNT(*) as cnt FROM project_controls WHERE implementation_status = ?",
+                            (val,),
+                        ).fetchone()["cnt"]
+                        result["frameworks"].append({"name": name, "total": total, "implemented": impl, "status": "Active"})
+                    except Exception:
+                        conn.rollback()
         finally:
             conn.close()
         return jsonify(result)

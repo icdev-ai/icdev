@@ -1,0 +1,30 @@
+# CUI // SP-CTI
+# Cache warming seed queries — pre-populate LLM response cache on deploy
+# so first real user requests hit the cache instead of paying full token cost.
+#
+# NIST 800-53: SA-11, SC-28, AU-12
+# Format: each function gets a list of seed queries (strings).
+
+seeds:
+  code_generation:
+    - "Generate a Python function to validate JWT tokens with RS256."
+    - "Write a NIST 800-53 compliant audit log decorator for Python."
+    - "Create a Terraform module for an S3 bucket with server-side encryption."
+
+  compliance_export:
+    - "Generate an OSCAL SSP for a FedRAMP Moderate impact system."
+    - "Export a POAM summary for open CAT2 STIG findings."
+    - "Generate CMMC Level 2 compliance evidence summary."
+
+  narrative_generation:
+    - "Write an executive summary for ICDEV™ platform security posture."
+    - "Describe the DevSecOps pipeline and its compliance controls."
+    - "Summarize the ATO boundary and key security controls in plain language."
+
+  agent_compliance:
+    - "Check NIST AC-2 account management control implementation status."
+    - "List all open POAM items with high severity."
+
+  nlq_sql:
+    - "Show me all audit events from the last 7 days."
+    - "Count failed login attempts by user in the last 24 hours."

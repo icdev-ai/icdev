@@ -1,0 +1,220 @@
+{"ts": "2026-05-30T04:01:10.853392+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.853594+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: orchestrator-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.853659+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.853892+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Orchestrator", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.869143+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.869350+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.871821+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.875381+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: orchestrate-workflow", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.878178+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: route-task", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.878287+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: aggregate-results", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.878363+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 3 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.879015+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.879087+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Orchestrator on 0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.906154+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.906322+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: builder-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.906371+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.906701+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Builder", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.913072+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.913266+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: compliance-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.913326+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.913574+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Compliance", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.917741+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.917915+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.920162+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.923074+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: write-tests", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.923275+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.923360+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: scaffold-project", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.923439+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: lint-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.923507+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: format-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.923596+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 5 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.923673+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.923732+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Builder on 0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.924823+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.924962+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.927231+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.930196+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-ssp", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.930342+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-poam", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.930448+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: check-stig", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.930514+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-sbom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.930574+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: apply-cui-markings", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.930635+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: map-controls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.930704+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 6 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.930767+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:01:10.930836+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Compliance on 0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.390593+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.390849+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: orchestrator-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.390902+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.391116+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Orchestrator", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.401597+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.401732+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.404329+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.407132+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: orchestrate-workflow", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.407368+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: route-task", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.407443+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: aggregate-results", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.407509+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 3 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.407572+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.407621+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Orchestrator on 0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.443824+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.443949+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: builder-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.444032+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.444254+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Builder", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.445215+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.445333+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: compliance-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.445380+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.445625+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Compliance", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.456124+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.456268+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.456984+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.457117+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.458634+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.459382+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.461464+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: write-tests", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.461642+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.461717+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: scaffold-project", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.461780+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: lint-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.461839+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: format-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.461899+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 5 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.461964+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.462012+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Builder on 0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.462096+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-ssp", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.462256+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-poam", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.462328+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: check-stig", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.462389+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-sbom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.462449+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: apply-cui-markings", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.462517+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: map-controls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.462599+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 6 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.462661+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:03:24.462710+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Compliance on 0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.386826+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.387039+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: orchestrator-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.387089+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.387325+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Orchestrator", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.387650+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.387781+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: builder-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.387829+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.388056+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Builder", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.388312+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.388448+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: compliance-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.388638+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.388920+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Compliance", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.400384+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.400562+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.400921+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.401059+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.403057+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.403128+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.403237+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.403259+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.405376+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.405876+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: orchestrate-workflow", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.406015+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: write-tests", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.406107+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: route-task", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.406187+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-code", "trace_id": null, "session_id": null, "extra": {}}
+}}
+{"ts": "2026-05-30T04:05:33.406256+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 3 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.406292+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: scaffold-project", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.406322+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.406370+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Orchestrator on 0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.406378+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: lint-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.406460+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: format-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.406525+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 5 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.406589+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.406637+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Builder on 0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.408099+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-ssp", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.408233+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-poam", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.408303+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: check-stig", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.408366+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-sbom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.408429+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: apply-cui-markings", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.408489+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: map-controls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.408574+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 6 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.408639+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:05:33.408686+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Compliance on 0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.676889+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.677099+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: orchestrator-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.677154+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.677415+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Orchestrator", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.677903+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.678030+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: builder-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.678082+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.678334+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Builder", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.680143+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.680273+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: compliance-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.680320+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.680569+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Compliance", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.692268+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.692419+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.692412+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.692598+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.693700+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.693890+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.694938+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.695403+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.696314+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.698116+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-ssp", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.698429+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-poam", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.698529+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: check-stig", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.698604+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-sbom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.698601+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: orchestrate-workflow", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.698730+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: apply-cui-markings", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.698784+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: route-task", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.698807+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: map-controls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.698918+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: aggregate-results", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.698923+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 6 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.699002+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.699008+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 3 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.699056+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Compliance on 0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.699100+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.699171+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Orchestrator on 0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.699525+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: write-tests", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.699697+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.699784+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: scaffold-project", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.699850+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: lint-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.699940+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: format-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.700009+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 5 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.700075+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:07:57.700125+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Builder on 0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.178170+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.178353+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: orchestrator-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.178412+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.178622+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Orchestrator", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.181879+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.181992+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: builder-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.182038+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.182307+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Builder", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.187615+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "=== A2A Agent Entrypoint ===", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.187730+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Agent ID: compliance-agent", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.187776+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Bind:     0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.188026+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent card: ICDEV\u2122 Compliance", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.189412+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.189528+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.191683+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.192631+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.192743+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.194397+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: orchestrate-workflow", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.194604+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: route-task", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.194683+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: aggregate-results", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.194748+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 3 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.194826+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.194844+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.194897+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Orchestrator on 0.0.0.0:18443", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.197516+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: write-tests", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.197649+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.197719+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: scaffold-project", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.197858+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: lint-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.197936+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: format-code", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.197999+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 5 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.198063+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.198114+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Builder on 0.0.0.0:18445", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.198553+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded agent config from args/agent_config.yaml", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.198669+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "TLS disabled via --no-tls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.200878+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Loaded 22 skill-tool mappings from .agents/skills/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.203770+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-ssp", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.203913+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-poam", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.203987+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: check-stig", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.204088+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: generate-sbom", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.204159+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: apply-cui-markings", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.204241+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registering stub skill: map-controls", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.204310+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered 6 skills", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.204387+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Registered default echo skill", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T04:16:17.204435+00:00", "level": "INFO", "component": "a2a.entrypoint", "message": "Starting ICDEV\u2122 Compliance on 0.0.0.0:18446", "trace_id": null, "session_id": null, "extra": {}}

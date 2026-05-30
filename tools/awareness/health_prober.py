@@ -66,7 +66,13 @@ except ImportError:
     get_connection = None  # type: ignore[assignment]
 
 GRAPH_ID = "kg-icdev-self-awareness"
-DASHBOARD_BASE = "http://localhost:5050"
+# Use the IPv4 loopback explicitly. On Windows, "localhost" resolves to ::1
+# (IPv6) first, but the dashboard listens on IPv4 only — so every probe pays a
+# ~2s failed-IPv6-connect penalty before falling back. Across dozens of
+# http_head probes per cycle that added minutes, pushing the awareness cycle
+# past its watchdog and stalling self_monitor's probe refresh. 127.0.0.1 is ~30x
+# faster (0.07s vs 2.17s measured).
+DASHBOARD_BASE = "http://127.0.0.1:5050"
 HTTP_HEAD_TIMEOUT = 5.0
 IMPORT_PROBE_TIMEOUT = 15.0
 _AWARENESS_CONFIG = BASE_DIR / "args" / "awareness_config.yaml"
@@ -236,75 +242,101 @@ def _load_component_nodes(
 # ---------------------------------------------------------------------------
 
 
+_INTROSPECT_PATH = "/api/_introspect/routes"
+_HTTP_HEAD_MAX_ROUTES = 80  # safety cap on routes probed per cycle
+
+
+def _fetch_probeable_routes() -> Optional[List[str]]:
+    """Ask the live dashboard for its real GET-able, parameter-free page routes.
+
+    Returns the list, or None if the dashboard is unreachable / the endpoint is
+    missing (older build). Sourcing from the running url_map means we probe the
+    ACTUAL mounted paths (blueprint url_prefixes applied), not decorator-relative
+    paths — which eliminated a wave of false 404s.
+    """
+    url = DASHBOARD_BASE + _INTROSPECT_PATH
+    if not url.startswith(("http://", "https://")):
+        return None
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=HTTP_HEAD_TIMEOUT) as resp:  # nosec B310 -- scheme validated above
+            if resp.status >= 400:
+                return None
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        routes = data.get("routes") or []
+        return [r for r in routes if isinstance(r, str) and r.startswith("/")]
+    except Exception as exc:
+        LOG.warning("route introspection fetch failed: %s", exc)
+        return None
+
+
 def _probe_http_head(
     conn: Any,
     run_id: str,
     flags: Dict[str, bool],
     mapping: List[Dict[str, Any]],
 ) -> Dict[str, int]:
-    """HEAD every dashboard_route component. Skips disabled ones.
+    """HEAD the dashboard's real page routes (from the live url_map).
 
-    NOTE: Phase 1d indexer doesn't yet produce `dashboard_route`
-    entity nodes — they're in the deferred set. In the meantime this
-    probe walks canvas_module.blueprint_routes lists instead, which
-    is where routes currently live.
+    Replaces the old approach of walking canvas ``blueprint_routes`` (which stored
+    decorator-relative paths without url_prefixes, and parameterized/POST routes —
+    producing false 404s). We now fetch the actual GET-able, parameter-free routes
+    from ``/api/_introspect/routes`` and HEAD each. If the dashboard is unreachable,
+    that itself is the signal — one ``dashboard::unreachable`` failure.
     """
     ok = 0
     fail = 0
     skipped = 0
 
-    nodes = _load_component_nodes(conn, entity_types=["canvas_module"])
-    for node in nodes:
-        if not is_component_enabled(
-            node["id"], {"entity_type": "canvas_module", **node["properties"]},
-            flags=flags, mapping=mapping,
-        ):
-            skipped += 1
+    routes = _fetch_probeable_routes()
+    if routes is None:
+        # Dashboard down or introspection endpoint missing → single real signal.
+        _write_snapshot(
+            conn, "dashboard::unreachable", "http_head", "fail",
+            {"route": _INTROSPECT_PATH, "error": "dashboard unreachable or introspection endpoint missing"},
+            run_id,
+        )
+        return {"ok": 0, "fail": 1, "skipped": 0}
+
+    # Dashboard reachable — clear any prior 'unreachable' failure (recovery), so a
+    # down→up transition supersedes the old fail instead of lingering forever.
+    _write_snapshot(
+        conn, "dashboard::unreachable", "http_head", "pass",
+        {"route": _INTROSPECT_PATH, "recovered": True}, run_id,
+    )
+
+    for route in routes[:_HTTP_HEAD_MAX_ROUTES]:
+        url = DASHBOARD_BASE + route
+        if not url.startswith(("http://", "https://")):
             continue
-        routes = node["properties"].get("blueprint_routes") or []
-        for raw_route in routes[:5]:  # cap per canvas to avoid O(n*m) blow-up
-            # Strip parameter placeholders (Flask <var> segments) so HEAD lands
-            route = raw_route
-            for placeholder in ("<int:", "<string:", "<path:", "<uuid:", "<"):
-                if placeholder in route:
-                    route = route.split(placeholder, 1)[0]
-                    break
-            # Skip non-GET API routes that require bodies
-            if not route or not route.startswith("/"):
-                continue
-            url = DASHBOARD_BASE + route
-            status = "fail"
-            detail: Dict[str, Any] = {"route": route, "canvas": node["label"]}
-            start = time.time()
-            # Hard-require http(s) scheme — prevents any edge case
-            # where a malformed route could turn the probe into a
-            # file:// or ftp:// fetch (bandit B310).
-            if not (url.startswith("http://") or url.startswith("https://")):
-                detail["error"] = "non-http scheme rejected"
-                _write_snapshot(conn, node["id"], "http_head", "error", detail, run_id)
-                fail += 1
-                continue
-            try:
-                req = urllib.request.Request(url, method="HEAD")
-                with urllib.request.urlopen(req, timeout=HTTP_HEAD_TIMEOUT) as resp:  # nosec B310  -- scheme validated above
-                    code = resp.status
-                    detail["status_code"] = code
-                    detail["response_time_ms"] = int((time.time() - start) * 1000)
-                    status = "pass" if code < 400 else "fail"
-            except urllib.error.HTTPError as e:
-                detail["status_code"] = e.code
+        node_id = f"route::{route}"
+        status = "fail"
+        detail: Dict[str, Any] = {"route": route}
+        start = time.time()
+        try:
+            req = urllib.request.Request(url, method="HEAD")
+            with urllib.request.urlopen(req, timeout=HTTP_HEAD_TIMEOUT) as resp:  # nosec B310 -- scheme validated above
+                code = resp.status
+                detail["status_code"] = code
                 detail["response_time_ms"] = int((time.time() - start) * 1000)
-                # 405 means route exists but HEAD not allowed — still healthy
-                status = "pass" if e.code in (405,) else "fail"
-            except Exception as exc:
-                detail["error"] = str(exc)[:200]
+                status = "pass" if code < 400 else "fail"
+        except urllib.error.HTTPError as e:
+            detail["status_code"] = e.code
+            detail["response_time_ms"] = int((time.time() - start) * 1000)
+            # 405 = route exists but HEAD not allowed — still healthy.
+            status = "pass" if e.code == 405 else "fail"
+        except Exception as exc:
+            detail["error"] = str(exc)[:200]
 
-            if _write_snapshot(conn, node["id"], "http_head", status, detail, run_id):
-                if status == "pass":
-                    ok += 1
-                else:
-                    fail += 1
+        if _write_snapshot(conn, node_id, "http_head", status, detail, run_id):
+            if status == "pass":
+                ok += 1
+            else:
+                fail += 1
 
+    if len(routes) > _HTTP_HEAD_MAX_ROUTES:
+        skipped = len(routes) - _HTTP_HEAD_MAX_ROUTES
+        LOG.info("http_head: probed %d of %d routes (cap %d)", _HTTP_HEAD_MAX_ROUTES, len(routes), _HTTP_HEAD_MAX_ROUTES)
     return {"ok": ok, "fail": fail, "skipped": skipped}
 
 

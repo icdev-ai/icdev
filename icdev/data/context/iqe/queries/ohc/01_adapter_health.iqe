@@ -1,0 +1,1 @@
+foreach a in ohc.adapters select a.adapter_name, a.domain, a.available, a.latency_ms, a.error, a.last_checked

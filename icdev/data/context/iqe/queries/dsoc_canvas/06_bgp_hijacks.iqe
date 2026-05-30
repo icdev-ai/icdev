@@ -1,0 +1,4 @@
+# show open bgp hijack events
+# canvas: dsoc
+# collection: dsoc.bgp_hijacks
+show open bgp hijack events ordered by confidence

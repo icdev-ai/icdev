@@ -1,0 +1,6 @@
+{
+  "version": "115",
+  "name": "canvas_kg_confidence",
+  "description": "Add confidence REAL column to canvas_kg_edges",
+  "classification": "CUI"
+}

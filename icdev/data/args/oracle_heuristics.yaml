@@ -1,0 +1,47 @@
+# Oracle Triage Dynamic Heuristics
+# Loaded by oracle_triage._verify_no_lens() at startup.
+# Supplements (does not replace) the lens-specific verifiers.
+# First match wins. LLM-proposed entries are appended below the baseline.
+#
+# Schema per entry:
+#   name:                 unique slug
+#   action:               promote | dismiss | backlog | skip
+#   reason:               string returned to the triage caller
+#   match_title_prefix:   (opt) title.startswith(value)
+#   match_title_contains: (opt) value in title.lower()
+#   match_id_prefix:      (opt) task_id.startswith(value)
+#
+# Maintenance: run `python tools/genesis/harness/heuristic_writer.py --extract`
+# to see current error cases driving LLM proposals.
+
+version: 1
+
+# ── Baseline (mirrors hardcoded rules in _verify_no_lens) ─────────────────
+heuristics:
+  - name: oracle_rca_prefix
+    match_title_prefix: "Oracle RCA:"
+    action: promote
+    reason: "Self-debug reflex RCA card — recurring scheduler failure needs fix"
+
+  - name: diag_id_prefix
+    match_id_prefix: "diag-"
+    action: promote
+    reason: "Diagnostic task from self_debug — promote to fix recurring failure"
+
+  - name: vv_card
+    match_title_contains: "v&v"
+    action: promote
+    reason: "V&V card — mandatory verification gate, promote to run"
+
+  - name: playwright_vv
+    match_title_contains: "playwright v&v"
+    action: promote
+    reason: "Playwright V&V card — mandatory post-build UI verification"
+
+  - name: fr_card
+    match_title_prefix: "[FR]"
+    action: backlog
+    reason: "Feature request — real value, promote to backlog for human scoping"
+
+# ── LLM-proposed entries (appended by heuristic_writer.py) ────────────────
+# proposed:
