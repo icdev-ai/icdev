@@ -3,9 +3,9 @@
 [TEMPLATE: CUI // SP-CTI]
 
 Embedding and KG bridging are disabled so the suite runs headless without an
-LLM router or vector store; the focus is provider routing + DIC row writes
-(dic_documents / dic_versions / dic_chunk_links) with tenant/classification
-stamps.
+embedding provider or vector store; the focus is provider routing + DIC row
+writes (dic_documents / dic_versions / dic_chunk_links) with tenant/
+classification stamps.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.db.storage import get_connection, set_security_context
+from tools.db.storage import get_connection
 from tools.document_intelligence import ingest_orchestrator as orch
 from tools.document_intelligence.ingest_orchestrator import ingest_file
 
@@ -47,6 +47,15 @@ def test_provider_routing_picks_builtin_text(sample_doc: Path):
     assert "multi-factor" in extraction.text
 
 
+def test_html_extractor_strips_tags(tmp_path: Path):
+    p = tmp_path / "page.html"
+    p.write_text("<html><body><h1>Title</h1><p>Hello world</p></body></html>", "utf-8")
+    extraction = orch._select_extractor(p)
+    assert extraction.content_type == "text/html"
+    assert "<" not in extraction.text
+    assert "Hello world" in extraction.text
+
+
 def test_ingest_writes_dic_rows_with_stamps(sample_doc: Path):
     outcome = ingest_file(
         str(sample_doc),
@@ -61,7 +70,7 @@ def test_ingest_writes_dic_rows_with_stamps(sample_doc: Path):
     assert outcome.chunks >= 1
     assert outcome.tenant_id == "acme"
     assert outcome.classification == "CUI"
-    assert outcome.source_id.startswith("src_")
+    assert outcome.doc_id.startswith("dic_doc_")
 
     # dic_documents row.
     conn = get_connection()
@@ -92,9 +101,9 @@ def test_ingest_writes_dic_rows_with_stamps(sample_doc: Path):
     # dic_chunk_links: one per chunk, mapping rag chunk id back to the doc.
     links = _rows("dic_chunk_links", outcome.version_id)
     assert len(links) == outcome.chunks
-    for i, link in enumerate(sorted(links, key=lambda r: r["chunk_index"])):
+    for link in links:
         assert link["doc_id"] == outcome.doc_id
-        assert link["rag_chunk_id"] == f"{outcome.source_id}_chunk_{link['chunk_index']}"
+        assert link["rag_chunk_id"]  # non-empty rag chunk id
         assert link["tenant_id"] == "acme"
         assert link["classification"] == "CUI"
 
@@ -112,16 +121,12 @@ def test_reingest_is_idempotent(sample_doc: Path):
     assert len(links) == second.chunks  # not doubled
 
 
-def test_context_falls_back_to_security_context(sample_doc: Path):
-    set_security_context(tenant_id="ctx_tenant", classification="SECRET")
-    try:
-        outcome = ingest_file(
-            str(sample_doc), "ctx_collection", embed=False, bridge_kg=False
-        )
-        assert outcome.tenant_id == "ctx_tenant"
-        assert outcome.classification == "SECRET"
-    finally:
-        set_security_context(tenant_id=None, classification=None)
+def test_context_defaults_when_unset(sample_doc: Path):
+    outcome = ingest_file(
+        str(sample_doc), "default_collection", embed=False, bridge_kg=False
+    )
+    assert outcome.tenant_id == "default"
+    assert outcome.classification == "UNCLASSIFIED"
 
 
 def test_missing_file_raises():

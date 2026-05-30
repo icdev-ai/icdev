@@ -8,23 +8,27 @@ Given a file path and a collection id this module:
 1. Picks an extractor (provider) by file extension. If the dic-ingest-02
    provider package (``tools.document_intelligence.providers``) is installed it
    is preferred; otherwise a small built-in text/markup extractor is used.
-2. REUSES the RAG layer: ``icdev.tools.rag.chunker.chunk_content`` to chunk and
-   ``icdev.tools.rag.ingestion_manager.IngestionManager.ingest_source`` to
-   embed + upsert chunks into the vector store.
+2. REUSES the RAG layer: ``tools.rag.chunker.chunk_content`` to chunk, then the
+   same embed + vector-store upsert path that ``ingestion_manager.ingest_source``
+   uses (embedding provider via ``tools.llm`` + ``VectorStoreFactory``).
+   ``ingest_source`` itself only ingests rows from registered ICDEV source
+   tables (SOURCE_REGISTRY), not arbitrary files, so we reuse its building
+   blocks rather than the function directly.
 3. Bridges each chunk into the Knowledge Graph via
-   ``icdev.tools.rag.rag_to_kg_ingester.ingest_chunk_to_kg``.
+   ``tools.rag.rag_to_kg_ingester.ingest_chunk``.
 4. Writes DIC bookkeeping rows: ``dic_documents`` + an initial
    ``dic_versions(origin='human_authored', status='approved')`` row, plus
    ``dic_chunk_links`` mapping each rag chunk back to the document and its
    page/section.
 
 Every row is stamped with ``tenant_id``/``classification`` taken from the
-caller's security context (``get_security_context()``) or explicit overrides,
-so writes participate in RBAC+ABAC+RLS access control (dic-authz-01).
+caller's security context (Flask ``g.security_context`` when present) or
+explicit overrides, so writes participate in RBAC+ABAC+RLS access control
+(dic-authz-01).
 
-Embedding and KG bridging are best-effort: if the vector store or LLM router is
-unavailable (e.g. air-gapped/headless without credentials) the DIC rows are
-still written and the failure is reported in the result, never raised.
+Embedding and KG bridging are best-effort: if the vector store or embedding
+provider is unavailable (e.g. air-gapped/headless without Ollama) the DIC rows
+are still written and the failure is reported in the result, never raised.
 """
 from __future__ import annotations
 
@@ -40,13 +44,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from icdev.tools.rag.chunker import ChunkingConfig, chunk_content
-from icdev.tools.rag.ingestion_manager import IngestionManager
-
-try:  # storage may live under either namespace depending on install mode
-    from icdev.tools.db.storage import get_connection, get_security_context
-except Exception:  # pragma: no cover - fallback to shim
-    from tools.db.storage import get_connection, get_security_context
+from tools.db.storage import get_connection
+from tools.rag.chunker import chunk_content
 
 
 # --------------------------------------------------------------------------- #
@@ -72,7 +71,6 @@ class Extraction:
     content_type: str
     page_count: int = 1
     title: str = ""
-    # Optional per-chunk-ish hints; aligned by chunk index when available.
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -95,12 +93,10 @@ def _select_extractor(path: Path) -> Extraction:
     """
     ext = path.suffix.lower()
 
-    # 1) Prefer the dic-ingest-02 provider package if available.
     provider = _try_provider_package(path, ext)
     if provider is not None:
         return provider
 
-    # 2) Built-in extractor for text/markup files.
     if ext in _TEXT_EXTS:
         raw = path.read_text(encoding="utf-8", errors="replace")
         if ext in (".html", ".htm"):
@@ -117,9 +113,8 @@ def _select_extractor(path: Path) -> Extraction:
             title=path.stem,
         )
 
-    # 3) Last-resort: read bytes as best-effort utf-8 (covers unknown text-ish
-    #    files). Binary blobs degrade to whatever decodes; callers see the
-    #    provider name and can re-ingest once a real provider lands.
+    # Last-resort: best-effort utf-8 decode. Binary blobs degrade to whatever
+    # decodes; callers can re-ingest once a real provider lands.
     raw = path.read_text(encoding="utf-8", errors="replace")
     return Extraction(
         text=raw,
@@ -151,7 +146,6 @@ def _try_provider_package(path: Path, ext: str) -> Extraction | None:
         provider = getter(ext)
         if provider is None:
             return None
-        # Providers expose .extract(path) -> object with .text/.pages/etc.
         result = provider.extract(str(path))
         text = getattr(result, "text", None)
         if text is None and isinstance(result, dict):
@@ -167,7 +161,6 @@ def _try_provider_package(path: Path, ext: str) -> Extraction | None:
             title=getattr(result, "title", "") or path.stem,
         )
     except Exception:
-        # Provider exists but failed; fall back to built-in extraction.
         return None
 
 
@@ -245,26 +238,26 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
 
 
-def _rag_source_id(text: str) -> str:
-    """Mirror IngestionManager._make_source_id for source_type='text'."""
-    h = hashlib.sha256(f"text:{text}".encode()).hexdigest()[:16]
-    return f"src_{h}"
-
-
 def _doc_id(collection_id: str, filepath: str) -> str:
     h = hashlib.sha256(f"{collection_id}:{filepath}".encode()).hexdigest()[:16]
     return f"dic_doc_{h}"
 
 
 def _resolve_context(tenant_id: str | None, classification: str | None) -> tuple[str, str]:
-    ctx = {}
-    try:
-        ctx = get_security_context() or {}
-    except Exception:
-        ctx = {}
-    tid = tenant_id or ctx.get("tenant_id") or "default"
-    cls = classification or ctx.get("classification") or "UNCLASSIFIED"
-    return tid, cls
+    """Resolve tenant_id/classification: explicit args > Flask security ctx > defaults."""
+    tid, cls = tenant_id, classification
+    if tid is None or cls is None:
+        try:
+            from flask import g, has_request_context
+
+            if has_request_context():
+                ctx = getattr(g, "security_context", None)
+                if ctx is not None:
+                    tid = tid or getattr(ctx, "tenant_id", None)
+                    cls = cls or getattr(ctx, "classification", None)
+        except Exception:
+            pass
+    return (tid or "default"), (cls or "UNCLASSIFIED")
 
 
 @dataclass
@@ -300,6 +293,63 @@ class IngestOutcome:
 
 
 # --------------------------------------------------------------------------- #
+# Embedding + vector-store upsert (mirrors ingestion_manager.ingest_source path)
+# --------------------------------------------------------------------------- #
+
+def _embed_and_store(chunks: list, tenant_id: str, errors: list[str]) -> int:
+    """Embed new chunks and upsert into the vector store. Returns count embedded."""
+    try:
+        from tools.llm import get_embedding_provider
+        from tools.rag.vector_store_factory import VectorStoreFactory
+    except Exception as e:
+        errors.append(f"embed deps unavailable: {e}")
+        return 0
+
+    provider = get_embedding_provider()
+    if not provider:
+        errors.append("no embedding provider available")
+        return 0
+
+    try:
+        store = VectorStoreFactory.create(tenant_id=tenant_id)
+    except Exception as e:
+        errors.append(f"vector store unavailable: {e}")
+        return 0
+
+    # Dedup against existing content hashes.
+    new_chunks = []
+    for c in chunks:
+        try:
+            if store.get_by_content_hash(getattr(c, "content_hash", "")):
+                continue
+        except Exception:
+            pass
+        new_chunks.append(c)
+
+    embedded = 0
+    for c in new_chunks:
+        try:
+            if hasattr(provider, "embed"):
+                c.embedding = provider.embed(c.content)
+            else:
+                resp = provider.embeddings.create(
+                    input=c.content, model="nomic-embed-text"
+                )
+                c.embedding = resp.data[0].embedding
+            embedded += 1
+        except Exception as e:
+            errors.append(f"embed chunk failed: {e}")
+
+    embeddable = [c for c in new_chunks if getattr(c, "embedding", None) is not None]
+    if embeddable:
+        try:
+            store.upsert(embeddable)
+        except Exception as e:
+            errors.append(f"vector upsert failed: {e}")
+    return embedded
+
+
+# --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
@@ -312,7 +362,6 @@ def ingest_file(
     created_by: str | None = None,
     embed: bool = True,
     bridge_kg: bool = True,
-    chunk_config: ChunkingConfig | None = None,
     conn=None,
 ) -> IngestOutcome:
     """Route a file through provider -> RAG ingest -> KG bridge -> DIC rows.
@@ -324,7 +373,6 @@ def ingest_file(
         created_by: user id recorded on the initial version row.
         embed: when True, embed + upsert chunks into the vector store.
         bridge_kg: when True, extract entities/relationships into the KG.
-        chunk_config: chunking knobs (defaults to RAG defaults).
         conn: optional DB connection (else an RLS-aware one is opened).
     """
     p = Path(path)
@@ -332,51 +380,40 @@ def ingest_file(
         raise FileNotFoundError(f"not a file: {path}")
 
     tid, cls = _resolve_context(tenant_id, classification)
-    cfg = chunk_config or ChunkingConfig()
     errors: list[str] = []
 
     # 1) Extract.
     extraction = _select_extractor(p)
     text = extraction.text or ""
 
-    # 2) Chunk (reuse chunker) — gives us deterministic chunk indices + texts
-    #    for KG bridging and chunk links.
-    chunks = chunk_content(text, cfg, metadata={"filename": p.name})
-    source_id = _rag_source_id(text)
+    doc_id = _doc_id(collection_id, str(p))
+    source_id = doc_id  # rag source id for these chunks
 
-    # 3) Embed + upsert via the RAG ingestion manager (reuse ingest_source).
+    # 2) Chunk (reuse chunker). chunk_content returns VectorChunk objects whose
+    #    .chunk_id is the canonical rag_chunks id used by the vector store + KG.
+    chunks = chunk_content(
+        text,
+        source_type="dic_document",
+        source_id=source_id,
+        source_table="dic_documents",
+        metadata={"filename": p.name, "collection_id": collection_id},
+        tenant_id=tid,
+        project_id=collection_id,
+        classification=cls,
+    )
+
+    # 3) Embed + upsert into the vector store (same path ingest_source uses).
     chunks_embedded = 0
-    if embed and text:
-        try:
-            mgr = IngestionManager(collection=collection_id, config=cfg)
-            res = mgr.ingest_source(
-                text,
-                source_type="text",
-                metadata={
-                    "filename": p.name,
-                    "filepath": str(p),
-                    "provider": extraction.provider,
-                    "content_type": extraction.content_type,
-                    "tenant_id": tid,
-                    "classification": cls,
-                    "dic_collection": collection_id,
-                },
-                collection=collection_id,
-            )
-            source_id = res.source_id or source_id
-            chunks_embedded = res.chunks_embedded
-            errors.extend(res.errors or [])
-        except Exception as e:  # vector store / LLM unavailable
-            errors.append(f"embed failed: {e}")
+    if embed and chunks:
+        chunks_embedded = _embed_and_store(chunks, tid, errors)
 
     # 4) DIC bookkeeping rows.
     own_conn = conn is None
     if own_conn:
-        conn = get_connection(tenant_id=tid, classification=cls)
+        conn = get_connection()
     try:
         _ensure_schema(conn)
         now = _now()
-        doc_id = _doc_id(collection_id, str(p))
         version_id = f"{doc_id}_v1"
         content_hash = _sha256(text)
         cur = conn.cursor()
@@ -413,8 +450,9 @@ def ingest_file(
         # Refresh chunk links for this version.
         cur.execute("DELETE FROM dic_chunk_links WHERE version_id = ?", (version_id,))
         for i, chunk in enumerate(chunks):
-            rag_chunk_id = f"{source_id}_chunk_{i}"
-            md = chunk.metadata or {}
+            rag_chunk_id = getattr(chunk, "chunk_id", f"{source_id}_chunk_{i}")
+            chunk_index = getattr(chunk, "chunk_index", i)
+            md = getattr(chunk, "metadata", None) or {}
             page = md.get("page")
             section = md.get("section") or md.get("heading")
             link_id = f"{version_id}_link_{i}"
@@ -427,7 +465,7 @@ def ingest_file(
                 """,
                 (
                     link_id, doc_id, version_id, rag_chunk_id, collection_id,
-                    i, page, section, now, tid, cls,
+                    chunk_index, page, section, now, tid, cls,
                 ),
             )
         conn.commit()
@@ -438,25 +476,34 @@ def ingest_file(
             except Exception:
                 pass
 
-    # 5) KG bridge (best-effort, after rows are durable).
+    # 5) KG bridge (best-effort). ingest_chunk reads rag_chunks by id, so this
+    #    only finds content when embedding upserted the chunk above.
     kg_entities = 0
     kg_rels = 0
-    if bridge_kg and chunks:
+    if bridge_kg and chunks and chunks_embedded:
         try:
-            from icdev.tools.rag.rag_to_kg_ingester import ingest_chunk_to_kg
+            from tools.rag.rag_to_kg_ingester import ingest_chunk
 
-            for i, chunk in enumerate(chunks):
-                rag_chunk_id = f"{source_id}_chunk_{i}"
-                summary = ingest_chunk_to_kg(
-                    rag_chunk_id,
-                    chunk.text,
-                    source_id=source_id,
-                    collection=collection_id,
-                )
-                kg_entities += int(summary.get("entities", 0) or 0)
-                kg_rels += int(summary.get("relationships", 0) or 0)
+            kg_conn = get_connection()
+            try:
+                for chunk in chunks:
+                    cid = getattr(chunk, "chunk_id", None)
+                    if not cid:
+                        continue
+                    try:
+                        summary = ingest_chunk(kg_conn, cid)
+                    except Exception as e:
+                        errors.append(f"kg chunk failed: {e}")
+                        continue
+                    kg_entities += int(summary.get("nodes_written", 0) or 0)
+                    kg_rels += int(summary.get("edges_written", 0) or 0)
+            finally:
+                try:
+                    kg_conn.close()
+                except Exception:
+                    pass
         except Exception as e:
-            errors.append(f"kg bridge failed: {e}")
+            errors.append(f"kg bridge unavailable: {e}")
 
     return IngestOutcome(
         doc_id=doc_id,
