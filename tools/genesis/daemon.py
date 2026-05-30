@@ -78,6 +78,7 @@ REFLEX_NAMES = [
     "remediation_lens",
     "awareness",
     "canvas_indexer",
+    "self_monitor",
     "alphadesk_trap_scenarios",
     "migration_canvas",
     "academy_reflex",

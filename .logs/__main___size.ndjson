@@ -3867,3 +3867,7 @@
 {"ts": "2026-05-30T11:55:49.781112+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 350: status=executing activated=0 completed=0 running=1", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T11:56:51.635772+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 351: status=executing activated=0 completed=0 running=1", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T11:57:52.334299+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 352: status=executing activated=0 completed=0 running=1", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T11:59:29.027975+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 353: status=no_due_tasks activated=0 completed=1 running=0", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T12:00:29.983988+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 354: idle (no due tasks)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T12:01:38.967832+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 355: status=ok activated=1 completed=0 running=0", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T12:02:39.811579+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 356: status=executing activated=0 completed=0 running=1", "trace_id": null, "session_id": null, "extra": {}}
