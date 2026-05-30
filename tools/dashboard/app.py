@@ -2733,6 +2733,7 @@ def create_app() -> Flask:
             "kanban":     ("tools.iqe.adapters.core_kanban", ["kanban.tasks", "kanban.epics"]),
             "agents":        ("tools.iqe.adapters.core_agents",    ["agents.registry"]),
             "projects":      ("tools.iqe.adapters.core_agents",    ["projects.list"]),
+            "qdc":            ("tools.iqe.adapters.qdc",            ["qdc.designs", "qdc.assessments", "qdc.gate_results", "qdc.ai_decisions"]),
             "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
             "ontology":      ("tools.iqe.adapters.ontology",       ["ontology.classes", "ontology.closure", "ontology.alignments"]),
             "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
