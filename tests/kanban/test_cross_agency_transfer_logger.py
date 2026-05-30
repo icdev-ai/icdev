@@ -24,13 +24,35 @@ os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
 # ---------------------------------------------------------------------------
 
 def _make_db(tmp_path):
-    """Return a sqlite3 connection backed by a temp file with the CAT table."""
+    """Return a sqlite3 connection backed by a temp file with the required tables."""
     from tests.conftest import MINIMAL_ICDEV_SCHEMA
 
     db_path = tmp_path / "icdev.db"
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.executescript(MINIMAL_ICDEV_SCHEMA)
+    # Ensure cross_agency_transfers table exists
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS cross_agency_transfers ("
+        "id TEXT PRIMARY KEY, transfer_id TEXT NOT NULL, event_type TEXT NOT NULL, "
+        "source_agency TEXT NOT NULL DEFAULT '', target_agency TEXT NOT NULL DEFAULT '', "
+        "data_type TEXT, data_classification TEXT NOT NULL DEFAULT 'CUI', "
+        "actor TEXT NOT NULL DEFAULT '', project_id TEXT, bytes_transferred INTEGER, "
+        "checksum TEXT, duration_ms INTEGER, rejection_reason TEXT, error_code TEXT, "
+        "details TEXT, occurred_at TEXT NOT NULL)"
+    )
+    # Add missing columns to audit_trail (production schema has event_type, actor, created_at)
+    for col_def in [
+        ("event_type", "TEXT"),
+        ("actor", "TEXT"),
+        ("created_at", "TEXT"),
+        ("project_id", "TEXT"),
+        ("affected_files", "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE audit_trail ADD COLUMN {col_def[0]} {col_def[1]}")
+        except Exception:
+            pass  # column already exists
     conn.commit()
     return db_path, conn
 
@@ -476,7 +498,7 @@ def test_lifecycle_initiated_to_completed(tmp_path):
     assert dict(rows[1])["id"] == eid2
 
     audit = conn2.execute(
-        "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY timestamp ASC",
+        "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY recorded_at ASC",
         ("%xfr-life-01%",),
     ).fetchall()
     conn2.close()

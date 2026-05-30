@@ -22,7 +22,7 @@ def test_enum_values_match_schema_allowed_statuses():
     # db_status_for must only ever return one of them.
     allowed = {
         "backlog", "scheduled", "in_progress", "done",
-        "token_exhausted", "suggested",
+        "token_exhausted", "suggested", "decomposed", "needs_decomposition",
     }
     for state in KanbanState:
         assert sm.db_status_for(state) in allowed

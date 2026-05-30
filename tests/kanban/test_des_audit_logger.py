@@ -32,6 +32,14 @@ def _make_db(tmp_path):
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.executescript(MINIMAL_ICDEV_SCHEMA)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS des_execution_events ("
+        "id TEXT PRIMARY KEY, task_id TEXT NOT NULL, event_type TEXT NOT NULL, "
+        "skill_invoked TEXT, inputs_json TEXT, outputs_json TEXT, executor TEXT, "
+        "dispatch_source TEXT, task_status TEXT, duration_ms INTEGER, "
+        "verification_signals TEXT, queued_at TEXT, occurred_at TEXT NOT NULL, "
+        "classification TEXT NOT NULL DEFAULT 'CUI')"
+    )
     conn.commit()
     return db_path, conn
 
