@@ -1,0 +1,5 @@
+# IQE-QDC-003: Recent AI quality assessment decisions
+# Shows quality assessment decisions recorded by the QDC AI traceability layer.
+
+foreach d in qdc.ai_decisions
+select d.id, d.decision_type, d.decision, d.confidence, d.model_used, d.created_at

@@ -78,6 +78,7 @@ Each canvas IQE adapter exposes a `<canvas>.ai_decisions` collection backed by `
 | AADC | `aadc.ai_decisions` | `tools/iqe/adapters/aadc.py` |
 | AIMC | `aimc.ai_decisions` | `tools/iqe/adapters/aimc.py` |
 | MC | `mc.ai_decisions` | `tools/iqe/adapters/mc.py` |
+| QDC | `qdc.ai_decisions` | `tools/iqe/adapters/qdc.py` |
 | Observatory | `observatory.decisions`, `observatory.confabulation_flags` | `tools/iqe/adapters/ai_observatory.py` |
 
 ## Related

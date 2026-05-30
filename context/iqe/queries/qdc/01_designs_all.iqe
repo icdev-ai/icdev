@@ -1,0 +1,5 @@
+# IQE-QDC-001: All quality gate topology designs
+# Lists all designs in the Quality Design Canvas.
+
+foreach d in qdc.designs
+select d.id, d.name, d.description, d.created_at

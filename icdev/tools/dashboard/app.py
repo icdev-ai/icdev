@@ -106,12 +106,6 @@ if _CANVAS_KG_ENABLED:
     except ImportError:
         _HAS_CANVAS_KG = False
 
-# RAG-KG hybrid search blueprint (always enabled)
-try:
-    from tools.knowledge_graph.blueprint import rag_kg_api as _rag_kg_api  # noqa: E402
-    _HAS_RAG_KG_API = True
-except ImportError:
-    _HAS_RAG_KG_API = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded.
 # Opt-in: default is OFF. Operators set ICDEV_GOVCON_ENABLED=true to enable.
 # Air-gap installs (ICDEV_AIRGAP=true) force this off regardless so the
@@ -1641,14 +1635,6 @@ def create_app() -> Flask:
     def ndc_sops_page():
         return render_template("ndc_sops.html")
 
-    # ---- RAG-KG Hybrid Search Blueprint ----
-    if _HAS_RAG_KG_API:
-        try:
-            app.register_blueprint(_rag_kg_api, url_prefix="/api/rag-kg")
-            app.logger.info("RAG-KG hybrid search registered at /api/rag-kg")
-        except Exception as exc:
-            app.logger.warning("RAG-KG blueprint failed to register: %s", exc)
-
     # ---- Canvas Knowledge Graph Blueprint ----
     if _HAS_CANVAS_KG:
         try:
@@ -1819,14 +1805,6 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("HITL Workflow API blueprint failed to register: %s", _exc)
 
-    # ---- AISG Setup Wizard Blueprint ----
-    try:
-        from tools.aisg.blueprint import bp as _aisg_bp
-        app.register_blueprint(_aisg_bp)
-        app.logger.info("AISG Wizard blueprint registered at /ai-wizard")
-    except Exception as _exc:
-        app.logger.warning("AISG Wizard blueprint failed to register: %s", _exc)
-
     # ---- Autonomous Coder Blueprint ----
     try:
         try:
@@ -1888,6 +1866,14 @@ def create_app() -> Flask:
         app.logger.info("JISE Portal blueprint registered at /api/v1/jise")
     except Exception as _exc:
         app.logger.warning("JISE Portal blueprint failed to register: %s", _exc)
+
+    # ---- SaaS Tenant Admin Portal Blueprint ----
+    try:
+        from tools.saas.portal.app import portal_bp as _portal_bp
+        app.register_blueprint(_portal_bp)
+        app.logger.info("SaaS Portal blueprint registered at /portal")
+    except Exception as _exc:
+        app.logger.warning("SaaS Portal blueprint failed to register: %s", _exc)
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -2747,6 +2733,7 @@ def create_app() -> Flask:
             "kanban":     ("tools.iqe.adapters.core_kanban", ["kanban.tasks", "kanban.epics"]),
             "agents":        ("tools.iqe.adapters.core_agents",    ["agents.registry"]),
             "projects":      ("tools.iqe.adapters.core_agents",    ["projects.list"]),
+            "qdc":            ("tools.iqe.adapters.qdc",            ["qdc.designs", "qdc.assessments", "qdc.gate_results", "qdc.ai_decisions"]),
             "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
             "ontology":      ("tools.iqe.adapters.ontology",       ["ontology.classes", "ontology.closure", "ontology.alignments"]),
             "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
@@ -2755,6 +2742,8 @@ def create_app() -> Flask:
             "aac":            ("tools.iqe.adapters.ai_augmentation", ["ai_augmentation.opportunities", "ai_augmentation.scans", "ai_augmentation.roadmaps"]),
             "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
             "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
+            "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),
+            "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
@@ -2836,6 +2825,19 @@ def create_app() -> Flask:
                 resolved_count=resolved,
                 unresolved_failures=unresolved_failures,
                 health_status=health,
+            )
+        except Exception as exc:  # noqa: BLE001
+            import logging as _mon_log
+            _mon_log.getLogger(__name__).error("monitoring_overview DB error: %s", exc)
+            return render_template(
+                "monitoring/overview.html",
+                firing_alerts=[],
+                alerts=[],
+                healing_events=[],
+                firing_count=0,
+                resolved_count=0,
+                unresolved_failures=0,
+                health_status="unknown",
             )
         finally:
             conn.close()
