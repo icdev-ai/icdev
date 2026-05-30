@@ -4917,3 +4917,4 @@
 {"ts": "2026-05-30T01:53:41.552829+00:00", "level": "INFO", "component": "tools.genesis.reflexes.kanban", "message": "Executor tier changed to CLAUDE_CLI", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T02:00:39.719492+00:00", "level": "INFO", "component": "tools.genesis.reflexes.kanban", "message": "Executor tier changed to CLAUDE_CLI", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T02:23:50.029962+00:00", "level": "WARNING", "component": "tools.genesis.reflexes.kanban", "message": "orphan-done sweep: DB error server closed the connection unexpectedly\n\tThis probably means the server terminated abnormally\n\tbefore or while processing the request.\n", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:28:50.701402+00:00", "level": "INFO", "component": "tools.genesis.reflexes.kanban", "message": "Executor tier changed to CLAUDE_CLI", "trace_id": null, "session_id": null, "extra": {}}
