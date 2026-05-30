@@ -79,6 +79,11 @@ from tools.data_canvas.db.init_db import get_connection, init_db  # noqa: E402
 from tools.common.helpers import row_to_dict, now_isoformat  # noqa: E402
 from tools.data_canvas.csp import get_csp_status, run_sync as csp_run_sync  # noqa: E402
 
+try:
+    from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
+except Exception:
+    def _record_decision(**_kw): pass  # type: ignore[assignment]
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -508,6 +513,15 @@ def create_data_canvas_blueprint():
             session.get("user_id", "system"),
             "ASSESS",
             f"score={result['risk_score']} grade={result['posture_grade']}",
+        )
+        _record_decision(
+            canvas_type="ddc",
+            record_id=design_id,
+            decision_type="compliance_finding",
+            decision=f"Grade {result.get('posture_grade','?')} — Risk score {result.get('risk_score', 0)}, NIST coverage {nist_cov.get('coverage_pct', 0):.0f}%",
+            rationale=f"Gaps detected: {len(gaps)}, PII findings: {len(pii_scan.get('compliance_findings', []))}",
+            model_used=None,
+            confidence=None,
         )
         # Blockchain provenance for assessment
         try:

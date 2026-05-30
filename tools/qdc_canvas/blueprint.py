@@ -46,6 +46,11 @@ from tools.qdc_canvas.qdc_engine import (
 
 logger = get_logger(__name__)
 
+try:
+    from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
+except Exception:
+    def _record_decision(**_kw): pass  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -598,6 +603,16 @@ def api_assess_design(design_id: str):
 
     finally:
         conn.close()
+
+    _record_decision(
+        canvas_type="qdc",
+        record_id=design_id,
+        decision_type="quality_assessment",
+        decision=f"UQS {uqs_result.get('uqs_score', 0):.2f} — Score {result.get('score', 0)}, Grade {uqs_result.get('grade', '?')}",
+        rationale=f"SA-11 mappings: {len(sa11_mapping)}, findings: {len(result.get('findings', []))}",
+        model_used=None,
+        confidence=uqs_result.get("uqs_score"),
+    )
 
     return jsonify(
         {
