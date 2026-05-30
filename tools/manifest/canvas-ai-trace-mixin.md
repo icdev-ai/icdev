@@ -29,7 +29,7 @@ decision_id = record_canvas_decision(
 
 **Graceful degradation:** All canvas imports use try/except with a no-op `_record_decision` fallback — canvas blueprints never break if mixin fails to import.
 
-## DB Table: `canvas_ai_decisions` (migration 121)
+## DB Table: `canvas_ai_decisions` (migration 167)
 
 Stored in `icdev.db` (main DB, NOT canvas-specific). Columns: `id, canvas_type, record_id, decision_type, decision, rationale, model_used, confidence, alternatives, trace_id, span_id, actor, project_id, classification, created_at`. Append-only (NIST AU).
 
@@ -45,7 +45,7 @@ Stored in `icdev.db` (main DB, NOT canvas-specific). Columns: `id, canvas_type, 
 | NIST AU-2 | Dual-write to `audit_trail` via `decision_recorder` |
 | OMB M-25-21 | AI use case inventory via `canvas_type` + `decision_type` |
 
-## Canvas Wiring Status (all 10 canvases)
+## Canvas Wiring Status (all 12 canvases)
 
 | Canvas | Blueprint | Injection Points | /api/ai-trace |
 |--------|-----------|-----------------|---------------|
@@ -53,12 +53,14 @@ Stored in `icdev.db` (main DB, NOT canvas-specific). Columns: `id, canvas_type, 
 | SDC | `tools/security_canvas/blueprint.py` | `sc_api_assess`, `sc_api_llm_threats` | ✓ |
 | PDC | `tools/pipeline/blueprint.py` | `pc_api_analyze` | ✓ |
 | BDC | `tools/boundary_canvas/blueprint.py` | `bdc_api_assess` | ✓ |
-| DDC | `tools/data_canvas/anomaly_detector.py` | `detect_anomalies` | ✓ |
+| DDC | `tools/data_canvas/blueprint.py` | `dc_api_assess` | ✓ |
+| DDC (anomaly) | `tools/data_canvas/anomaly_detector.py` | `detect_anomalies` | ✓ |
 | ODC | `tools/observability_canvas/blueprint.py` | `oc_api_assess` | ✓ |
 | IDC | `tools/infra_canvas/blueprint.py` | `assess_infra_design` | ✓ |
 | AADC | `tools/agentic_ai_canvas/blueprint.py` | `run_assessment` | ✓ |
 | AIMC | `tools/aiml_canvas/blueprint.py` | `api_assess`, `api_assess_gov` | ✓ |
 | MC | `tools/migration_canvas/blueprint.py` + `network_migration.py` | `mc_api_assess`, hardware rec | ✓ |
+| QDC | `tools/qdc_canvas/blueprint.py` | `api_assess_design` | ✓ |
 
 ## IQE Collections (per canvas)
 
@@ -80,7 +82,8 @@ Each canvas IQE adapter exposes a `<canvas>.ai_decisions` collection backed by `
 
 ## Related
 
-- Migration 122: `tools/db/migrations/122_trace_linkage/up.py` — adds `trace_id`/`span_id` to `kanban_tasks` and `reflex_observations`
+- Migration 169: `tools/db/migrations/169_trace_id_columns.sql` — adds `trace_id`/`span_id` to `kanban_tasks` and `reflex_observations`
+- Package `tools/ai_trace/` — canonical re-export of `record_canvas_decision` (Phase D-TRACE ep1)
 - AI Observatory: `tools/ai_observatory/blueprint.py` — unified dashboard at `/ai-observatory`
 - AI Observatory analytics: `tools/ai_observatory/analytics.py`
 - Confabulation detector: `tools/security/confabulation_detector.py` — wired into Genesis synthesize reflex

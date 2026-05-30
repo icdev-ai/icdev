@@ -160,6 +160,23 @@ CREATE TABLE IF NOT EXISTS zta_drift_alerts (
     acknowledged INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS canvas_ai_decisions (
+    id              TEXT PRIMARY KEY,
+    canvas_type     TEXT NOT NULL,
+    record_id       TEXT,
+    decision_type   TEXT NOT NULL,
+    decision        TEXT NOT NULL,
+    rationale       TEXT,
+    model_used      TEXT,
+    confidence      REAL,
+    alternatives    TEXT DEFAULT '[]',
+    trace_id        TEXT,
+    span_id         TEXT,
+    actor           TEXT NOT NULL DEFAULT 'icdev-system',
+    project_id      TEXT,
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
 """
 
 
