@@ -55,7 +55,7 @@ from tools.dashboard.config import (  # noqa: E402
     HOST,
     DEBUG,
 )
-from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event  # noqa: E402
+from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event, require_role  # noqa: E402
 from tools.dashboard.websocket import init_socketio, get_socketio  # noqa: E402
 from tools.dashboard.findings_aggregator import (  # noqa: E402
     aggregate_findings as _aggregate_findings,
@@ -816,7 +816,11 @@ def _register_govcon_pages(app: "Flask", _get_db):
         finally:
             conn.close()
 
+    # GovCon RBAC (prop-fix-09, roles per prop-fix-08): GovCon is the BD/capture
+    # pre-award intelligence domain. View pages are read-only dashboards open to
+    # the capture roles + management; deny -> 403 + audit via require_role().
     @app.route("/govcon")
+    @require_role("admin", "bd", "capture_mgr", "pm")
     def govcon_pipeline_page():
         """GovCon Intelligence — pipeline status, recent opportunities, domain distribution."""
         conn = _get_db()
@@ -858,6 +862,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/govcon/requirements")
+    @require_role("admin", "bd", "capture_mgr", "pm")
     def govcon_requirements_page():
         """GovCon Requirements — pattern frequency, domain heatmap, statement types."""
         conn = _get_db()
@@ -917,6 +922,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/govcon/capabilities")
+    @require_role("admin", "bd", "capture_mgr", "pm")
     def govcon_capabilities_page():
         """GovCon Capabilities — coverage by domain, gap list, enhancement recommendations."""
         conn = _get_db()
