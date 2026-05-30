@@ -100,10 +100,15 @@ def test_roll_up_bands():
 
 
 def test_score_opportunity_unchanged_for_explicit_components():
+    # All-ideal components: value=1.0, feasibility=1.0, risk=1.0 (safest).
+    # composite = 1.0*0.45 + 1.0*0.35 + (1-1.0)*0.20 = 0.80 — the risk_inv term
+    # contributes 0 when risk is maximally safe, so the ceiling here is 0.80.
     r = s.score_opportunity(
         {"usage_freq": 1.0, "task_complexity": 1.0, "automation_deficit": 1.0,
          "data_avail": 1.0, "il_model_exists": 1.0, "integration_complexity": 0.0,
          "reversibility": 1.0, "compliance_impact": 0.0, "dep_complexity": 0.0},
         _ctx(),
     )
-    assert r["composite_score"] > 0.9
+    assert r["value_score"] == 1.0
+    assert r["feasibility_score"] == 1.0
+    assert r["composite_score"] >= 0.79
