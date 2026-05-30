@@ -11,3 +11,7 @@
 {"ts": "2026-05-30T13:50:15.676416+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T13:50:38.455875+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T13:54:26.429966+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T14:36:51.467682+00:00", "level": "WARNING", "component": "health_prober", "message": "route introspection fetch failed: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T15:07:29.648309+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T15:37:56.217543+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T15:50:40.315291+00:00", "level": "INFO", "component": "health_prober", "message": "http_head: probed 80 of 654 routes (cap 80)", "trace_id": null, "session_id": null, "extra": {}}

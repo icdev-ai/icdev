@@ -1807,31 +1807,29 @@ def _close_orphaned_rca_children(parent_task_id: str, actor: str = "scheduler") 
     (the two types self_debug uses for RCA cards).
     """
     try:
-        conn = get_connection()
-        now = _utcnow_iso()
-        prefix = f"diag-{parent_task_id}"
-        open_statuses = ("suggested", "backlog", "scheduled", "in_progress")
-        placeholders = ",".join("?" * len(open_statuses))
-        rows = conn.execute(
-            f"SELECT id FROM kanban_tasks "  # nosec B608
-            f"WHERE (id LIKE ? OR (title LIKE ? AND task_type IN ('chore','research','fix'))) "
-            f"  AND status IN ({placeholders})",
-            (f"{prefix}%", f"%{parent_task_id}%", *open_statuses),
-        ).fetchall()
-        orphan_ids = [dict(r)["id"] for r in rows]
-        if orphan_ids:
-            ph = ",".join("?" * len(orphan_ids))
-            conn.execute(
-                f"UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=?, "  # nosec B608
-                f"last_failure_reason=? WHERE id IN ({ph})",
-                (now, now, f"auto-closed: parent {parent_task_id} resolved", *orphan_ids),
-            )
-            conn.commit()
-            logger.info(
-                "_close_orphaned_rca_children: closed %d orphan(s) of %s: %s",
-                len(orphan_ids), parent_task_id, orphan_ids,
-            )
-        conn.close()
+        with get_connection() as conn:
+            now = _utcnow_iso()
+            prefix = f"diag-{parent_task_id}"
+            open_statuses = ("suggested", "backlog", "scheduled", "in_progress")
+            placeholders = ",".join("?" * len(open_statuses))
+            rows = conn.execute(
+                f"SELECT id FROM kanban_tasks "  # nosec B608
+                f"WHERE (id LIKE ? OR (title LIKE ? AND task_type IN ('chore','research','fix'))) "
+                f"  AND status IN ({placeholders})",
+                (f"{prefix}%", f"%{parent_task_id}%", *open_statuses),
+            ).fetchall()
+            orphan_ids = [dict(r)["id"] for r in rows]
+            if orphan_ids:
+                ph = ",".join("?" * len(orphan_ids))
+                conn.execute(
+                    f"UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=?, "  # nosec B608
+                    f"last_failure_reason=? WHERE id IN ({ph})",
+                    (now, now, f"auto-closed: parent {parent_task_id} resolved", *orphan_ids),
+                )
+                logger.info(
+                    "_close_orphaned_rca_children: closed %d orphan(s) of %s: %s",
+                    len(orphan_ids), parent_task_id, orphan_ids,
+                )
     except Exception as exc:
         logger.warning("_close_orphaned_rca_children failed for %s: %s", parent_task_id, exc)
 
@@ -2344,25 +2342,23 @@ def _queue_alert_locally(
     body = f"Task returned to backlog. Reason: {reason}"
     for attempt in range(max_retries):
         try:
-            conn = get_connection()
-            conn.execute(
-                "INSERT INTO kanban_alert_queue "
-                "(task_id, event, severity, title, body, reason, actor, created_at, retry_count) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    task_id,
-                    event,
-                    severity,
-                    title,
-                    body,
-                    reason,
-                    "stale-cleanup",
-                    datetime.now(timezone.utc).isoformat(),
-                    attempt,
-                ),
-            )
-            conn.commit()
-            conn.close()
+            with get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO kanban_alert_queue "
+                    "(task_id, event, severity, title, body, reason, actor, created_at, retry_count) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        task_id,
+                        event,
+                        severity,
+                        title,
+                        body,
+                        reason,
+                        "stale-cleanup",
+                        datetime.now(timezone.utc).isoformat(),
+                        attempt,
+                    ),
+                )
             logger.info("Queued alert locally for %s (attempt %d)", task_id, attempt)
             return True
         except Exception as exc:

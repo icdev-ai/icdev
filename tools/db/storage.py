@@ -956,6 +956,29 @@ _pg_pool = None
 _pg_pool_lock = None
 
 
+def _pg_session_options() -> str:
+    """libpq `options` string applied to every PostgreSQL connection at startup.
+
+    Two server-enforced guards that prevent the recurring `kanban_tasks` lock
+    storm (see memory `kanban-tasks-lock-storm`):
+      * idle_in_transaction_session_timeout — a leaked/unclosed transaction (an
+        `idle in transaction` connection holding ACCESS SHARE locks) is rolled
+        back automatically after this many ms, so it can never accumulate into a
+        storm regardless of per-callsite connection hygiene.
+      * lock_timeout — a statement blocked waiting on a lock (e.g. a concurrent
+        `ALTER TABLE`) fails fast instead of hanging the whole table.
+    Both overridable via .env; set to 0 to disable.
+    """
+    idle_ms = os.environ.get("ICDEV_PG_IDLE_TXN_TIMEOUT_MS", "30000")
+    lock_ms = os.environ.get("ICDEV_PG_LOCK_TIMEOUT_MS", "10000")
+    parts = []
+    if str(idle_ms) != "0":
+        parts.append(f"-c idle_in_transaction_session_timeout={idle_ms}")
+    if str(lock_ms) != "0":
+        parts.append(f"-c lock_timeout={lock_ms}")
+    return " ".join(parts)
+
+
 def _get_pg_pool():
     """Return (or lazily create) a thread-safe PostgreSQL connection pool."""
     global _pg_pool, _pg_pool_lock
@@ -972,10 +995,11 @@ def _get_pg_pool():
         minconn = int(os.environ.get("ICDEV_PG_POOL_MIN", "2"))
         maxconn = int(os.environ.get("ICDEV_PG_POOL_MAX", "20"))
         _pg_timeout = int(os.environ.get("ICDEV_PG_CONNECT_TIMEOUT", "10"))
+        _pg_options = _pg_session_options()
         if db_url:
             _pg_pool = psycopg2.pool.ThreadedConnectionPool(
                 minconn, maxconn, db_url,
-                connect_timeout=_pg_timeout,
+                connect_timeout=_pg_timeout, options=_pg_options,
                 cursor_factory=psycopg2.extras.RealDictCursor, **ssl_kwargs,
             )
         else:
@@ -986,7 +1010,7 @@ def _get_pg_pool():
                 user=os.environ.get("ICDEV_PG_USER", "icdev"),
                 password=os.environ.get("ICDEV_PG_PASSWORD", "icdev_dev_2026"),
                 dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
-                connect_timeout=_pg_timeout,
+                connect_timeout=_pg_timeout, options=_pg_options,
                 cursor_factory=psycopg2.extras.RealDictCursor,
                 **ssl_kwargs,
             )
@@ -1031,9 +1055,10 @@ def _get_pg_connection(db_url: str = None):
         import psycopg2.extras
         ssl_kwargs = _pg_ssl_kwargs()
         _pg_timeout = int(os.environ.get("ICDEV_PG_CONNECT_TIMEOUT", "10"))
+        _pg_options = _pg_session_options()
         if db_url:
             conn = psycopg2.connect(
-                db_url, connect_timeout=_pg_timeout,
+                db_url, connect_timeout=_pg_timeout, options=_pg_options,
                 cursor_factory=psycopg2.extras.RealDictCursor, **ssl_kwargs
             )
         else:
@@ -1043,7 +1068,7 @@ def _get_pg_connection(db_url: str = None):
                 user=os.environ.get("ICDEV_PG_USER", "icdev"),
                 password=os.environ.get("ICDEV_PG_PASSWORD", "icdev_dev_2026"),
                 dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
-                connect_timeout=_pg_timeout,
+                connect_timeout=_pg_timeout, options=_pg_options,
                 cursor_factory=psycopg2.extras.RealDictCursor,
                 **ssl_kwargs,
             )
