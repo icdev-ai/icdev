@@ -84,3 +84,20 @@ ml_nested_conditionals:
   model: claude-haiku-4-5-20251001
   max_tokens: 256
   context_lines: 5          # source lines of context above/below the matched block
+
+ml_regex_user_input:
+  # NLP extractor enrichment for regex_user_input detections in pattern_classifier.py.
+  # Opt-in: set enabled: true here OR export ICDEV_AAC_NLP_REGEX=true.
+  enabled: false
+  model: claude-haiku-4-5-20251001
+  max_tokens: 256
+  context_lines: 5          # source lines of context above/below the matched call
+
+nlp_ref_extractor:
+  # NLP extractor for scan target ref classification in engine.py.
+  # Replaces regex URL/path parsing with Claude Haiku NLP extraction for richer
+  # project metadata (hosting platform, language hints, canonical project name).
+  # Opt-in: set enabled: true here OR export ICDEV_AAC_NLP_REF=true.
+  enabled: false
+  model: claude-haiku-4-5-20251001
+  max_tokens: 128

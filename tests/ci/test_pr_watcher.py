@@ -351,7 +351,7 @@ def test_cli_dry_run_json(monkeypatch, capsys):
     monkeypatch.setattr(pw, "list_pr_tasks", fake_list)
     # Stub the DB factory so nothing tries to touch the real DB
     monkeypatch.setattr(
-        "tools.db.storage.get_connection",
+        "icdev.tools.db.storage.get_connection",
         lambda: _FakeConnection([]),
         raising=False,
     )
