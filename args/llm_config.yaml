@@ -1013,6 +1013,48 @@ chain_orchestration:
           - Neutral case (hold / wait)
 
 # -----------------------------------------------------------------------
+# Reasoned Codegen (tools/llm/reasoned_codegen.py)
+# Opt-in Generate -> Critique -> Verify -> Repair loop that composes the
+# chain_orchestration engine (CoT/CoD) + anvil_critique + an injected verifier.
+# When a function resolves to mode:off and critique:false the wrapper is a
+# byte-identical passthrough to router.invoke (zero added cost).
+#
+# Cost scaling (why expensive paths default OFF):
+#   CoT      ~= chain_orchestration.cot.max_rounds sequential calls
+#   CoD      ~= num_debaters * debate_rounds + 1 judge
+#   critique  += len(anvil_critique.critics) parallel calls PER round
+#   outer loop multiplies the above by max_repair_rounds
+#   Worst case (code_generation CoD 3x2 + critique 3 + repair 2) ~= 20 calls.
+# Hard backstops remain chain_orchestration.cost_cap_usd / token_cap and
+# module_budgets; cost_cap_usd below aborts the OUTER repair loop.
+# -----------------------------------------------------------------------
+reasoned_codegen:
+  enabled: true
+  default_mode: off          # off | cot | cod  (global default OFF)
+  default_critique: false
+  max_repair_rounds: 2
+  cost_cap_usd: 1.00         # outer-loop cap; >= chain_orchestration.cost_cap_usd
+  token_cap: 64000
+  per_function:
+    # PHASE 1 — default ON. Translation already has verify+repair (pass@k + Phase 5).
+    code_translation:
+      enabled: true
+      mode: cot
+      critique: false
+      max_repair_rounds: 3
+    # PHASE 2 — wired but default OFF until validated on translation.
+    code_generation:
+      enabled: false
+      mode: cot
+      critique: true
+      max_repair_rounds: 2
+    # PHASE 3 — wired but default OFF.
+    child_app:
+      enabled: false
+      mode: cot
+      critique: true
+
+# -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
 # Two-level: response_cache = deterministic KV store for full responses
 # (PostgreSQL-native with SQLite fallback); context_cache = provider-level
