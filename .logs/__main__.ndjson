@@ -168,3 +168,9 @@
 {"ts": "2026-05-30T14:25:15.933540+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 3: status=ok activated=1 completed=0 running=0", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T14:26:16.244190+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 4: status=executing activated=0 completed=0 running=1", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T14:27:16.551727+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 5: status=executing activated=0 completed=0 running=1", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T14:28:21.321771+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 6: idle (no due tasks)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T14:29:29.183749+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 7: status=ok activated=1 completed=0 running=0", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T14:30:29.483050+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 8: status=executing activated=0 completed=0 running=1", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T14:31:29.801259+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 9: status=executing activated=0 completed=0 running=1", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T14:32:34.612963+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 10: idle (no due tasks)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T14:34:04.062411+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 11: status=ok activated=3 completed=0 running=0", "trace_id": null, "session_id": null, "extra": {}}

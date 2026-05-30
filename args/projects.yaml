@@ -4,6 +4,30 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: chyg
+  name: Connection-Hygiene Sweep — eliminate leaked PostgreSQL connections
+  description: 'Follow-on to the kanban_tasks lock-storm fixes. Convert bare `conn
+    = get_connection()` callsites (no close/commit -> ''idle in transaction'' leaks)
+    to `with get_connection()` / finally-close across the genesis reflexes / dispatcher,
+    esp. tools/genesis/reflexes/kanban.py (~53 sites). Pattern precedent: eval_harness.py
+    _safe_close + the kanban.py GA/CI poll fixes.'
+  task_prefix: chyg-
+  default_open: true
+  briefs:
+  - 'audit: enumerate leaking get_connection() sites -> docs/features/chyg-audit.md
+    — chyg-audit-01'
+  - 'sweep: batch-fix kanban.py (top/middle/bottom) + sibling reflexes — chyg-sweep-01..03'
+  - 'vv: verify low idle-in-transaction + regression guard + coherence — chyg-vv-01'
+  epics:
+  - key: audit
+    title: Audit — enumerate leaked get_connection() callsites
+    priority: high
+  - key: sweep
+    title: Sweep — convert to with/finally close (batched)
+    priority: high
+  - key: vv
+    title: V&V — verify no idle-in-transaction + regression guard
+    priority: high
 - key: dic
   name: Document Intelligence Canvas (DIC) — Enterprise RAG+KG Document Management
   description: 'New canvas where users stand up their own RAG + Knowledge Graph over
@@ -23,20 +47,20 @@ projects:
   briefs:
   - 'foundation: DIC package + db/init_db.py (PG dual-schema, RLS columns) + constants
     + config + .env toggle + registry — dic-foundation-01/02'
-  - 'authz: access_control.py RBAC+ABAC+RLS + DIC roles + RBAC_MATRIX + documents permission
-    category — dic-authz-01'
+  - 'authz: access_control.py RBAC+ABAC+RLS + DIC roles + RBAC_MATRIX + documents
+    permission category — dic-authz-01'
   - 'ingest: DOCX/XLSX/PPTX/OCR/HTML-SharePoint providers + orchestrator (reuse RAG
     ingest + KG bridge) — dic-ingest-01..03'
-  - 'search: NO-LLM grounded BM25 + KG retrieval + mandatory citations + RLS/ABAC filter;
-    optional hybrid vector + provenance — dic-search-01/02'
-  - 'verify+generate: CoT/CoD verifier + citation gate + abstention; generation -> AI-labeled
-    PENDING version (HITL, no auto-publish) — dic-verify-01, dic-generate-01'
+  - 'search: NO-LLM grounded BM25 + KG retrieval + mandatory citations + RLS/ABAC
+    filter; optional hybrid vector + provenance — dic-search-01/02'
+  - 'verify+generate: CoT/CoD verifier + citation gate + abstention; generation ->
+    AI-labeled PENDING version (HITL, no auto-publish) — dic-verify-01, dic-generate-01'
   - 'freshness+collab: staleness engine + genesis reflex; versioning + locks + HITL
     approval + AI-content labeling + audit — dic-freshness-01, dic-collab-01'
   - 'acoic: drift events -> impact scoring -> regen queue -> RICOAS NIST SSP fragment
     bridge (CoD-verified, HITL) — dic-acoic-01/02'
-  - 'finetune: air-gap local QLoRA/Ollama fine-tuning option (no cloud, no egress) —
-    dic-finetune-01'
+  - 'finetune: air-gap local QLoRA/Ollama fine-tuning option (no cloud, no egress)
+    — dic-finetune-01'
   - 'templates: ACOIC + SOP refresh + contract lifecycle + runbook validation + policy
     library + onboarding/knowledge-handoff — dic-templates-01'
   - 'blueprint+ui+iqe: Flask blueprint + 10 pages + icdev mirror + nav; IQE adapter/dispatch/seed
@@ -75,7 +99,8 @@ projects:
     title: Air-Gap Local Fine-Tuning / Training (option)
     priority: medium
   - key: templates
-    title: Templates + Snippets Galleries (ACOIC, SOP, contract, runbook, policy, onboarding)
+    title: Templates + Snippets Galleries (ACOIC, SOP, contract, runbook, policy,
+      onboarding)
     priority: high
   - key: acoic
     title: ACOIC Flagship — drift -> regen -> RICOAS NIST bridge
@@ -98,6 +123,15 @@ projects:
   - key: vv
     title: V&V — pytest + behave + Playwright E2E + health + docs
     priority: critical
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: explore
+    title: EXPLORE
+    priority: medium
+  - key: handoff
+    title: HANDOFF
+    priority: medium
 - key: ci
   name: Ci Project
   description: Auto-registered project for tasks with prefix 'ci-'. Update name and
@@ -4083,6 +4117,27 @@ projects:
     priority: medium
   - key: wiring
     title: WIRING
+    priority: medium
+  - key: contract
+    title: CONTRACT
+    priority: medium
+  - key: domain
+    title: DOMAIN
+    priority: medium
+  - key: found
+    title: FOUND
+    priority: medium
+  - key: gov
+    title: GOV
+    priority: medium
+  - key: portal
+    title: PORTAL
+    priority: medium
+  - key: prod
+    title: PROD
+    priority: medium
+  - key: wire
+    title: WIRE
     priority: medium
 - key: dm
   name: Data Mesh Integration — Domains, Products, Contracts, Governance, CSP Bridges

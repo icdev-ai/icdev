@@ -177,12 +177,15 @@ def sync_projects(dry_run: bool = False) -> dict:
     data, _ = _load_yaml_raw()
     projects: list = data.get("projects", [])
 
-    # Build lookup: prefix -> project entry index
-    existing: dict[str, int] = {}
-    for i, p in enumerate(projects):
+    # Build lookup: prefix -> project entry (by REFERENCE, not index). Indices
+    # become stale the moment we projects.insert(0, ...) a new project — every
+    # existing entry shifts by one — which previously caused epics to be added
+    # to the wrong project. Holding the dict reference is shift-safe.
+    existing: dict[str, dict] = {}
+    for p in projects:
         pfx = (p.get("task_prefix") or "").strip()
         if pfx:
-            existing[pfx] = i
+            existing[pfx] = p
 
     new_projects = []
     updated_projects = []
@@ -196,8 +199,7 @@ def sync_projects(dry_run: bool = False) -> dict:
     for prefix, epics_found in sorted(db_map.items()):
         if prefix in existing:
             # Project exists — add missing epics only
-            idx = existing[prefix]
-            proj = projects[idx]
+            proj = existing[prefix]
             current_epic_keys = {(e.get("key") or "").strip() for e in (proj.get("epics") or [])}
             added = []
             for epic in sorted(epics_found - current_epic_keys):
@@ -250,7 +252,7 @@ def sync_projects(dry_run: bool = False) -> dict:
             }
             # Insert at top of projects list (most recently registered first)
             projects.insert(0, new_entry)
-            existing[prefix] = 0  # update lookup (indices shift but we don't need them again)
+            existing[prefix] = new_entry  # store by reference (shift-safe)
             new_projects.append({"prefix": prefix, "key": key})
             changed = True
 
