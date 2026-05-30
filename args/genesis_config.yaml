@@ -563,6 +563,23 @@ reflexes:
     promotion_threshold: 0.7  # Oracle confidence threshold for kanban card creation
     config_path: args/awareness_config.yaml  # Full config — probes, gaps, oracle, narrative
 
+  # ── Self-Monitor (project internal health into operator-facing /monitoring) ──
+
+  self_monitor:
+    enabled: true
+    risk_tier: green
+    schedule: "every 30m"
+    interval_seconds: 1800   # 30 minutes — short cadence; only re-runs the cheap http probe
+    cooldown_minutes: 20
+    description: "Project Internal Awareness health snapshots into operator alerts + failure_log so /monitoring reflects real platform health"
+    success_metric:
+      name: alerts_firing
+      threshold: 0
+      operator: gte  # 0 firing = healthy; >0 surfaces real failures (always succeeds)
+    refresh_probes: [http_head]   # cheap probes re-run live each cycle; others reused from awareness
+    min_fail_to_alert: 1          # per-category failing count before an alert fires
+    max_failure_rows: 200         # cap failure_log inserts per cycle
+
   # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
 
   oracle_triage:

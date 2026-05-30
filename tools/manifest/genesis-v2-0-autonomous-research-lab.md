@@ -22,6 +22,7 @@
 | scout | GREEN | daily 07:00 | Monitor 16 GitHub repos (autoresearch, trivy, ollama, etc.), intel briefs |
 | audit | GREEN | daily 06:00 | Self-scan: code quality + SAST via existing tools |
 | awareness | GREEN | every 3h | Internal self-observation cycle: component graph refresh, health probe, drift detection, gap detection, kanban card promotion |
+| self_monitor | GREEN | every 30m | Project Internal Awareness health snapshots into operator alerts + failure_log so /monitoring reflects real platform health |
 | report | GREEN | weekly Sun 20:00 | Generate weekly status report with promotions/circuit breakers |
 | comply | GREEN | daily 09:00 | cATO evidence freshness, crosswalk sync, SbD assessment |
 | ingest | GREEN | every 4h | RSS feeds → innovation_signals for knowledge enrichment |
@@ -44,6 +45,7 @@
 | Scout Reflex | tools/genesis/reflexes/scout.py | Monitor GitHub repos for new tools/CVEs, produce intel briefs | config dict | Intel briefs |
 | Audit Reflex | tools/genesis/reflexes/audit.py | Self-scan: code quality + SAST via existing tools | config dict | Audit findings |
 | Awareness Reflex | tools/genesis/reflexes/awareness.py | Internal self-observation: component graph refresh, health probe, drift, gap, kanban card promotion | config dict | Awareness report |
+| Self-Monitor Reflex | tools/genesis/reflexes/self_monitor.py | Projection layer: reads latest awareness_component_health snapshots, refreshes the cheap http_head probe live, then writes aggregated rows to `alerts` (one per failing category, deduped + auto-resolved) and `failure_log` (one per failing component, deduped) so the operator-facing /monitoring page reflects real platform health. GREEN tier. CLI: `--json [--no-refresh] [--min-fail N]` | config dict | {alerts_opened, alerts_updated, alerts_resolved, alerts_firing, failures_logged} |
 | Report Reflex | tools/genesis/reflexes/report.py | Weekly status report with reflex activity, promotions, circuit breakers | config dict | Markdown report |
 | Comply Reflex | tools/genesis/reflexes/comply.py | cATO evidence freshness, crosswalk sync, SbD assessment | config dict | Compliance status |
 | Ingest Reflex | tools/genesis/reflexes/ingest.py | RSS/Atom feeds (NIST NVD, CISA KEV, FedRAMP) → innovation_signals for KG enrichment. GREEN tier, air-gap safe | config dict | nodes_added count |
