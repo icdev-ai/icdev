@@ -875,3 +875,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Seed Dic Kanban | tools\kanban\seed_dic_kanban.py | Auto-registered: kanban/seed_dic_kanban.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Chyg Kanban | tools\kanban\seed_chyg_kanban.py | Auto-registered: kanban/seed_chyg_kanban.py | --json | JSON |

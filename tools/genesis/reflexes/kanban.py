@@ -136,12 +136,11 @@ def _get_task_timeout(task_id: str) -> int:
 
     # Check task description + task_type for TIMEOUT_HINT or heavy-tool heuristics
     try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        conn.close()
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
         d = dict(row) if row else {}
         desc = (d.get("description") or "").lower()
         task_type = (d.get("task_type") or "").lower()
@@ -1068,20 +1067,18 @@ def _cleanup_worktree(task_id: str):
 
     # Persist change metrics + branch info to kanban_tasks (best-effort)
     try:
-        _ds_conn = get_connection()
-        _ds_conn.execute(
-            "UPDATE kanban_tasks SET "
-            "files_changed = ?, lines_added = ?, lines_removed = ?, "
-            "branch_name = ?, commit_summary = ? "
-            "WHERE id = ?",
-            (
-                diff_stats["files_changed"], diff_stats["lines_added"], diff_stats["lines_removed"],
-                f"kanban/{task_id}", _commit_summary or None,
-                task_id,
-            ),
-        )
-        _ds_conn.commit()
-        _ds_conn.close()
+        with get_connection() as _ds_conn:
+            _ds_conn.execute(
+                "UPDATE kanban_tasks SET "
+                "files_changed = ?, lines_added = ?, lines_removed = ?, "
+                "branch_name = ?, commit_summary = ? "
+                "WHERE id = ?",
+                (
+                    diff_stats["files_changed"], diff_stats["lines_added"], diff_stats["lines_removed"],
+                    f"kanban/{task_id}", _commit_summary or None,
+                    task_id,
+                ),
+            )
     except Exception as _ds_exc:
         logger.warning("diff_stats write failed for %s: %s", task_id, _ds_exc)
 
@@ -1757,36 +1754,33 @@ def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
     (the E-gate orphan-done incident, 2026-04-15).
     """
     try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT t.depends_on_task_id, p.status AS parent_status "
-            "FROM kanban_tasks t "
-            "LEFT JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
-            "WHERE t.id = ?",
-            (task_id,),
-        ).fetchone()
-        if not row:
-            conn.close()
-            return True, None
-        row = dict(row)
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT t.depends_on_task_id, p.status AS parent_status "
+                "FROM kanban_tasks t "
+                "LEFT JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
+                "WHERE t.id = ?",
+                (task_id,),
+            ).fetchone()
+            if not row:
+                return True, None
+            row = dict(row)
 
-        # Check scalar dep
-        parent_id = row.get("depends_on_task_id")
-        if parent_id:
-            parent_status = row.get("parent_status")
-            if parent_status not in ("done", "decomposed"):
-                conn.close()
-                return False, f"parent {parent_id} status={parent_status!r}"
+            # Check scalar dep
+            parent_id = row.get("depends_on_task_id")
+            if parent_id:
+                parent_status = row.get("parent_status")
+                if parent_status not in ("done", "decomposed"):
+                    return False, f"parent {parent_id} status={parent_status!r}"
 
-        # Check junction deps — any undone junction parent blocks
-        unmet = conn.execute(
-            "SELECT d.depends_on_id, p.status "
-            "FROM kanban_task_deps d "
-            "JOIN kanban_tasks p ON p.id = d.depends_on_id "
-            "WHERE d.task_id = ? AND p.status NOT IN ('done', 'decomposed')",
-            (task_id,),
-        ).fetchone()
-        conn.close()
+            # Check junction deps — any undone junction parent blocks
+            unmet = conn.execute(
+                "SELECT d.depends_on_id, p.status "
+                "FROM kanban_task_deps d "
+                "JOIN kanban_tasks p ON p.id = d.depends_on_id "
+                "WHERE d.task_id = ? AND p.status NOT IN ('done', 'decomposed')",
+                (task_id,),
+            ).fetchone()
         if unmet:
             unmet = dict(unmet)
             return False, (
@@ -2954,12 +2948,11 @@ def _dispatch_gitlab(task_id: str, task_desc: str, task_type: str) -> bool:
         pipeline_id = str(resp.json().get("id", ""))
         pipeline_web_url = resp.json().get("web_url", "")
         try:
-            conn = get_connection()
-            conn.execute(
-                "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
-                (pipeline_id, pipeline_web_url, datetime.now(timezone.utc).isoformat(), task_id),
-            )
-            conn.commit()
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
+                    (pipeline_id, pipeline_web_url, datetime.now(timezone.utc).isoformat(), task_id),
+                )
         except Exception as _db_exc:
             logger.warning("kanban: failed to store pipeline_id for %s: %s", task_id, _db_exc)
         logger.info("kanban: GitLab pipeline %s triggered for task %s", pipeline_id, task_id)
@@ -3035,12 +3028,11 @@ def _dispatch_github_actions(task_id: str, task_desc: str, task_type: str) -> bo
         except Exception as _poll_exc:
             logger.warning("kanban: could not capture run_id for %s: %s", task_id, _poll_exc)
         try:
-            conn = get_connection()
-            conn.execute(
-                "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
-                (run_id, run_url, datetime.now(timezone.utc).isoformat(), task_id),
-            )
-            conn.commit()
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
+                    (run_id, run_url, datetime.now(timezone.utc).isoformat(), task_id),
+                )
         except Exception as _db_exc:
             logger.warning("kanban: failed to store execution_id for %s: %s", task_id, _db_exc)
         logger.info("kanban: GitHub Actions workflow triggered for task %s (run_id=%s)", task_id, run_id)
@@ -3432,13 +3424,11 @@ def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
 def _set_executor_type(task_id: str, executor_type: str) -> None:
     """Stamp executor_type on the task row so the UI badge is accurate."""
     try:
-        conn = get_connection()
-        conn.execute(
-            "UPDATE kanban_tasks SET executor_type = ? WHERE id = ?",
-            (executor_type, task_id),
-        )
-        conn.commit()
-        conn.close()
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE kanban_tasks SET executor_type = ? WHERE id = ?",
+                (executor_type, task_id),
+            )
     except Exception as exc:
         logger.debug("kanban: failed to set executor_type for %s: %s", task_id, exc)
 
@@ -3446,12 +3436,11 @@ def _set_executor_type(task_id: str, executor_type: str) -> None:
 def _get_executor_type(task_id: str) -> str | None:
     """Read executor_type from the task row."""
     try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT executor_type FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        conn.close()
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT executor_type FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
         return row[0] if row else None
     except Exception:
         return None
@@ -3586,14 +3575,12 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
                 "gitlab=unreachable, ollama=unreachable"
             )
             try:
-                _conn = get_connection()
-                _conn.execute(
-                    "UPDATE kanban_tasks SET last_failure_reason = ?, "
-                    "updated_at = ? WHERE id = ?",
-                    (_no_exec_reason, _utcnow_iso(), task_id),
-                )
-                _conn.commit()
-                _conn.close()
+                with get_connection() as _conn:
+                    _conn.execute(
+                        "UPDATE kanban_tasks SET last_failure_reason = ?, "
+                        "updated_at = ? WHERE id = ?",
+                        (_no_exec_reason, _utcnow_iso(), task_id),
+                    )
             except Exception as _lfr_exc:
                 logger.warning(
                     "kanban: failed to set last_failure_reason for %s: %s",
@@ -3693,12 +3680,11 @@ def _is_dangerous_task(task_id: str) -> bool:
     runs. Lookup uses task_type + description keyword scan.
     """
     try:
-        _c = get_connection()
-        row = _c.execute(
-            "SELECT task_type, description FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        _c.close()
+        with get_connection() as _c:
+            row = _c.execute(
+                "SELECT task_type, description FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
     except Exception:
         return False
     if not row:
@@ -3868,12 +3854,11 @@ def _run_verify_checks(task_id, claude_output):
         "regression", "report pass/fail",
     ]
     try:
-        _c0b = get_connection()
-        _r0b = _c0b.execute(
-            "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        _c0b.close()
+        with get_connection() as _c0b:
+            _r0b = _c0b.execute(
+                "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
         _desc0b = ((_r0b["description"] or "").lower() if _r0b else "")
         _type0b = ((_r0b["task_type"] or "").lower() if _r0b else "")
     except Exception:
@@ -3915,26 +3900,24 @@ def _run_verify_checks(task_id, claude_output):
     # Tasks completed via bypass produce no git commits by design — skip the
     # no-commits check entirely.
     try:
-        _c0c = get_connection()
-        # Primary signal: metadata flag on the task row — cheapest check.
-        _bypass_meta = _c0c.execute(
-            "SELECT completed_via_bypass FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        if _bypass_meta and _bypass_meta["completed_via_bypass"]:
-            _c0c.close()
-            return True, (
-                "Verified (bypass): completed_via_bypass flag set on task — "
-                "no git commits expected (pre-existing correct state)"
-            )
-        # Secondary signal: verification row written by the move-to-done API.
-        _brow = _c0c.execute(
-            "SELECT reason FROM kanban_verifications "
-            "WHERE task_id = ? AND result = 'bypassed' "
-            "ORDER BY verified_at DESC LIMIT 1",
-            (task_id,),
-        ).fetchone()
-        _c0c.close()
+        with get_connection() as _c0c:
+            # Primary signal: metadata flag on the task row — cheapest check.
+            _bypass_meta = _c0c.execute(
+                "SELECT completed_via_bypass FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
+            if _bypass_meta and _bypass_meta["completed_via_bypass"]:
+                return True, (
+                    "Verified (bypass): completed_via_bypass flag set on task — "
+                    "no git commits expected (pre-existing correct state)"
+                )
+            # Secondary signal: verification row written by the move-to-done API.
+            _brow = _c0c.execute(
+                "SELECT reason FROM kanban_verifications "
+                "WHERE task_id = ? AND result = 'bypassed' "
+                "ORDER BY verified_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
         if _brow is not None:
             _bypass_reason_txt = (_brow["reason"] or "pre-existing correct state")[:80]
             return True, (
@@ -4040,11 +4023,10 @@ def _run_verify_checks(task_id, claude_output):
         # output (e.g. codelens scan, pytest run, dependency check) with
         # no file mutations. Per V&V policy these are fail-open.
         try:
-            _c3 = get_connection()
-            _r3 = _c3.execute(
-                "SELECT task_type FROM kanban_tasks WHERE id = ?", (task_id,)
-            ).fetchone()
-            _c3.close()
+            with get_connection() as _c3:
+                _r3 = _c3.execute(
+                    "SELECT task_type FROM kanban_tasks WHERE id = ?", (task_id,)
+                ).fetchone()
             _tt = (_r3["task_type"] or "").lower() if _r3 else ""
         except Exception:
             _tt = ""
@@ -4067,11 +4049,10 @@ def _run_verify_checks(task_id, claude_output):
     # Only apply zero-path guard to task types that imply file creation.
     if not claimed_paths and not has_nochange_signal:
         try:
-            _c = get_connection()
-            _row = _c.execute(
-                "SELECT description, task_type FROM kanban_tasks WHERE id = ?", (task_id,)
-            ).fetchone()
-            _c.close()
+            with get_connection() as _c:
+                _row = _c.execute(
+                    "SELECT description, task_type FROM kanban_tasks WHERE id = ?", (task_id,)
+                ).fetchone()
             task_desc = (_row["description"] or "").lower() if _row else ""
             task_type = (_row["task_type"] or "").lower() if _row else ""
         except Exception:
@@ -4264,11 +4245,10 @@ def _run_verify_checks(task_id, claude_output):
         ]
         _scan_desc = ""
         try:
-            _c_sd = get_connection()
-            _r_sd = _c_sd.execute(
-                "SELECT description FROM kanban_tasks WHERE id = ?", (task_id,)
-            ).fetchone()
-            _c_sd.close()
+            with get_connection() as _c_sd:
+                _r_sd = _c_sd.execute(
+                    "SELECT description FROM kanban_tasks WHERE id = ?", (task_id,)
+                ).fetchone()
             _scan_desc = ((_r_sd["description"] or "").lower() if _r_sd else "")
         except Exception:
             pass
@@ -4351,32 +4331,30 @@ def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
     # Also write to kanban_verifications table (guard-5) for dashboard visibility
     try:
         import uuid as _uuid
-        conn = get_connection()
-        verification_id = f"kv-{_uuid.uuid4().hex[:10]}"
-        result_enum = "passed" if verified else "failed"
-        if "PHANTOM" in (reason or "").upper():
-            result_enum = "phantom"
+        with get_connection() as conn:
+            verification_id = f"kv-{_uuid.uuid4().hex[:10]}"
+            result_enum = "passed" if verified else "failed"
+            if "PHANTOM" in (reason or "").upper():
+                result_enum = "phantom"
 
-        # guard-23: read dispatch_source from task row (set at dispatch time)
-        source_row = conn.execute(
-            "SELECT dispatch_source FROM kanban_tasks WHERE id = ?", (task_id,)
-        ).fetchone()
-        dispatch_source = (
-            dict(source_row).get("dispatch_source") if source_row else None
-        ) or "genesis_scheduler"  # scheduler-invoked verifications are scheduler by default
+            # guard-23: read dispatch_source from task row (set at dispatch time)
+            source_row = conn.execute(
+                "SELECT dispatch_source FROM kanban_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            dispatch_source = (
+                dict(source_row).get("dispatch_source") if source_row else None
+            ) or "genesis_scheduler"  # scheduler-invoked verifications are scheduler by default
 
-        conn.execute(
-            "INSERT INTO kanban_verifications "
-            "(id, task_id, verified_at, result, reason, dispatch_source) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                verification_id, task_id,
-                datetime.now(timezone.utc).isoformat(),
-                result_enum, reason, dispatch_source,
-            ),
-        )
-        conn.commit()
-        conn.close()
+            conn.execute(
+                "INSERT INTO kanban_verifications "
+                "(id, task_id, verified_at, result, reason, dispatch_source) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    verification_id, task_id,
+                    datetime.now(timezone.utc).isoformat(),
+                    result_enum, reason, dispatch_source,
+                ),
+            )
     except Exception as exc:
         # Don't fail verification just because audit log is missing
         logger.debug("kanban: kanban_verifications write skipped: %s", exc)
@@ -4436,12 +4414,11 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
     Returns (False, reason) if a targeted check fails.
     """
     try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT title, description FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        conn.close()
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT title, description FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
         if not row:
             return True, "Task row not found — skipping specific checks"
     except Exception as exc:
@@ -4712,20 +4689,19 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             )
         # Non-orphan_db_table path: verify table exists in live DB
         try:
-            conn = get_connection()
-            _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
-            if _pg:
-                check = conn.execute(
-                    "SELECT 1 FROM information_schema.tables "
-                    "WHERE table_schema = 'public' AND table_name = ?",
-                    (table_name,),
-                ).fetchone()
-            else:
-                check = conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-                    (table_name,),
-                ).fetchone()
-            conn.close()
+            with get_connection() as conn:
+                _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+                if _pg:
+                    check = conn.execute(
+                        "SELECT 1 FROM information_schema.tables "
+                        "WHERE table_schema = 'public' AND table_name = ?",
+                        (table_name,),
+                    ).fetchone()
+                else:
+                    check = conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                        (table_name,),
+                    ).fetchone()
             if not check:
                 return False, (
                     f"SPECIFIC CHECK FAILED: task says create table '{table_name}' "
@@ -4810,29 +4786,27 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
 def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
     """Update the latest kanban_verifications row for this task with post-task metrics."""
     try:
-        conn = get_connection()
-        conn.execute(
-            "UPDATE kanban_verifications SET "
-            "codelens_passed = ?, ruff_issues = ?, bandit_issues = ?, "
-            "pytest_passed = ?, coherence_passed = ?, "
-            "e2e_ran = ?, e2e_passed = ?, companion_synced = ? "
-            "WHERE task_id = ? AND id = ("
-            "  SELECT id FROM kanban_verifications WHERE task_id = ? "
-            "  ORDER BY verified_at DESC LIMIT 1)",
-            (
-                1 if metrics.get("codelens_passed") else 0 if metrics.get("codelens_passed") is False else None,
-                metrics.get("ruff_issues", 0),
-                metrics.get("bandit_issues", 0),
-                1 if metrics.get("pytest_passed") else 0 if metrics.get("pytest_passed") is False else None,
-                1 if metrics.get("coherence_passed") else 0 if metrics.get("coherence_passed") is False else None,
-                1 if metrics.get("e2e_ran") else 0,
-                1 if metrics.get("e2e_passed") else 0 if metrics.get("e2e_passed") is False else None,
-                1 if metrics.get("companion_synced") else 0,
-                task_id, task_id,
-            ),
-        )
-        conn.commit()
-        conn.close()
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE kanban_verifications SET "
+                "codelens_passed = ?, ruff_issues = ?, bandit_issues = ?, "
+                "pytest_passed = ?, coherence_passed = ?, "
+                "e2e_ran = ?, e2e_passed = ?, companion_synced = ? "
+                "WHERE task_id = ? AND id = ("
+                "  SELECT id FROM kanban_verifications WHERE task_id = ? "
+                "  ORDER BY verified_at DESC LIMIT 1)",
+                (
+                    1 if metrics.get("codelens_passed") else 0 if metrics.get("codelens_passed") is False else None,
+                    metrics.get("ruff_issues", 0),
+                    metrics.get("bandit_issues", 0),
+                    1 if metrics.get("pytest_passed") else 0 if metrics.get("pytest_passed") is False else None,
+                    1 if metrics.get("coherence_passed") else 0 if metrics.get("coherence_passed") is False else None,
+                    1 if metrics.get("e2e_ran") else 0,
+                    1 if metrics.get("e2e_passed") else 0 if metrics.get("e2e_passed") is False else None,
+                    1 if metrics.get("companion_synced") else 0,
+                    task_id, task_id,
+                ),
+            )
     except Exception as exc:
         logger.debug("guard-7: metrics update skipped: %s", exc)
 
@@ -5009,37 +4983,35 @@ def _promote_stale_suggested() -> None:
     hard-quarantine reason) still require human review.
     """
     try:
-        conn = get_connection()
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(hours=_SUGGESTED_DECAY_HOURS)
-        ).isoformat()
-        rows = conn.execute(
-            "SELECT id, failure_count, last_failure_reason FROM kanban_tasks "
-            "WHERE status = 'suggested' AND updated_at < ?",
-            (cutoff,),
-        ).fetchall()
-        promoted = []
-        now_iso = datetime.now(timezone.utc).isoformat()
-        for r in rows:
-            d = dict(r)
-            fc = d.get("failure_count") or 0
-            reason = (d.get("last_failure_reason") or "").lower()
-            if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
-                continue  # genuinely quarantined — leave for human review
-            conn.execute(
-                "UPDATE kanban_tasks SET status='scheduled', scheduled_at=?, "
-                "updated_at=?, failure_count=0, "
-                "last_failure_reason='decay-promoted: re-queued after 48 h in suggested' "
-                "WHERE id=?",
-                (now_iso, now_iso, d["id"]),
-            )
-            promoted.append(d["id"])
-        if promoted:
-            conn.commit()
-            logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
-            for tid in promoted:
-                print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
-        conn.close()
+        with get_connection() as conn:
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(hours=_SUGGESTED_DECAY_HOURS)
+            ).isoformat()
+            rows = conn.execute(
+                "SELECT id, failure_count, last_failure_reason FROM kanban_tasks "
+                "WHERE status = 'suggested' AND updated_at < ?",
+                (cutoff,),
+            ).fetchall()
+            promoted = []
+            now_iso = datetime.now(timezone.utc).isoformat()
+            for r in rows:
+                d = dict(r)
+                fc = d.get("failure_count") or 0
+                reason = (d.get("last_failure_reason") or "").lower()
+                if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
+                    continue  # genuinely quarantined — leave for human review
+                conn.execute(
+                    "UPDATE kanban_tasks SET status='scheduled', scheduled_at=?, "
+                    "updated_at=?, failure_count=0, "
+                    "last_failure_reason='decay-promoted: re-queued after 48 h in suggested' "
+                    "WHERE id=?",
+                    (now_iso, now_iso, d["id"]),
+                )
+                promoted.append(d["id"])
+            if promoted:
+                logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
+                for tid in promoted:
+                    print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
     except Exception as exc:
         logger.warning("suggested-decay sweep failed: %s", exc)
 
@@ -5060,6 +5032,7 @@ def _reap_stale_in_progress() -> None:
     Silent-dispatch threshold: 5 min (log empty + not in _running).
     Only resets tasks NOT currently in _running to avoid killing live agents.
     """
+    conn = None
     try:
         conn = get_connection()
         rows = conn.execute(
@@ -5067,7 +5040,6 @@ def _reap_stale_in_progress() -> None:
             "WHERE status = 'in_progress'"
         ).fetchall()
         if not rows:
-            conn.close()
             return
 
         now = datetime.now(timezone.utc)
@@ -5169,9 +5141,11 @@ def _reap_stale_in_progress() -> None:
         if reaped:
             conn.commit()
             logger.info("stale-reaper: reset %d orphaned in_progress task(s): %s", len(reaped), reaped)
-        conn.close()
     except Exception as exc:
         logger.warning("stale-reaper sweep error: %s", exc)
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 # Startup-recovery flag: True after the first cycle's stale-in_progress sweep runs.
@@ -5188,13 +5162,13 @@ def _startup_recover_stale_in_progress() -> None:
     if _startup_recovery_done:
         return
     _startup_recovery_done = True
+    conn = None
     try:
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, title, executor_type FROM kanban_tasks WHERE status = 'in_progress'"
         ).fetchall()
         if not rows:
-            conn.close()
             return
         now_iso = datetime.now(timezone.utc).isoformat()
         reason = (
@@ -5215,9 +5189,11 @@ def _startup_recover_stale_in_progress() -> None:
             )
             print(f"  Kanban: startup-recovery reset {tid} in_progress -> backlog")
         conn.commit()
-        conn.close()
     except Exception as exc:
         logger.warning("startup-recovery sweep failed: %s", exc)
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _check_completed():
@@ -5258,12 +5234,11 @@ def _check_completed():
                 _SCAN_KW_TIMEOUT = ["pytest", "codelens", "coherence",
                                     "companion", "report pass/fail"]
                 try:
-                    _stc = get_connection()
-                    _str = _stc.execute(
-                        "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
-                        (task_id,),
-                    ).fetchone()
-                    _stc.close()
+                    with get_connection() as _stc:
+                        _str = _stc.execute(
+                            "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
+                            (task_id,),
+                        ).fetchone()
                     _stdesc = ((_str["description"] or "").lower() if _str else "")
                     _sttype = ((_str["task_type"] or "").lower() if _str else "")
                 except Exception:
@@ -5304,17 +5279,15 @@ def _check_completed():
                 )
                 # Increment failure_count so the task health signal is accurate
                 try:
-                    _fc_conn = get_connection()
                     _fc_now = datetime.now(timezone.utc).isoformat()
-                    _fc_conn.execute(
-                        "UPDATE kanban_tasks SET "
-                        "failure_count = COALESCE(failure_count, 0) + 1, "
-                        "last_failure_reason = ?, last_failure_at = ? "
-                        "WHERE id = ?",
-                        (_timeout_reason, _fc_now, task_id),
-                    )
-                    _fc_conn.commit()
-                    _fc_conn.close()
+                    with get_connection() as _fc_conn:
+                        _fc_conn.execute(
+                            "UPDATE kanban_tasks SET "
+                            "failure_count = COALESCE(failure_count, 0) + 1, "
+                            "last_failure_reason = ?, last_failure_at = ? "
+                            "WHERE id = ?",
+                            (_timeout_reason, _fc_now, task_id),
+                        )
                 except Exception as _fc_exc:
                     logger.warning("failure_count update failed for %s: %s", task_id, _fc_exc)
                 if _tout_count >= MAX_TIMEOUT_RETRIES:
@@ -5341,13 +5314,11 @@ def _check_completed():
                     _backoff_seconds = _tout_count * 5 * 60
                     _backoff_at = (datetime.now(timezone.utc) + timedelta(seconds=_backoff_seconds)).isoformat()
                     try:
-                        _bo_conn = get_connection()
-                        _bo_conn.execute(
-                            "UPDATE kanban_tasks SET scheduled_at = ? WHERE id = ?",
-                            (_backoff_at, task_id),
-                        )
-                        _bo_conn.commit()
-                        _bo_conn.close()
+                        with get_connection() as _bo_conn:
+                            _bo_conn.execute(
+                                "UPDATE kanban_tasks SET scheduled_at = ? WHERE id = ?",
+                                (_backoff_at, task_id),
+                            )
                     except Exception as _bo_exc:
                         logger.warning("backoff scheduled_at update failed for %s: %s", task_id, _bo_exc)
                     print(
@@ -5357,12 +5328,11 @@ def _check_completed():
                 # Build task dict for notification
                 task_dict = {"id": task_id, "title": task_id}
                 try:
-                    task_conn = get_connection()
-                    row = task_conn.execute(
-                        "SELECT title FROM kanban_tasks WHERE id = ?",
-                        (task_id,),
-                    ).fetchone()
-                    task_conn.close()
+                    with get_connection() as task_conn:
+                        row = task_conn.execute(
+                            "SELECT title FROM kanban_tasks WHERE id = ?",
+                            (task_id,),
+                        ).fetchone()
                     if row:
                         task_dict["title"] = row["title"]
                 except Exception:
@@ -5415,12 +5385,11 @@ def _check_completed():
             # Build task dict with title from DB or fallback
             task_dict = {"id": task_id, "title": task_id}
             try:
-                task_conn = get_connection()
-                row = task_conn.execute(
-                    "SELECT title, task_type, priority FROM kanban_tasks WHERE id = ?",
-                    (task_id,),
-                ).fetchone()
-                task_conn.close()
+                with get_connection() as task_conn:
+                    row = task_conn.execute(
+                        "SELECT title, task_type, priority FROM kanban_tasks WHERE id = ?",
+                        (task_id,),
+                    ).fetchone()
                 if row:
                     task_dict = {
                         "id": task_id,
@@ -6290,11 +6259,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         stale_info: list[tuple[str, str]] = []
         for tid, proc in list(_running.items()):
             try:
-                task_conn = get_connection()
-                row = task_conn.execute(
-                    "SELECT status FROM kanban_tasks WHERE id = ?", (tid,),
-                ).fetchone()
-                task_conn.close()
+                with get_connection() as task_conn:
+                    row = task_conn.execute(
+                        "SELECT status FROM kanban_tasks WHERE id = ?", (tid,),
+                    ).fetchone()
                 if row and dict(row)["status"] not in ("in_progress", "scheduled"):
                     # Task was completed/moved externally — clean up. The
                     # cause is most often: agent subprocess died before
@@ -6352,17 +6320,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 # failure_triage's recency window picks it up.
                 try:
                     now_iso = datetime.now(timezone.utc).isoformat()
-                    _fc_conn = get_connection()
-                    _fc_conn.execute(
-                        "UPDATE kanban_tasks SET "
-                        "  last_failure_reason = ?, "
-                        "  last_failure_at = ?, "
-                        "  updated_at = ? "
-                        "WHERE id = ?",
-                        (reason, now_iso, now_iso, tid),
-                    )
-                    _fc_conn.commit()
-                    _fc_conn.close()
+                    with get_connection() as _fc_conn:
+                        _fc_conn.execute(
+                            "UPDATE kanban_tasks SET "
+                            "  last_failure_reason = ?, "
+                            "  last_failure_at = ?, "
+                            "  updated_at = ? "
+                            "WHERE id = ?",
+                            (reason, now_iso, now_iso, tid),
+                        )
                 except Exception as _fc_exc:
                     logger.warning(
                         "stale-cleanup failure-write failed for %s: %s",
@@ -6372,12 +6338,11 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 # Build a task dict for the local alert queue.
                 task_dict = {"id": tid, "title": tid}
                 try:
-                    _tc = get_connection()
-                    _tr = _tc.execute(
-                        "SELECT title, task_type, priority FROM kanban_tasks "
-                        "WHERE id = ?", (tid,),
-                    ).fetchone()
-                    _tc.close()
+                    with get_connection() as _tc:
+                        _tr = _tc.execute(
+                            "SELECT title, task_type, priority FROM kanban_tasks "
+                            "WHERE id = ?", (tid,),
+                        ).fetchone()
                     if _tr:
                         _tr_d = dict(_tr)
                         task_dict = {
