@@ -76,6 +76,11 @@ anomaly_detection:
   value_feasibility_max_delta: 0.50   # flag when |value - feasibility| exceeds this
   component_outlier_floor: 0.05       # flag component below this value
   component_outlier_ceiling: 0.95     # flag component above this value
+  # Statistical / adaptive detection (applied when batch >= min_sample_size)
+  statistical_detection_enabled: true
+  min_sample_size: 5          # minimum rows required to use z-score / IQR methods
+  z_score_threshold: 2.5      # flag component when |z| exceeds this
+  iqr_multiplier: 1.5         # IQR fence: Q1 - m*IQR  /  Q3 + m*IQR
 
 ml_nested_conditionals:
   # ML classifier enrichment for nested_conditionals detections.

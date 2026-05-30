@@ -451,11 +451,35 @@ def _promote_phase_opportunities(
     return inserted
 
 
+def _compute_score_stats(rows: list, field: str) -> dict | None:
+    """Return mean, stdev, Q1, Q3, IQR for *field* across *rows*.
+
+    Returns None when fewer than 2 non-None values are present.
+    """
+    vals = [float(r[field]) for r in rows if r.get(field) is not None]
+    if len(vals) < 2:
+        return None
+    n = len(vals)
+    mean = sum(vals) / n
+    variance = sum((v - mean) ** 2 for v in vals) / (n - 1)
+    stdev = variance ** 0.5
+    sorted_vals = sorted(vals)
+    q1 = sorted_vals[int(n * 0.25)]
+    q3 = sorted_vals[min(int(n * 0.75), n - 1)]
+    iqr = q3 - q1
+    return {"mean": mean, "stdev": stdev, "q1": q1, "q3": q3, "iqr": iqr, "n": n}
+
+
 def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
     """Detect statistical anomalies in a batch of scored opportunities.
 
     Uses thresholds from the ``anomaly_detection`` section of aac_config.yaml
     so that sensitivity can be tuned without touching source code.
+
+    When the batch contains at least ``min_sample_size`` rows and
+    ``statistical_detection_enabled`` is true, z-score and IQR-fence methods
+    are applied to each score component.  For smaller batches the fixed
+    floor/ceiling bounds are used instead.
 
     Args:
         rows:       List of score row dicts with ``opportunity_id``,
@@ -474,6 +498,20 @@ def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
     max_delta = float(thresholds.get("value_feasibility_max_delta", 0.50))
     floor = float(thresholds.get("component_outlier_floor", 0.05))
     ceiling = float(thresholds.get("component_outlier_ceiling", 0.95))
+    stat_enabled = bool(thresholds.get("statistical_detection_enabled", True))
+    min_sample = int(thresholds.get("min_sample_size", 5))
+    z_threshold = float(thresholds.get("z_score_threshold", 2.5))
+    iqr_mult = float(thresholds.get("iqr_multiplier", 1.5))
+
+    # Pre-compute per-field statistics when the batch is large enough.
+    _SCORE_FIELDS = ("value_score", "feasibility_score", "risk_score", "composite_score")
+    use_stats = stat_enabled and len(rows) >= min_sample
+    stats: dict[str, dict] = {}
+    if use_stats:
+        for field in _SCORE_FIELDS:
+            s = _compute_score_stats(rows, field)
+            if s is not None:
+                stats[field] = s
 
     anomalies: list = []
     for row in rows:
@@ -483,6 +521,7 @@ def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
         risk = float(row.get("risk_score", 0.0))
         composite = float(row.get("composite_score", 0.0))
 
+        # ── value/feasibility imbalance (fixed-threshold; always applied) ──
         delta = abs(value - feasibility)
         if delta > max_delta:
             anomalies.append({
@@ -496,24 +535,77 @@ def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
                 },
             })
 
+        # ── per-component outlier detection ────────────────────────────────
         for comp_name, comp_val in [
             ("value_score", value),
             ("feasibility_score", feasibility),
             ("risk_score", risk),
             ("composite_score", composite),
         ]:
-            if comp_val < floor:
-                anomalies.append({
-                    "opportunity_id": opp_id,
-                    "anomaly_type": "component_outlier_low",
-                    "detail": {"component": comp_name, "value": comp_val, "floor": floor},
-                })
-            elif comp_val > ceiling:
-                anomalies.append({
-                    "opportunity_id": opp_id,
-                    "anomaly_type": "component_outlier_high",
-                    "detail": {"component": comp_name, "value": comp_val, "ceiling": ceiling},
-                })
+            if use_stats and comp_name in stats:
+                s = stats[comp_name]
+                # z-score check
+                if s["stdev"] > 0:
+                    z = abs(comp_val - s["mean"]) / s["stdev"]
+                    if z > z_threshold:
+                        direction = "low" if comp_val < s["mean"] else "high"
+                        anomalies.append({
+                            "opportunity_id": opp_id,
+                            "anomaly_type": f"statistical_outlier_{direction}",
+                            "detail": {
+                                "component": comp_name,
+                                "value": comp_val,
+                                "z_score": round(z, 4),
+                                "mean": round(s["mean"], 4),
+                                "stdev": round(s["stdev"], 4),
+                                "z_threshold": z_threshold,
+                                "method": "z_score",
+                            },
+                        })
+                        continue  # skip IQR check to avoid duplicate flag
+                # IQR fence check
+                lower_fence = s["q1"] - iqr_mult * s["iqr"]
+                upper_fence = s["q3"] + iqr_mult * s["iqr"]
+                if comp_val < lower_fence:
+                    anomalies.append({
+                        "opportunity_id": opp_id,
+                        "anomaly_type": "iqr_outlier_low",
+                        "detail": {
+                            "component": comp_name,
+                            "value": comp_val,
+                            "lower_fence": round(lower_fence, 4),
+                            "q1": round(s["q1"], 4),
+                            "iqr": round(s["iqr"], 4),
+                            "method": "iqr",
+                        },
+                    })
+                elif comp_val > upper_fence:
+                    anomalies.append({
+                        "opportunity_id": opp_id,
+                        "anomaly_type": "iqr_outlier_high",
+                        "detail": {
+                            "component": comp_name,
+                            "value": comp_val,
+                            "upper_fence": round(upper_fence, 4),
+                            "q3": round(s["q3"], 4),
+                            "iqr": round(s["iqr"], 4),
+                            "method": "iqr",
+                        },
+                    })
+            else:
+                # Fallback: fixed floor/ceiling bounds
+                if comp_val < floor:
+                    anomalies.append({
+                        "opportunity_id": opp_id,
+                        "anomaly_type": "component_outlier_low",
+                        "detail": {"component": comp_name, "value": comp_val, "floor": floor, "method": "fixed"},
+                    })
+                elif comp_val > ceiling:
+                    anomalies.append({
+                        "opportunity_id": opp_id,
+                        "anomaly_type": "component_outlier_high",
+                        "detail": {"component": comp_name, "value": comp_val, "ceiling": ceiling, "method": "fixed"},
+                    })
 
     return anomalies
 
