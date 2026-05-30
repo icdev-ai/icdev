@@ -1090,6 +1090,8 @@ _DB_CALL_PATTERNS = re.compile(
     r"|yf\.Ticker|yfinance|fetch_latest_quote|requests\.get\("
     # Cookie reads are a valid key-value storage layer (e.g. theme preferences)
     r"|\.cookies\.get\(|set_cookie\("
+    # Flask route introspection — live url_map is real dynamic data, not a literal
+    r"|url_map|iter_rules\("
     r")",
     re.IGNORECASE,
 )

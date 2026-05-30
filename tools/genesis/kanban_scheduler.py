@@ -234,9 +234,11 @@ def main():
     # Cross-session coordination: register the scheduler as an agent session so
     # interactive Claude/Cursor sessions can SEE that kanban is active and what
     # it's dispatching (LLM-agnostic; tools/coordination). Best-effort.
-    os.environ.setdefault("ICDEV_SESSION_ID", "kanban-scheduler")
-    os.environ.setdefault("ICDEV_AGENT", "kanban")
+    _coord_reg = None
     try:
+        import os as _os
+        _os.environ.setdefault("ICDEV_SESSION_ID", "kanban-scheduler")
+        _os.environ.setdefault("ICDEV_AGENT", "kanban")
         from tools.coordination import session_registry as _coord_reg
         _coord_reg.register(intent="kanban scheduler — dispatching due tasks")
     except Exception:

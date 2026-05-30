@@ -13,3 +13,7 @@
 {"ts": "2026-05-30T03:03:26.424339+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 161 (sdc_rag_stigs)...", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T03:03:26.484490+00:00", "level": "ERROR", "component": "icdev.db.migration", "message": "Migration 161 failed: duplicate key value violates unique constraint \"schema_migrations_version_key\"\nDETAIL:  Key (version)=(161) already exists.\n", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T03:03:26.484559+00:00", "level": "ERROR", "component": "icdev.db.migration", "message": "Migration failed \u2014 stopping.", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T17:34:09.120590+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 163 (groups_canvas_access)...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T17:34:09.121152+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 166 (tenant_id_not_null)...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T17:34:09.121451+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 167 (canvas_ai_decisions)...", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T17:34:09.121638+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 169 (trace_id_columns)...", "trace_id": null, "session_id": null, "extra": {}}
