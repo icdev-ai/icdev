@@ -173,13 +173,17 @@ def _record_failures(conn: Any, failures_by_cat: Dict[str, List[Dict[str, Any]]]
             node_id = item.get("node_id") or "unknown"
             detail = item.get("detail") or {}
             error_type = cat
-            error_message = str(
+            reason = str(
                 detail.get("error")
                 or detail.get("message")
                 or detail.get("route")
                 or detail.get("file_path")
-                or node_id
-            )[:500]
+                or "failing probe"
+            )[:300]
+            # Prefix with the component id so each failing component is a
+            # distinct, informative row (otherwise a shared generic message
+            # like "file not found" collapses many failures into one).
+            error_message = f"{node_id} — {reason}"[:500]
             sig = (source, error_type, error_message)
             if sig in existing:
                 continue
@@ -234,23 +238,40 @@ def _sync_alerts(conn: Any, failures_by_cat: Dict[str, List[Dict[str, Any]]], mi
     firing = _firing_self_alerts(conn)
     opened = 0
     resolved = 0
+    updated = 0
 
     # Categories that currently breach the threshold.
     breaching: Dict[str, int] = {
         cat: len(items) for cat, items in failures_by_cat.items() if len(items) >= min_fail
     }
 
-    # 1) Open alerts for newly-breaching categories not already firing.
+    # 1) Open (or refresh) one aggregated alert per breaching category.
     for cat, count in breaching.items():
         source = f"{SOURCE_PREFIX}:{cat}"
-        meta = SEVERITY_MAP.get(cat, {"severity": "medium", "label": f"{cat} probe(s) failing"})
-        if source in firing:
-            continue  # already firing — leave it; recovery handled below
+        meta = SEVERITY_MAP.get(cat, {"severity": "warning", "label": f"{cat} probe(s) failing"})
         title = f"{count} {meta['label']}"
         description = (
             f"Self-monitor detected {count} component(s) currently failing the "
             f"'{cat}' probe (latest health snapshot). Source: Internal Awareness Engine."
         )
+        if source in firing:
+            # Already firing — keep the count accurate as failures rise/fall.
+            if firing[source].get("title") == title:
+                continue  # unchanged, nothing to do
+            try:
+                conn.execute(
+                    "UPDATE alerts SET title = ?, description = ?, severity = ? WHERE id = ?",
+                    (title, description, meta["severity"], firing[source]["id"]),
+                )
+                conn.commit()
+                updated += 1
+            except Exception as exc:
+                LOG.warning("alert refresh failed (%s): %s", cat, exc)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            continue
         try:
             conn.execute(
                 "INSERT INTO alerts "
@@ -286,7 +307,7 @@ def _sync_alerts(conn: Any, failures_by_cat: Dict[str, List[Dict[str, Any]]], mi
             except Exception:
                 pass
 
-    return {"opened": opened, "resolved": resolved, "firing": len(breaching)}
+    return {"opened": opened, "updated": updated, "resolved": resolved, "firing": len(breaching)}
 
 
 # ---------------------------------------------------------------------------
@@ -351,8 +372,8 @@ def run(config: Optional[Dict[str, Any]] = None, trust: Any = None) -> Dict[str,
 
     LOG.info(
         "self_monitor: %d failing component(s) across %d categor(ies); "
-        "alerts opened=%d resolved=%d firing=%d; failure_log +%d; %dms",
-        total_failing, len(failures_by_cat), alert_counts["opened"],
+        "alerts opened=%d updated=%d resolved=%d firing=%d; failure_log +%d; %dms",
+        total_failing, len(failures_by_cat), alert_counts["opened"], alert_counts["updated"],
         alert_counts["resolved"], alert_counts["firing"], failures_logged, elapsed_ms,
     )
 
@@ -364,6 +385,7 @@ def run(config: Optional[Dict[str, Any]] = None, trust: Any = None) -> Dict[str,
             "total_failing_components": total_failing,
             "by_category": by_category,
             "alerts_opened": alert_counts["opened"],
+            "alerts_updated": alert_counts["updated"],
             "alerts_resolved": alert_counts["resolved"],
             "alerts_firing": alert_counts["firing"],
             "failures_logged": failures_logged,

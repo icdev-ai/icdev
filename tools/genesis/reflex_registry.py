@@ -42,6 +42,7 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("evolve",            CORE,      12.0, "Propose and apply system improvements"),
     ReflexEntry("awareness",         CORE,      3.0,  "Internal Awareness Engine — 5-phase self-model"),
     ReflexEntry("canvas_indexer",    CORE,      3.0,  "Re-index canvas components into awareness graph"),
+    ReflexEntry("self_monitor",      CORE,      0.5,  "Project internal health snapshots into operator alerts + failure_log (/monitoring)"),
 
     # ── STRATEGOS ─────────────────────────────────────────────────────────────
     ReflexEntry("strategos.osint_harvester", STRATEGOS, 4.0,
