@@ -551,3 +551,31 @@ class TestConstants:
             if lang == "javascript":
                 continue  # JS uses same as TS
             assert lang in NAMING_CONVENTIONS, f"Missing naming for {lang}"
+
+
+class TestReasonedCodegenWiring:
+    """Phase 1: per-unit generation routes through reasoned_codegen."""
+
+    def test_invoke_llm_routes_through_wrapper(self):
+        """_invoke_llm should call generate_reasoned_code(function=code_translation)
+        and return its .code, so CoT/passthrough is governed by config."""
+        from unittest.mock import MagicMock
+        from tools.translation.code_translator import _invoke_llm
+
+        fake_result = MagicMock(code="translated body")
+        with patch("tools.llm.reasoned_codegen.generate_reasoned_code", return_value=fake_result) as gen, \
+             patch("tools.llm.router.LLMRouter"):
+            out = _invoke_llm("prompt text", {"translation": {"temperature": 0.2}}, "code_translation")
+        assert out == "translated body"
+        assert gen.call_args.kwargs["function"] == "code_translation"
+
+    def test_invoke_llm_empty_returns_none(self):
+        """Empty wrapper output → None so the caller falls back to pass@k / mock."""
+        from unittest.mock import MagicMock
+        from tools.translation.code_translator import _invoke_llm
+
+        fake_result = MagicMock(code="")
+        with patch("tools.llm.reasoned_codegen.generate_reasoned_code", return_value=fake_result), \
+             patch("tools.llm.router.LLMRouter"):
+            out = _invoke_llm("prompt", {}, "code_translation")
+        assert out is None

@@ -253,6 +253,49 @@ When a new `tools/` module ingests user-provided content:
   - DB reload path (`source='db'`) reads from first-party `ni_device_configs` only — no new user content enters.
 - **Revisit if:** config content is ever passed to a shell command, rendered outside Jinja2 auto-escape, or accepted from an unauthenticated endpoint.
 
+### Gap 15 — Reasoned Codegen wrapper + advisor (`tools/llm/reasoned_codegen*.py`)
+
+**Modules:** `tools/llm/reasoned_codegen.py`, `tools/llm/reasoned_codegen_advisor.py`
+
+**Ingress path:** The wrapper receives LLM-generated code strings (from CoT/CoD/plain
+generation via `LLMRouter`), runs them through an optional **injected verifier** and a
+repair loop, and returns the final code string. The advisor scores a task spec to
+recommend whether to enable reasoned codegen.
+
+- **Decision:** **bypass-documented** (safe by construction — never executes generated code)
+- **Rationale:** Neither module contains `exec()`, `eval()`, `subprocess`, `os.system`,
+  or `os.popen`. The wrapper only (a) calls `LLMRouter` for generation/repair, (b) calls
+  `anvil_critique` (which itself routes through the router), and (c) invokes a verifier
+  *callback supplied by the caller*. The wrapper does not run the code it produces — any
+  execution is the responsibility of the downstream pipeline (e.g. the agentic runner's
+  pre-existing allowlisted `run_command`, or the translation validator's compiler check),
+  each already covered by its own decision. The advisor consumes only the spec text and a
+  context dict and emits a recommendation dict — pure data.
+- **Guardrails:**
+  - Regression test `tests/security/test_reasoned_codegen_no_exec.py` fails the build if
+    either module gains `exec(`, `eval(`, `subprocess`, `os.system(`, or `os.popen(`.
+  - Generated code is gated by deterministic verifiers (FORGE gate, `code_lens`,
+    `translation_validator`, acceptance criteria) before any downstream execution.
+  - Under `ICDEV_STRICT_SANDBOX=1` the downstream executors (agentic runner) already
+    enforce their isolation; the wrapper adds no new execution surface.
+- **Revisit if:** the wrapper ever directly executes, compiles, or `subprocess`-runs the
+  code it generates → re-decide as **sandboxed**.
+
+### Bypass — non-LLM code generators (template/scaffold emitters)
+
+These paths were assessed as reasoned-codegen wiring targets and found to contain **no LLM
+generation call**, so they remain deterministic and out of scope:
+
+| Module | Decision | Rationale |
+|--------|----------|-----------|
+| `tools/builder/child_app_generator.py` | **trusted-first-party** | 20-step scaffold/template copier; 0 `router.invoke` calls. Output validated by `forge_validator --gate` + syntax checks. |
+| `tools/builder/code_generator.py` | **trusted-first-party** | Deprecated template emitter; 0 `router.invoke` calls. |
+| `tools/modernization/migration_code_generator.py` | **trusted-first-party** | Template-based adapter/facade emitter; no LLM generation. |
+| `tools/ai_augmentation/` scoring (AAC) | **trusted-first-party** | Deterministic weighted scoring; LLM optional (covered by Gap 13). |
+
+**Revisit if:** any of these adds an `LLMRouter.invoke` code-generation call → wire through
+`reasoned_codegen` and re-decide.
+
 ## References
 
 - D-SEC-10 — SandboxExecutor (container isolation, Phase 71)

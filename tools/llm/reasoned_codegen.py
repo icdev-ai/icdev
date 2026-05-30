@@ -104,6 +104,21 @@ class ReasonedCodegenResult:
 # ---------------------------------------------------------------------------
 # Config resolution
 # ---------------------------------------------------------------------------
+def section_enabled(router: Any) -> bool:
+    """Return the section-level kill-switch (``reasoned_codegen.enabled``).
+
+    When false, reasoned codegen is OFF everywhere regardless of per_function
+    settings OR explicit caller overrides — the absolute kill-switch. Callers
+    that honor a runtime enable option (e.g. ``--reasoned on``) should gate on
+    this before forcing a mode.
+    """
+    try:
+        root = (getattr(router, "_config", {}) or {}).get("reasoned_codegen", {}) or {}
+        return bool(root.get("enabled", _DEFAULTS["enabled"]))
+    except Exception:
+        return bool(_DEFAULTS["enabled"])
+
+
 def resolve_config(function: str, router: Any) -> dict:
     """Resolve effective reasoned_codegen config for ``function``.
 

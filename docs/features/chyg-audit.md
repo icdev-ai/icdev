@@ -88,3 +88,18 @@ After sweeps: restart kanban scheduler + genesis daemon; after ~2 idle cycles
 assert `idle in transaction` count in the icdev DB stays `< 3` (query in
 `.tmp/_verify_kanban_leak.py`); add `tests/test_conn_hygiene.py` regression guard;
 run coherence gate + companion sync.
+
+## COMPLETED — 2026-05-30
+All **29 leak sites** in `tools/genesis/reflexes/kanban.py` converted to
+`with get_connection() as conn:` (commits + closes via `__exit__`) or, for large
+multi-close loops (`_reap_stale_in_progress`, `_startup_recover_stale_in_progress`),
+the `conn=None … finally: conn.close()` pattern. The 2 GA/CI poll functions were
+left as-is per scope.
+
+Final analyzer state (`.tmp/chyg_audit.py`):
+`with_safe: 29 · SAFE_FINALLY: 24 · LINEAR_CLOSE: 2 (GA/CI polls) · **NO_CLOSE: 0**`.
+`py_compile` + `ruff` clean. Regression guard `tests/test_conn_hygiene.py` passes
+(asserts 0 always-leak sites). **Systemic backstop already live**: `storage.py`
+sets `idle_in_transaction_session_timeout=30s` + `lock_timeout=10s` on every
+pooled PG connection. The running scheduler/daemon load the fixed code on their
+next restart. Done manually under a coordination lease on the file.
