@@ -3165,24 +3165,26 @@
     window.ICDEV = ns;
 
     // Init on DOM ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () {
-            init();
-            initUseCasesPanel();
-            document.addEventListener('click', function (e) {
-                if (!e.target.classList.contains('chat-welcome__prompt-chip')) return;
-                var prompt = e.target.getAttribute('data-prompt');
-                if (!prompt || !_activeContextId) return;
-                var inp = document.getElementById('message-input');
-                if (inp && !inp.disabled) {
-                    inp.value = prompt;
-                    inp.dispatchEvent(new Event('input'));
-                    sendMessage();
-                }
-            });
-        });
-    } else {
+    function _onReady() {
         init();
         initUseCasesPanel();
+        document.addEventListener('click', function (e) {
+            if (!e.target.classList.contains('chat-welcome__prompt-chip')) return;
+            var prompt = e.target.getAttribute('data-prompt');
+            if (!prompt) return;
+            var inp = document.getElementById('message-input');
+            if (!inp) return;
+            inp.value = prompt;
+            inp.dispatchEvent(new Event('input'));
+            inp.focus();
+            if (_activeContextId && !inp.disabled) {
+                sendMessage();
+            }
+        });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _onReady);
+    } else {
+        _onReady();
     }
 })();
