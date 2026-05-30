@@ -35,6 +35,14 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Config: args/llm_config.yaml — providers, models, routing, embeddings
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
+
+# Reasoned Codegen (CoT/CoD + adversary critique + verify/repair)
+# Library: tools/llm/reasoned_codegen.py — generate_reasoned_code(function=, request=, verifier=, mode=)
+#   Config: args/llm_config.yaml -> reasoned_codegen (section kill-switch + per_function mode/critique)
+#   Wired: translation (default ON); ANVIL agentic_runner --reasoned auto|on|off; chat per-session reasoning_mode
+python tools/llm/reasoned_codegen_advisor.py --function code_generation --spec "..." --file-count 5 --json  # advise enable/mode
+python tools/anvil/agentic_runner.py --task-id X --task-desc "..." --reasoned auto   # auto|on|off
+# Dashboard panel: /ops/llm (config view + advisor runner + recent chain runs)
 ```
 
 ---
