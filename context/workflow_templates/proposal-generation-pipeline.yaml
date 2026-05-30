@@ -1,0 +1,47 @@
+name: GovCon Proposal Generation Pipeline
+description: Full proposal lifecycle — opportunity capture, compliance matrix, win theme extraction, volume drafting, and review gate.
+category: general
+tags: [proposal, govcon, capture, compliance-matrix, rfp]
+author: builtin
+steps:
+  - id: opp_capture
+    name: Opportunity Capture & Analysis
+    tool: tools/proposals/opportunity_analyzer.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: compliance_matrix
+    name: Compliance Matrix Generation
+    tool: tools/proposals/compliance_matrix_generator.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [opp_capture]
+  - id: win_themes
+    name: Win Theme Extraction
+    tool: tools/proposals/win_theme_extractor.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [opp_capture]
+  - id: volume_draft
+    name: Volume Draft Generation
+    tool: tools/proposals/volume_drafter.py
+    node_type: tool
+    required: true
+    timeout: 600
+    depends_on: [compliance_matrix, win_themes]
+  - id: capture_review
+    name: Capture Manager Review
+    tool: ""
+    node_type: human
+    role: reviewer
+    required: true
+    depends_on: [volume_draft]
+  - id: final_export
+    name: Final Proposal Export
+    tool: tools/proposals/proposal_exporter.py
+    node_type: tool
+    required: false
+    timeout: 120
+    depends_on: [capture_review]

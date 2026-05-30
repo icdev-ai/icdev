@@ -1,0 +1,47 @@
+name: Application Migration Wave Planning — 7Rs Strategy
+description: Classify applications by 7Rs migration strategy, sequence migration waves, and validate compliance gates.
+category: deploy
+tags: [migration, 7rs, wave-planning, cloud, mdc]
+author: builtin
+steps:
+  - id: discovery
+    name: Application Portfolio Discovery
+    tool: tools/migration_canvas/portfolio_scanner.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: classify_7r
+    name: 7Rs Strategy Classification
+    tool: tools/migration_canvas/migration_classifier.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [discovery]
+  - id: wave_plan
+    name: Wave Sequencing
+    tool: tools/migration_canvas/wave_planner.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [classify_7r]
+  - id: compliance_gate
+    name: Compliance Gate Validation
+    tool: tools/migration_canvas/compliance_gate.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [wave_plan]
+  - id: pm_review
+    name: Program Manager Review
+    tool: ""
+    node_type: human
+    role: approver
+    required: true
+    depends_on: [compliance_gate]
+  - id: export
+    name: Export Migration Plan
+    tool: tools/migration_canvas/plan_exporter.py
+    node_type: tool
+    required: false
+    timeout: 120
+    depends_on: [pm_review]

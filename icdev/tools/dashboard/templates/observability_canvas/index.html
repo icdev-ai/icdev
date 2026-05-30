@@ -31,6 +31,10 @@
   <p>Visual SOC architecture designer — log sources, collectors, SIEM/SOAR platforms, alert rules, and MITRE ATT&CK detection coverage.</p>
   <a href="/observability/canvas/new" class="odc-new-btn">+ New Observability Design</a>
   <a href="/simulate/chat?canvas_type=eda" class="odc-new-btn" style="background:#7c4dff;margin-left:10px;" title="Digital Program Twin — AI-assisted simulation chat">Simulate Chat</a>
+  {% set wf_canvas_id = 'odc' %}
+  {% set wf_context_label = 'Observability Canvas' %}
+  {% set wf_design_id = '' %}
+  {% include 'includes/workflow_trigger_btn.html' %}
   <div class="odc-stats">
     <div class="odc-stat"><div class="val">{{ designs | length }}</div><div class="lbl">Designs</div></div>
     <div class="odc-stat"><div class="val">{{ templates | length }}</div><div class="lbl">Templates</div></div>

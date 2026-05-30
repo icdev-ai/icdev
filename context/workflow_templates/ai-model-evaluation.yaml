@@ -1,0 +1,47 @@
+name: AI Model Evaluation & IL Suitability Assessment
+description: Evaluate foundation model performance, assess IL suitability, run bias/fairness checks, and generate governance report.
+category: ai
+tags: [ai-ml, model-eval, il-suitability, governance, aimc]
+author: builtin
+steps:
+  - id: data_prep
+    name: Evaluation Dataset Preparation
+    tool: tools/ml/data_prep.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: eval
+    name: Model Performance Evaluation
+    tool: tools/ml/model_evaluator.py
+    node_type: tool
+    required: true
+    timeout: 600
+    depends_on: [data_prep]
+  - id: il_assess
+    name: IL Suitability Assessment
+    tool: tools/aimc/il_assessor.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [eval]
+  - id: bias_check
+    name: Bias & Fairness Check
+    tool: tools/aimc/bias_checker.py
+    node_type: tool
+    required: true
+    timeout: 300
+    depends_on: [eval]
+  - id: ai_review
+    name: AI Safety Review
+    tool: ""
+    node_type: human
+    role: reviewer
+    required: true
+    depends_on: [il_assess, bias_check]
+  - id: governance_report
+    name: Governance Report Generation
+    tool: tools/aimc/governance_reporter.py
+    node_type: tool
+    required: false
+    timeout: 120
+    depends_on: [ai_review]

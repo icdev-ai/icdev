@@ -19,6 +19,10 @@
     <button onclick="deleteAllDesigns()" style="background:#1e1e2e;color:#ef4444;border:1px solid #ef444466;padding:8px 16px;border-radius:5px;font-size:13px;cursor:pointer;">🗑 Delete All</button>
     {% endif %}
     <a href="/agentic-ai/canvas" style="background:#6366f1;color:#fff;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;font-weight:600;">+ New Design</a>
+    {% set wf_canvas_id = 'aadc' %}
+    {% set wf_context_label = 'Agentic AI Canvas' %}
+    {% set wf_design_id = '' %}
+    {% include 'includes/workflow_trigger_btn.html' %}
   </div>
 </div>
 

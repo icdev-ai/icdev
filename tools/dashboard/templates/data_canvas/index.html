@@ -31,6 +31,10 @@
   <p>Visual data model designer with CUI/SECRET classification markings, ER diagrams, and compliance-aware data flow tracking.</p>
   <a href="/data/canvas/new" class="ddc-new-btn">+ New Data Design</a>
   <a href="/simulate/chat?canvas_type=ddc" class="ddc-new-btn" style="background:#7c4dff;margin-left:10px;" title="Digital Program Twin — AI-assisted simulation chat">Simulate Chat</a>
+  {% set wf_canvas_id = 'ddc' %}
+  {% set wf_context_label = 'Data Canvas' %}
+  {% set wf_design_id = '' %}
+  {% include 'includes/workflow_trigger_btn.html' %}
   <div class="ddc-stats">
     <div class="ddc-stat"><div class="val">{{ designs | length }}</div><div class="lbl">Designs</div></div>
     <div class="ddc-stat"><div class="val">{{ templates | length }}</div><div class="lbl">Templates</div></div>
