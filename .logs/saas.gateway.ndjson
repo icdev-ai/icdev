@@ -112,3 +112,22 @@
 {"ts": "2026-05-30T01:53:25.947771+00:00", "level": "INFO", "component": "saas.gateway", "message": "Health check: http://0.0.0.0:8443/health", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T01:53:25.947803+00:00", "level": "INFO", "component": "saas.gateway", "message": "REST API:     http://0.0.0.0:8443/api/v1/", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T01:53:25.947834+00:00", "level": "INFO", "component": "saas.gateway", "message": "MCP HTTP:     http://0.0.0.0:8443/mcp/v1/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:38.995518+00:00", "level": "INFO", "component": "saas.gateway", "message": "Loaded .env from C:\\AI\\ICDev\\.env", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:38.999882+00:00", "level": "INFO", "component": "saas.gateway", "message": "Env key sync: Env key already registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.003828+00:00", "level": "INFO", "component": "saas.gateway", "message": "Correlation ID middleware registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.005614+00:00", "level": "INFO", "component": "saas.gateway", "message": "Auth middleware registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.007013+00:00", "level": "INFO", "component": "saas.gateway", "message": "Rate limiter registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.008092+00:00", "level": "INFO", "component": "saas.gateway", "message": "Request logger registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.008219+00:00", "level": "INFO", "component": "saas.gateway", "message": "CORS configured: origins=['http://localhost:3000', 'http://localhost:5000', 'http://localhost:8080', 'https://localhost:8443']", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.008280+00:00", "level": "INFO", "component": "saas.gateway", "message": "CUI security headers registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.028254+00:00", "level": "INFO", "component": "saas.gateway", "message": "REST API v1 blueprint registered at /api/v1", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.031937+00:00", "level": "INFO", "component": "saas.gateway", "message": "MCP Streamable HTTP blueprint registered at /mcp/v1", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.039068+00:00", "level": "INFO", "component": "saas.gateway", "message": "Portal blueprint registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.041896+00:00", "level": "INFO", "component": "saas.gateway", "message": "Swagger UI blueprint registered at /api/v1/docs", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.043253+00:00", "level": "INFO", "component": "saas.gateway", "message": "Prometheus metrics middleware registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.044099+00:00", "level": "INFO", "component": "saas.gateway", "message": "Prometheus metrics blueprint registered at /metrics", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.044198+00:00", "level": "INFO", "component": "saas.gateway", "message": "ICDEV\u2122 SaaS API Gateway v1.0.0 initialized (CUI // SP-CTI)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.044246+00:00", "level": "INFO", "component": "saas.gateway", "message": "Starting ICDEV\u2122 SaaS API Gateway on http://0.0.0.0:8443 (debug=True)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.044283+00:00", "level": "INFO", "component": "saas.gateway", "message": "Health check: http://0.0.0.0:8443/health", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.044316+00:00", "level": "INFO", "component": "saas.gateway", "message": "REST API:     http://0.0.0.0:8443/api/v1/", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T02:01:39.044348+00:00", "level": "INFO", "component": "saas.gateway", "message": "MCP HTTP:     http://0.0.0.0:8443/mcp/v1/", "trace_id": null, "session_id": null, "extra": {}}
