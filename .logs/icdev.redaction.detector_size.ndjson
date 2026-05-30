@@ -286,3 +286,5 @@
 {"ts": "2026-05-30T04:30:18.182875+00:00", "level": "INFO", "component": "icdev.redaction.detector", "message": "Ollama NER recognizer initialized (use_ollama=True)", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T05:01:04.364149+00:00", "level": "INFO", "component": "icdev.redaction.detector", "message": "Presidio not available (ModuleNotFoundError) \u2014 using built-in detection", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T05:01:04.364299+00:00", "level": "INFO", "component": "icdev.redaction.detector", "message": "Ollama NER recognizer initialized (use_ollama=True)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T05:34:32.900541+00:00", "level": "INFO", "component": "icdev.redaction.detector", "message": "Presidio not available (ModuleNotFoundError) \u2014 using built-in detection", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T05:34:32.900648+00:00", "level": "INFO", "component": "icdev.redaction.detector", "message": "Ollama NER recognizer initialized (use_ollama=True)", "trace_id": null, "session_id": null, "extra": {}}
