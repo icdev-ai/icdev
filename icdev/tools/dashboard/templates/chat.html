@@ -8,8 +8,8 @@
 
 {% block content %}
 <div class="page-header">
-    <h1>Chat</h1>
-    <p class="text-muted">Multi-stream agent chat with requirements intake, COA generation, and build pipeline.</p>
+    <h1>AI Assistant</h1>
+    <p class="text-muted">Ask anything about your project — requirements, architecture, security design, or compliance. I route your question to the right specialist automatically.</p>
 </div>
 
 <!-- Stats bar -->
@@ -28,7 +28,7 @@
     </div>
     <div class="stat-card">
         <div class="stat-value" id="stat-total">0</div>
-        <div class="stat-label">Total Contexts</div>
+        <div class="stat-label">Total Conversations</div>
     </div>
 </div>
 
@@ -37,7 +37,7 @@
     <!-- Left sidebar: context list -->
     <div class="chat-sidebar" id="chat-sidebar">
         <div class="chat-sidebar__header">
-            <strong>Contexts</strong>
+            <strong>Conversations</strong>
             <button id="btn-new-context" class="chat-sidebar__new-btn" title="Create new chat context">+ New</button>
         </div>
         <div id="context-list" class="chat-sidebar__list"></div>
@@ -79,13 +79,13 @@
     <div class="chat-main">
         <!-- Chat header -->
         <div id="chat-header" class="chat-header">
-            <span id="chat-title" class="chat-header__title">Select or create a context</span>
+            <span id="chat-title" class="chat-header__title">Start a new conversation</span>
             <div class="chat-header__actions">
                 <span id="chat-status" class="badge chat-header__status"></span>
-                <button id="btn-ricoas-toggle" class="chat-toggle-btn chat-toggle-btn--ricoas" title="Toggle RICOAS sidebar">RICOAS</button>
-                <button id="btn-gov-toggle" class="chat-toggle-btn chat-toggle-btn--gov" title="Toggle AI Governance sidebar">Gov</button>
-                <button id="btn-intel-toggle" class="chat-toggle-btn chat-toggle-btn--intel" title="Toggle Intelligence sidebar (RAG, Bayesian, Code Quality, Genesis)">Intel</button>
-                <button id="btn-focus-mode" class="chat-toggle-btn chat-toggle-btn--focus" title="Focus mode — hide sidebars">Focus</button>
+                <button id="btn-ricoas-toggle" class="chat-toggle-btn chat-toggle-btn--ricoas" title="Toggle Requirements sidebar">Requirements</button>
+                <button id="btn-gov-toggle" class="chat-toggle-btn chat-toggle-btn--gov" title="Toggle AI Governance sidebar">Governance</button>
+                <button id="btn-intel-toggle" class="chat-toggle-btn chat-toggle-btn--intel" title="Toggle Knowledge &amp; Intelligence sidebar">Knowledge</button>
+                <button id="btn-focus-mode" class="chat-toggle-btn chat-toggle-btn--focus" title="Focus mode — hide side panels for a cleaner chat view">Focus</button>
                 <button id="btn-close-context" class="chat-toggle-btn chat-toggle-btn--close">Close</button>
             </div>
         </div>
@@ -98,7 +98,18 @@
         </div>
 
         <!-- Message stream -->
-        <div id="message-stream" class="chat-messages"></div>
+        <div id="message-stream" class="chat-messages">
+            <div class="chat-welcome" id="chat-welcome-banner">
+                <div class="chat-welcome__title">Hello! How can I help you today?</div>
+                <div class="chat-welcome__subtitle">I can help you capture requirements, design systems, review security, and build government or commercial applications. Just describe what you want to accomplish.</div>
+                <div class="chat-welcome__prompts">
+                    <span class="chat-welcome__prompt-chip" data-prompt="I want to build a new application">I want to build an app</span>
+                    <span class="chat-welcome__prompt-chip" data-prompt="Help me capture requirements for my project">Capture requirements</span>
+                    <span class="chat-welcome__prompt-chip" data-prompt="Review my security architecture">Review security</span>
+                    <span class="chat-welcome__prompt-chip" data-prompt="Explain the compliance requirements for a DoD system">DoD compliance guidance</span>
+                </div>
+            </div>
+        </div>
 
         <!-- Typing indicator (D-CU-1) -->
         <div id="typing-indicator" class="typing-indicator">
@@ -114,16 +125,16 @@
         <!-- Intervention bar (visible during processing) -->
         <div id="intervention-bar" class="chat-intervention">
             <div class="chat-intervention__inner">
-                <span class="chat-intervention__label">Agent is processing...</span>
-                <input type="text" id="intervention-input" class="chat-intervention__input" placeholder="Type to intervene...">
-                <button id="btn-intervene" class="chat-intervention__btn">Intervene</button>
+                <span class="chat-intervention__label">AI is thinking…</span>
+                <input type="text" id="intervention-input" class="chat-intervention__input" placeholder="Send a new direction or clarification…">
+                <button id="btn-intervene" class="chat-intervention__btn" title="Send a new direction to the AI">Redirect</button>
             </div>
         </div>
 
         <!-- Input area with file upload -->
         <div id="input-area" class="chat-input-area">
             <div class="chat-input-area__inner">
-                <button id="chat-upload-btn" class="chat-upload-btn" title="Upload document or image" aria-label="Upload file">&#x1F4CE;</button>
+                <button id="chat-upload-btn" class="chat-upload-btn" title="Attach a file (PDF, Word, image, CSV, JSON, YAML, Markdown)" aria-label="Attach file" style="padding:0 8px;">&#x1F4CE;</button>
                 <input type="text" id="message-input" class="chat-message-input" placeholder="Type a message..." disabled>
                 <button id="btn-send" class="chat-send-btn" disabled>Send</button>
                 <input type="file" id="chat-file-input" style="display:none" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.gif,.webp">
@@ -138,9 +149,9 @@
     <div id="right-sidebar" class="chat-right-panel">
         <!-- Tabs -->
         <div class="chat-right-tabs" id="right-sidebar-tabs">
-            <button class="chat-right-tab chat-right-tab--active" data-tab="ricoas" id="tab-ricoas">RICOAS</button>
-            <button class="chat-right-tab" data-tab="gov" id="tab-gov">Gov</button>
-            <button class="chat-right-tab" data-tab="intel" id="tab-intel">Intel</button>
+            <button class="chat-right-tab chat-right-tab--active" data-tab="ricoas" id="tab-ricoas" title="Requirements Intake — readiness score, test scenarios, and recommended next steps">Requirements</button>
+            <button class="chat-right-tab" data-tab="gov" id="tab-gov" title="AI Governance — transparency and accountability status">Governance</button>
+            <button class="chat-right-tab" data-tab="intel" id="tab-intel" title="Knowledge — documents, knowledge graph, and AI learning status">Knowledge</button>
         </div>
 
         <!-- RICOAS Tab Content -->
@@ -179,7 +190,8 @@
 
             <!-- Readiness Score -->
             <h4 class="chat-sidebar-heading">Readiness Score</h4>
-            <div class="readiness-gauge-container" id="readiness-gauge" style="text-align: center;">
+            <div id="readiness-placeholder" style="font-size:0.82rem;color:var(--text-muted);padding:0.5rem 0 0.75rem;">Start chatting to track your requirements readiness.</div>
+            <div class="readiness-gauge-container" id="readiness-gauge" style="display:none;text-align: center;">
                 <svg viewBox="0 0 120 120" class="readiness-gauge-svg" style="width: 100px; height: 100px;">
                     <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border-color)" stroke-width="10"/>
                     <circle cx="60" cy="60" r="50" fill="none" stroke="var(--accent-blue)" stroke-width="10"
@@ -190,7 +202,7 @@
                 </svg>
             </div>
 
-            <div class="readiness-dimensions" id="readiness-dimensions">
+            <div class="readiness-dimensions" id="readiness-dimensions" style="display:none;">
                 <div class="readiness-dim"><span class="readiness-dim-label">Completeness</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-completeness" style="width:0%"></div></div><span class="readiness-dim-value" id="val-completeness">0%</span></div>
                 <div class="readiness-dim"><span class="readiness-dim-label">Clarity</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-clarity" style="width:0%"></div></div><span class="readiness-dim-value" id="val-clarity">0%</span></div>
                 <div class="readiness-dim"><span class="readiness-dim-label">Feasibility</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-feasibility" style="width:0%"></div></div><span class="readiness-dim-value" id="val-feasibility">0%</span></div>
@@ -209,7 +221,7 @@
 
             <!-- Elicitation Techniques -->
             <div class="sidebar-section" id="techniques-section">
-                <h4 class="chat-sidebar-heading">Elicitation Techniques</h4>
+                <h4 class="chat-sidebar-heading">Ways to Explore Requirements</h4>
                 <div id="technique-active" class="technique-active-banner" style="display:none;">
                     <span id="technique-active-name"></span>
                     <button class="technique-deactivate-btn" onclick="ICDEV.chatDeactivateTechnique()" title="Deactivate">&times;</button>
@@ -219,13 +231,13 @@
 
             <!-- BDD Preview -->
             <div class="sidebar-section" id="bdd-preview-section" style="display:none;">
-                <h4 class="chat-sidebar-heading">BDD Scenarios (Draft)</h4>
+                <h4 class="chat-sidebar-heading">Test Scenarios (Draft)</h4>
                 <div id="bdd-preview-list" class="bdd-preview-list"></div>
             </div>
 
             <!-- Courses of Action -->
             <div class="sidebar-section" id="coa-section" style="display:none;">
-                <h4 class="chat-sidebar-heading">Courses of Action</h4>
+                <h4 class="chat-sidebar-heading">Options to Consider</h4>
                 <div id="coa-list"></div>
                 <div id="coa-selected-banner" class="coa-selected-banner" style="display:none;">&#x2713; <span id="coa-selected-name"></span> selected</div>
             </div>
@@ -282,7 +294,7 @@
             </div>
             <div class="intel-sidebar-header">
                 <strong class="intel-sidebar-title">Intelligence</strong>
-                <span class="intel-sidebar-subtitle">RAG + Bayesian + Quality + Genesis</span>
+                <span class="intel-sidebar-subtitle">Documents · Learning · Research</span>
             </div>
 
             <!-- RAG Knowledge Sources -->
@@ -336,24 +348,27 @@
             <label class="chat-modal__label">Title</label>
             <input type="text" id="new-ctx-title" class="chat-modal__input" placeholder="Chat title...">
         </div>
-        <div class="chat-modal__field">
-            <label class="chat-modal__label">Agent Model</label>
-            <select id="new-ctx-model" class="chat-modal__select">
-                <option value="kimi-cloud" selected>Kimi Cloud (Default)</option>
-                <option value="sonnet">Sonnet</option>
-                <option value="opus">Opus</option>
-                <option value="haiku">Haiku</option>
-            </select>
-        </div>
-        <div class="chat-modal__field">
-            <label class="chat-modal__label chat-modal__label--inline">
-                <input type="checkbox" id="new-ctx-intake" class="chat-modal__checkbox">
-                Link to Requirements Intake (RICOAS)
-            </label>
-        </div>
-        <div class="chat-modal__field">
-            <label class="chat-modal__label">System Prompt (optional)</label>
-            <textarea id="new-ctx-prompt" class="chat-modal__textarea" placeholder="Custom system prompt..." rows="3"></textarea>
+        <div class="chat-modal__advanced-toggle" id="ctx-advanced-toggle" style="margin-top:0.75rem;cursor:pointer;font-size:0.82rem;color:var(--text-muted);user-select:none;">Advanced settings &#x25B8;</div>
+        <div id="ctx-advanced-body" style="display:none;">
+            <div class="chat-modal__field">
+                <label class="chat-modal__label">Agent Model</label>
+                <select id="new-ctx-model" class="chat-modal__select">
+                    <option value="kimi-cloud" selected>Kimi Cloud (Default)</option>
+                    <option value="sonnet">Sonnet</option>
+                    <option value="opus">Opus</option>
+                    <option value="haiku">Haiku</option>
+                </select>
+            </div>
+            <div class="chat-modal__field">
+                <label class="chat-modal__label chat-modal__label--inline">
+                    <input type="checkbox" id="new-ctx-intake" class="chat-modal__checkbox">
+                    Link to Requirements Intake (RICOAS)
+                </label>
+            </div>
+            <div class="chat-modal__field">
+                <label class="chat-modal__label">System Prompt (optional)</label>
+                <textarea id="new-ctx-prompt" class="chat-modal__textarea" placeholder="Custom system prompt..." rows="3"></textarea>
+            </div>
         </div>
         <div class="chat-modal__actions">
             <button id="btn-cancel-modal" class="chat-modal__btn chat-modal__btn--cancel">Cancel</button>
@@ -361,6 +376,17 @@
         </div>
     </div>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var tog = document.getElementById('ctx-advanced-toggle');
+    if (tog) tog.addEventListener('click', function () {
+        var body = document.getElementById('ctx-advanced-body');
+        var open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : '';
+        this.textContent = open ? 'Advanced settings ▸' : 'Advanced settings ▾';
+    });
+});
+</script>
 
 <!-- Pass config to JS -->
 <script>
@@ -889,4 +915,29 @@
         </div>
     </div>
 </div>
+<script>
+(function () {
+    var _roleMap = {
+        'Program Manager': 'pm',
+        'Contracting Officer': 'contracting',
+        'Analyst': 'analyst',
+        'Business Development': 'bizdev',
+        'Contracting Officer Representative': 'cor'
+    };
+    function _applyRole(val) {
+        var body = document.body;
+        Object.values(_roleMap).forEach(function (cls) { body.classList.remove('view-role--' + cls); });
+        if (val && _roleMap[val]) body.classList.add('view-role--' + _roleMap[val]);
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+        var sel = document.getElementById('role-select');
+        if (sel) {
+            _applyRole(sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '');
+            sel.addEventListener('change', function () {
+                _applyRole(this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '');
+            });
+        }
+    });
+})();
+</script>
 {% endblock %}

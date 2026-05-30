@@ -2173,3 +2173,18 @@
 .uc-field-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .uc-wiz-radio-label { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer; color: var(--text-secondary); }
 .uc-wiz-radio-label:hover { color: var(--text-primary); }
+
+/* Welcome banner — cu-es-03 */
+.chat-welcome { padding: 2rem 1.5rem; text-align: center; max-width: 600px; margin: 2rem auto 0; }
+.chat-welcome__title { font-size: 1.25rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.5rem; }
+.chat-welcome__subtitle { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.5rem; line-height: 1.5; }
+.chat-welcome__prompts { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
+.chat-welcome__prompt-chip { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 20px; padding: 0.4rem 0.85rem; font-size: 0.82rem; color: var(--text-secondary); cursor: pointer; transition: background 0.15s, border-color 0.15s; user-select: none; }
+.chat-welcome__prompt-chip:hover { background: var(--accent-blue-dim, rgba(79,142,247,0.12)); border-color: var(--accent-blue); color: var(--accent-blue); }
+
+/* Stats bar role filter — hide for non-developer roles — cu-es-03 */
+.view-role--pm #chat-top-stats,
+.view-role--contracting #chat-top-stats,
+.view-role--analyst #chat-top-stats,
+.view-role--bizdev #chat-top-stats,
+.view-role--cor #chat-top-stats { display: none !important; }

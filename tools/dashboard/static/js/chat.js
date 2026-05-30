@@ -302,7 +302,7 @@
         _fastTrackDone = false;
         chatApi('POST', '/' + ctxId + '/close').then(function () {
             refreshContextList();
-            setText('chat-title', 'Select or create a context');
+            setText('chat-title', 'Start a new conversation');
             document.getElementById('message-input').disabled = true;
             document.getElementById('btn-send').disabled = true;
             document.getElementById('btn-close-context').style.display = 'none';
@@ -311,6 +311,9 @@
             stopPolling();
             stopRicoasTimers();
             hideRicoasSidebar();
+            var stream = document.getElementById('message-stream');
+            var wb = document.getElementById('chat-welcome-banner');
+            if (stream && wb) { stream.appendChild(wb); wb.style.display = ''; }
         });
     }
 
@@ -582,6 +585,15 @@
         var exportBtn = document.getElementById('export-btn');
         if (planBtn) planBtn.style.display = overall >= 0.7 ? 'block' : 'none';
         if (exportBtn) exportBtn.style.display = overall > 0 ? 'block' : 'none';
+
+        if (overall > 0) {
+            var gauge = document.getElementById('readiness-gauge');
+            var dimsEl = document.getElementById('readiness-dimensions');
+            var placeholder = document.getElementById('readiness-placeholder');
+            if (gauge) gauge.style.display = '';
+            if (dimsEl) dimsEl.style.display = '';
+            if (placeholder) placeholder.style.display = 'none';
+        }
     }
 
     function startReadinessPolling() {
@@ -1431,7 +1443,7 @@
                 + '<button class="ctx-item__delete" data-ctx-id="' + c.context_id + '" title="Delete context" tabindex="-1">&#x2715;</button>'
                 + '</div>'
                 + '<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">'
-                + c.message_count + ' msgs'
+                + (c.message_count === 0 ? 'No messages yet' : (c.message_count + ' message' + (c.message_count !== 1 ? 's' : '')))
                 + (c.is_processing ? ' · processing' : '')
                 + (c.queue_depth > 0 ? ' · ' + c.queue_depth + ' queued' : '')
                 + '</div></div>';
@@ -1481,12 +1493,16 @@
         if (!stream) return;
         if (!messages.length) {
             stream.innerHTML = '<div class="msg-bubble msg-bubble--system" data-placeholder="true">Start a conversation by sending a message.</div>';
+            var wb = document.getElementById('chat-welcome-banner');
+            if (wb) { stream.appendChild(wb); wb.style.display = ''; }
             return;
         }
         var html = '';
         for (var i = 0; i < messages.length; i++) html += renderMessageHtml(messages[i]);
         stream.innerHTML = html;
         stream.scrollTop = stream.scrollHeight;
+        var wb = document.getElementById('chat-welcome-banner');
+        if (wb) wb.style.display = 'none';
     }
 
     function appendMessage(msg) {
@@ -1777,7 +1793,8 @@
         .then(function (r) { return r.json(); })
         .then(function (data) {
             if (data.error) {
-                appendMessage({ role: 'system', content: 'Error creating intake session: ' + data.error });
+                console.error('[ICDEV] Intake session error:', data.error);
+                appendMessage({ role: 'system', content: 'Could not start your session. Please refresh the page or create a new conversation. If this keeps happening, contact your administrator.' });
                 return null;
             }
             var intakeSessionId = data.session_id;
@@ -1821,7 +1838,8 @@
             });
         })
         .catch(function (err) {
-            appendMessage({ role: 'system', content: 'Connection error: ' + err.message });
+            console.error('[ICDEV] Intake connection error:', err);
+            appendMessage({ role: 'system', content: 'Could not connect. Please check your connection and refresh the page.' });
             return null;
         });
     }
@@ -3148,7 +3166,21 @@
 
     // Init on DOM ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () { init(); initUseCasesPanel(); });
+        document.addEventListener('DOMContentLoaded', function () {
+            init();
+            initUseCasesPanel();
+            document.addEventListener('click', function (e) {
+                if (!e.target.classList.contains('chat-welcome__prompt-chip')) return;
+                var prompt = e.target.getAttribute('data-prompt');
+                if (!prompt || !_activeContextId) return;
+                var inp = document.getElementById('message-input');
+                if (inp && !inp.disabled) {
+                    inp.value = prompt;
+                    inp.dispatchEvent(new Event('input'));
+                    sendMessage();
+                }
+            });
+        });
     } else {
         init();
         initUseCasesPanel();
