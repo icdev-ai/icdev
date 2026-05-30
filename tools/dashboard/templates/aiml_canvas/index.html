@@ -48,6 +48,10 @@
       <a href="/ai-ml/model-catalog" class="btn-sm btn-secondary" style="text-decoration:none;">&#x1F4DA; Model Catalog</a>
       <a href="/ai-ml/templates"     class="btn-sm btn-secondary" style="text-decoration:none;">&#x1F4CB; Templates</a>
       <a href="/ai-ml/canvas/new"    class="btn-sm btn-primary"   style="text-decoration:none;">+ New Design</a>
+      {% set wf_canvas_id = 'aimc' %}
+      {% set wf_context_label = 'AI/ML Model Canvas' %}
+      {% set wf_design_id = '' %}
+      {% include 'includes/workflow_trigger_btn.html' %}
     </div>
   </div>
 </div>

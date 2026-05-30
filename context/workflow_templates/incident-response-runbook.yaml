@@ -1,0 +1,47 @@
+name: Incident Response Runbook — Triage to SITREP
+description: Automated incident triage, containment action execution, SLA tracking, and SITREP generation.
+category: ops
+tags: [incident-response, sla, sitrep, runbook, ohc]
+author: builtin
+steps:
+  - id: triage
+    name: Incident Triage & Severity Classification
+    tool: tools/ops/incident_triager.py
+    node_type: tool
+    required: true
+    timeout: 120
+  - id: contain
+    name: Automated Containment Actions
+    tool: tools/ops/containment_executor.py
+    node_type: tool
+    required: true
+    timeout: 300
+    depends_on: [triage]
+  - id: sla_check
+    name: SLA Threshold Check
+    tool: tools/ops/sla_checker.py
+    node_type: tool
+    required: true
+    timeout: 60
+    depends_on: [triage]
+  - id: analyst_review
+    name: Analyst Review & Escalation Decision
+    tool: ""
+    node_type: human
+    role: reviewer
+    required: true
+    depends_on: [contain, sla_check]
+  - id: remediate
+    name: Remediation Execution
+    tool: tools/ops/remediation_executor.py
+    node_type: tool
+    required: false
+    timeout: 600
+    depends_on: [analyst_review]
+  - id: sitrep
+    name: SITREP Generation
+    tool: tools/ops/sitrep_generator.py
+    node_type: tool
+    required: true
+    timeout: 120
+    depends_on: [analyst_review]

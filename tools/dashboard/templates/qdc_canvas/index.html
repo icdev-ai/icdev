@@ -10,6 +10,10 @@
 
   <h1 style="color:#eaeaea;">Quality Design Canvas</h1>
   <p style="color:#7a8cb0;">Visual design tool for NIST SA-11 compliant software quality architecture.</p>
+  {% set wf_canvas_id = 'qdc' %}
+  {% set wf_context_label = 'Quality Canvas' %}
+  {% set wf_design_id = '' %}
+  {% include 'includes/workflow_trigger_btn.html' %}
 
   <!-- Stat Grid -->
   <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin:1.5rem 0;">

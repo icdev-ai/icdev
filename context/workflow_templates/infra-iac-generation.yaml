@@ -1,0 +1,40 @@
+name: Infrastructure IaC Generation — Scan → Terraform → Review
+description: Scan infrastructure resources, generate Terraform IaC, and route for engineer review before apply.
+category: deploy
+tags: [infrastructure, iac, terraform, cloud, idc]
+author: builtin
+steps:
+  - id: scan
+    name: Inventory Cloud Resources
+    tool: tools/infra_canvas/resource_scanner.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: iac_gen
+    name: Generate Terraform IaC
+    tool: tools/iac/iac_generator.py
+    node_type: tool
+    required: true
+    timeout: 300
+    depends_on: [scan]
+  - id: security_check
+    name: IaC Security Scan (Checkov)
+    tool: tools/devsecops/iac_security_scanner.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [iac_gen]
+  - id: engineer_review
+    name: Infrastructure Engineer Review
+    tool: ""
+    node_type: human
+    role: reviewer
+    required: true
+    depends_on: [security_check]
+  - id: apply
+    name: Apply Approved IaC
+    tool: tools/iac/iac_applier.py
+    node_type: tool
+    required: false
+    timeout: 600
+    depends_on: [engineer_review]

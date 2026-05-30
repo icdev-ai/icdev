@@ -33,6 +33,10 @@
   <p>Visual DevSecOps pipeline designer — cloud-agnostic, multi-cloud, on-premises. Drag-and-drop 100+ tools across 13 categories.</p>
   <a href="/devops/canvas/new" class="pdc-new-btn">+ New Pipeline</a>
   <a href="/sre" class="pdc-new-btn" style="background:#00bcd4;">SRE Dashboard</a>
+  {% set wf_canvas_id = 'pdc' %}
+  {% set wf_context_label = 'Pipeline Canvas' %}
+  {% set wf_design_id = '' %}
+  {% include 'includes/workflow_trigger_btn.html' %}
   <div class="pdc-stats">
     <div class="pdc-stat"><div class="val">{{ pipelines | length }}</div><div class="lbl">Pipelines</div></div>
     <div class="pdc-stat"><div class="val">{{ templates | length }}</div><div class="lbl">Templates</div></div>

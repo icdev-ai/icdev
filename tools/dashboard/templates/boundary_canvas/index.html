@@ -31,6 +31,10 @@
   <h1>Boundary Design Canvas</h1>
   <p>Visual ATO authorization boundary designer — ISA lifecycle, interconnection risk, PPS matrix, and multi-system boundary ecosystems.</p>
   <a href="/boundary/canvas/new" class="bdc-new-btn">+ New Boundary Design</a>
+  {% set wf_canvas_id = 'bdc' %}
+  {% set wf_context_label = 'Boundary Canvas' %}
+  {% set wf_design_id = '' %}
+  {% include 'includes/workflow_trigger_btn.html' %}
   <div class="bdc-stats">
     <div class="bdc-stat"><div class="val">{{ designs | length }}</div><div class="lbl">Designs</div></div>
     <div class="bdc-stat"><div class="val">{{ templates | length }}</div><div class="lbl">Templates</div></div>

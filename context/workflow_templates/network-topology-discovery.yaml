@@ -1,0 +1,40 @@
+name: Network Topology Discovery & Diagram
+description: Discover network topology, generate diagram, validate STIG compliance, and export PDF.
+category: general
+tags: [network, topology, diagram, stig, ndc]
+author: builtin
+steps:
+  - id: discover
+    name: Discover Network Topology
+    tool: tools/network/topology_scanner.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: diagram
+    name: Generate Network Diagram
+    tool: tools/network/diagram_exporter.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [discover]
+  - id: stig_check
+    name: STIG Compliance Validation
+    tool: tools/compliance/stig_checker.py
+    node_type: tool
+    required: true
+    timeout: 300
+    depends_on: [discover]
+  - id: review
+    name: Network Engineer Review
+    tool: ""
+    node_type: human
+    role: reviewer
+    required: true
+    depends_on: [diagram, stig_check]
+  - id: export
+    name: Export PDF Report
+    tool: tools/network/pdf_exporter.py
+    node_type: tool
+    required: false
+    timeout: 120
+    depends_on: [review]

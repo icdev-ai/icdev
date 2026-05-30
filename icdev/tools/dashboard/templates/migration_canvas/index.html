@@ -31,6 +31,10 @@
   <a href="/migration-canvas/canvas/new" class="mdc-new-btn">+ New App Migration</a>
   <a href="/migration-canvas/network-migration/new" class="mdc-new-btn" style="background:#0f3460;border:1px solid #27ae60">+ Network Device Migration</a>
   <a href="/migration-canvas/projects" class="mdc-new-btn" style="background:#0a1628;border:1px solid #3d6bce">☁ Cloud Migration Projects</a>
+  {% set wf_canvas_id = 'mdc' %}
+  {% set wf_context_label = 'Migration Canvas' %}
+  {% set wf_design_id = '' %}
+  {% include 'includes/workflow_trigger_btn.html' %}
   <div class="mdc-stats">
     <div class="mdc-stat"><div class="val">{{ designs | length }}</div><div class="lbl">App Designs</div></div>
     <div class="mdc-stat"><div class="val">{{ templates | length }}</div><div class="lbl">Templates</div></div>

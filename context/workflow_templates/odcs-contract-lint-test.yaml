@@ -1,0 +1,40 @@
+name: ODCS Data Contract Lint & Test
+description: Validate, lint, and test ODCS-compliant data contracts — score quality and store run history.
+category: data
+tags: [odcs, data-contract, lint, data-mesh, ddc]
+author: builtin
+steps:
+  - id: validate
+    name: YAML Structure Validation
+    tool: tools/data_canvas/data_mesh/contract_engine.py
+    node_type: tool
+    required: true
+    timeout: 60
+  - id: lint
+    name: Full Contract Lint (score ≥ 70)
+    tool: tools/data_canvas/data_mesh/contract_engine.py
+    node_type: tool
+    required: true
+    timeout: 120
+    depends_on: [validate]
+  - id: test
+    name: Contract Test Run (datacontract-cli)
+    tool: tools/data_canvas/data_mesh/contract_engine.py
+    node_type: tool
+    required: false
+    timeout: 300
+    depends_on: [lint]
+  - id: governance_check
+    name: OPA Governance Policy Check
+    tool: tools/data_canvas/data_mesh/governance_engine.py
+    node_type: tool
+    required: true
+    timeout: 120
+    depends_on: [lint]
+  - id: data_steward
+    name: Data Steward Approval
+    tool: ""
+    node_type: approval
+    role: data_steward
+    approval_policy: any
+    depends_on: [governance_check, test]

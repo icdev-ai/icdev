@@ -1,0 +1,39 @@
+name: Security Posture Assessment — STIG + Vuln + Report
+description: Run STIG compliance scan, vulnerability assessment, and generate POAM for identified findings.
+category: security
+tags: [security, stig, vulnerability, poam, sdc]
+author: builtin
+steps:
+  - id: stig_scan
+    name: STIG Compliance Scan
+    tool: tools/compliance/stig_checker.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: vuln_scan
+    name: Vulnerability Assessment (Bandit + OSV)
+    tool: tools/devsecops/vulnerability_scanner.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: sbom
+    name: SBOM Generation
+    tool: tools/devsecops/sbom_generator.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [vuln_scan]
+  - id: isso_review
+    name: ISSO Security Review
+    tool: ""
+    node_type: human
+    role: isso
+    required: true
+    depends_on: [stig_scan, sbom]
+  - id: poam
+    name: Generate POAM
+    tool: tools/compliance/poam_generator.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [isso_review]
