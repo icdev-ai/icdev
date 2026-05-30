@@ -219,8 +219,8 @@ def _mirror_to_audit_trail(conn, kwargs: dict, event_id: str, occurred_at: str) 
             """
             INSERT INTO audit_trail
                 (event_type, actor, action, project_id, details, classification,
-                 created_at, recorded_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event_type,
@@ -229,7 +229,6 @@ def _mirror_to_audit_trail(conn, kwargs: dict, event_id: str, occurred_at: str) 
                 kwargs.get("project_id"),
                 details,
                 kwargs.get("data_classification", "CUI"),
-                occurred_at,
                 occurred_at,
             ),
         )
