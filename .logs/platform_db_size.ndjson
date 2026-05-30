@@ -18,3 +18,5 @@
 {"ts": "2026-05-30T03:54:41.035061+00:00", "level": "INFO", "component": "platform_db", "message": "Platform DB initialized: 8 tables (sqlite)", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T14:14:48.861463+00:00", "level": "INFO", "component": "platform_db", "message": "Initializing platform database (backend=sqlite, force=False)", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T14:14:48.863402+00:00", "level": "INFO", "component": "platform_db", "message": "Platform DB initialized: 8 tables (sqlite)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:14:09.974851+00:00", "level": "INFO", "component": "platform_db", "message": "Initializing platform database (backend=sqlite, force=False)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:14:09.979215+00:00", "level": "INFO", "component": "platform_db", "message": "Platform DB initialized: 8 tables (sqlite)", "trace_id": null, "session_id": null, "extra": {}}

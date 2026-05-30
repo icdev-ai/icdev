@@ -1,1 +1,3 @@
-{"ts": "2026-05-30T02:02:27.363040+00:00", "level": "ERROR", "component": "saas.rest_api", "message": "list_projects error: Tenant f63db8a2-bb74-4f3f-8c87-bcd428fa127f not found or not active", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:14:54.421260+00:00", "level": "ERROR", "component": "saas.rest_api", "message": "list_projects error: Tenant f63db8a2-bb74-4f3f-8c87-bcd428fa127f not found or not active", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:15:24.712075+00:00", "level": "ERROR", "component": "saas.rest_api", "message": "list_projects error: Tenant f63db8a2-bb74-4f3f-8c87-bcd428fa127f not found or not active", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:15:54.469597+00:00", "level": "ERROR", "component": "saas.rest_api", "message": "list_projects error: Tenant f63db8a2-bb74-4f3f-8c87-bcd428fa127f not found or not active", "trace_id": null, "session_id": null, "extra": {}}
