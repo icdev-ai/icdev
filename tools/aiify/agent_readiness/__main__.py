@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""CLI entry point: python -m tools.ai_augmentation.agent_readiness <repo_path> [--json]"""
+"""CLI entry point: python -m tools.aiify.agent_readiness <repo_path> [--json]"""
 from __future__ import annotations
 
 import argparse
@@ -7,7 +7,7 @@ import json
 import pathlib
 import sys
 
-from tools.ai_augmentation.agent_readiness.checker import run_readiness_check
+from tools.aiify.agent_readiness.checker import run_readiness_check
 
 
 def main() -> None:

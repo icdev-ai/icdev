@@ -168,7 +168,7 @@
 - [Data Mesh (dm-*)](manifest/data-mesh.md) — Data Mesh: Domains, Products, Contracts, Governance, CSP (9 tables, 6 modules, 6 pages)
 - [System Graph — Federated Sigma.js Graph](manifest/system-graph.md)
 - [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
-- [AI Augmentation Canvas (AAC)](manifest/ai-augmentation-canvas.md)
+- [AI-ify Canvas (AI-ify)](manifest/ai-ify-canvas.md)
 
 
 ## Auto-Registered (Coherence Fix)
@@ -757,12 +757,12 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Opportunity Scorer | tools\ai_augmentation\opportunity_scorer.py | Auto-registered: ai_augmentation/opportunity_scorer.py | --json | JSON |
-| Pattern Classifier | tools\ai_augmentation\pattern_classifier.py | Auto-registered: ai_augmentation/pattern_classifier.py | --json | JSON |
-| Roadmap Generator | tools\ai_augmentation\roadmap_generator.py | Auto-registered: ai_augmentation/roadmap_generator.py | --json | JSON |
+| Opportunity Scorer | tools\aiify\opportunity_scorer.py | Auto-registered: aiify/opportunity_scorer.py | --json | JSON |
+| Pattern Classifier | tools\aiify\pattern_classifier.py | Auto-registered: aiify/pattern_classifier.py | --json | JSON |
+| Roadmap Generator | tools\aiify\roadmap_generator.py | Auto-registered: aiify/roadmap_generator.py | --json | JSON |
 | Bgp Hijack Detector | tools\dsoc_canvas\bgp_hijack_detector.py | Auto-registered: dsoc_canvas/bgp_hijack_detector.py | --json | JSON |
 | Bgpq4 Wrapper | tools\pmc_canvas\bgpq4_wrapper.py | Auto-registered: pmc_canvas/bgpq4_wrapper.py | --json | JSON |
-| Ai Augmentation | tools\iqe\adapters\ai_augmentation.py | Auto-registered: adapters/ai_augmentation.py | --json | JSON |
+| Ai Augmentation | tools\iqe\adapters\aiify.py | Auto-registered: adapters/aiify.py | --json | JSON |
 | Bgp Alerter Ingest | tools\genesis\reflexes\bgp_alerter_ingest.py | Auto-registered: reflexes/bgp_alerter_ingest.py | --json | JSON |
 | Peering Manager Connector | tools\databridge\connectors\peering_manager_connector.py | Auto-registered: connectors/peering_manager_connector.py | --json | JSON |
 | Pmacct Connector | tools\databridge\connectors\pmacct_connector.py | Auto-registered: connectors/pmacct_connector.py | --json | JSON |
@@ -782,10 +782,10 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Append Only Audit | tools\ai_augmentation\agent_readiness\pillars\append_only_audit.py | Auto-registered: pillars/append_only_audit.py | --json | JSON |
-| Il Classification | tools\ai_augmentation\agent_readiness\pillars\il_classification.py | Auto-registered: pillars/il_classification.py | --json | JSON |
-| Nist Controls | tools\ai_augmentation\agent_readiness\pillars\nist_controls.py | Auto-registered: pillars/nist_controls.py | --json | JSON |
-| Stig Compliance | tools\ai_augmentation\agent_readiness\pillars\stig_compliance.py | Auto-registered: pillars/stig_compliance.py | --json | JSON |
+| Append Only Audit | tools\aiify\agent_readiness\pillars\append_only_audit.py | Auto-registered: pillars/append_only_audit.py | --json | JSON |
+| Il Classification | tools\aiify\agent_readiness\pillars\il_classification.py | Auto-registered: pillars/il_classification.py | --json | JSON |
+| Nist Controls | tools\aiify\agent_readiness\pillars\nist_controls.py | Auto-registered: pillars/nist_controls.py | --json | JSON |
+| Stig Compliance | tools\aiify\agent_readiness\pillars\stig_compliance.py | Auto-registered: pillars/stig_compliance.py | --json | JSON |
 
 
 ## Auto-Registered (Coherence Fix)
@@ -828,7 +828,7 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Version Anomaly Detector | tools\ai_augmentation\version_anomaly_detector.py | Auto-registered: ai_augmentation/version_anomaly_detector.py | --json | JSON |
+| Version Anomaly Detector | tools\aiify\version_anomaly_detector.py | Auto-registered: aiify/version_anomaly_detector.py | --json | JSON |
 | Migrate To Icdev Logger | tools\refactor\migrate_to_icdev_logger.py | Auto-registered: refactor/migrate_to_icdev_logger.py | --json | JSON |
 
 
@@ -843,7 +843,7 @@
 |------|------|-------------|-------|--------|
 | Agent Entrypoint | tools\a2a\agent_entrypoint.py | Auto-registered: a2a/agent_entrypoint.py | --json | JSON |
 | Provision Dev Certs | tools\a2a\provision_dev_certs.py | Auto-registered: a2a/provision_dev_certs.py | --json | JSON |
-| Signal Ingester | tools\ai_augmentation\signal_ingester.py | Auto-registered: ai_augmentation/signal_ingester.py | --json | JSON |
+| Signal Ingester | tools\aiify\signal_ingester.py | Auto-registered: aiify/signal_ingester.py | --json | JSON |
 | Agentic Runner | tools\anvil\agentic_runner.py | Auto-registered: anvil/agentic_runner.py | --json | JSON |
 | Eval Harness | tools\genesis\harness\eval_harness.py | Auto-registered: harness/eval_harness.py | --json | JSON |
 | Heuristic Writer | tools\genesis\harness\heuristic_writer.py | Auto-registered: harness/heuristic_writer.py | --json | JSON |

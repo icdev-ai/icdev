@@ -329,9 +329,9 @@
                     <li><a href="/dsoc/bgp-security">BGP Security</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
-                    {% if aac_enabled %}
-                    <li class="nav-section-label">AI Augmentation</li>
-                    <li><a href="/ai-augmentation/" style="color:#6ee7b7;">AI Augmentation</a></li>
+                    {% if aiify_enabled %}
+                    <li class="nav-section-label">AI-ify</li>
+                    <li><a href="/ai-ify/" style="color:#6ee7b7;">AI-ify</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     {% if govlift_enabled %}
@@ -882,7 +882,7 @@
             [/^\/pmc/, 'pmc'],
             [/^\/ccc/, 'ccc'],
             [/^\/dsoc/, 'dsoc'],
-            [/^\/ai-augmentation/, 'aac'],
+            [/^\/ai-ify/, 'aiify'],
             [/^\/demo-runner/, 'demo_runner'],
             [/^\/innovation/, 'innovation'],
             [/^\/mission-canvas/, 'mission_canvas'],

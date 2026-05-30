@@ -4,7 +4,7 @@
 Runs T1–T6 in order:
   T1 — AADC 8 designs (seed_ai_canvases_aadc.py)
   T2 — AIMC 8 designs (seed_ai_canvases_aimc.py)
-  T3 — AAC 5 scans (seed_ai_canvases_aac.py)
+  T3 — AI-ify 5 scans (seed_ai_canvases_aac.py)
   T4 — Observatory 200 decisions (seed_ai_canvases_observatory.py)
   T5 — KG 38 nodes + 30+ edges (seed_ai_canvases_kg.py)
   T6 — SDC demo before/after state (seed_sdc_demo.py)
@@ -60,7 +60,7 @@ def main(
     steps = [
         ("T1 — AADC designs", seed_aadc),
         ("T2 — AIMC designs", seed_aimc),
-        ("T3 — AAC scans", seed_aac),
+        ("T3 — AI-ify scans", seed_aac),
     ]
     if not skip_observatory:
         steps.append(("T4 — Observatory decisions", seed_obs))

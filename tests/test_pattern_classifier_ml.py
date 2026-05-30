@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import tools.ai_augmentation.pattern_classifier as pc
+import tools.aiify.pattern_classifier as pc
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

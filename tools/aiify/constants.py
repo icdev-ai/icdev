@@ -1,18 +1,18 @@
 # CUI // SP-CTI
-"""AI Augmentation Canvas (AAC) constants.
+"""AI-ify Canvas constants.
 
 Pattern types, AI paradigms, supported languages, scoring weights,
-and IL levels for the AI Augmentation Opportunity Assessment engine.
+and IL levels for the AI-ify Opportunity Assessment engine.
 """
 
 from __future__ import annotations
 
 # ── Feature Flag ──────────────────────────────────────────────────────────────
-AAC_FEATURE_FLAG = "ICDEV_AAC_ENABLED"
+AIIFY_FEATURE_FLAG = "ICDEV_AIIFY_ENABLED"
 
 # ── Pattern Types ─────────────────────────────────────────────────────────────
 # 8 AI-augmentable code patterns detected by the pattern classifier.
-# IDs must match entries in context/ai_augmentation/pattern_catalog.json.
+# IDs must match entries in context/aiify/pattern_catalog.json.
 PATTERN_TYPES: list[str] = [
     "nested_conditionals",      # if-depth ≥ 3 → ML classifier
     "regex_user_input",         # regex on user-provided strings → NLP/NLU extractor
@@ -46,7 +46,7 @@ SUPPORTED_LANGUAGES: list[str] = [
 ]
 
 # ── Scoring Weights ───────────────────────────────────────────────────────────
-# Matches the scoring formula in docs/features/aac-ai-augmentation-canvas.md.
+# Matches the scoring formula in docs/features/aiify-ai-ify-canvas.md.
 SCORING_WEIGHTS: dict[str, dict[str, float]] = {
     # value_score = Σ(component × weight) — higher = more business value
     "value": {
@@ -88,3 +88,93 @@ _paradigm_list = ", ".join(f"'{p}'" for p in AI_PARADIGMS)
 
 CHECK_PATTERN_TYPE = f"pattern_type IN ({_pattern_list})"
 CHECK_AI_PARADIGM = f"ai_paradigm IN ({_paradigm_list})"
+
+# ── Pattern → AI Paradigm map ─────────────────────────────────────────────────
+# Single source of truth shared by engine.py and opportunity_scorer.py.
+PATTERN_TO_PARADIGM: dict[str, str] = {
+    "nested_conditionals": "ml_classifier",
+    "regex_user_input": "nlp_extractor",
+    "string_template_rendering": "llm_generation",
+    "scheduled_cron": "agentic_trigger",
+    "hardcoded_threshold": "anomaly_detection",
+    "db_render_notify_chain": "llm_generation",
+    "keyword_list_search": "embedding_search",
+    "large_rule_table": "decision_agent",
+}
+
+# ── AI-readiness verdict tiers ────────────────────────────────────────────────
+# Encodes "is this worth AI-ifying?" — anything below VERDICT_PARTIAL_MIN, or
+# that trips a disqualifier, is NOT SUITABLE ("don't AI-ify for the sake of it").
+AI_READINESS_TIERS: list[str] = ["ai_ready", "partial", "not_suitable"]
+VERDICT_LABELS: dict[str, str] = {
+    "ai_ready": "AI-ready (wholly)",
+    "partial": "Partially AI-ready",
+    "not_suitable": "Not suitable for AI",
+}
+VERDICT_AI_READY_MIN: float = 0.65
+VERDICT_PARTIAL_MIN: float = 0.45
+SCAN_AI_READY_RATIO_MIN: float = 0.50
+SCAN_PARTIAL_RATIO_MIN: float = 0.20
+
+# ── Innovation / Automation / Enhancement category ────────────────────────────
+CATEGORIES: list[str] = ["innovation", "automation", "enhancement"]
+CATEGORY_MAP: dict[str, str] = {
+    "scheduled_cron": "automation",
+    "db_render_notify_chain": "automation",
+    "large_rule_table": "innovation",
+    "nested_conditionals": "innovation",
+    "regex_user_input": "enhancement",
+    "keyword_list_search": "enhancement",
+    "string_template_rendering": "enhancement",
+    "hardcoded_threshold": "enhancement",
+}
+
+# ── Component derivation tables (replace the old flat-0.5 defaults) ────────────
+PATTERN_BASE_SIGNALS: dict[str, dict[str, float]] = {
+    "nested_conditionals":       {"usage_freq": 0.55, "automation_deficit": 0.55},
+    "regex_user_input":          {"usage_freq": 0.65, "automation_deficit": 0.55},
+    "string_template_rendering": {"usage_freq": 0.55, "automation_deficit": 0.50},
+    "scheduled_cron":            {"usage_freq": 0.70, "automation_deficit": 0.65},
+    "hardcoded_threshold":       {"usage_freq": 0.45, "automation_deficit": 0.70},
+    "db_render_notify_chain":    {"usage_freq": 0.75, "automation_deficit": 0.70},
+    "keyword_list_search":       {"usage_freq": 0.60, "automation_deficit": 0.55},
+    "large_rule_table":          {"usage_freq": 0.60, "automation_deficit": 0.60},
+}
+DATA_AVAIL_BY_PARADIGM: dict[str, float] = {
+    "embedding_search": 0.85, "llm_generation": 0.80, "nlp_extractor": 0.70,
+    "anomaly_detection": 0.65, "agentic_trigger": 0.60, "ml_classifier": 0.55,
+    "decision_agent": 0.45,
+}
+INTEGRATION_COMPLEXITY_BY_PARADIGM: dict[str, float] = {
+    "llm_generation": 0.30, "embedding_search": 0.35, "nlp_extractor": 0.40,
+    "anomaly_detection": 0.45, "ml_classifier": 0.55, "agentic_trigger": 0.60,
+    "decision_agent": 0.70,
+}
+DEP_COMPLEXITY_BY_PARADIGM: dict[str, float] = {
+    "llm_generation": 0.30, "nlp_extractor": 0.35, "agentic_trigger": 0.40,
+    "anomaly_detection": 0.40, "ml_classifier": 0.50, "embedding_search": 0.55,
+    "decision_agent": 0.65,
+}
+SIDE_EFFECT_PATTERNS: set[str] = {"scheduled_cron", "db_render_notify_chain"}
+
+HIGH_USAGE_PATH_RE = r"(handler|view|controller|route|api|service|endpoint|blueprint)"
+SCHED_PATH_RE = r"(scheduler|cron|job|worker|task)"
+LOW_USAGE_PATH_RE = r"(test|spec|migration|fixture|mock|/scripts/|example)"
+
+# ── Disqualifier thresholds ("don't AI-ify for the sake of it") ───────────────
+DISQ_TRIVIAL_MIN_DEPTH: int = 3
+DISQ_TRIVIAL_MIN_LOC: int = 6
+DISQ_TRIVIAL_MIN_KEYS: int = 10
+DISQ_NO_DATA_MAX: float = 0.30
+DISQ_COMPLIANCE_INV_MAX: float = 0.40
+DISQ_REVERSIBILITY_MAX: float = 0.50
+SECURITY_INAPPROPRIATE_PARADIGMS: set[str] = {
+    "ml_classifier", "decision_agent", "anomaly_detection",
+}
+
+# ── SQL CHECK strings for the new scoring columns ─────────────────────────────
+_readiness_list = ", ".join(f"'{r}'" for r in AI_READINESS_TIERS)
+_category_list = ", ".join(f"'{c}'" for c in CATEGORIES)
+CHECK_AI_READINESS = f"ai_readiness IN ({_readiness_list})"
+CHECK_CATEGORY = f"category IN ({_category_list})"
+CHECK_OVERALL_AI_READINESS = f"overall_ai_readiness IN ({_readiness_list})"

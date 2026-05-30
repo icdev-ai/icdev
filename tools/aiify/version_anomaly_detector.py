@@ -1,8 +1,8 @@
 # CUI // SP-CTI
-"""AI Augmentation Canvas — Version Anomaly Detector.
+"""AI-ify Canvas — Version Anomaly Detector.
 
 Implements the ``anomaly_detection`` AI paradigm for the ``hardcoded_threshold``
-pattern (AAC opportunity 467).  Replaces hard-coded version-range assertions such as
+pattern (AI-ify opportunity 467).  Replaces hard-coded version-range assertions such as
 
     assert (3, 0, 2) <= (major, minor, patch) < (6, 0, 0)   # requests/__init__.py:78
 
@@ -13,7 +13,7 @@ Public API:
     check_version_compat(package, version, *, context="", timeout=30) -> dict
 
 CLI:
-    python tools/ai_augmentation/version_anomaly_detector.py \\
+    python tools/aiify/version_anomaly_detector.py \\
         --package chardet --version 4.0.0 --context "used by requests HTTP library"
 """
 
@@ -156,10 +156,10 @@ def check_version_compat(
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description=(
-            "AAC Version Anomaly Detector — assess package version compatibility "
+            "AI-ify Version Anomaly Detector — assess package version compatibility "
             "via LLM instead of hardcoded bounds."
         ),
-        epilog="CUI // SP-CTI  |  AAC opportunity aac-opp-467",
+        epilog="CUI // SP-CTI  |  AI-ify opportunity aiify-opp-467",
     )
     p.add_argument("--package", required=True, help="Package name (e.g. chardet)")
     p.add_argument("--version", required=True, help="Version to assess (e.g. 4.0.0)")
