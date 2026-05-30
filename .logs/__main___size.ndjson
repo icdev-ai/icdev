@@ -4526,3 +4526,13 @@
 {"ts": "2026-05-30T20:09:35.591011+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 144: idle (no due tasks)", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T20:10:36.935841+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 145: idle (no due tasks)", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-30T20:11:37.243024+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 146: idle (no due tasks)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:14:46.601310+00:00", "level": "INFO", "component": "__main__", "message": "Kanban scheduler started (interval=60s)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:14:46.601428+00:00", "level": "INFO", "component": "__main__", "message": "Press Ctrl+C to stop", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:15:02.650236+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 1: idle (no due tasks)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:15:05.229114+00:00", "level": "INFO", "component": "__main__", "message": "[GENESIS] Reflex 'heal' starting", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:15:05.243454+00:00", "level": "INFO", "component": "__main__", "message": "[GENESIS] Reflex 'heal' finished in 14.24ms (success=True)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:15:22.101141+00:00", "level": "INFO", "component": "__main__", "message": "[GENESIS] Reflex 'self_monitor' starting", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:16:02.971832+00:00", "level": "INFO", "component": "__main__", "message": "Cycle 2: idle (no due tasks)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:16:05.059861+00:00", "level": "INFO", "component": "__main__", "message": "[GENESIS] Reflex 'self_monitor' finished in 42958.74ms (success=True)", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:16:05.094044+00:00", "level": "INFO", "component": "__main__", "message": "[GENESIS] Reflex 'log_triage' starting", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-30T20:16:05.102412+00:00", "level": "INFO", "component": "__main__", "message": "[GENESIS] Reflex 'log_triage' finished in 8.41ms (success=True)", "trace_id": null, "session_id": null, "extra": {}}
