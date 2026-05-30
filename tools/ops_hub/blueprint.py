@@ -191,6 +191,29 @@ def create_ops_hub_blueprint() -> Blueprint:
             "traces": get_langfuse_traces(limit=10),
         })
 
+    @bp.route("/api/ops/reasoned-codegen")
+    def api_ops_reasoned_codegen():
+        from tools.ops_hub.llmops_engine import (
+            get_reasoned_codegen_config, get_recent_chain_runs,
+        )
+        fn = request.args.get("function", "")
+        return jsonify({
+            "config": get_reasoned_codegen_config(),
+            "recent_runs": get_recent_chain_runs(limit=25, function=fn),
+        })
+
+    @bp.route("/api/ops/reasoned-codegen/advise", methods=["POST"])
+    def api_ops_reasoned_codegen_advise():
+        from tools.ops_hub.llmops_engine import run_reasoned_codegen_advisor
+        body = request.get_json(force=True, silent=True) or {}
+        return jsonify(run_reasoned_codegen_advisor(
+            function=body.get("function", "code_generation"),
+            spec=body.get("spec", ""),
+            file_count=body.get("file_count", 0),
+            past_failures=body.get("past_failures", 0),
+            use_llm=bool(body.get("use_llm", False)),
+        ))
+
     @bp.route("/api/ops/models")
     def api_ops_models():
         from tools.ops_hub.mlops_engine import (
