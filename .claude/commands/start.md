@@ -13,6 +13,35 @@ PORTAL_PORT: 8443
    taskkill /f /im python.exe 2>$null; echo "Cleared Python processes"
    ```
 
+0. Clear stale PostgreSQL backend connections left over from killed processes (prevents lock pile-up on `kanban_tasks`).
+   Write and run a temp script:
+   ```powershell
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   @'
+import os
+from dotenv import load_dotenv
+load_dotenv()
+db_url = os.environ.get("ICDEV_DATABASE_URL")
+if not db_url:
+    print("No ICDEV_DATABASE_URL — skipping PG cleanup")
+else:
+    try:
+        import psycopg2, psycopg2.extras
+        conn = psycopg2.connect(db_url, connect_timeout=5, cursor_factory=psycopg2.extras.RealDictCursor)
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("SELECT pid FROM pg_stat_activity WHERE pid != pg_backend_pid() AND state IS DISTINCT FROM 'idle'")
+        pids = [r["pid"] for r in cur.fetchall()]
+        for pid in pids:
+            cur.execute("SELECT pg_terminate_backend(%s)", (pid,))
+        conn.close()
+        print(f"PG cleanup: terminated {len(pids)} stale connection(s)")
+    except Exception as e:
+        print(f"PG cleanup skipped ({e})")
+'@ | Set-Content .tmp\pg_cleanup.py
+   python .tmp\pg_cleanup.py
+   ```
+
 0. Reset any stuck IN PROGRESS tasks back to backlog (orphaned by the taskkill above).
    Write a temp script then run it (avoids PowerShell quote-escaping issues with `python -c`):
    ```powershell
