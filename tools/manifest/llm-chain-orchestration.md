@@ -76,6 +76,8 @@ refines it. No-LLM mode → heuristics only.
 |----------|-----------|
 | `recommend(function, spec, context=None, router=None, use_llm=True)` | `{recommended, mode, critique, confidence, rationale, signals, source}` |
 | CLI | `python tools/llm/reasoned_codegen_advisor.py --function <fn> --spec "..." [--file-count N] [--no-llm] --json` |
+| MCP | `reasoned_codegen_advise` tool (`tools/mcp/gap_handlers.py::handle_reasoned_codegen_advise`, registered in `tool_registry.py`) |
+| Routing | `reasoned_codegen_advisor` cheap-tier chain in `args/llm_config.yaml` (LLM-refine; heuristic baseline needs no LLM) |
 
 **Wired pipelines:** translation (`code_translator._invoke_llm`, default ON) and the ANVIL
 agentic runner (`tools/anvil/agentic_runner.py --reasoned auto|on|off`, default OFF, advisor-gated).

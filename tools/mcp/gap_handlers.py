@@ -1601,6 +1601,25 @@ def handle_cot_invoke(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_reasoned_codegen_advise(args: dict) -> dict:
+    """Advise whether reasoned codegen pays off for a task (enable + mode)."""
+    try:
+        from tools.llm.reasoned_codegen_advisor import recommend
+
+        return recommend(
+            args.get("function", "code_generation"),
+            args.get("spec", ""),
+            context={
+                "file_count": int(args.get("file_count", 0) or 0),
+                "past_failures": int(args.get("past_failures", 0) or 0),
+            },
+            use_llm=bool(args.get("use_llm", False)),
+        )
+    except Exception as exc:
+        logger.warning("handle_reasoned_codegen_advise: %s", exc)
+        return {"error": str(exc), "recommended": False, "mode": "off"}
+
+
 # ---------------------------------------------------------------------------
 # NOC CANVAS (NOCC)
 # ---------------------------------------------------------------------------

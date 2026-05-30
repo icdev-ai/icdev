@@ -560,6 +560,12 @@ routing:
     chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
 
+  # Reasoned-codegen advisor — lightweight enable/mode recommendation (cheap tier).
+  # Heuristic baseline runs with no LLM; this chain only powers optional LLM refine.
+  reasoned_codegen_advisor:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
   test_translation:
     chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
