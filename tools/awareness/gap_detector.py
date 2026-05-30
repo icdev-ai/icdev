@@ -661,6 +661,14 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     """
     findings: List[Dict[str, Any]] = []
     tools_dir = BASE_DIR / "tools"
+    # CREATE TABLE statements legitimately live outside tools/ as well:
+    # canvas / app schema modules under apps/ own their own DDL (e.g.
+    # apps/innovation/db.py defines innov_ideas, innov_assessments, ...).
+    # The reference scan below only looks at tools/, so a table created in
+    # apps/ but read from a tools/ adapter (e.g. tools/iqe/adapters/
+    # innovation.py SELECTs innov_ideas) was mis-flagged as an orphan.
+    # Scan apps/ for schema too so those CREATE TABLEs are seen.
+    schema_roots = [tools_dir, BASE_DIR / "apps"]
 
     created: Set[str] = set()
     referenced: Dict[str, str] = {}  # table → first referencing file
@@ -725,27 +733,29 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     # First pass: collect CREATE TABLE (and RENAME TO) from SQL-shaped string
     # literals in .py files. Comments are stripped first so documentation
     # inside SQL doesn't leak English prose into the regex matcher.
-    for py in _walk_py(tools_dir):
-        for sql in _extract_py_string_literals(py):
-            if not _is_likely_sql(sql):
-                continue
-            sql_clean = _strip_sql_comments(sql)
-            for m in create_re.finditer(sql_clean):
-                created.add(m.group(1).lower())
-            for m in rename_re.finditer(sql_clean):
-                created.add(m.group(1).lower())
+    for root in schema_roots:
+        for py in _walk_py(root):
+            for sql in _extract_py_string_literals(py):
+                if not _is_likely_sql(sql):
+                    continue
+                sql_clean = _strip_sql_comments(sql)
+                for m in create_re.finditer(sql_clean):
+                    created.add(m.group(1).lower())
+                for m in rename_re.finditer(sql_clean):
+                    created.add(m.group(1).lower())
 
     # Also scan raw .sql files (migrations written as pure SQL). These
     # don't need the _is_likely_sql gate — if it's a .sql file, assume
     # it's SQL. Comments still get stripped.
-    for sql_path in tools_dir.rglob("*.sql"):
-        if any(part in _EXCLUDED_PARTS for part in sql_path.parts):
-            continue
-        src = _strip_sql_comments(_read_text(sql_path))
-        for m in create_re.finditer(src):
-            created.add(m.group(1).lower())
-        for m in rename_re.finditer(src):
-            created.add(m.group(1).lower())
+    for root in schema_roots:
+        for sql_path in root.rglob("*.sql"):
+            if any(part in _EXCLUDED_PARTS for part in sql_path.parts):
+                continue
+            src = _strip_sql_comments(_read_text(sql_path))
+            for m in create_re.finditer(src):
+                created.add(m.group(1).lower())
+            for m in rename_re.finditer(src):
+                created.add(m.group(1).lower())
 
     # Second pass: references from SQL-shaped string literals. Python
     # ``from X import Y`` statements are ast.ImportFrom (not ast.Constant),
