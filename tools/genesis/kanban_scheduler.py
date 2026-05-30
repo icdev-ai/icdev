@@ -283,6 +283,22 @@ def main():
         except Exception:
             pass
 
+        # Pause gate: manual (dashboard "Pause Scheduler" button) or automatic
+        # (an interactive Claude/Cursor session is active). Skips the dispatch /
+        # git stash+merge churn so it can't clobber in-flight human work. We still
+        # heartbeat above so the scheduler shows as alive-but-paused.
+        try:
+            from tools.kanban.scheduler_control import should_pause
+            _pp = should_pause()
+        except Exception:
+            _pp = {"paused": False, "mode": ""}
+        if _pp.get("paused"):
+            logger.info("Cycle %d: paused (%s) — skipping dispatch; %s",
+                        cycle, _pp.get("mode"),
+                        _pp.get("reason") or _pp.get("intents") or "")
+            time.sleep(args.interval)
+            continue
+
         try:
             # [DISPATCH POINT - main loop]
             reflex_name = kanban_run.__module__.rsplit(".", 1)[-1]
