@@ -10,6 +10,13 @@
 # Values below 0.1 are anomalously low and will be clamped to 0.1 at load time.
 # ---------------------------------------------------------------------------
 pillar_weights:
+  # Anomaly-detection floor: weights below this value are treated as anomalously
+  # low and clamped up to min_weight at load time.  Raise to enforce a stricter
+  # floor (e.g. 0.3 for environments that require all pillars to carry meaningful
+  # influence); lower toward 0.0 for nearly-disabled pillars.
+  # Default: 0.1 (matches the hardcoded fallback in checker.py).
+  min_weight: 0.1
+
   code-quality:      1.0
   documentation:     1.0
   testing:           1.2   # testing weighted slightly higher
