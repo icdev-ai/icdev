@@ -157,6 +157,7 @@
 - [AISG — AI Strategy Guide Tools](manifest/aisg.md)
 - [IQE — Internal Query Engine](manifest/iqe-query-engine.md)
 - [Kanban System](manifest/kanban.md)
+- [Cross-Session Coordination (`tools/coordination/`)](manifest/session-coordination.md) — LLM-agnostic session registry + leases + advisory/git locks so concurrent agent sessions (Claude CLI, Cursor, Kanban) don't collide
 - [Regulatory Foresight Engine (D352 — pint-regfore)](manifest/regulatory-foresight-engine.md)
 - [Voice-of-Customer (VOC) Signal Capture (pint-voc)](manifest/voc.md)
 - [Strategos — DIB Supply Chain & Strategy Intelligence](manifest/strategos.md)

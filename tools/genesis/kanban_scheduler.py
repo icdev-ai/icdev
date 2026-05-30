@@ -231,6 +231,17 @@ def main():
     logger.info("Kanban scheduler started (interval=%ds)", args.interval)
     logger.info("Press Ctrl+C to stop")
 
+    # Cross-session coordination: register the scheduler as an agent session so
+    # interactive Claude/Cursor sessions can SEE that kanban is active and what
+    # it's dispatching (LLM-agnostic; tools/coordination). Best-effort.
+    os.environ.setdefault("ICDEV_SESSION_ID", "kanban-scheduler")
+    os.environ.setdefault("ICDEV_AGENT", "kanban")
+    try:
+        from tools.coordination import session_registry as _coord_reg
+        _coord_reg.register(intent="kanban scheduler — dispatching due tasks")
+    except Exception:
+        _coord_reg = None
+
     # guard-6: Orphan cleanup on startup -- kill any Claude CLI subprocesses
     # left over from a previous run that may have crashed.
     _cleanup_orphan_processes()
@@ -262,6 +273,13 @@ def main():
             )
         except Exception as exc:
             logger.debug("heartbeat write failed: %s", exc)
+
+        # Coordination heartbeat — keep the scheduler visible to other sessions.
+        try:
+            if _coord_reg is not None:
+                _coord_reg.heartbeat(intent=f"kanban scheduler — cycle {cycle}")
+        except Exception:
+            pass
 
         try:
             # [DISPATCH POINT - main loop]
