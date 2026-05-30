@@ -27,6 +27,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 from tools.common.helpers import now_isoformat
+from tools.dashboard.auth import require_role
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -36,6 +37,12 @@ if str(BASE_DIR) not in sys.path:
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 govcon_api = Blueprint("govcon_api", __name__, url_prefix="/api/govcon")
+
+# RBAC roles for write/sensitive GovCon operations (prop-fix-09, roles per
+# prop-fix-08). These endpoints mutate data or trigger AI/SAM.gov scans, so they
+# are restricted to the active capture roles. require_role() denies with 403 +
+# log_auth_event("permission_denied"); 401 if unauthenticated.
+GOVCON_WRITE_ROLES = ("admin", "bd", "capture_mgr")
 
 
 def _get_db():
@@ -75,6 +82,7 @@ def _audit(conn, action, details="", actor="govcon_api"):
 
 
 @govcon_api.route("/sam/scan", methods=["POST"])
+@require_role(*GOVCON_WRITE_ROLES)
 def scan_sam_gov():
     """POST /api/govcon/sam/scan — Trigger SAM.gov scanner.
 
@@ -132,6 +140,7 @@ def list_sam_opportunities():
 
 
 @govcon_api.route("/sam/import/<sam_opp_id>", methods=["POST"])
+@require_role(*GOVCON_WRITE_ROLES)
 def import_sam_to_proposal(sam_opp_id):
     """POST /api/govcon/sam/import/<id> — Create proposal_opportunity from SAM.gov record.
 
@@ -207,6 +216,7 @@ def import_sam_to_proposal(sam_opp_id):
 
 
 @govcon_api.route("/opportunities/<opp_id>/extract-requirements", methods=["POST"])
+@require_role(*GOVCON_WRITE_ROLES)
 def extract_requirements(opp_id):
     """POST /api/govcon/opportunities/<id>/extract-requirements
 
@@ -283,6 +293,7 @@ def list_patterns():
 
 
 @govcon_api.route("/opportunities/<opp_id>/map-capabilities", methods=["POST"])
+@require_role(*GOVCON_WRITE_ROLES)
 def map_capabilities(opp_id):
     """POST /api/govcon/opportunities/<id>/map-capabilities
 
@@ -316,6 +327,7 @@ def get_coverage(opp_id):
 
 
 @govcon_api.route("/opportunities/<opp_id>/auto-compliance", methods=["POST"])
+@require_role(*GOVCON_WRITE_ROLES)
 def auto_populate_compliance(opp_id):
     """POST /api/govcon/opportunities/<id>/auto-compliance
 
@@ -374,6 +386,7 @@ def auto_populate_compliance(opp_id):
 
 
 @govcon_api.route("/opportunities/<opp_id>/bid-recommendation", methods=["GET"])
+@require_role(*GOVCON_WRITE_ROLES)
 def bid_recommendation(opp_id):
     """GET /api/govcon/opportunities/<id>/bid-recommendation — Get bid/no-bid recommendation."""
     try:
@@ -391,6 +404,7 @@ def bid_recommendation(opp_id):
 
 
 @govcon_api.route("/opportunities/<opp_id>/auto-draft", methods=["POST"])
+@require_role(*GOVCON_WRITE_ROLES)
 def auto_draft(opp_id):
     """POST /api/govcon/opportunities/<id>/auto-draft
 
