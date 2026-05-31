@@ -125,3 +125,28 @@ print(update["content"], update["citation_count"], update["status"])
 > `DICSearchEngine` (search_engine.py) and optionally `verifier.verify`
 > (verifier.py) for CoD gating — both are soft dependencies; generation
 > degrades gracefully when either is absent.
+
+## Verification
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/verifier.py` | CoT/CoD claim replay + citation validation + abstention gate. Every AI-generated draft passes through `verify()` before persisting. Pipeline: `validate_citations` (structural), claim extraction, per-claim CoT/CoD replay against cited chunk (LLM + deterministic lexical-overlap fallback), optional corrective retrieval, and disposition (strip unsupported claims or reject/abstain). Reuses `icdev.tools.rag.retriever.validate_citations` and `icdev.tools.rag.corrective_rag`. Air-gap safe — functions headless without an LLM provider. |
+
+## Analytics & Discovery
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/analytics_engine.py` | DIC Analytics Engine — document-level analytics, pattern detection, anomaly detection, and scenario impact analysis over the KG and RAG layers. All queries use `get_connection()` so RLS applies. No LLM calls — pure graph and SQL analytics. |
+| `tools/document_intelligence/explorer.py` | DIC KG "Buried Bodies" Explorer. Surfaces: orphaned documents (no collection/chunks/versions), single-owner tribal knowledge, undocumented KG dependencies, contradictions between overlapping docs, and superseded versions. All queries are RLS-filtered by `tenant_id`. No LLM calls — pure graph analytics. |
+
+## Flask Blueprint
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/blueprint.py` | Document Intelligence Canvas Flask Blueprint. Registers all UI routes (`/document-intelligence/`, `/collections`, `/search`, `/review`, `/generate`, `/acoic`, `/finetune`, `/snippets`, `/templates`) and JSON API endpoints (`/api/ingest`, `/api/search`, `/api/chat`, `/api/collections`, `/api/review/<id>/approve|reject`, `/api/generate`, `/api/iqe-query`). |
+
+## Knowledge Handoff
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/handoff.py` | DIC Knowledge Handoff Workflow. Multi-step guided session: initiate (departing owner + successor + destination collection) → auto-build agenda from explorer findings → interview prompts → captured answers → CoD-verified structured document generation per agenda area → write to destination collection with HITL-gated status. All outputs are AI-labeled `PENDING`; never auto-published. |
