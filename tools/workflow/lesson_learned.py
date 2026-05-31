@@ -46,6 +46,13 @@ class LessonPattern:
     STALE_CLEANUP = "stale_cleanup"
     AUTOFIXED = "autofixed"
     AUTO_REMEDIATED = "auto_remediated"
+    CHAT_RLS_MISUNDERSTANDING = "chat_rls_misunderstanding"
+    CHAT_WRONG_IMPORT = "chat_wrong_import"
+    CHAT_DB_BACKEND = "chat_db_backend"
+    CHAT_TIMEOUT = "chat_timeout"
+    CHAT_PERMISSION = "chat_permission"
+    CHAT_PHANTOM = "chat_phantom"
+    CHAT_GENERIC = "chat_correction_generic"
     UNKNOWN = "unknown"
 
 
@@ -59,6 +66,13 @@ _SYSTEMIC_PATTERNS = {
     LessonPattern.STALE_CLEANUP,
     LessonPattern.AUTO_DECOMPOSED,
     LessonPattern.VERIFICATION_FAIL,
+    LessonPattern.CHAT_RLS_MISUNDERSTANDING,
+    LessonPattern.CHAT_WRONG_IMPORT,
+    LessonPattern.CHAT_DB_BACKEND,
+    LessonPattern.CHAT_TIMEOUT,
+    LessonPattern.CHAT_PERMISSION,
+    LessonPattern.CHAT_PHANTOM,
+    LessonPattern.CHAT_GENERIC,
 }
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -284,6 +298,13 @@ def _pattern_to_category(pattern: str) -> str:
         LessonPattern.STALE_CLEANUP: "Stale cleanup",
         LessonPattern.AUTOFIXED: "Autofixed",
         LessonPattern.AUTO_REMEDIATED: "Auto-remediated",
+        LessonPattern.CHAT_RLS_MISUNDERSTANDING: "Chat: RLS misunderstanding",
+        LessonPattern.CHAT_WRONG_IMPORT: "Chat: wrong import",
+        LessonPattern.CHAT_DB_BACKEND: "Chat: DB/backend mismatch",
+        LessonPattern.CHAT_TIMEOUT: "Chat: timeout/hang",
+        LessonPattern.CHAT_PERMISSION: "Chat: permission denied",
+        LessonPattern.CHAT_PHANTOM: "Chat: phantom completion",
+        LessonPattern.CHAT_GENERIC: "Chat: generic correction",
         LessonPattern.UNKNOWN: "Unknown",
     }
     return labels.get(pattern, pattern)
@@ -343,6 +364,29 @@ def _build_recommendation(pattern: str, last_reason: str, failure_count: int, tr
         LessonPattern.AUTO_REMEDIATED: (
             "Pre-backlog auto-remediation resolved an idempotent issue. "
             "If this recurs, the fix should be pushed upstream."
+        ),
+        LessonPattern.CHAT_RLS_MISUNDERSTANDING: (
+            "LLM repeatedly misapplied RLS rules. Review prompt context for tenant_id/classification "
+            "handling or add a hard-prompt guard."
+        ),
+        LessonPattern.CHAT_WRONG_IMPORT: (
+            "LLM used wrong import path or module. Update canonical-import snippets in context/ "
+            "or add an import-check reflex."
+        ),
+        LessonPattern.CHAT_DB_BACKEND: (
+            "LLM assumed wrong DB backend. Ensure prompt includes ICDEV_STORAGE_BACKEND env context."
+        ),
+        LessonPattern.CHAT_TIMEOUT: (
+            "User reported timeout/hang. Check worktree health, subprocess timeout, and scheduler pause gate."
+        ),
+        LessonPattern.CHAT_PERMISSION: (
+            "LLM blocked by permissions. Review pre-dispatch permission audit or add --dangerously-skip hint."
+        ),
+        LessonPattern.CHAT_PHANTOM: (
+            "LLM claimed completion but produced no changes. Strengthen file-existence checks in prompt."
+        ),
+        LessonPattern.CHAT_GENERIC: (
+            "User corrected LLM output. If this recurs on the same topic, consider a prompt patch or skill update."
         ),
     }
     return recommendations.get(pattern, f"Review failure reason: {reason[:200]}")
@@ -462,6 +506,80 @@ def write_lesson(lesson: Lesson) -> str:
     except Exception as exc:
         logger.warning("lesson_learned write failed for %s: %s", lesson.task_id, exc)
         return ""
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Chat corrections (Claude CLI integration)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+_CHAT_CORRECTION_KEYWORDS = {
+    LessonPattern.CHAT_RLS_MISUNDERSTANDING: ["rls", "row security", "tenant_id", "classification", "inject_row_predicate"],
+    LessonPattern.CHAT_WRONG_IMPORT: ["import", "module", "modulenotfound", "no module named", "cannot import"],
+    LessonPattern.CHAT_DB_BACKEND: ["sqlite", "postgresql", "psycopg2", "postgres", "backend"],
+    LessonPattern.CHAT_TIMEOUT: ["timeout", "hang", "stuck", "frozen", "not responding"],
+    LessonPattern.CHAT_PERMISSION: ["permission", "access denied", "unauthorized", "forbidden"],
+    LessonPattern.CHAT_PHANTOM: ["phantom", "no commits", "no changes", "nothing happened", "empty commit"],
+}
+
+
+def _classify_chat_correction(correction_text: str) -> str:
+    """Map a user correction to a LessonPattern."""
+    lowered = correction_text.lower()
+    for pattern, keywords in _CHAT_CORRECTION_KEYWORDS.items():
+        if any(kw in lowered for kw in keywords):
+            return pattern
+    return LessonPattern.CHAT_GENERIC
+
+
+def write_chat_correction_lesson(context_id: str, turn_number: int, correction_text: str) -> str:
+    """Write a lesson for a Claude CLI chat correction.
+
+    Returns the memory entry id (or existing id on dedup).
+    """
+    cfg = _load_config()
+    if not cfg.get("enabled"):
+        return ""
+
+    task_id = f"chat-{context_id}"
+    pattern = _classify_chat_correction(correction_text)
+    category = _pattern_to_category(pattern)
+
+    # Count prior corrections for this context as failure_count proxy
+    from tools.db.storage import get_connection  # noqa: PLC0415
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM chat_corrections WHERE context_id = %s",
+            (context_id,),
+        ).fetchone()
+        failure_count = int(row[0]) if row else 0
+    except Exception:
+        failure_count = 0
+    finally:
+        conn.close()
+
+    rec = get_recurrence(pattern, "chat", "chat")
+    recurrence_score = rec.recurrence_score
+    is_systemic = _is_systemic(pattern, recurrence_score, cfg)
+    recommendation = _build_recommendation(pattern, correction_text, failure_count, turn_number)
+
+    lesson = Lesson(
+        task_id=task_id,
+        task_title=f"Chat correction turn #{turn_number}",
+        outcome="failure",
+        pattern=pattern,
+        category=category,
+        failure_count=failure_count,
+        last_failure_reason=correction_text[:500],
+        transitions_count=turn_number,
+        recurrence_score=recurrence_score,
+        is_systemic=is_systemic,
+        recommendation=recommendation,
+        commit_summary="",
+        diff_stats={},
+    )
+    return write_lesson(lesson)
 
 
 # ────────────────────────────────────────────────────────────────────────────

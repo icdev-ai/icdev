@@ -342,6 +342,14 @@ def _detect_and_store_correction(context_id: str, content: str, turn_number: int
         )
         conn.commit()
         logger.debug("[RICOAS] Stored correction for context %s", context_id)
+        # ── LESSONS LEARNED: chat correction ─────────────────────────────────
+        try:
+            from tools.workflow.lesson_learned import write_chat_correction_lesson
+            entry_id = write_chat_correction_lesson(context_id, turn_number, content)
+            if entry_id:
+                logger.debug("[LESSON] Chat correction logged as %s", entry_id)
+        except Exception as _ll_exc:
+            logger.warning("[LESSON] Could not log chat correction: %s", _ll_exc)
     except Exception as exc:
         logger.debug("[RICOAS] Could not store correction: %s", exc)
 
