@@ -1616,8 +1616,8 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
                     from tools.workflow.lesson_learned import analyze_task, write_lesson
                     lesson = analyze_task(task_id, outcome="auto_decomposed")
                     write_lesson(lesson)
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
             except Exception as exc:
                 print(f"  Kanban: failed to mark gate {task_id} done: {exc}")
         else:
@@ -2876,8 +2876,8 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
                 )
                 try:
                     fh.flush()
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
                 # OPT-62: drain the user message queue. If nothing was
                 # injected mid-run, the task is done — exit the loop.
@@ -4502,8 +4502,8 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                             if sr.returncode == 0:
                                 chunks.append(sr.stdout)
                         manifest_text = "\n".join(chunks)
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 if not manifest_text or tool_path not in manifest_text:
                     # Fallback to working-tree shards when the kanban branch
                     # either has no manifest files or is missing the specific
@@ -4656,8 +4656,8 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                         cwd=str(BASE_DIR), timeout=15,
                     )
                     found = r.returncode == 0 and bool(r.stdout.strip())
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
             if not found:
                 # Python-based fallback: search worktree directory directly.
                 # git grep may fail when the branch is checked out in a
@@ -5236,8 +5236,8 @@ def _check_completed():
                 try:
                     proc.kill()
                     proc.wait(timeout=10)
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
                 # ── SCAN-ONLY TIMEOUT ACCEPTANCE ─────────────────────
                 # Scan tasks (pytest, codelens, coherence, companion) are
@@ -5350,8 +5350,8 @@ def _check_completed():
                         ).fetchone()
                     if row:
                         task_dict["title"] = row["title"]
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 _send_notification(task_dict, event="failed")
                 try:
                     from tools.notifications.adapters.telegram import (
@@ -5364,8 +5364,8 @@ def _check_completed():
                         f"(timeout {_tout_count}/{MAX_TIMEOUT_RETRIES})",
                         severity="warning",
                     )
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 # self-debug reflex: timeouts are their own recurrence class
                 try:
                     from tools.workflow.self_debug import check_and_diagnose
@@ -5694,8 +5694,8 @@ def _check_completed():
                     if claude_output:
                         lines = claude_output.split("\n")
                         error_tail = "\n".join(lines[-5:])
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 print(f"  Kanban: {task_id} failed (exit {ret}){': ' + error_tail[:200] if error_tail else ''}")
                 # Preserve worktree for debugging/retry — do NOT clean up
                 if task_id in _worktrees:
@@ -5703,8 +5703,8 @@ def _check_completed():
                 try:
                     _move_task(task_id, "backlog")
                     _send_notification(task_dict, event="failed")
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
             del _running[task_id]
     return completed
 
@@ -6313,8 +6313,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             if proc:
                 try:
                     proc.kill()
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
             if tid in _worktrees:
                 _cleanup_worktree(tid)
                 del _worktrees[tid]
@@ -6371,8 +6371,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     lesson = analyze_task(tid, outcome="stale_cleanup")
                     write_lesson(lesson)
                     maybe_create_remediation_card(lesson)
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
                 # Build a task dict for the local alert queue.
                 task_dict = {"id": tid, "title": tid}
@@ -6390,8 +6390,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                             "task_type": _tr_d.get("task_type"),
                             "priority": _tr_d.get("priority"),
                         }
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
                 # Queue the alert locally instead of calling fragile external
                 # notification adapters. The local queue is drained by the
@@ -6403,8 +6403,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                         "stale-cleanup local alert queue failed for %s: %s",
                         tid, _qa_exc,
                     )
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
         # Stale cleanup happened — defer promotion to the next cycle so the
         # quarantine state written by check_and_diagnose has time to settle
@@ -6484,8 +6484,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     from tools.workflow.lesson_learned import analyze_task, write_lesson
                     lesson = analyze_task(_tid, outcome="auto_decomposed")
                     write_lesson(lesson)
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
     except Exception as _ad_exc:
         logger.warning("auto_decompose sweep failed: %s", _ad_exc)
 
@@ -6545,8 +6545,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     from tools.workflow.lesson_learned import analyze_task, write_lesson
                     lesson = analyze_task(task["id"], outcome="auto_decomposed")
                     write_lesson(lesson)
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 continue
 
         try:

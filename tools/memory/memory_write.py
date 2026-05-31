@@ -88,11 +88,12 @@ def write_to_db(
 
     c.execute(
         "INSERT INTO memory_entries (content, type, importance, content_hash, user_id, tenant_id, source, decay_weight, classification, compartment) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
         (content, entry_type, importance, fingerprint, user_id, tenant_id, source, 1.0, classification, compartment),
     )
+    returning = c.fetchone()
+    entry_id = returning[0] if returning else None
     conn.commit()
-    entry_id = c.lastrowid
     conn.close()
     return {"id": entry_id, "status": "inserted", "fingerprint": fingerprint}
 
