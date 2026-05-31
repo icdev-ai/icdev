@@ -5,7 +5,7 @@ Creates all Contract Performance Management Portal tables (Phase 60):
 cpmp_contracts, cpmp_clins, cpmp_wbs, cpmp_deliverables, cpmp_status_history,
 cpmp_evm_periods, cpmp_subcontractors, cpmp_cpars_assessments,
 cpmp_negative_events, cpmp_small_business_plan, cpmp_cdrl_generations,
-cpmp_sam_contract_awards, cpmp_cor_access_log.
+cpmp_sam_contract_awards, cpmp_cor_access_log, cpmp_contract_mods.
 
 All DDL uses CREATE TABLE IF NOT EXISTS so this is safe to call on both
 fresh SQLite databases (CI/E2E) and production DBs that already have tables.
@@ -358,6 +358,33 @@ CREATE TABLE IF NOT EXISTS cpmp_cor_access_log (
 )
 """
 
+_CPMP_CONTRACT_MODS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_contract_mods (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    contract_id TEXT NOT NULL,
+    mod_number INTEGER NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('admin','funding','scope','pop')),
+    description TEXT NOT NULL DEFAULT '',
+    value_delta REAL NOT NULL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','in_review','approved','rejected','executed')),
+    requested_by TEXT,
+    requested_at TEXT NOT NULL DEFAULT (datetime('now','utc')),
+    reviewed_by TEXT,
+    reviewed_at TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    rejection_reason TEXT,
+    effective_date TEXT,
+    executed_at TEXT,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now','utc')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now','utc')),
+    FOREIGN KEY (contract_id) REFERENCES cpmp_contracts(id)
+)
+"""
+
 _CPMP_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_status ON cpmp_contracts(status)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_health ON cpmp_contracts(health)",
@@ -374,6 +401,9 @@ _CPMP_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cpmp_nevent_contract ON cpmp_negative_events(contract_id)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_cdrl_gen_deliv  ON cpmp_cdrl_generations(deliverable_id)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_cor_log_contract ON cpmp_cor_access_log(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_contract ON cpmp_contract_mods(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_status ON cpmp_contract_mods(status)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_cpmp_contract_mods_number ON cpmp_contract_mods(contract_id, mod_number)",
 ]
 
 _ALL_DDLS = [
@@ -390,6 +420,7 @@ _ALL_DDLS = [
     _CPMP_CDRL_GENERATIONS_DDL,
     _CPMP_SAM_CONTRACT_AWARDS_DDL,
     _CPMP_COR_ACCESS_LOG_DDL,
+    _CPMP_CONTRACT_MODS_DDL,
 ]
 
 

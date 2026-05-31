@@ -110,6 +110,21 @@ acceptance_validation:
     - acceptance_criteria_unverified
     - page_content_empty
 
+# Aggregation Guard Gate — blocks when a result set's derived classification exceeds
+# the surface ceiling or the requesting user's clearance_level.
+# Run: python tools/security/aggregation_guard.py --gate --json
+aggregation_guard:
+  blocking:
+    - derived_classification_exceeds_surface_ceiling   # guard_result() returned action='block'
+    - derived_classification_exceeds_user_clearance    # derived > user clearance_level
+  warning:
+    - aggregation_rule_fired_warn                      # SCG rule matched; derived within ceiling
+    - user_volume_throttle_approaching                 # row×entity×time-window near limit
+  note: >
+    Detected by tools/security/aggregation_guard.py (guard_result / evaluate_rules).
+    SCG rules live in args/classification_aggregation.yaml.  Events are written to
+    the append-only aggregation_events table (NIST AU-9/AU-10); never UPDATE/DELETE.
+
 thresholds:
   sast:
     max_critical: 0
@@ -174,6 +189,9 @@ thresholds:
     max_failed_criteria: 0
     max_error_pages: 0
     require_acceptance_criteria: true
+  aggregation_guard:
+    max_daily_block_events: 0       # any block event trips the gate
+    max_warn_rate_per_hour: 50      # high warn rate triggers policy review
 
 fedramp:
   blocking:

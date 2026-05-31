@@ -1,0 +1,10 @@
+canvas: dic
+queries:
+  - label: All drift events
+    query: "foreach d in dic.drift_events select d.source, d.entity, d.severity, d.detected_at"
+  - label: Critical drift events
+    query: "foreach d in dic.drift_events where d.severity == \"critical\" select d.source, d.entity, d.detected_at"
+  - label: Open regen queue
+    query: "foreach r in dic.regen_queue where r.state == \"queued\" select r.document_id, r.impact_level, r.queued_at"
+  - label: All SSP fragments
+    query: "foreach s in dic.ssp_fragments select s.control_id, s.document_id, s.status"

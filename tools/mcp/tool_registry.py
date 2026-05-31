@@ -32,7 +32,7 @@ Categories:
     dx (5)
     cloud (5)
     registry (9)
-    security_agentic (9)
+    security_agentic (11)
     testing (6)
     installer (4)
     misc (8)
@@ -43,7 +43,7 @@ Categories:
     system_graph (3)
     intelligence (3)
 
-Total: 265 tools, 6 resources
+Total: 267 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -3906,7 +3906,7 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
-    # SECURITY_AGENTIC (9 + 4 tools)
+    # SECURITY_AGENTIC (9 + 4 + 2 tools)
     # ============================================================
     "scan_code_patterns": {
         "category": "security_agentic",
@@ -4078,6 +4078,62 @@ TOOL_REGISTRY = {
                 "role": {"type": "string", "description": "Agent role (e.g., builder, security, compliance)"}
             },
             "required": ["role"],
+        },
+    },
+    # Aggregation Guard (prop-sec-04 through prop-sec-08)
+    "guard_result": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_guard_result",
+        "description": "Run the GovCon mosaic aggregation guard on a result set. Computes derived classification from SCG rules (args/classification_aggregation.yaml), compares against the surface ceiling and user clearance, and returns action='derive'|'warn'|'block' with throttle status. Writes append-only events to aggregation_events.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "result_set": {
+                    "type": "array",
+                    "description": "List of row dicts from proposals/govcon query (each with classification and field values)",
+                    "items": {"type": "object"},
+                },
+                "surface": {
+                    "type": "string",
+                    "description": "Surface/route identifier for ceiling lookup (e.g. 'proposals/list', 'proposals/export')",
+                },
+                "user_id": {"type": "string", "description": "User ID for clearance + throttle checks"},
+                "clearance_level": {
+                    "type": "string",
+                    "description": "User clearance level (PUBLIC, CUI, SECRET, TS, TS//SCI)",
+                    "enum": ["PUBLIC", "CUI", "SECRET", "TS", "TS//SCI"],
+                },
+                "surface_ceiling": {
+                    "type": "string",
+                    "description": "Maximum classification this surface is authorized to display",
+                    "enum": ["PUBLIC", "CUI", "SECRET", "TS", "TS//SCI"],
+                },
+                "gate": {"type": "boolean", "description": "Exit non-zero if action is block", "default": False},
+            },
+            "required": ["result_set", "surface"],
+        },
+    },
+    "evaluate_aggregation_rules": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_evaluate_aggregation_rules",
+        "description": "Evaluate SCG aggregation rules from args/classification_aggregation.yaml against a result set or query context, returning which rules fired and the computed derived classification. Pure evaluation — no events written.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "result_set": {
+                    "type": "array",
+                    "description": "List of row dicts to evaluate against SCG rules",
+                    "items": {"type": "object"},
+                },
+                "rules_file": {
+                    "type": "string",
+                    "description": "Path to SCG rules YAML (defaults to args/classification_aggregation.yaml)",
+                },
+                "json": {"type": "boolean", "default": True},
+            },
+            "required": ["result_set"],
         },
     },
     # ============================================================

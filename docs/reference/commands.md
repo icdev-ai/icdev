@@ -187,6 +187,26 @@ python tools/security/agent_trust_scorer.py --all --json
 
 ---
 
+## Aggregation Guard (prop-sec-03 through prop-sec-08)
+```bash
+# Evaluate SCG aggregation rules against a result set (dry-run, no events written)
+python tools/security/aggregation_guard.py --evaluate-rules --json
+
+# Run full guard check for a surface (writes aggregation_events on match)
+python tools/security/aggregation_guard.py --guard --surface "proposals/list" --json
+
+# Gate mode — exits non-zero if action=block
+python tools/security/aggregation_guard.py --guard --surface "proposals/export" --gate --json
+
+# Show recent aggregation events (audit trail)
+python tools/security/aggregation_guard.py --events --limit 50 --json
+
+# Check guard health (rule count, events table row count)
+python tools/security/aggregation_guard.py --health --json
+```
+
+---
+
 ## Requirements Intake (RICOAS) Commands
 ```bash
 python tools/requirements/intake_engine.py --project-id "sparkpilot" --customer-name "Name" --customer-org "Org" --impact-level IL4 --json

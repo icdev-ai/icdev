@@ -38,6 +38,12 @@
 | ZTA Continuous Monitoring | tools/devsecops/zta_maturity_scorer.py | Scheduled ZTA maturity assessment with drift detection (G-18). `run_scheduled_assessment(project_id, drift_threshold=0.1)` compares current vs previous score; emits warning if score drops ≥ threshold. CLI: `--schedule --drift-threshold 0.1`. NIST CA-7/SI-4. | `--schedule --project-id P --drift-threshold 0.1 --json` | Dict with drift_alert flag |
 | A2A Cert Rotation | tools/a2a/provision_dev_certs.py | 90-day A2A cert rotation with intermediate CA (G-19). Reduced from 365 to 90-day validity. Added `_make_intermediate_ca()` (path_length=0); agent certs signed by intermediate CA, not root. `--rotate` flag removes + regenerates all certs. NIST IA-5/SC-17. | `--rotate --json` | Dict with cert paths |
 
+## GovCon Proposals Security — Aggregation Guard (prop-sec-03 through prop-sec-08)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Aggregation Guard | tools/security/aggregation_guard.py | Mosaic aggregation guard: evaluates SCG rules from `args/classification_aggregation.yaml` (field co-occurrence, count/threshold, entity-diversity) against GovCon result sets; computes derived classification via `compute_derived_classification(elements, ctx)`; enforces ceiling + clearance via `guard_result(result_set, ctx, surface)`; writes append-only events to `aggregation_events` table (NIST AU-9). Pure deterministic — no LLM. | `--guard --surface <route> --json`, `--evaluate-rules --json`, `--gate` | `{derived, action, throttled, events_written}` |
+| SCG Rules Config | args/classification_aggregation.yaml | Declarative Security Classification Guide rules: field co-occurrence (columns A+B+C together → derived X), count/threshold (≥N opportunities for agency within window), entity-diversity. Rule schema: `{name, when:{tables, columns, count?, window?, operator}, derive:<classification>, action:warn|block, rationale}` | YAML config | SCG rule set |
+
 ## Security Framework (Phase 74 — sec-fnd)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|

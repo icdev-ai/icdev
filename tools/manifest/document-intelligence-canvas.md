@@ -65,3 +65,9 @@ CLI: `python -m tools.document_intelligence.acoic {drift|map|fragment|approve|re
 > retrieved for a control — correct behavior until documents are ingested.
 > The `/document-intelligence/acoic` route is wired by the DIC blueprint
 > (dic-ui-02); `acoic.get_acoic_page_context()` is the data source.
+
+## Dashboard Blueprint
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/blueprint.py` | Flask Blueprint (`dic_bp`, prefix `/document-intelligence`). Registers 5 page routes (`/`, `/acoic`, `/finetune`, `/snippets`, `/templates`) and `POST /api/iqe-query` for natural-language IQE queries against DIC collections. Each page route renders the corresponding template under `tools/dashboard/templates/document_intelligence/`. IQE query dispatches through `tools.iqe.adapters.dic` + `tools.iqe.executor.Executor`. |

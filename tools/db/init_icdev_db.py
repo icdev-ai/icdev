@@ -3366,6 +3366,9 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
         CHECK(status IN ('active', 'suspended')),
     created_by TEXT,
     tenant_id TEXT,
+    -- Bell-LaPadula MAC subject attributes (prop-sec-02)
+    clearance_level TEXT NOT NULL DEFAULT 'CUI',
+    compartments TEXT NOT NULL DEFAULT '[]',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -5404,6 +5407,7 @@ CREATE TABLE IF NOT EXISTS proposal_opportunities (
         'devsecops', 'ai_ml', 'ato_rmf', 'cloud', 'security',
         'compliance', 'agile', 'data', 'management', 'general')),
     classification TEXT DEFAULT 'CUI',
+    compartments TEXT NOT NULL DEFAULT '[]',
     created_by TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
@@ -5576,6 +5580,27 @@ CREATE TABLE IF NOT EXISTS proposal_status_history (
 );
 CREATE INDEX IF NOT EXISTS idx_prop_hist_entity ON proposal_status_history(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_prop_hist_created ON proposal_status_history(created_at);
+
+-- HITL reviewer assignment + hand-off table (prop-rev-09)
+-- Tracks assignment lifecycle: assign → accept/reject → in_progress → complete/reassign
+CREATE TABLE IF NOT EXISTS proposal_reviewer_assignments (
+    id TEXT PRIMARY KEY,
+    review_id TEXT NOT NULL REFERENCES proposal_reviews(id),
+    reviewer TEXT NOT NULL,
+    assigned_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN (
+        'pending', 'accepted', 'rejected', 'in_progress', 'completed', 'reassigned')),
+    notes TEXT,
+    assigned_at TEXT DEFAULT (datetime('now')),
+    accepted_at TEXT,
+    rejected_at TEXT,
+    rejection_reason TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_asgn_review ON proposal_reviewer_assignments(review_id);
+CREATE INDEX IF NOT EXISTS idx_prop_asgn_reviewer ON proposal_reviewer_assignments(reviewer);
+CREATE INDEX IF NOT EXISTS idx_prop_asgn_status ON proposal_reviewer_assignments(status);
 
 -- =========================================================================
 -- GovCon Intelligence (Phase 59, D361-D373)
@@ -5873,7 +5898,8 @@ CREATE TABLE IF NOT EXISTS cpmp_contracts (
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
     created_by TEXT,
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    compartments TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_number ON cpmp_contracts(contract_number);
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_agency ON cpmp_contracts(agency);
@@ -6246,6 +6272,51 @@ CREATE INDEX IF NOT EXISTS idx_cpmp_cor_user ON cpmp_cor_access_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cor_contract ON cpmp_cor_access_log(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cor_action ON cpmp_cor_access_log(action);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cor_created ON cpmp_cor_access_log(created_at);
+
+-- ── Phase D: Integrated Master Schedule (IMS, prop-pm-01) ──────────────
+
+-- Milestones linked to WBS elements and EVM periods for schedule-to-EVM traceability
+CREATE TABLE IF NOT EXISTS cpmp_milestones (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    wbs_id TEXT REFERENCES cpmp_wbs(id),
+    title TEXT NOT NULL,
+    description TEXT,
+    baseline_date TEXT,
+    forecast_date TEXT,
+    actual_date TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN (
+        'pending', 'in_progress', 'complete', 'missed', 'on_hold')),
+    evm_period_id TEXT REFERENCES cpmp_evm_periods(id),
+    responsible_person TEXT,
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_ms_contract ON cpmp_milestones(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_ms_wbs ON cpmp_milestones(wbs_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_ms_status ON cpmp_milestones(status);
+CREATE INDEX IF NOT EXISTS idx_cpmp_ms_baseline ON cpmp_milestones(baseline_date);
+
+-- Milestone dependency graph (FS/SS/FF/SF) for critical path visualization
+CREATE TABLE IF NOT EXISTS cpmp_milestone_deps (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    predecessor_id TEXT NOT NULL REFERENCES cpmp_milestones(id),
+    successor_id TEXT NOT NULL REFERENCES cpmp_milestones(id),
+    lag_days INTEGER DEFAULT 0,
+    dep_type TEXT DEFAULT 'finish_to_start' CHECK(dep_type IN (
+        'finish_to_start', 'start_to_start', 'finish_to_finish', 'start_to_finish')),
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE(predecessor_id, successor_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_contract ON cpmp_milestone_deps(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_pred ON cpmp_milestone_deps(predecessor_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_succ ON cpmp_milestone_deps(successor_id);
 
 -- =========================================================================
 -- Questions to Government (Phase 59, D-QTG-1 through D-QTG-5)

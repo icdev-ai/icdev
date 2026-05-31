@@ -16,13 +16,14 @@ Integration points:
     sam_contract_sync.py     → SAM.gov Contract Awards API
 """
 
+import json as _mac_json
 import os
 import sys
 import uuid
 from tools.db.storage import get_connection
 from pathlib import Path
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, g, jsonify, make_response, request
 
 from tools.dashboard.auth import require_role
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
@@ -75,6 +76,97 @@ def _cor_access_log(conn, user_id, contract_id, action):
         pass
 
 
+# ---------------------------------------------------------------------------
+# Bell-LaPadula MAC helpers (prop-sec-02)
+# ---------------------------------------------------------------------------
+
+def _mac_ctx():
+    """Return current security context from Flask g (None = system/unauthenticated)."""
+    try:
+        return getattr(g, "security_context", None)
+    except RuntimeError:
+        return None
+
+
+def _mac_compartments(raw):
+    """Parse compartments from JSON string or collection to a plain set."""
+    if isinstance(raw, (list, tuple, set, frozenset)):
+        return set(raw)
+    try:
+        return set(_mac_json.loads(raw or "[]"))
+    except Exception:
+        return set()
+
+
+def _mac_filter(rows):
+    """Filter row list — keep only those the current user can read per Bell-LaPadula.
+
+    Applies no-read-up (clearance >= classification) and strict-subset
+    compartment check (resource compartments ⊆ user compartments).
+    """
+    from tools.security.classification_enforcer import can_read, can_access_compartment
+    ctx = _mac_ctx()
+    if ctx is None:
+        return [dict(r) if not isinstance(r, dict) else r for r in rows]
+    result = []
+    for row in rows:
+        d = dict(row) if not isinstance(row, dict) else row
+        cls = d.get("classification", "CUI") or "CUI"
+        comps = _mac_compartments(d.get("compartments", "[]"))
+        if can_read(cls, ctx) and can_access_compartment(comps, ctx):
+            result.append(d)
+    return result
+
+
+def _mac_deny_read(row):
+    """Return 403 JSON response if current user cannot read this row. Returns None on pass."""
+    from tools.security.classification_enforcer import can_read, can_access_compartment
+    ctx = _mac_ctx()
+    if ctx is None:
+        return None
+    d = dict(row) if not isinstance(row, dict) else row
+    cls = d.get("classification", "CUI") or "CUI"
+    comps = _mac_compartments(d.get("compartments", "[]"))
+    if not can_read(cls, ctx) or not can_access_compartment(comps, ctx):
+        return make_response(
+            jsonify({"error": "Insufficient clearance", "code": "MAC_DENIED"}), 403
+        )
+    return None
+
+
+def _mac_deny_write(classification, compartments_raw="[]"):
+    """Return 403 JSON response if current user cannot write at this classification.
+
+    Implements no-write-down: user clearance must be >= target classification so
+    a lower-cleared user cannot create or update a higher-classified contract.
+    """
+    from tools.security.classification_enforcer import can_read, can_access_compartment
+    ctx = _mac_ctx()
+    if ctx is None:
+        return None
+    cls = (classification or "CUI").upper()
+    comps = _mac_compartments(compartments_raw)
+    if not can_read(cls, ctx) or not can_access_compartment(comps, ctx):
+        return make_response(
+            jsonify({"error": "MAC write policy denied", "code": "MAC_WRITE_DENIED"}), 403
+        )
+    return None
+
+
+def _mac_check_parent_contract(contract_id, conn):
+    """Check MAC read access on the parent contract. Returns 403 response or None."""
+    try:
+        row = conn.execute(
+            "SELECT classification, compartments FROM cpmp_contracts WHERE id = ?",
+            (contract_id,),
+        ).fetchone()
+        if not row:
+            return None  # Let child route return 404
+        return _mac_deny_read(row)
+    except Exception:
+        return None
+
+
 # =====================================================================
 # Phase A — Contracts CRUD
 # =====================================================================
@@ -90,6 +182,9 @@ def list_contracts():
         request.args.get("agency")
         limit = int(request.args.get("limit", 50))
         result = _list(status=status, limit=limit)
+        # Bell-LaPadula: filter contracts list to only rows caller can read
+        if isinstance(result, dict) and "contracts" in result:
+            result["contracts"] = _mac_filter(result["contracts"])
         return jsonify(result)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -102,6 +197,10 @@ def create_contract():
         from tools.govcon.contract_manager import create_contract as _create
 
         data = request.get_json(silent=True) or {}
+        # Bell-LaPadula: no-write-down — caller must hold clearance >= target classification
+        denied = _mac_deny_write(data.get("classification", "CUI"), data.get("compartments", "[]"))
+        if denied:
+            return denied
         result = _create(data)
         return jsonify(result), 201 if result.get("status") == "ok" else 400
     except Exception as e:
@@ -117,6 +216,10 @@ def get_contract(contract_id):
         result = _get(contract_id)
         if result.get("status") == "error":
             return jsonify(result), 404
+        # Bell-LaPadula: no-read-up check on individual contract
+        denied = _mac_deny_read(result)
+        if denied:
+            return denied
         return jsonify(result)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -126,9 +229,20 @@ def get_contract(contract_id):
 def update_contract(contract_id):
     """PUT /api/cpmp/contracts/<id> — Update contract fields."""
     try:
-        from tools.govcon.contract_manager import update_contract as _update
+        from tools.govcon.contract_manager import get_contract as _get, update_contract as _update
 
         data = request.get_json(silent=True) or {}
+        # Bell-LaPadula: check read access on existing record before updating
+        existing = _get(contract_id)
+        if existing.get("status") != "error":
+            denied = _mac_deny_read(existing)
+            if denied:
+                return denied
+            # Also check write at the target classification
+            new_cls = data.get("classification", existing.get("classification", "CUI"))
+            denied = _mac_deny_write(new_cls, data.get("compartments", existing.get("compartments", "[]")))
+            if denied:
+                return denied
         result = _update(contract_id, data)
         if result.get("status") == "error":
             return jsonify(result), 404
@@ -168,6 +282,14 @@ def list_clins(contract_id):
     try:
         from tools.govcon.contract_manager import list_clins as _list
 
+        # Bell-LaPadula: inherit parent contract classification
+        conn = _get_db()
+        try:
+            denied = _mac_check_parent_contract(contract_id, conn)
+        finally:
+            conn.close()
+        if denied:
+            return denied
         result = _list(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -213,6 +335,14 @@ def list_wbs(contract_id):
     try:
         from tools.govcon.contract_manager import list_wbs as _list, build_wbs_tree as _tree
 
+        # Bell-LaPadula: inherit parent contract classification
+        conn = _get_db()
+        try:
+            denied = _mac_check_parent_contract(contract_id, conn)
+        finally:
+            conn.close()
+        if denied:
+            return denied
         mode = request.args.get("mode", "")
         tree_flag = request.args.get("tree", "").lower() == "true"
         if mode == "tree" or tree_flag:
@@ -1004,3 +1134,235 @@ def cor_get_cpars(contract_id):
         return jsonify(_sanitize_for_cor(result))
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =====================================================================
+# Phase D — Integrated Master Schedule (IMS, prop-pm-01)
+# =====================================================================
+
+
+@cpmp_api.route("/contracts/<contract_id>/milestones", methods=["GET"])
+def list_milestones(contract_id):
+    """GET /api/cpmp/contracts/<id>/milestones — List milestones with WBS + EVM joins."""
+    try:
+        conn = _get_db()
+        mac_err = _mac_check_parent_contract(contract_id, conn)
+        conn.close()
+        if mac_err:
+            return mac_err
+        from tools.govcon.milestone_manager import list_milestones as _list
+
+        status = request.args.get("status")
+        result = _list(contract_id, status=status)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/milestones", methods=["POST"])
+@require_role("pm", "admin")
+def create_milestone(contract_id):
+    """POST /api/cpmp/contracts/<id>/milestones — Create milestone (pm/admin only)."""
+    try:
+        conn = _get_db()
+        mac_err = _mac_check_parent_contract(contract_id, conn)
+        conn.close()
+        if mac_err:
+            return mac_err
+        from tools.govcon.milestone_manager import create_milestone as _create
+
+        data = request.get_json(silent=True) or {}
+        data["contract_id"] = contract_id
+        result = _create(data)
+        return jsonify(result), 201 if result.get("status") == "ok" else 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/milestones/<milestone_id>", methods=["GET"])
+def get_milestone(milestone_id):
+    """GET /api/cpmp/milestones/<id> — Get a single milestone."""
+    try:
+        from tools.govcon.milestone_manager import get_milestone as _get
+
+        result = _get(milestone_id)
+        if result.get("status") == "error":
+            return jsonify(result), 404
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/milestones/<milestone_id>", methods=["PUT"])
+@require_role("pm", "admin")
+def update_milestone(milestone_id):
+    """PUT /api/cpmp/milestones/<id> — Update milestone (pm/admin only)."""
+    try:
+        from tools.govcon.milestone_manager import update_milestone as _update
+
+        data = request.get_json(silent=True) or {}
+        result = _update(milestone_id, data)
+        if result.get("status") == "error":
+            return jsonify(result), 404
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/milestones/<milestone_id>", methods=["DELETE"])
+@require_role("pm", "admin")
+def delete_milestone(milestone_id):
+    """DELETE /api/cpmp/milestones/<id> — Delete milestone + its deps (pm/admin only)."""
+    try:
+        from tools.govcon.milestone_manager import delete_milestone as _delete
+
+        result = _delete(milestone_id)
+        if result.get("status") == "error":
+            return jsonify(result), 404
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/milestone-deps", methods=["GET"])
+def list_milestone_deps(contract_id):
+    """GET /api/cpmp/contracts/<id>/milestone-deps — List milestone dependencies."""
+    try:
+        conn = _get_db()
+        mac_err = _mac_check_parent_contract(contract_id, conn)
+        conn.close()
+        if mac_err:
+            return mac_err
+        from tools.govcon.milestone_manager import list_deps as _list
+
+        result = _list(contract_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/milestone-deps", methods=["POST"])
+@require_role("pm", "admin")
+def create_milestone_dep(contract_id):
+    """POST /api/cpmp/contracts/<id>/milestone-deps — Create dependency (pm/admin only)."""
+    try:
+        conn = _get_db()
+        mac_err = _mac_check_parent_contract(contract_id, conn)
+        conn.close()
+        if mac_err:
+            return mac_err
+        from tools.govcon.milestone_manager import create_dep as _create
+
+        data = request.get_json(silent=True) or {}
+        data["contract_id"] = contract_id
+        result = _create(data)
+        return jsonify(result), 201 if result.get("status") == "ok" else 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/milestone-deps/<dep_id>", methods=["DELETE"])
+@require_role("pm", "admin")
+def delete_milestone_dep(dep_id):
+    """DELETE /api/cpmp/milestone-deps/<id> — Remove a dependency (pm/admin only)."""
+    try:
+        from tools.govcon.milestone_manager import delete_dep as _delete
+
+        result = _delete(dep_id)
+        if result.get("status") == "error":
+            return jsonify(result), 404
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Contract Modifications — request/approval workflow (prop-ctr-01)
+# ---------------------------------------------------------------------------
+
+@cpmp_api.route("/contracts/<contract_id>/mods", methods=["GET"])
+@require_role("admin", "pm", "co", "contract_mgr", "cor")
+def list_contract_mods(contract_id):
+    """GET /api/cpmp/contracts/<id>/mods — List all modifications for a contract."""
+    try:
+        from tools.govcon.contract_mods_manager import list_mods as _list_mods
+        mods = _list_mods(contract_id, db_path=str(DB_PATH))
+        return jsonify({"mods": mods, "count": len(mods)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/mods", methods=["POST"])
+@require_role("admin", "co", "contract_mgr")
+def create_contract_mod(contract_id):
+    """POST /api/cpmp/contracts/<id>/mods — Request a new contract modification."""
+    data = request.get_json(force=True) or {}
+    denied = _mac_deny_write(data.get("classification", "CUI"), data.get("compartments", "[]"))
+    if denied:
+        return denied
+    try:
+        from tools.govcon.contract_mods_manager import create_mod as _create_mod
+        actor = "system"
+        if hasattr(g, "current_user") and g.current_user:
+            actor = (g.current_user.get("username") or "system") if isinstance(g.current_user, dict) else "system"
+        mod = _create_mod(
+            contract_id=contract_id,
+            type_=data.get("type", "admin"),
+            description=data.get("description", ""),
+            value_delta=float(data.get("value_delta", 0.0)),
+            requested_by=actor,
+            effective_date=data.get("effective_date"),
+            classification=data.get("classification", "CUI"),
+            tenant_id=data.get("tenant_id"),
+            metadata=data.get("metadata", "{}"),
+            db_path=str(DB_PATH),
+        )
+        return jsonify({"mod": mod}), 201
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@cpmp_api.route("/mods/<mod_id>", methods=["GET"])
+@require_role("admin", "pm", "co", "contract_mgr", "cor")
+def get_contract_mod(mod_id):
+    """GET /api/cpmp/mods/<id> — Get a single modification record."""
+    try:
+        from tools.govcon.contract_mods_manager import get_mod as _get_mod
+        mod = _get_mod(mod_id, db_path=str(DB_PATH))
+        if not mod:
+            return jsonify({"error": "Modification not found"}), 404
+        denied = _mac_deny_read(mod)
+        if denied:
+            return denied
+        return jsonify({"mod": mod})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@cpmp_api.route("/mods/<mod_id>/status", methods=["PUT"])
+@require_role("admin", "co", "contract_mgr")
+def transition_contract_mod(mod_id):
+    """PUT /api/cpmp/mods/<id>/status — Advance modification through approval workflow."""
+    data = request.get_json(force=True) or {}
+    new_status = data.get("status")
+    if not new_status:
+        return jsonify({"error": "status is required"}), 400
+    try:
+        from tools.govcon.contract_mods_manager import transition_mod as _transition_mod
+        actor = "system"
+        if hasattr(g, "current_user") and g.current_user:
+            actor = (g.current_user.get("username") or "system") if isinstance(g.current_user, dict) else "system"
+        mod = _transition_mod(
+            mod_id=mod_id,
+            new_status=new_status,
+            actor=actor,
+            reason=data.get("reason"),
+            db_path=str(DB_PATH),
+        )
+        return jsonify({"mod": mod})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500

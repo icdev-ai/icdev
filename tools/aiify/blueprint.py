@@ -220,10 +220,13 @@ def _build_prd(
     pain_points: list[dict],
     roadmap_title: str,
     innovation_signals: list[dict] | None = None,
+    all_opportunities: list[dict] | None = None,
 ) -> str:
     label = phase.get("label", phase_id)
     opps = phase.get("opportunities", [])
     effort = phase.get("total_effort_days", 0)
+    # Architecture diagram shows the *whole* target system, not just this phase
+    arch_opps = all_opportunities if all_opportunities else opps
 
     input_ref = (scan or {}).get("input_ref", "Unknown project")
     project_summary = (scan or {}).get("project_summary", "")
@@ -235,7 +238,7 @@ def _build_prd(
         import pathlib as _pathlib
         project_name = _pathlib.Path(ref).name or ref
 
-    # Paradigm effort breakdown
+    # Paradigm effort breakdown (phase-specific)
     paradigm_counts: dict[str, int] = {}
     for opp in opps:
         pa = opp.get("ai_paradigm", "llm_generation")
@@ -250,7 +253,7 @@ def _build_prd(
         from tools.aiify.diagram_generator import build_architecture_mermaid_block
         lines.append("## Target Architecture (AI / GenAI / Agentic AI)")
         lines.append("")
-        lines.append(build_architecture_mermaid_block(scan or {}, opps, label))
+        lines.append(build_architecture_mermaid_block(scan or {}, arch_opps, label, max_opps=25))
         lines.append("")
     except Exception:  # noqa: BLE001 — diagram is best-effort, never blocks the PRD
         pass
@@ -434,6 +437,21 @@ def api_send_to_kanban():
     data = request.get_json(force=True, silent=True) or {}
     roadmap_id = (data.get("roadmap_id") or "").strip()
     phase_id   = (data.get("phase_id") or "all").strip()
+
+    # Fallback: if caller sends scan_id, resolve the latest roadmap for that scan
+    if not roadmap_id:
+        scan_id = data.get("scan_id")
+        if scan_id:
+            conn = _conn()
+            try:
+                rm = conn.execute(
+                    "SELECT roadmap_id FROM aiify_roadmaps WHERE scan_id = ? ORDER BY created_at DESC LIMIT 1",
+                    (scan_id,),
+                ).fetchone()
+                if rm:
+                    roadmap_id = rm["roadmap_id"]
+            finally:
+                conn.close()
 
     if not roadmap_id:
         return jsonify({"error": "roadmap_id is required"}), 400
@@ -628,6 +646,21 @@ def api_generate_prd():
     roadmap_id = (data.get("roadmap_id") or "").strip()
     phase_id   = (data.get("phase_id") or "").strip()
 
+    # Fallback: if caller sends scan_id, resolve the latest roadmap for that scan
+    if not roadmap_id:
+        scan_id = data.get("scan_id")
+        if scan_id:
+            conn = _conn()
+            try:
+                rm = conn.execute(
+                    "SELECT roadmap_id FROM aiify_roadmaps WHERE scan_id = ? ORDER BY created_at DESC LIMIT 1",
+                    (scan_id,),
+                ).fetchone()
+                if rm:
+                    roadmap_id = rm["roadmap_id"]
+            finally:
+                conn.close()
+
     if not roadmap_id or not phase_id:
         return jsonify({"error": "roadmap_id and phase_id are required"}), 400
 
@@ -654,6 +687,20 @@ def api_generate_prd():
             return jsonify({"error": f"phase {phase_id} not found in roadmap"}), 404
 
         roadmap_title = rm["title"]
+    finally:
+        conn.close()
+
+    # Fetch ALL opportunities for this scan (used for architecture diagram)
+    all_opportunities: list[dict] = []
+    conn = _conn()
+    try:
+        all_opportunities = [
+            dict(r) for r in conn.execute(
+                "SELECT opportunity_id, module_path, function_name, pattern_type, ai_paradigm, "
+                "il_recommended_model FROM aiify_opportunities WHERE scan_id = ?",
+                (rm["scan_id"],),
+            ).fetchall()
+        ]
     finally:
         conn.close()
 
@@ -757,6 +804,7 @@ def api_generate_prd():
     prd = _build_prd(
         phase_id, target_phase, scan_dict, score_map,
         regulatory_items, pain_points, roadmap_title, innovation_signals,
+        all_opportunities,
     )
     return jsonify({
         "prd": prd,

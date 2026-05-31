@@ -334,6 +334,16 @@
                     <li><a href="/ai-ify/" style="color:#6ee7b7;">AI-ify</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
+                    {% if dic_enabled %}
+                    <li class="nav-section-label">Document Intelligence</li>
+                    <li><a href="/document-intelligence/" style="color:#7ab3f0;">DIC Overview</a></li>
+                    <li><a href="/document-intelligence/collections">Collections</a></li>
+                    <li><a href="/document-intelligence/search">Search &amp; Chat</a></li>
+                    <li><a href="/document-intelligence/review">HITL Review</a></li>
+                    <li><a href="/document-intelligence/generate">AI-Assist</a></li>
+                    <li><a href="/document-intelligence/acoic">ACOIC</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
                     {% if govlift_enabled %}
                     <li class="nav-section-label">Cloud Migration</li>
                     <li><a href="/govlift" style="color:#34d399;">GovLift</a></li>
@@ -883,6 +893,7 @@
             [/^\/ccc/, 'ccc'],
             [/^\/dsoc/, 'dsoc'],
             [/^\/ai-ify/, 'aiify'],
+            [/^\/document-intelligence/, 'dic'],
             [/^\/demo-runner/, 'demo_runner'],
             [/^\/innovation/, 'innovation'],
             [/^\/mission-canvas/, 'mission_canvas'],
