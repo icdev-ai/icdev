@@ -29,8 +29,8 @@ aiify_bp = Blueprint(
     template_folder="../../tools/dashboard/templates",
 )
 
-# Backward-compat: 301-redirect the legacy /ai-ify/ URLs to /ai-ify/.
-aiify_compat_bp = Blueprint("aiify_compat", __name__, url_prefix="/ai-ify")
+# Backward-compat: 301-redirect the legacy /ai-augmentation/ URLs to /ai-ify/.
+aiify_compat_bp = Blueprint("aiify_compat", __name__, url_prefix="/ai-augmentation")
 
 
 @aiify_compat_bp.route("/", defaults={"subpath": ""})
