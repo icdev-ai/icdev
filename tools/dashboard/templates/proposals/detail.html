@@ -554,6 +554,59 @@
         <button class="btn btn-secondary" onclick="openPropModal('add-teaming-modal')">+ Teaming Partner</button>
     </div>
 
+    <!-- Shipley Phase-Gate Stepper (prop-cap-11) -->
+    <div class="card" style="padding:16px; margin-bottom:20px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+            <strong style="font-size:14px;">Capture Phase-Gate Lifecycle</strong>
+            <button class="btn btn-sm btn-primary" onclick="openAdvanceGateModal('{{ opp.id }}')" id="btn-advance-gate">Advance Phase</button>
+        </div>
+        <!-- Phase stepper -->
+        <div id="capture-phase-stepper" style="display:flex; align-items:center; gap:0; margin-bottom:16px;">
+            {% set phases = [('qualify','Qualify'),('pursue','Pursue'),('capture','Capture'),('bid','Bid/No-Bid'),('proposal','Proposal')] %}
+            {% set cp = opp.capture_phase or 'qualify' %}
+            {% for phase_key, phase_label in phases %}
+            {% set is_active = (cp == phase_key) %}
+            {% set phase_idx = loop.index0 %}
+            {% set cp_idx = ['qualify','pursue','capture','bid','proposal'].index(cp) if cp in ['qualify','pursue','capture','bid','proposal'] else 0 %}
+            {% set is_done = (phase_idx < cp_idx) %}
+            <div style="flex:1; text-align:center; position:relative;">
+                <div style="width:32px; height:32px; border-radius:50%; margin:0 auto 4px;
+                     background:{% if is_active %}var(--primary,#3b82f6){% elif is_done %}var(--status-green,#22c55e){% else %}var(--bg-secondary,#374151){% endif %};
+                     border:2px solid {% if is_active %}var(--primary,#3b82f6){% elif is_done %}var(--status-green,#22c55e){% else %}var(--border-color,#4b5563){% endif %};
+                     display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:bold; color:#fff;">
+                    {% if is_done %}✓{% else %}{{ loop.index }}{% endif %}
+                </div>
+                <div style="font-size:11px; color:{% if is_active %}var(--text-primary){% else %}var(--text-secondary){% endif %}; font-weight:{% if is_active %}600{% else %}400{% endif %};">{{ phase_label }}</div>
+                {% if not loop.last %}
+                <div style="position:absolute; top:15px; right:-50%; width:100%; height:2px; background:{% if is_done %}var(--status-green,#22c55e){% else %}var(--border-color,#4b5563){% endif %}; z-index:0;"></div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Gate decision history -->
+        <div style="margin-top:12px;">
+            <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px;">Gate Decision Audit Trail</div>
+            <div id="gate-decisions-container">
+                <table id="gate-decisions-table" style="width:100%; font-size:12px; border-collapse:collapse;">
+                    <thead>
+                        <tr style="color:var(--text-secondary);">
+                            <th style="text-align:left; padding:4px 8px;">Date</th>
+                            <th style="text-align:left; padding:4px 8px;">From</th>
+                            <th style="text-align:left; padding:4px 8px;">To</th>
+                            <th style="text-align:left; padding:4px 8px;">Decision</th>
+                            <th style="text-align:left; padding:4px 8px;">Rationale</th>
+                            <th style="text-align:left; padding:4px 8px;">By</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gate-decisions-tbody">
+                        <tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding:8px;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- Capture fields card -->
     <div class="stat-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:20px;">
         <div class="stat-card">
@@ -630,6 +683,126 @@
         </table>
     </div>
 </div>
+
+<!-- Advance Gate Modal (prop-cap-11) -->
+<div id="advance-gate-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content" style="max-width:480px;">
+        <div class="modal-header">
+            <h2>Advance Capture Phase Gate</h2>
+            <button class="modal-close" onclick="closePropModal('advance-gate-modal')">&times;</button>
+        </div>
+        <form id="advance-gate-form" onsubmit="return submitAdvanceGate(event)">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Decision *</label>
+                    <select name="decision" required style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;">
+                        <option value="advance">Advance to Next Phase</option>
+                        <option value="hold">Hold at Current Phase</option>
+                        <option value="no_bid">No-Bid (End Pursuit)</option>
+                    </select>
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Rationale</label>
+                    <textarea name="rationale" rows="3" placeholder="Gate decision rationale..." style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Criteria Met</label>
+                    <input type="text" name="gate_criteria_met" placeholder="e.g. Win probability ≥ 40%, Budget confirmed" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;">
+                </div>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+                <button type="button" class="btn btn-secondary" onclick="closePropModal('advance-gate-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Record Gate Decision</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// Capture phase-gate JS (prop-cap-11)
+let _gateCapturePlanId = null;
+
+function openAdvanceGateModal(oppId) {
+    // Find the capture plan for this opportunity
+    fetch('/api/proposal-genesis/capture-plans?limit=100')
+        .then(r => r.json())
+        .then(data => {
+            const plan = (data.plans || []).find(p => p.opportunity_id === oppId);
+            if (!plan) { alert('No capture plan found for this opportunity.'); return; }
+            _gateCapturePlanId = plan.id;
+            openPropModal('advance-gate-modal');
+        })
+        .catch(() => alert('Could not load capture plan.'));
+}
+
+function submitAdvanceGate(e) {
+    e.preventDefault();
+    if (!_gateCapturePlanId) return false;
+    const form = e.target;
+    const body = {
+        decision: form.decision.value,
+        rationale: form.rationale.value,
+        gate_criteria_met: form.gate_criteria_met.value,
+    };
+    fetch('/api/proposal-genesis/capture-plans/' + _gateCapturePlanId + '/advance', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) { alert('Error: ' + data.error); return; }
+        closePropModal('advance-gate-modal');
+        loadGateDecisions(_gateCapturePlanId);
+        form.reset();
+    })
+    .catch(err => alert('Request failed: ' + err));
+    return false;
+}
+
+function loadGateDecisions(planId) {
+    if (!planId) return;
+    fetch('/api/proposal-genesis/capture-plans/' + planId + '/gates')
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('gate-decisions-tbody');
+            if (!tbody) return;
+            if (!data.gates || data.gates.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding:8px;">No gate decisions recorded yet.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.gates.map(g => `
+                <tr style="border-top:1px solid var(--border-color);">
+                    <td style="padding:4px 8px; color:var(--text-secondary);">${(g.created_at || '').slice(0,10)}</td>
+                    <td style="padding:4px 8px;">${g.from_phase || ''}</td>
+                    <td style="padding:4px 8px;">${g.to_phase || ''}</td>
+                    <td style="padding:4px 8px;"><span class="badge ${g.decision==='advance'?'badge-success':g.decision==='no_bid'?'badge-danger':'badge-warning'}">${g.decision}</span></td>
+                    <td style="padding:4px 8px; color:var(--text-secondary);">${g.rationale || '—'}</td>
+                    <td style="padding:4px 8px; color:var(--text-secondary);">${g.decided_by || '—'}</td>
+                </tr>
+            `).join('');
+        })
+        .catch(() => {
+            const tbody = document.getElementById('gate-decisions-tbody');
+            if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">Failed to load.</td></tr>';
+        });
+}
+
+// Load gate decisions when capture tab is activated
+document.addEventListener('DOMContentLoaded', function() {
+    const capTab = document.querySelector('[data-tab="tab-capture"]');
+    if (capTab) {
+        capTab.addEventListener('click', function() {
+            fetch('/api/proposal-genesis/capture-plans?limit=100')
+                .then(r => r.json())
+                .then(data => {
+                    const plan = (data.plans || []).find(p => p.opportunity_id === '{{ opp.id }}');
+                    if (plan) loadGateDecisions(plan.id);
+                });
+        });
+    }
+});
+</script>
 
 <!-- ===================== Modals ===================== -->
 

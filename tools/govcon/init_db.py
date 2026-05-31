@@ -5,7 +5,8 @@ Creates all Contract Performance Management Portal tables (Phase 60):
 cpmp_contracts, cpmp_clins, cpmp_wbs, cpmp_deliverables, cpmp_status_history,
 cpmp_evm_periods, cpmp_subcontractors, cpmp_cpars_assessments,
 cpmp_negative_events, cpmp_small_business_plan, cpmp_cdrl_generations,
-cpmp_sam_contract_awards, cpmp_cor_access_log, cpmp_contract_mods.
+cpmp_sam_contract_awards, cpmp_cor_access_log, cpmp_contract_mods,
+cpmp_milestones, cpmp_milestone_deps (IMS — prop-pm-01).
 
 All DDL uses CREATE TABLE IF NOT EXISTS so this is safe to call on both
 fresh SQLite databases (CI/E2E) and production DBs that already have tables.
@@ -358,6 +359,44 @@ CREATE TABLE IF NOT EXISTS cpmp_cor_access_log (
 )
 """
 
+_CPMP_MILESTONES_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_milestones (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    wbs_id TEXT,
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT,
+    baseline_date TEXT,
+    forecast_date TEXT,
+    actual_date TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN (
+        'pending', 'in_progress', 'complete', 'missed', 'on_hold')),
+    evm_period_id TEXT,
+    responsible_person TEXT,
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_MILESTONE_DEPS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_milestone_deps (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    predecessor_id TEXT NOT NULL,
+    successor_id TEXT NOT NULL,
+    lag_days INTEGER DEFAULT 0,
+    dep_type TEXT DEFAULT 'finish_to_start' CHECK(dep_type IN (
+        'finish_to_start', 'start_to_start', 'finish_to_finish', 'start_to_finish')),
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE(predecessor_id, successor_id)
+)
+"""
+
 _CPMP_CONTRACT_MODS_DDL = """
 CREATE TABLE IF NOT EXISTS cpmp_contract_mods (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -404,6 +443,13 @@ _CPMP_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_contract ON cpmp_contract_mods(contract_id)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_status ON cpmp_contract_mods(status)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_cpmp_contract_mods_number ON cpmp_contract_mods(contract_id, mod_number)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_ms_contract   ON cpmp_milestones(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_ms_wbs        ON cpmp_milestones(wbs_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_ms_status     ON cpmp_milestones(status)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_ms_baseline   ON cpmp_milestones(baseline_date)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_contract ON cpmp_milestone_deps(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_pred    ON cpmp_milestone_deps(predecessor_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_succ    ON cpmp_milestone_deps(successor_id)",
 ]
 
 _ALL_DDLS = [
@@ -421,6 +467,8 @@ _ALL_DDLS = [
     _CPMP_SAM_CONTRACT_AWARDS_DDL,
     _CPMP_COR_ACCESS_LOG_DDL,
     _CPMP_CONTRACT_MODS_DDL,
+    _CPMP_MILESTONES_DDL,
+    _CPMP_MILESTONE_DEPS_DDL,
 ]
 
 

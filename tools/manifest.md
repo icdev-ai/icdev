@@ -892,3 +892,10 @@
 | Lesson Learned | tools\workflow\lesson_learned.py | Auto-registered: workflow/lesson_learned.py | --json | JSON |
 | Lesson Learned Remediation | tools\workflow\lesson_learned_remediation.py | Auto-registered: workflow/lesson_learned_remediation.py | --json | JSON |
 | Inspect Adapt | tools\genesis\reflexes\inspect_adapt.py | Auto-registered: reflexes/inspect_adapt.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Contract Mods Manager | tools\govcon\contract_mods_manager.py | Auto-registered: govcon/contract_mods_manager.py | --json | JSON |
+| Milestone Manager | tools\govcon\milestone_manager.py | Auto-registered: govcon/milestone_manager.py | --json | JSON |

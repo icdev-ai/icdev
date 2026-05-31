@@ -628,6 +628,18 @@ CREATE TABLE IF NOT EXISTS cpmp_contract_mods (
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_contract ON cpmp_contract_mods(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_status ON cpmp_contract_mods(status);
+CREATE TABLE IF NOT EXISTS pg_capture_gate_decisions (
+    id TEXT PRIMARY KEY,
+    capture_plan_id TEXT NOT NULL,
+    opportunity_id TEXT,
+    from_phase TEXT NOT NULL,
+    to_phase TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    rationale TEXT,
+    decided_by TEXT,
+    gate_criteria_met TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
