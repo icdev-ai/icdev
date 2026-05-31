@@ -1,10 +1,10 @@
 # CUI // SP-CTI
-# AI-ify Semgrep rules — each rule maps to one of the 8 AI-augmentable code patterns.
+# AI-ify Semgrep rules -- each rule maps to one of the 8 AI-augmentable code patterns.
 # metadata.aiify_pattern must match an entry in PATTERN_TYPES (constants.py).
 # metadata.ai_paradigm must match an entry in AI_PARADIGMS (constants.py).
 
 rules:
-  # ── Pattern 1: nested_conditionals ──────────────────────────────────────────
+  # -- Pattern 1: nested_conditionals ------------------------------------------
   - id: aac-nested-conditionals-py
     patterns:
       - pattern: |
@@ -12,7 +12,7 @@ rules:
             if ...:
               if ...:
                 ...
-    message: "Nested conditionals (depth ≥ 3) — replace with ML classifier"
+    message: "Nested conditionals (depth  3) -- replace with ML classifier"
     languages: [python]
     severity: INFO
     metadata:
@@ -29,7 +29,7 @@ rules:
               }
             }
           }
-    message: "Nested conditionals (depth ≥ 3) — replace with ML classifier"
+    message: "Nested conditionals (depth  3) -- replace with ML classifier"
     languages: [java]
     severity: INFO
     metadata:
@@ -46,18 +46,18 @@ rules:
               }
             }
           }
-    message: "Nested conditionals (depth ≥ 3) — replace with ML classifier"
+    message: "Nested conditionals (depth  3) -- replace with ML classifier"
     languages: [go]
     severity: INFO
     metadata:
       aiify_pattern: nested_conditionals
       ai_paradigm: ml_classifier
 
-  # ── Pattern 2: regex_user_input ──────────────────────────────────────────────
+  # -- Pattern 2: regex_user_input ----------------------------------------------
   - id: aac-regex-user-input-py
     patterns:
       - pattern: re.$FUNC($PATTERN, $INPUT)
-    message: "Regex-based user input parsing — replace with NLP/NLU extractor"
+    message: "Regex-based user input parsing -- replace with NLP/NLU extractor"
     languages: [python]
     severity: INFO
     metadata:
@@ -67,20 +67,20 @@ rules:
   - id: aac-regex-user-input-java
     patterns:
       - pattern: Pattern.compile($X).matcher($Y)
-    message: "Regex-based user input parsing — replace with NLP/NLU extractor"
+    message: "Regex-based user input parsing -- replace with NLP/NLU extractor"
     languages: [java]
     severity: INFO
     metadata:
       aiify_pattern: regex_user_input
       ai_paradigm: nlp_extractor
 
-  # ── Pattern 3: string_template_rendering ─────────────────────────────────────
+  # -- Pattern 3: string_template_rendering -------------------------------------
   - id: aac-string-template-rendering-py
     pattern-either:
       - pattern: render_template($TEMPLATE, ...)
       - pattern: $ENV.get_template($X).render(...)
       - pattern: Template($X).render(...)
-    message: "Static template rendering — replace with LLM generation"
+    message: "Static template rendering -- replace with LLM generation"
     languages: [python]
     severity: INFO
     metadata:
@@ -91,18 +91,18 @@ rules:
     pattern-either:
       - pattern: $TEMPLATE.process($WRITER, $MODEL)
       - pattern: $ENGINE.getTemplate($X).process(...)
-    message: "Static template rendering — replace with LLM generation"
+    message: "Static template rendering -- replace with LLM generation"
     languages: [java]
     severity: INFO
     metadata:
       aiify_pattern: string_template_rendering
       ai_paradigm: llm_generation
 
-  # ── Pattern 4: scheduled_cron ────────────────────────────────────────────────
+  # -- Pattern 4: scheduled_cron ------------------------------------------------
   - id: aac-scheduled-cron-py-apscheduler
     patterns:
       - pattern: $SCHEDULER.add_job(...)
-    message: "APScheduler job — replace with agentic trigger"
+    message: "APScheduler job -- replace with agentic trigger"
     languages: [python]
     severity: INFO
     metadata:
@@ -115,7 +115,7 @@ rules:
           @$APP.task(...)
           def $FUNC(...):
               ...
-    message: "Celery periodic task — replace with agentic trigger"
+    message: "Celery periodic task -- replace with agentic trigger"
     languages: [python]
     severity: INFO
     metadata:
@@ -127,14 +127,14 @@ rules:
       - pattern: |
           @Scheduled(...)
           public $RET $FUNC(...) { ... }
-    message: "Spring @Scheduled — replace with agentic trigger"
+    message: "Spring @Scheduled -- replace with agentic trigger"
     languages: [java]
     severity: INFO
     metadata:
       aiify_pattern: scheduled_cron
       ai_paradigm: agentic_trigger
 
-  # ── Pattern 5: hardcoded_threshold ───────────────────────────────────────────
+  # -- Pattern 5: hardcoded_threshold -------------------------------------------
   - id: aac-hardcoded-threshold-py
     pattern-either:
       - pattern: $X > $LITERAL
@@ -142,14 +142,14 @@ rules:
       - pattern: $X >= $LITERAL
       - pattern: $X <= $LITERAL
     pattern-where-python: "isinstance($LITERAL, (int, float)) and $LITERAL not in (0, 1)"
-    message: "Hardcoded numeric threshold — replace with ML anomaly detection"
+    message: "Hardcoded numeric threshold -- replace with ML anomaly detection"
     languages: [python]
     severity: INFO
     metadata:
       aiify_pattern: hardcoded_threshold
       ai_paradigm: anomaly_detection
 
-  # ── Pattern 6: db_render_notify_chain ────────────────────────────────────────
+  # -- Pattern 6: db_render_notify_chain ----------------------------------------
   - id: aac-db-render-notify-chain-py
     patterns:
       - pattern: |
@@ -161,18 +161,18 @@ rules:
             ...
             $NOTIFIER.send(...)
             ...
-    message: "DB→render→notify pipeline — replace with LLM synthesis"
+    message: "DB->render->notify pipeline -- replace with LLM synthesis"
     languages: [python]
     severity: INFO
     metadata:
       aiify_pattern: db_render_notify_chain
       ai_paradigm: llm_generation
 
-  # ── Pattern 7: keyword_list_search ───────────────────────────────────────────
+  # -- Pattern 7: keyword_list_search -------------------------------------------
   - id: aac-keyword-list-search-py
     patterns:
       - pattern: $X in [$A, $B, $C, ...]
-    message: "Keyword list membership check — replace with vector semantic search"
+    message: "Keyword list membership check -- replace with vector semantic search"
     languages: [python]
     severity: INFO
     metadata:
@@ -182,20 +182,20 @@ rules:
   - id: aac-keyword-list-search-java
     patterns:
       - pattern: $LIST.contains($X)
-    message: "List contains check — replace with vector semantic search"
+    message: "List contains check -- replace with vector semantic search"
     languages: [java]
     severity: INFO
     metadata:
       aiify_pattern: keyword_list_search
       ai_paradigm: embedding_retrieval
 
-  # ── Pattern 8: large_rule_table ──────────────────────────────────────────────
+  # -- Pattern 8: large_rule_table ----------------------------------------------
   - id: aac-large-rule-table-py
     patterns:
       - pattern: |
           {$K1: $V1, $K2: $V2, $K3: $V3, $K4: $V4, $K5: $V5,
            $K6: $V6, $K7: $V7, $K8: $V8, $K9: $V9, $K10: $V10, ...}
-    message: "Large rule/dispatch table — replace with ML/RL decision agent"
+    message: "Large rule/dispatch table -- replace with ML/RL decision agent"
     languages: [python]
     severity: INFO
     metadata:
@@ -216,16 +216,16 @@ rules:
           $MAP.put(...);
           $MAP.put(...);
           $MAP.put(...);
-    message: "Large rule table (HashMap) — replace with ML/RL decision agent"
+    message: "Large rule table (HashMap) -- replace with ML/RL decision agent"
     languages: [java]
     severity: INFO
     metadata:
       aiify_pattern: large_rule_table
       ai_paradigm: decision_agent
 
-  # ── Spring Boot / JVM supplemental rules ─────────────────────────────────────
+  # -- Spring Boot / JVM supplemental rules -------------------------------------
 
-  # Spring @Pattern annotation — regex constraint on a field
+  # Spring @Pattern annotation -- regex constraint on a field
   - id: aac-spring-pattern-annotation-java
     pattern-either:
       - pattern: |
@@ -234,18 +234,18 @@ rules:
       - pattern: |
           @Pattern(regexp = $X, message = $MSG)
           private $TYPE $FIELD;
-    message: "Spring @Pattern regexp constraint — replace with NLP-based phone/address normalizer"
+    message: "Spring @Pattern regexp constraint -- replace with NLP-based phone/address normalizer"
     languages: [java]
     severity: INFO
     metadata:
       aiify_pattern: regex_user_input
       ai_paradigm: nlp_extractor
 
-  # Spring Data derived query: findBy…StartingWith / Containing / Like
+  # Spring Data derived query: findByStartingWith / Containing / Like
   - id: aac-spring-data-keyword-query-java
     pattern-either:
       - pattern: $REPO.findBy$X($QUERY, ...)
-    message: "Spring Data keyword query — replace with embedding-based semantic search"
+    message: "Spring Data keyword query -- replace with embedding-based semantic search"
     languages: [java]
     severity: INFO
     metadata:
@@ -259,21 +259,22 @@ rules:
       - metavariable-regex:
           metavariable: $N
           regex: '^\d+$'
-    message: "Hardcoded page size in PageRequest.of — replace with adaptive pagination"
+    message: "Hardcoded page size in PageRequest.of -- replace with adaptive pagination"
     languages: [java]
     severity: INFO
     metadata:
       aiify_pattern: hardcoded_threshold
       ai_paradigm: anomaly_detection
 
-  # Spring @Scheduled — move to agentic workflow trigger
+  # Spring @Scheduled -- move to agentic workflow trigger
   - id: aac-spring-scheduled-java
-    pattern: |
-      @Scheduled(...)
-      $MODS $RETURN $METHOD(...) {
-        ...
-      }
-    message: "@Scheduled annotation — replace with agentic workflow trigger"
+    patterns:
+      - pattern-inside: |
+          @Scheduled(...)
+          public $RETURN $METHOD(...) {
+            ...
+          }
+    message: "@Scheduled annotation -- replace with agentic workflow trigger"
     languages: [java]
     severity: INFO
     metadata:
@@ -287,7 +288,7 @@ rules:
       public $COLLECTION $METHOD() {
         return $REPO.$FIND(...);
       }
-    message: "@ModelAttribute static collection — replace with ML-assisted suggestion/autocomplete"
+    message: "@ModelAttribute static collection -- replace with ML-assisted suggestion/autocomplete"
     languages: [java]
     severity: INFO
     metadata:
@@ -300,14 +301,14 @@ rules:
       - pattern: return "$VIEW";
       - pattern-not: return "redirect:$X";
       - pattern-not: return "forward:$X";
-    message: "Static MVC view-name return — consider LLM-augmented content generation"
+    message: "Static MVC view-name return -- consider LLM-augmented content generation"
     languages: [java]
     severity: INFO
     metadata:
       aiify_pattern: string_template_rendering
       ai_paradigm: llm_generation
 
-  # Nested if depth ≥ 2 (Spring validation chains)
+  # Nested if depth  2 (Spring validation chains)
   - id: aac-nested-conditionals-java-depth2
     patterns:
       - pattern: |
@@ -316,281 +317,330 @@ rules:
               ...
             }
           }
-    message: "Nested conditionals (depth ≥ 2) in Java — replace with ML classifier"
+    message: "Nested conditionals (depth  2) in Java -- replace with ML classifier"
     languages: [java]
     severity: INFO
     metadata:
       aiify_pattern: nested_conditionals
       ai_paradigm: ml_classifier
 
-  # ══════════════════════════════════════════════════════════════════════════════
+  # ==============================================================================
   # Framework-level architectural patterns (added 2026-05-31)
   # These detect domain-specific AI augmentation opportunities missed by
-  # literal code-pattern rules above.
-  # ══════════════════════════════════════════════════════════════════════════════
+  # literal code-pattern rules above.  Rules are intentionally BROAD so they
+  # catch framework abstractions (Django consumers, OCR pipelines, search
+  # querysets) that do not contain the literal low-level smells (nested ifs,
+  # hardcoded thresholds) the original 8 patterns target.
+  # ==============================================================================
 
-  # ── Django / Python document-management patterns ─────────────────────────────
+  # -- Document ingestion / upload (broad catch-all) ---------------------------
 
-  # Django signal-based document consumer (post_save on Document model)
-  - id: aac-django-document-consumer-py
-    patterns:
-      - pattern-either:
-          - pattern: |
-              @receiver($SIGNAL, sender=$MODEL)
-              def $FUNC(...):
-                ...
-                $DOC.$FIELD.save(...)
-                ...
-          - pattern: |
-              def $FUNC(...):
-                ...
-                $MODEL.objects.create(...)
-                ...
-                $CONSUMER.consume_document(...)
-                ...
-    message: "Django document ingestion consumer — replace with agentic document router"
+  # Any function/class named consume/ingest/process_document/upload that
+  # touches a file-like object or FileField.
+  - id: aac-document-consumer-broad-py
+    pattern-either:
+      - pattern: |
+          def $FUNC(...):
+            ...
+            $FILE = request.FILES[...]
+            ...
+      - pattern: |
+          def $FUNC(...):
+            ...
+            $FILE = $FORM.cleaned_data[...]
+            ...
+      - pattern: |
+          def consume(...):
+            ...
+            $DOC.save(...)
+            ...
+      - pattern: |
+          def ingest(...):
+            ...
+            $FILE.read(...)
+            ...
+      - pattern: |
+          def $FUNC(...):
+            ...
+            $PATH.save(...)
+            ...
+            $PATH.store(...)
+            ...
+    message: "Document upload / ingestion handler -- hook into agentic document processing pipeline"
     languages: [python]
     severity: INFO
     metadata:
       aiify_pattern: document_ingestion_pipeline
       ai_paradigm: agentic_trigger
 
-  # OCR library usage (tesseract, pytesseract, OCRmyPDF, pdf2image)
-  - id: aac-ocr-pipeline-py
+  # Django model with FileField or ImageField (any document store)
+  - id: aac-django-filefield-py
     pattern-either:
-      - pattern: pytesseract.$METHOD(...)
-      - pattern: $TESS.image_to_string(...)
-      - pattern: ocrmypdf.$METHOD(...)
-      - pattern: pdf2image.convert_from_path(...)
-      - pattern: cv2.imread(...)
-    message: "OCR / image-to-text pipeline — replace with layout-aware vision transformer"
+      - pattern: $FIELD = models.FileField(...)
+      - pattern: $FIELD = models.ImageField(...)
+    message: "Django model with file storage -- core document ingestion schema"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aiify_pattern: document_ingestion_pipeline
+      ai_paradigm: agentic_trigger
+
+  # -- OCR / document parsing (broad catch-all) --------------------------------
+
+  # Any import or usage of tesseract, ocrmypdf, pdfminer, pdf2image, PIL for
+  # document/image processing.
+  - id: aac-ocr-broad-py
+    pattern-either:
+      - pattern: import pytesseract
+      - pattern: import tesseract
+      - pattern: import ocrmypdf
+      - pattern: import pdf2image
+      - pattern: import pdfminer
+      - pattern: from PIL import Image
+      - pattern: |
+          def $FUNC(...):
+            ...
+            subprocess.run(..., "tesseract", ...)
+            ...
+      - pattern: |
+          def $FUNC(...):
+            ...
+            subprocess.call(..., "tesseract", ...)
+            ...
+    message: "OCR / document parsing pipeline -- replace with layout-aware vision transformer"
     languages: [python]
     severity: INFO
     metadata:
       aiify_pattern: ocr_extraction_pipeline
       ai_paradigm: nlp_extractor
 
-  # Django full-text search (PostgreSQL SearchVector, SearchQuery, SearchRank)
-  - id: aac-django-fulltext-search-py
+  # -- Full-text / keyword search (targeted, not broad) ------------------------
+
+  # Only catch Q-object filters, annotate, and filters inside search/query
+  # functions.  The old $QS.filter($KW=$VAL) matched every Django filter
+  # and produced 250+ noise hits.
+  - id: aac-search-broad-py
     pattern-either:
-      - pattern: SearchVector(...)
-      - pattern: SearchQuery(...)
-      - pattern: SearchRank(...)
-      - pattern: $QS.annotate(search=SearchVector(...))
-      - pattern: $QS.filter($Q__search=...)
-    message: "Django full-text search — replace with vector semantic search + embeddings"
+      - pattern: |
+          $QS.filter(Q(...))
+      - pattern: |
+          $QS.annotate(...)
+      - pattern: |
+          def search(...):
+            ...
+            $QS.filter(...)
+            ...
+      - pattern: |
+          def query(...):
+            ...
+            $QS.filter(...)
+            ...
+    message: "Text search / filter on document queryset -- replace with vector semantic search + embeddings"
     languages: [python]
     severity: INFO
     metadata:
       aiify_pattern: fulltext_search_engine
       ai_paradigm: embedding_search
 
-  # Django file upload / ingestion view
-  - id: aac-django-upload-view-py
-    patterns:
-      - pattern: |
-          def $FUNC(...):
-            ...
-            $FILE = request.FILES[$NAME]
-            ...
-            $DOC.save()
-            ...
-    message: "Django file upload handler — hook into agentic document processing pipeline"
-    languages: [python]
-    severity: INFO
-    metadata:
-      aiify_pattern: document_ingestion_pipeline
-      ai_paradigm: agentic_trigger
+  # -- Manual classification / tagging (broad catch-all) -----------------------
 
-  # Manual tagging / classification in Django ORM
-  - id: aac-django-manual-tags-py
+  # Any model with a Tag, tags, category, label, or type field; any manual
+  # assignment of these fields.
+  - id: aac-tags-broad-py
     pattern-either:
-      - pattern: $DOC.tags.add(...)
-      - pattern: $DOC.tags.set(...)
-      - pattern: Tag.objects.get_or_create(...)
-      - pattern: $MODEL.objects.update(tags=...)
-    message: "Manual document tagging via ORM — replace with ML auto-classifier"
+      - pattern: |
+          class $MODEL(models.Model):
+            ...
+            tags = models.ManyToManyField(...)
+            ...
+      - pattern: |
+          class $MODEL(models.Model):
+            ...
+            $FIELD = models.ForeignKey("Tag", ...)
+            ...
+      - pattern: |
+          $DOC.tags.set(...)
+      - pattern: |
+          $DOC.tags.add(...)
+      - pattern: |
+          $DOC.type = ...
+      - pattern: |
+          $DOC.category = ...
+    message: "Manual tagging / classification schema -- replace with ML auto-classifier"
     languages: [python]
     severity: INFO
     metadata:
       aiify_pattern: manual_classification_ui
       ai_paradigm: ml_classifier
 
-  # Metadata extraction (manual or regex-based)
-  - id: aac-metadata-extraction-py
+  # -- Metadata extraction (broad catch-all) ------------------------------------
+
+  # Any function parsing or populating metadata, date, title, author fields.
+  - id: aac-metadata-broad-py
     pattern-either:
       - pattern: |
           def $FUNC(...):
             ...
             $META = $DOC.metadata
             ...
-            $DOC.$FIELD = $META[$KEY]
+      - pattern: |
+          def $FUNC(...):
             ...
-      - pattern: re.$METHOD($PATTERN, $CONTENT)
+            $META = $DOC.content
+            ...
+      - pattern: |
+          def parse_date(...):
+            ...
       - pattern: |
           def parse_metadata(...):
             ...
-            return {...}
-    message: "Manual / regex metadata extraction — replace with NLP entity extractor"
+      - pattern: |
+          $DOC.date_created = ...
+      - pattern: |
+          $DOC.title = ...
+    message: "Manual metadata parsing / assignment -- replace with NLP entity extractor"
     languages: [python]
     severity: INFO
     metadata:
       aiify_pattern: metadata_extraction
       ai_paradigm: nlp_extractor
 
-  # Static document routing rules (matchers, dispatchers, pipelines)
-  - id: aac-document-routing-py
-    pattern-either:
+  # -- Document routing / MIME dispatch (broad catch-all) ---------------------
+
+  # Any if/elif chain on content_type, file extension, or MIME type.
+  - id: aac-mime-dispatch-broad-py
+    patterns:
       - pattern: |
-          if $DOC.content_type == $TYPE:
+          if $VAR.content_type == $TYPE:
             ...
-          elif $DOC.content_type == $TYPE2:
+          elif $VAR.content_type == $TYPE2:
             ...
       - pattern: |
-          $ROUTES = {
-            $K1: $V1,
-            $K2: $V2,
-            $K3: $V3,
+          if $VAR.endswith($EXT):
             ...
-          }
-    message: "Static document routing — replace with ML decision agent"
+          elif $VAR.endswith($EXT2):
+            ...
+      - pattern: |
+          if $VAR.mime_type == $TYPE:
+            ...
+          elif $VAR.mime_type == $TYPE2:
+            ...
+    message: "Static MIME-type / extension routing -- replace with ML document classifier"
     languages: [python]
     severity: INFO
     metadata:
       aiify_pattern: document_routing
       ai_paradigm: decision_agent
 
-  # Celery / Huey background document processing task
-  - id: aac-celery-document-task-py
+  # -- Celery / background task patterns --------------------------------------
+
+  # Celery tasks that process documents or files.
+  - id: aac-celery-doc-task-broad-py
     patterns:
       - pattern: |
           @$APP.task(...)
           def $FUNC(...):
             ...
-            $DOC.process(...)
+            $DOC = Document.objects.get(...)
             ...
-    message: "Celery background document task — consider agentic trigger orchestration"
+      - pattern: |
+          @$APP.task(...)
+          def $FUNC(...):
+            ...
+            $FILE.read(...)
+            ...
+    message: "Celery background document task -- consider agentic trigger orchestration"
     languages: [python]
     severity: INFO
     metadata:
       aiify_pattern: scheduled_cron
       ai_paradigm: agentic_trigger
 
-  # ── Flask / FastAPI patterns ──────────────────────────────────────────────────
+  # -- Flask / FastAPI upload patterns -----------------------------------------
 
-  # Flask/FastAPI file upload endpoint
-  - id: aac-flask-upload-endpoint-py
+  - id: aac-flask-upload-broad-py
     patterns:
       - pattern: |
-          @$APP.route(..., methods=["POST"])
+          @$APP.route(..., methods=[..., "POST", ...])
           def $FUNC(...):
             ...
-            $FILE = request.files[$NAME]
+            $FILE = request.files[...]
             ...
-            $DOC.save(...)
-            ...
-    message: "Flask file upload endpoint — hook into agentic ingestion pipeline"
+    message: "Flask file upload endpoint -- hook into agentic ingestion pipeline"
     languages: [python]
     severity: INFO
     metadata:
       aiify_pattern: document_ingestion_pipeline
       ai_paradigm: agentic_trigger
 
-  # FastAPI upload endpoint
-  - id: aac-fastapi-upload-endpoint-py
+  - id: aac-fastapi-upload-broad-py
     patterns:
       - pattern: |
-          @$DECORATOR
-          async def $FUNC($FILE: UploadFile):
+          async def $FUNC(..., $FILE: UploadFile, ...):
             ...
             $CONTENTS = await $FILE.read(...)
             ...
-            $DOC.save(...)
-            ...
-    message: "FastAPI file upload handler — hook into agentic ingestion pipeline"
+    message: "FastAPI file upload handler -- hook into agentic ingestion pipeline"
     languages: [python]
     severity: INFO
     metadata:
       aiify_pattern: document_ingestion_pipeline
       ai_paradigm: agentic_trigger
 
-  # ── Spring Boot / Java patterns ─────────────────────────────────────────────
+  # -- Spring Boot patterns ----------------------------------------------------
 
-  # Spring file upload controller
-  - id: aac-spring-upload-controller-java
+  - id: aac-spring-upload-broad-java
     patterns:
       - pattern: |
           @$MAPPING(...)
-          public $RET $FUNC(@RequestParam("file") MultipartFile $FILE) {
+          public $RET $FUNC(@RequestParam(...) MultipartFile $FILE) {
             ...
             $FILE.transferTo(...);
             ...
           }
-    message: "Spring Boot file upload — hook into agentic document ingestion"
+    message: "Spring Boot file upload -- hook into agentic document ingestion"
     languages: [java]
     severity: INFO
     metadata:
       aiify_pattern: document_ingestion_pipeline
       ai_paradigm: agentic_trigger
 
-  # Spring Data JPA full-text search (Elasticsearch, Solr)
-  - id: aac-spring-fulltext-search-java
+  - id: aac-spring-search-broad-java
     pattern-either:
       - pattern: $REPO.search(...)
+      - pattern: $REPO.findBy$XContaining(...)
       - pattern: elasticsearchRestTemplate.search(...)
-      - pattern: $SOLR.query(...)
-    message: "Spring full-text search — replace with vector semantic search + embeddings"
+    message: "Spring full-text search -- replace with vector semantic search + embeddings"
     languages: [java]
     severity: INFO
     metadata:
       aiify_pattern: fulltext_search_engine
       ai_paradigm: embedding_search
 
-  # ── JavaScript / TypeScript (Node.js) patterns ───────────────────────────────
+  # -- Node.js patterns ---------------------------------------------------------
 
-  # Express/Multer file upload
-  - id: aac-express-upload-js
+  - id: aac-express-upload-broad-js
     patterns:
       - pattern: |
-          $APP.post(..., $UPLOAD.single($NAME), function($REQ, $RES) {
+          $APP.post(..., $UPLOAD.single(...), function($REQ, $RES) {
             ...
             $FILE = $REQ.file
             ...
           })
-    message: "Express file upload — hook into agentic ingestion pipeline"
+    message: "Express file upload -- hook into agentic ingestion pipeline"
     languages: [javascript, typescript]
     severity: INFO
     metadata:
       aiify_pattern: document_ingestion_pipeline
       ai_paradigm: agentic_trigger
 
-  # OCR library in Node.js (tesseract.js)
-  - id: aac-ocr-node-js
+  - id: aac-ocr-node-broad-js
     pattern-either:
       - pattern: Tesseract.recognize(...)
       - pattern: tesseract.recognize(...)
-    message: "Node.js OCR pipeline — replace with layout-aware vision transformer"
+    message: "Node.js OCR pipeline -- replace with layout-aware vision transformer"
     languages: [javascript, typescript]
     severity: INFO
     metadata:
       aiify_pattern: ocr_extraction_pipeline
       ai_paradigm: nlp_extractor
-
-  # ── General cross-language patterns ──────────────────────────────────────────
-
-  # Content-type dispatch table
-  - id: aac-content-type-dispatch
-    patterns:
-      - pattern: |
-          $DISPATCH = {
-            "application/pdf": $HANDLER1,
-            "image/jpeg": $HANDLER2,
-            "image/png": $HANDLER3,
-            ...
-          }
-    message: "Static MIME-type dispatch table — replace with ML document classifier"
-    languages: [python, java, go, javascript, typescript]
-    severity: INFO
-    metadata:
-      aiify_pattern: document_routing
-      ai_paradigm: decision_agent

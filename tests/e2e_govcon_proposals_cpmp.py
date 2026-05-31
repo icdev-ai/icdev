@@ -379,6 +379,18 @@ def test_cpmp_browser(results: TestResult, driver: webdriver.Chrome) -> None:
         results.fail("browser_cpmp_screenshot", exc)
 
 
+def _get_proposal_opp_id() -> "str | None":
+    """Return the first proposal opportunity ID from the backend DB (PG or SQLite)."""
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        row = conn.execute("SELECT id FROM proposal_opportunities LIMIT 1").fetchone()
+        conn.close()
+        return dict(row)["id"] if row else None
+    except Exception:
+        return None
+
+
 def test_pwin_ptw_browser(results: TestResult, driver: webdriver.Chrome) -> None:
     # proposals/reviews-dashboard (pWin aggregate)
     try:
@@ -391,15 +403,9 @@ def test_pwin_ptw_browser(results: TestResult, driver: webdriver.Chrome) -> None
     except Exception as exc:
         results.fail("browser_reviews_dashboard", exc)
 
-    # PTW: look up a real opp_id from the API, fall back gracefully
+    # PTW: look up a real opp_id from proposal_opportunities (backend DB), fall back gracefully
     try:
-        opp_id = None
-        r = requests.get(f"{BASE_URL}/api/govcon/sam/opportunities", headers=_ADMIN_HEADERS, timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            opps = data.get("opportunities", []) if isinstance(data, dict) else data
-            if opps:
-                opp_id = opps[0].get("id")
+        opp_id = _get_proposal_opp_id()
 
         if opp_id:
             driver.get(f"{BASE_URL}/proposals/{opp_id}/ptw")

@@ -489,6 +489,13 @@ from tools.aiify.constants import (  # noqa: E402
 _HIGH_USAGE = _re.compile(HIGH_USAGE_PATH_RE, _re.IGNORECASE)
 _SCHED = _re.compile(SCHED_PATH_RE, _re.IGNORECASE)
 _LOW_USAGE = _re.compile(LOW_USAGE_PATH_RE, _re.IGNORECASE)
+# High-value application paths get an extra scoring boost because architectural
+# patterns in views/models/services/consumers have more AI augmentation impact
+# than the same literal pattern buried in tests or utilities.
+_HIGH_VALUE_PATH_RE = _re.compile(
+    r"(views?|models?|services?|consumers?|parsers?|serializers?|search|index|ingest|upload|documents?|workflows?)",
+    _re.IGNORECASE,
+)
 _SECURITY_PATH_RE = _re.compile(
     r"(auth|login|crypto|password|secret|token|acl|rbac|permission|session|jwt|oauth|"
     r"credential|cipher|signature|sanitiz|validat)",
@@ -551,6 +558,19 @@ def _derive_task_complexity(ptype: str, mag: float, func_loc: float) -> float:
         return _clamp(0.40 + 0.25 * min(1.0, mag) + loc_bonus)
     if ptype == "db_render_notify_chain":
         return _clamp(0.80 + loc_bonus)
+    # Framework-level architectural patterns (added 2026-05-31)
+    if ptype == "document_ingestion_pipeline":
+        return _clamp(0.75 + loc_bonus)
+    if ptype == "ocr_extraction_pipeline":
+        return _clamp(0.70 + loc_bonus)
+    if ptype == "fulltext_search_engine":
+        return _clamp(0.65 + loc_bonus)
+    if ptype == "manual_classification_ui":
+        return _clamp(0.60 + loc_bonus)
+    if ptype == "metadata_extraction":
+        return _clamp(0.65 + loc_bonus)
+    if ptype == "document_routing":
+        return _clamp(0.55 + loc_bonus)
     base = {"regex_user_input": 0.55, "string_template_rendering": 0.45, "scheduled_cron": 0.50}
     return _clamp(base.get(ptype, 0.50) + loc_bonus)
 
@@ -583,6 +603,12 @@ def derive_components(pattern: dict, scan_context: dict) -> dict:
     base = PATTERN_BASE_SIGNALS.get(ptype, {"usage_freq": 0.5, "automation_deficit": 0.5})
 
     usage_freq = _clamp(base["usage_freq"] + _path_usage_factor(path))
+    # High-value application paths (views, models, services, consumers, parsers,
+    # serializers, search, index, ingest, upload, documents, workflows) get an
+    # extra +0.08 usage_freq boost because architectural patterns in these files
+    # have significantly more AI augmentation business impact.
+    if _HIGH_VALUE_PATH_RE.search(path or ""):
+        usage_freq = _clamp(usage_freq + 0.08)
     task_complexity = _derive_task_complexity(ptype, mag, func_loc)
     automation_deficit = _clamp(base["automation_deficit"] + 0.2 * (task_complexity - 0.5))
 
@@ -670,6 +696,42 @@ _PATTERN_PROS_CONS: dict[str, tuple[list[str], list[str]]] = {
          "Replaces unmaintainable hand-tuned tables that grow quadratically with feature count"],
         ["Highest integration effort of the paradigms — needs feature engineering, training data, and evaluation harness",
          "Explainability is mandatory for compliance; must ship with SHAP or attention-based rationale extraction"],
+    ),
+    "document_ingestion_pipeline": (
+        ["Agentic router replaces static upload handlers with intelligent ingestion (classify, route, queue) at ingestion time",
+         "Eliminates manual pre-sorting and reduces misrouted documents"],
+        ["Requires robust guardrails (file-size limits, virus scan, format validation) before AI routing",
+         "Async agent pipeline adds operational complexity (dead-letter queues, retry logic)"],
+    ),
+    "ocr_extraction_pipeline": (
+        ["Layout-aware vision transformers (e.g. Donut, LayoutLM) capture tables, forms, and multi-column text that Tesseract misses",
+         "Higher accuracy on scanned invoices, receipts, and structured forms"],
+        ["Requires GPU inference infrastructure; CPU fallback degrades to legacy OCR quality",
+         "Model licensing (Apache-2 vs GPL) must be compatible with the project's license"],
+    ),
+    "fulltext_search_engine": (
+        ["Embedding-based semantic search finds conceptually related documents even when keywords differ or are misspelled",
+         "Resilient to synonym substitution and phrasing changes without reindexing rules"],
+        ["Requires a vector store (e.g. pgvector, FAISS) and an embedding refresh strategy",
+         "Adds an operational dependency: embedding model updates can shift vector space and require re-indexing"],
+    ),
+    "manual_classification_ui": (
+        ["Auto-classifier reduces manual tagging burden and enforces consistent taxonomy",
+         "Learns from historical tags and improves as the document corpus grows"],
+        ["Initial training set must be curated and balanced across all target categories",
+         "Edge cases (ambiguous documents, new categories) need human-in-the-loop fallback"],
+    ),
+    "metadata_extraction": (
+        ["NLP entity extractor automatically populates date, vendor, amount, invoice # from unstructured text",
+         "Eliminates manual data entry and reduces form-filling errors"],
+        ["Entity schemas must be defined and validated; hallucinated entities need confidence thresholds",
+         "Multi-language documents may require language-specific models or adapters"],
+    ),
+    "document_routing": (
+        ["ML classifier replaces brittle if/elif MIME-type chains with learned routing based on document content",
+         "Handles new file formats without code changes when retrained"],
+        ["Misrouted sensitive documents are a compliance risk — needs audit logging and human override",
+         "Training data must include examples of all target document types and workflows"],
     ),
 }
 

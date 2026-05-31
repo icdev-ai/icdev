@@ -2,6 +2,8 @@
 {% block title %}Contract Detail - ICDEV™{% endblock %}
 
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(contract) }}
 <style>
 .tab-nav { display:flex; gap:0; border-bottom:2px solid var(--border-color, #2a2a4a); margin-top:20px; }
 .tab-btn { background:none; border:none; color:var(--text-secondary, #a0a0b8); padding:10px 18px; font-size:14px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:color 0.2s, border-color 0.2s; }
