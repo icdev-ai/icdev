@@ -121,19 +121,20 @@ These 6 paths adopted `SandboxExecutor` in Phase 72 (D-SEC-11):
   - Any new caller that receives command input from a user-facing API must add a gap entry here.
 - **Revisit if:** `CredentialProxy.spawn()` is called from a route that accepts user-supplied command arguments.
 
-### Gap 13 — AI Augmentation Canvas scan engine (`tools/ai_augmentation/`)
+### Gap 13 — AI-ify Canvas scan engine (`tools/aiify/`)
 
-**Module:** `tools/ai_augmentation/engine.py`, `tools/ai_augmentation/pattern_classifier.py`
+**Module:** `tools/aiify/engine.py`, `tools/aiify/pattern_classifier.py`
 
-**Ingress path:** `POST /ai-augmentation/api/scan` accepts `input_ref` (a local file-system path) and `il_level`. The engine reads source files from that path, runs AST-based pattern detection (and optionally Semgrep), scores opportunities, and stores results in `aac_scans` / `aac_opportunities` / `aac_scores` tables.
+**Ingress path:** `POST /ai-ify/api/scan` accepts `input_type` + `input_ref` and `il_level`. Supported `input_ref` forms: local path, UNC share (`\\server\share`), `file://` URI, git URL (shallow clone), and `s3://` (download). `tools/aiify/engine.py:_resolve_input` validates the reference and rejects unsupported transports (`smb://`, `ftp://`, bare `http(s)` non-repo) with a clear error rather than fetching them. The engine reads source files from the resolved path, runs AST-based pattern detection (and optionally Semgrep), scores opportunities, and stores results in `aiify_scans` / `aiify_opportunities` / `aiify_scores` tables. No scanned code is executed.
 
 - **Decision:** **trusted-first-party**
-- **Rationale:** `input_ref` is a developer/operator-supplied directory path — not end-user HTTP input from the public internet. The scanner performs read-only static analysis (AST walk + Semgrep subprocess with fixed argument list); it does not execute any code from the scanned directory. No `eval()`/`exec()` appears in the analysis hot path. Template files under `tools/dashboard/templates/ai_augmentation/` and `icdev/tools/dashboard/templates/ai_augmentation/` are first-party and code-reviewed.
+- **Rationale:** `input_ref` is a developer/operator-supplied source reference — not end-user HTTP input from the public internet. The scanner performs read-only static analysis (AST walk + Semgrep subprocess with fixed argument list); it does not execute any code from the scanned directory. No `eval()`/`exec()` appears in the analysis hot path. Template files under `tools/dashboard/templates/aiify/` are first-party and code-reviewed.
 - **Guardrails:**
   - `input_ref` is resolved with `pathlib.Path.resolve()` before use; empty paths return a 400 before engine invocation.
   - Semgrep subprocess uses a fixed argument list; no `shell=True`; no user-controlled command interpolation.
   - Canvas templates are first-party; the IQE query widget renders query results as text only (no raw HTML).
-  - Scan results are written to append-only audit log (`aac_audit_log`).
+  - `_resolve_input` rejects unsupported transports (`smb://`, `ftp://`, bare `http(s)`) instead of fetching them; git/`s3://` fetch into a temp dir that is removed after the scan.
+  - Scan results are written to append-only audit log (`aiify_audit_log`).
 - **Revisit if:** `input_ref` is ever accepted from an unauthenticated public endpoint, or if the engine adds a step that executes code from the scanned directory.
 
 ## Coherence rule
@@ -291,7 +292,7 @@ generation call**, so they remain deterministic and out of scope:
 | `tools/builder/child_app_generator.py` | **trusted-first-party** | 20-step scaffold/template copier; 0 `router.invoke` calls. Output validated by `forge_validator --gate` + syntax checks. |
 | `tools/builder/code_generator.py` | **trusted-first-party** | Deprecated template emitter; 0 `router.invoke` calls. |
 | `tools/modernization/migration_code_generator.py` | **trusted-first-party** | Template-based adapter/facade emitter; no LLM generation. |
-| `tools/ai_augmentation/` scoring (AAC) | **trusted-first-party** | Deterministic weighted scoring; LLM optional (covered by Gap 13). |
+| `tools/aiify/` scoring (AI-ify) | **trusted-first-party** | Deterministic weighted scoring; LLM optional (covered by Gap 13). |
 
 **Revisit if:** any of these adds an `LLMRouter.invoke` code-generation call → wire through
 `reasoned_codegen` and re-decide.
