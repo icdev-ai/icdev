@@ -87,6 +87,14 @@
   .sig-state{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#1e293b;}
   .sig-state.accepted{color:#86efac;background:#052e1a;}
   .sig-state.rejected{color:#fca5a5;background:#450a0a;}
+  /* Diagram zoom/pan */
+  .dia-wrap{position:relative;background:#0b1120;border:1px solid #1e293b;border-radius:10px;overflow:hidden;min-height:420px;display:flex;flex-direction:column;}
+  .dia-toolbar{position:absolute;top:8px;right:8px;z-index:10;display:flex;gap:6px;}
+  .dia-toolbar .btn{padding:5px 10px;font-size:12px;background:#1e293b;border-color:#334155;}
+  .dia-viewport{width:100%;flex:1;overflow:hidden;position:relative;cursor:grab;}
+  .dia-viewport:active{cursor:grabbing;}
+  .dia-content{transform-origin:0 0;transition:transform .05s linear;}
+  .dia-content svg{max-width:none !important;}
 </style>
 
 <div class="aiify-wrap">
@@ -175,8 +183,15 @@
         <option value="P3">Phase 3 — Long-Horizon</option>
       </select>
     </div>
-    <div id="diagram" style="background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;overflow:auto;min-height:420px;">
-      <span class="spin"></span> building…
+    <div class="dia-wrap" id="diagram">
+      <div class="dia-toolbar">
+        <button class="btn" onclick="zoomDiagram(1.2)" title="Zoom in">+</button>
+        <button class="btn" onclick="zoomDiagram(0.8)" title="Zoom out">−</button>
+        <button class="btn" onclick="resetDiagram()" title="Reset">Reset</button>
+      </div>
+      <div class="dia-viewport" id="diaViewport">
+        <div class="dia-content" id="diaContent"><span class="spin"></span> building…</div>
+      </div>
     </div>
     <h3>Product Requirements Document</h3>
     <div class="prd-box" id="prdBox"><span class="spin"></span></div>
@@ -366,14 +381,14 @@
 
   window.genPrd=function(){
     var rid=state.roadmapId;
+    var box=document.getElementById('prdBox'), diaContent=document.getElementById('diaContent');
     if(!rid){
-      var box=document.getElementById('prdBox'), dia=document.getElementById('diagram');
       box.innerHTML='<div class="err">No roadmap available for this scan. Run a fresh scan first.</div>';
-      dia.textContent='No roadmap available.';
+      diaContent.textContent='No roadmap available.';
       return;
     }
-    var box=document.getElementById('prdBox'), dia=document.getElementById('diagram');
-    box.innerHTML='<span class="spin"></span>'; dia.innerHTML='<span class="spin"></span> building…';
+    resetDiagram();
+    box.innerHTML='<span class="spin"></span>'; diaContent.innerHTML='<span class="spin"></span> building…';
     fetch(BASE+'/api/generate-prd',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({roadmap_id:rid,phase_id:state.phaseId})})
     .then(r=>r.json()).then(function(d){
@@ -381,9 +396,9 @@
       var html=d.prd_html||'';
       var m=md.match(/```mermaid\s*([\s\S]*?)```/);
       if(m && window.mermaid){
-        dia.innerHTML='<div class="mermaid">'+m[1].trim()+'</div>';
-        try{ mermaid.run({nodes:dia.querySelectorAll('.mermaid')}); }catch(e){ dia.textContent=m[1]; }
-      } else { dia.textContent = m? m[1] : 'No diagram available.'; }
+        diaContent.innerHTML='<div class="mermaid">'+m[1].trim()+'</div>';
+        try{ mermaid.run({nodes:diaContent.querySelectorAll('.mermaid')}).then(function(){initDiagramZoomPan();}); }catch(e){ diaContent.textContent=m[1]; }
+      } else { diaContent.textContent = m? m[1] : 'No diagram available.'; }
       if(html && !d.error){ box.innerHTML=html; }
       else { box.textContent=md; }
     }).catch(e=>{box.innerHTML='<div class="err">PRD failed: '+e+'</div>';});
@@ -397,6 +412,49 @@
       body:JSON.stringify({roadmap_id:rid,phase_id:'all'})})
     .then(r=>r.json()).then(d=>{msg.textContent=d.error?('Error: '+d.error):('Sent ✓ '+(d.created||d.kanban_promoted||'')+' task(s)');})
     .catch(e=>{msg.textContent='Error: '+e;});
+  };
+
+  var _diaState={scale:1,x:0,y:0,isDragging:false,lastX:0,lastY:0};
+  window.zoomDiagram=function(factor){
+    _diaState.scale=Math.max(0.2,Math.min(5,_diaState.scale*factor));
+    _applyDiagramTransform();
+  };
+  window.resetDiagram=function(){
+    _diaState={scale:1,x:0,y:0,isDragging:false,lastX:0,lastY:0};
+    _applyDiagramTransform();
+  };
+  function _applyDiagramTransform(){
+    var el=document.getElementById('diaContent');
+    if(el) el.style.transform='translate('+_diaState.x+'px,'+_diaState.y+'px) scale('+_diaState.scale+')';
+  }
+  window.initDiagramZoomPan=function(){
+    var vp=document.getElementById('diaViewport');
+    if(!vp) return;
+    vp.addEventListener('wheel',function(e){
+      if(e.ctrlKey||e.metaKey){
+        e.preventDefault();
+        var factor=e.deltaY>0?0.9:1.1;
+        zoomDiagram(factor);
+      } else {
+        if(e.shiftKey){ e.preventDefault(); _diaState.x-=e.deltaY; _diaState.y-=e.deltaX; _applyDiagramTransform(); }
+      }
+    },{passive:false});
+    vp.addEventListener('mousedown',function(e){
+      _diaState.isDragging=true; _diaState.lastX=e.clientX; _diaState.lastY=e.clientY; vp.style.cursor='grabbing';
+    });
+    window.addEventListener('mousemove',function(e){
+      if(!_diaState.isDragging) return;
+      var dx=e.clientX-_diaState.lastX, dy=e.clientY-_diaState.lastY;
+      _diaState.x+=dx; _diaState.y+=dy; _diaState.lastX=e.clientX; _diaState.lastY=e.clientY; _applyDiagramTransform();
+    });
+    window.addEventListener('mouseup',function(){_diaState.isDragging=false; if(vp) vp.style.cursor='grab';});
+    vp.addEventListener('touchstart',function(e){
+      if(e.touches.length===1){ _diaState.isDragging=true; _diaState.lastX=e.touches[0].clientX; _diaState.lastY=e.touches[0].clientY; }
+    },{passive:false});
+    vp.addEventListener('touchmove',function(e){
+      if(_diaState.isDragging && e.touches.length===1){ e.preventDefault(); var dx=e.touches[0].clientX-_diaState.lastX, dy=e.touches[0].clientY-_diaState.lastY; _diaState.x+=dx; _diaState.y+=dy; _diaState.lastX=e.touches[0].clientX; _diaState.lastY=e.touches[0].clientY; _applyDiagramTransform(); }
+    },{passive:false});
+    vp.addEventListener('touchend',function(){_diaState.isDragging=false;});
   };
 })();
 </script>
