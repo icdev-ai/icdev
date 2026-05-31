@@ -161,3 +161,4 @@ data/network_canvas.db-wal
 frontend/.next/
 frontend/out/
 frontend/node_modules/
+.logs/

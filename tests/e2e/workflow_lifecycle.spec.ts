@@ -4,6 +4,7 @@
 
 import { test, expect } from '@playwright/test';
 import path from 'path';
+import fs from 'fs';
 
 // All screenshot paths are anchored to the project root via __dirname so that
 // cwd changes (which caused prior coherence failures) do not affect resolution.
@@ -16,6 +17,10 @@ const CUI_BANNER = 'CUI // SP-CTI';
 const STUDIO_READY_TIMEOUT = 30_000;
 
 test.describe('Workflow Studio Lifecycle', () => {
+  test.beforeAll(() => {
+    fs.mkdirSync(SCREENSHOTS, { recursive: true });
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('icdev_tour_completed', '1');

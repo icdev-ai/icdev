@@ -1,0 +1,734 @@
+# CUI // SP-CTI
+"""Initialize CPMP DB tables (idempotent — safe to call at startup).
+
+Creates all Contract Performance Management Portal tables (Phase 60):
+cpmp_contracts, cpmp_clins, cpmp_wbs, cpmp_deliverables, cpmp_status_history,
+cpmp_evm_periods, cpmp_subcontractors, cpmp_cpars_assessments,
+cpmp_negative_events, cpmp_small_business_plan, cpmp_cdrl_generations,
+cpmp_sam_contract_awards, cpmp_cor_access_log.
+
+All DDL uses CREATE TABLE IF NOT EXISTS so this is safe to call on both
+fresh SQLite databases (CI/E2E) and production DBs that already have tables.
+"""
+from __future__ import annotations
+
+_CPMP_CONTRACTS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_contracts (
+    id TEXT PRIMARY KEY,
+    contract_number TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    agency TEXT NOT NULL DEFAULT '',
+    cor_name TEXT,
+    cor_email TEXT,
+    cor_phone TEXT,
+    contract_type TEXT NOT NULL DEFAULT 'FFP',
+    idiq_contract_id TEXT,
+    task_order_number TEXT,
+    naics_code TEXT,
+    total_value REAL DEFAULT 0.0,
+    funded_value REAL DEFAULT 0.0,
+    ceiling_value REAL,
+    billed_value REAL DEFAULT 0.0,
+    pop_start TEXT,
+    pop_end TEXT,
+    status TEXT DEFAULT 'draft',
+    health TEXT DEFAULT 'green',
+    health_score REAL,
+    cpars_rating_current TEXT,
+    opportunity_id TEXT,
+    customer_delivery_id TEXT,
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    created_by TEXT,
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_CLINS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_clins (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    clin_number TEXT NOT NULL DEFAULT '',
+    description TEXT,
+    clin_type TEXT NOT NULL DEFAULT 'labor',
+    total_value REAL DEFAULT 0.0,
+    funded_value REAL DEFAULT 0.0,
+    billed_value REAL DEFAULT 0.0,
+    pop_start TEXT,
+    pop_end TEXT,
+    status TEXT DEFAULT 'active',
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_WBS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_wbs (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    parent_id TEXT,
+    wbs_number TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT,
+    level INTEGER DEFAULT 1,
+    budget_at_completion REAL DEFAULT 0.0,
+    pv_cumulative REAL DEFAULT 0.0,
+    ev_cumulative REAL DEFAULT 0.0,
+    ac_cumulative REAL DEFAULT 0.0,
+    percent_complete REAL DEFAULT 0.0,
+    planned_start TEXT,
+    planned_finish TEXT,
+    actual_start TEXT,
+    actual_finish TEXT,
+    responsible_person TEXT,
+    status TEXT DEFAULT 'not_started',
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_DELIVERABLES_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_deliverables (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    clin_id TEXT,
+    wbs_id TEXT,
+    cdrl_number TEXT,
+    did_number TEXT,
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT,
+    deliverable_type TEXT NOT NULL DEFAULT 'cdrl',
+    frequency TEXT,
+    due_date TEXT,
+    submitted_date TEXT,
+    accepted_date TEXT,
+    rejected_date TEXT,
+    rejection_reason TEXT,
+    status TEXT DEFAULT 'not_started',
+    days_overdue INTEGER DEFAULT 0,
+    generated_by_tool TEXT,
+    output_path TEXT,
+    reviewer TEXT,
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_STATUS_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_status_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    old_status TEXT,
+    new_status TEXT NOT NULL,
+    changed_by TEXT,
+    reason TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+)
+"""
+
+_CPMP_EVM_PERIODS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_evm_periods (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    wbs_id TEXT,
+    period_date TEXT NOT NULL,
+    budget_at_completion REAL DEFAULT 0.0,
+    bac REAL DEFAULT 0.0,
+    planned_value REAL DEFAULT 0.0,
+    pv REAL DEFAULT 0.0,
+    earned_value REAL DEFAULT 0.0,
+    ev REAL DEFAULT 0.0,
+    actual_cost REAL DEFAULT 0.0,
+    ac REAL DEFAULT 0.0,
+    bcws REAL DEFAULT 0.0,
+    bcwp REAL DEFAULT 0.0,
+    acwp REAL DEFAULT 0.0,
+    cpi REAL,
+    spi REAL,
+    cost_variance REAL,
+    cv REAL,
+    schedule_variance REAL,
+    sv REAL,
+    eac REAL,
+    etc REAL,
+    vac REAL,
+    tcpi REAL,
+    source TEXT DEFAULT 'manual',
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_SUBCONTRACTORS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_subcontractors (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    company_name TEXT NOT NULL,
+    cage_code TEXT,
+    uei TEXT,
+    business_size TEXT,
+    business_type TEXT,
+    subcontract_type TEXT,
+    subcontract_value REAL DEFAULT 0.0,
+    billed_value REAL DEFAULT 0.0,
+    performance_rating TEXT,
+    flow_down_complete INTEGER DEFAULT 0,
+    flowdown_verified INTEGER DEFAULT 0,
+    cybersecurity_compliant INTEGER DEFAULT 0,
+    cmmc_level INTEGER,
+    isr_ssr_current INTEGER DEFAULT 0,
+    contact_name TEXT,
+    contact_email TEXT,
+    status TEXT DEFAULT 'active',
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_CPARS_ASSESSMENTS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_cpars_assessments (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    quality_rating REAL,
+    schedule_rating REAL,
+    cost_rating REAL,
+    management_rating REAL,
+    small_business_rating REAL,
+    overall_rating TEXT,
+    overall_score REAL,
+    predicted_overall TEXT,
+    predicted_score REAL,
+    narrative TEXT,
+    government_narrative TEXT,
+    negative_event_count INTEGER DEFAULT 0,
+    corrective_actions_completed INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'draft',
+    submitted_date TEXT,
+    finalized_date TEXT,
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_NEGATIVE_EVENTS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_negative_events (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    description TEXT NOT NULL,
+    evidence TEXT,
+    deliverable_id TEXT,
+    subcontractor_id TEXT,
+    corrective_action TEXT,
+    corrective_action_status TEXT DEFAULT 'open',
+    corrective_action_due TEXT,
+    cpars_impact REAL DEFAULT 0.0,
+    detected_by TEXT,
+    reported_by TEXT,
+    reported_date TEXT DEFAULT (datetime('now')),
+    resolved_date TEXT,
+    source_entity_type TEXT,
+    source_entity_id TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_SMALL_BUSINESS_PLAN_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_small_business_plan (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    reporting_period TEXT NOT NULL,
+    report_type TEXT NOT NULL DEFAULT 'isr',
+    total_subcontract_dollars REAL DEFAULT 0.0,
+    sb_goal_pct REAL DEFAULT 0.0,
+    sb_actual_pct REAL DEFAULT 0.0,
+    sb_actual_dollars REAL DEFAULT 0.0,
+    sdb_goal_pct REAL DEFAULT 0.0,
+    sdb_actual_pct REAL DEFAULT 0.0,
+    sdb_actual_dollars REAL DEFAULT 0.0,
+    wosb_goal_pct REAL DEFAULT 0.0,
+    wosb_actual_pct REAL DEFAULT 0.0,
+    wosb_actual_dollars REAL DEFAULT 0.0,
+    hubzone_goal_pct REAL DEFAULT 0.0,
+    hubzone_actual_pct REAL DEFAULT 0.0,
+    hubzone_actual_dollars REAL DEFAULT 0.0,
+    sdvosb_goal_pct REAL DEFAULT 0.0,
+    sdvosb_actual_pct REAL DEFAULT 0.0,
+    sdvosb_actual_dollars REAL DEFAULT 0.0,
+    compliant INTEGER DEFAULT 0,
+    submitted_date TEXT,
+    status TEXT DEFAULT 'draft',
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_CDRL_GENERATIONS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_cdrl_generations (
+    id TEXT PRIMARY KEY,
+    deliverable_id TEXT NOT NULL,
+    contract_id TEXT NOT NULL,
+    cdrl_type TEXT NOT NULL,
+    generation_tool TEXT NOT NULL,
+    tool_args TEXT DEFAULT '{}',
+    output_path TEXT,
+    output_hash TEXT,
+    file_size_bytes INTEGER,
+    status TEXT DEFAULT 'generated',
+    error_message TEXT,
+    generated_by TEXT,
+    reviewed_by TEXT,
+    approved_by TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_SAM_CONTRACT_AWARDS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_sam_contract_awards (
+    id TEXT PRIMARY KEY,
+    sam_award_id TEXT NOT NULL UNIQUE,
+    piid TEXT,
+    referenced_idv_piid TEXT,
+    award_type TEXT,
+    awardee_name TEXT,
+    awardee_uei TEXT,
+    awardee_cage TEXT,
+    awarding_agency TEXT,
+    awarding_sub_agency TEXT,
+    funding_agency TEXT,
+    naics_code TEXT,
+    psc_code TEXT,
+    obligation_amount REAL,
+    base_exercised_options_value REAL,
+    total_dollars_obligated REAL,
+    award_date TEXT,
+    pop_start TEXT,
+    pop_end TEXT,
+    place_of_performance TEXT,
+    linked_contract_id TEXT,
+    content_hash TEXT NOT NULL,
+    raw_json TEXT,
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_COR_ACCESS_LOG_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_cor_access_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    user_email TEXT,
+    contract_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+)
+"""
+
+_CPMP_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_status ON cpmp_contracts(status)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_health ON cpmp_contracts(health)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_opp    ON cpmp_contracts(opportunity_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_clin_contract   ON cpmp_clins(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_wbs_contract    ON cpmp_wbs(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_deliv_contract  ON cpmp_deliverables(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_deliv_status    ON cpmp_deliverables(status)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_deliv_due       ON cpmp_deliverables(due_date)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_hist_entity     ON cpmp_status_history(entity_type, entity_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_evm_contract    ON cpmp_evm_periods(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_sub_contract    ON cpmp_subcontractors(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_cpars_contract  ON cpmp_cpars_assessments(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_nevent_contract ON cpmp_negative_events(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_cdrl_gen_deliv  ON cpmp_cdrl_generations(deliverable_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_cor_log_contract ON cpmp_cor_access_log(contract_id)",
+]
+
+_ALL_DDLS = [
+    _CPMP_CONTRACTS_DDL,
+    _CPMP_CLINS_DDL,
+    _CPMP_WBS_DDL,
+    _CPMP_DELIVERABLES_DDL,
+    _CPMP_STATUS_HISTORY_DDL,
+    _CPMP_EVM_PERIODS_DDL,
+    _CPMP_SUBCONTRACTORS_DDL,
+    _CPMP_CPARS_ASSESSMENTS_DDL,
+    _CPMP_NEGATIVE_EVENTS_DDL,
+    _CPMP_SMALL_BUSINESS_PLAN_DDL,
+    _CPMP_CDRL_GENERATIONS_DDL,
+    _CPMP_SAM_CONTRACT_AWARDS_DDL,
+    _CPMP_COR_ACCESS_LOG_DDL,
+]
+
+
+def init_cpmp_tables(conn=None) -> dict:
+    """Create all CPMP tables. Safe to call on any DB state."""
+    from tools.db.storage import get_connection
+
+    _close = conn is None
+    if conn is None:
+        conn = get_connection()
+    try:
+        for ddl in _ALL_DDLS:
+            conn.execute(ddl)
+        for idx in _CPMP_INDEXES:
+            conn.execute(idx)
+        conn.commit()
+        return {"status": "ok", "tables_created": len(_ALL_DDLS)}
+    finally:
+        if _close:
+            conn.close()
+
+
+# =========================================================================
+# GovCon Intelligence tables (Phase 59, D361-D373)
+# proposal_opportunities, rfp_shall_statements, rfp_requirement_patterns,
+# icdev_capability_map, proposal_section_drafts, proposal_knowledge_base,
+# govcon_awards, proposal_compliance_matrix, proposal_status_history,
+# proposal_questions, sam_gov_opportunities
+# =========================================================================
+
+_GOVCON_SAM_OPPS_DDL = """
+CREATE TABLE IF NOT EXISTS sam_gov_opportunities (
+    id TEXT PRIMARY KEY,
+    solicitation_number TEXT,
+    title TEXT NOT NULL DEFAULT '',
+    agency TEXT NOT NULL DEFAULT '',
+    agency_hierarchy TEXT,
+    naics_code TEXT,
+    classification_code TEXT,
+    notice_type TEXT NOT NULL DEFAULT 'presolicitation',
+    posted_date TEXT,
+    response_deadline TEXT,
+    description TEXT,
+    point_of_contact TEXT,
+    set_aside_type TEXT,
+    place_of_performance TEXT,
+    attachment_urls TEXT DEFAULT '[]',
+    active TEXT DEFAULT 'true',
+    proposal_opportunity_id TEXT,
+    content_hash TEXT NOT NULL DEFAULT '',
+    metadata TEXT DEFAULT '{}',
+    first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+    last_synced TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_GOVCON_PROP_OPPS_DDL = """
+CREATE TABLE IF NOT EXISTS proposal_opportunities (
+    id TEXT PRIMARY KEY,
+    solicitation_number TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    agency TEXT NOT NULL DEFAULT '',
+    sub_agency TEXT,
+    due_date TEXT NOT NULL DEFAULT '',
+    due_time TEXT DEFAULT '17:00',
+    set_aside_type TEXT,
+    naics_code TEXT,
+    estimated_value_low REAL,
+    estimated_value_high REAL,
+    proposal_type TEXT NOT NULL DEFAULT 'other',
+    status TEXT NOT NULL DEFAULT 'intake',
+    bid_decision TEXT,
+    bid_decision_date TEXT,
+    bid_decision_rationale TEXT,
+    rfp_document_path TEXT,
+    rfp_url TEXT,
+    capture_manager TEXT,
+    proposal_manager TEXT,
+    domain TEXT DEFAULT 'general',
+    classification TEXT DEFAULT 'CUI',
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    licensing_model TEXT,
+    sam_gov_opportunity_id TEXT,
+    questions_due_date TEXT,
+    amendment_count INTEGER DEFAULT 0,
+    question_count INTEGER DEFAULT 0,
+    contract_id TEXT
+)
+"""
+
+_GOVCON_SHALL_STMTS_DDL = """
+CREATE TABLE IF NOT EXISTS rfp_shall_statements (
+    id TEXT PRIMARY KEY,
+    sam_opportunity_id TEXT,
+    proposal_opportunity_id TEXT,
+    statement_text TEXT NOT NULL DEFAULT '',
+    statement_type TEXT NOT NULL DEFAULT 'shall',
+    domain_category TEXT,
+    keywords TEXT DEFAULT '[]',
+    keyword_fingerprint TEXT,
+    source_section TEXT,
+    content_hash TEXT NOT NULL DEFAULT '',
+    extracted_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_GOVCON_REQ_PATTERNS_DDL = """
+CREATE TABLE IF NOT EXISTS rfp_requirement_patterns (
+    id TEXT PRIMARY KEY,
+    pattern_name TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    domain_category TEXT NOT NULL DEFAULT 'other',
+    frequency INTEGER NOT NULL DEFAULT 1,
+    shall_statement_ids TEXT NOT NULL DEFAULT '[]',
+    sam_opportunity_ids TEXT NOT NULL DEFAULT '[]',
+    keyword_fingerprint TEXT NOT NULL DEFAULT '',
+    keywords TEXT NOT NULL DEFAULT '[]',
+    representative_text TEXT NOT NULL DEFAULT '',
+    capability_coverage REAL DEFAULT 0.0,
+    icdev_capability_ids TEXT DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'new',
+    first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen TEXT NOT NULL DEFAULT (datetime('now')),
+    metadata TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_GOVCON_CAP_MAP_DDL = """
+CREATE TABLE IF NOT EXISTS icdev_capability_map (
+    id TEXT PRIMARY KEY,
+    pattern_id TEXT NOT NULL DEFAULT '',
+    capability_id TEXT NOT NULL DEFAULT '',
+    capability_name TEXT DEFAULT '',
+    coverage_score REAL NOT NULL DEFAULT 0.0,
+    grade TEXT DEFAULT 'N',
+    matched_keywords TEXT DEFAULT '[]',
+    created_at TEXT DEFAULT (datetime('now')),
+    mapped_at TEXT DEFAULT (datetime('now')),
+    metadata TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_GOVCON_SECTION_DRAFTS_DDL = """
+CREATE TABLE IF NOT EXISTS proposal_section_drafts (
+    id TEXT PRIMARY KEY,
+    section_id TEXT,
+    opportunity_id TEXT NOT NULL DEFAULT '',
+    shall_statement_id TEXT,
+    capability_ids TEXT DEFAULT '[]',
+    knowledge_block_ids TEXT DEFAULT '[]',
+    draft_content TEXT NOT NULL DEFAULT '',
+    draft_method TEXT,
+    confidence_score REAL DEFAULT 0.0,
+    confidence REAL DEFAULT 0.0,
+    domain_category TEXT,
+    generation_model TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    reviewed_by TEXT,
+    reviewed_at TEXT,
+    review_notes TEXT,
+    reviewer_notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_GOVCON_KNOWLEDGE_BASE_DDL = """
+CREATE TABLE IF NOT EXISTS proposal_knowledge_base (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'other',
+    domain TEXT NOT NULL DEFAULT 'general',
+    naics_codes TEXT DEFAULT '[]',
+    volume_type TEXT,
+    keywords TEXT NOT NULL DEFAULT '[]',
+    usage_count INTEGER DEFAULT 0,
+    win_rate REAL,
+    last_used_at TEXT,
+    created_by TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_GOVCON_AWARDS_DDL = """
+CREATE TABLE IF NOT EXISTS govcon_awards (
+    id TEXT PRIMARY KEY,
+    sam_opportunity_id TEXT,
+    solicitation_number TEXT,
+    title TEXT NOT NULL DEFAULT '',
+    agency TEXT NOT NULL DEFAULT '',
+    naics_code TEXT,
+    awardee_name TEXT NOT NULL DEFAULT '',
+    awardee_duns TEXT,
+    awardee_uei TEXT,
+    contract_number TEXT,
+    award_amount REAL,
+    award_date TEXT,
+    period_of_performance_start TEXT,
+    period_of_performance_end TEXT,
+    set_aside_type TEXT,
+    competitor_id TEXT,
+    content_hash TEXT NOT NULL DEFAULT '',
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_GOVCON_COMPLIANCE_MATRIX_DDL = """
+CREATE TABLE IF NOT EXISTS proposal_compliance_matrix (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL DEFAULT '',
+    section_ref TEXT NOT NULL DEFAULT '',
+    volume_ref TEXT,
+    requirement_text TEXT NOT NULL DEFAULT '',
+    requirement_type TEXT DEFAULT 'L',
+    compliance_status TEXT DEFAULT 'not_addressed',
+    proposal_section_id TEXT,
+    response_summary TEXT,
+    notes TEXT,
+    sort_order INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+)
+"""
+
+_GOVCON_STATUS_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS proposal_status_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL DEFAULT 'opportunity',
+    entity_id TEXT NOT NULL DEFAULT '',
+    old_status TEXT,
+    new_status TEXT NOT NULL DEFAULT '',
+    changed_by TEXT,
+    reason TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+)
+"""
+
+_GOVCON_QUESTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS proposal_questions (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL DEFAULT '',
+    question_number INTEGER,
+    question_text TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'scope',
+    priority TEXT NOT NULL DEFAULT 'medium',
+    source TEXT NOT NULL DEFAULT 'manual',
+    rfp_section_ref TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    ambiguity_trigger TEXT,
+    content_hash TEXT,
+    created_by TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    submitted_at TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+)
+"""
+
+_GOVCON_INTELLIGENCE_DDLS = [
+    _GOVCON_SAM_OPPS_DDL,
+    _GOVCON_PROP_OPPS_DDL,
+    _GOVCON_SHALL_STMTS_DDL,
+    _GOVCON_REQ_PATTERNS_DDL,
+    _GOVCON_CAP_MAP_DDL,
+    _GOVCON_SECTION_DRAFTS_DDL,
+    _GOVCON_KNOWLEDGE_BASE_DDL,
+    _GOVCON_AWARDS_DDL,
+    _GOVCON_COMPLIANCE_MATRIX_DDL,
+    _GOVCON_STATUS_HISTORY_DDL,
+    _GOVCON_QUESTIONS_DDL,
+]
+
+_GOVCON_INTELLIGENCE_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_sam_naics      ON sam_gov_opportunities(naics_code)",
+    "CREATE INDEX IF NOT EXISTS idx_sam_agency     ON sam_gov_opportunities(agency)",
+    "CREATE INDEX IF NOT EXISTS idx_prop_opp_status ON proposal_opportunities(status)",
+    "CREATE INDEX IF NOT EXISTS idx_prop_opp_due    ON proposal_opportunities(due_date)",
+    "CREATE INDEX IF NOT EXISTS idx_shall_sam      ON rfp_shall_statements(sam_opportunity_id)",
+    "CREATE INDEX IF NOT EXISTS idx_shall_prop     ON rfp_shall_statements(proposal_opportunity_id)",
+    "CREATE INDEX IF NOT EXISTS idx_shall_domain   ON rfp_shall_statements(domain_category)",
+    "CREATE INDEX IF NOT EXISTS idx_rfp_pattern_domain ON rfp_requirement_patterns(domain_category)",
+    "CREATE INDEX IF NOT EXISTS idx_rfp_pattern_freq   ON rfp_requirement_patterns(frequency)",
+    "CREATE INDEX IF NOT EXISTS idx_capmap_pattern  ON icdev_capability_map(pattern_id)",
+    "CREATE INDEX IF NOT EXISTS idx_draft_opp      ON proposal_section_drafts(opportunity_id)",
+    "CREATE INDEX IF NOT EXISTS idx_draft_status   ON proposal_section_drafts(status)",
+    "CREATE INDEX IF NOT EXISTS idx_kb_domain      ON proposal_knowledge_base(domain)",
+    "CREATE INDEX IF NOT EXISTS idx_kb_status      ON proposal_knowledge_base(status)",
+    "CREATE INDEX IF NOT EXISTS idx_award_awardee  ON govcon_awards(awardee_name)",
+    "CREATE INDEX IF NOT EXISTS idx_prop_cm_opp    ON proposal_compliance_matrix(opportunity_id)",
+    "CREATE INDEX IF NOT EXISTS idx_prop_q_opp     ON proposal_questions(opportunity_id)",
+    "CREATE INDEX IF NOT EXISTS idx_prop_q_status  ON proposal_questions(status)",
+]
+
+
+def init_govcon_intelligence_tables(conn=None) -> dict:
+    """Create all GovCon Intelligence tables (Phase 59). Safe to call at startup.
+
+    Creates: sam_gov_opportunities, proposal_opportunities, rfp_shall_statements,
+    rfp_requirement_patterns, icdev_capability_map, proposal_section_drafts,
+    proposal_knowledge_base, govcon_awards, proposal_compliance_matrix,
+    proposal_status_history, proposal_questions.
+
+    All DDL uses CREATE TABLE IF NOT EXISTS — idempotent and safe to call
+    on both fresh SQLite databases (CI/E2E) and production DBs.
+    """
+    from tools.db.storage import get_connection
+
+    _close = conn is None
+    if conn is None:
+        conn = get_connection()
+    try:
+        for ddl in _GOVCON_INTELLIGENCE_DDLS:
+            conn.execute(ddl)
+        for idx in _GOVCON_INTELLIGENCE_INDEXES:
+            conn.execute(idx)
+        conn.commit()
+        return {"status": "ok", "tables_created": len(_GOVCON_INTELLIGENCE_DDLS)}
+    finally:
+        if _close:
+            conn.close()
+
+
+if __name__ == "__main__":
+    result = init_cpmp_tables()
+    print(result)

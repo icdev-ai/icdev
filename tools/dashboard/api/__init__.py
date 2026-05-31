@@ -324,7 +324,7 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     import os as _os  # noqa: PLC0415
     _airgap = _os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
     _govcon_enabled = (
-        _os.environ.get("ICDEV_GOVCON_ENABLED", "false").lower() == "true"
+        _os.environ.get("ICDEV_GOVCON_ENABLED", "false").lower() in ("true", "1", "yes")
         and not _airgap
     )
     if _govcon_enabled:
