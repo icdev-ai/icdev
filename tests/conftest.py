@@ -661,6 +661,46 @@ CREATE TABLE IF NOT EXISTS pg_capture_gate_decisions (
     gate_criteria_met TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS dic_handoff_sessions (
+    session_id          TEXT    PRIMARY KEY,
+    departing_owner_id  TEXT    NOT NULL,
+    successor_owner_id  TEXT    NOT NULL,
+    dest_collection_id  TEXT    NOT NULL,
+    title               TEXT    DEFAULT '',
+    status              TEXT    DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+    agenda_count        INTEGER DEFAULT 0,
+    answered_count      INTEGER DEFAULT 0,
+    generated_count     INTEGER DEFAULT 0,
+    orphan_count        INTEGER DEFAULT 0,
+    created_by          TEXT    DEFAULT 'system',
+    created_at          TEXT    DEFAULT (datetime('now')),
+    updated_at          TEXT    DEFAULT (datetime('now')),
+    tenant_id           TEXT    DEFAULT 'default',
+    classification      TEXT    DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_handoff_sessions_tenant ON dic_handoff_sessions(tenant_id);
+CREATE TABLE IF NOT EXISTS dic_handoff_items (
+    item_id         TEXT    PRIMARY KEY,
+    session_id      TEXT    NOT NULL,
+    item_kind       TEXT    NOT NULL DEFAULT 'interview' CHECK (item_kind IN ('interview', 'generated_doc', 'orphan_flag')),
+    finding_id      TEXT    DEFAULT '',
+    finding_type    TEXT    DEFAULT '',
+    severity        TEXT    DEFAULT '',
+    entity_ref      TEXT    DEFAULT '',
+    topic           TEXT    DEFAULT '',
+    prompt          TEXT    DEFAULT '',
+    answer_text     TEXT    DEFAULT '',
+    doc_id          TEXT    DEFAULT '',
+    version_id      TEXT    DEFAULT '',
+    verified        INTEGER DEFAULT 0,
+    abstained       INTEGER DEFAULT 0,
+    status          TEXT    DEFAULT 'pending' CHECK (status IN ('pending', 'answered', 'generated')),
+    created_at      TEXT    DEFAULT (datetime('now')),
+    updated_at      TEXT    DEFAULT (datetime('now')),
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_handoff_items_session ON dic_handoff_items(session_id);
 """
 
 
