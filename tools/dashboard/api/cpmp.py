@@ -41,7 +41,7 @@ def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
     # Clear RLS context — cpmp tables use classification=CUI universally;
     # complex JOIN queries break when RLS injects c.classification into subqueries.
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: cpmp tables use CUI universally; RLS JOIN injection breaks subqueries
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

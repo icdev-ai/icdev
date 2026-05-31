@@ -659,7 +659,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 for a in all_asgns:
                     assignments_by_review.setdefault(a["review_id"], []).append(dict(a))
             except Exception:
-                pass
+                conn.rollback()
             reviews_data = []
             for rev in reviews:
                 rd = dict(rev)

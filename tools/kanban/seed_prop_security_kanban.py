@@ -150,7 +150,7 @@ TASKS = [
             "(RLS-aware), NOT get_canvas_connection(). Replace 'SELECT * FROM proposal_opportunities ORDER BY "
             "due_date' (app.py ~449) and siblings with predicate-injected reads. Verify "
             "_attach_flask_security_context bridges g.security_context (the earlier prop-fix-01 removed a "
-            "set_security_context(None) override; confirm context now flows). Follow "
+            "set_security_context(None) override; confirm context now flows). Follow "  # rls-bypass: text in task description, not an actual call
             "feedback_always_use_get_connection + rls-consideration-in-code-generation. Requires prop-fix-07; "
             "secondary prop-fix-09/10/11."
         ),

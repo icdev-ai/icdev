@@ -320,7 +320,7 @@ def regenerate_section(
 
     conn = get_connection()
     try:
-        # 1. Load existing context.
+        # 1. Load existing context + adjacent sections for coherence.
         cur = conn.cursor()
         cur.execute(
             "SELECT doc_id, title FROM dic_documents WHERE doc_id = "
@@ -330,6 +330,25 @@ def regenerate_section(
         row = cur.fetchone()
         doc_id = row[0] if row else ""
         doc_title = (row[1] if row else "") or heading
+        # Load all sections for this version ordered by rowid to find neighbors.
+        cur.execute(
+            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            (version_id,),
+        )
+        all_sections = cur.fetchall()
+        target_idx = -1
+        for i, (h, _) in enumerate(all_sections):
+            if h == heading:
+                target_idx = i
+                break
+        adjacent_context = []
+        if target_idx >= 0:
+            if target_idx > 0:
+                prev_h, prev_c = all_sections[target_idx - 1]
+                adjacent_context.append(f"Previous section: {prev_h}\nSummary: {prev_c[:300]}" if prev_c else f"Previous section: {prev_h}")
+            if target_idx < len(all_sections) - 1:
+                next_h, next_c = all_sections[target_idx + 1]
+                adjacent_context.append(f"Next section: {next_h}\nSummary: {next_c[:300]}" if next_c else f"Next section: {next_h}")
     finally:
         conn.close()
 
@@ -348,11 +367,16 @@ def regenerate_section(
             "abstained": True,
         }
 
-    # 3. Draft with targeted evidence.
+    # 3. Draft with targeted evidence + adjacent context for coherence.
     prompt = (
         "You are rewriting ONE section of a technical document.\n\n"
         f"Document title: {doc_title}\n"
         f"Section heading: {heading}\n\n"
+    )
+    if adjacent_context:
+        prompt += "Adjacent sections for context (do not repeat their content; ensure smooth transitions):\n"
+        prompt += "\n---\n".join(adjacent_context) + "\n\n"
+    prompt += (
         "Source evidence (cite exactly — do not invent facts):\n"
         f"{evidence}\n\n"
         "Write the section in clear, professional prose. "

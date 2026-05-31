@@ -83,6 +83,9 @@ _PAGES = [
     {"name": "Air-Gap Fine-Tuning", "icon": "🧪", "href": "/document-intelligence/finetune", "desc": "Train a local model on a collection's chunks/KG (GPU optional).", "ready": True, "task": "dic-finetune-01"},
     {"name": "Snippets", "icon": "🧩", "href": "/document-intelligence/snippets", "desc": "Reusable UI building blocks for document workflows.", "ready": True, "task": "dic-snippets-01"},
     {"name": "Templates", "icon": "📐", "href": "/document-intelligence/templates", "desc": "Pre-built document workflows. ACOIC is the flagship.", "ready": True, "task": "dic-templates-01"},
+    {"name": "Freshness", "icon": "🌡️", "href": "/document-intelligence/freshness", "desc": "Corpus staleness heatmap and remediation queue.", "ready": True, "task": "dic-freshness-01"},
+    {"name": "Explorer", "icon": "🔎", "href": "/document-intelligence/explorer", "desc": "KG buried-bodies explorer — orphans, tribal knowledge, contradictions.", "ready": True, "task": "dic-explore-01"},
+    {"name": "Handoff", "icon": "🤝", "href": "/document-intelligence/handoff", "desc": "Knowledge handoff — capture retiring SME knowledge into a living collection.", "ready": True, "task": "dic-handoff-01"},
 ]
 
 _LOCAL_PROVIDERS = ["ollama", "llamacpp", "huggingface-local"]
@@ -204,6 +207,55 @@ def _role_badge(role: str) -> str:
     }.get(role, role)
 
 
+def _collection_id_from_doc(doc_id: str) -> str | None:
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT collection_id FROM dic_documents WHERE doc_id = ? LIMIT 1", (doc_id,)).fetchone()
+        if row:
+            return row[0] if hasattr(row, "__getitem__") else row["collection_id"]
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    return None
+
+
+def _collection_id_from_version(version_id: str) -> str | None:
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT d.collection_id FROM dic_versions v JOIN dic_documents d ON d.doc_id = v.doc_id WHERE v.version_id = ? LIMIT 1",
+            (version_id,),
+        ).fetchone()
+        if row:
+            return row[0] if hasattr(row, "__getitem__") else row["collection_id"]
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    return None
+
+
+def _collection_id_from_section(section_id: str) -> str | None:
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT d.collection_id FROM dic_sections s JOIN dic_documents d ON d.doc_id = s.doc_id WHERE s.section_id = ? LIMIT 1",
+            (section_id,),
+        ).fetchone()
+        if row:
+            return row[0] if hasattr(row, "__getitem__") else row["collection_id"]
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    return None
+
+
+def _forbid(role: str, msg: str = "Insufficient permissions") -> tuple:
+    return jsonify({"error": msg}), 403
+
+
 # ── Page Routes ───────────────────────────────────────────────────────────────
 
 @dic_bp.route("/")
@@ -242,6 +294,67 @@ def search():
     return render_template("document_intelligence/search.html", collection_id=collection_id)
 
 
+# ── Document Detail Page ──────────────────────────────────────────────────────
+
+@dic_bp.route("/doc/<doc_id>")
+def doc_detail(doc_id: str):
+    conn = _conn()
+    try:
+        doc = _safe_rows(conn, "SELECT * FROM dic_documents WHERE doc_id = ? LIMIT 1", (doc_id,))
+        doc = doc[0] if doc else {}
+        versions = _safe_rows(
+            conn,
+            "SELECT version_id, version_no, origin, status, assigned_to, created_at, created_by "
+            "FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC",
+            (doc_id,),
+        )
+        # Load sections for the latest pending or latest version
+        active_version_id = ""
+        for v in versions:
+            if v["status"] in ("pending_review", "needs_revision", "draft"):
+                active_version_id = v["version_id"]
+                break
+        if not active_version_id and versions:
+            active_version_id = versions[0]["version_id"]
+        sections = []
+        if active_version_id:
+            sections = _safe_rows(
+                conn,
+                "SELECT section_id, heading, content, citations_json, status, origin, assigned_to "
+                "FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+                (active_version_id,),
+            )
+            for s in sections:
+                try:
+                    s["citations"] = json.loads(s.get("citations_json") or "[]")
+                except Exception:
+                    s["citations"] = []
+        # Team members for assignment dropdown
+        collection_id = doc.get("collection_id") or "default"
+        team = _safe_rows(
+            conn,
+            "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
+            (collection_id,),
+        )
+    finally:
+        conn.close()
+
+    current_user = _current_user()
+    user_role = _user_role(collection_id, current_user)
+    return render_template(
+        "document_intelligence/doc_detail.html",
+        doc=doc,
+        versions=versions,
+        sections=sections,
+        active_version_id=active_version_id,
+        team=team,
+        current_user=current_user,
+        user_role=user_role,
+        role_badge=_role_badge,
+        role_levels=_ROLE_LEVEL,
+    )
+
+
 @dic_bp.route("/review")
 def review():
     conn = _conn()
@@ -270,6 +383,33 @@ def review():
                     "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
                     (cid,),
                 )
+        # Documents with pending sections (for the Documents tab).
+        pending_docs = _safe_rows(
+            conn,
+            "SELECT DISTINCT d.doc_id, d.title, d.collection_id, d.filename, d.classification, "
+            "(SELECT COUNT(*) FROM dic_sections s2 WHERE s2.doc_id = d.doc_id AND s2.status IN ('pending_review','needs_revision','draft')) AS pending_section_count "
+            "FROM dic_documents d JOIN dic_sections s ON s.doc_id = d.doc_id "
+            "WHERE s.status IN ('pending_review', 'needs_revision', 'draft') "
+            "ORDER BY pending_section_count DESC LIMIT 50",
+        )
+        # Gather team members per collection for assignment dropdowns.
+        team_map: dict[str, list[dict]] = {}
+        for v in pending_versions:
+            cid = v.get("collection_id") or "default"
+            if cid not in team_map:
+                team_map[cid] = _safe_rows(
+                    conn,
+                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
+                    (cid,),
+                )
+        for pd in pending_docs:
+            cid = pd.get("collection_id") or "default"
+            if cid not in team_map:
+                team_map[cid] = _safe_rows(
+                    conn,
+                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
+                    (cid,),
+                )
         # Load latest review note per item.
         notes_map: dict[str, str] = {}
         for rows in (
@@ -282,7 +422,7 @@ def review():
     finally:
         conn.close()
 
-    # Augment versions/fragments with latest note and current-user role.
+    # Augment versions/fragments/docs with latest note and current-user role.
     current_user = _current_user()
     for v in pending_versions:
         v["latest_note"] = notes_map.get(v["version_id"], "")
@@ -290,11 +430,14 @@ def review():
     for f in pending_fragments:
         f["latest_note"] = notes_map.get(f["fragment_id"], "")
         f["user_role"] = _user_role("default", current_user)
+    for pd in pending_docs:
+        pd["user_role"] = _user_role(pd.get("collection_id") or "default", current_user)
 
     return render_template(
         "document_intelligence/review.html",
         pending_fragments=pending_fragments,
         pending_versions=pending_versions,
+        pending_docs=pending_docs,
         team_map=team_map,
         current_user=current_user,
         role_badge=_role_badge,
@@ -350,6 +493,55 @@ def snippets():
 @dic_bp.route("/templates")
 def templates_page():
     return render_template("document_intelligence/templates.html", templates=_TEMPLATES)
+
+
+@dic_bp.route("/freshness")
+def freshness():
+    tenant_id, _ = _security_context()
+    try:
+        from tools.document_intelligence.freshness_engine import corpus_heatmap
+        heatmap = corpus_heatmap(tenant_id=tenant_id, limit=200)
+    except Exception as exc:
+        logger.warning("dic: freshness heatmap error: %s", exc)
+        heatmap = []
+    # Group by collection for the UI.
+    by_collection: dict[str, list[dict]] = {}
+    for row in heatmap:
+        cid = row.get("collection_id") or "default"
+        by_collection.setdefault(cid, []).append(row)
+    return render_template("document_intelligence/freshness.html", heatmap=heatmap, by_collection=by_collection)
+
+
+@dic_bp.route("/explorer")
+def explorer():
+    tenant_id, _ = _security_context()
+    try:
+        from tools.document_intelligence.explorer import run_explorer
+        findings = run_explorer(tenant_id=tenant_id, limit=100)
+    except Exception as exc:
+        logger.warning("dic: explorer error: %s", exc)
+        findings = []
+    return render_template("document_intelligence/explorer.html", findings=findings)
+
+
+@dic_bp.route("/handoff")
+def handoff():
+    tenant_id, _ = _security_context()
+    conn = _conn()
+    try:
+        sessions = _safe_rows(
+            conn,
+            "SELECT session_id, departing_owner_id, successor_owner_id, dest_collection_id, title, status, "
+            "agenda_count, answered_count, generated_count, orphan_count, created_at "
+            "FROM dic_handoff_sessions WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 50",
+            (tenant_id,),
+        )
+    except Exception as exc:
+        logger.warning("dic: handoff query error: %s", exc)
+        sessions = []
+    finally:
+        conn.close()
+    return render_template("document_intelligence/handoff.html", sessions=sessions)
 
 
 # ── API: Upload / Ingest ──────────────────────────────────────────────────────
@@ -799,6 +991,9 @@ def api_collections_create():
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "name is required"}), 400
+    # Collection creation requires admin role in the tenant (use default collection as proxy).
+    if not _require_role("default", "admin"):
+        return _forbid("admin")
     tenant_id, classification = _security_context()
     collection_id = _hid("dic_col", name, tenant_id, _now())
     conn = _conn()
@@ -832,6 +1027,8 @@ def api_team_add(collection_id):
     user_id = (data.get("user_id") or "").strip()
     if not user_id:
         return jsonify({"error": "user_id is required"}), 400
+    if not _require_role(collection_id, "admin"):
+        return _forbid("admin")
     role = data.get("role", "viewer")
     tenant_id, _ = _security_context()
     access_id = _hid("dic_access", collection_id, user_id, _now())
@@ -845,6 +1042,75 @@ def api_team_add(collection_id):
         return jsonify({"access_id": access_id, "user_id": user_id, "role": role})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+# ── API: Documents ───────────────────────────────────────────────────────────
+
+@dic_bp.route("/api/collections/<collection_id>/documents", methods=["GET"])
+def api_collection_documents(collection_id):
+    tenant_id, _ = _security_context()
+    conn = _conn()
+    try:
+        rows = _safe_rows(
+            conn,
+            "SELECT doc_id, collection_id, filename, title, content_type, provider, "
+            "page_count, content_sha256, created_at, classification "
+            "FROM dic_documents WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC",
+            (collection_id, tenant_id),
+        )
+        # Augment with latest version status and chunk count
+        for r in rows:
+            try:
+                ver = conn.execute(
+                    "SELECT version_id, status, origin, version_no FROM dic_versions "
+                    "WHERE doc_id = ? ORDER BY version_no DESC LIMIT 1",
+                    (r["doc_id"],),
+                ).fetchone()
+                if ver:
+                    r["latest_version_id"] = ver[0] if hasattr(ver, "__getitem__") else ver["version_id"]
+                    r["latest_status"] = ver[1] if hasattr(ver, "__getitem__") else ver["status"]
+                    r["latest_origin"] = ver[2] if hasattr(ver, "__getitem__") else ver["origin"]
+                    r["version_count"] = conn.execute(
+                        "SELECT COUNT(*) FROM dic_versions WHERE doc_id = ?",
+                        (r["doc_id"],),
+                    ).fetchone()[0]
+                else:
+                    r["latest_version_id"] = ""
+                    r["latest_status"] = ""
+                    r["latest_origin"] = ""
+                    r["version_count"] = 0
+            except Exception:
+                r["latest_version_id"] = ""
+                r["latest_status"] = ""
+                r["latest_origin"] = ""
+                r["version_count"] = 0
+            try:
+                chunk_row = conn.execute(
+                    "SELECT COUNT(*) FROM dic_chunk_links WHERE doc_id = ?",
+                    (r["doc_id"],),
+                ).fetchone()
+                r["chunk_count"] = chunk_row[0] if chunk_row else 0
+            except Exception:
+                r["chunk_count"] = 0
+        return jsonify({"documents": rows, "collection_id": collection_id})
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/documents/<doc_id>/versions", methods=["GET"])
+def api_document_versions(doc_id):
+    conn = _conn()
+    try:
+        versions = _safe_rows(
+            conn,
+            "SELECT version_id, version_no, origin, status, assigned_to, "
+            "created_at, created_by, content_sha256 "
+            "FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC",
+            (doc_id,),
+        )
+        return jsonify({"doc_id": doc_id, "versions": versions})
     finally:
         conn.close()
 
@@ -874,11 +1140,20 @@ def api_review_assign(item_id):
     item_type = data.get("type", "version")
     if not assigned_to:
         return jsonify({"error": "assigned_to is required"}), 400
+    # Resolve collection for role check.
+    if item_type == "version":
+        cid = _collection_id_from_version(item_id) or "default"
+    elif item_type == "section":
+        cid = _collection_id_from_section(item_id) or "default"
+    else:
+        cid = "default"
+    if not _require_role(cid, "editor"):
+        return _forbid("editor")
     conn = _conn()
     try:
         table = "dic_versions" if item_type == "version" else "dic_ssp_fragments"
         pk = "version_id" if item_type == "version" else "fragment_id"
-        conn.execute(f"UPDATE {table} SET assigned_to = ? WHERE {pk} = ?", (assigned_to, item_id))
+        conn.execute(f"UPDATE {table} SET assigned_to = ? WHERE {pk} = ?", (assigned_to, item_id))  # nosec B608 — table/pk from ternary constants, not user input
         conn.commit()
         return jsonify({"status": "assigned", "item_id": item_id, "assigned_to": assigned_to})
     except Exception as exc:
@@ -893,6 +1168,14 @@ def api_review_revise(item_id):
     reviewer = data.get("reviewer", _current_user())
     item_type = data.get("type", "fragment")
     note = (data.get("note") or "").strip()
+    if item_type == "version":
+        cid = _collection_id_from_version(item_id) or "default"
+    elif item_type == "section":
+        cid = _collection_id_from_section(item_id) or "default"
+    else:
+        cid = "default"
+    if not _require_role(cid, "reviewer"):
+        return _forbid("reviewer")
     conn = _conn()
     try:
         if item_type == "version":
@@ -925,6 +1208,14 @@ def api_review_approve(item_id):
     reviewer = data.get("reviewer", _current_user())
     item_type = data.get("type", "fragment")
     note = (data.get("note") or "").strip()
+    if item_type == "version":
+        cid = _collection_id_from_version(item_id) or "default"
+    elif item_type == "section":
+        cid = _collection_id_from_section(item_id) or "default"
+    else:
+        cid = "default"
+    if not _require_role(cid, "reviewer"):
+        return _forbid("reviewer")
     conn = _conn()
     try:
         if item_type == "version":
@@ -957,6 +1248,14 @@ def api_review_reject(item_id):
     reviewer = data.get("reviewer", _current_user())
     item_type = data.get("type", "fragment")
     note = (data.get("note") or "").strip()
+    if item_type == "version":
+        cid = _collection_id_from_version(item_id) or "default"
+    elif item_type == "section":
+        cid = _collection_id_from_section(item_id) or "default"
+    else:
+        cid = "default"
+    if not _require_role(cid, "reviewer"):
+        return _forbid("reviewer")
     conn = _conn()
     try:
         if item_type == "version":
@@ -982,6 +1281,188 @@ def api_review_reject(item_id):
         conn.close()
 
 
+# ── API: Section Review (per-section accept/reject/revise) ─────────────────
+
+@dic_bp.route("/api/sections/<section_id>/approve", methods=["POST"])
+def api_section_approve(section_id):
+    data = request.get_json(silent=True) or {}
+    reviewer = data.get("reviewer", _current_user())
+    note = (data.get("note") or "").strip()
+    cid = _collection_id_from_section(section_id) or "default"
+    if not _require_role(cid, "reviewer"):
+        return _forbid("reviewer")
+    conn = _conn()
+    try:
+        conn.execute(
+            "UPDATE dic_sections SET status='approved', reviewed_by=?, reviewed_at=? WHERE section_id=?",
+            (reviewer, _now(), section_id),
+        )
+        conn.commit()
+        if note:
+            _record_review_note(section_id, "section", note, reviewer)
+        return jsonify({"status": "approved", "section_id": section_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/sections/<section_id>/reject", methods=["POST"])
+def api_section_reject(section_id):
+    data = request.get_json(silent=True) or {}
+    reviewer = data.get("reviewer", _current_user())
+    note = (data.get("note") or "").strip()
+    cid = _collection_id_from_section(section_id) or "default"
+    if not _require_role(cid, "reviewer"):
+        return _forbid("reviewer")
+    conn = _conn()
+    try:
+        conn.execute(
+            "UPDATE dic_sections SET status='rejected', reviewed_by=?, reviewed_at=? WHERE section_id=?",
+            (reviewer, _now(), section_id),
+        )
+        conn.commit()
+        if note:
+            _record_review_note(section_id, "section", note, reviewer)
+        return jsonify({"status": "rejected", "section_id": section_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/sections/<section_id>/revise", methods=["POST"])
+def api_section_revise(section_id):
+    data = request.get_json(silent=True) or {}
+    reviewer = data.get("reviewer", _current_user())
+    note = (data.get("note") or "").strip()
+    cid = _collection_id_from_section(section_id) or "default"
+    if not _require_role(cid, "reviewer"):
+        return _forbid("reviewer")
+    conn = _conn()
+    try:
+        conn.execute(
+            "UPDATE dic_sections SET status='needs_revision', reviewed_by=?, reviewed_at=? WHERE section_id=?",
+            (reviewer, _now(), section_id),
+        )
+        conn.commit()
+        if note:
+            _record_review_note(section_id, "section", note, reviewer)
+        return jsonify({"status": "needs_revision", "section_id": section_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/sections/<section_id>/content", methods=["POST"])
+def api_section_update_content(section_id):
+    data = request.get_json(silent=True) or {}
+    content = data.get("content", "")
+    cid = _collection_id_from_section(section_id) or "default"
+    if not _require_role(cid, "editor"):
+        return _forbid("editor")
+    conn = _conn()
+    try:
+        conn.execute(
+            "UPDATE dic_sections SET content = ?, status = ?, origin = ?, created_at = ? WHERE section_id = ?",
+            (content, "draft", "human_authored", _now(), section_id),
+        )
+        conn.commit()
+        return jsonify({"status": "updated", "section_id": section_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+# ── API: Template Instantiation ─────────────────────────────────────────────
+
+_TEMPLATE_SECTIONS: dict[str, list[str]] = {
+    "acoic": ["Impact Assessment", "Affected Controls", "Regeneration Plan", "SSP Fragment", "Approval Gate"],
+    "freshness-audit": ["Audit Scope", "Stale Document Inventory", "Remediation Plan", "Owner Assignments", "Timeline"],
+    "airgap-ingest": ["Source Directory", "Ingest Pipeline Steps", "Verification Checklist", "Rollback Plan"],
+    "hitl-review": ["Review Queue", "Reviewer Assignments", "Acceptance Criteria", "Escalation Path"],
+    "sop-refresh": ["Current Procedure", "Change Summary", "Updated Steps", "Validation Criteria", "Rollback Plan"],
+    "knowledge-handoff": ["SME Profile", "Knowledge Areas", "Interview Agenda", "Captured Artifacts", "Successor Onboarding"],
+}
+
+
+@dic_bp.route("/api/templates/<template_id>/instantiate", methods=["POST"])
+def api_template_instantiate(template_id):
+    data = request.get_json(silent=True) or {}
+    collection_id = data.get("collection_id", "default")
+    if not _require_role(collection_id, "editor"):
+        return _forbid("editor")
+    tenant_id, classification = _security_context()
+    created_by = _current_user()
+
+    template_meta = next((t for t in _TEMPLATES if t["id"] == template_id), None)
+    if not template_meta:
+        return jsonify({"error": "template not found"}), 404
+
+    sections = _TEMPLATE_SECTIONS.get(template_id, ["Overview"])
+    now = _now()
+    doc_id = _hid("dic_tpl", template_id, collection_id, now)
+    version_id = f"{doc_id}_v1"
+
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT OR REPLACE INTO dic_documents
+                (doc_id, collection_id, source_id, filename, filepath,
+                 content_type, provider, title, byte_size, content_sha256,
+                 page_count, created_at, tenant_id, classification)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                doc_id, collection_id, doc_id, f"{template_id}-template.md", "",
+                "text/markdown", "template", template_meta["name"], 0, "",
+                len(sections), now, tenant_id, classification,
+            ),
+        )
+        cur.execute(
+            """
+            INSERT OR REPLACE INTO dic_versions
+                (version_id, doc_id, version_no, origin, status,
+                 content_sha256, created_at, created_by, tenant_id, classification)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                version_id, doc_id, 1, "template", "draft",
+                "", now, created_by, tenant_id, classification,
+            ),
+        )
+        for i, heading in enumerate(sections):
+            section_id = f"{version_id}_sec_{i}"
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO dic_sections
+                    (section_id, version_id, doc_id, heading, content,
+                     citations_json, status, origin, created_at, created_by, tenant_id, classification)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    section_id, version_id, doc_id, heading, "",
+                    "[]", "draft", "template", now, created_by, tenant_id, classification,
+                ),
+            )
+        conn.commit()
+        return jsonify({
+            "doc_id": doc_id,
+            "version_id": version_id,
+            "template_id": template_id,
+            "title": template_meta["name"],
+            "sections": sections,
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
 # ── API: Generate ─────────────────────────────────────────────────────────────
 
 @dic_bp.route("/api/generate", methods=["POST"])
@@ -991,6 +1472,8 @@ def api_generate():
     if not query:
         return jsonify({"error": "query is required"}), 400
     collection_id = data.get("collection_id", "default")
+    if not _require_role(collection_id, "editor"):
+        return _forbid("editor")
     template_id = data.get("template_id")
     tenant_id, classification = _security_context()
 
@@ -1016,6 +1499,8 @@ def api_generate_section():
     version_id = (data.get("version_id") or "").strip()
     heading = (data.get("heading") or "").strip()
     collection_id = data.get("collection_id", "default")
+    if not _require_role(collection_id, "editor"):
+        return _forbid("editor")
     if not version_id or not heading:
         return jsonify({"error": "version_id and heading are required"}), 400
     tenant_id, classification = _security_context()
@@ -1052,6 +1537,48 @@ def api_version_sections(version_id):
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
+
+
+# ── API: Handoff ──────────────────────────────────────────────────────────────
+
+@dic_bp.route("/api/handoff/start", methods=["POST"])
+def api_handoff_start():
+    data = request.get_json(silent=True) or {}
+    departing = (data.get("departing_owner_id") or "").strip()
+    successor = (data.get("successor_owner_id") or "").strip()
+    dest = data.get("dest_collection_id", "default")
+    if not departing or not successor:
+        return jsonify({"error": "departing_owner_id and successor_owner_id are required"}), 400
+    if not _require_role(dest, "admin"):
+        return _forbid("admin")
+    tenant_id, classification = _security_context()
+    created_by = _current_user()
+    try:
+        from tools.document_intelligence.handoff import start_session
+        session = start_session(
+            departing, successor, dest,
+            tenant_id=tenant_id, classification=classification, created_by=created_by,
+        )
+        return jsonify({
+            "session_id": session.session_id,
+            "title": session.title,
+            "agenda_count": session.agenda_count,
+            "orphan_count": session.orphan_count,
+        })
+    except Exception as exc:
+        logger.warning("dic: handoff start error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/handoff/<session_id>/close", methods=["POST"])
+def api_handoff_close(session_id):
+    try:
+        from tools.document_intelligence.handoff import close_session
+        result = close_session(session_id, closed_by=_current_user())
+        return jsonify(result)
+    except Exception as exc:
+        logger.warning("dic: handoff close error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
 
 
 # ── Analytics Page + API ─────────────────────────────────────────────────────

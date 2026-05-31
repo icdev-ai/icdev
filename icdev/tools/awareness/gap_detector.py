@@ -661,6 +661,14 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     """
     findings: List[Dict[str, Any]] = []
     tools_dir = BASE_DIR / "tools"
+    # icdev/ is the canonical package root (this file lives inside it).
+    # tools/ is a backward-compat shim.  When run from the repo root the
+    # gap detector also needs to see CREATE TABLEs in the legacy tools/
+    # and apps/ trees so references from those trees aren't mis-flagged.
+    # Use the grandparent of BASE_DIR ("icdev"'s parent = repo root) if it
+    # looks like the real repo root; fall back to BASE_DIR-only otherwise.
+    _repo_root = BASE_DIR.parent if (BASE_DIR.parent / "tools").is_dir() else BASE_DIR
+    schema_roots = [tools_dir, _repo_root / "tools", _repo_root / "apps"]
 
     created: Set[str] = set()
     referenced: Dict[str, str] = {}  # table → first referencing file
@@ -725,27 +733,29 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     # First pass: collect CREATE TABLE (and RENAME TO) from SQL-shaped string
     # literals in .py files. Comments are stripped first so documentation
     # inside SQL doesn't leak English prose into the regex matcher.
-    for py in _walk_py(tools_dir):
-        for sql in _extract_py_string_literals(py):
-            if not _is_likely_sql(sql):
-                continue
-            sql_clean = _strip_sql_comments(sql)
-            for m in create_re.finditer(sql_clean):
-                created.add(m.group(1).lower())
-            for m in rename_re.finditer(sql_clean):
-                created.add(m.group(1).lower())
+    for _sroot in schema_roots:
+        for py in _walk_py(_sroot):
+            for sql in _extract_py_string_literals(py):
+                if not _is_likely_sql(sql):
+                    continue
+                sql_clean = _strip_sql_comments(sql)
+                for m in create_re.finditer(sql_clean):
+                    created.add(m.group(1).lower())
+                for m in rename_re.finditer(sql_clean):
+                    created.add(m.group(1).lower())
 
     # Also scan raw .sql files (migrations written as pure SQL). These
     # don't need the _is_likely_sql gate — if it's a .sql file, assume
     # it's SQL. Comments still get stripped.
-    for sql_path in tools_dir.rglob("*.sql"):
-        if any(part in _EXCLUDED_PARTS for part in sql_path.parts):
-            continue
-        src = _strip_sql_comments(_read_text(sql_path))
-        for m in create_re.finditer(src):
-            created.add(m.group(1).lower())
-        for m in rename_re.finditer(src):
-            created.add(m.group(1).lower())
+    for _sroot in schema_roots:
+        for sql_path in _sroot.rglob("*.sql"):
+            if any(part in _EXCLUDED_PARTS for part in sql_path.parts):
+                continue
+            src = _strip_sql_comments(_read_text(sql_path))
+            for m in create_re.finditer(src):
+                created.add(m.group(1).lower())
+            for m in rename_re.finditer(src):
+                created.add(m.group(1).lower())
 
     # Second pass: references from SQL-shaped string literals. Python
     # ``from X import Y`` statements are ast.ImportFrom (not ast.Constant),

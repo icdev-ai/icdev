@@ -90,11 +90,11 @@ def _load_model_and_tokenizer(model_path: str):
         bnb_4bit_use_double_quant=True,
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)  # nosec B615 — model_path is a controlled local or approved HF repo
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(  # nosec B615 — model_path is a controlled local or approved HF repo
         model_path,
         quantization_config=bnb_config,
         device_map="auto",

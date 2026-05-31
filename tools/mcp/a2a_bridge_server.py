@@ -53,7 +53,7 @@ class MCPA2ABridge:
 
     def __init__(
         self,
-        host: str = "0.0.0.0",
+        host: str = "0.0.0.0",  # nosec B104 — bridge server binds all interfaces by design; override via constructor arg
         port: int = 9000,
         db_path: Optional[Path] = None,
         tls_cert: Optional[str] = None,
@@ -311,7 +311,7 @@ def _utcnow_iso() -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="MCP-A2A Bridge Server")
-    parser.add_argument("--host", default="0.0.0.0", help="Bind host")
+    parser.add_argument("--host", default="0.0.0.0", help="Bind host")  # nosec B104 — server binds all interfaces by design; override via --host
     parser.add_argument("--port", type=int, default=9000, help="Bind port")
     parser.add_argument("--tls-cert", help="TLS certificate path")
     parser.add_argument("--tls-key", help="TLS private key path")

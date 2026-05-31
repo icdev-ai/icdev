@@ -101,7 +101,7 @@ def _get_db():
     conn = get_connection()
     # Govcon tools are service-layer operations — clear any Flask RLS context
     # so that complex JOIN queries don't fail with RLS column injection errors.
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: govcon service-layer; complex JOIN queries fail with RLS column injection
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

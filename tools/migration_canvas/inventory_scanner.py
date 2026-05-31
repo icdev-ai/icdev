@@ -216,7 +216,7 @@ def parse_nmap_xml(path: Path) -> list[dict]:
 
     results: list[dict] = []
     try:
-        tree = ET.parse(str(path))
+        tree = ET.parse(str(path))  # nosec B314 — parsing trusted local nmap XML output, not user-supplied input
         root = tree.getroot()
     except Exception:
         return []

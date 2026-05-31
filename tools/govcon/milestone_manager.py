@@ -34,7 +34,7 @@ DEP_TYPES = ("finish_to_start", "start_to_start", "finish_to_finish", "start_to_
 
 def _get_db():
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: govcon service-layer; govcon tables lack tenant_id/classification columns
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
