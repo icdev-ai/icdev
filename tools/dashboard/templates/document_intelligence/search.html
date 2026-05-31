@@ -21,6 +21,10 @@
     style="background:none;color:#5a7aa0;padding:6px 18px;border:none;border-radius:4px;cursor:pointer;font-size:13px;">
     Chat
   </button>
+  <button id="btn-kg" onclick="setMode('kg')"
+    style="background:none;color:#5a7aa0;padding:6px 18px;border:none;border-radius:4px;cursor:pointer;font-size:13px;">
+    KG Explorer
+  </button>
 </div>
 
 <!-- Search Bar -->
@@ -47,22 +51,63 @@
   <div id="chat-thinking" style="display:none;color:#5a7aa0;font-size:12px;padding:8px 0;">Thinking…</div>
 </div>
 
+<!-- KG Explorer Panel -->
+<div id="kg-panel" style="display:none;">
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:16px;margin-bottom:14px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+      <div>
+        <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Entity / Concept</label>
+        <input type="text" id="kg-label" placeholder="e.g. Sun Tzu, commander, strategy…"
+          style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 12px;border-radius:5px;font-size:13px;width:240px;"
+          onkeydown="if(event.key==='Enter') runKG()">
+      </div>
+      <div>
+        <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Mode</label>
+        <select id="kg-mode" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:5px;font-size:12px;">
+          <option value="entities">All Entities (browse)</option>
+          <option value="relations">Relationships of Entity</option>
+          <option value="neighbors">Neighbors (direct connections)</option>
+        </select>
+      </div>
+      <div>
+        <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Type filter</label>
+        <select id="kg-type" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:5px;font-size:12px;">
+          <option value="">All types</option>
+          <option value="PERSON">PERSON</option>
+          <option value="ORG">ORG</option>
+          <option value="SYSTEM">SYSTEM</option>
+          <option value="CONCEPT">CONCEPT</option>
+        </select>
+      </div>
+      <button onclick="runKG()"
+        style="background:#0f3460;color:#7ab3f0;padding:8px 18px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">
+        Explore
+      </button>
+    </div>
+  </div>
+  <div id="kg-status" style="color:#5a7aa0;font-size:12px;margin-bottom:8px;"></div>
+  <div id="kg-results"></div>
+</div>
+
 <script>
 var _mode = 'search';
 var _chatHistory = [];
 
 function setMode(mode) {
   _mode = mode;
-  var isSearch = mode === 'search';
-  document.getElementById('btn-search').style.background = isSearch ? '#0f3460' : 'none';
-  document.getElementById('btn-search').style.color = isSearch ? '#7ab3f0' : '#5a7aa0';
-  document.getElementById('btn-chat').style.background = isSearch ? 'none' : '#0f3460';
-  document.getElementById('btn-chat').style.color = isSearch ? '#5a7aa0' : '#7ab3f0';
-  document.getElementById('search-panel').style.display = isSearch ? 'block' : 'none';
-  document.getElementById('chat-panel').style.display = isSearch ? 'none' : 'block';
-  document.getElementById('query-input').placeholder = isSearch
+  ['search','chat','kg'].forEach(function(m) {
+    var btn = document.getElementById('btn-' + m);
+    btn.style.background = mode === m ? '#0f3460' : 'none';
+    btn.style.color = mode === m ? '#7ab3f0' : '#5a7aa0';
+  });
+  document.getElementById('search-panel').style.display = mode === 'search' ? 'block' : 'none';
+  document.getElementById('chat-panel').style.display = mode === 'chat' ? 'block' : 'none';
+  document.getElementById('kg-panel').style.display = mode === 'kg' ? 'block' : 'none';
+  document.getElementById('query-input').placeholder = mode === 'search'
     ? 'Search your documents…'
-    : 'Ask a question about your documents…';
+    : mode === 'chat'
+      ? 'Ask a question about your documents…'
+      : 'Use KG Explorer below…';
 }
 
 function submitQuery() {
@@ -159,6 +204,77 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+function runKG() {
+  var label = document.getElementById('kg-label').value.trim();
+  var mode = document.getElementById('kg-mode').value;
+  var entityType = document.getElementById('kg-type').value;
+  var status = document.getElementById('kg-status');
+  var results = document.getElementById('kg-results');
+  status.textContent = 'Querying knowledge graph…';
+  results.innerHTML = '';
+  fetch('/document-intelligence/api/kg-explore', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({mode: mode, label: label, entity_type: entityType || null, limit: 100})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { status.textContent = 'Error: ' + data.error; return; }
+
+      if (mode === 'entities') {
+        var items = data.entities || [];
+        status.textContent = items.length + ' entities found' + (label ? ' matching "' + label + '"' : '');
+        if (!items.length) { results.innerHTML = '<p style="color:#5a7aa0;font-size:12px;">No entities found. Upload and ingest a document first.</p>'; return; }
+        var byType = {};
+        items.forEach(function(e) { (byType[e.entity_type] = byType[e.entity_type] || []).push(e); });
+        results.innerHTML = Object.keys(byType).map(function(t) {
+          return '<div style="margin-bottom:16px;">' +
+            '<div style="color:#9bb8d8;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;">' + t + ' (' + byType[t].length + ')</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+            byType[t].map(function(e) {
+              return '<span onclick="drillEntity(\'' + escHtml(e.label) + '\')" style="background:#16213e;border:1px solid #1e3a6e;color:#a8c8e0;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;" title="Click to explore relationships">' +
+                e.label + '</span>';
+            }).join('') + '</div></div>';
+        }).join('');
+
+      } else if (mode === 'relations') {
+        var rels = data.relationships || [];
+        status.textContent = rels.length + ' relationships found for "' + label + '"';
+        if (!rels.length) { results.innerHTML = '<p style="color:#5a7aa0;font-size:12px;">No relationships found for that entity.</p>'; return; }
+        results.innerHTML = '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;overflow:hidden;">' +
+          '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+          '<thead><tr style="background:#08112a;color:#6090b0;"><th style="padding:7px 12px;text-align:left;">Source</th><th style="padding:7px 12px;text-align:left;">Relationship</th><th style="padding:7px 12px;text-align:left;">Target</th></tr></thead><tbody>' +
+          rels.map(function(r) {
+            return '<tr style="border-top:1px solid #0d1e30;color:#a8c8e0;">' +
+              '<td style="padding:6px 12px;"><span onclick="drillEntity(\'' + escHtml(r.source) + '\')" style="cursor:pointer;color:#7ab3f0;">' + escHtml(r.source) + '</span></td>' +
+              '<td style="padding:6px 12px;color:#5a7aa0;font-style:italic;">' + escHtml(r.relationship) + '</td>' +
+              '<td style="padding:6px 12px;"><span onclick="drillEntity(\'' + escHtml(r.target) + '\')" style="cursor:pointer;color:#7ab3f0;">' + escHtml(r.target) + '</span></td>' +
+              '</tr>';
+          }).join('') + '</tbody></table></div>';
+
+      } else if (mode === 'neighbors') {
+        var entity = data.entity || {};
+        var nb = data.neighbors || [];
+        status.textContent = nb.length + ' direct neighbors of "' + (entity.label || label) + '"';
+        if (!nb.length) { results.innerHTML = '<p style="color:#5a7aa0;font-size:12px;">No neighbors found.</p>'; return; }
+        results.innerHTML = '<div style="margin-bottom:10px;"><span style="background:#1a2e52;color:#7ab3f0;padding:4px 12px;border-radius:4px;font-size:12px;">' + escHtml(entity.label || label) + '</span><span style="color:#5a7aa0;font-size:11px;margin-left:8px;">' + (entity.entity_type || '') + '</span></div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
+          nb.map(function(n) {
+            return '<div onclick="drillEntity(\'' + escHtml(n.label) + '\')" style="background:#0d1b2e;border:1px solid #1a3560;border-radius:6px;padding:8px 12px;cursor:pointer;" title="' + escHtml(n.relationship) + '">' +
+              '<div style="color:#a8c8e0;font-size:12px;">' + escHtml(n.label) + '</div>' +
+              '<div style="color:#5a7aa0;font-size:10px;margin-top:2px;">' + escHtml(n.relationship) + ' · ' + (n.entity_type || '') + '</div>' +
+              '</div>';
+          }).join('') + '</div>';
+      }
+    })
+    .catch(function() { status.textContent = 'KG query failed.'; });
+}
+
+function drillEntity(label) {
+  document.getElementById('kg-label').value = label;
+  document.getElementById('kg-mode').value = 'neighbors';
+  runKG();
+}
+
 {% if collection_id %}
 document.getElementById('collection-filter').value = '{{ collection_id }}';
 {% endif %}
@@ -169,7 +285,8 @@ document.getElementById('collection-filter').value = '{{ collection_id }}';
 {% set iqe_title = "IQE Query — Search" %}
 {% set iqe_examples = [
   {"label": "All documents", "query": "foreach d in dic.documents select d.title, d.collection_id"},
-  {"label": "SSP fragments", "query": "foreach s in dic.ssp_fragments select s.control_id, s.status"}
+  {"label": "Top KG entities", "query": "foreach e in dic.kg_entities select e.label, e.entity_type, e.centrality"},
+  {"label": "KG relationships", "query": "foreach r in dic.kg_relationships select r.source, r.relationship, r.target"}
 ] %}
 {% include "includes/iqe_query_widget.html" %}
 {% endblock %}

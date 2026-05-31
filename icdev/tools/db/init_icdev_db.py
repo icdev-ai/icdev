@@ -5515,7 +5515,7 @@ CREATE TABLE IF NOT EXISTS proposal_reviews (
     id TEXT PRIMARY KEY,
     opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
     review_type TEXT NOT NULL CHECK(review_type IN (
-        'pink_team', 'red_team', 'gold_team', 'white_glove', 'internal')),
+        'pink_team', 'red_team', 'gold_team', 'white_team', 'white_glove', 'internal')),
     status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN (
         'scheduled', 'in_progress', 'completed', 'cancelled')),
     scheduled_date TEXT,

@@ -17,6 +17,7 @@ Review Types:
     Red   — Government evaluator simulation scored against Section M
     Green — Pricing review (cost compliance + technical consistency)
     Gold  — Final executive review (all critics combined)
+    White — Compliance-check review (regulatory/policy adherence gate)
 
 Critics:
     Compliance    — Section M requirement coverage, shall statement gaps,
@@ -60,7 +61,7 @@ _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")
 
 # ── Constants ─────────────────────────────────────────────────────────
 
-REVIEW_TYPES = ("blue", "pink", "red", "green", "gold")
+REVIEW_TYPES = ("blue", "pink", "red", "green", "gold", "white")
 
 SEVERITIES = ("critical", "major", "minor", "observation")
 
@@ -73,6 +74,7 @@ REVIEW_CRITICS: Dict[str, List[str]] = {
     "red": ["compliance", "persuasiveness", "readability"],
     "green": ["pricing"],
     "gold": ["compliance", "persuasiveness", "readability", "pricing"],
+    "white": ["compliance"],  # compliance-check gate before executive sign-off
 }
 
 # Vague / weak language patterns (D354 — deterministic keyword matching)

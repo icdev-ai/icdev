@@ -146,6 +146,6 @@ def build_architecture_mermaid(scan: dict, opps: list[dict], title: str | None =
     return "\n".join(lines)
 
 
-def build_architecture_mermaid_block(scan: dict, opps: list[dict], title: str | None = None) -> str:
+def build_architecture_mermaid_block(scan: dict, opps: list[dict], title: str | None = None, *, max_opps: int = 25) -> str:
     """Same as build_architecture_mermaid but wrapped in a fenced code block."""
-    return "```mermaid\n" + build_architecture_mermaid(scan, opps, title) + "\n```"
+    return "```mermaid\n" + build_architecture_mermaid(scan, opps, title, max_opps=max_opps) + "\n```"

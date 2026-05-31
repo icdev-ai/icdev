@@ -628,6 +628,27 @@ CREATE TABLE IF NOT EXISTS cpmp_contract_mods (
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_contract ON cpmp_contract_mods(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_status ON cpmp_contract_mods(status);
+CREATE TABLE IF NOT EXISTS cpmp_risks (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'other',
+    probability INTEGER NOT NULL DEFAULT 3,
+    impact INTEGER NOT NULL DEFAULT 3,
+    exposure INTEGER NOT NULL DEFAULT 9,
+    mitigation TEXT,
+    owner TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    milestone_id TEXT,
+    negative_event_id TEXT,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_risk_contract ON cpmp_risks(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_risk_status ON cpmp_risks(status);
 CREATE TABLE IF NOT EXISTS pg_capture_gate_decisions (
     id TEXT PRIMARY KEY,
     capture_plan_id TEXT NOT NULL,

@@ -63,6 +63,9 @@ SECTION_TRANSITIONS = {
     "submitted": [],
 }
 
+# Valid color team review types for proposal_reviews (matches DB CHECK constraint)
+REVIEW_TYPES = ("pink_team", "red_team", "gold_team", "white_team", "white_glove", "internal")
+
 # Ordered status list for pipeline rendering
 SECTION_STATUS_ORDER = [
     "not_started",
@@ -270,7 +273,12 @@ def update_opportunity(opp_id):
 
 @proposals_api.route("/opportunities/<opp_id>/status", methods=["PUT"])
 def change_opportunity_status(opp_id):
-    """PUT /api/proposals/opportunities/<id>/status — Change opportunity status."""
+    """PUT /api/proposals/opportunities/<id>/status — Change opportunity status.
+
+    Gate: transition to 'submitted' is blocked unless a 'gold_team' review
+    exists with overall_rating IN ('pass', 'pass_with_findings') and
+    status = 'completed'. Pass force=true to bypass (admin only).
+    """
     data = request.get_json(force=True, silent=True) or {}
     new_status = data.get("status")
     if not new_status:
@@ -281,6 +289,27 @@ def change_opportunity_status(opp_id):
         if not row:
             return jsonify({"error": "Opportunity not found"}), 404
         old_status = row["status"]
+
+        # Gold-team sign-off gate (D-PROP-GOLD): block 'submitted' until Gold passes
+        if new_status == "submitted" and not data.get("force"):
+            gold_review = conn.execute(
+                """SELECT id, overall_rating FROM proposal_reviews
+                   WHERE opportunity_id = ? AND review_type = 'gold_team'
+                     AND status = 'completed'
+                     AND overall_rating IN ('pass', 'pass_with_findings')
+                   ORDER BY created_at DESC LIMIT 1""",
+                (opp_id,),
+            ).fetchone()
+            if not gold_review:
+                return jsonify({
+                    "error": "Gold-team sign-off required before submitting",
+                    "gate": "gold_team_signoff",
+                    "detail": (
+                        "A completed Gold Team review with overall_rating 'pass' or "
+                        "'pass_with_findings' must exist before this opportunity can be submitted."
+                    ),
+                }), 409
+
         conn.execute(
             "UPDATE proposal_opportunities SET status = ?, updated_at = ? WHERE id = ?",
             (new_status, now_iso(), opp_id),
@@ -864,6 +893,8 @@ def schedule_review(opp_id):
     data = request.get_json(force=True, silent=True) or {}
     if not data.get("review_type"):
         return jsonify({"error": "review_type is required"}), 400
+    if data["review_type"] not in REVIEW_TYPES:
+        return jsonify({"error": f"Invalid review_type. Must be one of: {', '.join(REVIEW_TYPES)}"}), 400
     rev_id = _uuid()
     conn = _get_db()
     try:

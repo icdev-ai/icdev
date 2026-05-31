@@ -15,6 +15,29 @@
     <span id="gc-status-msg" style="margin-left:8px;color:var(--text-secondary);font-size:0.85rem;"></span>
   </div>
 
+  <!-- Weighted Pipeline Value Banner (prop-cap-12) -->
+  {% if pipeline_rollup %}
+  <div style="background:var(--bg-card,#16213e);border:1px solid var(--border-color,#2a2a4a);border-radius:8px;padding:16px 20px;margin-bottom:16px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
+    <div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Weighted Pipeline Value</div>
+      <div style="font-size:1.6rem;font-weight:bold;color:var(--accent-color,#4a90d9);">${{ "{:,.0f}".format(pipeline_rollup.total_weighted_pipeline_value) }}</div>
+    </div>
+    <div style="width:1px;background:var(--border-color);height:40px;"></div>
+    <div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Total Potential</div>
+      <div style="font-size:1.6rem;font-weight:bold;">${{ "{:,.0f}".format(pipeline_rollup.total_potential_value) }}</div>
+    </div>
+    <div style="width:1px;background:var(--border-color);height:40px;"></div>
+    <div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Scored / Total</div>
+      <div style="font-size:1.6rem;font-weight:bold;">{{ pipeline_rollup.scored_count }} / {{ (pipeline_rollup.scored_count + pipeline_rollup.unscored_count) }}</div>
+    </div>
+    <div style="margin-left:auto;">
+      <button class="btn btn-secondary" onclick="refreshPipelineValue()" style="font-size:0.8rem;">Refresh Roll-Up</button>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Stat Grid -->
   <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin:1rem 0;">
     <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
@@ -73,6 +96,74 @@
       <div style="font-weight:600;">DRAFT</div>
       <div style="font-size:0.8rem;color:var(--text-secondary);">Two-tier LLM</div>
     </div>
+  </div>
+
+  <!-- Active Proposal Pipeline with pWin (prop-cap-12) -->
+  <h2 style="margin-top:1.5rem;">Active Proposal Pipeline</h2>
+  <div id="pwin-legend" style="display:none;background:var(--bg-card,#16213e);border:1px solid var(--border-color,#2a2a4a);border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+    <div style="font-size:0.8rem;font-weight:600;margin-bottom:8px;">pWin Factor Breakdown</div>
+    <div id="pwin-legend-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;font-size:0.78rem;"></div>
+    <button onclick="document.getElementById('pwin-legend').style.display='none'" style="margin-top:8px;font-size:0.75rem;background:none;border:none;color:var(--text-secondary);cursor:pointer;">Close</button>
+  </div>
+  <div class="table-container">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border-color);">
+          <th style="text-align:left;padding:0.5rem;">Solicitation #</th>
+          <th style="text-align:left;padding:0.5rem;">Title</th>
+          <th style="text-align:left;padding:0.5rem;">Agency</th>
+          <th style="text-align:left;padding:0.5rem;">Due Date</th>
+          <th style="text-align:left;padding:0.5rem;">Days Left</th>
+          <th style="text-align:left;padding:0.5rem;">Status</th>
+          <th style="text-align:left;padding:0.5rem;">pWin</th>
+          <th style="text-align:left;padding:0.5rem;">Wtd Value</th>
+          <th style="text-align:left;padding:0.5rem;">Capture Mgr</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for opp in active_proposals %}
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:0.5rem;"><a href="/proposals/{{ opp.id }}">{{ opp.solicitation_number }}</a></td>
+          <td style="padding:0.5rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.title }}">{{ opp.title[:55] }}{% if opp.title|length > 55 %}...{% endif %}</td>
+          <td style="padding:0.5rem;">{{ opp.agency or '' }}</td>
+          <td style="padding:0.5rem;">{{ opp.due_date or '' }}</td>
+          <td style="padding:0.5rem;{% if opp.days_left is not none and opp.days_left <= 7 %}color:#dc3545;font-weight:bold;{% elif opp.days_left is not none and opp.days_left <= 14 %}color:#ffc107;{% endif %}">{{ opp.days_left if opp.days_left is not none else '—' }}</td>
+          <td style="padding:0.5rem;"><span style="padding:2px 8px;border-radius:4px;font-size:0.75rem;background:var(--bg-secondary,#1a1a2e);">{{ opp.status | replace('_', ' ') | title }}</span></td>
+          <td style="padding:0.5rem;">
+            {% set display_pwin = opp.computed_pwin_pct if opp.computed_pwin_pct is not none else opp.win_probability %}
+            {% if display_pwin is not none %}
+              {% set pct = display_pwin | int %}
+              {% if pct >= 70 %}{% set bar_color = 'var(--status-green,#4caf50)' %}
+              {% elif pct >= 40 %}{% set bar_color = 'var(--status-yellow,#ffc107)' %}
+              {% else %}{% set bar_color = 'var(--status-red,#dc3545)' %}{% endif %}
+              <div style="display:flex;align-items:center;gap:6px;">
+                <div style="flex:1;background:var(--bg-secondary,#1a1a2e);border-radius:3px;height:8px;min-width:60px;">
+                  <div style="background:{{ bar_color }};height:8px;border-radius:3px;width:{{ pct }}%;"></div>
+                </div>
+                <span style="color:{{ bar_color }};font-weight:bold;font-size:0.85rem;min-width:36px;">{{ pct }}%</span>
+                {% if opp.has_pwin_model %}
+                  <span title="Model score" style="cursor:pointer;font-size:0.7rem;color:var(--accent-color,#4a90d9);"
+                        onclick="showFactors({{ opp.pwin_factors | tojson if opp.pwin_factors else 'null' }})">ℹ</span>
+                {% endif %}
+              </div>
+            {% else %}
+              <span style="color:var(--text-secondary);">—</span>
+            {% endif %}
+          </td>
+          <td style="padding:0.5rem;font-size:0.85rem;">
+            {% if opp.weighted_value is not none %}
+              ${{ "{:,.0f}".format(opp.weighted_value) }}
+            {% else %}
+              <span style="color:var(--text-secondary);">—</span>
+            {% endif %}
+          </td>
+          <td style="padding:0.5rem;">{{ opp.capture_manager or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No active proposals in the pipeline.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 
   <!-- Domain Distribution -->
@@ -209,6 +300,46 @@ function extractReqs(oppId) {
       setMsg('Extracted ' + (d.total_extracted || 0) + ' requirements', '#388e3c');
     })
     .catch(function(e) { setMsg('Error: ' + e, '#d32f2f'); });
+}
+
+// ---- pWin Factor Breakdown + Pipeline Refresh (prop-cap-12) ----
+var FACTOR_LABELS = {incumbency:'Incumbency',past_performance_fit:'Past Performance Fit',competitive_position:'Competitive Position',compliance_coverage:'Compliance Coverage',crm_engagement:'CRM Engagement'};
+
+function showFactors(factors) {
+  if (!factors) return;
+  var legend = document.getElementById('pwin-legend');
+  var content = document.getElementById('pwin-legend-content');
+  content.innerHTML = '';
+  var colorMap = function(score) {
+    if (score >= 0.7) return 'var(--status-green,#4caf50)';
+    if (score >= 0.4) return 'var(--status-yellow,#ffc107)';
+    return 'var(--status-red,#dc3545)';
+  };
+  Object.entries(factors).forEach(function(entry) {
+    var f = entry[0], d = entry[1];
+    var label = FACTOR_LABELS[f] || f;
+    var pct = Math.round(d.score * 100);
+    var color = colorMap(d.score);
+    content.innerHTML += '<div style="padding:6px 8px;background:var(--bg-secondary,#1a1a2e);border-radius:4px;">' +
+      '<div style="font-size:0.75rem;color:var(--text-secondary);">' + label + ' <span style="float:right;color:var(--text-muted);">w=' + (d.weight*100).toFixed(0) + '%</span></div>' +
+      '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;">' +
+      '<div style="flex:1;background:var(--bg-card,#16213e);border-radius:2px;height:6px;">' +
+      '<div style="background:' + color + ';height:6px;border-radius:2px;width:' + pct + '%;"></div></div>' +
+      '<span style="color:' + color + ';font-size:0.8rem;font-weight:bold;">' + pct + '%</span></div></div>';
+  });
+  legend.style.display = 'block';
+  legend.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function refreshPipelineValue() {
+  fetch('/api/govcon/pipeline-value')
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.status === 'ok') {
+      location.reload();
+    }
+  })
+  .catch(function(){});
 }
 </script>
 {% endblock %}

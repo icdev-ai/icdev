@@ -55,7 +55,7 @@
                 <td><a href="/proposals/{{ opp.id }}">{{ opp.title[:50] }}{% if opp.title|length > 50 %}...{% endif %}</a></td>
                 <td>{{ opp.agency }}</td>
                 <td>{{ opp.due_date }}</td>
-                {% for gate, color in [('pink_team','#ff69b4'), ('red_team','#dc3545'), ('gold_team','#ffc107'), ('white_glove','#e0e0e0')] %}
+                {% for gate, color in [('pink_team','#ff69b4'), ('red_team','#dc3545'), ('gold_team','#ffc107'), ('white_team','#ffffff'), ('white_glove','#e0e0e0')] %}
                 {% set rev = rev_map.get(gate) %}
                 <td style="text-align:center;">
                     {% if rev %}

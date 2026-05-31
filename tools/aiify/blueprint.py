@@ -847,8 +847,16 @@ def api_generate_prd():
         all_opportunities,
         rejected_innovation, rejected_research, rejected_creative,
     )
+    try:
+        import markdown as _markdown_lib
+        prd_html = _markdown_lib.markdown(
+            prd, extensions=["tables", "fenced_code"]
+        )
+    except Exception:
+        prd_html = ""
     return jsonify({
         "prd": prd,
+        "prd_html": prd_html,
         "phase_id": phase_id,
         "roadmap_id": roadmap_id,
         "hitl_decision": prd_hitl_decision,

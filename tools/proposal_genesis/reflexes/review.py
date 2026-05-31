@@ -46,6 +46,7 @@ REVIEW_TYPES = {
     "pink": {"label": "Pink Team", "focus": "storyboard_compliance", "threshold": 0.40},
     "red": {"label": "Red Team", "focus": "content_quality", "threshold": 0.60},
     "gold": {"label": "Gold Team", "focus": "final_readiness", "threshold": 0.80},
+    "white": {"label": "White Team", "focus": "compliance_check", "threshold": 0.90},
 }
 
 
