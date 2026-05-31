@@ -321,7 +321,25 @@ def _process_draft(conn, draft: dict) -> dict:
         },
         default=str,
     )
+    # Merge writeguard summary into metadata for downstream template visibility
+    import json as _json
+
+    meta_str = draft.get("metadata", "{}")
+    try:
+        meta = _json.loads(meta_str) if isinstance(meta_str, str) and meta_str.strip() else {}
+    except Exception:
+        meta = {}
+    meta["writeguard"] = {
+        "passed": passed,
+        "overall_score": overall_score,
+        "overall_rating": overall_rating,
+        "findings_created": findings_created,
+        "review_id": rev_id,
+    }
+    merged_metadata = _json.dumps(meta, default=str)
+    draft["metadata"] = merged_metadata
     _insert_reviewed_draft(conn, draft, review_notes_json)
+    draft["metadata_parsed"] = meta  # for any downstream use in this run
 
     # 6. Update section status if warranted
     old_status = draft.get("section_status", "not_started")

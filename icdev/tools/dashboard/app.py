@@ -671,6 +671,34 @@ def _register_govcon_pages(app: "Flask", _get_db):
                     section["overdue"] = date.fromisoformat(section["due_date"]) < date.today()
                 except (ValueError, TypeError):
                     pass
+            # Latest draft for this section
+            draft_row = conn.execute(
+                """SELECT * FROM proposal_section_drafts
+                   WHERE section_id = ?
+                   ORDER BY created_at DESC LIMIT 1""", (sec_id,)
+            ).fetchone()
+            draft = None
+            if draft_row:
+                draft = dict(draft_row)
+                import json as _json
+
+                meta_str = draft.get("metadata", "{}")
+                try:
+                    draft["metadata_parsed"] = _json.loads(meta_str) if isinstance(meta_str, str) else meta_str
+                except Exception:
+                    draft["metadata_parsed"] = {}
+                notes_str = draft.get("review_notes", "{}")
+                try:
+                    draft["review_notes_parsed"] = _json.loads(notes_str) if isinstance(notes_str, str) else notes_str
+                except Exception:
+                    draft["review_notes_parsed"] = {}
+                # WriteGuard may be in review_notes (new pipeline) or metadata (legacy)
+                if draft["review_notes_parsed"] and draft["review_notes_parsed"].get("writeguard"):
+                    draft["writeguard"] = draft["review_notes_parsed"]["writeguard"]
+                elif draft["metadata_parsed"] and draft["metadata_parsed"].get("writeguard"):
+                    draft["writeguard"] = draft["metadata_parsed"]["writeguard"]
+                else:
+                    draft["writeguard"] = None
             section["compliance_items"] = [
                 dict(r)
                 for r in conn.execute(
@@ -717,7 +745,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                     "SELECT * FROM proposal_status_history WHERE entity_id = ? ORDER BY created_at DESC", (sec_id,)
                 ).fetchall()
             ]
-            return render_template("proposals/section_detail.html", section=section, opp_title=opp_title)
+            return render_template("proposals/section_detail.html", section=section, opp_title=opp_title, draft=draft)
         finally:
             conn.close()
 
