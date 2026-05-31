@@ -444,7 +444,7 @@ def write_lesson(lesson: Lesson) -> str:
         result = write_to_db(
             content=content,
             entry_type="lesson_learned",
-            importance="high" if lesson.is_systemic else "medium",
+            importance=8 if lesson.is_systemic else 5,  # DB column is INTEGER
             source="auto",
             classification="CUI",
         )
