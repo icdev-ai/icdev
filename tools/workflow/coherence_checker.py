@@ -2866,19 +2866,25 @@ def check_new_page_completeness() -> CoherenceCheck:
 
     status = "fail" if violations else "pass"
     canvas_count = len(list(templates_dir.rglob("*/page.html")))
+    checked_count = canvas_count - whitelisted_count
     wl_note = f" ({whitelisted_count} whitelisted)" if whitelisted_count else ""
+    incomplete_count = len(violations)
     return CoherenceCheck(
         check_id="new_page_completeness",
         check_name="New Page 8-Component Completeness",
         status=status,
-        expected=[f"All {canvas_count - whitelisted_count} canvas pages have all 8 required components"],
-        actual=[f"{len(violations)} incomplete page(s){wl_note}"],
+        expected=[f"0 incomplete pages out of {checked_count} checked{wl_note}"],
+        actual=[f"{incomplete_count} incomplete page(s) out of {checked_count} checked{wl_note}"],
         missing=violations,
         extra=[],
         message=(
-            f"{len(violations)} canvas page(s) are missing required components — "
+            f"{incomplete_count} canvas page(s) are missing required components — "
             "these features will be broken or unreachable"
-        ) if violations else f"All {canvas_count - whitelisted_count} canvas pages have required components{wl_note}",
+        ) if violations else (
+            f"All {checked_count} canvas pages have required components{wl_note}"
+            if checked_count > 0
+            else f"No new canvas pages to check{wl_note}"
+        ),
     )
 
 
