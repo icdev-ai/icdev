@@ -725,8 +725,10 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         r"(?=\(|VALUES\b|SELECT\b|DEFAULT\s+VALUES\b)",
         re.IGNORECASE,
     )
+    # Negative lookahead (?!\s*\() excludes table-valued function calls like
+    # DuckDB's read_json_auto(...), read_csv_auto(...), glob(...), etc.
     from_re = re.compile(
-        r"\bFROM\s+([a-zA-Z_][\w]*)\b",
+        r"\bFROM\s+([a-zA-Z_][\w]*)(?!\s*\()\b",
         re.IGNORECASE,
     )
 
