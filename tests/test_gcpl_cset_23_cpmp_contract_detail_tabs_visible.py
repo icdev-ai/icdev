@@ -1,11 +1,11 @@
 # CUI // SP-CTI
-"""Tests for /cpmp/<id> — all 7 contract detail tabs render.
+"""Tests for /cpmp/<id> — all 10 contract detail tabs render.
 
 Verifies:
-1. Template source declares all 7 tab buttons (Overview, CLINs, WBS, Deliverables,
-   EVM, Subcontractors, CPARS) with correct switchTab() calls.
-2. Template source declares all 7 tab panel divs with correct IDs.
-3. Rendered HTML includes all 7 tab panel IDs when given a minimal contract context.
+1. Template source declares all 10 tab buttons (Overview, CLINs, WBS, Deliverables,
+   EVM, Schedule, Subcontractors, CPARS, Modifications, Risks) with correct switchTab() calls.
+2. Template source declares all 10 tab panel divs with correct IDs.
+3. Rendered HTML includes all 10 tab panel IDs when given a minimal contract context.
 4. Overview tab panel is active by default (class="tab-panel active").
 5. Each non-active tab panel is present but not initially active.
 """
@@ -29,8 +29,11 @@ _EXPECTED_TABS = [
     ("wbs", "WBS"),
     ("deliverables", "Deliverables"),
     ("evm", "EVM"),
+    ("schedule", "Schedule"),
     ("subcontractors", "Subcontractors"),
     ("cpars", "CPARS"),
+    ("mods", "Modifications"),
+    ("risks", "Risks"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -83,6 +86,8 @@ def _render_detail(
     evm=None,
     cpars_prediction=None,
     cpars_assessments=None,
+    milestones=None,
+    milestone_deps=None,
 ):
     from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, select_autoescape
 
@@ -107,16 +112,18 @@ def _render_detail(
         evm=evm if evm is not None else _make_evm(),
         cpars_prediction=cpars_prediction,
         cpars_assessments=cpars_assessments if cpars_assessments is not None else [],
+        milestones=milestones if milestones is not None else [],
+        milestone_deps=milestone_deps if milestone_deps is not None else [],
     )
 
 
 # ---------------------------------------------------------------------------
-# Static: template source declares all 7 tab buttons
+# Static: template source declares all 10 tab buttons
 # ---------------------------------------------------------------------------
 
 
 class TestTemplateSourceTabButtons:
-    """cpmp/detail.html must declare all 7 tab navigation buttons."""
+    """cpmp/detail.html must declare all 10 tab navigation buttons."""
 
     def test_overview_tab_button_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
@@ -158,6 +165,24 @@ class TestTemplateSourceTabButtons:
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
         assert "switchTab('cpars')" in source, (
             "cpmp/detail.html must have a tab button calling switchTab('cpars')"
+        )
+
+    def test_schedule_tab_button_present(self):
+        source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
+        assert "switchTab('schedule')" in source, (
+            "cpmp/detail.html must have a tab button calling switchTab('schedule')"
+        )
+
+    def test_mods_tab_button_present(self):
+        source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
+        assert "switchTab('mods')" in source, (
+            "cpmp/detail.html must have a tab button calling switchTab('mods')"
+        )
+
+    def test_risks_tab_button_present(self):
+        source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
+        assert "switchTab('risks')" in source, (
+            "cpmp/detail.html must have a tab button calling switchTab('risks')"
         )
 
     def test_overview_button_label_present(self):
@@ -202,14 +227,32 @@ class TestTemplateSourceTabButtons:
             "cpmp/detail.html must have a tab button labeled 'CPARS'"
         )
 
+    def test_schedule_button_label_present(self):
+        source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
+        assert ">Schedule<" in source, (
+            "cpmp/detail.html must have a tab button labeled 'Schedule'"
+        )
+
+    def test_mods_button_label_present(self):
+        source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
+        assert ">Modifications<" in source, (
+            "cpmp/detail.html must have a tab button labeled 'Modifications'"
+        )
+
+    def test_risks_button_label_present(self):
+        source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
+        assert ">Risks<" in source, (
+            "cpmp/detail.html must have a tab button labeled 'Risks'"
+        )
+
 
 # ---------------------------------------------------------------------------
-# Static: template source declares all 7 tab panel divs
+# Static: template source declares all 10 tab panel divs
 # ---------------------------------------------------------------------------
 
 
 class TestTemplateSourceTabPanels:
-    """cpmp/detail.html must declare all 7 tab panel divs with correct IDs."""
+    """cpmp/detail.html must declare all 10 tab panel divs with correct IDs."""
 
     def test_overview_panel_id_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
@@ -253,11 +296,29 @@ class TestTemplateSourceTabPanels:
             "cpmp/detail.html must have id='tab-cpars' on the CPARS panel div"
         )
 
-    def test_seven_tab_panels_total(self):
+    def test_schedule_panel_id_present(self):
+        source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
+        assert 'id="tab-schedule"' in source, (
+            "cpmp/detail.html must have id='tab-schedule' on the Schedule panel div"
+        )
+
+    def test_mods_panel_id_present(self):
+        source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
+        assert 'id="tab-mods"' in source, (
+            "cpmp/detail.html must have id='tab-mods' on the Modifications panel div"
+        )
+
+    def test_risks_panel_id_present(self):
+        source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
+        assert 'id="tab-risks"' in source, (
+            "cpmp/detail.html must have id='tab-risks' on the Risks panel div"
+        )
+
+    def test_ten_tab_panels_total(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
         count = source.count('class="tab-panel')
-        assert count == 7, (
-            f"cpmp/detail.html must declare exactly 7 tab-panel divs, found {count}"
+        assert count == 10, (
+            f"cpmp/detail.html must declare exactly 10 tab-panel divs, found {count}"
         )
 
     def test_overview_panel_is_active_by_default(self):
@@ -279,7 +340,7 @@ class TestTemplateSourceTabPanels:
 
 
 class TestRenderedHtmlTabPanels:
-    """Jinja2-rendered cpmp/detail.html must emit all 7 tab panel IDs."""
+    """Jinja2-rendered cpmp/detail.html must emit all 10 tab panel IDs."""
 
     def test_overview_panel_in_rendered_html(self):
         html = _render_detail()
@@ -335,11 +396,11 @@ class TestRenderedHtmlTabPanels:
             "Rendered HTML must include the tab-nav container"
         )
 
-    def test_seven_tab_panel_divs_in_rendered_html(self):
+    def test_ten_tab_panel_divs_in_rendered_html(self):
         html = _render_detail()
         count = html.count('class="tab-panel')
-        assert count == 7, (
-            f"Rendered HTML must contain exactly 7 tab-panel divs, found {count}"
+        assert count == 10, (
+            f"Rendered HTML must contain exactly 10 tab-panel divs, found {count}"
         )
 
     def test_all_tab_button_labels_in_rendered_html(self):

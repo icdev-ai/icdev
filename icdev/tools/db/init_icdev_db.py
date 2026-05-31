@@ -5975,7 +5975,7 @@ CREATE TABLE IF NOT EXISTS cpmp_status_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL CHECK(entity_type IN (
         'contract', 'clin', 'wbs', 'deliverable', 'subcontractor',
-        'evm_baseline', 'cpars_assessment', 'negative_event')),
+        'evm_baseline', 'cpars_assessment', 'negative_event', 'contract_mod')),
     entity_id TEXT NOT NULL,
     old_status TEXT,
     new_status TEXT NOT NULL,
@@ -6243,6 +6243,34 @@ CREATE INDEX IF NOT EXISTS idx_cpmp_cor_user ON cpmp_cor_access_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cor_contract ON cpmp_cor_access_log(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cor_action ON cpmp_cor_access_log(action);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cor_created ON cpmp_cor_access_log(created_at);
+
+-- Contract modification request/approval workflow (prop-ctr-01)
+CREATE TABLE IF NOT EXISTS cpmp_contract_mods (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    mod_number INTEGER NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('admin','funding','scope','pop')),
+    description TEXT NOT NULL DEFAULT '',
+    value_delta REAL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'requested' CHECK(status IN ('requested','in_review','approved','rejected','executed')),
+    requested_by TEXT,
+    requested_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    reviewed_by TEXT,
+    reviewed_at TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    rejection_reason TEXT,
+    effective_date TEXT,
+    executed_at TEXT,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_contract ON cpmp_contract_mods(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_status ON cpmp_contract_mods(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cpmp_contract_mods_number ON cpmp_contract_mods(contract_id, mod_number);
 
 -- =========================================================================
 -- Questions to Government (Phase 59, D-QTG-1 through D-QTG-5)

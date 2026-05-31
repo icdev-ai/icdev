@@ -1005,3 +1005,95 @@ def cor_get_cpars(contract_id):
         return jsonify(_sanitize_for_cor(result))
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Contract Modifications — request/approval workflow (prop-ctr-01)
+# ---------------------------------------------------------------------------
+
+@cpmp_api.route("/contracts/<contract_id>/mods", methods=["GET"])
+@require_role("admin", "pm", "co", "contract_mgr", "cor")
+def list_contract_mods(contract_id):
+    """GET /api/cpmp/contracts/<id>/mods — List all modifications for a contract."""
+    try:
+        from icdev.tools.govcon.contract_mods_manager import list_mods as _list_mods
+        mods = _list_mods(contract_id, db_path=str(DB_PATH))
+        return jsonify({"mods": mods, "count": len(mods)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/mods", methods=["POST"])
+@require_role("admin", "co", "contract_mgr")
+def create_contract_mod(contract_id):
+    """POST /api/cpmp/contracts/<id>/mods — Request a new contract modification."""
+    data = request.get_json(force=True) or {}
+    denied = _mac_deny_write(data.get("classification", "CUI"), data.get("compartments", "[]"))
+    if denied:
+        return denied
+    try:
+        from icdev.tools.govcon.contract_mods_manager import create_mod as _create_mod
+        actor = "system"
+        if hasattr(g, "current_user") and g.current_user:
+            actor = (g.current_user.get("username") or "system") if isinstance(g.current_user, dict) else "system"
+        mod = _create_mod(
+            contract_id=contract_id,
+            type_=data.get("type", "admin"),
+            description=data.get("description", ""),
+            value_delta=float(data.get("value_delta", 0.0)),
+            requested_by=actor,
+            effective_date=data.get("effective_date"),
+            classification=data.get("classification", "CUI"),
+            tenant_id=data.get("tenant_id"),
+            metadata=data.get("metadata", "{}"),
+            db_path=str(DB_PATH),
+        )
+        return jsonify({"mod": mod}), 201
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@cpmp_api.route("/mods/<mod_id>", methods=["GET"])
+@require_role("admin", "pm", "co", "contract_mgr", "cor")
+def get_contract_mod(mod_id):
+    """GET /api/cpmp/mods/<id> — Get a single modification record."""
+    try:
+        from icdev.tools.govcon.contract_mods_manager import get_mod as _get_mod
+        mod = _get_mod(mod_id, db_path=str(DB_PATH))
+        if not mod:
+            return jsonify({"error": "Modification not found"}), 404
+        denied = _mac_deny_read(mod)
+        if denied:
+            return denied
+        return jsonify({"mod": mod})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@cpmp_api.route("/mods/<mod_id>/status", methods=["PUT"])
+@require_role("admin", "co", "contract_mgr")
+def transition_contract_mod(mod_id):
+    """PUT /api/cpmp/mods/<id>/status — Advance modification through approval workflow."""
+    data = request.get_json(force=True) or {}
+    new_status = data.get("status")
+    if not new_status:
+        return jsonify({"error": "status is required"}), 400
+    try:
+        from icdev.tools.govcon.contract_mods_manager import transition_mod as _transition_mod
+        actor = "system"
+        if hasattr(g, "current_user") and g.current_user:
+            actor = (g.current_user.get("username") or "system") if isinstance(g.current_user, dict) else "system"
+        mod = _transition_mod(
+            mod_id=mod_id,
+            new_status=new_status,
+            actor=actor,
+            reason=data.get("reason"),
+            db_path=str(DB_PATH),
+        )
+        return jsonify({"mod": mod})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500

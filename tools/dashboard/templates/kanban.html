@@ -750,8 +750,8 @@ function renderTaskKanban(tasks) {
                     + (confLabel ? '<span style="font-size:10px; color:var(--text-dim);">' + confLabel + valueLabel + dupLabel + lensLabel + '</span>' : '')
                     + '</div>';
                 inlineActions = '<div style="display:flex; gap:6px; margin-top:6px;">'
-                    + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:3px 8px; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\'',\'backlog\')" title="Promote to Backlog">↑ Promote</button>'
-                    + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:3px 8px; background:transparent; color:#6b7280; border:1px solid var(--border); border-radius:4px; cursor:pointer;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\'',\'done\')" title="Dismiss">✕ Dismiss</button>'
+                    + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:3px 8px; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'backlog\')" title="Promote to Backlog">↑ Promote</button>'
+                    + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:3px 8px; background:transparent; color:#6b7280; border:1px solid var(--border); border-radius:4px; cursor:pointer;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'done\')" title="Dismiss">✕ Dismiss</button>'
                     + '</div>';
             }
 
