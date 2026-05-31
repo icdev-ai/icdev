@@ -29,7 +29,6 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -260,7 +259,7 @@ def api_ingest():
         return jsonify({
             "status": "ok",
             "doc_id": outcome.doc_id,
-            "chunks": outcome.chunks_written,
+            "chunks": outcome.chunks,
             "collection_id": collection_id,
             "errors": outcome.errors,
         })
@@ -300,14 +299,81 @@ def api_search():
 
 # ── API: Chat ─────────────────────────────────────────────────────────────────
 
+# Synthesis keywords — LLM is warranted only for these query types.
+_SYNTHESIS_KEYWORDS = frozenset([
+    "summarize", "summary", "compare", "contrast", "explain", "describe",
+    "how does", "why does", "what does", "what is the difference",
+    "write", "draft", "generate", "create", "list all", "what are all",
+])
+
+
+def _needs_synthesis(query: str) -> bool:
+    q = query.lower()
+    return any(kw in q for kw in _SYNTHESIS_KEYWORDS)
+
+
+def _compile_grounded_answer(results: list, query: str) -> str:
+    """Build a grounded answer directly from RAG chunks — no LLM."""
+    if not results:
+        return "No relevant documents found."
+    lines = []
+    for r in results[:4]:
+        citation = f"[{r.doc_title or r.doc_id} · p.{r.page}]" if r.page else f"[{r.doc_title or r.doc_id}]"
+        snippet = r.content[:300].strip()
+        if snippet:
+            lines.append(f"{citation} {snippet}")
+    return "\n\n".join(lines) if lines else results[0].content[:400]
+
+
+def _llm_synthesize(message: str, results: list, evidence: str) -> str | None:
+    """Call LLM only when synthesis is warranted. Returns None on failure."""
+    try:
+        for ns in ("icdev.tools.llm.router", "tools.llm.router"):
+            try:
+                import importlib
+                mod = importlib.import_module(ns)
+                router = mod.LLMRouter()
+                prompt = (
+                    "You are a document assistant. Answer ONLY using the provided evidence — "
+                    "do not add information beyond what is cited. Cite sources inline as "
+                    "[chunk <id>]. If the evidence is insufficient, say so explicitly.\n\n"
+                    f"Evidence:\n{evidence}\n\n"
+                    f"Question: {message}\n\nAnswer:"
+                )
+                for meth in ("generate", "complete", "chat", "route", "call"):
+                    fn = getattr(router, meth, None)
+                    if callable(fn):
+                        result = fn(prompt)
+                        if isinstance(result, str):
+                            return result
+                        if isinstance(result, dict):
+                            return result.get("text") or result.get("content")
+            except ImportError:
+                continue
+    except Exception as exc:
+        logger.warning("dic: chat LLM error: %s", exc)
+    return None
+
+
 @dic_bp.route("/api/chat", methods=["POST"])
 def api_chat():
+    """DIC chat: RAG+KG first. LLM only for synthesis queries when available.
+
+    Mode logic:
+    1. Always retrieve from RAG+KG (grounded, air-gap safe).
+    2. If top result confidence is high (≥0.4) AND query is a direct lookup:
+       → return grounded answer directly, mode="grounded", NO LLM call.
+    3. If query needs synthesis (summarize/compare/explain/…) AND LLM available:
+       → synthesize from evidence, mode="ai_assisted", verify with CoD gate.
+    4. If LLM unavailable or synthesis not needed:
+       → compile grounded answer from top chunks, mode="grounded".
+    """
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
     if not message:
         return jsonify({"error": "message is required"}), 400
     collection_id = data.get("collection_id")
-    tenant_id, classification = _security_context()
+    tenant_id, _cls = _security_context()
 
     try:
         from tools.document_intelligence.search_engine import DICSearchEngine
@@ -315,65 +381,63 @@ def api_chat():
         results = engine.search(message, collection_id=collection_id, top_k=8)
 
         if not results:
-            return jsonify({"answer": "No relevant documents found in this collection.", "citations": [], "abstained": True})
+            return jsonify({
+                "answer": "No relevant documents found in this collection. Upload documents first.",
+                "citations": [],
+                "abstained": True,
+                "mode": "grounded",
+            })
 
-        evidence = "\n\n".join(
-            f"[chunk {r.chunk_id}] {r.content[:400]}" for r in results
-        )
         citations = [r.citation.to_dict() for r in results[:5]]
+        top_score = results[0].score if results else 0.0
 
-        # LLM-assisted answer generation.
-        answer = None
+        # ── Path 1: High-confidence direct lookup — NO LLM ──────────────────
+        if top_score >= 0.4 and not _needs_synthesis(message):
+            answer = _compile_grounded_answer(results, message)
+            return jsonify({
+                "answer": answer,
+                "citations": citations,
+                "abstained": False,
+                "mode": "grounded",
+            })
+
+        # ── Path 2: Grounded answer from top chunks — NO LLM ────────────────
+        grounded_answer = _compile_grounded_answer(results, message)
+
+        # ── Path 3: LLM synthesis if query warrants it ───────────────────────
+        answer = grounded_answer
+        mode = "grounded"
         abstained = False
-        try:
-            for ns in ("icdev.tools.llm.router", "tools.llm.router"):
+
+        if _needs_synthesis(message):
+            evidence = "\n\n".join(
+                f"[chunk {r.chunk_id}] {r.content[:400]}" for r in results
+            )
+            llm_answer = _llm_synthesize(message, results, evidence)
+            if llm_answer:
+                # Verify LLM answer against evidence before returning.
                 try:
-                    import importlib
-                    mod = importlib.import_module(ns)
-                    router = mod.LLMRouter()
-                    prompt = (
-                        f"You are a document assistant. Answer only using the provided evidence. "
-                        f"Cite sources with [chunk <id>] inline. If the evidence is insufficient, say so.\n\n"
-                        f"Evidence:\n{evidence}\n\n"
-                        f"Question: {message}\n\nAnswer:"
-                    )
-                    for meth in ("generate", "complete", "chat", "route", "call"):
-                        fn = getattr(router, meth, None)
-                        if callable(fn):
-                            result = fn(prompt)
-                            if isinstance(result, str):
-                                answer = result
-                            elif isinstance(result, dict):
-                                answer = result.get("text") or result.get("content") or str(result)
-                            if answer:
-                                break
-                    if answer:
-                        break
-                except ImportError:
-                    continue
-        except Exception as exc:
-            logger.warning("dic: chat LLM error: %s", exc)
+                    from tools.document_intelligence.verifier import verify
+                    vr = verify(llm_answer, [r.content for r in results])
+                    if vr.abstained:
+                        abstained = True
+                        answer = grounded_answer  # fall back to grounded
+                    else:
+                        answer = vr.verified_text or llm_answer
+                        mode = "ai_assisted"
+                except Exception:
+                    answer = llm_answer
+                    mode = "ai_assisted"
 
-        if not answer:
-            top = results[0] if results else None
-            answer = f"Based on your documents: {top.content[:300] if top else 'No content available.'}"
-            abstained = True
-
-        # Verify answer.
-        try:
-            from tools.document_intelligence.verifier import verify
-            vr = verify(answer, [r.content for r in results])
-            if vr.abstained:
-                abstained = True
-            else:
-                answer = vr.verified_text or answer
-        except Exception:
-            pass
-
-        return jsonify({"answer": answer, "citations": citations, "abstained": abstained})
+        return jsonify({
+            "answer": answer,
+            "citations": citations,
+            "abstained": abstained,
+            "mode": mode,
+        })
     except Exception as exc:
         logger.warning("dic: chat error: %s", exc)
-        return jsonify({"answer": f"Error: {exc}", "citations": [], "abstained": True}), 500
+        return jsonify({"answer": f"Error: {exc}", "citations": [], "abstained": True, "mode": "grounded"}), 500
 
 
 # ── API: Collections ──────────────────────────────────────────────────────────

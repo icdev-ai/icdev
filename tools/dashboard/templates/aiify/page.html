@@ -52,6 +52,26 @@
   .prd-box{background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;white-space:pre;
     font-family:ui-monospace,monospace;font-size:12px;max-height:540px;overflow:auto;}
   .err{color:#fca5a5;font-size:13px;margin-top:10px;}
+  /* Intelligence feed */
+  .intel-cat{margin-bottom:18px;}
+  .intel-cat h4{font-size:14px;color:#e2e8f0;margin:0 0 10px;display:flex;align-items:center;gap:8px;}
+  .intel-cat h4 .count{font-size:11px;color:#94a3b8;font-weight:400;}
+  .sig-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;}
+  .sig-card{background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:12px;transition:.15s;}
+  .sig-card.rejected{opacity:.45;border-color:#334155;}
+  .sig-card.accepted{border-color:#16a34a;}
+  .sig-title{font-size:13px;font-weight:600;color:#e2e8f0;margin-bottom:4px;}
+  .sig-desc{font-size:12px;color:#94a3b8;line-height:1.4;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+  .sig-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+  .sig-score{font-size:11px;color:#64748b;}
+  .sig-actions{display:flex;gap:6px;}
+  .sig-actions .btn{padding:4px 10px;font-size:11px;}
+  .sig-actions .btn.on{background:#16a34a;border-color:#16a34a;color:#fff;}
+  .sig-actions .btn.off{background:#7f1d1d;border-color:#7f1d1d;color:#fca5a5;}
+  .sig-actions .btn.clear{background:transparent;border-color:#475569;color:#94a3b8;}
+  .sig-state{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#1e293b;}
+  .sig-state.accepted{color:#86efac;background:#052e1a;}
+  .sig-state.rejected{color:#fca5a5;background:#450a0a;}
 </style>
 
 <div class="aiify-wrap">
@@ -63,7 +83,8 @@
     <div class="step" data-s="2"><span class="dot">2</span>Options</div><span class="bar"></span>
     <div class="step" data-s="3"><span class="dot">3</span>Scan</div><span class="bar"></span>
     <div class="step" data-s="4"><span class="dot">4</span>Results</div><span class="bar"></span>
-    <div class="step" data-s="5"><span class="dot">5</span>PRD &amp; Diagram</div>
+    <div class="step" data-s="5"><span class="dot">5</span>Review &amp; Approve</div><span class="bar"></span>
+    <div class="step" data-s="6"><span class="dot">6</span>PRD &amp; Diagram</div>
   </div>
 
   <div class="panel show" id="p1">
@@ -115,10 +136,21 @@
     <div id="overallBanner"></div>
     <div id="summaryActions" style="display:none;margin:12px 0 16px;"></div>
     <div id="oppList"></div>
-    <div class="row"><button class="btn" onclick="go(3)">← Back</button><button class="btn primary" onclick="go(5);genPrd();">Generate PRD &amp; Diagram →</button></div>
+    <div class="row"><button class="btn" onclick="go(3)">← Back</button><button class="btn primary" onclick="go(5)">Review &amp; Approve →</button></div>
   </div>
 
+  <!-- Panel 5: Intelligence Review & HITL -->
   <div class="panel" id="p5">
+    <h3 style="margin-top:0;">Review &amp; Approve</h3>
+    <p style="color:#94a3b8;font-size:13px;margin:0 0 14px;">
+      Curate signals from the Innovation, Creative, and Research engines before they enter the PRD.
+      <b style="color:#e2e8f0;">Accepted</b> signals are included in the PRD; <b style="color:#e2e8f0;">rejected</b> signals are filtered out.
+    </p>
+    <div id="intelFeed"><span class="spin"></span> loading intelligence feed…</div>
+    <div class="row"><button class="btn" onclick="go(4)">← Back</button><button class="btn primary" onclick="go(6);genPrd();">Generate PRD &amp; Diagram →</button></div>
+  </div>
+
+  <div class="panel" id="p6">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
       <h3 style="margin:0;">Target Architecture</h3>
       <select id="phaseSelect" class="btn" style="padding:6px 10px;font-size:12px;cursor:pointer;"
@@ -133,7 +165,7 @@
     </div>
     <h3>Product Requirements Document</h3>
     <div class="prd-box" id="prdBox"><span class="spin"></span></div>
-    <div class="row"><button class="btn" onclick="go(4)">← Back</button>
+    <div class="row"><button class="btn" onclick="go(5)">← Back</button>
       <button class="btn primary" onclick="sendKanban()">Send phase to Kanban</button></div>
     <div class="hint" id="kanbanMsg" style="text-align:right;"></div>
   </div>
@@ -167,6 +199,7 @@
       var sn=+s.dataset.s; s.classList.toggle('active',sn===n); s.classList.toggle('done',sn<n);
     });
     if(n===3){document.getElementById('recap').textContent=(document.getElementById('inputRef').value||'(no source)');}
+    if(n===5){loadIntelFeed();}
   };
 
   function apiType(){ return state.type==='unc'||state.type==='uri' ? 'local_path' : state.type; }
@@ -232,7 +265,7 @@
         '<b style="color:#fcd34d;">'+partial+'</b> partial · '+
         '<b style="color:#cbd5e1;">'+notSuit+'</b> not suitable'+
         '</div>'+
-        '<button class="btn primary" style="margin-left:auto;" onclick="go(5);genPrd();">Generate PRD &amp; Diagram →</button></div>';
+        '<button class="btn primary" style="margin-left:auto;" onclick="go(5)">Review &amp; Approve →</button></div>';
       sa.style.display='block';
 
       list.innerHTML=opps.map(function(o){
@@ -251,6 +284,70 @@
       }).join('');
     }).catch(e=>{list.innerHTML='<div class="err">Failed to load results: '+e+'</div>';});
   }
+
+  /* ── Intelligence feed + HITL ── */
+  function _hitlClass(d){ return d==='accept'?'accepted':(d==='reject'?'rejected':''); }
+  function _hitlLabel(d){ return d==='accept'?'Accepted':(d==='reject'?'Rejected':'Pending'); }
+
+  function loadIntelFeed(){
+    var box=document.getElementById('intelFeed');
+    if(!box || box.dataset.loaded==='1') return;
+    box.innerHTML='<span class="spin"></span> loading intelligence feed…';
+    fetch(BASE+'/api/intelligence-feed').then(r=>r.json()).then(function(d){
+      box.dataset.loaded='1';
+      var cats=[
+        {key:'innovation',label:'Innovation Signals',color:'#c4b5fd'},
+        {key:'creative',label:'Creative Pain Points',color:'#fdba74'},
+        {key:'research',label:'Research & Regulatory',color:'#6ee7b7'}
+      ];
+      var out='';
+      cats.forEach(function(cat){
+        var items=d[cat.key]||[];
+        out+='<div class="intel-cat"><h4><span style="color:'+cat.color+'">●</span> '+cat.label+
+          ' <span class="count">('+items.length+')</span></h4>';
+        if(!items.length){out+='<p style="color:#64748b;font-size:12px;">No signals available.</p>';return;}
+        out+='<div class="sig-list">';
+        items.forEach(function(it){
+          var id=it.id||'';
+          var dec=it.hitl_decision||'';
+          var cls=_hitlClass(dec);
+          var lbl=_hitlLabel(dec);
+          out+='<div class="sig-card '+cls+'" id="sig-'+cat.key+'-'+id+'" data-st="'+dec+'">'+
+            '<div class="sig-title">'+((it.title||'Signal '+id).replace(/</g,'&lt;'))+'</div>'+
+            '<div class="sig-desc">'+((it.description||'').substring(0,180).replace(/</g,'&lt;'))+'</div>'+
+            '<div class="sig-foot">'+
+            '<span class="sig-score">Score: '+(it.composite_score||it.score||'—')+'</span>'+
+            '<span class="sig-state '+cls+'">'+lbl+'</span>'+
+            '<div class="sig-actions">'+
+            '<button class="btn on" onclick="hitlDecision(\''+cat.key+'\',\''+id+'\',\'accept\',this)">✓</button>'+
+            '<button class="btn off" onclick="hitlDecision(\''+cat.key+'\',\''+id+'\',\'reject\',this)">✗</button>'+
+            '<button class="btn clear" onclick="hitlDecision(\''+cat.key+'\',\''+id+'\',\'clear\',this)">Clear</button>'+
+            '</div></div></div>';
+        });
+        out+='</div>';
+      });
+      box.innerHTML=out;
+    }).catch(function(e){
+      box.innerHTML='<div class="err">Failed to load intelligence feed: '+e+'</div>';
+    });
+  }
+
+  window.hitlDecision=function(sourceType,sourceId,decision,btn){
+    var card=document.getElementById('sig-'+sourceType+'-'+sourceId);
+    if(!card) return;
+    fetch(BASE+'/api/hitl-decision',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({source_type:sourceType,source_id:String(sourceId),decision:decision})})
+    .then(r=>r.json()).then(function(d){
+      if(d.status==='ok'){
+        card.dataset.st=decision;
+        card.classList.remove('accepted','rejected');
+        var stateEl=card.querySelector('.sig-state');
+        if(decision==='accept'){card.classList.add('accepted');stateEl.textContent='Accepted';stateEl.className='sig-state accepted';}
+        else if(decision==='reject'){card.classList.add('rejected');stateEl.textContent='Rejected';stateEl.className='sig-state rejected';}
+        else {stateEl.textContent='Pending';stateEl.className='sig-state';}
+      }
+    }).catch(function(e){alert('HITL update failed: '+e);});
+  };
 
   window.genPrd=function(){
     var rid=state.roadmapId;

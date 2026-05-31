@@ -8757,6 +8757,7 @@ CREATE TABLE IF NOT EXISTS pg_capture_plans (
     teaming_strategy TEXT,
     price_strategy  TEXT,
     gate_reviews    TEXT,
+    current_phase   TEXT DEFAULT 'qualify' CHECK(current_phase IN ('qualify','pursue','capture','bid','proposal')),
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
@@ -8774,6 +8775,22 @@ CREATE TABLE IF NOT EXISTS pg_capture_activities (
     created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pg_capture_act_plan ON pg_capture_activities(capture_plan_id);
+
+-- Phase-gate audit trail (append-only — NIST AU, prop-cap-11)
+CREATE TABLE IF NOT EXISTS pg_capture_gate_decisions (
+    id TEXT PRIMARY KEY,
+    capture_plan_id TEXT NOT NULL,
+    opportunity_id TEXT,
+    from_phase TEXT NOT NULL CHECK(from_phase IN ('qualify','pursue','capture','bid','proposal')),
+    to_phase TEXT NOT NULL CHECK(to_phase IN ('pursue','capture','bid','proposal','no_bid')),
+    decision TEXT NOT NULL CHECK(decision IN ('advance','hold','no_bid','return')),
+    rationale TEXT,
+    decided_by TEXT,
+    gate_criteria_met TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pg_cap_gates_plan ON pg_capture_gate_decisions(capture_plan_id);
+CREATE INDEX IF NOT EXISTS idx_pg_cap_gates_created ON pg_capture_gate_decisions(created_at);
 
 -- Teaming partners (R3 Shape — Phase D, D-PG-6)
 CREATE TABLE IF NOT EXISTS pg_teaming_partners (
