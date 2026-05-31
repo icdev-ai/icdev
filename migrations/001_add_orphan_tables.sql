@@ -14,3 +14,19 @@ CREATE TABLE IF NOT EXISTS "order" (
     created_at  TEXT        NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT        NOT NULL DEFAULT (datetime('now'))
 );
+
+-- innov_pilots: pilot records for the Innovation canvas.
+-- Schema mirrors apps/innovation/db.py and the SELECT in tools/iqe/adapters/innovation.py.
+-- innov_ideas must exist before this table is created (FK dependency).
+CREATE TABLE IF NOT EXISTS innov_pilots (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    idea_id          INTEGER NOT NULL REFERENCES innov_ideas(id),
+    pilot_name       TEXT    NOT NULL,
+    hypothesis       TEXT,
+    success_criteria TEXT,
+    kanban_epic_id   TEXT,
+    start_date       TEXT,
+    end_date         TEXT,
+    status           TEXT    NOT NULL DEFAULT 'planned',
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+);
