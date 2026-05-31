@@ -19,7 +19,7 @@ import pathlib
 from functools import lru_cache
 from typing import Any, Union
 
-from tools.ai_augmentation.agent_readiness.pillars import (
+from tools.aiify.agent_readiness.pillars import (
     append_only_audit,
     code_quality,
     configuration,
@@ -32,7 +32,7 @@ from tools.ai_augmentation.agent_readiness.pillars import (
     structure,
     testing,
 )
-from tools.ai_augmentation.agent_readiness.pillars._base import Pillar
+from tools.aiify.agent_readiness.pillars._base import Pillar
 
 # All 11 pillars in evaluation order.
 # Pillars 1–7 are ported from kodustech/agent-readiness.

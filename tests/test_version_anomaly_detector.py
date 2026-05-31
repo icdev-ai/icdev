@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-"""Tests for tools.ai_augmentation.version_anomaly_detector.
+"""Tests for tools.aiify.version_anomaly_detector.
 
-Validates the version compatibility anomaly-detection tool (AAC opp 467):
+Validates the version compatibility anomaly-detection tool (AI-ify opp 467):
   - _parse_response: JSON extraction from LLM output
   - check_version_compat: full flow with mocked LLM
   - CLI: argument parsing and output format
@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.ai_augmentation.version_anomaly_detector import (
+from tools.aiify.version_anomaly_detector import (
     _parse_response,
     check_version_compat,
 )
@@ -83,7 +83,7 @@ def _make_mock_router(content: str = _MOCK_LLM_JSON):
 
 
 def test_check_version_compat_returns_expected_keys():
-    from tools.ai_augmentation import version_anomaly_detector as vad
+    from tools.aiify import version_anomaly_detector as vad
     with patch.object(vad, "_llm_assess", return_value=_parse_response(_MOCK_LLM_JSON)):
         result = vad.check_version_compat("chardet", "4.0.0", context="requests HTTP library")
 
@@ -101,7 +101,7 @@ def test_check_version_compat_incompatible_version():
         "reason": "chardet 2.0.0 is too old.",
         "recommendation": "upgrade to >= 3.0.2.",
     })
-    from tools.ai_augmentation import version_anomaly_detector as vad
+    from tools.aiify import version_anomaly_detector as vad
     with patch.object(vad, "_llm_assess", return_value=_parse_response(bad_json)):
         result = vad.check_version_compat("chardet", "2.0.0")
 

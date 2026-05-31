@@ -12,7 +12,7 @@ import pytest
 
 class TestLoadPillarWeights:
     def _get_mod(self):
-        import tools.ai_augmentation.agent_readiness.checker as mod
+        import tools.aiify.agent_readiness.checker as mod
         return mod
 
     def test_returns_defaults_when_file_absent(self, tmp_path, monkeypatch):
@@ -111,13 +111,13 @@ class TestLoadPillarWeights:
 class TestRunReadinessCheckWeights:
     def test_custom_weight_changes_overall_score(self, tmp_path, monkeypatch):
         """Boosting one pillar's weight must shift the overall score."""
-        import tools.ai_augmentation.agent_readiness.checker as mod
+        import tools.aiify.agent_readiness.checker as mod
 
         # Patch all pillars to return 100% pass rate
         all_pass_weights = {p: 1.0 for p in mod._WEIGHT_DEFAULTS}
         monkeypatch.setattr(mod, "_load_pillar_weights", lambda: all_pass_weights)
 
-        from tools.ai_augmentation.agent_readiness.pillars._base import CriterionResult
+        from tools.aiify.agent_readiness.pillars._base import CriterionResult
 
         def _all_pass_pillar(pillar):
             def run(repo_path):
@@ -133,8 +133,8 @@ class TestRunReadinessCheckWeights:
 
     def test_overall_score_reflects_failing_high_weight_pillar(self, tmp_path, monkeypatch):
         """A heavily-weighted failing pillar must reduce the overall score more than a lightly-weighted one."""
-        import tools.ai_augmentation.agent_readiness.checker as mod
-        from tools.ai_augmentation.agent_readiness.pillars._base import CriterionResult, Criterion, Pillar
+        import tools.aiify.agent_readiness.checker as mod
+        from tools.aiify.agent_readiness.pillars._base import CriterionResult, Criterion, Pillar
 
         heavy_fail = Pillar(
             id="heavy", name="Heavy", description="High-weight failing pillar",
@@ -154,8 +154,8 @@ class TestRunReadinessCheckWeights:
 
     def test_overall_score_weighted_average(self, tmp_path, monkeypatch):
         """overall = (1.0*w_pass + 0.0*w_fail) / (w_pass + w_fail)."""
-        import tools.ai_augmentation.agent_readiness.checker as mod
-        from tools.ai_augmentation.agent_readiness.pillars._base import CriterionResult, Criterion, Pillar
+        import tools.aiify.agent_readiness.checker as mod
+        from tools.aiify.agent_readiness.pillars._base import CriterionResult, Criterion, Pillar
 
         pass_pillar = Pillar(
             id="pass-p", name="Pass", description="All-pass pillar",

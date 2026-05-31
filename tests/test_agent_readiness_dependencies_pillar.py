@@ -7,7 +7,7 @@ import textwrap
 import time
 
 
-from tools.ai_augmentation.agent_readiness.pillars.dependencies import (
+from tools.aiify.agent_readiness.pillars.dependencies import (
     PILLAR,
     _check_lock_file_freshness,
     _check_pinned_versions,
@@ -42,7 +42,7 @@ class TestLoadThresholds:
             "      min_pin_ratio: 0.9\n",
             encoding="utf-8",
         )
-        import tools.ai_augmentation.agent_readiness.pillars.dependencies as mod
+        import tools.aiify.agent_readiness.pillars.dependencies as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -51,7 +51,7 @@ class TestLoadThresholds:
         mod._load_thresholds.cache_clear()
 
     def test_falls_back_to_defaults_when_file_absent(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.dependencies as mod
+        import tools.aiify.agent_readiness.pillars.dependencies as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", tmp_path / "nonexistent.yaml")
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -65,7 +65,7 @@ class TestLoadThresholds:
             "pillars:\n  dependencies:\n    lock_file_freshness:\n      max_age_months: 12\n",
             encoding="utf-8",
         )
-        import tools.ai_augmentation.agent_readiness.pillars.dependencies as mod
+        import tools.aiify.agent_readiness.pillars.dependencies as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -76,7 +76,7 @@ class TestLoadThresholds:
     def test_falls_back_on_malformed_yaml(self, tmp_path, monkeypatch):
         cfg = tmp_path / "agent_readiness_config.yaml"
         cfg.write_text(":\tbad: yaml: [", encoding="utf-8")
-        import tools.ai_augmentation.agent_readiness.pillars.dependencies as mod
+        import tools.aiify.agent_readiness.pillars.dependencies as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -93,7 +93,7 @@ class TestCheckLockFileFreshness:
     def _patch_thresholds(self, monkeypatch, **overrides):
         defaults = {"max_age_months": 6, "min_pin_ratio": 0.8}
         defaults.update(overrides)
-        import tools.ai_augmentation.agent_readiness.pillars.dependencies as mod
+        import tools.aiify.agent_readiness.pillars.dependencies as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: defaults)
 
     def test_passes_when_lock_file_fresh(self, tmp_path, monkeypatch):
@@ -144,7 +144,7 @@ class TestCheckPinnedVersions:
     def _patch_thresholds(self, monkeypatch, **overrides):
         defaults = {"max_age_months": 6, "min_pin_ratio": 0.8}
         defaults.update(overrides)
-        import tools.ai_augmentation.agent_readiness.pillars.dependencies as mod
+        import tools.aiify.agent_readiness.pillars.dependencies as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: defaults)
 
     def test_passes_when_ratio_meets_threshold(self, tmp_path, monkeypatch):
@@ -201,7 +201,7 @@ class TestDependenciesPillarIntegration:
         assert ids == {"lock-file", "lock-file-freshness", "pinned-versions", "sbom-present"}
 
     def test_score_lock_file_and_pinned_pass(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.dependencies as mod
+        import tools.aiify.agent_readiness.pillars.dependencies as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: {
             "max_age_months": 6,
             "min_pin_ratio": 0.5,

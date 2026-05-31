@@ -1,12 +1,12 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""AI Augmentation Opportunity Scorer for ICDEV™ AAC Engine.
+"""AI-ify Opportunity Scorer for ICDEV™ AI-ify Engine.
 
 Scores detected AI augmentation opportunities using a weighted multi-criteria
-model loaded from args/aac_config.yaml.  All scoring is deterministic — no LLM
+model loaded from args/aiify_config.yaml.  All scoring is deterministic — no LLM
 calls, no external network access.
 
-Scoring formulas (weights loaded from args/aac_config.yaml):
+Scoring formulas (weights loaded from args/aiify_config.yaml):
   value       = usage_freq_norm * 0.40 + task_complexity_norm * 0.35 + automation_deficit_norm * 0.25
   feasibility = data_avail * 0.40 + il_model_exists * 0.35 + (1 - integration_complexity_norm) * 0.25
   risk        = reversibility * 0.40 + compliance_impact_inv * 0.35 + (1 - dep_complexity_norm) * 0.25
@@ -15,9 +15,9 @@ Scoring formulas (weights loaded from args/aac_config.yaml):
 All scores normalized to [0.0, 1.0].
 
 Usage:
-    python tools/ai_augmentation/opportunity_scorer.py --opportunity-file opp.json
-    python tools/ai_augmentation/opportunity_scorer.py --opportunity-file opp.json --json
-    python tools/ai_augmentation/opportunity_scorer.py \\
+    python tools/aiify/opportunity_scorer.py --opportunity-file opp.json
+    python tools/aiify/opportunity_scorer.py --opportunity-file opp.json --json
+    python tools/aiify/opportunity_scorer.py \\
         --usage-freq 0.8 --task-complexity 0.7 --automation-deficit 0.6 \\
         --data-avail 0.9 --il-model-exists 1 --integration-complexity 0.3 \\
         --reversibility 0.8 --compliance-impact 0.2 --dep-complexity 0.4
@@ -38,10 +38,10 @@ import yaml
 # Paths
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-CONFIG_PATH = BASE_DIR / "args" / "aac_config.yaml"
+CONFIG_PATH = BASE_DIR / "args" / "aiify_config.yaml"
 
 # ---------------------------------------------------------------------------
-# Fallback weights (mirrors aac_config.yaml defaults)
+# Fallback weights (mirrors aiify_config.yaml defaults)
 # Used only if the config file is missing or malformed.
 # ---------------------------------------------------------------------------
 _FALLBACK_CONFIG = {
@@ -58,7 +58,7 @@ _FALLBACK_CONFIG = {
 
 
 def _load_config(config_path=None) -> dict:
-    """Load AAC scoring weights from args/aac_config.yaml.
+    """Load AI-ify scoring weights from args/aiify_config.yaml.
 
     Args:
         config_path: Optional override path to the config YAML file.
@@ -109,9 +109,9 @@ def _extract_components(opportunity: dict, scan_context: dict, il_penalties: dic
     dicts still produce a meaningful score.
 
     Args:
-        opportunity:  Opportunity dict from the AAC scanner.
+        opportunity:  Opportunity dict from the AI-ify scanner.
         scan_context: Broader scan context (il_level, available_models, etc.).
-        il_penalties: IL-level compliance penalties from aac_config.yaml.
+        il_penalties: IL-level compliance penalties from aiify_config.yaml.
                       Defaults to {"il4": 0.0, "il5": 0.1, "il6": 0.2}.
 
     Returns:
@@ -177,7 +177,7 @@ def _compute_value_score(components: dict, weights: dict) -> float:
 
     Args:
         components: Normalized component dict from _extract_components.
-        weights:    value_weights section of aac_config.yaml.
+        weights:    value_weights section of aiify_config.yaml.
 
     Returns:
         Float in [0.0, 1.0].
@@ -209,7 +209,7 @@ def _compute_feasibility_score(components: dict, weights: dict) -> float:
 
     Args:
         components: Normalized component dict from _extract_components.
-        weights:    feasibility_weights section of aac_config.yaml.
+        weights:    feasibility_weights section of aiify_config.yaml.
 
     Returns:
         Float in [0.0, 1.0].
@@ -256,7 +256,7 @@ def _compute_risk_score(components: dict, weights: dict) -> float:
 
     Args:
         components: Normalized component dict from _extract_components.
-        weights:    risk_weights section of aac_config.yaml.
+        weights:    risk_weights section of aiify_config.yaml.
 
     Returns:
         Float in [0.0, 1.0].
@@ -294,7 +294,7 @@ def _compute_composite_score(value_score: float, feasibility_score: float, risk_
         value_score:       Float in [0.0, 1.0].
         feasibility_score: Float in [0.0, 1.0].
         risk_score:        Float in [0.0, 1.0] (higher = safer).
-        weights:           scoring_weights section of aac_config.yaml.
+        weights:           scoring_weights section of aiify_config.yaml.
 
     Returns:
         Float in [0.0, 1.0].
@@ -324,13 +324,13 @@ def _compute_composite_score(value_score: float, feasibility_score: float, risk_
 def detect_score_anomalies(score_result: dict, cfg: dict) -> list:
     """Detect statistical anomalies in a scored opportunity.
 
-    Uses thresholds from the ``anomaly_detection`` section of aac_config.yaml
+    Uses thresholds from the ``anomaly_detection`` section of aiify_config.yaml
     instead of hardcoded values so that sensitivity can be tuned without
     touching source code.
 
     Args:
         score_result: Dict returned by score_opportunity.
-        cfg:          Parsed aac_config.yaml dict.
+        cfg:          Parsed aiify_config.yaml dict.
 
     Returns:
         List of anomaly dicts; empty list means no anomalies detected.
@@ -384,7 +384,7 @@ def score_opportunity(opportunity: dict, scan_context: dict) -> dict:
     """Score a single AI augmentation opportunity.
 
     All sub-scores and the composite score are normalized to [0.0, 1.0].
-    Weights are loaded from args/aac_config.yaml; the function degrades
+    Weights are loaded from args/aiify_config.yaml; the function degrades
     gracefully to built-in defaults if the file is missing.
 
     Args:
@@ -456,6 +456,384 @@ def score_opportunity(opportunity: dict, scan_context: dict) -> dict:
 
 
 # ============================================================================
+# Component derivation + verdict  (AI-ify assessment layer)
+# ============================================================================
+
+import re as _re  # noqa: E402
+
+from tools.aiify.constants import (  # noqa: E402
+    PATTERN_TO_PARADIGM,
+    PATTERN_BASE_SIGNALS,
+    DATA_AVAIL_BY_PARADIGM,
+    INTEGRATION_COMPLEXITY_BY_PARADIGM,
+    DEP_COMPLEXITY_BY_PARADIGM,
+    SIDE_EFFECT_PATTERNS,
+    HIGH_USAGE_PATH_RE,
+    SCHED_PATH_RE,
+    LOW_USAGE_PATH_RE,
+    CATEGORY_MAP,
+    VERDICT_LABELS,
+    VERDICT_AI_READY_MIN,
+    VERDICT_PARTIAL_MIN,
+    DISQ_TRIVIAL_MIN_DEPTH,
+    DISQ_TRIVIAL_MIN_LOC,
+    DISQ_TRIVIAL_MIN_KEYS,
+    DISQ_NO_DATA_MAX,
+    DISQ_COMPLIANCE_INV_MAX,
+    DISQ_REVERSIBILITY_MAX,
+    SECURITY_INAPPROPRIATE_PARADIGMS,
+    SCAN_AI_READY_RATIO_MIN,
+    SCAN_PARTIAL_RATIO_MIN,
+)
+
+_HIGH_USAGE = _re.compile(HIGH_USAGE_PATH_RE, _re.IGNORECASE)
+_SCHED = _re.compile(SCHED_PATH_RE, _re.IGNORECASE)
+_LOW_USAGE = _re.compile(LOW_USAGE_PATH_RE, _re.IGNORECASE)
+_SECURITY_PATH_RE = _re.compile(
+    r"(auth|login|crypto|password|secret|token|acl|rbac|permission|session|jwt|oauth|"
+    r"credential|cipher|signature|sanitiz|validat)",
+    _re.IGNORECASE,
+)
+
+_MAGNITUDE_KEYS = (
+    "max_depth", "depth", "key_count", "num_keys", "count",
+    "size", "length", "branches", "keys",
+)
+
+
+def _is_sec(pattern: dict, detail: dict) -> bool:
+    """Security/authorization-sensitive code (path-based, with detail override)."""
+    if detail.get("is_security_path"):
+        return True
+    return bool(_SECURITY_PATH_RE.search(pattern.get("module_path", "") or ""))
+
+
+def _detail_dict(pattern: dict) -> dict:
+    d = pattern.get("pattern_detail", {})
+    if isinstance(d, str):
+        try:
+            d = json.loads(d)
+        except (ValueError, TypeError):
+            d = {}
+    return d if isinstance(d, dict) else {}
+
+
+def _magnitude(detail: dict) -> float:
+    for k in _MAGNITUDE_KEYS:
+        v = detail.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return float(v)
+    return 0.0
+
+
+def _path_usage_factor(path: str) -> float:
+    if _LOW_USAGE.search(path or ""):
+        return -0.15
+    if _HIGH_USAGE.search(path or ""):
+        return 0.15
+    if _SCHED.search(path or ""):
+        return 0.10
+    return 0.0
+
+
+def _derive_task_complexity(ptype: str, mag: float, func_loc: float) -> float:
+    loc_bonus = min(0.15, float(func_loc) / 400.0)
+    if ptype == "nested_conditionals":
+        depth = mag if mag >= 2 else 3
+        return _clamp(0.30 + 0.12 * (depth - 2) + loc_bonus)
+    if ptype == "large_rule_table":
+        keys = mag if mag > 0 else 10
+        return _clamp(0.35 + 0.015 * keys + loc_bonus)
+    if ptype == "keyword_list_search":
+        cnt = mag if mag > 0 else 5
+        return _clamp(0.30 + 0.04 * cnt + loc_bonus)
+    if ptype == "hardcoded_threshold":
+        return _clamp(0.40 + 0.25 * min(1.0, mag) + loc_bonus)
+    if ptype == "db_render_notify_chain":
+        return _clamp(0.80 + loc_bonus)
+    base = {"regex_user_input": 0.55, "string_template_rendering": 0.45, "scheduled_cron": 0.50}
+    return _clamp(base.get(ptype, 0.50) + loc_bonus)
+
+
+def derive_components(pattern: dict, scan_context: dict) -> dict:
+    """Map observable scan-time signals -> the 9 scoring components.
+
+    The fix for the "everything scores ~40%" bug: previously the scanner emitted
+    no component fields so every component defaulted to 0.5 (and il_model_exists
+    to 0.0), pinning the composite at ~0.44 for every opportunity. Here each
+    component is derived from real signals (structural magnitude, function size,
+    path role, AI paradigm). Returns a dict to merge onto the opportunity before
+    scoring; explicit caller-provided values are NOT overridden.
+    """
+    scan_context = scan_context or {}
+    ptype = pattern.get("pattern_type", "")
+    detail = _detail_dict(pattern)
+    paradigm = pattern.get("ai_paradigm") or PATTERN_TO_PARADIGM.get(ptype, "llm_generation")
+    path = pattern.get("module_path", "")
+    mag = _magnitude(detail)
+
+    func_loc = detail.get("func_loc")
+    if not isinstance(func_loc, (int, float)) or isinstance(func_loc, bool):
+        try:
+            func_loc = max(1, int(pattern.get("line_end", 0)) - int(pattern.get("line_start", 0)) + 1)
+        except (TypeError, ValueError):
+            func_loc = 1
+    is_sec = _is_sec(pattern, detail)
+
+    base = PATTERN_BASE_SIGNALS.get(ptype, {"usage_freq": 0.5, "automation_deficit": 0.5})
+
+    usage_freq = _clamp(base["usage_freq"] + _path_usage_factor(path))
+    task_complexity = _derive_task_complexity(ptype, mag, func_loc)
+    automation_deficit = _clamp(base["automation_deficit"] + 0.2 * (task_complexity - 0.5))
+
+    data_avail = DATA_AVAIL_BY_PARADIGM.get(paradigm, 0.55)
+    if _LOW_USAGE.search(path or ""):
+        data_avail = _clamp(data_avail - 0.10)
+    airgap = bool(scan_context.get("airgap"))
+    il_model_exists = 0.0 if (airgap and not scan_context.get("local_model_available")) else 1.0
+    integration_complexity = INTEGRATION_COMPLEXITY_BY_PARADIGM.get(paradigm, 0.5)
+    if ptype == "db_render_notify_chain":
+        integration_complexity = _clamp(integration_complexity + 0.10)
+
+    reversibility = 0.80
+    if ptype in SIDE_EFFECT_PATTERNS:
+        reversibility -= 0.20
+    if is_sec:
+        reversibility -= 0.10
+    reversibility = _clamp(reversibility)
+    compliance_impact = 0.20
+    if is_sec:
+        compliance_impact += 0.40
+    if ptype == "db_render_notify_chain":
+        compliance_impact += 0.20
+    compliance_impact = _clamp(compliance_impact)
+    dep_complexity = DEP_COMPLEXITY_BY_PARADIGM.get(paradigm, 0.5)
+
+    return {
+        "usage_freq": round(usage_freq, 4),
+        "task_complexity": round(task_complexity, 4),
+        "automation_deficit": round(automation_deficit, 4),
+        "data_avail": round(data_avail, 4),
+        "il_model_exists": il_model_exists,
+        "integration_complexity": round(integration_complexity, 4),
+        "reversibility": round(reversibility, 4),
+        "compliance_impact": round(compliance_impact, 4),
+        "dep_complexity": round(dep_complexity, 4),
+    }
+
+
+_PATTERN_PROS_CONS: dict[str, tuple[list[str], list[str]]] = {
+    "nested_conditionals": (
+        ["Replaces brittle branching with a model that generalizes from examples",
+         "Cuts cognitive complexity and long-term maintenance cost"],
+        ["Needs labeled examples of the decision outcomes",
+         "Model decisions are less transparent than explicit branches"],
+    ),
+    "regex_user_input": (
+        ["NLP extractor handles fuzzy/free-form input regex cannot",
+         "More robust to input drift and edge cases"],
+        ["Overkill for strict, fixed-format validation",
+         "Adds inference latency on the input path"],
+    ),
+    "string_template_rendering": (
+        ["LLM generation produces richer, context-aware output",
+         "Reduces template sprawl and manual copy maintenance"],
+        ["Requires output validation against a structured schema",
+         "Non-deterministic output needs guardrails"],
+    ),
+    "scheduled_cron": (
+        ["Agentic trigger reacts to events instead of fixed schedules",
+         "Eliminates wasteful polling and missed-window gaps"],
+        ["Autonomous triggers need clear guardrails and audit",
+         "Harder to reason about than a fixed timetable"],
+    ),
+    "hardcoded_threshold": (
+        ["Anomaly detection adapts thresholds as data distributions shift",
+         "Catches drift that static cutoffs miss"],
+        ["Needs historical data to learn normal behavior",
+         "False-positive tuning required before trust"],
+    ),
+    "db_render_notify_chain": (
+        ["LLM synthesis collapses a brittle multi-step pipeline",
+         "Produces clearer, audience-aware notifications"],
+        ["Side-effecting pipeline is harder to roll back",
+         "Requires human-in-the-loop review for outbound content"],
+    ),
+    "keyword_list_search": (
+        ["Embedding search finds semantically related matches keywords miss",
+         "Resilient to synonyms, typos, and phrasing changes"],
+        ["Requires an embedding index and refresh strategy",
+         "Adds vector store as an operational dependency"],
+    ),
+    "large_rule_table": (
+        ["Decision agent learns the rule surface and handles novel cases",
+         "Replaces an unmaintainable hand-tuned table"],
+        ["Highest integration and data effort of the paradigms",
+         "Decisions need explainability for compliance"],
+    ),
+}
+
+
+def generate_pros_cons(score_result: dict, components: dict, pattern: dict) -> dict:
+    """Deterministic pros/cons from the pattern catalog + scored components."""
+    ptype = pattern.get("pattern_type", "")
+    static = _PATTERN_PROS_CONS.get(ptype, ([], []))
+    pros, cons = list(static[0]), list(static[1])
+    comp = score_result["score_detail"]["components"]
+    if score_result.get("value_score", 0) >= 0.65:
+        pros.append("High business value — frequently exercised, high-effort logic")
+    if comp.get("data_avail", 0) >= 0.70:
+        pros.append("Good data availability to train or ground the AI component")
+    if comp.get("reversibility", 0) >= 0.75:
+        pros.append("Easily reversible — low rollback risk for a pilot")
+    if comp.get("integration_complexity_norm", 0) >= 0.60:
+        cons.append("Non-trivial integration effort to wire the AI component in")
+    if comp.get("compliance_impact_inv", 1) < 0.50:
+        cons.append("Elevated compliance burden requires review and marking controls")
+    if comp.get("dep_complexity_norm", 0) >= 0.55:
+        cons.append("Adds operational complexity (model serving, monitoring)")
+    return {"pros": pros, "cons": cons}
+
+
+def categorize(pattern: dict) -> str:
+    """innovation | automation | enhancement for the pattern's paradigm shift."""
+    return CATEGORY_MAP.get(pattern.get("pattern_type", ""), "enhancement")
+
+
+def _build_rationale(readiness, composite, comp, disq, soft):
+    if readiness == "not_suitable" and disq:
+        reasons = "; ".join(d[1] for d in disq)
+        return f"Not suitable for AI ({composite:.0%} composite): {reasons}"
+    top = sorted(comp.items(), key=lambda kv: kv[1], reverse=True)[:2]
+    drivers = ", ".join(f"{k.replace('_norm', '').replace('_', ' ')} {v:.0%}" for k, v in top)
+    base = f"{VERDICT_LABELS[readiness]} ({composite:.0%} composite); strongest signals: {drivers}."
+    if soft:
+        base += f" {soft}"
+    return base
+
+
+def assign_verdict(score_result: dict, components: dict, pattern: dict, scan_context: dict | None = None) -> dict:
+    """Three-tier AI-readiness verdict with disqualifier guard.
+
+    A disqualifier forces NOT SUITABLE regardless of composite — this encodes
+    "not everything is AI-ifiable; we don't do it for the sake of it".
+    """
+    scan_context = scan_context or {}
+    ptype = pattern.get("pattern_type", "")
+    detail = _detail_dict(pattern)
+    paradigm = pattern.get("ai_paradigm") or PATTERN_TO_PARADIGM.get(ptype, "llm_generation")
+    composite = score_result["composite_score"]
+    comp = score_result["score_detail"]["components"]
+    mag = _magnitude(detail)
+    func_loc = detail.get("func_loc", 0)
+
+    disq: list[tuple[str, str]] = []
+    if ((ptype == "nested_conditionals" and 0 < mag < DISQ_TRIVIAL_MIN_DEPTH)
+            or (ptype == "large_rule_table" and 0 < mag < DISQ_TRIVIAL_MIN_KEYS)
+            or (isinstance(func_loc, (int, float)) and 0 < func_loc < DISQ_TRIVIAL_MIN_LOC)):
+        disq.append(("trivial_function",
+                     "Too trivial to benefit from AI; deterministic code is simpler and cheaper"))
+    if _is_sec(pattern, detail) and paradigm in SECURITY_INAPPROPRIATE_PARADIGMS:
+        disq.append(("security_sensitive",
+                     "Security/authorization logic must stay deterministic and auditable"))
+    if comp.get("data_avail", 1.0) < DISQ_NO_DATA_MAX:
+        disq.append(("no_data_availability",
+                     "Insufficient data to train or ground a model; risk of hallucination"))
+    if (comp.get("compliance_impact_inv", 1.0) < DISQ_COMPLIANCE_INV_MAX
+            and comp.get("reversibility", 1.0) < DISQ_REVERSIBILITY_MAX):
+        disq.append(("high_compliance_low_reversibility",
+                     "High compliance burden combined with low reversibility"))
+    if ptype == "regex_user_input" and str(detail.get("nlp_intent", "")).lower() == "validation":
+        disq.append(("regex_validation_only",
+                     "Fixed-format validation is better served by a regex than a model"))
+    if ptype in SIDE_EFFECT_PATTERNS and comp.get("reversibility", 1.0) < 0.45:
+        disq.append(("side_effecting_irreversible",
+                     "Irreversible side effects make autonomous AI risky here"))
+
+    if disq:
+        readiness = "not_suitable"
+    elif composite >= VERDICT_AI_READY_MIN:
+        readiness = "ai_ready"
+    elif composite >= VERDICT_PARTIAL_MIN:
+        readiness = "partial"
+    else:
+        readiness = "not_suitable"
+
+    soft = None
+    if readiness == "ai_ready" and score_result.get("feasibility_score", 1.0) < 0.50:
+        readiness = "partial"
+        soft = "Strong value but limited feasibility — pilot before committing."
+
+    return {
+        "ai_readiness": readiness,
+        "verdict_label": VERDICT_LABELS[readiness],
+        "rationale": _build_rationale(readiness, composite, comp, disq, soft),
+        "disqualifiers": [d[0] for d in disq],
+    }
+
+
+def score_and_assess(pattern: dict, scan_context: dict) -> dict:
+    """Full per-opportunity assessment: derive -> score -> verdict -> pros/cons."""
+    enriched = dict(pattern)
+    enriched.setdefault(
+        "ai_paradigm",
+        PATTERN_TO_PARADIGM.get(enriched.get("pattern_type", ""), "llm_generation"),
+    )
+    for k, v in derive_components(enriched, scan_context).items():
+        enriched.setdefault(k, v)
+
+    score = score_opportunity(enriched, scan_context)
+    verdict = assign_verdict(score, enriched, enriched, scan_context)
+    pros_cons = generate_pros_cons(score, enriched, enriched)
+
+    score["verdict"] = verdict["verdict_label"]
+    score["ai_readiness"] = verdict["ai_readiness"]
+    score["rationale"] = verdict["rationale"]
+    score["disqualifiers"] = verdict["disqualifiers"]
+    score["pros"] = pros_cons["pros"]
+    score["cons"] = pros_cons["cons"]
+    score["category"] = categorize(enriched)
+    score["module_path"] = enriched.get("module_path", "")
+    return score
+
+
+def roll_up_scan_verdict(opportunity_scores: list[dict]) -> dict:
+    """Aggregate per-opportunity verdicts into one scan-level verdict."""
+    n = len(opportunity_scores)
+    if n == 0:
+        return {
+            "overall_ai_readiness": "not_suitable",
+            "overall_verdict": VERDICT_LABELS["not_suitable"],
+            "overall_rationale": "No AI-augmentable patterns detected — nothing to AI-ify.",
+        }
+    ready = sum(1 for s in opportunity_scores if s.get("ai_readiness") == "ai_ready")
+    partial = sum(1 for s in opportunity_scores if s.get("ai_readiness") == "partial")
+    not_suit = n - ready - partial
+    ratio = (ready + 0.5 * partial) / n
+    if ratio >= SCAN_AI_READY_RATIO_MIN and ready >= 1:
+        readiness = "ai_ready"
+    elif ratio >= SCAN_PARTIAL_RATIO_MIN:
+        readiness = "partial"
+    else:
+        readiness = "not_suitable"
+
+    lead = max(opportunity_scores, key=lambda s: s.get("composite_score", 0))
+    lead_ref = lead.get("module_path") or lead.get("function_name") or "?"
+    counts = f"{ready} AI-ready, {partial} partial, {not_suit} not suitable of {n}"
+    if readiness == "not_suitable":
+        rationale = (f"Not suitable for AI overall ({counts}). Most patterns are trivial, "
+                     f"security-sensitive, or lack data — do not AI-ify for the sake of it.")
+    else:
+        rationale = (f"{VERDICT_LABELS[readiness]} — {counts}. "
+                     f"Lead candidate: {lead_ref} ({lead.get('composite_score', 0):.0%}).")
+    return {
+        "overall_ai_readiness": readiness,
+        "overall_verdict": VERDICT_LABELS[readiness],
+        "overall_rationale": rationale,
+    }
+
+
+# ============================================================================
 # CLI entry point
 # ============================================================================
 
@@ -463,9 +841,9 @@ def score_opportunity(opportunity: dict, scan_context: dict) -> dict:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "AI Augmentation Opportunity Scorer — "
+            "AI-ify Opportunity Scorer — "
             "Scores detected opportunities using weighted multi-criteria scoring "
-            "loaded from args/aac_config.yaml."
+            "loaded from args/aiify_config.yaml."
         ),
         epilog="CUI // SP-CTI",
     )
@@ -534,7 +912,7 @@ def main():
         print("=" * 60)
         print("CUI // SP-CTI")
         print("=" * 60)
-        print("AI Augmentation Opportunity Score")
+        print("AI-ify Opportunity Score")
         print(f"  Value Score:       {result['value_score']:.4f}")
         print(f"  Feasibility Score: {result['feasibility_score']:.4f}")
         print(f"  Risk Score:        {result['risk_score']:.4f}  (higher = safer)")

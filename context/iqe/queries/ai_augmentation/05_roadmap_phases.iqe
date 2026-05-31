@@ -1,3 +1,0 @@
-foreach r in aac.roadmaps
-  join s in aac.scans on s.scan_id == r.scan_id
-  select s.input_ref, r.title, r.total_effort_days, r.aimc_links, r.aadc_links

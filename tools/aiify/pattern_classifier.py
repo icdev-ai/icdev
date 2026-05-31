@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""AI Augmentation Canvas — Pattern Classifier (Semgrep + AST fallback).
+"""AI-ify Canvas — Pattern Classifier (Semgrep + AST fallback).
 
 Primary path: Semgrep CLI is invoked via subprocess; its JSON output is parsed
 and mapped to the canonical result schema.
@@ -11,7 +11,7 @@ Public API:
     detect_patterns(target_path: str) -> list[dict]
 
 Each result dict contains:
-    pattern_type    — one of tools.ai_augmentation.constants.PATTERN_TYPES
+    pattern_type    — one of tools.aiify.constants.PATTERN_TYPES
     module_path     — path to the analyzed source file
     function_name   — enclosing function name, or '<unknown>'
     line_start      — first line of the matched pattern (1-based)
@@ -35,7 +35,7 @@ import yaml
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-_CONFIG_PATH = pathlib.Path(__file__).parent.parent.parent / "args" / "aac_config.yaml"
+_CONFIG_PATH = pathlib.Path(__file__).parent.parent.parent / "args" / "aiify_config.yaml"
 _REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
 
 
@@ -67,15 +67,15 @@ _AD_PERCENTILE_SCALE: float = float(_threshold_ad_cfg.get("percentile_scale", 10
 
 _semgrep_cfg: dict[str, Any] = _cfg.get("semgrep", {})
 _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
-    "rules_dir", "context/ai_augmentation/semgrep_rules"
+    "rules_dir", "context/aiify/semgrep_rules"
 )
 _SEMGREP_TIMEOUT: int = int(_semgrep_cfg.get("timeout_seconds", 60))
 _SEMGREP_METRICS: str = str(_semgrep_cfg.get("metrics", "off"))
 
 _ml_nc_cfg: dict[str, Any] = _cfg.get("ml_nested_conditionals", {})
-# Env var ICDEV_AAC_ML_CLASSIFY takes precedence over yaml config.
+# Env var ICDEV_AIIFY_ML_CLASSIFY takes precedence over yaml config.
 _ML_NC_ENABLED: bool = (
-    os.environ.get("ICDEV_AAC_ML_CLASSIFY", "").lower() in ("1", "true", "yes")
+    os.environ.get("ICDEV_AIIFY_ML_CLASSIFY", "").lower() in ("1", "true", "yes")
     or bool(_ml_nc_cfg.get("enabled", False))
 )
 _ML_NC_MODEL: str = str(_ml_nc_cfg.get("model", "claude-haiku-4-5-20251001"))
@@ -83,9 +83,9 @@ _ML_NC_MAX_TOKENS: int = int(_ml_nc_cfg.get("max_tokens", 256))
 _ML_NC_CONTEXT_LINES: int = int(_ml_nc_cfg.get("context_lines", 5))
 
 _ml_rui_cfg: dict[str, Any] = _cfg.get("ml_regex_user_input", {})
-# Env var ICDEV_AAC_NLP_REGEX takes precedence over yaml config.
+# Env var ICDEV_AIIFY_NLP_REGEX takes precedence over yaml config.
 _ML_RUI_ENABLED: bool = (
-    os.environ.get("ICDEV_AAC_NLP_REGEX", "").lower() in ("1", "true", "yes")
+    os.environ.get("ICDEV_AIIFY_NLP_REGEX", "").lower() in ("1", "true", "yes")
     or bool(_ml_rui_cfg.get("enabled", False))
 )
 _ML_RUI_MODEL: str = str(_ml_rui_cfg.get("model", "claude-haiku-4-5-20251001"))
@@ -194,12 +194,12 @@ def _detect_via_semgrep(target_path: str) -> list[dict] | None:
 
 
 def _map_semgrep_results(hits: list[dict]) -> list[dict]:
-    """Map raw Semgrep result objects to the canonical AAC pattern dict."""
+    """Map raw Semgrep result objects to the canonical AI-ify pattern dict."""
     results: list[dict] = []
     for hit in hits:
         extra = hit.get("extra", {})
         metadata = extra.get("metadata", {})
-        pattern_type = metadata.get("aac_pattern")
+        pattern_type = metadata.get("aiify_pattern")
         if not pattern_type:
             continue
 
@@ -217,7 +217,7 @@ def _map_semgrep_results(hits: list[dict]) -> list[dict]:
         )
 
         pattern_detail: dict[str, Any] = {
-            k: v for k, v in metadata.items() if k != "aac_pattern"
+            k: v for k, v in metadata.items() if k != "aiify_pattern"
         }
         message = extra.get("message", "")
         if message:
@@ -503,12 +503,12 @@ def _ast_detect_file(file_path: str) -> list[dict]:
     raw.extend(_detect_large_rule_table(file_path, tree, scope_map))
 
     # Optional ML enrichment: annotate nested_conditionals hits with a
-    # Claude Haiku classification score when ICDEV_AAC_ML_CLASSIFY is set.
+    # Claude Haiku classification score when ICDEV_AIIFY_ML_CLASSIFY is set.
     if _ML_NC_ENABLED:
         raw = _enrich_nested_conditionals_with_ml(raw, source_text.splitlines())
 
     # Optional NLP enrichment: annotate regex_user_input hits with intent and
-    # NLP candidate classification when ICDEV_AAC_NLP_REGEX is set.
+    # NLP candidate classification when ICDEV_AIIFY_NLP_REGEX is set.
     if _ML_RUI_ENABLED:
         raw = _enrich_regex_user_input_with_nlp(raw, source_text.splitlines())
 
@@ -1783,7 +1783,7 @@ def _java_detect_db_render_chain(file_path: str, lines: list[str]) -> list[dict]
 
 
 def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
-    """Regex-based Java pattern detection for all 8 AAC pattern types."""
+    """Regex-based Java pattern detection for all 8 AI-ify pattern types."""
     results: list[dict] = []
     lines = source_text.splitlines()
     population: list[float] = _collect_numeric_from_lines(lines) if _AD_ENABLED else []

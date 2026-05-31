@@ -8,7 +8,7 @@ import pytest
 
 class TestLoadAgentReadinessConfig:
     def _mod(self):
-        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        import tools.aiify.agent_readiness.pillars._base as m
         return m
 
     def test_returns_empty_when_file_absent(self, tmp_path, monkeypatch):
@@ -50,7 +50,7 @@ class TestPillarScorePrecision:
     """Pillar.score() precision is driven by score.precision in YAML (default 4)."""
 
     def _make_two_of_three_pillar(self):
-        from tools.ai_augmentation.agent_readiness.pillars._base import (
+        from tools.aiify.agent_readiness.pillars._base import (
             Criterion, CriterionResult, Pillar,
         )
         return Pillar(
@@ -63,7 +63,7 @@ class TestPillarScorePrecision:
         )
 
     def test_default_precision_is_4(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        import tools.aiify.agent_readiness.pillars._base as m
         monkeypatch.setattr(m, "_ARGS_PATH", tmp_path / "absent.yaml")
         m._load_agent_readiness_config.cache_clear()
         pillar = self._make_two_of_three_pillar()
@@ -73,7 +73,7 @@ class TestPillarScorePrecision:
         m._load_agent_readiness_config.cache_clear()
 
     def test_configurable_precision_reads_from_yaml(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        import tools.aiify.agent_readiness.pillars._base as m
         cfg = tmp_path / "cfg.yaml"
         cfg.write_text("score:\n  precision: 2\n", encoding="utf-8")
         monkeypatch.setattr(m, "_ARGS_PATH", cfg)
@@ -85,8 +85,8 @@ class TestPillarScorePrecision:
         m._load_agent_readiness_config.cache_clear()
 
     def test_all_pass_returns_1_0(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars._base as m
-        from tools.ai_augmentation.agent_readiness.pillars._base import (
+        import tools.aiify.agent_readiness.pillars._base as m
+        from tools.aiify.agent_readiness.pillars._base import (
             Criterion, CriterionResult, Pillar,
         )
         monkeypatch.setattr(m, "_ARGS_PATH", tmp_path / "absent.yaml")
@@ -102,8 +102,8 @@ class TestPillarScorePrecision:
         m._load_agent_readiness_config.cache_clear()
 
     def test_all_skipped_returns_0_0(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars._base as m
-        from tools.ai_augmentation.agent_readiness.pillars._base import (
+        import tools.aiify.agent_readiness.pillars._base as m
+        from tools.aiify.agent_readiness.pillars._base import (
             Criterion, CriterionResult, Pillar,
         )
         monkeypatch.setattr(m, "_ARGS_PATH", tmp_path / "absent.yaml")
@@ -119,7 +119,7 @@ class TestPillarScorePrecision:
         m._load_agent_readiness_config.cache_clear()
 
     def test_score_dict_has_required_keys(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        import tools.aiify.agent_readiness.pillars._base as m
         monkeypatch.setattr(m, "_ARGS_PATH", tmp_path / "absent.yaml")
         m._load_agent_readiness_config.cache_clear()
         pillar = self._make_two_of_three_pillar()

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for detect_score_anomalies() in tools.ai_augmentation.engine.
+"""Tests for detect_score_anomalies() in tools.aiify.engine.
 
 Validates that score anomaly detection uses config-driven thresholds and
 correctly flags value/feasibility imbalance and component outliers.
@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.ai_augmentation.engine import detect_score_anomalies
+from tools.aiify.engine import detect_score_anomalies
 
 _THRESHOLDS = {
     "value_feasibility_max_delta": 0.50,

@@ -1,6 +1,6 @@
 # CUI // SP-CTI
-# AAC Semgrep rules — each rule maps to one of the 8 AI-augmentable code patterns.
-# metadata.aac_pattern must match an entry in PATTERN_TYPES (constants.py).
+# AI-ify Semgrep rules — each rule maps to one of the 8 AI-augmentable code patterns.
+# metadata.aiify_pattern must match an entry in PATTERN_TYPES (constants.py).
 # metadata.ai_paradigm must match an entry in AI_PARADIGMS (constants.py).
 
 rules:
@@ -16,7 +16,7 @@ rules:
     languages: [python]
     severity: INFO
     metadata:
-      aac_pattern: nested_conditionals
+      aiify_pattern: nested_conditionals
       ai_paradigm: ml_classifier
 
   - id: aac-nested-conditionals-java
@@ -33,7 +33,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: nested_conditionals
+      aiify_pattern: nested_conditionals
       ai_paradigm: ml_classifier
 
   - id: aac-nested-conditionals-go
@@ -50,7 +50,7 @@ rules:
     languages: [go]
     severity: INFO
     metadata:
-      aac_pattern: nested_conditionals
+      aiify_pattern: nested_conditionals
       ai_paradigm: ml_classifier
 
   # ── Pattern 2: regex_user_input ──────────────────────────────────────────────
@@ -61,7 +61,7 @@ rules:
     languages: [python]
     severity: INFO
     metadata:
-      aac_pattern: regex_user_input
+      aiify_pattern: regex_user_input
       ai_paradigm: nlp_extractor
 
   - id: aac-regex-user-input-java
@@ -71,7 +71,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: regex_user_input
+      aiify_pattern: regex_user_input
       ai_paradigm: nlp_extractor
 
   # ── Pattern 3: string_template_rendering ─────────────────────────────────────
@@ -84,7 +84,7 @@ rules:
     languages: [python]
     severity: INFO
     metadata:
-      aac_pattern: string_template_rendering
+      aiify_pattern: string_template_rendering
       ai_paradigm: llm_generation
 
   - id: aac-string-template-rendering-java
@@ -95,7 +95,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: string_template_rendering
+      aiify_pattern: string_template_rendering
       ai_paradigm: llm_generation
 
   # ── Pattern 4: scheduled_cron ────────────────────────────────────────────────
@@ -106,7 +106,7 @@ rules:
     languages: [python]
     severity: INFO
     metadata:
-      aac_pattern: scheduled_cron
+      aiify_pattern: scheduled_cron
       ai_paradigm: agentic_trigger
 
   - id: aac-scheduled-cron-py-celery
@@ -119,7 +119,7 @@ rules:
     languages: [python]
     severity: INFO
     metadata:
-      aac_pattern: scheduled_cron
+      aiify_pattern: scheduled_cron
       ai_paradigm: agentic_trigger
 
   - id: aac-scheduled-cron-java
@@ -131,7 +131,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: scheduled_cron
+      aiify_pattern: scheduled_cron
       ai_paradigm: agentic_trigger
 
   # ── Pattern 5: hardcoded_threshold ───────────────────────────────────────────
@@ -146,7 +146,7 @@ rules:
     languages: [python]
     severity: INFO
     metadata:
-      aac_pattern: hardcoded_threshold
+      aiify_pattern: hardcoded_threshold
       ai_paradigm: anomaly_detection
 
   # ── Pattern 6: db_render_notify_chain ────────────────────────────────────────
@@ -165,7 +165,7 @@ rules:
     languages: [python]
     severity: INFO
     metadata:
-      aac_pattern: db_render_notify_chain
+      aiify_pattern: db_render_notify_chain
       ai_paradigm: llm_generation
 
   # ── Pattern 7: keyword_list_search ───────────────────────────────────────────
@@ -176,7 +176,7 @@ rules:
     languages: [python]
     severity: INFO
     metadata:
-      aac_pattern: keyword_list_search
+      aiify_pattern: keyword_list_search
       ai_paradigm: embedding_retrieval
 
   - id: aac-keyword-list-search-java
@@ -186,7 +186,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: keyword_list_search
+      aiify_pattern: keyword_list_search
       ai_paradigm: embedding_retrieval
 
   # ── Pattern 8: large_rule_table ──────────────────────────────────────────────
@@ -199,7 +199,7 @@ rules:
     languages: [python]
     severity: INFO
     metadata:
-      aac_pattern: large_rule_table
+      aiify_pattern: large_rule_table
       ai_paradigm: decision_agent
 
   - id: aac-large-rule-table-java
@@ -220,7 +220,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: large_rule_table
+      aiify_pattern: large_rule_table
       ai_paradigm: decision_agent
 
   # ── Spring Boot / JVM supplemental rules ─────────────────────────────────────
@@ -238,7 +238,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: regex_user_input
+      aiify_pattern: regex_user_input
       ai_paradigm: nlp_extractor
 
   # Spring Data derived query: findBy…StartingWith / Containing / Like
@@ -249,7 +249,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: keyword_list_search
+      aiify_pattern: keyword_list_search
       ai_paradigm: embedding_search
 
   # PageRequest with a numeric literal page size
@@ -263,7 +263,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: hardcoded_threshold
+      aiify_pattern: hardcoded_threshold
       ai_paradigm: anomaly_detection
 
   # Spring @Scheduled — move to agentic workflow trigger
@@ -277,7 +277,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: scheduled_cron
+      aiify_pattern: scheduled_cron
       ai_paradigm: agentic_trigger
 
   # @ModelAttribute returning a static collection from a repository
@@ -291,7 +291,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: large_rule_table
+      aiify_pattern: large_rule_table
       ai_paradigm: decision_agent
 
   # Spring MVC controller returning a Thymeleaf/JSP view name
@@ -304,7 +304,7 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: string_template_rendering
+      aiify_pattern: string_template_rendering
       ai_paradigm: llm_generation
 
   # Nested if depth ≥ 2 (Spring validation chains)
@@ -320,5 +320,5 @@ rules:
     languages: [java]
     severity: INFO
     metadata:
-      aac_pattern: nested_conditionals
+      aiify_pattern: nested_conditionals
       ai_paradigm: ml_classifier

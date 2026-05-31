@@ -7,7 +7,7 @@ import time
 from functools import lru_cache
 from typing import Any
 
-from tools.ai_augmentation.agent_readiness.pillars._base import (
+from tools.aiify.agent_readiness.pillars._base import (
     Criterion,
     CriterionResult,
     Pillar,

@@ -1,11 +1,11 @@
 # CUI // SP-CTI
-"""AI Augmentation Canvas (AAC) — Flask Blueprint.
+"""AI-ify Canvas — Flask Blueprint.
 
 Routes:
-  GET  /ai-augmentation/              index (scan form + history)
-  POST /ai-augmentation/api/scan      run scan → {scan_id, ...}
-  GET  /ai-augmentation/api/scan/<id> get scan results
-  POST /ai-augmentation/api/iqe-query IQE natural-language query
+  GET  /ai-ify/              index (scan form + history)
+  POST /ai-ify/api/scan      run scan → {scan_id, ...}
+  GET  /ai-ify/api/scan/<id> get scan results
+  POST /ai-ify/api/iqe-query IQE natural-language query
 """
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
@@ -13,21 +13,34 @@ from tools.logging.icdev_logger import get_logger
 import importlib
 import json
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, redirect, render_template, request
 
 import re
 
-from tools.ai_augmentation.db.init_db import get_connection, init_db
-from tools.ai_augmentation.engine import run_scan
+from tools.aiify.db.init_db import get_connection, init_db
+from tools.aiify.engine import run_scan
 
 logger = get_logger(__name__)
 
-aac_bp = Blueprint(
-    "aac",
+aiify_bp = Blueprint(
+    "aiify",
     __name__,
-    url_prefix="/ai-augmentation",
+    url_prefix="/ai-ify",
     template_folder="../../tools/dashboard/templates",
 )
+
+# Backward-compat: 301-redirect the legacy /ai-ify/ URLs to /ai-ify/.
+aiify_compat_bp = Blueprint("aiify_compat", __name__, url_prefix="/ai-ify")
+
+
+@aiify_compat_bp.route("/", defaults={"subpath": ""})
+@aiify_compat_bp.route("/<path:subpath>")
+def _legacy_redirect(subpath: str):
+    target = "/ai-ify/" + subpath
+    if request.query_string:
+        target += "?" + request.query_string.decode("utf-8", "ignore")
+    return redirect(target, code=301)
+
 
 _INIT_DONE = False
 
@@ -39,11 +52,11 @@ def _ensure_init() -> None:
     try:
         init_db()
     except Exception as exc:
-        logger.warning("aac: DB init error: %s", exc)
+        logger.warning("aiify: DB init error: %s", exc)
     _INIT_DONE = True
 
 
-@aac_bp.before_request
+@aiify_bp.before_request
 def _init():
     _ensure_init()
 
@@ -61,13 +74,13 @@ def _parse_phases(raw):
     return raw or []
 
 
-@aac_bp.route("/")
+@aiify_bp.route("/")
 def index():
     conn = _conn()
     try:
         scans = [dict(r) for r in conn.execute(
             "SELECT scan_id, input_type, input_ref, total_files, total_loc, "
-            "status, project_summary, created_at FROM aac_scans ORDER BY created_at DESC LIMIT 10"
+            "status, project_summary, created_at FROM aiify_scans ORDER BY created_at DESC LIMIT 10"
         ).fetchall()]
 
         # Lazy backfill: compute summary for old scans that predate the feature
@@ -75,14 +88,14 @@ def index():
         for scan in scans:
             if not scan.get("project_summary"):
                 try:
-                    from tools.ai_augmentation.engine import _build_summary
+                    from tools.aiify.engine import _build_summary
                     opps_for_scan = [dict(r) for r in conn.execute(
-                        "SELECT pattern_type, ai_paradigm FROM aac_opportunities WHERE scan_id = ?",
+                        "SELECT pattern_type, ai_paradigm FROM aiify_opportunities WHERE scan_id = ?",
                         (scan["scan_id"],),
                     ).fetchall()]
                     summary = _build_summary(scan["input_ref"], opps_for_scan)
                     conn.execute(
-                        "UPDATE aac_scans SET project_summary = ? WHERE scan_id = ?",
+                        "UPDATE aiify_scans SET project_summary = ? WHERE scan_id = ?",
                         (summary, scan["scan_id"]),
                     )
                     scan["project_summary"] = summary
@@ -101,15 +114,15 @@ def index():
                 "SELECT o.opportunity_id, o.module_path, o.function_name, o.language, "
                 "o.pattern_type, o.ai_paradigm, o.il_recommended_model, "
                 "s.composite_score, s.value_score "
-                "FROM aac_opportunities o "
-                "LEFT JOIN aac_scores s ON s.opportunity_id = o.opportunity_id "
+                "FROM aiify_opportunities o "
+                "LEFT JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
                 "WHERE o.scan_id = ? ORDER BY s.composite_score DESC",
                 (latest_id,)
             ).fetchall()]
 
             rm = conn.execute(
                 "SELECT roadmap_id, title, phases, total_effort_days "
-                "FROM aac_roadmaps WHERE scan_id = ? ORDER BY created_at DESC LIMIT 1",
+                "FROM aiify_roadmaps WHERE scan_id = ? ORDER BY created_at DESC LIMIT 1",
                 (latest_id,)
             ).fetchone()
             if rm:
@@ -119,13 +132,13 @@ def index():
         conn.close()
 
     return render_template(
-        "ai_augmentation/page.html",
+        "aiify/page.html",
         scans=scans,
         opportunities=opportunities,
         roadmap=roadmap,
-        iqe_canvas="aac",
-        iqe_api_route="/ai-augmentation/api/iqe-query",
-        iqe_title="AI Augmentation IQE",
+        iqe_canvas="aiify",
+        iqe_api_route="/ai-ify/api/iqe-query",
+        iqe_title="AI-ify IQE",
         iqe_examples=[
             {"label": "Top opportunities", "query": "show top opportunities by composite score"},
             {"label": "Completed scans",   "query": "list all completed scans"},
@@ -134,39 +147,39 @@ def index():
     )
 
 
-@aac_bp.route("/api/scan/<int:scan_id>", methods=["DELETE"])
+@aiify_bp.route("/api/scan/<int:scan_id>", methods=["DELETE"])
 def api_delete_scan(scan_id: int):
     """Delete a single scan and cascade to its opportunities, scores, and roadmaps."""
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT scan_id FROM aac_scans WHERE scan_id = ?", (scan_id,)
+            "SELECT scan_id FROM aiify_scans WHERE scan_id = ?", (scan_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
         # CASCADE FK constraints handle opportunities → scores and roadmaps.
         # audit_log rows are SET NULL (preserved for audit trail).
-        conn.execute("DELETE FROM aac_scans WHERE scan_id = ?", (scan_id,))
+        conn.execute("DELETE FROM aiify_scans WHERE scan_id = ?", (scan_id,))
         conn.commit()
         return jsonify({"deleted": scan_id})
     finally:
         conn.close()
 
 
-@aac_bp.route("/api/scan/all", methods=["DELETE"])
+@aiify_bp.route("/api/scan/all", methods=["DELETE"])
 def api_delete_all_scans():
     """Delete all scan records and their cascaded children."""
     conn = _conn()
     try:
-        count_row = conn.execute("SELECT COUNT(*) FROM aac_scans").fetchone()
+        count_row = conn.execute("SELECT COUNT(*) FROM aiify_scans").fetchone()
         count = count_row[0] if count_row else 0
         # Delete in dependency order to satisfy FK constraints where CASCADE
         # may not be enforced (e.g., SQLite without PRAGMA foreign_keys=ON).
-        conn.execute("DELETE FROM aac_audit_log")
-        conn.execute("DELETE FROM aac_scores")
-        conn.execute("DELETE FROM aac_roadmaps")
-        conn.execute("DELETE FROM aac_opportunities")
-        conn.execute("DELETE FROM aac_scans")
+        conn.execute("DELETE FROM aiify_audit_log")
+        conn.execute("DELETE FROM aiify_scores")
+        conn.execute("DELETE FROM aiify_roadmaps")
+        conn.execute("DELETE FROM aiify_opportunities")
+        conn.execute("DELETE FROM aiify_scans")
         conn.commit()
         return jsonify({"deleted_scans": count})
     finally:
@@ -230,7 +243,17 @@ def _build_prd(
 
     lines: list[str] = []
     lines.append(f"# PRD: {label} — {project_name}")
-    lines.append("> Generated by ICDEV™ AI Augmentation Canvas  |  CUI // SP-CTI\n")
+    lines.append("> Generated by ICDEV™ AI-ify Canvas  |  CUI // SP-CTI\n")
+
+    # Target architecture diagram (AI / GenAI / Agentic AI) — embedded Mermaid.
+    try:
+        from tools.aiify.diagram_generator import build_architecture_mermaid_block
+        lines.append("## Target Architecture (AI / GenAI / Agentic AI)")
+        lines.append("")
+        lines.append(build_architecture_mermaid_block(scan or {}, opps, label))
+        lines.append("")
+    except Exception:  # noqa: BLE001 — diagram is best-effort, never blocks the PRD
+        pass
 
     lines.append("## Objective")
     lines.append(
@@ -337,7 +360,7 @@ def _build_prd(
     return "\n".join(lines)
 
 
-@aac_bp.route("/api/scan", methods=["POST"])
+@aiify_bp.route("/api/scan", methods=["POST"])
 def api_scan():
     data = request.get_json(force=True, silent=True) or {}
     input_type = data.get("input_type", "local_path")
@@ -355,16 +378,16 @@ def api_scan():
         result = run_scan(input_type, input_ref, {"il_level": il_level})
         return jsonify(result), 201
     except Exception as exc:
-        logger.error("aac: scan error: %s", exc)
+        logger.error("aiify: scan error: %s", exc)
         return jsonify({"error": str(exc)}), 500
 
 
-@aac_bp.route("/api/scan/<int:scan_id>")
+@aiify_bp.route("/api/scan/<int:scan_id>")
 def api_get_scan(scan_id: int):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT * FROM aac_scans WHERE scan_id = ?", (scan_id,)
+            "SELECT * FROM aiify_scans WHERE scan_id = ?", (scan_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
@@ -372,16 +395,17 @@ def api_get_scan(scan_id: int):
         opps = [dict(r) for r in conn.execute(
             "SELECT o.opportunity_id, o.module_path, o.function_name, o.language, "
             "o.pattern_type, o.ai_paradigm, o.il_recommended_model, "
-            "s.composite_score, s.value_score "
-            "FROM aac_opportunities o "
-            "LEFT JOIN aac_scores s ON s.opportunity_id = o.opportunity_id "
+            "s.composite_score, s.value_score, s.feasibility_score, s.risk_score, "
+            "s.verdict, s.ai_readiness, s.rationale, s.pros, s.cons, s.category "
+            "FROM aiify_opportunities o "
+            "LEFT JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
             "WHERE o.scan_id = ? ORDER BY s.composite_score DESC",
             (scan_id,)
         ).fetchall()]
 
         rm = conn.execute(
             "SELECT roadmap_id, title, phases, total_effort_days "
-            "FROM aac_roadmaps WHERE scan_id = ? ORDER BY created_at DESC LIMIT 1",
+            "FROM aiify_roadmaps WHERE scan_id = ? ORDER BY created_at DESC LIMIT 1",
             (scan_id,)
         ).fetchone()
         roadmap = None
@@ -394,12 +418,12 @@ def api_get_scan(scan_id: int):
         conn.close()
 
 
-@aac_bp.route("/api/send-to-kanban", methods=["POST"])
+@aiify_bp.route("/api/send-to-kanban", methods=["POST"])
 def api_send_to_kanban():
     """Promote roadmap opportunities to kanban_tasks with atomic decomposition.
 
     Each phase creates:
-      - 1 epic task  (aac-{short}-{ph}-epic)
+      - 1 epic task  (aiify-{short}-{ph}-epic)
       - 4 child tasks per opportunity: d1=Design, d2=Implement, d3=Test, d4=Review
         with sequential depends_on_task_id chain (d2→d1, d3→d2, d4→d3).
     When phase_id='all', phase epics are also chained (P2 epic → P1 epic, etc.).
@@ -417,7 +441,7 @@ def api_send_to_kanban():
     conn = _conn()
     try:
         rm = conn.execute(
-            "SELECT scan_id, phases FROM aac_roadmaps WHERE roadmap_id = ?",
+            "SELECT scan_id, phases FROM aiify_roadmaps WHERE roadmap_id = ?",
             (roadmap_id,),
         ).fetchone()
         if not rm:
@@ -430,11 +454,11 @@ def api_send_to_kanban():
     # PRD HITL gate: block send if PRD for this phase was rejected
     if phase_id != "all":
         try:
-            aac = _conn()
+            aiify = _conn()
             try:
                 prd_key = f"{roadmap_id}:{phase_id}"
-                row = aac.execute(
-                    "SELECT decision FROM aac_hitl_decisions "
+                row = aiify.execute(
+                    "SELECT decision FROM aiify_hitl_decisions "
                     "WHERE source_type='prd' AND source_id=?",
                     (prd_key,),
                 ).fetchone()
@@ -447,7 +471,7 @@ def api_send_to_kanban():
                         "blocked": True,
                     }), 403
             finally:
-                aac.close()
+                aiify.close()
         except Exception:
             pass
 
@@ -473,7 +497,7 @@ def api_send_to_kanban():
             placeholders = ",".join("?" * len(all_opp_ids))
             rows = conn.execute(
                 f"SELECT opportunity_id, composite_score, value_score, feasibility_score, risk_score "
-                f"FROM aac_scores WHERE opportunity_id IN ({placeholders})",
+                f"FROM aiify_scores WHERE opportunity_id IN ({placeholders})",
                 tuple(all_opp_ids),
             ).fetchall()
             for r in rows:
@@ -498,12 +522,12 @@ def api_send_to_kanban():
             opps    = ph.get("opportunities", [])
 
             # ── Epic task ────────────────────────────────────────────────────
-            epic_id = f"aac-{short_id}-{ph_key.lower()}-epic"
+            epic_id = f"aiify-{short_id}-{ph_key.lower()}-epic"
             if icdev_conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (epic_id,)).fetchone():
                 skipped += 1
             else:
                 subtitle = label.split("—")[1].strip() if "—" in label else label
-                epic_title = f"[{ph_key} Epic] AI Augmentation — {subtitle}"
+                epic_title = f"[{ph_key} Epic] AI-ify — {subtitle}"
                 epic_desc = json.dumps({
                     "roadmap_id": roadmap_id, "scan_id": scan_id,
                     "phase": label, "opportunity_count": len(opps),
@@ -536,7 +560,7 @@ def api_send_to_kanban():
                 child_priority = "high" if composite >= 0.7 else priority
                 criterion = _PATTERN_CRITERIA.get(pattern, f"Replace {pattern} with {paradigm}")
 
-                base_id  = f"aac-{short_id}-{ph_key.lower()}-{opp_id}"
+                base_id  = f"aiify-{short_id}-{ph_key.lower()}-{opp_id}"
                 base_desc_data = {
                     "opportunity_id": opp_id, "scan_id": scan_id,
                     "roadmap_id": roadmap_id, "phase": label,
@@ -581,7 +605,7 @@ def api_send_to_kanban():
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+            "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
             ("kanban_promoted", scan_id, "user",
              json.dumps({"roadmap_id": roadmap_id, "phase_id": phase_id,
                          "created": created, "skipped": skipped, "epics": epics})),
@@ -593,7 +617,7 @@ def api_send_to_kanban():
     return jsonify({"created": created, "skipped": skipped, "phase_id": phase_id, "epics": epics})
 
 
-@aac_bp.route("/api/generate-prd", methods=["POST"])
+@aiify_bp.route("/api/generate-prd", methods=["POST"])
 def api_generate_prd():
     """Generate a PRD markdown document for a roadmap phase.
 
@@ -610,14 +634,14 @@ def api_generate_prd():
     conn = _conn()
     try:
         rm = conn.execute(
-            "SELECT scan_id, title, phases FROM aac_roadmaps WHERE roadmap_id = ?",
+            "SELECT scan_id, title, phases FROM aiify_roadmaps WHERE roadmap_id = ?",
             (roadmap_id,),
         ).fetchone()
         if not rm:
             return jsonify({"error": "roadmap not found"}), 404
 
         scan = conn.execute(
-            "SELECT input_ref, project_summary, total_files, total_loc FROM aac_scans WHERE scan_id = ?",
+            "SELECT input_ref, project_summary, total_files, total_loc FROM aiify_scans WHERE scan_id = ?",
             (rm["scan_id"],),
         ).fetchone()
         scan_dict = dict(scan) if scan else {}
@@ -642,7 +666,7 @@ def api_generate_prd():
             placeholders = ",".join("?" * len(opp_ids))
             rows = conn.execute(
                 f"SELECT opportunity_id, composite_score, value_score, feasibility_score, risk_score "
-                f"FROM aac_scores WHERE opportunity_id IN ({placeholders})",
+                f"FROM aiify_scores WHERE opportunity_id IN ({placeholders})",
                 tuple(opp_ids),
             ).fetchall()
             for r in rows:
@@ -650,25 +674,25 @@ def api_generate_prd():
         finally:
             conn.close()
 
-    # Load HITL decisions from AAC canvas DB
+    # Load HITL decisions from AI-ify canvas DB
     hitl: dict[tuple, str] = {}
     prd_key = f"{roadmap_id}:{phase_id}"
     prd_hitl_decision: str | None = None
     try:
-        aac = _conn()
+        aiify = _conn()
         try:
-            for row in aac.execute(
-                "SELECT source_type, source_id, decision FROM aac_hitl_decisions"
+            for row in aiify.execute(
+                "SELECT source_type, source_id, decision FROM aiify_hitl_decisions"
             ).fetchall():
                 hitl[(row["source_type"], str(row["source_id"]))] = row["decision"]
-            prd_row = aac.execute(
-                "SELECT decision FROM aac_hitl_decisions WHERE source_type='prd' AND source_id=?",
+            prd_row = aiify.execute(
+                "SELECT decision FROM aiify_hitl_decisions WHERE source_type='prd' AND source_id=?",
                 (prd_key,),
             ).fetchone()
             if prd_row:
                 prd_hitl_decision = prd_row["decision"]
         finally:
-            aac.close()
+            aiify.close()
     except Exception:
         pass
 
@@ -742,22 +766,22 @@ def api_generate_prd():
     })
 
 
-@aac_bp.route("/api/intelligence-feed", methods=["GET"])
+@aiify_bp.route("/api/intelligence-feed", methods=["GET"])
 def api_intelligence_feed():
     """Return signals from Innovation, Creative, and Research engines with HITL state."""
     result: dict = {"innovation": [], "creative": [], "research": []}
 
-    # Fetch HITL decisions from AAC canvas DB
+    # Fetch HITL decisions from AI-ify canvas DB
     decisions: dict = {}
     try:
-        aac = _conn()
+        aiify = _conn()
         try:
-            for row in aac.execute(
-                "SELECT source_type, source_id, decision FROM aac_hitl_decisions"
+            for row in aiify.execute(
+                "SELECT source_type, source_id, decision FROM aiify_hitl_decisions"
             ).fetchall():
                 decisions[f"{row['source_type']}:{row['source_id']}"] = row["decision"]
         finally:
-            aac.close()
+            aiify.close()
     except Exception:
         pass
 
@@ -820,7 +844,7 @@ def api_intelligence_feed():
     return jsonify(result)
 
 
-@aac_bp.route("/api/hitl-decision", methods=["POST"])
+@aiify_bp.route("/api/hitl-decision", methods=["POST"])
 def api_hitl_decision():
     """Record an accept / reject / clear HITL decision for an engine signal or PRD."""
     data = request.get_json(force=True, silent=True) or {}
@@ -840,18 +864,18 @@ def api_hitl_decision():
     conn = _conn()
     try:
         conn.execute(
-            "DELETE FROM aac_hitl_decisions WHERE source_type=? AND source_id=?",
+            "DELETE FROM aiify_hitl_decisions WHERE source_type=? AND source_id=?",
             (source_type, source_id),
         )
         if decision != "clear":
             conn.execute(
-                "INSERT INTO aac_hitl_decisions "
+                "INSERT INTO aiify_hitl_decisions "
                 "(source_type, source_id, phase_id, decision, reason) "
                 "VALUES (?,?,?,?,?)",
                 (source_type, source_id, phase_id, decision, reason),
             )
         conn.execute(
-            "INSERT INTO aac_audit_log (event_type, actor, detail) VALUES (?,?,?)",
+            "INSERT INTO aiify_audit_log (event_type, actor, detail) VALUES (?,?,?)",
             (
                 "hitl_decision",
                 "user",
@@ -870,7 +894,7 @@ def api_hitl_decision():
     return jsonify({"status": "ok", "decision": decision})
 
 
-@aac_bp.route("/api/run-innovation", methods=["POST"])
+@aiify_bp.route("/api/run-innovation", methods=["POST"])
 def api_run_innovation():
     """Trigger the Innovation engine pipeline asynchronously."""
     import threading
@@ -883,7 +907,7 @@ def api_run_innovation():
         return jsonify({"status": "error", "detail": str(exc)}), 500
 
 
-@aac_bp.route("/api/iqe-query", methods=["POST"])
+@aiify_bp.route("/api/iqe-query", methods=["POST"])
 def api_iqe_query():
     data = request.get_json(force=True, silent=True) or {}
     question = (data.get("question") or "").strip()
@@ -893,7 +917,7 @@ def api_iqe_query():
         return jsonify({"error": "question is required"}), 400
 
     try:
-        importlib.import_module("tools.iqe.adapters.ai_augmentation")
+        importlib.import_module("tools.iqe.adapters.aiify")
     except Exception:
         pass
 
@@ -904,9 +928,9 @@ def api_iqe_query():
         from tools.iqe.executor import execute_query
 
         collections = [
-            "ai_augmentation.opportunities",
-            "ai_augmentation.scans",
-            "ai_augmentation.roadmaps",
+            "aiify.opportunities",
+            "aiify.scans",
+            "aiify.roadmaps",
         ]
         iqe_str = nl_to_iqe(question, collections=collections)
         ast = _parse(iqe_str)
