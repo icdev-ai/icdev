@@ -179,6 +179,24 @@ projects:
   - key: import
     title: IMPORT
     priority: medium
+  - key: ctr
+    title: CTR
+    priority: medium
+  - key: disco
+    title: DISCO
+    priority: medium
+  - key: iqe
+    title: IQE
+    priority: medium
+  - key: pm
+    title: PM
+    priority: medium
+  - key: sec
+    title: SEC
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: fix_dispatcher
   name: Fix Dispatcher Project
   description: Auto-registered project for tasks with prefix 'fix-dispatcher-'. Update
