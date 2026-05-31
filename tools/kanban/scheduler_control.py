@@ -1,14 +1,15 @@
 # CUI // SP-CTI
-"""Kanban scheduler pause control — manual switch + automatic pipeline pause.
+"""Kanban scheduler pause control — manual switch only.
 
-Two ways the kanban scheduler's merge/stash cycle can be paused:
+The scheduler can be paused via the dashboard "Pause Scheduler" button
+(cross-process: dashboard writes a sentinel file under ``data/``, scheduler
+reads it).
 
-1. **Manual** — a sentinel file under ``data/`` set by the dashboard "Pause
-   Scheduler" button (cross-process: dashboard writes it, scheduler reads it).
-2. **Automatic** — while an *interactive* agent session (Claude Code / Cursor,
-   i.e. human-driven, not the scheduler itself) is active, the scheduler skips
-   its cycle. This stops the ``git stash``/checkout churn from clobbering an
-   in-flight refactor or merge. Gated by ``KANBAN_AUTO_PAUSE`` (default on).
+Auto-pause was removed on 2026-05-30 because kanban merges now use temporary
+git worktrees — the main repository working tree is never touched, so there
+is no risk of stash/checkout churn clobbering in-flight human work.
+The ``KANBAN_AUTO_PAUSE`` env var still exists for backward compatibility
+but is no longer consulted by ``should_pause()``.
 
 Scheduler integration: at the top of each cycle call ``should_pause()`` and skip
 the cycle (sleep + continue) when it returns truthy.
@@ -126,13 +127,14 @@ def should_pause() -> dict:
     """Single check for the scheduler loop.
 
     Returns ``{paused, mode, ...}`` so the scheduler can log *why* it skipped.
+
+    Auto-pause was removed because kanban merges now use temporary git
+    worktrees — the main repository working tree is never touched, so
+    there is no risk of stash/checkout churn clobbering in-flight work.
+    Only the manual pause flag (dashboard button) can stop dispatch.
     """
     if manual_paused():
         return {"paused": True, "mode": "manual", **(_flag_meta() or {})}
-    if auto_paused():
-        sessions = active_interactive_sessions()
-        intents = [s.get("current_intent") or s.get("agent_type") for s in sessions][:3]
-        return {"paused": True, "mode": "auto", "active_sessions": len(sessions), "intents": intents}
     return {"paused": False, "mode": ""}
 
 

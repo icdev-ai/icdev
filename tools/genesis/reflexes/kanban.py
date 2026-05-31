@@ -494,10 +494,23 @@ def _create_worktree(task_id: str) -> Optional[str]:
             _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
                     capture_output=True, text=True, timeout=10)
 
+    # Determine the best base commit for the new worktree:
+    # prefer origin/main so tasks build on the latest pushed state even when
+    # the local main branch hasn't been updated (e.g. after a detached-
+    # worktree merge).  Falls back to the local default branch.
+    base_check = _sp.run(
+        ["git", "rev-parse", "--verify", f"origin/{_default_branch()}"],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
+    )
+    if base_check.returncode == 0:
+        base = f"origin/{_default_branch()}"
+    else:
+        base = _default_branch()
+
     try:
-        # Create a new branch from HEAD for this task
+        # Create a new branch from the chosen base for this task
         result = _sp.run(
-            ["git", "worktree", "add", "-b", branch_name, str(worktree_path)],
+            ["git", "worktree", "add", "-b", branch_name, str(worktree_path), base],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -581,16 +594,20 @@ def _create_worktree(task_id: str) -> Optional[str]:
 
 
 def _merge_worktree_to_main(task_id: str) -> bool:
-    """Merge the kanban task branch into the parent branch before cleanup
-    so dependent tasks see each other's commits.
+    """Merge the kanban task branch into the parent branch using a temporary
+    git worktree.  The main repository working tree is NEVER touched — no stash,
+    no checkout, no branch switch.  This lets the scheduler dispatch tasks while
+    a human is actively editing files in the main repo.
 
     Strategy (in order):
-      1. Fast-forward merge (``--ff-only``) — cheapest, no merge commit.
-      2. If ff fails because main diverged, rebase the branch onto main
-         and retry ff.  This handles the common case where the scheduler
-         or another session committed to main while the task was running.
-      3. If the working tree is dirty (uncommitted edits on main), stash
-         before checkout and pop after merge so dirty files never block.
+      1. Create a detached worktree at the current parent-branch commit.
+      2. Inside the detached worktree create a temporary branch and attempt a
+         fast-forward merge (``--ff-only``).
+      3. If ff fails because main diverged, rebase the task branch onto main
+         inside the detached worktree and retry ff.
+      4. Push from the detached worktree using ``HEAD:{branch}`` so the merge
+         reaches origin without needing a local branch named ``main``.
+      5. Always clean up the temporary worktree.
 
     Returns True if merge succeeded (or branch had no commits to merge),
     False on unrecoverable conflict.  On failure the branch is PRESERVED
@@ -599,196 +616,120 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
+    default_branch = _default_branch()
 
     # 1) Is there anything to merge?
     try:
         result = _sp.run(
-            ["git", "log", _default_branch() + ".." + branch_name, "--oneline"],
+            ["git", "log", f"{default_branch}..{branch_name}", "--oneline"],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
             timeout=10,
         )
-        if result.returncode != 0:
-            return True
-        if not result.stdout.strip():
+        if result.returncode != 0 or not result.stdout.strip():
             return True  # Nothing to merge
     except Exception as exc:
         logger.warning("Pre-merge commit check failed for %s: %s", task_id, exc)
         return False
 
-    # 2) Determine current branch on main worktree so we can restore it
-    try:
-        cur_branch_proc = _sp.run(
-            ["git", "symbolic-ref", "--short", "HEAD"],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        cur_branch = (cur_branch_proc.stdout or _default_branch()).strip() or _default_branch()
-    except Exception:
-        cur_branch = _default_branch()
+    # 2) Resolve the parent-branch commit hash for a detached worktree.
+    #    Using a commit hash avoids the "branch already used by worktree" error.
+    main_commit_proc = _sp.run(
+        ["git", "rev-parse", default_branch],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
+    )
+    if main_commit_proc.returncode != 0:
+        logger.warning("Could not resolve %s for merge of %s", default_branch, task_id)
+        return False
+    main_commit = main_commit_proc.stdout.strip()
 
-    # 3) Stash dirty working tree if needed
-    stashed = False
+    # 3) Create a detached worktree for the merge
+    merge_wt = WORKTREE_BASE / f".merge-{task_id}"
     try:
-        dirty = _sp.run(
-            ["git", "status", "--porcelain"],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if dirty.stdout.strip():
-            stash = _sp.run(
-                ["git", "stash", "push", "-m", f"kanban-merge-{task_id}"],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if stash.returncode == 0 and "No local changes" not in stash.stdout:
-                stashed = True
-                logger.info("Stashed dirty working tree for merge of %s", task_id)
-    except Exception:
-        pass  # Best-effort — proceed anyway
-
-    def _restore():
-        """Restore original branch and pop stash."""
-        if cur_branch != _default_branch():
+        if merge_wt.exists():
             _sp.run(
-                ["git", "checkout", cur_branch],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=10,
+                ["git", "worktree", "remove", str(merge_wt), "--force"],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
             )
-        if stashed:
             _sp.run(
-                ["git", "stash", "pop"],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=10,
+                ["git", "worktree", "prune"],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
             )
 
-    def _push_main():
-        """Push merged main to origin. Called only after full validation passed.
-
-        The stop hook no longer pushes kanban branches — this is the ONLY
-        point where validated work reaches origin/main.
-        """
-        try:
-            push = _sp.run(
-                ["git", "push", "origin", _default_branch()],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=30,
+        add = _sp.run(
+            ["git", "worktree", "add", str(merge_wt), main_commit],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+        )
+        if add.returncode != 0:
+            logger.warning(
+                "Temp merge worktree creation failed for %s: %s",
+                task_id, add.stderr[:200],
             )
-            if push.returncode == 0:
-                logger.info("Pushed main to origin after merging %s", task_id)
-            else:
-                logger.warning(
-                    "Push main failed after merging %s: %s",
-                    task_id, push.stderr[:200],
-                )
-        except Exception as exc:
-            logger.warning("Push main error for %s: %s", task_id, exc)
+            return False
 
-    # 4) Checkout default branch and attempt fast-forward merge
-    try:
+        # 4) Create a temporary branch inside the detached worktree so we have
+        #    a named branch to push from.
+        temp_branch = f"temp-merge-{task_id}"
         co = _sp.run(
-            ["git", "checkout", _default_branch()],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=30,
+            ["git", "checkout", "-b", temp_branch],
+            cwd=str(merge_wt), capture_output=True, text=True, timeout=10,
         )
         if co.returncode != 0:
             logger.warning(
-                "Could not checkout main for merge of %s: %s",
-                task_id,
-                co.stderr[:200],
+                "Checkout temp branch failed for %s: %s", task_id, co.stderr[:200]
             )
-            _restore()
             return False
 
+        # 5) Fast-forward merge inside the detached worktree
         merge = _sp.run(
             ["git", "merge", "--ff-only", branch_name],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=30,
+            cwd=str(merge_wt), capture_output=True, text=True, timeout=30,
         )
         if merge.returncode == 0:
             logger.info(
-                "Merged kanban/%s to main (fast-forward, %d commits)",
+                "Merged kanban/%s to %s (fast-forward, %d commits)",
                 task_id,
+                default_branch,
                 len(result.stdout.strip().splitlines()),
             )
-            _push_main()
-            _restore()
+            _push_main(cwd=str(merge_wt))
             return True
 
-        # 5) FF failed — try rebase-then-ff
+        # 6) FF failed — rebase branch onto default_branch inside detached worktree
         logger.info(
-            "FF merge failed for %s, attempting rebase onto %s", task_id, _default_branch()
+            "FF merge failed for %s, attempting rebase onto %s", task_id, default_branch
         )
         rebase = _sp.run(
-            ["git", "rebase", _default_branch(), branch_name],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=60,
+            ["git", "rebase", default_branch, branch_name],
+            cwd=str(merge_wt), capture_output=True, text=True, timeout=60,
         )
         if rebase.returncode != 0:
-            # Rebase conflict — abort and preserve branch
             _sp.run(
                 ["git", "rebase", "--abort"],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=10,
+                cwd=str(merge_wt), capture_output=True, text=True, timeout=10,
             )
             logger.warning(
                 "Rebase conflict for %s: %s — branch preserved",
                 task_id,
                 rebase.stderr[:200],
             )
-            # Rebase leaves us on the branch — go back to default branch
-            _sp.run(
-                ["git", "checkout", _default_branch()],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            _restore()
             return False
 
-        # Rebase succeeded — now on the rebased branch, switch to default branch and ff
+        # Rebase succeeded — re-checkout our temp branch and ff-merge
         _sp.run(
-            ["git", "checkout", _default_branch()],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=10,
+            ["git", "checkout", temp_branch],
+            cwd=str(merge_wt), capture_output=True, text=True, timeout=10,
         )
         merge2 = _sp.run(
             ["git", "merge", "--ff-only", branch_name],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=30,
+            cwd=str(merge_wt), capture_output=True, text=True, timeout=30,
         )
         if merge2.returncode == 0:
             logger.info(
-                "Merged kanban/%s to main (rebase + fast-forward)", task_id
+                "Merged kanban/%s to %s (rebase + fast-forward)", task_id, default_branch
             )
-            _push_main()
-            _restore()
+            _push_main(cwd=str(merge_wt))
             return True
 
         logger.warning(
@@ -796,12 +737,58 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             task_id,
             merge2.stderr[:200],
         )
-        _restore()
         return False
     except Exception as exc:
         logger.warning("Merge to main failed for %s: %s", task_id, exc)
-        _restore()
         return False
+    finally:
+        # Always clean up the temporary merge worktree and the temp branch ref
+        try:
+            if merge_wt.exists():
+                _sp.run(
+                    ["git", "worktree", "remove", str(merge_wt), "--force"],
+                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+                )
+        except Exception as exc:
+            logger.debug("Temp merge worktree cleanup failed for %s: %s", task_id, exc)
+        try:
+            _sp.run(
+                ["git", "branch", "-D", f"temp-merge-{task_id}"],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            )
+        except Exception:
+            pass
+
+
+def _push_main(cwd: str) -> None:
+    """Push the merged commit to origin/{default_branch}.
+
+    Uses ``HEAD:{branch}`` so the push works from any detached/temp branch
+    inside a temporary worktree — the local branch name does not matter.
+
+    The stop hook no longer pushes kanban branches — this is the ONLY
+    point where validated work reaches origin/main.
+    """
+    import subprocess as _sp
+    default_branch = _default_branch()
+    try:
+        push = _sp.run(
+            ["git", "push", "origin", f"HEAD:{default_branch}"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if push.returncode == 0:
+            logger.info("Pushed HEAD:%s to origin after merge", default_branch)
+        else:
+            logger.warning(
+                "Push HEAD:%s to origin failed: %s",
+                default_branch,
+                push.stderr[:200],
+            )
+    except Exception as exc:
+        logger.warning("Push HEAD:%s to origin error: %s", default_branch, exc)
 
 
 # Batch 4 worktree age sweep threshold — worktrees whose owning task is NOT

@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI — AI-ify Canvas: guided wizard #}
+{% block content %}
+<style>
+  .aiify-wrap{max-width:1100px;margin:0 auto;padding:8px 4px 60px;color:#e2e8f0;}
+  .aiify-wrap h1{font-size:22px;margin:0 0 2px;}
+  .aiify-sub{color:#94a3b8;font-size:13px;margin-bottom:18px;}
+  .stepper{display:flex;align-items:center;gap:0;margin:0 0 22px;flex-wrap:wrap;}
+  .step{display:flex;align-items:center;gap:8px;color:#64748b;font-size:13px;}
+  .step .dot{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:#1e293b;border:1px solid #334155;font-size:12px;font-weight:600;}
+  .step.active{color:#e2e8f0;} .step.active .dot{background:#2563eb;border-color:#2563eb;color:#fff;}
+  .step.done .dot{background:#16a34a;border-color:#16a34a;color:#fff;}
+  .step .bar{width:42px;height:2px;background:#334155;margin:0 6px;}
+  .panel{display:none;background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:22px;}
+  .panel.show{display:block;}
+  .fld{margin-bottom:16px;} .fld label{display:block;font-size:13px;color:#cbd5e1;margin-bottom:6px;font-weight:600;}
+  .fld input,.fld select{width:100%;box-sizing:border-box;background:#1e293b;border:1px solid #334155;color:#e2e8f0;
+    border-radius:8px;padding:10px 12px;font-size:14px;}
+  .hint{font-size:12px;color:#64748b;margin-top:5px;}
+  .src-types{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}
+  .src-card{border:1px solid #334155;border-radius:10px;padding:12px;cursor:pointer;background:#1e293b;transition:.15s;}
+  .src-card:hover{border-color:#475569;} .src-card.sel{border-color:#2563eb;box-shadow:0 0 0 1px #2563eb inset;}
+  .src-card b{font-size:13px;} .src-card span{display:block;font-size:11px;color:#94a3b8;margin-top:3px;}
+  .row{display:flex;gap:10px;justify-content:space-between;margin-top:20px;}
+  .btn{background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer;}
+  .btn:hover{border-color:#475569;} .btn.primary{background:#2563eb;border-color:#2563eb;color:#fff;}
+  .btn.primary:disabled{opacity:.5;cursor:not-allowed;}
+  .adv summary{cursor:pointer;color:#94a3b8;font-size:13px;margin:6px 0;}
+  .verdict-banner{border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:14px;border:1px solid;}
+  .v-ai_ready{background:#052e1a;border-color:#16a34a;color:#86efac;}
+  .v-partial{background:#3a2c06;border-color:#d97706;color:#fcd34d;}
+  .v-not_suitable{background:#1e293b;border-color:#475569;color:#cbd5e1;}
+  .opp{border:1px solid #1e293b;border-radius:10px;padding:14px;margin-bottom:10px;background:#0b1120;}
+  .opp-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+  .opp-title{font-weight:600;font-size:14px;}
+  .opp-meta{font-size:12px;color:#94a3b8;margin-top:2px;}
+  .badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid;white-space:nowrap;}
+  .b-ai_ready{background:#052e1a;border-color:#16a34a;color:#86efac;}
+  .b-partial{background:#3a2c06;border-color:#d97706;color:#fcd34d;}
+  .b-not_suitable{background:#1e293b;border-color:#475569;color:#cbd5e1;}
+  .chip{font-size:10px;padding:2px 8px;border-radius:6px;background:#1e293b;border:1px solid #334155;color:#cbd5e1;margin-left:6px;}
+  .chip.innovation{color:#c4b5fd;border-color:#7c3aed;} .chip.automation{color:#fdba74;border-color:#ea580c;}
+  .chip.enhancement{color:#6ee7b7;border-color:#10b981;}
+  .score{font-variant-numeric:tabular-nums;font-weight:700;font-size:15px;}
+  .pc{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;}
+  .pc ul{margin:4px 0 0;padding-left:18px;} .pc li{font-size:12px;margin-bottom:3px;}
+  .pc .pros b{color:#86efac;} .pc .cons b{color:#fca5a5;}
+  .rationale{font-size:12px;color:#94a3b8;margin-top:8px;font-style:italic;}
+  .spin{display:inline-block;width:16px;height:16px;border:2px solid #334155;border-top-color:#2563eb;border-radius:50%;
+    animation:sp 0.8s linear infinite;vertical-align:middle;} @keyframes sp{to{transform:rotate(360deg);}}
+  .prd-box{background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;white-space:pre-wrap;
+    font-family:ui-monospace,monospace;font-size:12px;max-height:320px;overflow:auto;}
+  .err{color:#fca5a5;font-size:13px;margin-top:10px;}
+</style>
+
+<div class="aiify-wrap">
+  <h1>AI-ify <span style="font-size:13px;color:#64748b;">— Codebase AI Opportunity Assessment</span></h1>
+  <div class="aiify-sub">Assess any application (any language) and get a defensible verdict on what to make AI-native — and what to leave alone.</div>
+
+  <div class="stepper" id="stepper">
+    <div class="step active" data-s="1"><span class="dot">1</span>Source</div><span class="bar"></span>
+    <div class="step" data-s="2"><span class="dot">2</span>Options</div><span class="bar"></span>
+    <div class="step" data-s="3"><span class="dot">3</span>Scan</div><span class="bar"></span>
+    <div class="step" data-s="4"><span class="dot">4</span>Results</div><span class="bar"></span>
+    <div class="step" data-s="5"><span class="dot">5</span>PRD &amp; Diagram</div>
+  </div>
+
+  <div class="panel show" id="p1">
+    <div class="fld"><label>Choose source type</label>
+      <div class="src-types">
+        <div class="src-card sel" data-type="local_path"><b>Local path</b><span>C:\code\app or /opt/app</span></div>
+        <div class="src-card" data-type="unc"><b>UNC share</b><span>\\server\share\project</span></div>
+        <div class="src-card" data-type="git_url"><b>Git URL</b><span>https://…/repo.git · git+ssh://…</span></div>
+        <div class="src-card" data-type="uri"><b>URI</b><span>file:// · s3://</span></div>
+      </div>
+    </div>
+    <div class="fld"><label for="inputRef">Source location</label>
+      <input id="inputRef" placeholder="C:\AI\ICDev\tools" autocomplete="off"/>
+      <div class="hint" id="srcHint">Absolute path to the application directory or single file.</div>
+    </div>
+    <div class="row"><span></span><button class="btn primary" onclick="go(2)">Next →</button></div>
+  </div>
+
+  <div class="panel" id="p2">
+    <div class="fld"><label for="ilLevel">Impact level (classification ceiling)</label>
+      <select id="ilLevel">
+        <option value="il4">IL4 — CUI (FedRAMP Moderate)</option>
+        <option value="il5">IL5 — CUI/ECI (higher controls)</option>
+        <option value="il6">IL6 — SECRET (air-gapped)</option>
+      </select>
+      <div class="hint">Raises the compliance bar used when scoring feasibility and risk.</div>
+    </div>
+    <details class="adv"><summary>Advanced</summary>
+      <div class="fld" style="margin-top:10px;"><label><input type="checkbox" id="airgap" style="width:auto;margin-right:6px;">Air-gapped (no cloud models)</label>
+        <div class="hint">Marks opportunities unfeasible unless a local model is available.</div>
+      </div>
+    </details>
+    <div class="row"><button class="btn" onclick="go(1)">← Back</button><button class="btn primary" onclick="go(3)">Next →</button></div>
+  </div>
+
+  <div class="panel" id="p3">
+    <div style="text-align:center;padding:18px 0;">
+      <div id="scanIdle">
+        <p style="color:#cbd5e1;">Ready to scan <b id="recap"></b></p>
+        <button class="btn primary" id="runBtn" onclick="runScan()">Run assessment</button>
+      </div>
+      <div id="scanBusy" style="display:none;"><span class="spin"></span> <span style="color:#cbd5e1;">Scanning &amp; scoring… this may take a moment.</span></div>
+      <div class="err" id="scanErr"></div>
+    </div>
+    <div class="row"><button class="btn" onclick="go(2)">← Back</button><span></span></div>
+  </div>
+
+  <div class="panel" id="p4">
+    <div id="overallBanner"></div>
+    <div id="oppList"></div>
+    <div class="row"><button class="btn" onclick="go(3)">← Back</button><button class="btn primary" onclick="go(5);genPrd();">Generate PRD &amp; Diagram →</button></div>
+  </div>
+
+  <div class="panel" id="p5">
+    <h3 style="margin-top:0;">Target Architecture</h3>
+    <div id="diagram" style="background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;overflow:auto;">
+      <span class="spin"></span> building…
+    </div>
+    <h3>Product Requirements Document</h3>
+    <div class="prd-box" id="prdBox"><span class="spin"></span></div>
+    <div class="row"><button class="btn" onclick="go(4)">← Back</button>
+      <button class="btn primary" onclick="sendKanban()">Send phase to Kanban</button></div>
+    <div class="hint" id="kanbanMsg" style="text-align:right;"></div>
+  </div>
+
+  {% include "includes/iqe_query_widget.html" ignore missing %}
+</div>
+
+<script src="/static/vendor/mermaid/mermaid.min.js"></script>
+<script>
+(function(){
+  if(window.mermaid){ try{ mermaid.initialize({startOnLoad:false, theme:'dark'}); }catch(e){} }
+  var state={type:'local_path', scanId:null};
+  var BASE='/ai-ify';
+
+  document.querySelectorAll('.src-card').forEach(function(c){
+    c.addEventListener('click', function(){
+      document.querySelectorAll('.src-card').forEach(x=>x.classList.remove('sel'));
+      c.classList.add('sel'); state.type=c.dataset.type;
+      var h={local_path:'Absolute path to the application directory or single file.',
+        unc:'Windows network share, e.g. \\\\server\\share\\project.',
+        git_url:'Public/SSH git repo — shallow-cloned for analysis.',
+        uri:'file:// resolves to a path; s3:// downloads the tree (needs boto3).'};
+      document.getElementById('srcHint').textContent=h[c.dataset.type]||'';
+    });
+  });
+
+  window.go=function(n){
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('show'));
+    document.getElementById('p'+n).classList.add('show');
+    document.querySelectorAll('.step').forEach(function(s){
+      var sn=+s.dataset.s; s.classList.toggle('active',sn===n); s.classList.toggle('done',sn<n);
+    });
+    if(n===3){document.getElementById('recap').textContent=(document.getElementById('inputRef').value||'(no source)');}
+  };
+
+  function apiType(){ return state.type==='unc'||state.type==='uri' ? 'local_path' : state.type; }
+
+  window.runScan=function(){
+    var ref=document.getElementById('inputRef').value.trim();
+    if(!ref){document.getElementById('scanErr').textContent='Enter a source location first.';go(1);return;}
+    document.getElementById('scanIdle').style.display='none';
+    document.getElementById('scanBusy').style.display='block';
+    document.getElementById('scanErr').textContent='';
+    fetch(BASE+'/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({input_type:apiType(),input_ref:ref,il_level:document.getElementById('ilLevel').value})})
+    .then(r=>r.json().then(j=>({ok:r.ok,j:j})))
+    .then(function(res){
+      document.getElementById('scanBusy').style.display='none';
+      document.getElementById('scanIdle').style.display='block';
+      if(!res.ok){document.getElementById('scanErr').textContent=res.j.error||'Scan failed.';return;}
+      state.scanId=res.j.scan_id; loadResults(res.j.scan_id); go(4);
+    }).catch(function(e){
+      document.getElementById('scanBusy').style.display='none';
+      document.getElementById('scanIdle').style.display='block';
+      document.getElementById('scanErr').textContent='Error: '+e;
+    });
+  };
+
+  function vClass(r){return 'v-'+(r||'not_suitable');}
+  function bClass(r){return 'b-'+(r||'not_suitable');}
+  function jparse(x){ if(!x)return []; if(Array.isArray(x))return x; try{return JSON.parse(x);}catch(e){return [];} }
+
+  function loadResults(id){
+    var list=document.getElementById('oppList'); list.innerHTML='<span class="spin"></span> loading…';
+    fetch(BASE+'/api/scan/'+id).then(r=>r.json()).then(function(d){
+      var s=d.scan||{}, opps=d.opportunities||[];
+      var ob=document.getElementById('overallBanner');
+      var ov=s.overall_ai_readiness||'not_suitable';
+      ob.className='verdict-banner '+vClass(ov);
+      ob.innerHTML='<b>'+(s.overall_verdict||'Not suitable for AI')+'</b><br>'+
+        (s.overall_rationale||'')+'<div style="margin-top:6px;opacity:.8;font-size:12px;">'+
+        opps.length+' opportunit'+(opps.length===1?'y':'ies')+' assessed · '+(s.total_files||0)+' files · '+(s.total_loc||0)+' LOC</div>';
+      if(!opps.length){list.innerHTML='<p style="color:#94a3b8;">No AI-augmentable patterns detected.</p>';return;}
+      list.innerHTML=opps.map(function(o){
+        var pros=jparse(o.pros), cons=jparse(o.cons);
+        var sc=(o.composite_score!=null)?Math.round(o.composite_score*100)+'%':'—';
+        return '<div class="opp"><div class="opp-head"><div>'+
+          '<div class="opp-title">'+(o.module_path||'?')+' <span style="color:#64748b">·</span> '+(o.function_name||'')+
+          '<span class="chip '+(o.category||'')+'">'+(o.category||'')+'</span></div>'+
+          '<div class="opp-meta">'+(o.pattern_type||'')+' → '+(o.ai_paradigm||'')+' · '+(o.il_recommended_model||'')+'</div></div>'+
+          '<div style="text-align:right"><div class="badge '+bClass(o.ai_readiness)+'">'+(o.verdict||'')+'</div>'+
+          '<div class="score" style="margin-top:6px">'+sc+'</div></div></div>'+
+          ((pros.length||cons.length)?'<div class="pc"><div class="pros"><b>Pros</b><ul>'+
+            pros.map(p=>'<li>'+p+'</li>').join('')+'</ul></div><div class="cons"><b>Cons</b><ul>'+
+            cons.map(c=>'<li>'+c+'</li>').join('')+'</ul></div></div>':'')+
+          (o.rationale?'<div class="rationale">'+o.rationale+'</div>':'')+'</div>';
+      }).join('');
+    }).catch(e=>{list.innerHTML='<div class="err">Failed to load results: '+e+'</div>';});
+  }
+
+  window.genPrd=function(){
+    if(!state.scanId)return;
+    var box=document.getElementById('prdBox'), dia=document.getElementById('diagram');
+    box.innerHTML='<span class="spin"></span>'; dia.innerHTML='<span class="spin"></span> building…';
+    fetch(BASE+'/api/generate-prd',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({scan_id:state.scanId,phase_id:'P1'})})
+    .then(r=>r.json()).then(function(d){
+      var md=d.prd||d.error||'(no PRD returned)';
+      var m=md.match(/```mermaid\s*([\s\S]*?)```/);
+      if(m && window.mermaid){
+        dia.innerHTML='<div class="mermaid">'+m[1].trim()+'</div>';
+        try{ mermaid.run({nodes:dia.querySelectorAll('.mermaid')}); }catch(e){ dia.textContent=m[1]; }
+      } else { dia.textContent = m? m[1] : 'No diagram available.'; }
+      box.textContent=md;
+    }).catch(e=>{box.innerHTML='<div class="err">PRD failed: '+e+'</div>';});
+  };
+
+  window.sendKanban=function(){
+    if(!state.scanId)return;
+    var msg=document.getElementById('kanbanMsg'); msg.textContent='sending…';
+    fetch(BASE+'/api/send-to-kanban',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({scan_id:state.scanId})})
+    .then(r=>r.json()).then(d=>{msg.textContent=d.error?('Error: '+d.error):('Sent ✓ '+(d.created||d.kanban_promoted||'')+' task(s)');})
+    .catch(e=>{msg.textContent='Error: '+e;});
+  };
+})();
+</script>
+{% endblock %}

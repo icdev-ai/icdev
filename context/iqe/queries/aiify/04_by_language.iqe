@@ -1,0 +1,3 @@
+foreach o in aac.opportunities
+  join sc in aac.scores on sc.opportunity_id == o.opportunity_id
+  select o.language, o.pattern_type, o.ai_paradigm, sc.composite_score, o.module_path
