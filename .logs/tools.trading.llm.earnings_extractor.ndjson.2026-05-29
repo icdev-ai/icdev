@@ -1,2 +1,0 @@
-{"ts": "2026-05-30T03:24:11.898925+00:00", "level": "INFO", "component": "tools.trading.llm.earnings_extractor", "message": "earnings_extractor got non-JSON response, falling back to heuristic", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-30T03:38:37.526641+00:00", "level": "INFO", "component": "tools.trading.llm.earnings_extractor", "message": "earnings_extractor got non-JSON response, falling back to heuristic", "trace_id": null, "session_id": null, "extra": {}}
