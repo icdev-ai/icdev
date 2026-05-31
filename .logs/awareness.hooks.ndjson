@@ -1,3 +1,0 @@
-{"ts": "2026-05-29T04:00:01.277407+00:00", "level": "INFO", "component": "awareness.hooks", "message": "awareness hook registered (TOOL_EXECUTE_AFTER)", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-29T04:00:05.945992+00:00", "level": "INFO", "component": "awareness.hooks", "message": "awareness hook registered (TOOL_EXECUTE_AFTER)", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-29T04:00:09.550532+00:00", "level": "INFO", "component": "awareness.hooks", "message": "awareness hook registered (TOOL_EXECUTE_AFTER)", "trace_id": null, "session_id": null, "extra": {}}
