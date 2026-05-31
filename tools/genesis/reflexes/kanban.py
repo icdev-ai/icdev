@@ -182,9 +182,10 @@ TOKEN_EXHAUSTION_PATTERNS = [
     r"max.*turns.*reached",
     r"conversation.*limit",
     r"please\s*try\s*again\s*(?:later|in\s*\d+)",
-    r"reset(?:s)?\s*(?:at|in)?\s*\d+\s*(?:am|pm)",
+    r"reset(?:s)?\s*(?:at|in)?\s*\d{1,2}:\d{2}\s*(?:am|pm)",
     r"hit\s*your\s*limit",
     r"you'?ve\s*hit\s*your\s*limit",
+    r"session\s+limit",
 ]
 _TOKEN_RE = re.compile("|".join(TOKEN_EXHAUSTION_PATTERNS), re.IGNORECASE)
 
@@ -208,8 +209,8 @@ def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optiona
     if _TOKEN_RE.search(tail):
         # Try to extract a reset time hint
         reset_match = re.search(
-            r"(?:reset|try again|available)\s*(?:at|in)\s*"
-            r"(\d[\d:hm \-]+)",
+            r"(?:reset|resets|try again|available)\s*(?:at|in)?\s*"
+            r"(\d[\d:hmap. \-]+)",
             tail,
             re.IGNORECASE,
         )
