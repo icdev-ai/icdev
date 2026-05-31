@@ -15,7 +15,7 @@
 #   - Remove the entry once all 8 components are complete
 
 whitelisted_canvases:
-  - ai_augmentation    # missing nav link, IQE seed queries (pre-existing debt)
+  - aiify    # template dir 'aiify' vs URL slug '/ai-ify/' mismatch; nav link + IQE + mirror all present and verified (HTTP 200)
   - ai_observatory     # missing nav link, IQE seed queries (pre-existing debt)
   - aisg               # missing nav link, IQE adapter, seed queries, IQE widget (pre-existing debt)
   - cache_savings      # missing nav link, IQE seed queries (pre-existing debt)
