@@ -1,1 +1,0 @@
-{"ts": "2026-05-30T13:33:01.900572+00:00", "level": "WARNING", "component": "icdev.data_canvas", "message": "Data Canvas DB init failed: [Errno 22] Invalid argument", "trace_id": null, "session_id": null, "extra": {}}
