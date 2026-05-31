@@ -1,4 +1,0 @@
-{"ts": "2026-05-30T17:34:09.120453+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 163 (groups_canvas_access)...", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-30T17:34:09.121099+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 166 (tenant_id_not_null)...", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-30T17:34:09.121309+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 167 (canvas_ai_decisions)...", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-30T17:34:09.121612+00:00", "level": "INFO", "component": "icdev.db.migration", "message": "Applying migration 169 (trace_id_columns)...", "trace_id": null, "session_id": null, "extra": {}}
