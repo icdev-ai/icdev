@@ -11,13 +11,12 @@ SaFe alignment: "Inspect & Adapt" ceremony → automated post-task closure ritua
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from tools.logging.icdev_logger import get_logger
 

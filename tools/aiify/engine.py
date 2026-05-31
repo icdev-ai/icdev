@@ -34,7 +34,6 @@ import yaml
 from tools.aiify.agent_readiness import run_readiness_check
 from tools.aiify.db.init_db import get_connection, init_db
 from tools.aiify.opportunity_scorer import (
-    score_opportunity,
     score_and_assess,
     roll_up_scan_verdict,
 )
