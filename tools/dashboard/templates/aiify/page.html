@@ -49,8 +49,8 @@
   .rationale{font-size:12px;color:#94a3b8;margin-top:8px;font-style:italic;}
   .spin{display:inline-block;width:16px;height:16px;border:2px solid #334155;border-top-color:#2563eb;border-radius:50%;
     animation:sp 0.8s linear infinite;vertical-align:middle;} @keyframes sp{to{transform:rotate(360deg);}}
-  .prd-box{background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;white-space:pre-wrap;
-    font-family:ui-monospace,monospace;font-size:12px;max-height:320px;overflow:auto;}
+  .prd-box{background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;white-space:pre;
+    font-family:ui-monospace,monospace;font-size:12px;max-height:540px;overflow:auto;}
   .err{color:#fca5a5;font-size:13px;margin-top:10px;}
 </style>
 
@@ -113,13 +113,22 @@
 
   <div class="panel" id="p4">
     <div id="overallBanner"></div>
+    <div id="summaryActions" style="display:none;margin:12px 0 16px;"></div>
     <div id="oppList"></div>
     <div class="row"><button class="btn" onclick="go(3)">← Back</button><button class="btn primary" onclick="go(5);genPrd();">Generate PRD &amp; Diagram →</button></div>
   </div>
 
   <div class="panel" id="p5">
-    <h3 style="margin-top:0;">Target Architecture</h3>
-    <div id="diagram" style="background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;overflow:auto;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+      <h3 style="margin:0;">Target Architecture</h3>
+      <select id="phaseSelect" class="btn" style="padding:6px 10px;font-size:12px;cursor:pointer;"
+        onchange="state.phaseId=this.value;genPrd();">
+        <option value="P1">Phase 1 — Quick Wins</option>
+        <option value="P2">Phase 2 — Core Modernization</option>
+        <option value="P3">Phase 3 — Long-Horizon</option>
+      </select>
+    </div>
+    <div id="diagram" style="background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;overflow:auto;min-height:420px;">
       <span class="spin"></span> building…
     </div>
     <h3>Product Requirements Document</h3>
@@ -136,7 +145,7 @@
 <script>
 (function(){
   if(window.mermaid){ try{ mermaid.initialize({startOnLoad:false, theme:'dark'}); }catch(e){} }
-  var state={type:'local_path', scanId:null};
+  var state={type:'local_path', scanId:null, roadmapId:null, phaseId:'P1'};
   var BASE='/ai-ify';
 
   document.querySelectorAll('.src-card').forEach(function(c){
@@ -191,13 +200,41 @@
     var list=document.getElementById('oppList'); list.innerHTML='<span class="spin"></span> loading…';
     fetch(BASE+'/api/scan/'+id).then(r=>r.json()).then(function(d){
       var s=d.scan||{}, opps=d.opportunities||[];
+      var roadmap=d.roadmap||{};
+      state.roadmapId=roadmap.roadmap_id||null;
+
+      // Auto-pick the first phase that actually has opportunities
+      var phases=roadmap.phases||[];
+      var firstNonEmpty=phases.find(function(ph){ return (ph.count||ph.opportunities&&ph.opportunities.length||0)>0; });
+      state.phaseId=firstNonEmpty?(firstNonEmpty.phase_id||'P1'):'P1';
+      var ps=document.getElementById('phaseSelect');
+      if(ps){ ps.value=state.phaseId; }
+
       var ob=document.getElementById('overallBanner');
       var ov=s.overall_ai_readiness||'not_suitable';
       ob.className='verdict-banner '+vClass(ov);
       ob.innerHTML='<b>'+(s.overall_verdict||'Not suitable for AI')+'</b><br>'+
         (s.overall_rationale||'')+'<div style="margin-top:6px;opacity:.8;font-size:12px;">'+
         opps.length+' opportunit'+(opps.length===1?'y':'ies')+' assessed · '+(s.total_files||0)+' files · '+(s.total_loc||0)+' LOC</div>';
-      if(!opps.length){list.innerHTML='<p style="color:#94a3b8;">No AI-augmentable patterns detected.</p>';return;}
+
+      var sa=document.getElementById('summaryActions');
+      if(!opps.length){
+        list.innerHTML='<p style="color:#94a3b8;">No AI-augmentable patterns detected.</p>';
+        sa.style.display='none';
+        return;
+      }
+      var ready=0, partial=0, notSuit=0;
+      opps.forEach(function(o){ if(o.ai_readiness==='ai_ready') ready++; else if(o.ai_readiness==='partial') partial++; else notSuit++; });
+      sa.innerHTML='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'+
+        '<div style="font-size:13px;color:#94a3b8;">'+
+        '<b style="color:#e2e8f0;">'+opps.length+'</b> opportunities · '+
+        '<b style="color:#86efac;">'+ready+'</b> AI-ready · '+
+        '<b style="color:#fcd34d;">'+partial+'</b> partial · '+
+        '<b style="color:#cbd5e1;">'+notSuit+'</b> not suitable'+
+        '</div>'+
+        '<button class="btn primary" style="margin-left:auto;" onclick="go(5);genPrd();">Generate PRD &amp; Diagram →</button></div>';
+      sa.style.display='block';
+
       list.innerHTML=opps.map(function(o){
         var pros=jparse(o.pros), cons=jparse(o.cons);
         var sc=(o.composite_score!=null)?Math.round(o.composite_score*100)+'%':'—';
@@ -216,11 +253,17 @@
   }
 
   window.genPrd=function(){
-    if(!state.scanId)return;
+    var rid=state.roadmapId;
+    if(!rid){
+      var box=document.getElementById('prdBox'), dia=document.getElementById('diagram');
+      box.innerHTML='<div class="err">No roadmap available for this scan. Run a fresh scan first.</div>';
+      dia.textContent='No roadmap available.';
+      return;
+    }
     var box=document.getElementById('prdBox'), dia=document.getElementById('diagram');
     box.innerHTML='<span class="spin"></span>'; dia.innerHTML='<span class="spin"></span> building…';
     fetch(BASE+'/api/generate-prd',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({scan_id:state.scanId,phase_id:'P1'})})
+      body:JSON.stringify({roadmap_id:rid,phase_id:state.phaseId})})
     .then(r=>r.json()).then(function(d){
       var md=d.prd||d.error||'(no PRD returned)';
       var m=md.match(/```mermaid\s*([\s\S]*?)```/);
@@ -233,10 +276,11 @@
   };
 
   window.sendKanban=function(){
-    if(!state.scanId)return;
+    var rid=state.roadmapId;
+    if(!rid){document.getElementById('kanbanMsg').textContent='No roadmap available.';return;}
     var msg=document.getElementById('kanbanMsg'); msg.textContent='sending…';
     fetch(BASE+'/api/send-to-kanban',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({scan_id:state.scanId})})
+      body:JSON.stringify({roadmap_id:rid,phase_id:'all'})})
     .then(r=>r.json()).then(d=>{msg.textContent=d.error?('Error: '+d.error):('Sent ✓ '+(d.created||d.kanban_promoted||'')+' task(s)');})
     .catch(e=>{msg.textContent='Error: '+e;});
   };

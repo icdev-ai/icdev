@@ -624,52 +624,52 @@ def derive_components(pattern: dict, scan_context: dict) -> dict:
 
 _PATTERN_PROS_CONS: dict[str, tuple[list[str], list[str]]] = {
     "nested_conditionals": (
-        ["Replaces brittle branching with a model that generalizes from examples",
-         "Cuts cognitive complexity and long-term maintenance cost"],
-        ["Needs labeled examples of the decision outcomes",
-         "Model decisions are less transparent than explicit branches"],
+        ["Replaces an `if/else` ladder with a trained intent classifier that generalizes to unseen branches",
+         "Reduces cyclomatic complexity and makes future rule changes data-driven instead of code changes"],
+        ["Requires curated examples of each branch outcome for initial training",
+         "Model inference is less debuggable than explicit conditional logic — needs tracing hooks"],
     ),
     "regex_user_input": (
-        ["NLP extractor handles fuzzy/free-form input regex cannot",
-         "More robust to input drift and edge cases"],
-        ["Overkill for strict, fixed-format validation",
-         "Adds inference latency on the input path"],
+        ["Intent classifier captures synonyms, typos, and multi-turn context that a regex cannot express",
+         "Eliminates regex maintenance churn when input vocabularies change"],
+        ["If the input is machine-generated with a strict schema, regex is faster and deterministic",
+         "Adds ~50–200 ms inference latency per request depending on model size"],
     ),
     "string_template_rendering": (
-        ["LLM generation produces richer, context-aware output",
-         "Reduces template sprawl and manual copy maintenance"],
-        ["Requires output validation against a structured schema",
-         "Non-deterministic output needs guardrails"],
+        ["Structured LLM output replaces static Jinja/string templates with context-aware, audience-tailored content",
+         "Removes template sprawl and copy-debt across language variants"],
+        ["Output must be validated against a JSON schema or Pydantic model before use",
+         "Non-deterministic generation requires idempotency guards and prompt-version pinning"],
     ),
     "scheduled_cron": (
-        ["Agentic trigger reacts to events instead of fixed schedules",
-         "Eliminates wasteful polling and missed-window gaps"],
-        ["Autonomous triggers need clear guardrails and audit",
-         "Harder to reason about than a fixed timetable"],
+        ["Event-driven trigger fires on actual state changes instead of polling, cutting wasted compute",
+         "Removes missed-window risk when jobs overrun their cron slot"],
+        ["Autonomous triggers require explicit guardrails (rate limits, circuit breakers) and full audit logging",
+         "Harder to reason about than a fixed timetable when debugging missed executions"],
     ),
     "hardcoded_threshold": (
-        ["Anomaly detection adapts thresholds as data distributions shift",
-         "Catches drift that static cutoffs miss"],
-        ["Needs historical data to learn normal behavior",
-         "False-positive tuning required before trust"],
+        ["Statistical anomaly detector learns normal distributions and adapts thresholds as traffic patterns shift",
+         "Catches gradual drift that static cutoffs miss — e.g., seasonal load changes"],
+        ["Requires a representative history window (typically 7–30 days) to establish a baseline",
+         "False-positive rate needs supervised tuning before production trust"],
     ),
     "db_render_notify_chain": (
-        ["LLM synthesis collapses a brittle multi-step pipeline",
-         "Produces clearer, audience-aware notifications"],
-        ["Side-effecting pipeline is harder to roll back",
-         "Requires human-in-the-loop review for outbound content"],
+        ["Single LLM synthesis step replaces a brittle multi-step pipeline (query → render → notify) with coherent, audience-aware messaging",
+         "Reduces intermediate failure points and data-shape coupling"],
+        ["Side-effecting pipeline (sends outbound content) is harder to roll back than a pure read",
+         "Requires human-in-the-loop review for outbound notifications until trust is established"],
     ),
     "keyword_list_search": (
-        ["Embedding search finds semantically related matches keywords miss",
-         "Resilient to synonyms, typos, and phrasing changes"],
-        ["Requires an embedding index and refresh strategy",
-         "Adds vector store as an operational dependency"],
+        ["Embedding-based semantic search finds conceptually related matches even when keywords differ or are misspelled",
+         "Resilient to synonym substitution and phrasing changes without reindexing rules"],
+        ["Requires a vector store (e.g., pgvector, FAISS) and an embedding refresh strategy",
+         "Adds an operational dependency: embedding model updates can shift vector space and require re-indexing"],
     ),
     "large_rule_table": (
-        ["Decision agent learns the rule surface and handles novel cases",
-         "Replaces an unmaintainable hand-tuned table"],
-        ["Highest integration and data effort of the paradigms",
-         "Decisions need explainability for compliance"],
+        ["Decision agent learns the rule surface and handles edge cases not explicitly encoded in the table",
+         "Replaces unmaintainable hand-tuned tables that grow quadratically with feature count"],
+        ["Highest integration effort of the paradigms — needs feature engineering, training data, and evaluation harness",
+         "Explainability is mandatory for compliance; must ship with SHAP or attention-based rationale extraction"],
     ),
 }
 
@@ -681,17 +681,17 @@ def generate_pros_cons(score_result: dict, components: dict, pattern: dict) -> d
     pros, cons = list(static[0]), list(static[1])
     comp = score_result["score_detail"]["components"]
     if score_result.get("value_score", 0) >= 0.65:
-        pros.append("High business value — frequently exercised, high-effort logic")
+        pros.append("Strong automation candidate — frequently executed path with high manual effort")
     if comp.get("data_avail", 0) >= 0.70:
-        pros.append("Good data availability to train or ground the AI component")
+        pros.append("Existing logs or events provide sufficient signal to train or ground the model")
     if comp.get("reversibility", 0) >= 0.75:
-        pros.append("Easily reversible — low rollback risk for a pilot")
+        pros.append("Feature-flag friendly — can be shadowed or rolled back without schema migration")
     if comp.get("integration_complexity_norm", 0) >= 0.60:
-        cons.append("Non-trivial integration effort to wire the AI component in")
+        cons.append("Integration touches multiple subsystems; plan a staged rollout with contract tests")
     if comp.get("compliance_impact_inv", 1) < 0.50:
-        cons.append("Elevated compliance burden requires review and marking controls")
+        cons.append("Requires classification review, marking controls, and audit logging before production")
     if comp.get("dep_complexity_norm", 0) >= 0.55:
-        cons.append("Adds operational complexity (model serving, monitoring)")
+        cons.append("Adds operational surface area: model serving, drift monitoring, and prompt/version registries")
     return {"pros": pros, "cons": cons}
 
 

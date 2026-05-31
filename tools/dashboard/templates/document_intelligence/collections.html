@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Collections — Document Intelligence — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">🗂️ Collections</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Organize documents into collections · manage team access · track freshness</p>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Back to DIC</a>
+    <button onclick="document.getElementById('new-collection-modal').style.display='flex'"
+      style="background:#1e3a6e;color:#7ab3f0;padding:8px 16px;border:1px solid #2a4a8e;border-radius:5px;cursor:pointer;font-size:13px;">
+      + New Collection
+    </button>
+  </div>
+</div>
+
+<!-- Collections Table -->
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;overflow:hidden;margin-bottom:24px;">
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead>
+      <tr style="background:#08112a;color:#6090b0;">
+        <th style="padding:8px 12px;text-align:left;">Name</th>
+        <th style="padding:8px 12px;text-align:left;">Docs</th>
+        <th style="padding:8px 12px;text-align:left;">Classification</th>
+        <th style="padding:8px 12px;text-align:left;">Owner</th>
+        <th style="padding:8px 12px;text-align:left;">Retention</th>
+        <th style="padding:8px 12px;text-align:left;">Team</th>
+        <th style="padding:8px 12px;text-align:left;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in collections %}
+      <tr style="border-top:1px solid #0d1e30;color:#a8c8e0;" onclick="showTeam('{{ c.collection_id }}', '{{ c.name }}')" style="cursor:pointer;">
+        <td style="padding:7px 12px;font-weight:600;cursor:pointer;" onclick="showTeam('{{ c.collection_id }}', '{{ c.name }}')">{{ c.name }}</td>
+        <td style="padding:7px 12px;">{{ c.doc_count }}</td>
+        <td style="padding:7px 12px;"><span style="background:#1e293b;color:#e94560;padding:1px 6px;border-radius:3px;font-size:10px;">{{ c.classification }}</span></td>
+        <td style="padding:7px 12px;color:#7a8cb0;">{{ c.owner_id or '—' }}</td>
+        <td style="padding:7px 12px;color:#7a8cb0;">{{ c.retention_days }}d</td>
+        <td style="padding:7px 12px;color:#7a8cb0;">{{ c.team_size }} member(s)</td>
+        <td style="padding:7px 12px;">
+          <a href="/document-intelligence/search?collection={{ c.collection_id }}" style="color:#4f8ef7;font-size:11px;text-decoration:none;margin-right:8px;">Search</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" style="padding:20px;text-align:center;color:#3a6080;">No collections yet — create one or upload documents to get started.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Team Panel (slides in) -->
+<div id="team-panel" style="display:none;background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:20px;margin-bottom:24px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <h3 id="team-panel-title" style="margin:0;color:#9bb8d8;font-size:14px;text-transform:uppercase;letter-spacing:.6px;">Team Access</h3>
+    <button onclick="document.getElementById('team-panel').style.display='none'"
+      style="background:none;border:none;color:#5a7aa0;cursor:pointer;font-size:18px;">✕</button>
+  </div>
+  <div id="team-members-list" style="margin-bottom:16px;"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <input type="text" id="add-user-input" placeholder="User ID"
+      style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px 10px;border-radius:5px;font-size:12px;width:160px;">
+    <select id="add-role-select"
+      style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px 10px;border-radius:5px;font-size:12px;">
+      <option value="viewer">viewer</option>
+      <option value="editor">editor</option>
+      <option value="reviewer">reviewer</option>
+      <option value="admin">admin</option>
+    </select>
+    <button onclick="addTeamMember()"
+      style="background:#0f3460;color:#7ab3f0;padding:7px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">
+      Add Member
+    </button>
+  </div>
+</div>
+
+<!-- New Collection Modal -->
+<div id="new-collection-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:28px;min-width:380px;max-width:480px;">
+    <h3 style="margin:0 0 18px;color:#9bb8d8;font-size:15px;">New Collection</h3>
+    <div style="margin-bottom:12px;">
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Name *</label>
+      <input type="text" id="new-col-name" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:5px;font-size:13px;">
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Description</label>
+      <input type="text" id="new-col-desc" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:5px;font-size:13px;">
+    </div>
+    <div style="margin-bottom:16px;">
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Classification</label>
+      <select id="new-col-cls" style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:5px;font-size:13px;">
+        <option value="CUI">CUI</option>
+        <option value="UNCLASSIFIED">UNCLASSIFIED</option>
+        <option value="SECRET">SECRET</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="document.getElementById('new-collection-modal').style.display='none'"
+        style="background:#1e293b;color:#94a3b8;padding:8px 18px;border:1px solid #2a3a50;border-radius:5px;cursor:pointer;font-size:13px;">Cancel</button>
+      <button onclick="createCollection()"
+        style="background:#0f3460;color:#7ab3f0;padding:8px 18px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">Create</button>
+    </div>
+    <div id="new-col-status" style="margin-top:10px;font-size:12px;color:#4ade80;display:none;"></div>
+  </div>
+</div>
+
+<script>
+var _activeCollectionId = null;
+
+function showTeam(colId, colName) {
+  _activeCollectionId = colId;
+  document.getElementById('team-panel-title').textContent = 'Team: ' + colName;
+  document.getElementById('team-panel').style.display = 'block';
+  loadTeamMembers(colId);
+}
+
+function loadTeamMembers(colId) {
+  var list = document.getElementById('team-members-list');
+  list.innerHTML = '<span style="color:#5a7aa0;font-size:12px;">Loading…</span>';
+  fetch('/document-intelligence/api/collections/' + colId + '/team')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.members || !data.members.length) {
+        list.innerHTML = '<p style="color:#5a7aa0;font-size:12px;">No team members yet.</p>';
+        return;
+      }
+      list.innerHTML = data.members.map(function(m) {
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #0d1e30;">' +
+          '<span style="color:#a8c8e0;font-size:12px;">' + m.user_id + '</span>' +
+          '<span style="background:#1e293b;color:#94a3b8;padding:2px 8px;border-radius:3px;font-size:10px;">' + m.role + '</span>' +
+          '</div>';
+      }).join('');
+    })
+    .catch(function() { list.innerHTML = '<p style="color:#f87171;font-size:12px;">Failed to load members.</p>'; });
+}
+
+function addTeamMember() {
+  if (!_activeCollectionId) return;
+  var userId = document.getElementById('add-user-input').value.trim();
+  var role = document.getElementById('add-role-select').value;
+  if (!userId) return;
+  fetch('/document-intelligence/api/collections/' + _activeCollectionId + '/team', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: userId, role: role})
+  }).then(function(r) { return r.json(); })
+    .then(function() { document.getElementById('add-user-input').value = ''; loadTeamMembers(_activeCollectionId); })
+    .catch(function() { alert('Failed to add member.'); });
+}
+
+function createCollection() {
+  var name = document.getElementById('new-col-name').value.trim();
+  if (!name) { alert('Name is required.'); return; }
+  fetch('/document-intelligence/api/collections', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name: name,
+      description: document.getElementById('new-col-desc').value.trim(),
+      classification: document.getElementById('new-col-cls').value
+    })
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert(data.error); return; }
+      var s = document.getElementById('new-col-status');
+      s.style.display = 'block';
+      s.textContent = 'Collection "' + name + '" created (ID: ' + data.collection_id + ')';
+      setTimeout(function() { location.reload(); }, 1200);
+    })
+    .catch(function() { alert('Failed to create collection.'); });
+}
+</script>
+
+{% set iqe_canvas = "dic" %}
+{% set iqe_api_route = "/document-intelligence/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Collections" %}
+{% set iqe_examples = [
+  {"label": "All collections", "query": "foreach c in dic.collections select c.name, c.collection_id"},
+  {"label": "Documents in collection", "query": "foreach d in dic.documents where d.collection_id == \"default\" select d.title, d.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

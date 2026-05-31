@@ -1,0 +1,112 @@
+# CUI // SP-CTI
+"""DIC database schema initialization.
+
+All DIC tables carry tenant_id + classification columns and use get_connection()
+(NOT get_canvas_connection()) so RLS is enforced across all queries.
+"""
+from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
+
+_SCHEMA_PG = """
+CREATE TABLE IF NOT EXISTS dic_collections (
+    collection_id   TEXT        PRIMARY KEY,
+    name            TEXT        NOT NULL,
+    description     TEXT        DEFAULT '',
+    owner_id        TEXT        DEFAULT '',
+    retention_days  INTEGER     DEFAULT 90,
+    classification  TEXT        DEFAULT 'CUI',
+    tenant_id       TEXT        DEFAULT 'default',
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS dic_team_access (
+    access_id       TEXT        PRIMARY KEY,
+    collection_id   TEXT        NOT NULL REFERENCES dic_collections(collection_id),
+    user_id         TEXT        NOT NULL,
+    role            TEXT        NOT NULL DEFAULT 'viewer',
+    granted_by      TEXT        DEFAULT '',
+    tenant_id       TEXT        DEFAULT 'default',
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_dic_team_access_collection ON dic_team_access(collection_id);
+
+CREATE TABLE IF NOT EXISTS dic_freshness_scans (
+    scan_id         TEXT        PRIMARY KEY,
+    collection_id   TEXT        NOT NULL,
+    stale_count     INTEGER     DEFAULT 0,
+    regen_priority  FLOAT       DEFAULT 0.0,
+    scanned_at      TIMESTAMPTZ DEFAULT NOW(),
+    tenant_id       TEXT        DEFAULT 'default'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_freshness_scans_collection ON dic_freshness_scans(collection_id);
+"""
+
+_SCHEMA_SQLITE = """
+CREATE TABLE IF NOT EXISTS dic_collections (
+    collection_id   TEXT    PRIMARY KEY,
+    name            TEXT    NOT NULL,
+    description     TEXT    DEFAULT '',
+    owner_id        TEXT    DEFAULT '',
+    retention_days  INTEGER DEFAULT 90,
+    classification  TEXT    DEFAULT 'CUI',
+    tenant_id       TEXT    DEFAULT 'default',
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS dic_team_access (
+    access_id       TEXT    PRIMARY KEY,
+    collection_id   TEXT    NOT NULL,
+    user_id         TEXT    NOT NULL,
+    role            TEXT    NOT NULL DEFAULT 'viewer',
+    granted_by      TEXT    DEFAULT '',
+    tenant_id       TEXT    DEFAULT 'default',
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dic_team_access_collection ON dic_team_access(collection_id);
+
+CREATE TABLE IF NOT EXISTS dic_freshness_scans (
+    scan_id         TEXT    PRIMARY KEY,
+    collection_id   TEXT    NOT NULL,
+    stale_count     INTEGER DEFAULT 0,
+    regen_priority  REAL    DEFAULT 0.0,
+    scanned_at      TEXT    DEFAULT (datetime('now')),
+    tenant_id       TEXT    DEFAULT 'default'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_freshness_scans_collection ON dic_freshness_scans(collection_id);
+"""
+
+_INIT_DONE = False
+
+
+def init_db() -> None:
+    global _INIT_DONE
+    if _INIT_DONE:
+        return
+    try:
+        import os
+        from tools.db.storage import get_connection
+
+        conn = get_connection()
+        is_pg = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower() in (
+            "postgresql", "postgres", "pg"
+        )
+        schema = _SCHEMA_PG if is_pg else _SCHEMA_SQLITE
+        cur = conn.cursor()
+        for stmt in schema.strip().split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                cur.execute(stmt)
+        conn.commit()
+        conn.close()
+        _INIT_DONE = True
+        logger.info("DIC schema initialized")
+    except Exception as exc:
+        logger.warning("DIC db init error: %s", exc)
+
+
+def get_connection():
+    from tools.db.storage import get_connection as _gc
+    return _gc()

@@ -159,6 +159,7 @@ _CANVAS_DEFS = [
     ("dsoc", "ICDEV_DSOC_ENABLED", "tools.dsoc_canvas.blueprint", "create_dsoc_blueprint"),
     ("aiify",  "ICDEV_AIIFY_ENABLED",  "tools.aiify.blueprint", "aiify_bp"),
     ("aiify_compat", "ICDEV_AIIFY_ENABLED", "tools.aiify.blueprint", "aiify_compat_bp"),
+    ("dic", "ICDEV_DIC_ENABLED", "tools.document_intelligence.blueprint", "dic_bp"),
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
 ]
 
@@ -306,6 +307,14 @@ def _register_govcon_pages(app: "Flask", _get_db):
             except Exception:
                 cpars_prediction = {}
                 cpars_assessments = []
+            try:
+                from tools.govcon.milestone_manager import list_milestones, list_deps
+
+                milestones = list_milestones(contract_id).get("milestones", [])
+                milestone_deps = list_deps(contract_id).get("deps", [])
+            except Exception:
+                milestones = []
+                milestone_deps = []
             return render_template(
                 "cpmp/detail.html",
                 contract=contract,
@@ -316,6 +325,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 evm=evm,
                 cpars_prediction=cpars_prediction,
                 cpars_assessments=cpars_assessments,
+                milestones=milestones,
+                milestone_deps=milestone_deps,
             )
         except Exception as e:
             import traceback
@@ -331,6 +342,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 evm={},
                 cpars_prediction={},
                 cpars_assessments=[],
+                milestones=[],
+                milestone_deps=[],
                 error=str(e),
             ), 200
 
@@ -581,10 +594,24 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 rid = f.get("review_id")
                 if rid:
                     findings_by_review.setdefault(rid, []).append(f)
+            # Load reviewer assignments per review (prop-rev-09)
+            assignments_by_review = {}
+            try:
+                all_asgns = conn.execute(
+                    """SELECT a.* FROM proposal_reviewer_assignments a
+                       JOIN proposal_reviews r ON a.review_id = r.id
+                       WHERE r.opportunity_id = ? ORDER BY a.created_at DESC""",
+                    (opp_id,),
+                ).fetchall()
+                for a in all_asgns:
+                    assignments_by_review.setdefault(a["review_id"], []).append(dict(a))
+            except Exception:
+                pass
             reviews_data = []
             for rev in reviews:
                 rd = dict(rev)
                 rd["findings"] = findings_by_review.get(rev["id"], [])
+                rd["assignments"] = assignments_by_review.get(rev["id"], [])
                 reviews_data.append(rd)
             days_left = None
             if opp.get("due_date"):
@@ -782,6 +809,15 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 except Exception:
                     opp["days_left"] = None
                 opps.append(opp)
+            # Count pending reviewer assignments (prop-rev-09)
+            pending_assignments = 0
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM proposal_reviewer_assignments WHERE status = 'pending'"
+                ).fetchone()
+                pending_assignments = row["cnt"] if row else 0
+            except Exception:
+                pass
             return render_template(
                 "proposals/reviews_dashboard.html",
                 opportunities=opps,
@@ -789,6 +825,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 passed=passed,
                 pass_with_findings=pass_with_findings,
                 failed=failed,
+                pending_assignments=pending_assignments,
             )
         finally:
             conn.close()
@@ -1585,6 +1622,7 @@ def create_app() -> Flask:
             "ccc_enabled": _CANVAS_FLAGS.get("ccc", False),
             "dsoc_enabled": _CANVAS_FLAGS.get("dsoc", False),
             "aiify_enabled": _CANVAS_FLAGS.get("aiify", False),
+            "dic_enabled": _CANVAS_FLAGS.get("dic", False),
             "demo_runner_enabled": _CANVAS_FLAGS.get("demo_runner", False),
             "govlift_enabled": _CANVAS_FLAGS.get("govlift", False),
             "info_ops_enabled": _CANVAS_FLAGS.get("iop", False),
@@ -2824,6 +2862,7 @@ def create_app() -> Flask:
             "strategos":      ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
             "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
             "aiify":            ("tools.iqe.adapters.aiify", ["aiify.opportunities", "aiify.scans", "aiify.roadmaps"]),
+            "dic":              ("tools.iqe.adapters.dic",   ["dic.drift_events", "dic.regen_queue", "dic.ssp_fragments"]),
             "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
             "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
             "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),

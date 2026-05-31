@@ -59,12 +59,26 @@ def _short_path(path: str) -> str:
     return "/".join(parts[-2:]) if len(parts) >= 2 else (parts[-1] if parts else str(path))
 
 
-def build_architecture_mermaid(scan: dict, opps: list[dict], title: str | None = None) -> str:
-    """Return Mermaid flowchart source (no fences) for the target architecture."""
+def build_architecture_mermaid(scan: dict, opps: list[dict], title: str | None = None, *, max_opps: int = 25) -> str:
+    """Return Mermaid flowchart source (no fences) for the target architecture.
+
+    Args:
+        scan:    Scan dict with project info.
+        opps:    Opportunities to diagram.
+        title:   Optional diagram title.
+        max_opps: Cap the diagram to the top-N opportunities by composite score
+                  so Mermaid.js can render without choking on hundreds of nodes.
+    """
     proj = _san(scan.get("project_summary") or scan.get("input_ref") or "Existing System")
     if not opps:
         return (f'flowchart TD\n  ROOT["{proj}"]\n'
                 f'  NONE["No AI-augmentable modules identified"]\n  ROOT --> NONE')
+
+    # Sort by composite_score descending and slice so the diagram stays readable
+    sorted_opps = sorted(opps, key=lambda o: float(o.get("composite_score", 0) or 0), reverse=True)
+    truncated = sorted_opps[:max_opps]
+    total = len(sorted_opps)
+    shown = len(truncated)
 
     lines: list[str] = ["flowchart TD"]
     if title:
@@ -76,7 +90,7 @@ def build_architecture_mermaid(scan: dict, opps: list[dict], title: str | None =
     models: dict[str, str] = {}
     paradigm_model: dict[str, str] = {}
 
-    for i, opp in enumerate(opps):
+    for i, opp in enumerate(truncated):
         paradigm = opp.get("ai_paradigm") or "llm_generation"
         layer = _PARADIGM_LAYER.get(paradigm, "GenAI")
         p_node = f"P_{paradigm}"
@@ -115,6 +129,11 @@ def build_architecture_mermaid(scan: dict, opps: list[dict], title: str | None =
         if (p_node, m_node) not in seen:
             seen.add((p_node, m_node))
             lines.append(f"  {p_node} --> {m_node}")
+
+    # Truncation note so users know this is a subset
+    if shown < total:
+        lines.append(f'  NOTE["… and {total - shown} more module(s)"]')
+        lines.append(f"  ROOT -.-> NOTE")
 
     lines.append("  classDef genai fill:#1e3a5f,stroke:#6ee7b7,color:#fff;")
     lines.append("  classDef ml fill:#3f2d5c,stroke:#c4b5fd,color:#fff;")

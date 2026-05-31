@@ -6,14 +6,17 @@ Full GovCon proposal lifecycle — opportunities, volumes, sections,
 compliance matrix (L/M/N), color team reviews, findings, and status history.
 """
 
+import json as _mac_json
 import os
 import sys
 import uuid
 from tools.db.storage import get_connection
+from tools.security.abac_engine import abac_protect
+from tools.dashboard.auth import require_role
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, make_response, request
 
 from tools.common.helpers import now_iso
 
@@ -31,6 +34,98 @@ def _get_db():
     return conn
 
 
+# ---------------------------------------------------------------------------
+# Bell-LaPadula MAC helpers (prop-sec-02)
+# ---------------------------------------------------------------------------
+
+def _mac_ctx():
+    """Return current security context from Flask g (None = system/unauthenticated)."""
+    try:
+        from flask import g
+        return getattr(g, "security_context", None)
+    except RuntimeError:
+        return None
+
+
+def _mac_compartments(raw):
+    """Parse compartments from JSON string or collection to a plain set."""
+    if isinstance(raw, (list, tuple, set, frozenset)):
+        return set(raw)
+    try:
+        return set(_mac_json.loads(raw or "[]"))
+    except Exception:
+        return set()
+
+
+def _mac_filter(rows):
+    """Filter row list — keep only those the current user can read per Bell-LaPadula.
+
+    Applies no-read-up (clearance >= classification) and strict-subset
+    compartment check (resource compartments ⊆ user compartments).
+    """
+    from tools.security.classification_enforcer import can_read, can_access_compartment
+    ctx = _mac_ctx()
+    if ctx is None:
+        return [dict(r) if not isinstance(r, dict) else r for r in rows]
+    result = []
+    for row in rows:
+        d = dict(row) if not isinstance(row, dict) else row
+        cls = d.get("classification", "CUI") or "CUI"
+        comps = _mac_compartments(d.get("compartments", "[]"))
+        if can_read(cls, ctx) and can_access_compartment(comps, ctx):
+            result.append(d)
+    return result
+
+
+def _mac_deny_read(row):
+    """Return 403 JSON response if current user cannot read this row. Returns None on pass."""
+    from tools.security.classification_enforcer import can_read, can_access_compartment
+    ctx = _mac_ctx()
+    if ctx is None:
+        return None
+    d = dict(row) if not isinstance(row, dict) else row
+    cls = d.get("classification", "CUI") or "CUI"
+    comps = _mac_compartments(d.get("compartments", "[]"))
+    if not can_read(cls, ctx) or not can_access_compartment(comps, ctx):
+        return make_response(
+            jsonify({"error": "Insufficient clearance", "code": "MAC_DENIED"}), 403
+        )
+    return None
+
+
+def _mac_deny_write(classification, compartments_raw="[]"):
+    """Return 403 JSON response if current user cannot write at this classification.
+
+    Implements no-write-down: user clearance must be >= target classification so
+    a lower-cleared user cannot create or update a higher-classified resource.
+    """
+    from tools.security.classification_enforcer import can_read, can_access_compartment
+    ctx = _mac_ctx()
+    if ctx is None:
+        return None
+    cls = (classification or "CUI").upper()
+    comps = _mac_compartments(compartments_raw)
+    if not can_read(cls, ctx) or not can_access_compartment(comps, ctx):
+        return make_response(
+            jsonify({"error": "MAC write policy denied", "code": "MAC_WRITE_DENIED"}), 403
+        )
+    return None
+
+
+def _mac_check_parent_opp(opp_id, conn):
+    """Check MAC read access on the parent opportunity. Returns 403 response or None."""
+    try:
+        row = conn.execute(
+            "SELECT classification, compartments FROM proposal_opportunities WHERE id = ?",
+            (opp_id,),
+        ).fetchone()
+        if not row:
+            return None  # Let child route return 404
+        return _mac_deny_read(row)
+    except Exception:
+        return None
+
+
 def _uuid():
     return str(uuid.uuid4())
 
@@ -42,6 +137,24 @@ def _record_status_change(conn, entity_type, entity_id, old_status, new_status, 
         "VALUES (?, ?, ?, ?, ?, ?)",
         (entity_type, entity_id, old_status, new_status, changed_by, reason),
     )
+
+
+def _section_resource_attrs(request):
+    """Build ABAC resource dict for a proposal section endpoint."""
+    sec_id = (request.view_args or {}).get("sec_id", "")
+    writer_email = ""
+    if sec_id:
+        try:
+            conn = _get_db()
+            row = conn.execute(
+                "SELECT writer_email FROM proposal_sections WHERE id = ?", (sec_id,)
+            ).fetchone()
+            conn.close()
+            if row:
+                writer_email = row["writer_email"] or ""
+        except Exception:
+            pass
+    return {"type": "proposal_section", "writer_email": writer_email}
 
 
 # Valid status transitions for sections (D-PROP-1)
@@ -101,7 +214,8 @@ def list_opportunities():
             params.append(status_filter)
         sql += " ORDER BY due_date ASC"
         rows = conn.execute(sql, params).fetchall()
-        items = [dict(r) for r in rows]
+        # Bell-LaPadula: filter to only rows the caller can read (no-read-up)
+        items = _mac_filter(rows)
         return jsonify({"opportunities": items, "total": len(items)})
     finally:
         conn.close()
@@ -115,6 +229,11 @@ def create_opportunity():
     missing = [f for f in required if not data.get(f)]
     if missing:
         return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
+
+    # Bell-LaPadula: no-write-down — caller must have clearance >= target classification
+    denied = _mac_deny_write(data.get("classification", "CUI"), data.get("compartments", "[]"))
+    if denied:
+        return denied
 
     opp_id = _uuid()
     conn = _get_db()
@@ -163,6 +282,10 @@ def get_opportunity(opp_id):
         row = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
         if not row:
             return jsonify({"error": "Opportunity not found"}), 404
+        # Bell-LaPadula: no-read-up check before serving data
+        denied = _mac_deny_read(row)
+        if denied:
+            return denied
         opp = dict(row)
 
         # Aggregate stats
@@ -230,6 +353,21 @@ def update_opportunity(opp_id):
     data = request.get_json(force=True, silent=True) or {}
     conn = _get_db()
     try:
+        # Bell-LaPadula: check read + write access on existing record before updating
+        existing = conn.execute(
+            "SELECT classification, compartments FROM proposal_opportunities WHERE id = ?", (opp_id,)
+        ).fetchone()
+        if not existing:
+            return jsonify({"error": "Opportunity not found"}), 404
+        denied = _mac_deny_read(existing)
+        if denied:
+            return denied
+        # If caller is upgrading classification, they must also hold that level
+        new_cls = data.get("classification", existing["classification"] or "CUI")
+        denied = _mac_deny_write(new_cls, data.get("compartments", existing.get("compartments", "[]")))
+        if denied:
+            return denied
+
         allowed = [
             "title",
             "agency",
@@ -304,6 +442,10 @@ def list_volumes(opp_id):
     """GET /api/proposals/<opp_id>/volumes — List volumes for opportunity."""
     conn = _get_db()
     try:
+        # Bell-LaPadula: inherit parent opportunity classification
+        denied = _mac_check_parent_opp(opp_id, conn)
+        if denied:
+            return denied
         rows = conn.execute(
             "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY sort_order, volume_number",
             (opp_id,),
@@ -378,6 +520,10 @@ def list_sections(opp_id):
     """GET /api/proposals/<opp_id>/sections — List all sections for opportunity."""
     conn = _get_db()
     try:
+        # Bell-LaPadula: inherit parent opportunity classification
+        denied = _mac_check_parent_opp(opp_id, conn)
+        if denied:
+            return denied
         sql = """SELECT s.*, v.title as volume_title, v.volume_number
                  FROM proposal_sections s
                  LEFT JOIN proposal_volumes v ON s.volume_id = v.id
@@ -500,6 +646,7 @@ def get_section(sec_id):
 
 
 @proposals_api.route("/sections/<sec_id>", methods=["PUT"])
+@abac_protect(_section_resource_attrs, "PUT")
 def update_section(sec_id):
     """PUT /api/proposals/sections/<id> — Update section fields (not status)."""
     data = request.get_json(force=True, silent=True) or {}
@@ -542,6 +689,7 @@ def update_section(sec_id):
 
 
 @proposals_api.route("/sections/<sec_id>/status", methods=["PUT"])
+@abac_protect(_section_resource_attrs, "PUT")
 def advance_section_status(sec_id):
     """PUT /api/proposals/sections/<id>/status — Advance section status (enforces transitions)."""
     data = request.get_json(force=True, silent=True) or {}
@@ -1004,6 +1152,165 @@ def update_finding(find_id):
 
         conn.commit()
         return jsonify({"id": find_id, "updated": True})
+    finally:
+        conn.close()
+
+
+# =====================================================================
+# HITL Reviewer Assignment + Hand-off (prop-rev-09)
+# =====================================================================
+
+
+@proposals_api.route("/reviews/<rev_id>/assignments", methods=["GET"])
+def list_assignments(rev_id):
+    """GET /api/proposals/reviews/<rev_id>/assignments — List all reviewer assignments."""
+    conn = _get_db()
+    try:
+        rev = conn.execute("SELECT id FROM proposal_reviews WHERE id = ?", (rev_id,)).fetchone()
+        if not rev:
+            return jsonify({"error": "Review not found"}), 404
+        rows = conn.execute(
+            "SELECT * FROM proposal_reviewer_assignments WHERE review_id = ? ORDER BY created_at DESC",
+            (rev_id,),
+        ).fetchall()
+        return jsonify({"assignments": [dict(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/reviews/<rev_id>/assign", methods=["POST"])
+@require_role("reviewer", "admin")
+def assign_reviewer(rev_id):
+    """POST /api/proposals/reviews/<rev_id>/assign — Assign a HITL reviewer."""
+    data = request.get_json(force=True, silent=True) or {}
+    reviewer = data.get("reviewer", "").strip()
+    assigned_by = data.get("assigned_by", "").strip()
+    if not reviewer:
+        return jsonify({"error": "reviewer is required"}), 400
+    if not assigned_by:
+        return jsonify({"error": "assigned_by is required"}), 400
+
+    conn = _get_db()
+    try:
+        rev = conn.execute("SELECT id, status FROM proposal_reviews WHERE id = ?", (rev_id,)).fetchone()
+        if not rev:
+            return jsonify({"error": "Review not found"}), 404
+
+        asgn_id = _uuid()
+        conn.execute(
+            """INSERT INTO proposal_reviewer_assignments
+               (id, review_id, reviewer, assigned_by, status, notes, classification)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
+            (asgn_id, rev_id, reviewer, assigned_by, data.get("notes"), data.get("classification", "CUI")),
+        )
+        _record_status_change(conn, "review", rev_id, rev["status"], rev["status"], assigned_by,
+                              reason=f"assignment:assigned:{reviewer}")
+        conn.commit()
+        return jsonify({"id": asgn_id, "reviewer": reviewer, "status": "pending"}), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/assignments/<asgn_id>/accept", methods=["POST"])
+@require_role("reviewer", "admin")
+def accept_assignment(asgn_id):
+    """POST /api/proposals/assignments/<asgn_id>/accept — Reviewer accepts the assignment."""
+    data = request.get_json(force=True, silent=True) or {}
+    conn = _get_db()
+    try:
+        asgn = conn.execute(
+            "SELECT * FROM proposal_reviewer_assignments WHERE id = ?", (asgn_id,)
+        ).fetchone()
+        if not asgn:
+            return jsonify({"error": "Assignment not found"}), 404
+        if asgn["status"] != "pending":
+            return jsonify({"error": f"Cannot accept assignment in status '{asgn['status']}'"}), 409
+
+        conn.execute(
+            "UPDATE proposal_reviewer_assignments SET status='accepted', accepted_at=datetime('now'), notes=? WHERE id=?",
+            (data.get("notes", asgn["notes"]), asgn_id),
+        )
+        _record_status_change(conn, "review", asgn["review_id"], "scheduled", "in_progress",
+                              asgn["reviewer"], reason=f"assignment:accepted:{asgn['reviewer']}")
+        conn.execute(
+            "UPDATE proposal_reviews SET status='in_progress', started_at=datetime('now') WHERE id=? AND status='scheduled'",
+            (asgn["review_id"],),
+        )
+        conn.commit()
+        return jsonify({"id": asgn_id, "status": "accepted"})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/assignments/<asgn_id>/reject", methods=["POST"])
+@require_role("reviewer", "admin")
+def reject_assignment(asgn_id):
+    """POST /api/proposals/assignments/<asgn_id>/reject — Reviewer rejects the assignment."""
+    data = request.get_json(force=True, silent=True) or {}
+    conn = _get_db()
+    try:
+        asgn = conn.execute(
+            "SELECT * FROM proposal_reviewer_assignments WHERE id = ?", (asgn_id,)
+        ).fetchone()
+        if not asgn:
+            return jsonify({"error": "Assignment not found"}), 404
+        if asgn["status"] not in ("pending", "accepted"):
+            return jsonify({"error": f"Cannot reject assignment in status '{asgn['status']}'"}), 409
+
+        reason = data.get("rejection_reason", "").strip()
+        conn.execute(
+            """UPDATE proposal_reviewer_assignments
+               SET status='rejected', rejected_at=datetime('now'), rejection_reason=?
+               WHERE id=?""",
+            (reason, asgn_id),
+        )
+        _record_status_change(conn, "review", asgn["review_id"], asgn["status"], "scheduled",
+                              asgn["reviewer"], reason=f"assignment:rejected:{asgn['reviewer']}")
+        conn.commit()
+        return jsonify({"id": asgn_id, "status": "rejected"})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/assignments/<asgn_id>/reassign", methods=["POST"])
+@require_role("admin")
+def reassign_reviewer(asgn_id):
+    """POST /api/proposals/assignments/<asgn_id>/reassign — Admin reassigns to a new reviewer."""
+    data = request.get_json(force=True, silent=True) or {}
+    new_reviewer = data.get("reviewer", "").strip()
+    assigned_by = data.get("assigned_by", "").strip()
+    if not new_reviewer:
+        return jsonify({"error": "reviewer is required"}), 400
+    if not assigned_by:
+        return jsonify({"error": "assigned_by is required"}), 400
+
+    conn = _get_db()
+    try:
+        asgn = conn.execute(
+            "SELECT * FROM proposal_reviewer_assignments WHERE id = ?", (asgn_id,)
+        ).fetchone()
+        if not asgn:
+            return jsonify({"error": "Assignment not found"}), 404
+
+        # Mark old assignment as reassigned
+        conn.execute(
+            "UPDATE proposal_reviewer_assignments SET status='reassigned' WHERE id=?", (asgn_id,)
+        )
+        # Create new assignment
+        new_id = _uuid()
+        conn.execute(
+            """INSERT INTO proposal_reviewer_assignments
+               (id, review_id, reviewer, assigned_by, status, notes, classification)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
+            (new_id, asgn["review_id"], new_reviewer, assigned_by,
+             data.get("notes"), asgn["classification"]),
+        )
+        _record_status_change(conn, "review", asgn["review_id"], asgn["status"], "scheduled",
+                              assigned_by,
+                              reason=f"assignment:reassigned:{asgn['reviewer']}→{new_reviewer}")
+        conn.commit()
+        return jsonify({"id": new_id, "reviewer": new_reviewer, "status": "pending",
+                        "supersedes": asgn_id})
     finally:
         conn.close()
 

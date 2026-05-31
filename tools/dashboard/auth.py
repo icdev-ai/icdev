@@ -36,16 +36,38 @@ from tools.dashboard.config import DASHBOARD_SECRET, DB_PATH
 def _attach_security_context(user: dict) -> None:
     """Build a SecurityContext from an authenticated user dict and attach to Flask g.
 
-    This is the single place that bridges the auth layer → RLS layer.
+    This is the single place that bridges the auth layer → MAC/RLS layer.
     Called after every successful authentication path in _auth_before_request().
+    Populates clearance_level (int) and compartments (frozenset) for Bell-LaPadula
+    no-read-up / no-write-down enforcement on SECRET+ proposal/cpmp surfaces.
     """
     try:
-        from tools.security.security_context import SecurityContext
+        import json as _json
+        from tools.security.security_context import SecurityContext, _get_clearance_order
+
+        # Clearance: prefer dedicated column, fall back to classification string, default CUI
+        clearance_str = (
+            user.get("clearance_level") or user.get("classification") or "CUI"
+        ).upper()
+        clearance_int = _get_clearance_order(clearance_str)
+
+        # Compartments: stored as JSON array; may arrive as list or JSON string
+        raw_comps = user.get("compartments", "[]") or "[]"
+        if isinstance(raw_comps, (list, tuple, set, frozenset)):
+            compartments: frozenset = frozenset(str(c) for c in raw_comps)
+        else:
+            try:
+                compartments = frozenset(str(c) for c in _json.loads(raw_comps))
+            except Exception:
+                compartments = frozenset()
+
         g.security_context = SecurityContext(
             user_id=str(user.get("id", "") or ""),
             role=user.get("role", "") or "",
             tenant_id=user.get("tenant_id") or None,
-            classification=user.get("classification", "CUI") or "CUI",
+            clearance_level=clearance_int,
+            compartments=compartments,
+            classification=clearance_str,
         )
     except Exception:
         pass
@@ -108,21 +130,30 @@ def log_auth_event(user_id, event_type, ip_address=None, user_agent=None, detail
 # ---------------------------------------------------------------------------
 
 
-def create_user(email, display_name, role="developer", created_by=None, tenant_id=None):
+def create_user(
+    email,
+    display_name,
+    role="developer",
+    created_by=None,
+    tenant_id=None,
+    clearance_level="CUI",
+    compartments="[]",
+):
     """Create a new dashboard user. Returns user dict."""
     user_id = str(uuid.uuid4())
     conn = _get_db()
     try:
         conn.execute(
-            """INSERT INTO dashboard_users (id, email, display_name, role, created_by, tenant_id)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (user_id, email, display_name, role, created_by, tenant_id),
+            """INSERT INTO dashboard_users
+               (id, email, display_name, role, created_by, tenant_id, clearance_level, compartments)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, email, display_name, role, created_by, tenant_id, clearance_level, compartments),
         )
         conn.commit()
     finally:
         conn.close()
 
-    log_auth_event(user_id, "user_created", details=f"email={email}, role={role}")
+    log_auth_event(user_id, "user_created", details=f"email={email}, role={role}, clearance={clearance_level}")
     return {
         "id": user_id,
         "email": email,
@@ -130,6 +161,8 @@ def create_user(email, display_name, role="developer", created_by=None, tenant_i
         "role": role,
         "status": "active",
         "tenant_id": tenant_id,
+        "clearance_level": clearance_level,
+        "compartments": compartments,
     }
 
 
@@ -170,6 +203,7 @@ def validate_api_key(raw_key):
     try:
         row = conn.execute(
             """SELECT u.id, u.email, u.display_name, u.role, u.status,
+                      u.clearance_level, u.compartments,
                       k.id as key_id, k.expires_at
                FROM dashboard_api_keys k
                JOIN dashboard_users u ON k.user_id = u.id
@@ -413,7 +447,9 @@ def _auth_before_request():
             "role": "admin",
             "status": "active",
             "tenant_id": None,
-            "classification": "CUI",
+            "classification": "TOP SECRET//SCI",
+            "clearance_level": "TOP SECRET//SCI",
+            "compartments": "[]",
         }
         g.current_user = bypass_user
         _attach_security_context(bypass_user)

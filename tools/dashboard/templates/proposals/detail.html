@@ -231,6 +231,69 @@
     </div>
     <!-- Review Pipeline -->
     <div id="review-pipeline" style="margin-bottom:20px;"></div>
+
+    <!-- Reviewer Assignment Panel (prop-rev-09) -->
+    {% for rev in reviews %}
+    <div class="table-container" style="margin-bottom:16px;">
+        <div class="table-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h2 style="margin:0;">
+                <span class="badge badge-info">{{ rev.review_type | replace('_', ' ') | title }}</span>
+                &nbsp;Reviewer Assignments
+                {% set asgn_status_colors = {'pending':'warning','accepted':'info','rejected':'error','in_progress':'warning','completed':'success','reassigned':'info'} %}
+                {% for a in rev.assignments %}
+                <span class="badge badge-{{ asgn_status_colors.get(a.status, 'info') }}" style="margin-left:4px;" title="Assigned {{ a.assigned_at }}">
+                    {{ a.reviewer }} ({{ a.status }})
+                </span>
+                {% endfor %}
+            </h2>
+            <button class="btn btn-sm btn-secondary" onclick="openAssignModal('{{ rev.id }}')">+ Assign Reviewer</button>
+        </div>
+        {% if rev.assignments %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Reviewer</th>
+                    <th>Assigned By</th>
+                    <th>Status</th>
+                    <th>Assigned At</th>
+                    <th>Notes</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in rev.assignments %}
+                <tr>
+                    <td>{{ a.reviewer }}</td>
+                    <td>{{ a.assigned_by }}</td>
+                    <td>
+                        <span class="badge badge-{{ asgn_status_colors.get(a.status, 'info') }}">
+                            {{ a.status | replace('_', ' ') | title }}
+                        </span>
+                    </td>
+                    <td style="font-size:12px;">{{ a.assigned_at or '—' }}</td>
+                    <td style="max-width:180px;">{{ a.notes or '—' }}</td>
+                    <td style="white-space:nowrap;">
+                        {% if a.status == 'pending' %}
+                        <button class="btn btn-sm btn-success" onclick="acceptAssignment('{{ a.id }}')">Accept</button>
+                        <button class="btn btn-sm btn-error" onclick="openRejectModal('{{ a.id }}')">Reject</button>
+                        {% endif %}
+                        {% if a.status in ('pending','accepted','in_progress') %}
+                        <button class="btn btn-sm btn-secondary" onclick="openReassignModal('{{ a.id }}')">Reassign</button>
+                        {% endif %}
+                        {% if a.rejection_reason %}
+                        <span style="font-size:11px;color:var(--text-secondary);" title="{{ a.rejection_reason }}">Reason: {{ a.rejection_reason[:40] }}{% if a.rejection_reason|length > 40 %}...{% endif %}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="padding:12px;color:var(--text-secondary);font-size:13px;">No reviewer assigned yet. Click "+ Assign Reviewer" to assign a HITL reviewer.</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+
     <!-- Findings Table -->
     <div class="table-container">
         <div class="table-header"><h2>Review Findings</h2></div>

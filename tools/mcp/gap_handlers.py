@@ -1394,6 +1394,51 @@ def handle_redaction_scan_db(args: dict) -> dict:
     return _run_cli("tools/redaction/db_scanner.py", cli_args)
 
 
+# ── GovCon Proposals Security — Aggregation Guard (prop-sec-04 through prop-sec-08) ──
+
+
+def handle_guard_result(args: dict) -> dict:
+    """Run mosaic aggregation guard on a result set (prop-sec-06)."""
+    try:
+        from tools.security.aggregation_guard import guard_result
+
+        result_set = args.get("result_set", [])
+        surface = str(args.get("surface", ""))
+        ctx = {
+            "user_id": args.get("user_id"),
+            "clearance_level": args.get("clearance_level"),
+            "surface_ceiling": args.get("surface_ceiling"),
+        }
+        result = guard_result(result_set, ctx, surface)
+        if args.get("gate") and result.get("action") == "block":
+            return {"error": "aggregation_guard: block — derived classification exceeds surface ceiling", **result}
+        return result
+    except ImportError:
+        return _run_cli(
+            "tools/security/aggregation_guard.py",
+            ["--guard", "--surface", str(args.get("surface", "")), "--json"],
+        )
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_evaluate_aggregation_rules(args: dict) -> dict:
+    """Evaluate SCG aggregation rules and return fired rules + derived classification (prop-sec-03)."""
+    try:
+        from tools.security.aggregation_guard import evaluate_rules
+
+        result_set = args.get("result_set", [])
+        fired = evaluate_rules(result_set)
+        return {"fired_rules": fired, "count": len(fired)}
+    except ImportError:
+        cli_args = ["--evaluate-rules", "--json"]
+        if args.get("rules_file"):
+            cli_args.extend(["--rules-file", str(args["rules_file"])])
+        return _run_cli("tools/security/aggregation_guard.py", cli_args)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 # ── Oracle Anticipatory Agent ─────────────────────────────────────────────
 
 
@@ -1752,13 +1797,22 @@ def ccc_circuit_ingest(args: dict) -> dict:
             "utilization_pct": float(args.get("utilization_pct", 0)),
             "mrr_usd": float(args.get("mrr_usd", 0)),
         }
-        cols = ", ".join(fields.keys())
+        values = tuple(fields.values())
         try:
-            placeholders = ", ".join("?" * len(fields))
-            conn.execute(f"INSERT OR REPLACE INTO ccc_circuits ({cols}) VALUES ({placeholders})", tuple(fields.values()))
+            conn.execute(
+                "INSERT OR REPLACE INTO ccc_circuits"
+                " (circuit_id, circuit_type, carrier, bandwidth_gbps, utilization_pct, mrr_usd)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                values,
+            )
         except Exception:
-            placeholders = ", ".join("%s" * len(fields))
-            conn.execute(f"INSERT INTO ccc_circuits ({cols}) VALUES ({placeholders}) ON CONFLICT (circuit_id) DO UPDATE SET circuit_type=EXCLUDED.circuit_type", tuple(fields.values()))
+            conn.execute(
+                "INSERT INTO ccc_circuits"
+                " (circuit_id, circuit_type, carrier, bandwidth_gbps, utilization_pct, mrr_usd)"
+                " VALUES (%s, %s, %s, %s, %s, %s)"
+                " ON CONFLICT (circuit_id) DO UPDATE SET circuit_type=EXCLUDED.circuit_type",
+                values,
+            )
         conn.commit()
         conn.close()
         return {"status": "ok", "circuit_id": circuit_id}

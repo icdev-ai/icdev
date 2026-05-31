@@ -137,6 +137,21 @@ These 6 paths adopted `SandboxExecutor` in Phase 72 (D-SEC-11):
   - Scan results are written to append-only audit log (`aiify_audit_log`).
 - **Revisit if:** `input_ref` is ever accepted from an unauthenticated public endpoint, or if the engine adds a step that executes code from the scanned directory.
 
+### Gap 14 — Aggregation Guard (`tools/security/aggregation_guard.py`)
+
+**Module:** `tools/security/aggregation_guard.py`
+
+**Ingress path:** `guard_result(result_set, ctx, surface)` and `evaluate_rules(result_set)` receive row dicts originating from GovCon/proposals DB queries. The rows are structured data (dicts of column→value); they are never `eval()`-ed or `exec()`-ed. The guard applies declarative SCG rules from `args/classification_aggregation.yaml` (pure dict/list comparisons — no code execution) and writes audit events to the append-only `aggregation_events` table.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The guard performs pure data classification checks — no subprocess spawning, no `eval()`/`exec()`, no file writes outside the append-only `aggregation_events` audit table. Row dicts from the DB are treated as opaque data structures; no field value is ever interpreted as code. Rule evaluation is deterministic (comparators: `>=`, `<`, `in`, `distinct_count`) with no dynamic code path.
+- **Guardrails:**
+  - `args/classification_aggregation.yaml` is first-party config; it defines rule metadata, not executable code.
+  - Row field values are compared via Python built-in operators only; no `eval()` or string-interpolated SQL.
+  - All events written to `aggregation_events` via `get_connection()` with append-only protection enforced by `pre_tool_use.py` hook.
+  - `guard_result()` never returns row data to callers — only `{derived, action, throttled, events_written}`.
+- **Revisit if:** a future rule type adds a `custom_expr` field that evaluates arbitrary expressions, or if result rows are ever rendered as HTML without escaping.
+
 ## Coherence rule
 
 The `sandbox_coverage` rule in `tools/workflow/coherence_checker.py` enforces:
