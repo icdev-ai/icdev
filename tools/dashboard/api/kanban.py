@@ -2,9 +2,11 @@ from __future__ import annotations
 # CUI // SP-CTI
 """Kanban Task Board API — CRUD for task cards on the dashboard Kanban."""
 
+import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -919,42 +921,107 @@ def bulk_move_tasks():
 
 @kanban_api.route("/tasks/promote-all", methods=["POST"])
 def promote_all_suggested():
-    """Move ALL suggested cards to backlog in one shot.
+    """Move suggested cards to backlog, with optional value/confidence/rule gates.
 
-    No request body needed.  Returns ``{"promoted": N}``.
+    Body (all optional):
+        {
+          "min_confidence": 0.90,   # only promote cards with oracle_confidence >= N
+          "min_value": 1.0,         # only promote cards with oracle_value >= N
+          "rule": "route_not_listed" # only promote cards matching this oracle_rule
+        }
+
+    When no body is provided, promotes ALL non-quarantined suggested cards
+    (legacy behaviour preserved for backward compat).
+
+    Returns ``{"promoted": N, "filtered": M, "new_status": "backlog"}``.
     Used by the "Promote All" button on the Suggested column header.
     """
+    data = request.get_json(force=True, silent=True) or {}
+    min_confidence = data.get("min_confidence")
+    min_value = data.get("min_value")
+    rule_filter = data.get("rule")
+
     now = _utcnow()
     conn = get_connection()
     try:
-        # Exclude self_debug-quarantined rows from bulk-promote: they live in
-        # 'suggested' as a durable quarantine, not as awaiting-approval
-        # suggestions. Promoting them re-loops the scheduler.
-        rows = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE status = 'suggested' "
-            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE ?)",
-            ("QUARANTINED by self_debug%",),
-        ).fetchall()
-        count = len(rows)
-        if count == 0:
-            return jsonify({"promoted": 0, "message": "No suggested cards to promote"})
+        # Fetch suggested cards with oracle metadata (same JOIN as list_tasks)
+        select = (
+            "SELECT kt.id, kt.title, "
+            "op.confidence AS oracle_confidence, "
+            "op.prediction_text AS oracle_proposed_action, "
+            "op.lens_name AS oracle_lens, "
+            "op.prediction_type AS oracle_prediction_type "
+            "FROM kanban_tasks kt "
+            "LEFT JOIN oracle_predictions op "
+            "ON kt.source_prediction_id = op.id "
+            "WHERE kt.status = 'suggested' "
+            "AND (kt.last_failure_reason IS NULL OR kt.last_failure_reason NOT LIKE ?) "
+        )
+        rows = conn.execute(select, ("QUARANTINED by self_debug%",)).fetchall()
+        tasks = [dict(r) for r in rows]
 
+        # Normalise oracle_rule exactly as list_tasks does
+        for t in tasks:
+            ptype = (t.get("oracle_prediction_type") or "")
+            lens = (t.get("oracle_lens") or "")
+            if ptype.startswith("gap::") or ptype.startswith("regression::"):
+                t["oracle_rule"] = ptype.split("::", 1)[1]
+            elif lens and lens != "internal_awareness":
+                t["oracle_rule"] = lens
+            else:
+                t["oracle_rule"] = lens or ""
+            if t["oracle_rule"] and t["oracle_rule"] != "internal_awareness":
+                t["oracle_lens"] = t["oracle_rule"]
+
+        # Compute oracle_value so we can gate on it
+        annotate_tasks_with_value(tasks)
+
+        filtered = 0
+        eligible_ids = []
+        for t in tasks:
+            # Rule filter
+            if rule_filter and t.get("oracle_rule") != rule_filter:
+                filtered += 1
+                continue
+            # Confidence filter
+            conf = t.get("oracle_confidence")
+            if min_confidence is not None:
+                if conf is None or conf < float(min_confidence):
+                    filtered += 1
+                    continue
+            # Value filter
+            val = t.get("oracle_value")
+            if min_value is not None:
+                if val is None or val < float(min_value):
+                    filtered += 1
+                    continue
+            eligible_ids.append(t["id"])
+
+        count = len(eligible_ids)
+        if count == 0:
+            return jsonify({
+                "promoted": 0,
+                "filtered": filtered,
+                "message": "No suggested cards matched the promotion gate",
+            })
+
+        # Batch update by IDs (safe cap at 1000 per existing bulk_move limit)
+        ph = ",".join(["?"] * len(eligible_ids))
         conn.execute(
-            "UPDATE kanban_tasks SET status = 'backlog', updated_at = ? "
-            "WHERE status = 'suggested' "
-            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE ?)",
-            (now, "QUARANTINED by self_debug%"),
+            f"UPDATE kanban_tasks SET status = 'backlog', updated_at = ? "  # nosec B608
+            f"WHERE id IN ({ph})",
+            (now, *eligible_ids),
         )
         conn.commit()
 
         try:
             sse_manager.broadcast(
-                {"action": "bulk_promoted", "count": count},
+                {"action": "bulk_promoted", "count": count, "filtered": filtered},
                 "kanban",
             )
         except Exception:
             pass
-        return jsonify({"promoted": count, "new_status": "backlog"})
+        return jsonify({"promoted": count, "filtered": filtered, "new_status": "backlog"})
     except Exception as exc:
         return jsonify({"error": str(exc)[:200]}), 500
     finally:

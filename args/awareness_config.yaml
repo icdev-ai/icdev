@@ -133,7 +133,7 @@ promotion_filters:
   # and the description lists every subject.
   consolidation:
     enabled: true
-    threshold: 5        # minimum findings per rule to trigger consolidation
+    threshold: 3        # minimum findings per rule to trigger consolidation
 
   # Auto-dismiss: cards sitting in 'suggested' for > N days without
   # being promoted to backlog are auto-dismissed on the next writer run.

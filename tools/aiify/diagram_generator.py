@@ -133,7 +133,7 @@ def build_architecture_mermaid(scan: dict, opps: list[dict], title: str | None =
     # Truncation note so users know this is a subset
     if shown < total:
         lines.append(f'  NOTE["… and {total - shown} more module(s)"]')
-        lines.append(f"  ROOT -.-> NOTE")
+        lines.append("  ROOT -.-> NOTE")
 
     lines.append("  classDef genai fill:#1e3a5f,stroke:#6ee7b7,color:#fff;")
     lines.append("  classDef ml fill:#3f2d5c,stroke:#c4b5fd,color:#fff;")

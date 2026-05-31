@@ -6,10 +6,8 @@ All queries use get_connection() so RLS applies.
 """
 from __future__ import annotations
 
-import hashlib
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any
 
 from tools.logging.icdev_logger import get_logger
 
@@ -328,7 +326,6 @@ def detect_patterns() -> dict:
         conn.close()
 
     nc = max(node_count, 1)
-    ec = max(edge_count, 1)
     orphan_ratio = orphan_count / nc
     edge_density = edge_count / (nc * (nc - 1) / 2) if nc > 1 else 0
     hub_ratio = hub_count / nc
