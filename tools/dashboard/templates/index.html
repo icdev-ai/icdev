@@ -841,6 +841,46 @@ function refreshDashboard() {
     _refreshCountdown = AUTO_REFRESH_SECONDS;
 }
 
+// Kanban scheduler pause/resume — toggles a sentinel flag the scheduler honors.
+// Auto-pause (an interactive session active) is shown; the button toggles the
+// MANUAL flag only.
+function _renderSchedBtn(s) {
+    var b = document.getElementById('schedToggleBtn');
+    if (!b) return;
+    if (s && s.paused) {
+        if (s.mode === 'auto') {
+            b.innerHTML = '⏸ Auto-paused (' + (s.active_interactive_sessions || 0) + ')';
+            b.title = 'Scheduler auto-paused while an interactive session is active';
+        } else {
+            b.innerHTML = '▶ Resume Scheduler';
+            b.title = 'Click to resume the kanban scheduler';
+        }
+        b.style.background = '#7f1d1d'; b.style.color = '#fecaca';
+        b.dataset.paused = '1'; b.dataset.mode = s.mode || '';
+    } else {
+        b.innerHTML = '⏸ Pause Scheduler';
+        b.style.background = ''; b.style.color = '';
+        b.dataset.paused = '0'; b.dataset.mode = '';
+        b.title = 'Pause the kanban scheduler (stops its git stash/merge cycle)';
+    }
+}
+function toggleKanbanScheduler() {
+    var b = document.getElementById('schedToggleBtn');
+    var manualPaused = b && b.dataset.paused === '1' && b.dataset.mode !== 'auto';
+    var url = '/api/kanban/scheduler/' + (manualPaused ? 'resume' : 'pause');
+    fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({actor: 'dashboard'})})
+        .then(function() { return fetch('/api/kanban/scheduler/status'); })
+        .then(function(r) { return r.json(); })
+        .then(_renderSchedBtn).catch(function() {});
+}
+function _pollSched() {
+    fetch('/api/kanban/scheduler/status').then(function(r) { return r.json(); })
+        .then(_renderSchedBtn).catch(function() {});
+}
+_pollSched();
+setInterval(_pollSched, 15000);
+
 function _updateCountdownDisplay() {
     var el = document.getElementById('auto-refresh-countdown');
     if (!el) return;
