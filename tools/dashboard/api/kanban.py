@@ -1605,3 +1605,68 @@ def create_from_plan():
     finally:
         conn.close()
 
+
+@kanban_api.route("/lessons", methods=["GET"])
+def list_lessons():
+    """Return lesson_learned memory entries for kanban tasks.
+
+    Query params:
+      pattern — filter by pattern (e.g. token_exhaustion)
+      systemic — 1/0 filter
+      days — look-back window (default 30)
+      limit — cap results (default 200)
+    """
+    pattern_filter = request.args.get("pattern")
+    systemic_filter = request.args.get("systemic")
+    try:
+        days = int(request.args.get("days") or 30)
+    except (ValueError, TypeError):
+        days = 30
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (ValueError, TypeError):
+        limit = 200
+
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    conn = get_connection()
+    try:
+        sql = (
+            "SELECT id, content, created_at, importance "
+            "FROM memory_entries WHERE type = ? AND created_at >= ?"
+        )
+        params: List[Any] = ["lesson_learned", since]
+        if pattern_filter:
+            sql += " AND content LIKE ?"
+            params.append(f'%"pattern": "{pattern_filter}"%')
+        if systemic_filter is not None:
+            sql += " AND content LIKE ?"
+            target = "true" if systemic_filter in ("1", "true", "yes") else "false"
+            params.append(f'%"is_systemic": {target}%')
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, tuple(params)).fetchall()
+        lessons: List[Dict[str, Any]] = []
+        for r in rows:
+            d = dict(r)
+            payload: Dict[str, Any] = {}
+            try:
+                payload = json.loads(d.get("content") or "{}")
+            except Exception:
+                pass
+            lessons.append({
+                "id": d.get("id"),
+                "created_at": d.get("created_at"),
+                "importance": d.get("importance"),
+                "task_id": payload.get("task_id"),
+                "task_title": payload.get("task_title"),
+                "outcome": payload.get("outcome"),
+                "pattern": payload.get("pattern"),
+                "category": payload.get("category"),
+                "failure_count": payload.get("failure_count"),
+                "recurrence_score": payload.get("recurrence_score"),
+                "is_systemic": payload.get("is_systemic"),
+                "recommendation": payload.get("recommendation"),
+            })
+        return jsonify({"lessons": lessons, "total": len(lessons), "days": days})
+    finally:
+        conn.close()

@@ -70,6 +70,8 @@ _PREDICTION_TYPE_TO_TASK_TYPE = {
     "regression::http_head": "fix",
     "regression::module_import": "fix",
     "regression::coherence_status": "fix",
+    # Lessons-learned remediation
+    "lesson_learned": "fix",
 }
 
 # Statuses considered "open" — a card in any of these blocks new creation
@@ -137,6 +139,17 @@ def _generate_title(pred: Dict[str, Any]) -> str:
         kind, rule_id = prediction_type.split("::", 1)
     else:
         kind, rule_id = "issue", prediction_type
+
+    # Special-case lesson_learned for a clearer title
+    if prediction_type == "lesson_learned":
+        subject_id = pred.get("subject_id", "")
+        parts = subject_id.split("::", 1)
+        prefix = parts[0] if len(parts) > 1 else ""
+        pattern = parts[1] if len(parts) > 1 else subject_id
+        label = f"{pattern} ({prefix})" if prefix else pattern
+        if len(label) > 50:
+            label = label[:47] + "..."
+        return f"Fix recurrence: {label}"
 
     subject_id = pred.get("subject_id", "")
     label = subject_id.split("::", 1)[-1] if "::" in subject_id else subject_id

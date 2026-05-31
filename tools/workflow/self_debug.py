@@ -512,6 +512,13 @@ def check_and_diagnose(task_id: str, reason: str, cwd: str,
     diag_id = _create_diagnostic_card(task_id, reason, snap, diag)
     _quarantine_task(task_id, diag_id, diag)
     lesson_id = _persist_lesson(task_id, reason, diag)
+    # ── LESSONS LEARNED: self-debug quarantine ─────────────────────────────
+    try:
+        from tools.workflow.lesson_learned import analyze_task, write_lesson
+        lesson = analyze_task(task_id, outcome="quarantined")
+        write_lesson(lesson)
+    except Exception:
+        pass
     _notify(task_id, diag_id, diag)
     diag["lesson_entry_id"] = lesson_id
     # Clear history so a future re-queue starts fresh (after human/Oracle acts)

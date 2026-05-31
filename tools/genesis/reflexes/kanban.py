@@ -1484,6 +1484,13 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
                 f"  Kanban: decomposed batch {task['id']} into "
                 f"{len(created_children)} children ({rule or 'unknown'} rule)"
             )
+            # ── LESSONS LEARNED: auto-decomposed batch ────────────────
+            try:
+                from tools.workflow.lesson_learned import analyze_task, write_lesson
+                lesson = analyze_task(task["id"], outcome="auto_decomposed")
+                write_lesson(lesson)
+            except Exception:
+                pass
         except Exception as exc:
             print(f"  Kanban: failed to mark batch decomposed: {exc}")
 
@@ -1604,6 +1611,13 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
                     f"  Kanban: auto-decomposed phase-exit gate {task_id} into "
                     f"5 sequential sub-tasks (parent marked done)"
                 )
+                # ── LESSONS LEARNED: auto-decomposed phase gate ───────────
+                try:
+                    from tools.workflow.lesson_learned import analyze_task, write_lesson
+                    lesson = analyze_task(task_id, outcome="auto_decomposed")
+                    write_lesson(lesson)
+                except Exception:
+                    pass
             except Exception as exc:
                 print(f"  Kanban: failed to mark gate {task_id} done: {exc}")
         else:
@@ -5560,6 +5574,14 @@ def _check_completed():
                     _clear_retry_count(task_id)
                     _clear_resume_at(task_id)
                     _clear_timeout_count(task_id)
+                    # ── LESSONS LEARNED: success ───────────────────────────────
+                    try:
+                        from tools.workflow.lesson_learned import analyze_task, write_lesson, maybe_create_remediation_card
+                        lesson = analyze_task(task_id, outcome="success")
+                        write_lesson(lesson)
+                        maybe_create_remediation_card(lesson)
+                    except Exception:
+                        pass
                 else:
                     print(f"  Kanban: {task_id} UNVERIFIED: {reason}")
                     # Permission-blocked: agent cannot self-resolve a write
@@ -5602,6 +5624,14 @@ def _check_completed():
                                 "_move_task(%s) failed for %s: %s",
                                 new_status, task_id, _mt_exc,
                             )
+                        # ── LESSONS LEARNED: failure ──────────────────────────────
+                        try:
+                            from tools.workflow.lesson_learned import analyze_task, write_lesson, maybe_create_remediation_card
+                            lesson = analyze_task(task_id, outcome="failure")
+                            write_lesson(lesson)
+                            maybe_create_remediation_card(lesson)
+                        except Exception:
+                            pass
 
                 if verified:
                     _send_notification(task_dict, event="done")
@@ -6335,6 +6365,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                         "stale-cleanup failure-write failed for %s: %s",
                         tid, _fc_exc,
                     )
+                # ── LESSONS LEARNED: stale cleanup ──────────────────────────
+                try:
+                    from tools.workflow.lesson_learned import analyze_task, write_lesson, maybe_create_remediation_card
+                    lesson = analyze_task(tid, outcome="stale_cleanup")
+                    write_lesson(lesson)
+                    maybe_create_remediation_card(lesson)
+                except Exception:
+                    pass
 
                 # Build a task dict for the local alert queue.
                 task_dict = {"id": tid, "title": tid}
@@ -6440,6 +6478,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         decomposed = _auto_decompose_stalled_tasks()
         if decomposed:
             print(f"  Kanban: auto-decomposed {len(decomposed)} stalled task(s): {decomposed}")
+            # ── LESSONS LEARNED: stalled auto-decompose ─────────────────
+            for _tid in decomposed:
+                try:
+                    from tools.workflow.lesson_learned import analyze_task, write_lesson
+                    lesson = analyze_task(_tid, outcome="auto_decomposed")
+                    write_lesson(lesson)
+                except Exception:
+                    pass
     except Exception as _ad_exc:
         logger.warning("auto_decompose sweep failed: %s", _ad_exc)
 
@@ -6494,6 +6540,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 # Decomposed successfully — skip dispatch for this task;
                 # children will be picked up next cycle. Continue to next task.
                 decomposed_this_cycle.append(task["id"])
+                # ── LESSONS LEARNED: pre-dispatch complexity decompose ────
+                try:
+                    from tools.workflow.lesson_learned import analyze_task, write_lesson
+                    lesson = analyze_task(task["id"], outcome="auto_decomposed")
+                    write_lesson(lesson)
+                except Exception:
+                    pass
                 continue
 
         try:
