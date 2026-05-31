@@ -1,5 +1,0 @@
-{"ts": "2026-05-30T04:01:10.551155+00:00", "level": "ERROR", "component": "databridge.servicenow_itsm", "message": "ITSM health check failed: Connection refused", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-30T04:03:24.099963+00:00", "level": "ERROR", "component": "databridge.servicenow_itsm", "message": "ITSM health check failed: Connection refused", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-30T04:05:33.084010+00:00", "level": "ERROR", "component": "databridge.servicenow_itsm", "message": "ITSM health check failed: Connection refused", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-30T04:07:57.261139+00:00", "level": "ERROR", "component": "databridge.servicenow_itsm", "message": "ITSM health check failed: Connection refused", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-30T04:16:16.861600+00:00", "level": "ERROR", "component": "databridge.servicenow_itsm", "message": "ITSM health check failed: Connection refused", "trace_id": null, "session_id": null, "extra": {}}

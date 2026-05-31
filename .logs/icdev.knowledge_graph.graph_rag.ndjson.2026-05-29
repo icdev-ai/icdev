@@ -1,1 +1,0 @@
-{"ts": "2026-05-30T03:23:35.489634+00:00", "level": "WARNING", "component": "icdev.knowledge_graph.graph_rag", "message": "Failed to log retrieval: database is locked", "trace_id": null, "session_id": null, "extra": {}}
