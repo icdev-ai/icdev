@@ -228,6 +228,7 @@
 (function(){
   if(window.mermaid){ try{ mermaid.initialize({startOnLoad:false, theme:'dark'}); }catch(e){} }
   var state={type:'local_path', scanId:null, roadmapId:null, phaseId:'P1'};
+  window.state=state;
   var BASE='/ai-ify';
 
   document.querySelectorAll('.src-card').forEach(function(c){

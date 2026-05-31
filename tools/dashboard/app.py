@@ -41,6 +41,7 @@ from flask import (
     url_for,
     send_from_directory,
     make_response,
+    Response,
 )  # noqa: E402
 
 from tools.dashboard.config import (  # noqa: E402
@@ -1553,7 +1554,7 @@ def create_app() -> Flask:
     def kanban_scheduler_pause():
         """POST — manually pause the kanban scheduler cycle."""
         from tools.kanban.scheduler_control import pause as _sched_pause  # noqa: PLC0415
-        body = request.get_json(silent=True) or {}
+        body = flask_request.get_json(silent=True) or {}
         return jsonify(_sched_pause(actor=body.get("actor", "dashboard"),
                                     reason=body.get("reason", "manual (dashboard)")))
 
@@ -1561,7 +1562,7 @@ def create_app() -> Flask:
     def kanban_scheduler_resume():
         """POST — resume the kanban scheduler cycle."""
         from tools.kanban.scheduler_control import resume as _sched_resume  # noqa: PLC0415
-        body = request.get_json(silent=True) or {}
+        body = flask_request.get_json(silent=True) or {}
         return jsonify(_sched_resume(actor=body.get("actor", "dashboard")))
 
     @app.route("/api/kanban/recent-events")
@@ -9763,7 +9764,7 @@ def create_app() -> Flask:
             """GET /api/platform/health — Composite platform health across 10 domains."""
             from tools.dashboard.platform_health import _invalidate_cache  # noqa: E402
 
-            if request.args.get("invalidate") == "1":  # noqa: F821
+            if flask_request.args.get("invalidate") == "1":  # noqa: F821
                 _invalidate_cache()
             result = get_platform_health()
             # Shape domains for API response (omit all_findings for brevity)

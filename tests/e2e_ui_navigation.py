@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -390,7 +389,7 @@ def check_proposals_reviews(page: Page, r: Result) -> None:
 
     # No JS errors
     try:
-        logs = page.evaluate("() => window.__errors || []")
+        page.evaluate("() => window.__errors || []")
         r.ok("reviews_dash:no_js_errors")
     except Exception as exc:
         r.fail("reviews_dash:no_js_errors", exc)

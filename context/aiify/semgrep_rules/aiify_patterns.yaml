@@ -322,3 +322,275 @@ rules:
     metadata:
       aiify_pattern: nested_conditionals
       ai_paradigm: ml_classifier
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # Framework-level architectural patterns (added 2026-05-31)
+  # These detect domain-specific AI augmentation opportunities missed by
+  # literal code-pattern rules above.
+  # ══════════════════════════════════════════════════════════════════════════════
+
+  # ── Django / Python document-management patterns ─────────────────────────────
+
+  # Django signal-based document consumer (post_save on Document model)
+  - id: aac-django-document-consumer-py
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @receiver($SIGNAL, sender=$MODEL)
+              def $FUNC(...):
+                ...
+                $DOC.$FIELD.save(...)
+                ...
+          - pattern: |
+              def $FUNC(...):
+                ...
+                $MODEL.objects.create(...)
+                ...
+                $CONSUMER.consume_document(...)
+                ...
+    message: "Django document ingestion consumer — replace with agentic document router"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aiify_pattern: document_ingestion_pipeline
+      ai_paradigm: agentic_trigger
+
+  # OCR library usage (tesseract, pytesseract, OCRmyPDF, pdf2image)
+  - id: aac-ocr-pipeline-py
+    pattern-either:
+      - pattern: pytesseract.$METHOD(...)
+      - pattern: $TESS.image_to_string(...)
+      - pattern: ocrmypdf.$METHOD(...)
+      - pattern: pdf2image.convert_from_path(...)
+      - pattern: cv2.imread(...)
+    message: "OCR / image-to-text pipeline — replace with layout-aware vision transformer"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aiify_pattern: ocr_extraction_pipeline
+      ai_paradigm: nlp_extractor
+
+  # Django full-text search (PostgreSQL SearchVector, SearchQuery, SearchRank)
+  - id: aac-django-fulltext-search-py
+    pattern-either:
+      - pattern: SearchVector(...)
+      - pattern: SearchQuery(...)
+      - pattern: SearchRank(...)
+      - pattern: $QS.annotate(search=SearchVector(...))
+      - pattern: $QS.filter($Q__search=...)
+    message: "Django full-text search — replace with vector semantic search + embeddings"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aiify_pattern: fulltext_search_engine
+      ai_paradigm: embedding_search
+
+  # Django file upload / ingestion view
+  - id: aac-django-upload-view-py
+    patterns:
+      - pattern: |
+          def $FUNC(...):
+            ...
+            $FILE = request.FILES[$NAME]
+            ...
+            $DOC.save()
+            ...
+    message: "Django file upload handler — hook into agentic document processing pipeline"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aiify_pattern: document_ingestion_pipeline
+      ai_paradigm: agentic_trigger
+
+  # Manual tagging / classification in Django ORM
+  - id: aac-django-manual-tags-py
+    pattern-either:
+      - pattern: $DOC.tags.add(...)
+      - pattern: $DOC.tags.set(...)
+      - pattern: Tag.objects.get_or_create(...)
+      - pattern: $MODEL.objects.update(tags=...)
+    message: "Manual document tagging via ORM — replace with ML auto-classifier"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aiify_pattern: manual_classification_ui
+      ai_paradigm: ml_classifier
+
+  # Metadata extraction (manual or regex-based)
+  - id: aac-metadata-extraction-py
+    pattern-either:
+      - pattern: |
+          def $FUNC(...):
+            ...
+            $META = $DOC.metadata
+            ...
+            $DOC.$FIELD = $META[$KEY]
+            ...
+      - pattern: re.$METHOD($PATTERN, $CONTENT)
+      - pattern: |
+          def parse_metadata(...):
+            ...
+            return {...}
+    message: "Manual / regex metadata extraction — replace with NLP entity extractor"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aiify_pattern: metadata_extraction
+      ai_paradigm: nlp_extractor
+
+  # Static document routing rules (matchers, dispatchers, pipelines)
+  - id: aac-document-routing-py
+    pattern-either:
+      - pattern: |
+          if $DOC.content_type == $TYPE:
+            ...
+          elif $DOC.content_type == $TYPE2:
+            ...
+      - pattern: |
+          $ROUTES = {
+            $K1: $V1,
+            $K2: $V2,
+            $K3: $V3,
+            ...
+          }
+    message: "Static document routing — replace with ML decision agent"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aiify_pattern: document_routing
+      ai_paradigm: decision_agent
+
+  # Celery / Huey background document processing task
+  - id: aac-celery-document-task-py
+    patterns:
+      - pattern: |
+          @$APP.task(...)
+          def $FUNC(...):
+            ...
+            $DOC.process(...)
+            ...
+    message: "Celery background document task — consider agentic trigger orchestration"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aiify_pattern: scheduled_cron
+      ai_paradigm: agentic_trigger
+
+  # ── Flask / FastAPI patterns ──────────────────────────────────────────────────
+
+  # Flask/FastAPI file upload endpoint
+  - id: aac-flask-upload-endpoint-py
+    patterns:
+      - pattern: |
+          @$APP.route(..., methods=["POST"])
+          def $FUNC(...):
+            ...
+            $FILE = request.files[$NAME]
+            ...
+            $DOC.save(...)
+            ...
+    message: "Flask file upload endpoint — hook into agentic ingestion pipeline"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aiify_pattern: document_ingestion_pipeline
+      ai_paradigm: agentic_trigger
+
+  # FastAPI upload endpoint
+  - id: aac-fastapi-upload-endpoint-py
+    patterns:
+      - pattern: |
+          @$DECORATOR
+          async def $FUNC($FILE: UploadFile):
+            ...
+            $CONTENTS = await $FILE.read(...)
+            ...
+            $DOC.save(...)
+            ...
+    message: "FastAPI file upload handler — hook into agentic ingestion pipeline"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aiify_pattern: document_ingestion_pipeline
+      ai_paradigm: agentic_trigger
+
+  # ── Spring Boot / Java patterns ─────────────────────────────────────────────
+
+  # Spring file upload controller
+  - id: aac-spring-upload-controller-java
+    patterns:
+      - pattern: |
+          @$MAPPING(...)
+          public $RET $FUNC(@RequestParam("file") MultipartFile $FILE) {
+            ...
+            $FILE.transferTo(...);
+            ...
+          }
+    message: "Spring Boot file upload — hook into agentic document ingestion"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aiify_pattern: document_ingestion_pipeline
+      ai_paradigm: agentic_trigger
+
+  # Spring Data JPA full-text search (Elasticsearch, Solr)
+  - id: aac-spring-fulltext-search-java
+    pattern-either:
+      - pattern: $REPO.search(...)
+      - pattern: elasticsearchRestTemplate.search(...)
+      - pattern: $SOLR.query(...)
+    message: "Spring full-text search — replace with vector semantic search + embeddings"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aiify_pattern: fulltext_search_engine
+      ai_paradigm: embedding_search
+
+  # ── JavaScript / TypeScript (Node.js) patterns ───────────────────────────────
+
+  # Express/Multer file upload
+  - id: aac-express-upload-js
+    patterns:
+      - pattern: |
+          $APP.post(..., $UPLOAD.single($NAME), function($REQ, $RES) {
+            ...
+            $FILE = $REQ.file
+            ...
+          })
+    message: "Express file upload — hook into agentic ingestion pipeline"
+    languages: [javascript, typescript]
+    severity: INFO
+    metadata:
+      aiify_pattern: document_ingestion_pipeline
+      ai_paradigm: agentic_trigger
+
+  # OCR library in Node.js (tesseract.js)
+  - id: aac-ocr-node-js
+    pattern-either:
+      - pattern: Tesseract.recognize(...)
+      - pattern: tesseract.recognize(...)
+    message: "Node.js OCR pipeline — replace with layout-aware vision transformer"
+    languages: [javascript, typescript]
+    severity: INFO
+    metadata:
+      aiify_pattern: ocr_extraction_pipeline
+      ai_paradigm: nlp_extractor
+
+  # ── General cross-language patterns ──────────────────────────────────────────
+
+  # Content-type dispatch table
+  - id: aac-content-type-dispatch
+    patterns:
+      - pattern: |
+          $DISPATCH = {
+            "application/pdf": $HANDLER1,
+            "image/jpeg": $HANDLER2,
+            "image/png": $HANDLER3,
+            ...
+          }
+    message: "Static MIME-type dispatch table — replace with ML document classifier"
+    languages: [python, java, go, javascript, typescript]
+    severity: INFO
+    metadata:
+      aiify_pattern: document_routing
+      ai_paradigm: decision_agent

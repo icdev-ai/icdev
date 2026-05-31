@@ -11,7 +11,7 @@ from __future__ import annotations
 AIIFY_FEATURE_FLAG = "ICDEV_AIIFY_ENABLED"
 
 # ── Pattern Types ─────────────────────────────────────────────────────────────
-# 8 AI-augmentable code patterns detected by the pattern classifier.
+# AI-augmentable code patterns detected by the pattern classifier.
 # IDs must match entries in context/aiify/pattern_catalog.json.
 PATTERN_TYPES: list[str] = [
     "nested_conditionals",      # if-depth ≥ 3 → ML classifier
@@ -22,6 +22,13 @@ PATTERN_TYPES: list[str] = [
     "db_render_notify_chain",   # ORM + template + SMTP pipeline → LLM synthesis
     "keyword_list_search",      # x in list / .contains() → vector semantic search
     "large_rule_table",         # dict/HashMap/map ≥ 10 keys → ML/RL decision agent
+    # Framework-level architectural patterns (added 2026-05-31)
+    "document_ingestion_pipeline",  # Document upload/consumer pipeline → agentic trigger
+    "ocr_extraction_pipeline",      # OCR library usage (tesseract, pytesseract) → NLP extractor
+    "fulltext_search_engine",       # DB full-text search (tsvector, SearchQuery) → embedding search
+    "manual_classification_ui",     # Manual tagging/classification UI/API → ML classifier
+    "metadata_extraction",          # Manual metadata entry / regex extraction → NLP extractor
+    "document_routing",             # Static document routing rules → decision agent
 ]
 
 # ── AI Paradigms ──────────────────────────────────────────────────────────────
@@ -100,6 +107,12 @@ PATTERN_TO_PARADIGM: dict[str, str] = {
     "db_render_notify_chain": "llm_generation",
     "keyword_list_search": "embedding_search",
     "large_rule_table": "decision_agent",
+    "document_ingestion_pipeline": "agentic_trigger",
+    "ocr_extraction_pipeline": "nlp_extractor",
+    "fulltext_search_engine": "embedding_search",
+    "manual_classification_ui": "ml_classifier",
+    "metadata_extraction": "nlp_extractor",
+    "document_routing": "decision_agent",
 }
 
 # ── AI-readiness verdict tiers ────────────────────────────────────────────────
@@ -127,6 +140,12 @@ CATEGORY_MAP: dict[str, str] = {
     "keyword_list_search": "enhancement",
     "string_template_rendering": "enhancement",
     "hardcoded_threshold": "enhancement",
+    "document_ingestion_pipeline": "automation",
+    "ocr_extraction_pipeline": "enhancement",
+    "fulltext_search_engine": "enhancement",
+    "manual_classification_ui": "innovation",
+    "metadata_extraction": "enhancement",
+    "document_routing": "automation",
 }
 
 # ── Component derivation tables (replace the old flat-0.5 defaults) ────────────
@@ -139,6 +158,12 @@ PATTERN_BASE_SIGNALS: dict[str, dict[str, float]] = {
     "db_render_notify_chain":    {"usage_freq": 0.75, "automation_deficit": 0.70},
     "keyword_list_search":       {"usage_freq": 0.60, "automation_deficit": 0.55},
     "large_rule_table":          {"usage_freq": 0.60, "automation_deficit": 0.60},
+    "document_ingestion_pipeline":{"usage_freq": 0.80, "automation_deficit": 0.70},
+    "ocr_extraction_pipeline":   {"usage_freq": 0.75, "automation_deficit": 0.65},
+    "fulltext_search_engine":    {"usage_freq": 0.70, "automation_deficit": 0.60},
+    "manual_classification_ui":  {"usage_freq": 0.65, "automation_deficit": 0.70},
+    "metadata_extraction":       {"usage_freq": 0.70, "automation_deficit": 0.60},
+    "document_routing":          {"usage_freq": 0.60, "automation_deficit": 0.55},
 }
 DATA_AVAIL_BY_PARADIGM: dict[str, float] = {
     "embedding_search": 0.85, "llm_generation": 0.80, "nlp_extractor": 0.70,
