@@ -453,14 +453,14 @@ def ingest_file(
     try:
         _ensure_schema(conn)
 
-        # Dedup: if same content already exists in this collection, return the latest
-        # version idempotently (no new rows — aligns with test_reingest_is_idempotent).
+        # ── Dedup: content-hash based idempotency ───────────────────────────────
         dup_row = conn.execute(
-            "SELECT doc_id FROM dic_documents WHERE content_sha256 = ? AND collection_id = ? LIMIT 1",
+            "SELECT doc_id, filename FROM dic_documents WHERE content_sha256 = ? AND collection_id = ? LIMIT 1",
             (content_hash, collection_id),
         ).fetchone()
         if dup_row:
-            existing_doc_id = dup_row[0]
+            existing_doc_id = dup_row[0] if hasattr(dup_row, "__getitem__") else dup_row["doc_id"]
+            existing_filename = dup_row[1] if hasattr(dup_row, "__getitem__") else dup_row.get("filename", "")
             ver_row = conn.execute(
                 "SELECT version_id, version_no FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC LIMIT 1",
                 (existing_doc_id,),
@@ -488,7 +488,7 @@ def ingest_file(
                 kg_relationships=0,
                 tenant_id=tid,
                 classification=cls,
-                errors=errors + ["Duplicate file — returned existing document without changes."],
+                errors=errors + [f"Duplicate detected — this file already exists as '{existing_filename}' in this collection. No new version created (idempotent)."],
             )
 
         doc_id = _doc_id(collection_id, str(p))
@@ -508,6 +508,10 @@ def ingest_file(
             classification=cls,
         )
         _emit("chunking", f"{len(chunks)} chunks created", 20)
+
+        # Warn when text is empty or near-empty so the UI can explain 0 chunks.
+        if not text.strip():
+            errors.append("Extracted text is empty — file may be image-based (scanned PDF), corrupted, or uses an unsupported encoding. Try OCR or re-export as text.")
 
         # 3) Embed + upsert into the vector store (same path ingest_source uses).
         chunks_embedded = 0

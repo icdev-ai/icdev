@@ -146,10 +146,22 @@ function renderDraft(data) {
       'style="margin-top:8px;background:#1a2e52;color:#7ab3f0;padding:5px 12px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">' +
       '↻ Regenerate Section (targeted retrieval)</button>' +
       '<span id="regen-status-' + escJs(s.heading || '') + '" style="margin-left:8px;color:#5a7aa0;font-size:11px;display:none;">Working…</span>';
+    var citationChips = '';
+    if (s.citations && s.citations.length) {
+      citationChips = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">' +
+        s.citations.map(function(c) {
+          var docTitle = c.doc_title || c.doc_id || 'Source';
+          var page = c.page ? 'p.' + c.page : '?';
+          return '<span style="background:#0a1a2e;border:1px solid #1a3a5e;border-radius:3px;padding:3px 8px;font-size:10px;color:#7ab3f0;" title="' + escHtml(docTitle + ' · ' + page + ' · ' + (c.chunk_id || '')) + '">' +
+            '📄 ' + escHtml(docTitle) + ' · ' + page +
+            '</span>';
+        }).join('') +
+        '</div>';
+    }
     return '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:6px;padding:14px;margin-bottom:12px;">' +
       '<div style="margin-bottom:8px;"><strong style="color:#9bb8d8;font-size:13px;">' + (s.heading || '') + '</strong>' + badge + '</div>' +
       '<div style="color:#a8c8e0;font-size:12px;line-height:1.7;">' + (s.abstained ? '<em style="color:#fbbf24;">Insufficient evidence — this section was omitted.</em>' : escHtml(s.content || '')) + '</div>' +
-      (s.citation_count ? '<div style="margin-top:6px;color:#5a7aa0;font-size:11px;">' + s.citation_count + ' citation(s)</div>' : '') +
+      citationChips +
       regenBtn +
       '</div>';
   }).join('');
@@ -169,8 +181,22 @@ function regenerateSection(heading, collectionId) {
     .then(function(data) {
       if (statusEl) statusEl.style.display = 'none';
       if (data.error) { alert('Regeneration failed: ' + data.error); return; }
-      // Refresh the page to show updated sections from DB, or just alert.
-      alert('Section "' + heading + '" regenerated with ' + data.citation_count + ' citations.');
+      // Fetch updated sections and re-render inline
+      fetch('/document-intelligence/api/versions/' + _currentVersionId + '/sections')
+        .then(function(r) { return r.json(); })
+        .then(function(secData) {
+          if (secData.sections) {
+            renderDraft({title: document.getElementById('draft-title').textContent, sections: secData.sections.map(function(s) {
+              return {
+                heading: s.heading,
+                content: s.content,
+                verified: s.status === 'approved',
+                abstained: s.status === 'abstained',
+                citation_count: (s.citations || []).length
+              };
+            })});
+          }
+        });
     })
     .catch(function(e) {
       if (statusEl) statusEl.style.display = 'none';

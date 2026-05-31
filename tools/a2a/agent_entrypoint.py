@@ -286,7 +286,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="A2A Agent Entrypoint")
     parser.add_argument("--agent-id", required=True, help="Agent ID (e.g. builder-agent)")
     parser.add_argument("--port", type=int, required=True, help="Agent port")
-    parser.add_argument("--host", default="0.0.0.0", help="Bind host")
+    parser.add_argument("--host", default="0.0.0.0", help="Bind host")  # nosec B104 — agent binds all interfaces by design; override via --host
     parser.add_argument("--tls-cert", help="TLS certificate path")
     parser.add_argument("--tls-key", help="TLS private key path")
     parser.add_argument("--tls-ca", help="TLS CA cert for mutual TLS")

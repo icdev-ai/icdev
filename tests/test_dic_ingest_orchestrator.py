@@ -57,6 +57,17 @@ def test_html_extractor_strips_tags(tmp_path: Path):
 
 
 def test_ingest_writes_dic_rows_with_stamps(sample_doc: Path):
+    # Clean up any prior test run residue in the shared DB.
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM dic_chunk_links WHERE doc_id LIKE 'dic_doc_%'")
+        cur.execute("DELETE FROM dic_versions WHERE doc_id LIKE 'dic_doc_%'")
+        cur.execute("DELETE FROM dic_documents WHERE collection_id = ?", ("test_collection",))
+        conn.commit()
+    finally:
+        conn.close()
+
     outcome = ingest_file(
         str(sample_doc),
         "test_collection",
@@ -135,6 +146,17 @@ def test_missing_file_raises():
 
 
 def test_cli_json(sample_doc: Path, capsys):
+    # Clean up any prior test run residue in the shared DB.
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM dic_chunk_links WHERE doc_id LIKE 'dic_doc_%'")
+        cur.execute("DELETE FROM dic_versions WHERE doc_id LIKE 'dic_doc_%'")
+        cur.execute("DELETE FROM dic_documents WHERE collection_id = ?", ("cli_collection",))
+        conn.commit()
+    finally:
+        conn.close()
+
     from tools.document_intelligence.__main__ import main
 
     rc = main(

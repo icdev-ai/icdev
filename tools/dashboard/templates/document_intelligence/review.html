@@ -21,6 +21,10 @@
     style="background:none;color:#5a7aa0;padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
     Document Versions <span style="background:#1e293b;color:#94a3b8;border-radius:9px;padding:1px 6px;font-size:10px;margin-left:4px;">{{ pending_versions|length }}</span>
   </button>
+  <button id="tab-docs" onclick="setTab('documents')"
+    style="background:none;color:#5a7aa0;padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+    Documents <span style="background:#1e293b;color:#94a3b8;border-radius:9px;padding:1px 6px;font-size:10px;margin-left:4px;">{{ pending_docs|length }}</span>
+  </button>
 </div>
 
 <!-- SSP Fragments Panel -->
@@ -158,15 +162,78 @@
 {% endfor %}
 </div>
 
+<!-- Documents Panel -->
+<div id="panel-documents" style="display:none;">
+{% for pd in pending_docs %}
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;margin-bottom:14px;" id="doc-{{ pd.doc_id }}">
+  <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+    <div>
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">{{ pd.title or pd.filename or pd.doc_id }}</span>
+      <span style="background:#1a2e52;color:#7ab3f0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:8px;">{{ pd.pending_section_count }} pending section{{ 's' if pd.pending_section_count != 1 else '' }}</span>
+      <span style="background:#1a2e52;color:#7ab3f0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">{{ role_badge(pd.user_role) }}</span>
+    </div>
+    <span style="color:#7a8cb0;font-size:11px;">{{ pd.classification or 'CUI' }}</span>
+  </div>
+  <div style="color:#7a8cb0;font-size:11px;margin-bottom:10px;">Collection: {{ pd.collection_id }} · <a href="/document-intelligence/doc/{{ pd.doc_id }}" style="color:#7ab3f0;">Open document →</a></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <button onclick="reviewDoc('{{ pd.doc_id }}', 'approve')"
+      style="background:#052e16;color:#4ade80;padding:7px 16px;border:1px solid #1a5a30;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(pd.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
+      ✓ Approve All
+    </button>
+    <button onclick="reviewDoc('{{ pd.doc_id }}', 'reject')"
+      style="background:#2e0505;color:#f87171;padding:7px 16px;border:1px solid #5a1a1a;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(pd.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
+      ✕ Reject All
+    </button>
+    <button onclick="reviewDoc('{{ pd.doc_id }}', 'revise')"
+      style="background:#2e1a05;color:#fbbf24;padding:7px 16px;border:1px solid #5a3a1a;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(pd.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
+      ✏️ Revise All
+    </button>
+  </div>
+</div>
+{% else %}
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:24px;text-align:center;color:#3a6080;">
+  No documents with pending sections.
+</div>
+{% endfor %}
+</div>
+
 <script>
 function setTab(tab) {
   var isFrag = tab === 'fragments';
+  var isVers = tab === 'versions';
+  var isDocs = tab === 'documents';
   document.getElementById('tab-frags').style.background = isFrag ? '#0f3460' : 'none';
   document.getElementById('tab-frags').style.color = isFrag ? '#7ab3f0' : '#5a7aa0';
-  document.getElementById('tab-vers').style.background = isFrag ? 'none' : '#0f3460';
-  document.getElementById('tab-vers').style.color = isFrag ? '#5a7aa0' : '#7ab3f0';
+  document.getElementById('tab-vers').style.background = isVers ? '#0f3460' : 'none';
+  document.getElementById('tab-vers').style.color = isVers ? '#7ab3f0' : '#5a7aa0';
+  document.getElementById('tab-docs').style.background = isDocs ? '#0f3460' : 'none';
+  document.getElementById('tab-docs').style.color = isDocs ? '#7ab3f0' : '#5a7aa0';
   document.getElementById('panel-fragments').style.display = isFrag ? 'block' : 'none';
-  document.getElementById('panel-versions').style.display = isFrag ? 'none' : 'block';
+  document.getElementById('panel-versions').style.display = isVers ? 'block' : 'none';
+  document.getElementById('panel-documents').style.display = isDocs ? 'block' : 'none';
+}
+
+function reviewDoc(docId, action) {
+  var note = prompt('Bulk review note (optional):') || '';
+  fetch('/document-intelligence/api/review/' + docId + '/' + action, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({type: 'version', reviewer: 'current_user', note: note})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      var el = document.getElementById('doc-' + docId);
+      if (el) {
+        el.style.opacity = '.4';
+        var label = action === 'approve' ? '✓ Approved' : action === 'reject' ? '✕ Rejected' : '✏️ Revision Requested';
+        var color = action === 'approve' ? '#4ade80' : action === 'reject' ? '#f87171' : '#fbbf24';
+        el.innerHTML += '<div style="color:' + color + ';font-size:12px;margin-top:8px;">' + label + '</div>';
+        el.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+      }
+    })
+    .catch(function() { alert('Action failed.'); });
 }
 
 function toggleSections(versionId) {

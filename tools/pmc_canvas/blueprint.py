@@ -284,7 +284,7 @@ def create_pmc_blueprint() -> Blueprint:
                 peer=peers[0],
                 our_asn=data.get("our_asn", 0),
                 os_type=data.get("os_type", "ios_xr"),
-                neighbor_ip=data.get("neighbor_ip", "0.0.0.0"),
+                neighbor_ip=data.get("neighbor_ip", "0.0.0.0"),  # nosec B104 — BGP neighbor IP placeholder, not a bind address
                 import_policy=data.get("import_policy", "IMPORT-PEER"),
                 export_policy=data.get("export_policy", "EXPORT-PEER"),
                 md5_password=data.get("md5_password", ""),

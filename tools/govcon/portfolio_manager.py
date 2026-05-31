@@ -84,7 +84,7 @@ def _get_db():
     # Govcon tools are service-layer operations — clear any Flask RLS context
     # so that complex JOIN queries (subquery aliases) don't fail with
     # "no such column: c.classification" when RLS injection misfires.
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: govcon service-layer; JOIN subquery aliases fail with c.classification injection
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

@@ -668,7 +668,11 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     # apps/ but read from a tools/ adapter (e.g. tools/iqe/adapters/
     # innovation.py SELECTs innov_ideas) was mis-flagged as an orphan.
     # Scan apps/ for schema too so those CREATE TABLEs are seen.
-    schema_roots = [tools_dir, BASE_DIR / "apps"]
+    # icdev/ is the canonical package location (tools/ is a shim); canvas
+    # schemas defined under icdev/tools/ (e.g. aac_scans in
+    # icdev/tools/ai_augmentation/db/init_db.py) must also be covered so
+    # seed/adapter references in tools/ don't false-fire as orphans.
+    schema_roots = [tools_dir, BASE_DIR / "apps", BASE_DIR / "icdev"]
 
     created: Set[str] = set()
     referenced: Dict[str, str] = {}  # table → first referencing file

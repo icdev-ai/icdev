@@ -105,7 +105,7 @@ CUI_PORTION_MARKING = CUI_CONFIG.get("portion_marking", "(CUI)")
 
 # Server
 PORT = int(os.environ.get("ICDEV_DASHBOARD_PORT", "5050"))
-HOST = os.environ.get("ICDEV_DASHBOARD_HOST", "0.0.0.0")
+HOST = os.environ.get("ICDEV_DASHBOARD_HOST", "0.0.0.0")  # nosec B104 — dashboard default; override via ICDEV_DASHBOARD_HOST
 DEBUG = os.environ.get("ICDEV_DASHBOARD_DEBUG", "false").lower() in ("1", "true", "yes")
 
 # Monitoring thresholds (from monitoring_config.yaml)
