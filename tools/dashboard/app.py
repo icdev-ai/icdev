@@ -1136,32 +1136,44 @@ def _register_govcon_pages(app: "Flask", _get_db):
             try:
                 rows = conn.execute(
                     """SELECT
-                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as L,
-                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as M,
-                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as N,
+                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as "L",
+                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as "M",
+                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as "N",
                         COUNT(*) as total
                     FROM rfp_shall_statements s
                     LEFT JOIN icdev_capability_map m ON s.id = m.pattern_id"""
                 ).fetchone()
-                if rows and rows["total"] > 0:
-                    coverage["L"] = rows["L"] or 0
-                    coverage["M"] = rows["M"] or 0
-                    coverage["N"] = rows["N"] or 0
-                    coverage["rate"] = round(coverage["L"] / rows["total"] * 100)
+                if rows:
+                    r = dict(rows)
+                    total = r.get("total", 0) or 0
+                    if total > 0:
+                        coverage["L"] = r.get("L", r.get("l", 0)) or 0
+                        coverage["M"] = r.get("M", r.get("m", 0)) or 0
+                        coverage["N"] = r.get("N", r.get("n", 0)) or 0
+                        coverage["rate"] = round(coverage["L"] / total * 100)
             except Exception:
                 pass
             domain_coverage = []
             try:
                 rows = conn.execute(
                     """SELECT s.domain_category as domain, COUNT(*) as total,
-                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as L,
-                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as M,
-                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as N
+                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as "L",
+                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as "M",
+                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as "N"
                     FROM rfp_shall_statements s
                     LEFT JOIN icdev_capability_map m ON s.id = m.pattern_id
                     GROUP BY s.domain_category ORDER BY total DESC"""
                 ).fetchall()
-                domain_coverage = [dict(r) for r in rows]
+                domain_coverage = [
+                    {
+                        "domain": dict(r).get("domain", ""),
+                        "total": dict(r).get("total", 0) or 0,
+                        "L": dict(r).get("L", dict(r).get("l", 0)) or 0,
+                        "M": dict(r).get("M", dict(r).get("m", 0)) or 0,
+                        "N": dict(r).get("N", dict(r).get("n", 0)) or 0,
+                    }
+                    for r in rows
+                ]
             except Exception:
                 pass
             gaps = []

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Task Board - ICDEV™ Dashboard{% endblock %}
 {% block content %}
+<!-- EDITED_BY_CLAUDE_V3 -->
 <div class="page-header">
     <h1>Task Board</h1>
     <p class="subtitle">Manage scheduled and planned tasks — drag across columns or use arrow buttons to move.</p>
@@ -39,7 +40,14 @@
             <h3>{{ status_label }}</h3>
             <span class="kanban-column-count">0</span>
             {% if status_key == "suggested" %}
-            <button class="btn btn-sm" id="btn-promote-all" onclick="promoteAllSuggested()" title="Promote all suggested cards to backlog" style="margin-left:auto; padding:4px 12px; font-size:12px; font-weight:600; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer; display:none; letter-spacing:0.3px;">&#x2714; Promote All</button>
+            <select id="promote-all-gate" style="margin-left:auto; font-size:11px; padding:3px 6px; background:var(--bg-code); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); cursor:pointer;">
+                <option value="">All suggested</option>
+                <option value="value10" selected>Value ≥ 1.0</option>
+                <option value="value08">Value ≥ 0.8</option>
+                <option value="conf95">Confidence ≥ 90%</option>
+                <option value="conf70">Confidence ≥ 70%</option>
+            </select>
+            <button class="btn btn-sm" id="btn-promote-all" onclick="promoteAllSuggested()" title="Promote filtered suggested cards to backlog" style="padding:4px 12px; font-size:12px; font-weight:600; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer; display:none; letter-spacing:0.3px;">↑ Promote</button>
             {% endif %}
         </div>
         <div class="kanban-column-body">
@@ -211,6 +219,15 @@
 </div>
 
 <script>
+console.log('VERSION_2026_05_31_v3');
+// Suggested-lane state (mirrors index.html triage UX)
+var _suggestedSort = (function() {
+    try { return localStorage.getItem('icdev.kanban.suggestedSort') || 'value'; }
+    catch (e) { return 'value'; }
+})();
+var _selectedTaskIds = new Set();
+var _allTasks = [];
+
 function _isoToLocal(iso) {
     // Convert ISO/UTC string to local datetime-local input value
     if (!iso) return '';
@@ -378,27 +395,138 @@ function deleteTask(taskId) {
 }
 
 function refreshKanbanTasks() {
-    fetch('/api/kanban/tasks')
+    var url = '/api/kanban/tasks?sort=' + encodeURIComponent(_suggestedSort);
+    fetch(url)
         .then(function(r) { return r.json(); })
-        .then(function(data) { renderTaskKanban(data.tasks || []); });
+        .then(function(data) {
+            _allTasks = data.tasks || [];
+            renderTaskKanban(_allTasks);
+        });
 }
 
 function promoteAllSuggested() {
-    if (!confirm('Promote ALL suggested cards to backlog?')) return;
+    var gate = document.getElementById('promote-all-gate');
+    var preset = gate ? gate.value : '';
+    var payload = {};
+    var label = 'all suggested';
+    switch (preset) {
+        case 'value10': payload.min_value = 1.0; label = 'value ≥ 1.0'; break;
+        case 'value08': payload.min_value = 0.8; label = 'value ≥ 0.8'; break;
+        case 'conf95':  payload.min_confidence = 0.95; label = 'confidence ≥ 90%'; break;
+        case 'conf70':  payload.min_confidence = 0.70; label = 'confidence ≥ 70%'; break;
+    }
+    if (!confirm('Promote ' + label + ' cards to backlog?')) return;
     var btn = document.getElementById('btn-promote-all');
     if (btn) { btn.disabled = true; btn.textContent = 'Promoting...'; }
-    fetch('/api/kanban/tasks/promote-all', { method: 'POST' })
+    fetch('/api/kanban/tasks/promote-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            if (btn) { btn.disabled = false; btn.textContent = 'Promote All'; }
+            if (btn) { btn.disabled = false; btn.textContent = '↑ Promote'; }
             if (data.error) { alert('Error: ' + data.error); return; }
+            var msg = 'Promoted ' + (data.promoted || 0) + ' cards';
+            if (data.filtered) msg += ' (' + data.filtered + ' filtered by gate)';
+            alert(msg);
             refreshKanbanTasks();
         })
         .catch(function() {
-            if (btn) { btn.disabled = false; btn.textContent = 'Promote All'; }
-            alert('Promote all failed');
+            if (btn) { btn.disabled = false; btn.textContent = '↑ Promote'; }
+            alert('Promote failed');
         });
 }
+
+// Sort dropdown handler — persists to localStorage + refetches so
+// the server-side sort applies (value and confidence are computed
+// post-fetch in Python, but the API still returns tasks pre-sorted).
+function onSuggestedSortChange(val) {
+    if (!val) return;
+    _suggestedSort = val;
+    try { localStorage.setItem('icdev.kanban.suggestedSort', val); } catch (e) {}
+    refreshKanbanTasks();
+}
+
+// Bulk select preset — clears current selection and reselects rows
+// matching the named threshold.
+function applySuggestedSelectPreset(preset) {
+    _selectedTaskIds.clear();
+    if (preset === 'none' || !preset) {
+        renderTaskKanban(_allTasks);
+        return;
+    }
+    var suggestedItems = _allTasks.filter(function(t) { return t.status === 'suggested'; });
+
+    // Rule-based preset — format: "rule::<oracle_lens>"
+    if (preset.indexOf('rule::') === 0) {
+        var targetRule = preset.slice(6);
+        suggestedItems.forEach(function(t) {
+            if ((t.oracle_lens || '') === targetRule) {
+                _selectedTaskIds.add(t.id);
+            }
+        });
+        renderTaskKanban(_allTasks);
+        return;
+    }
+
+    suggestedItems.forEach(function(t) {
+        var conf = t.oracle_confidence || 0;
+        var val = t.oracle_value || 0;
+        var prio = (t.priority || '').toLowerCase();
+        var match = false;
+        switch (preset) {
+            case 'all':       match = true; break;
+            case 'conf95':    match = conf >= 0.95; break;
+            case 'conf90':    match = conf >= 0.90; break;
+            case 'value10':   match = val >= 1.0; break;
+            case 'value08':   match = val >= 0.8; break;
+            case 'value_lo':  match = val < 0.6; break;
+            case 'pri_crit':  match = prio === 'critical'; break;
+            case 'pri_high':  match = prio === 'high'; break;
+            case 'pri_med':   match = prio === 'medium'; break;
+            case 'pri_low':   match = prio === 'low'; break;
+        }
+        if (match) _selectedTaskIds.add(t.id);
+    });
+    renderTaskKanban(_allTasks);
+}
+
+function toggleTaskSelected(taskId, ev) {
+    if (ev) ev.stopPropagation();
+    if (_selectedTaskIds.has(taskId)) _selectedTaskIds.delete(taskId);
+    else _selectedTaskIds.add(taskId);
+    var countEls = document.querySelectorAll('[data-bulk-count]');
+    for (var i = 0; i < countEls.length; i++) {
+        countEls[i].textContent = _selectedTaskIds.size;
+    }
+}
+
+function bulkMoveSuggested(newStatus, actionLabel) {
+    var ids = Array.from(_selectedTaskIds);
+    if (!ids.length) {
+        alert('No tasks selected. Use the "Select" dropdown to pick a threshold.');
+        return;
+    }
+    if (!confirm(actionLabel + ' ' + ids.length + ' suggested task(s)?')) return;
+    fetch('/api/kanban/tasks/bulk-move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_ids: ids, status: newStatus })
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            _selectedTaskIds.clear();
+            refreshKanbanTasks();
+            if (data && data.failed && data.failed.length) {
+                console.warn('bulk-move partial failures:', data.failed);
+            }
+        })
+        .catch(function(e) { alert('Bulk move failed: ' + e); });
+}
+
+function bulkPromoteSuggested() { bulkMoveSuggested('backlog', 'Promote to backlog'); }
+function bulkDismissSuggested() { bulkMoveSuggested('done',    'Dismiss'); }
 
 // kv-viz-02: live counters for in_progress cards
 var _kvIntervals = {};
@@ -482,14 +610,15 @@ function renderTaskKanban(tasks) {
         }
 
         var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || ''); };
-        bodyEl.innerHTML = items.map(function(t) {
+        var cardsHtml = items.map(function(t) {
             var icon = typeIcons[t.task_type] || '';
             var pColor = priorityColors[t.priority] || '#6b7280';
+            var isSuggested = status === 'suggested';
             var arrows = '';
-            if (prevStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + prevStatus[status] + '\')" title="Move left">\u25C0</button>';
-            if (nextStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + nextStatus[status] + '\')" title="Move right">\u25B6</button>';
+            if (!isSuggested && prevStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + prevStatus[status] + '\')" title="Move left">◀</button>';
+            if (!isSuggested && nextStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + nextStatus[status] + '\')" title="Move right">▶</button>';
 
-            var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">\u{1F4C5} ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
+            var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">📅 ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
 
             // Target date line with overdue warning
             var targetLine = '';
@@ -545,9 +674,9 @@ function renderTaskKanban(tasks) {
                 var execUrl = t.executor_url || null;
                 if (execUrl) {
                     execIdLine = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">'
-                        + '\uD83D\uDD17 <a href="' + esc(execUrl) + '" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="color:var(--text-dim);text-decoration:underline;">' + esc(t.execution_id) + '</a></div>';
+                        + '🔗 <a href="' + esc(execUrl) + '" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="color:var(--text-dim);text-decoration:underline;">' + esc(t.execution_id) + '</a></div>';
                 } else {
-                    execIdLine = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px;">\uD83C\uDD94 ' + esc(t.execution_id) + '</div>';
+                    execIdLine = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px;">🆔 ' + esc(t.execution_id) + '</div>';
                 }
             }
 
@@ -560,7 +689,7 @@ function renderTaskKanban(tasks) {
             // OPT-62: mid-run message injection button (in_progress only)
             var msgBtn = '';
             if (status === 'in_progress') {
-                msgBtn = '<button class="kanban-move-btn" onclick="event.stopPropagation(); openMessageModal(\'' + t.id + '\',' + JSON.stringify(t.title || '').replace(/"/g, '&quot;') + ')" title="Send message to running task">💬</button>';
+                msgBtn = `<button class="kanban-move-btn" onclick="event.stopPropagation(); openMessageModal('${t.id}', ${JSON.stringify(t.title || '').replace(/"/g, '&quot;')})" title="Send message to running task">💬</button>`;
             }
 
             // kv-viz-02: in_progress visibility elements
@@ -603,8 +732,45 @@ function renderTaskKanban(tasks) {
                 }
             }
 
+            // Suggested-column extras: checkbox, oracle badges, inline actions
+            var checkBox = '';
+            var oracleBadges = '';
+            var inlineActions = '';
+            if (isSuggested) {
+                var checked = _selectedTaskIds.has(t.id) ? ' checked' : '';
+                checkBox = `<input type="checkbox" class="suggested-checkbox"${checked} onclick="toggleTaskSelected('${t.id}', event)" style="position:absolute; top:8px; right:8px; cursor:pointer;">`;
+                var conf = t.oracle_confidence;
+                var val = t.oracle_value;
+                var dup = t.dedup_count || 0;
+                var lens = t.oracle_lens || '';
+                var confLabel = conf ? 'conf ' + Math.round(conf * 100) + '%' : '';
+                var valueLabel = val ? ' · val ' + val.toFixed(2) : '';
+                var dupLabel = dup > 1 ? ' · ' + dup + '× dup' : '';
+                var lensLabel = lens ? ' · ' + esc(lens) : '';
+                oracleBadges = '<div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-bottom:4px;">'
+                    + '<span style="font-size:10px; background:#8b5cf620; color:#8b5cf6; border-radius:3px; padding:1px 5px; font-weight:600;">🔮 Oracle</span>'
+                    + (confLabel ? '<span style="font-size:10px; color:var(--text-dim);">' + confLabel + valueLabel + dupLabel + lensLabel + '</span>' : '')
+                    + '</div>';
+                inlineActions = '<div style="display:flex; gap:6px; margin-top:6px;">'
+                    + `<button class="btn btn-sm" style="flex:1; font-size:11px; padding:3px 8px; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer;" onclick="event.stopPropagation(); moveTask('${t.id}', 'backlog')" title="Promote to Backlog">↑ Promote</button>`
+                    + `<button class="btn btn-sm" style="flex:1; font-size:11px; padding:3px 8px; background:transparent; color:#6b7280; border:1px solid var(--border); border-radius:4px; cursor:pointer;" onclick="event.stopPropagation(); moveTask('${t.id}', 'done')" title="Dismiss">✕ Dismiss</button>`
+                    + '</div>';
+            }
+
+            var bottomRow = '';
+            if (isSuggested) {
+                bottomRow = inlineActions;
+            } else {
+                bottomRow = '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
+                    + '<div style="display:flex; gap:4px;">' + arrows + msgBtn + '</div>'
+                    + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">✕</button>'
+                    + '</div>';
+            }
+
             var snapAttr = JSON.stringify(t).replace(/"/g, '&quot;');
-            return '<div class="kanban-card" data-task-id="' + esc(t.id) + '" data-status="' + esc(status) + '" data-snapshot="' + snapAttr + '" style="border-left:3px solid ' + pColor + '; cursor:pointer;" onclick="openEditTaskModal(' + snapAttr + ')">'
+            return '<div class="kanban-card" data-task-id="' + esc(t.id) + '" data-status="' + esc(status) + '" data-snapshot="' + snapAttr + '" style="border-left:3px solid ' + pColor + '; cursor:pointer; position:relative;" onclick="openEditTaskModal(' + snapAttr + ')">'
+                + checkBox
+                + oracleBadges
                 + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
                 + reaperBar
                 + '<div class="kanban-card-meta">'
@@ -623,12 +789,44 @@ function renderTaskKanban(tasks) {
                 + changeMetrics
                 + tagChips
                 + execIdLine
-                + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
-                + '<div style="display:flex; gap:4px;">' + arrows + msgBtn + '</div>'
-                + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">✕</button>'
-                + '</div>'
+                + bottomRow
                 + '</div>';
         }).join('');
+
+        if (status === 'suggested') {
+            var sortOpts = [
+                { v: 'value',       l: 'Sort: Value ▼' },
+                { v: 'confidence',  l: 'Sort: Confidence ▼' },
+                { v: 'priority',    l: 'Sort: Priority ▲' },
+                { v: 'created_at',  l: 'Sort: Newest first' }
+            ];
+            var sortSelect = '<select onchange="onSuggestedSortChange(this.value)" style="font-size:11px; padding:3px 6px; background:var(--bg-code); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); cursor:pointer;">'
+                + sortOpts.map(function(o) {
+                    return '<option value="' + o.v + '"' + (_suggestedSort === o.v ? ' selected' : '') + '>' + o.l + '</option>';
+                }).join('')
+                + '</select>';
+            var toolbar = '<div class="suggested-toolbar" style="padding:6px 8px; background:var(--bg-code); border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:6px;">'
+                + sortSelect
+                + '<select onchange="applySuggestedSelectPreset(this.value); this.value=\'\';" style="font-size:11px; padding:3px 6px; background:var(--bg-code); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); cursor:pointer;">'
+                + '<option value="">Select…</option>'
+                + '<option value="all">All</option>'
+                + '<option value="conf95">Confidence ≥ 95%</option>'
+                + '<option value="conf90">Confidence ≥ 90%</option>'
+                + '<option value="value10">Value ≥ 1.0</option>'
+                + '<option value="value08">Value ≥ 0.8</option>'
+                + '<option value="value_lo">Value &lt; 0.6</option>'
+                + '<option value="pri_crit">Priority: Critical</option>'
+                + '<option value="pri_high">Priority: High</option>'
+                + '<option value="pri_med">Priority: Medium</option>'
+                + '<option value="pri_low">Priority: Low</option>'
+                + '</select>'
+                + '<button class="btn btn-sm" onclick="bulkPromoteSuggested()" style="font-size:11px; padding:3px 8px; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer;">↑ Promote <span data-bulk-count>0</span></button>'
+                + '<button class="btn btn-sm" onclick="bulkDismissSuggested()" style="font-size:11px; padding:3px 8px; background:transparent; color:#6b7280; border:1px solid var(--border); border-radius:4px; cursor:pointer;">✕ Dismiss <span data-bulk-count>0</span></button>'
+                + '</div>';
+            bodyEl.innerHTML = toolbar + cardsHtml;
+        } else {
+            bodyEl.innerHTML = cardsHtml;
+        }
     });
     _setupKvCounters(board);
 }
@@ -1002,3 +1200,4 @@ document.addEventListener('DOMContentLoaded', function() {
 ] %}
 {% include "includes/iqe_query_widget.html" %}
 {% endblock %}
+

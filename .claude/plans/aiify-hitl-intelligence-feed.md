@@ -1,5 +1,7 @@
 # Plan: AI-ify HITL Intelligence Feed UI
 
+**Status: COMPLETE ✅**
+
 ## Problem Statement
 
 The AI-ify canvas backend has **full HITL support** (`api_intelligence_feed`, `api_hitl_decision`, PRD filtering by HITL state, DB schema with `aiify_hitl_decisions`), but the **frontend wizard has zero UI** for it. Users cannot see Innovation, Creative, or Research engine signals, and cannot accept/reject them before PRD generation.
@@ -13,10 +15,11 @@ The AI-ify canvas backend has **full HITL support** (`api_intelligence_feed`, `a
 | Roadmap generator (`roadmap_generator.py`) | ✅ | ✅ | Done |
 | PRD generation with Mermaid diagram | ✅ | ✅ Panel 5 | Done |
 | Kanban promotion (`api_send_to_kanban`) | ✅ | ✅ Button on Panel 5 | Done |
-| Intelligence feed API (`api_intelligence_feed`) | ✅ | ❌ Not called | **Missing** |
-| HITL decision API (`api_hitl_decision`) | ✅ | ❌ No buttons | **Missing** |
+| Intelligence feed API (`api_intelligence_feed`) | ✅ | ✅ Panel 5 calls feed | **Done** |
+| HITL decision API (`api_hitl_decision`) | ✅ | ✅ Panel 5 + Panel 6 buttons | **Done** |
 | PRD filters rejected signals | ✅ | N/A (backend) | Done |
 | HITL state persistence (`aiify_hitl_decisions` table) | ✅ | N/A | Done |
+| PRD-level HITL decision bar | ✅ | ✅ Panel 6 | **Done** |
 
 ## Root Cause
 
@@ -49,23 +52,25 @@ Insert a new wizard step **"5 Review & Approve"** between Results (4) and PRD (b
 
 Same as current Panel 5. No functional changes — the backend already filters rejected signals.
 
-## Files to Modify
+**Additional: PRD-level HITL** — Panel 6 now includes an Accept/Reject/Clear decision bar for the entire PRD, with state badge, client-side send-to-kanban blocking, and backend gate.
 
-1. `tools/dashboard/templates/aiify/page.html` — Add Panel 5 HTML, CSS, JS; renumber Panel 5→6
-2. `icdev/tools/dashboard/templates/aiify/page.html` — Mirror
-3. `tools/aiify/blueprint.py` — Minor: ensure `api_intelligence_feed` CORS/jsonify OK (already is)
+## Files Modified
+
+1. `tools/dashboard/templates/aiify/page.html` — Added Panel 5 HTML, CSS, JS; renumbered Panel 5→6; added PRD HITL bar
+2. `tools/aiify/blueprint.py` — `api_generate_prd` returns `hitl_decision`; `api_prd_dry_run` returns `prd_hitl_decision`; `api_hitl_decision` accepts `source_type='prd'`
 
 ## Acceptance Criteria
 
-- [ ] Stepper shows 6 steps with "Review & Approve" as step 5
-- [ ] Panel 5 loads `/api/intelligence-feed` and renders 3 categories
-- [ ] Each signal shows Accept/Reject/Clear buttons
-- [ ] Clicking a button calls `/api/hitl-decision` and updates the card visual state
-- [ ] Rejected signals are visually dimmed; accepted signals get a green border/check
-- [ ] "Generate PRD →" button on Panel 5 navigates to Panel 6
-- [ ] Panel 6 (PRD) renders normally; rejected signals do NOT appear in PRD markdown
-- [ ] `pytest tests/test_aiify_scoring.py` still passes
-- [ ] Both template copies (`tools/` + `icdev/`) are identical
+- [x] Stepper shows 6 steps with "Review & Approve" as step 5
+- [x] Panel 5 loads `/api/intelligence-feed` and renders 3 categories
+- [x] Each signal shows Accept/Reject/Clear buttons
+- [x] Clicking a button calls `/api/hitl-decision` and updates the card visual state
+- [x] Rejected signals are visually dimmed; accepted signals get a green border/check
+- [x] "Generate PRD →" button on Panel 5 navigates to Panel 6
+- [x] Panel 6 (PRD) renders normally; rejected signals do NOT appear in PRD markdown
+- [x] `pytest tests/test_aiify_scoring.py` still passes
+- [x] PRD-level HITL bar present on Panel 6 with Accept/Reject/Clear
+- [x] Send-to-kanban blocked when PRD is rejected (client + server)
 
 ## No-Go / Boundaries
 

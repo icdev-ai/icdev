@@ -131,6 +131,7 @@ _SCHEMA = [
         frameworks_json TEXT,
         fragment_text   TEXT,
         status          TEXT NOT NULL DEFAULT 'pending_review',
+        assigned_to     TEXT,
         origin          TEXT NOT NULL DEFAULT 'ai_generated',
         ai_labeled      INTEGER NOT NULL DEFAULT 1,
         verified        INTEGER NOT NULL DEFAULT 0,
@@ -658,8 +659,8 @@ def process_regen_item(item_id: str, control_ids: list[str] | None = None) -> di
 # --------------------------------------------------------------------------- #
 
 def _review_fragment(fragment_id: str, status: str, reviewed_by: str | None) -> dict[str, Any]:
-    if status not in ("approved", "rejected"):
-        raise ValueError("status must be 'approved' or 'rejected'")
+    if status not in ("approved", "rejected", "needs_revision"):
+        raise ValueError("status must be 'approved', 'rejected', or 'needs_revision'")
     conn = get_connection()
     try:
         _ensure_schema(conn)
@@ -682,7 +683,8 @@ def _review_fragment(fragment_id: str, status: str, reviewed_by: str | None) -> 
     if row:
         item_id = row["regen_item_id"] if hasattr(row, "keys") else row[0]
         if item_id:
-            _set_queue_state(item_id, status)
+            queue_state = "drafted" if status == "needs_revision" else status
+            _set_queue_state(item_id, queue_state)
     return {"fragment_id": fragment_id, "status": status, "updated": changed}
 
 
@@ -694,6 +696,28 @@ def approve_fragment(fragment_id: str, reviewed_by: str | None = None) -> dict[s
 def reject_fragment(fragment_id: str, reviewed_by: str | None = None) -> dict[str, Any]:
     """HITL rejection — the fragment is discarded from the SSP."""
     return _review_fragment(fragment_id, "rejected", reviewed_by)
+
+
+def request_revision(fragment_id: str, reviewed_by: str | None = None) -> dict[str, Any]:
+    """HITL request for revision — the fragment returns to editor queue."""
+    return _review_fragment(fragment_id, "needs_revision", reviewed_by)
+
+
+def assign_fragment(fragment_id: str, assigned_to: str) -> dict[str, Any]:
+    """Assign an SSP fragment to a user for review or editing."""
+    conn = get_connection()
+    try:
+        _ensure_schema(conn)
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE dic_ssp_fragments SET assigned_to = ? WHERE fragment_id = ?",
+            (assigned_to, fragment_id),
+        )
+        conn.commit()
+        changed = cur.rowcount
+    finally:
+        conn.close()
+    return {"fragment_id": fragment_id, "assigned_to": assigned_to, "updated": changed}
 
 
 # --------------------------------------------------------------------------- #

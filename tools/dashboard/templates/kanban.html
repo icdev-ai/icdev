@@ -1,6 +1,7 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Task Board - ICDEV™ Dashboard{% endblock %}
 {% block content %}
+<!-- EDITED_BY_CLAUDE_V3 -->
 <div class="page-header">
     <h1>Task Board</h1>
     <p class="subtitle">Manage scheduled and planned tasks — drag across columns or use arrow buttons to move.</p>
@@ -218,6 +219,7 @@
 </div>
 
 <script>
+console.log('VERSION_2026_05_31_v3');
 // Suggested-lane state (mirrors index.html triage UX)
 var _suggestedSort = (function() {
     try { return localStorage.getItem('icdev.kanban.suggestedSort') || 'value'; }
@@ -613,8 +615,8 @@ function renderTaskKanban(tasks) {
             var pColor = priorityColors[t.priority] || '#6b7280';
             var isSuggested = status === 'suggested';
             var arrows = '';
-            if (!isSuggested && prevStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\','\'' + prevStatus[status] + '\')" title="Move left">◀</button>';
-            if (!isSuggested && nextStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\','\'' + nextStatus[status] + '\')" title="Move right">▶</button>';
+            if (!isSuggested && prevStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + prevStatus[status] + '\')" title="Move left">◀</button>';
+            if (!isSuggested && nextStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + nextStatus[status] + '\')" title="Move right">▶</button>';
 
             var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">📅 ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
 
@@ -687,7 +689,7 @@ function renderTaskKanban(tasks) {
             // OPT-62: mid-run message injection button (in_progress only)
             var msgBtn = '';
             if (status === 'in_progress') {
-                msgBtn = '<button class="kanban-move-btn" onclick="event.stopPropagation(); openMessageModal(\'' + t.id + '\'',' + JSON.stringify(t.title || '').replace(/"/g, '&quot;') + ')" title="Send message to running task">💬</button>';
+                msgBtn = `<button class="kanban-move-btn" onclick="event.stopPropagation(); openMessageModal('${t.id}', ${JSON.stringify(t.title || '').replace(/"/g, '&quot;')})" title="Send message to running task">💬</button>`;
             }
 
             // kv-viz-02: in_progress visibility elements
@@ -736,7 +738,7 @@ function renderTaskKanban(tasks) {
             var inlineActions = '';
             if (isSuggested) {
                 var checked = _selectedTaskIds.has(t.id) ? ' checked' : '';
-                checkBox = '<input type="checkbox" class="suggested-checkbox"' + checked + ' onclick="toggleTaskSelected(\'' + t.id + '\'', event)" style="position:absolute; top:8px; right:8px; cursor:pointer;">';
+                checkBox = `<input type="checkbox" class="suggested-checkbox"${checked} onclick="toggleTaskSelected('${t.id}', event)" style="position:absolute; top:8px; right:8px; cursor:pointer;">`;
                 var conf = t.oracle_confidence;
                 var val = t.oracle_value;
                 var dup = t.dedup_count || 0;
@@ -750,8 +752,8 @@ function renderTaskKanban(tasks) {
                     + (confLabel ? '<span style="font-size:10px; color:var(--text-dim);">' + confLabel + valueLabel + dupLabel + lensLabel + '</span>' : '')
                     + '</div>';
                 inlineActions = '<div style="display:flex; gap:6px; margin-top:6px;">'
-                    + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:3px 8px; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'backlog\')" title="Promote to Backlog">↑ Promote</button>'
-                    + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:3px 8px; background:transparent; color:#6b7280; border:1px solid var(--border); border-radius:4px; cursor:pointer;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'done\')" title="Dismiss">✕ Dismiss</button>'
+                    + `<button class="btn btn-sm" style="flex:1; font-size:11px; padding:3px 8px; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer;" onclick="event.stopPropagation(); moveTask('${t.id}', 'backlog')" title="Promote to Backlog">↑ Promote</button>`
+                    + `<button class="btn btn-sm" style="flex:1; font-size:11px; padding:3px 8px; background:transparent; color:#6b7280; border:1px solid var(--border); border-radius:4px; cursor:pointer;" onclick="event.stopPropagation(); moveTask('${t.id}', 'done')" title="Dismiss">✕ Dismiss</button>`
                     + '</div>';
             }
 

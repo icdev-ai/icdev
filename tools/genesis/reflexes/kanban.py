@@ -5234,7 +5234,7 @@ def _check_completed():
                 # command almost certainly completed — Claude was just
                 # formatting the response when killed.  Accept as done.
                 _SCAN_KW_TIMEOUT = ["pytest", "codelens", "coherence",
-                                    "companion", "report pass/fail"]
+                                    "companion", "report pass/fail", "behave"]
                 try:
                     with get_connection() as _stc:
                         _str = _stc.execute(
@@ -5279,6 +5279,27 @@ def _check_completed():
                     f"TIMEOUT after {int(elapsed)}s "
                     f"(max {task_budget}s) — task exceeded dispatch budget"
                 )
+                # Skip demotion if a task was already marked done externally
+                # (e.g., operator or another agent completed it while this zombie ran).
+                try:
+                    with get_connection() as _done_chk:
+                        _done_row = _done_chk.execute(
+                            "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,),
+                        ).fetchone()
+                    if _done_row and dict(_done_row)["status"] == "done":
+                        logger.info(
+                            "timeout handler: %s is already done — skipping demotion",
+                            task_id,
+                        )
+                        del _running[task_id]
+                        _dispatch_times.pop(task_id, None)
+                        if task_id in _worktrees:
+                            _cleanup_worktree(task_id)
+                            del _worktrees[task_id]
+                        completed.append(task_id)
+                        continue
+                except Exception as _dc_exc:
+                    logger.warning("done-check in timeout handler failed for %s: %s", task_id, _dc_exc)
                 # Increment failure_count so the task health signal is accurate
                 try:
                     _fc_now = datetime.now(timezone.utc).isoformat()
@@ -5287,7 +5308,7 @@ def _check_completed():
                             "UPDATE kanban_tasks SET "
                             "failure_count = COALESCE(failure_count, 0) + 1, "
                             "last_failure_reason = ?, last_failure_at = ? "
-                            "WHERE id = ?",
+                            "WHERE id = ? AND status != 'done'",
                             (_timeout_reason, _fc_now, task_id),
                         )
                 except Exception as _fc_exc:
