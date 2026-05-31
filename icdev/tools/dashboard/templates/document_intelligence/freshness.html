@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Freshness — Document Intelligence — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">🌡️ Freshness Heatmap</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Corpus staleness at a glance — stale docs float to the top for remediation.</p>
+  </div>
+  <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Back to DIC</a>
+</div>
+
+<!-- Summary cards -->
+<div style="display:flex;gap:12px;margin-bottom:20px;">
+  <div style="flex:1;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#4ade80;">{{ heatmap | selectattr('state', 'equalto', 'fresh') | list | length }}</div>
+    <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🟢 Fresh</div>
+  </div>
+  <div style="flex:1;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#fbbf24;">{{ heatmap | selectattr('state', 'equalto', 'aging') | list | length }}</div>
+    <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🟡 Aging</div>
+  </div>
+  <div style="flex:1;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#f87171;">{{ heatmap | selectattr('state', 'equalto', 'stale') | list | length }}</div>
+    <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🔴 Stale</div>
+  </div>
+</div>
+
+<!-- Collection selector -->
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;margin-bottom:18px;">
+  <div style="display:flex;gap:6px;flex-wrap:wrap;">
+    <button onclick="filterCollection('all')" style="background:#0f3460;color:#7ab3f0;padding:5px 12px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">All Collections</button>
+    {% for cid in by_collection.keys() %}
+    <button onclick="filterCollection('{{ cid }}')" style="background:#050d1f;color:#94a3b8;padding:5px 12px;border:1px solid #1a3560;border-radius:4px;cursor:pointer;font-size:11px;">{{ cid }}</button>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Heatmap table -->
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;">
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead>
+      <tr style="color:#9bb8d8;border-bottom:1px solid #1a3560;">
+        <th style="text-align:left;padding:8px;">State</th>
+        <th style="text-align:left;padding:8px;">Document</th>
+        <th style="text-align:left;padding:8px;">Collection</th>
+        <th style="text-align:left;padding:8px;">Score</th>
+        <th style="text-align:left;padding:8px;">Reason</th>
+        <th style="text-align:right;padding:8px;">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in heatmap %}
+      <tr class="heatmap-row" data-collection="{{ row.collection_id or 'default' }}" style="border-bottom:1px solid #0d1b30;">
+        <td style="padding:8px;">
+          {% if row.state == 'fresh' %}
+          <span style="background:#052e16;color:#4ade80;padding:2px 8px;border-radius:3px;font-size:10px;">🟢 Fresh</span>
+          {% elif row.state == 'aging' %}
+          <span style="background:#2e1a05;color:#fbbf24;padding:2px 8px;border-radius:3px;font-size:10px;">🟡 Aging</span>
+          {% elif row.state == 'stale' %}
+          <span style="background:#2e0505;color:#f87171;padding:2px 8px;border-radius:3px;font-size:10px;">🔴 Stale</span>
+          {% else %}
+          <span style="background:#1e293b;color:#94a3b8;padding:2px 8px;border-radius:3px;font-size:10px;">⚪ Unknown</span>
+          {% endif %}
+        </td>
+        <td style="padding:8px;color:#eaeaea;">{{ row.title or row.doc_id }}</td>
+        <td style="padding:8px;color:#94a3b8;">{{ row.collection_id or 'default' }}</td>
+        <td style="padding:8px;color:#7a8cb0;">{{ '%.0f'|format((row.score or 0)*100) }}%</td>
+        <td style="padding:8px;color:#7a8cb0;font-size:11px;">{{ row.reason or '—' }}</td>
+        <td style="padding:8px;text-align:right;">
+          <a href="/document-intelligence/doc/{{ row.doc_id }}" style="color:#7ab3f0;font-size:11px;text-decoration:none;">Open →</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" style="padding:24px;text-align:center;color:#3a6080;">No freshness data yet. Run a scan from a collection page.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+function filterCollection(cid) {
+  var rows = document.querySelectorAll('.heatmap-row');
+  rows.forEach(function(r) {
+    r.style.display = (cid === 'all' || r.getAttribute('data-collection') === cid) ? '' : 'none';
+  });
+}
+</script>
+
+{% set iqe_canvas = "dic" %}
+{% set iqe_api_route = "/document-intelligence/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Freshness" %}
+{% set iqe_examples = [
+  {"label": "Stale docs", "query": "foreach d in dic.doc_freshness where d.state == 'stale' select d.doc_id, d.reason"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

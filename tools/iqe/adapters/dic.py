@@ -160,6 +160,68 @@ def kg_relationships_adapter(conn: Any) -> list[dict]:
         c.close()
 
 
+def doc_freshness_adapter(conn: Any) -> list[dict]:
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT doc_id, collection_id, state, reason, score, updated_at, tenant_id "
+            "FROM dic_doc_freshness ORDER BY score DESC LIMIT 500"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        c.close()
+
+
+def freshness_scans_adapter(conn: Any) -> list[dict]:
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT scan_id, collection_id, stale_count, regen_priority, scanned_at, tenant_id "
+            "FROM dic_freshness_scans ORDER BY scanned_at DESC LIMIT 200"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        c.close()
+
+
+def handoff_sessions_adapter(conn: Any) -> list[dict]:
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT session_id, departing_owner_id, successor_owner_id, dest_collection_id, "
+            "title, status, agenda_count, answered_count, generated_count, orphan_count, "
+            "created_at, tenant_id FROM dic_handoff_sessions ORDER BY created_at DESC LIMIT 200"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        c.close()
+
+
+def handoff_items_adapter(conn: Any) -> list[dict]:
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT item_id, session_id, item_kind, topic, prompt, answer_text, doc_id, "
+            "version_id, verified, abstained, status, created_at, tenant_id "
+            "FROM dic_handoff_items ORDER BY created_at DESC LIMIT 500"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        c.close()
+
+
 register_collection("dic.documents", documents_adapter)
 register_collection("dic.collections", collections_adapter)
 register_collection("dic.drift_events", drift_events_adapter)
@@ -167,3 +229,7 @@ register_collection("dic.regen_queue", regen_queue_adapter)
 register_collection("dic.ssp_fragments", ssp_fragments_adapter)
 register_collection("dic.kg_entities", kg_entities_adapter)
 register_collection("dic.kg_relationships", kg_relationships_adapter)
+register_collection("dic.doc_freshness", doc_freshness_adapter)
+register_collection("dic.freshness_scans", freshness_scans_adapter)
+register_collection("dic.handoff_sessions", handoff_sessions_adapter)
+register_collection("dic.handoff_items", handoff_items_adapter)

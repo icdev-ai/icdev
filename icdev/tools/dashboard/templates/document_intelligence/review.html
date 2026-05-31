@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}HITL Review — Document Intelligence — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">👁️ HITL Review</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Human-in-the-loop oversight — review AI-generated drafts before they are published</p>
+  </div>
+  <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Back to DIC</a>
+</div>
+
+<!-- Tab Bar -->
+<div style="display:flex;gap:2px;background:#050d1f;border:1px solid #1a3560;border-radius:6px;padding:3px;width:fit-content;margin-bottom:18px;">
+  <button id="tab-frags" onclick="setTab('fragments')"
+    style="background:#0f3460;color:#7ab3f0;padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+    SSP Fragments <span style="background:#e94560;color:#fff;border-radius:9px;padding:1px 6px;font-size:10px;margin-left:4px;">{{ pending_fragments|length }}</span>
+  </button>
+  <button id="tab-vers" onclick="setTab('versions')"
+    style="background:none;color:#5a7aa0;padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+    Document Versions <span style="background:#1e293b;color:#94a3b8;border-radius:9px;padding:1px 6px;font-size:10px;margin-left:4px;">{{ pending_versions|length }}</span>
+  </button>
+</div>
+
+<!-- SSP Fragments Panel -->
+<div id="panel-fragments">
+{% for f in pending_fragments %}
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;margin-bottom:14px;" id="frag-{{ f.fragment_id }}">
+  <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+    <div>
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">{{ f.control_id }}</span>
+      <span style="background:#052e16;color:#4ade80;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:8px;">AI-generated · pending review</span>
+    </div>
+    <span style="color:#7a8cb0;font-size:11px;">{{ f.created_at }}</span>
+  </div>
+  <div style="color:#7a8cb0;font-size:11px;margin-bottom:6px;">Document: {{ f.document_id }}</div>
+  {% if f.fragment_text %}
+  <div style="background:#050d1f;border-left:3px solid #1e3a6e;padding:10px 14px;border-radius:0 4px 4px 0;color:#a8c8e0;font-size:12px;line-height:1.7;margin-bottom:10px;max-height:160px;overflow-y:auto;">
+    {{ f.fragment_text[:800] }}{% if f.fragment_text|length > 800 %}…{% endif %}
+  </div>
+  {% endif %}
+  {% if f.cod_verdict %}
+  <div style="background:#0a2e18;border:1px solid #1a5a30;border-radius:4px;padding:8px 12px;margin-bottom:10px;font-size:11px;color:#6ee7b7;">
+    CoD Verdict: {{ f.cod_verdict }}
+  </div>
+  {% endif %}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button onclick="reviewFragment('{{ f.fragment_id }}', 'approve')"
+      style="background:#052e16;color:#4ade80;padding:7px 16px;border:1px solid #1a5a30;border-radius:5px;cursor:pointer;font-size:12px;">
+      ✓ Approve
+    </button>
+    <button onclick="reviewFragment('{{ f.fragment_id }}', 'reject')"
+      style="background:#2e0505;color:#f87171;padding:7px 16px;border:1px solid #5a1a1a;border-radius:5px;cursor:pointer;font-size:12px;">
+      ✕ Reject
+    </button>
+    <input type="text" id="note-{{ f.fragment_id }}" placeholder="Review note (optional)"
+      style="flex:1;min-width:200px;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:5px;font-size:12px;">
+  </div>
+</div>
+{% else %}
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:24px;text-align:center;color:#3a6080;">
+  No SSP fragments pending review. They appear here when ACOIC generates new NIST 800-53 control mappings.
+</div>
+{% endfor %}
+</div>
+
+<!-- Document Versions Panel -->
+<div id="panel-versions" style="display:none;">
+{% for v in pending_versions %}
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;margin-bottom:14px;" id="ver-{{ v.version_id }}">
+  <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+    <div>
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">{{ v.doc_title or v.doc_id }}</span>
+      <span style="background:#1a2e52;color:#7ab3f0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:8px;">v{{ v.version_no }}</span>
+      <span style="background:#052e16;color:#4ade80;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">{{ v.origin }}</span>
+    </div>
+    <span style="color:#7a8cb0;font-size:11px;">{{ v.created_at }}</span>
+  </div>
+  <div style="color:#7a8cb0;font-size:11px;margin-bottom:10px;">Created by: {{ v.created_by or '—' }}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button onclick="reviewVersion('{{ v.version_id }}', 'approve')"
+      style="background:#052e16;color:#4ade80;padding:7px 16px;border:1px solid #1a5a30;border-radius:5px;cursor:pointer;font-size:12px;">
+      ✓ Approve &amp; Publish
+    </button>
+    <button onclick="reviewVersion('{{ v.version_id }}', 'reject')"
+      style="background:#2e0505;color:#f87171;padding:7px 16px;border:1px solid #5a1a1a;border-radius:5px;cursor:pointer;font-size:12px;">
+      ✕ Reject
+    </button>
+  </div>
+</div>
+{% else %}
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:24px;text-align:center;color:#3a6080;">
+  No document versions pending review.
+</div>
+{% endfor %}
+</div>
+
+<script>
+function setTab(tab) {
+  var isFrag = tab === 'fragments';
+  document.getElementById('tab-frags').style.background = isFrag ? '#0f3460' : 'none';
+  document.getElementById('tab-frags').style.color = isFrag ? '#7ab3f0' : '#5a7aa0';
+  document.getElementById('tab-vers').style.background = isFrag ? 'none' : '#0f3460';
+  document.getElementById('tab-vers').style.color = isFrag ? '#5a7aa0' : '#7ab3f0';
+  document.getElementById('panel-fragments').style.display = isFrag ? 'block' : 'none';
+  document.getElementById('panel-versions').style.display = isFrag ? 'none' : 'block';
+}
+
+function reviewFragment(id, action) {
+  var note = (document.getElementById('note-' + id) || {}).value || '';
+  fetch('/document-intelligence/api/review/' + id + '/' + action, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({note: note, reviewer: 'current_user'})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      var el = document.getElementById('frag-' + id);
+      if (el) {
+        el.style.opacity = '.4';
+        el.innerHTML += '<div style="color:' + (action==='approve'?'#4ade80':'#f87171') + ';font-size:12px;margin-top:8px;">' +
+          (action==='approve' ? '✓ Approved' : '✕ Rejected') + '</div>';
+        el.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+      }
+    })
+    .catch(function() { alert('Action failed.'); });
+}
+
+function reviewVersion(id, action) {
+  fetch('/document-intelligence/api/review/' + id + '/' + action, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({type: 'version', reviewer: 'current_user'})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      var el = document.getElementById('ver-' + id);
+      if (el) {
+        el.style.opacity = '.4';
+        el.innerHTML += '<div style="color:' + (action==='approve'?'#4ade80':'#f87171') + ';font-size:12px;margin-top:8px;">' +
+          (action==='approve' ? '✓ Approved & Published' : '✕ Rejected') + '</div>';
+        el.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+      }
+    })
+    .catch(function() { alert('Action failed.'); });
+}
+</script>
+
+{% set iqe_canvas = "dic" %}
+{% set iqe_api_route = "/document-intelligence/api/iqe-query" %}
+{% set iqe_title = "IQE Query — HITL Review" %}
+{% set iqe_examples = [
+  {"label": "Pending fragments", "query": "foreach s in dic.ssp_fragments where s.status == \"pending_review\" select s.control_id, s.document_id, s.created_at"},
+  {"label": "Approved fragments", "query": "foreach s in dic.ssp_fragments where s.status == \"approved\" select s.control_id, s.reviewed_by"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

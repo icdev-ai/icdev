@@ -1581,6 +1581,71 @@ def api_handoff_close(session_id):
         return jsonify({"error": str(exc)}), 500
 
 
+@dic_bp.route("/api/handoff/<item_id>/answer", methods=["POST"])
+def api_handoff_answer(item_id):
+    data = request.get_json(silent=True) or {}
+    answer = (data.get("answer_text") or "").strip()
+    if not answer:
+        return jsonify({"error": "answer_text is required"}), 400
+    try:
+        from tools.document_intelligence.handoff import answer_item
+        result = answer_item(item_id, answer, reviewed_by=_current_user())
+        return jsonify(result)
+    except Exception as exc:
+        logger.warning("dic: handoff answer error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── API: Freshness ───────────────────────────────────────────────────────────
+
+@dic_bp.route("/api/freshness/scan", methods=["POST"])
+def api_freshness_scan():
+    data = request.get_json(silent=True) or {}
+    collection_id = data.get("collection_id", "default")
+    tenant_id, classification = _security_context()
+    try:
+        from tools.document_intelligence.freshness_engine import scan_collection
+        result = scan_collection(collection_id, tenant_id=tenant_id, classification=classification)
+        return jsonify({
+            "scan_id": result.scan_id,
+            "collection_id": result.collection_id,
+            "stale_count": result.stale_count,
+            "aging_count": result.aging_count,
+            "fresh_count": result.fresh_count,
+            "regen_priority": result.regen_priority,
+            "docs_scanned": len(result.docs),
+        })
+    except Exception as exc:
+        logger.warning("dic: freshness scan error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/freshness/heatmap", methods=["GET"])
+def api_freshness_heatmap():
+    tenant_id, _ = _security_context()
+    try:
+        from tools.document_intelligence.freshness_engine import corpus_heatmap
+        rows = corpus_heatmap(tenant_id=tenant_id, limit=200)
+        return jsonify({"heatmap": rows, "count": len(rows)})
+    except Exception as exc:
+        logger.warning("dic: freshness heatmap error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── API: Explorer ────────────────────────────────────────────────────────────
+
+@dic_bp.route("/api/explorer/refresh", methods=["POST"])
+def api_explorer_refresh():
+    tenant_id, _ = _security_context()
+    try:
+        from tools.document_intelligence.explorer import run_explorer
+        findings = run_explorer(tenant_id=tenant_id, limit=100)
+        return jsonify({"findings": findings, "count": len(findings)})
+    except Exception as exc:
+        logger.warning("dic: explorer refresh error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── Analytics Page + API ─────────────────────────────────────────────────────
 
 @dic_bp.route("/analytics")

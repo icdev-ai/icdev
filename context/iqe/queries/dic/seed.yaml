@@ -8,3 +8,11 @@ queries:
     query: "foreach r in dic.regen_queue where r.state == \"queued\" select r.document_id, r.impact_level, r.queued_at"
   - label: All SSP fragments
     query: "foreach s in dic.ssp_fragments select s.control_id, s.document_id, s.status"
+  - label: Stale documents
+    query: "foreach f in dic.doc_freshness where f.state == \"stale\" select f.doc_id, f.collection_id, f.reason, f.score"
+  - label: Recent freshness scans
+    query: "foreach s in dic.freshness_scans orderby s.scanned_at desc select s.scan_id, s.collection_id, s.stale_count, s.regen_priority"
+  - label: Open handoff sessions
+    query: "foreach h in dic.handoff_sessions where h.status == \"open\" select h.session_id, h.title, h.departing_owner_id, h.answered_count, h.agenda_count"
+  - label: Pending handoff items
+    query: "foreach i in dic.handoff_items where i.status == \"pending\" select i.item_id, i.session_id, i.topic, i.item_kind"
