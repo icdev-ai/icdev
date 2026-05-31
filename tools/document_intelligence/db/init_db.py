@@ -58,6 +58,20 @@ CREATE TABLE IF NOT EXISTS dic_freshness_scans (
 );
 CREATE INDEX IF NOT EXISTS idx_dic_freshness_scans_collection ON dic_freshness_scans(collection_id);
 
+CREATE TABLE IF NOT EXISTS dic_doc_freshness (
+    doc_id          TEXT        PRIMARY KEY,
+    collection_id   TEXT        NOT NULL DEFAULT 'default',
+    state           TEXT        DEFAULT 'unknown',
+    reason          TEXT        DEFAULT '',
+    source_event    TEXT        DEFAULT '',
+    score           FLOAT       DEFAULT 0.0,
+    updated_at      TIMESTAMPTZ DEFAULT NOW(),
+    tenant_id       TEXT        DEFAULT 'default',
+    classification  TEXT        DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_tenant ON dic_doc_freshness(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_collection ON dic_doc_freshness(collection_id);
+
 CREATE TABLE IF NOT EXISTS dic_handoff_sessions (
     session_id          TEXT        PRIMARY KEY,
     departing_owner_id  TEXT        NOT NULL,
@@ -148,6 +162,20 @@ CREATE TABLE IF NOT EXISTS dic_freshness_scans (
     tenant_id       TEXT    DEFAULT 'default'
 );
 CREATE INDEX IF NOT EXISTS idx_dic_freshness_scans_collection ON dic_freshness_scans(collection_id);
+
+CREATE TABLE IF NOT EXISTS dic_doc_freshness (
+    doc_id          TEXT    PRIMARY KEY,
+    collection_id   TEXT    NOT NULL DEFAULT 'default',
+    state           TEXT    DEFAULT 'unknown',
+    reason          TEXT    DEFAULT '',
+    source_event    TEXT    DEFAULT '',
+    score           REAL    DEFAULT 0.0,
+    updated_at      TEXT    DEFAULT (datetime('now')),
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_tenant ON dic_doc_freshness(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_collection ON dic_doc_freshness(collection_id);
 
 CREATE TABLE IF NOT EXISTS dic_handoff_sessions (
     session_id          TEXT    PRIMARY KEY,
