@@ -7,7 +7,7 @@ import pathlib
 import textwrap
 
 
-from tools.ai_augmentation.agent_readiness.pillars.configuration import (
+from tools.aiify.agent_readiness.pillars.configuration import (
     PILLAR,
     _check_cd_deployment,
     _check_ci_pipeline,
@@ -47,7 +47,7 @@ class TestLoadThresholds:
             "      min_files: 3\n",
             encoding="utf-8",
         )
-        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -58,7 +58,7 @@ class TestLoadThresholds:
         mod._load_thresholds.cache_clear()
 
     def test_falls_back_to_defaults_when_file_absent(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", tmp_path / "nonexistent.yaml")
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -74,7 +74,7 @@ class TestLoadThresholds:
             "pillars:\n  configuration:\n    ci_pipeline:\n      min_workflows: 4\n",
             encoding="utf-8",
         )
-        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -85,7 +85,7 @@ class TestLoadThresholds:
     def test_falls_back_on_malformed_yaml(self, tmp_path, monkeypatch):
         cfg = tmp_path / "agent_readiness_config.yaml"
         cfg.write_text(":\tbad: yaml: [", encoding="utf-8")
-        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
@@ -101,7 +101,7 @@ class TestCheckMakefileOrTaskfile:
     def _patch_thresholds(self, monkeypatch, **overrides):
         defaults = {"min_makefile_targets": 3, "min_npm_scripts": 3, "min_ci_workflows": 1, "min_iac_files": 1}
         defaults.update(overrides)
-        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: defaults)
 
     def test_passes_when_makefile_meets_threshold(self, tmp_path, monkeypatch):
@@ -161,7 +161,7 @@ class TestCheckCiPipeline:
     def _patch_thresholds(self, monkeypatch, **overrides):
         defaults = {"min_makefile_targets": 3, "min_npm_scripts": 3, "min_ci_workflows": 1, "min_iac_files": 1}
         defaults.update(overrides)
-        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: defaults)
 
     def test_passes_with_sufficient_workflows(self, tmp_path, monkeypatch):
@@ -198,7 +198,7 @@ class TestCheckIacPresent:
     def _patch_thresholds(self, monkeypatch, **overrides):
         defaults = {"min_makefile_targets": 3, "min_npm_scripts": 3, "min_ci_workflows": 1, "min_iac_files": 1}
         defaults.update(overrides)
-        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: defaults)
 
     def test_passes_with_sufficient_tf_files(self, tmp_path, monkeypatch):
@@ -241,7 +241,7 @@ class TestCheckCdDeployment:
 
     def _patch_thresholds(self, monkeypatch, **overrides):
         thresholds = {**self._DEFAULT_THRESHOLDS, **overrides}
-        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: thresholds)
 
     def test_passes_when_deploy_keyword_in_github_workflow(self, tmp_path, monkeypatch):
@@ -305,7 +305,7 @@ class TestConfigurationPillarIntegration:
         assert ids == {"ci-pipeline", "cd-deployment", "iac-present", "editorconfig", "task-runner"}
 
     def test_score_all_pass(self, tmp_path, monkeypatch):
-        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_load_thresholds", lambda: {
             "min_makefile_targets": 1, "min_npm_scripts": 1,
             "min_ci_workflows": 1, "min_iac_files": 1,

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for the NLP ref extractor in tools.ai_augmentation.engine.
+"""Tests for the NLP ref extractor in tools.aiify.engine.
 
 All LLM calls are mocked — no network traffic required.
 """
@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import tools.ai_augmentation.engine as eng
+import tools.aiify.engine as eng
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ class TestRunScanNlpRefIntegration:
         captured_profile: list = []
 
         def fake_insert(conn, sql, params, id_col="id"):
-            if "aac_scans" in sql and "INSERT" in sql:
+            if "aiify_scans" in sql and "INSERT" in sql:
                 # language_profile is 3rd positional param
                 captured_profile.append(params[2])
             return 1

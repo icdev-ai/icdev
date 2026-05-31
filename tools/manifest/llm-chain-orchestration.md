@@ -82,7 +82,7 @@ refines it. No-LLM mode → heuristics only.
 **Wired pipelines:** translation (`code_translator._invoke_llm`, default ON) and the ANVIL
 agentic runner (`tools/anvil/agentic_runner.py --reasoned auto|on|off`, default OFF, advisor-gated).
 Bypass (no LLM generation call): child-app generator, deprecated builder `code_generator.py`,
-migration generator, AAC — see `docs/security/sandbox-coverage.md`.
+migration generator, AI-ify — see `docs/security/sandbox-coverage.md`.
 
 ---
 

@@ -2,7 +2,7 @@
 """Agent Readiness checker — Python port of kodustech/agent-readiness with ICDEV IL/NIST extensions.
 
 Public API:
-    from tools.ai_augmentation.agent_readiness import run_readiness_check
+    from tools.aiify.agent_readiness import run_readiness_check
     result = run_readiness_check(repo_path)
 
 Returns:
@@ -12,6 +12,6 @@ Returns:
         "icdev_checks": {pillar_id: [criterion_results]},
     }
 """
-from tools.ai_augmentation.agent_readiness.checker import run_readiness_check
+from tools.aiify.agent_readiness.checker import run_readiness_check
 
 __all__ = ["run_readiness_check"]

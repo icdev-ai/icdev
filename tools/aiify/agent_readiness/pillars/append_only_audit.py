@@ -9,7 +9,7 @@ import re
 from functools import lru_cache
 from typing import Any, Optional
 
-from tools.ai_augmentation.agent_readiness.pillars._base import (
+from tools.aiify.agent_readiness.pillars._base import (
     Criterion,
     CriterionResult,
     Pillar,
@@ -30,7 +30,7 @@ _AUDIT_INSERT_PATTERN = r"INSERT\s+INTO\s+\w*(?:audit|log|trail|event)\w*"
 
 # Known ICDEV append-only tables (from pre_tool_use.py / CLAUDE.md)
 _KNOWN_APPEND_ONLY = {
-    "aac_audit_log", "audit_log", "audit_trail", "event_log",
+    "aiify_audit_log", "audit_log", "audit_trail", "event_log",
     "compliance_audit", "security_events", "access_log",
 }
 
@@ -228,10 +228,10 @@ def _check_audit_table_schema(repo: pathlib.Path) -> CriterionResult:
             # Verify no PRIMARY KEY with SERIAL that could allow updates
             if _search(content, r"audit") and _search(content, r"INSERT"):
                 return CriterionResult(cid, True, f"Audit table schema with INSERT support found in {f.name}")
-    # Check if aac_audit_log is in schema
-    init_db = _read(repo, "tools/ai_augmentation/db/init_db.py")
-    if init_db and "aac_audit_log" in init_db:
-        return CriterionResult(cid, True, "aac_audit_log table defined in AAC DB schema")
+    # Check if aiify_audit_log is in schema
+    init_db = _read(repo, "tools/aiify/db/init_db.py")
+    if init_db and "aiify_audit_log" in init_db:
+        return CriterionResult(cid, True, "aiify_audit_log table defined in AI-ify DB schema")
     return CriterionResult(cid, False, "No append-only audit table schema found.",
                            "Define an audit_log table (event_type, timestamp, actor, detail) as append-only storage.")
 

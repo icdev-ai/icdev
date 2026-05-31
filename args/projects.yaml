@@ -4747,8 +4747,8 @@ projects:
   - key: cor
     title: CPMP-COR — Government read-only portal + access audit
     priority: critical
-- key: aac
-  name: AI Augmentation Canvas (AAC) — Codebase AI Opportunity Assessment
+- key: aiify
+  name: AI-ify Canvas — Codebase AI Opportunity Assessment
   description: '13th ICDEV canvas. Scans external client codebases (Python/Java/C#/Go/Rust/TypeScript)
 
     to identify features that should be replaced or enhanced with AI.
@@ -4760,7 +4760,7 @@ projects:
     for technical leads and architects.
 
     '
-  task_prefix: aac-
+  task_prefix: aiify-
   default_open: true
   briefs:
   - 8 AI-augmentable patterns x 6 languages (Python / Java / C# / Go / Rust / TypeScript)

@@ -60,6 +60,7 @@
             <option value="github_actions,ollama_local">&#9881;&#65039; GitHub Actions &#8594; Ollama (air-gap)</option>
             <option value="ollama_local">&#129433; Ollama Local only</option>
         </select>
+        <button class="btn" id="schedToggleBtn" onclick="toggleKanbanScheduler()" title="Pause/resume the kanban scheduler" style="padding:6px 12px; font-size:13px;">&#x23f8; Pause Scheduler</button>
         <button class="btn" id="refresh-btn" onclick="refreshDashboard()" title="Refresh now" style="padding:6px 12px; font-size:13px;">&#x21bb; Refresh</button>
         <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
     </div>
@@ -839,6 +840,46 @@ function refreshDashboard() {
     // Reset countdown
     _refreshCountdown = AUTO_REFRESH_SECONDS;
 }
+
+// Kanban scheduler pause/resume — toggles a sentinel flag the scheduler honors.
+// Auto-pause (an interactive session active) is shown; the button toggles the
+// MANUAL flag only.
+function _renderSchedBtn(s) {
+    var b = document.getElementById('schedToggleBtn');
+    if (!b) return;
+    if (s && s.paused) {
+        if (s.mode === 'auto') {
+            b.innerHTML = '⏸ Auto-paused (' + (s.active_interactive_sessions || 0) + ')';
+            b.title = 'Scheduler auto-paused while an interactive session is active';
+        } else {
+            b.innerHTML = '▶ Resume Scheduler';
+            b.title = 'Click to resume the kanban scheduler';
+        }
+        b.style.background = '#7f1d1d'; b.style.color = '#fecaca';
+        b.dataset.paused = '1'; b.dataset.mode = s.mode || '';
+    } else {
+        b.innerHTML = '⏸ Pause Scheduler';
+        b.style.background = ''; b.style.color = '';
+        b.dataset.paused = '0'; b.dataset.mode = '';
+        b.title = 'Pause the kanban scheduler (stops its git stash/merge cycle)';
+    }
+}
+function toggleKanbanScheduler() {
+    var b = document.getElementById('schedToggleBtn');
+    var manualPaused = b && b.dataset.paused === '1' && b.dataset.mode !== 'auto';
+    var url = '/api/kanban/scheduler/' + (manualPaused ? 'resume' : 'pause');
+    fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({actor: 'dashboard'})})
+        .then(function() { return fetch('/api/kanban/scheduler/status'); })
+        .then(function(r) { return r.json(); })
+        .then(_renderSchedBtn).catch(function() {});
+}
+function _pollSched() {
+    fetch('/api/kanban/scheduler/status').then(function(r) { return r.json(); })
+        .then(_renderSchedBtn).catch(function() {});
+}
+_pollSched();
+setInterval(_pollSched, 15000);
 
 function _updateCountdownDisplay() {
     var el = document.getElementById('auto-refresh-countdown');

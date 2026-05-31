@@ -1,19 +1,19 @@
 # CUI // SP-CTI
-"""AI Augmentation Canvas (AAC) — Pipeline Engine.
+"""AI-ify Canvas — Pipeline Engine.
 
 Public API:
     run_scan(input_type, input_ref, scan_context=None) -> dict
 
-Orchestrates the full AAC pipeline:
+Orchestrates the full AI-ify pipeline:
   1. init_db()         — ensure schema is ready
-  2. aac_scans INSERT  — status='running'
+  2. aiify_scans INSERT  — status='running'
   3. detect_patterns() — Semgrep or AST fallback
-  4. aac_opportunities INSERT + score_opportunity() per hit
-  5. aac_scores INSERT
-  6. generate_roadmap() -> aac_roadmaps INSERT
-  7. promote top-5 opportunities -> kanban_tasks + aac_audit_log
-  8. aac_scans UPDATE  — status='completed'
-  9. aac_audit_log     — scan_started / scan_completed events
+  4. aiify_opportunities INSERT + score_opportunity() per hit
+  5. aiify_scores INSERT
+  6. generate_roadmap() -> aiify_roadmaps INSERT
+  7. promote top-5 opportunities -> kanban_tasks + aiify_audit_log
+  8. aiify_scans UPDATE  — status='completed'
+  9. aiify_audit_log     — scan_started / scan_completed events
 """
 from __future__ import annotations
 
@@ -24,21 +24,27 @@ import re
 import shutil
 import subprocess
 import tempfile
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from typing import Any
 
 import yaml
 
-from tools.ai_augmentation.agent_readiness import run_readiness_check
-from tools.ai_augmentation.db.init_db import get_connection, init_db
-from tools.ai_augmentation.opportunity_scorer import score_opportunity
-from tools.ai_augmentation.pattern_classifier import detect_patterns
-from tools.ai_augmentation.roadmap_generator import generate_roadmap
+from tools.aiify.agent_readiness import run_readiness_check
+from tools.aiify.db.init_db import get_connection, init_db
+from tools.aiify.opportunity_scorer import (
+    score_opportunity,
+    score_and_assess,
+    roll_up_scan_verdict,
+)
+from tools.aiify.pattern_classifier import detect_patterns
+from tools.aiify.roadmap_generator import generate_roadmap
 
-_CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / "args" / "aac_config.yaml"
+_CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / "args" / "aiify_config.yaml"
 
 
-def _load_aac_config() -> dict:
+def _load_aiify_config() -> dict:
     try:
         with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
             cfg = yaml.safe_load(fh)
@@ -47,10 +53,10 @@ def _load_aac_config() -> dict:
         return {}
 
 
-_aac_cfg = _load_aac_config()
-_nlp_ref_cfg: dict = _aac_cfg.get("nlp_ref_extractor", {})
+_aiify_cfg = _load_aiify_config()
+_nlp_ref_cfg: dict = _aiify_cfg.get("nlp_ref_extractor", {})
 _NLP_REF_ENABLED: bool = (
-    os.environ.get("ICDEV_AAC_NLP_REF", "").lower() in ("1", "true", "yes")
+    os.environ.get("ICDEV_AIIFY_NLP_REF", "").lower() in ("1", "true", "yes")
     or bool(_nlp_ref_cfg.get("enabled", False))
 )
 _NLP_REF_MODEL: str = str(_nlp_ref_cfg.get("model", "claude-haiku-4-5-20251001"))
@@ -85,7 +91,7 @@ _FALLBACK_ANOMALY_THRESHOLDS = {
 
 
 def _load_anomaly_thresholds() -> dict:
-    """Load anomaly_detection thresholds from args/aac_config.yaml with fallback."""
+    """Load anomaly_detection thresholds from args/aiify_config.yaml with fallback."""
     try:
         with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
             cfg = yaml.safe_load(fh)
@@ -125,7 +131,7 @@ def _now() -> str:
 
 def _dump(value: Any) -> Any:
     backend = os.environ.get(
-        "AAC_STORAGE_BACKEND",
+        "AIIFY_STORAGE_BACKEND",
         os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "postgresql"),
     ).lower()
     if backend == "postgresql":
@@ -150,7 +156,7 @@ def _exec(conn: Any, sql: str, params: tuple) -> Any:
 
 def _backend() -> str:
     return os.environ.get(
-        "AAC_STORAGE_BACKEND",
+        "AIIFY_STORAGE_BACKEND",
         os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "postgresql"),
     ).lower()
 
@@ -205,7 +211,7 @@ def _nlp_extract_ref_info(input_ref: str, input_type: str) -> dict:
     LLM-powered extraction, yielding richer project identification metadata
     (hosting platform, language hints, canonical project name).
 
-    Enabled by: ICDEV_AAC_NLP_REF=true env var or nlp_ref_extractor.enabled in aac_config.yaml.
+    Enabled by: ICDEV_AIIFY_NLP_REF=true env var or nlp_ref_extractor.enabled in aiify_config.yaml.
 
     Returns:
         Dict with keys ``project_name``, ``hosting_platform``, ``detected_languages``.
@@ -263,7 +269,7 @@ def _nlp_extract_ref_info(input_ref: str, input_type: str) -> dict:
 
 
 def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], scan_id: int) -> int:
-    """Option C: cross-register high-scoring AAC opportunities to innovation_signals."""
+    """Option C: cross-register high-scoring AI-ify opportunities to innovation_signals."""
     thresholds = _load_anomaly_thresholds()
     innovation_min = thresholds.get(
         "innovation_signal_min_score",
@@ -285,15 +291,15 @@ def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], s
                 pattern = opp.get("pattern_type", "")
                 paradigm = opp.get("ai_paradigm", "")
                 module = opp.get("module_path", "")
-                title = f"AI Augmentation: {pattern} → {paradigm} in {module}"
+                title = f"AI-ify: {pattern} → {paradigm} in {module}"
                 description = (
-                    f"Detected by AAC scan #{scan_id}. Pattern: {pattern}, "
+                    f"Detected by AI-ify scan #{scan_id}. Pattern: {pattern}, "
                     f"AI paradigm: {paradigm}, composite score: {composite:.2f}."
                 )
                 content_hash = hashlib.sha256(
-                    f"aac-{scan_id}-{opp_id}".encode()
+                    f"aiify-{scan_id}-{opp_id}".encode()
                 ).hexdigest()[:32]
-                signal_id = f"aac-{scan_id}-{opp_id}"
+                signal_id = f"aiify-{scan_id}-{opp_id}"
                 # Skip if already registered
                 existing = conn.execute(
                     "SELECT id FROM innovation_signals WHERE id = ?", (signal_id,)
@@ -306,9 +312,9 @@ def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], s
                     "discovered_at, status, category, innovation_score) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?)",
                     (
-                        signal_id, "aac_opportunities", "internal_analysis",
+                        signal_id, "aiify_opportunities", "internal_analysis",
                         title, description, content_hash,
-                        _now(), "approved", "ai_augmentation_opportunity", composite,
+                        _now(), "approved", "aiify_opportunity", composite,
                     ),
                 )
                 conn.commit()
@@ -341,8 +347,8 @@ def _promote_top_opportunities(
 ) -> int:
     """Promote top 5 opportunities (by composite_score) to kanban_tasks.
 
-    Uses the main ICDEV get_connection() for kanban_tasks and the AAC
-    get_connection() for aac_audit_log. Skips tasks whose id already exists.
+    Uses the main ICDEV get_connection() for kanban_tasks and the AI-ify
+    get_connection() for aiify_audit_log. Skips tasks whose id already exists.
     Returns the count of tasks actually inserted.
     """
     from tools.db.storage import get_connection as _icdev_get_connection
@@ -380,7 +386,7 @@ def _promote_top_opportunities(
     try:
         for opp in top5:
             opp_id = opp["opportunity_id"]
-            task_id = f"aac-opp-{str(opp_id)[:8]}"
+            task_id = f"aiify-opp-{str(opp_id)[:8]}"
 
             existing = _exec(
                 icdev_conn,
@@ -431,13 +437,13 @@ def _promote_top_opportunities(
     if not promoted_opps:
         return 0
 
-    # Write one audit entry per promoted task (separate AAC connection)
-    aac_conn = get_connection()
+    # Write one audit entry per promoted task (separate AI-ify connection)
+    aiify_conn = get_connection()
     try:
         for opp in promoted_opps:
             _exec(
-                aac_conn,
-                "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+                aiify_conn,
+                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
                 (
                     "kanban_promoted",
                     scan_id,
@@ -450,9 +456,9 @@ def _promote_top_opportunities(
                     }),
                 ),
             )
-        aac_conn.commit()
+        aiify_conn.commit()
     finally:
-        aac_conn.close()
+        aiify_conn.close()
 
     return len(promoted_opps)
 
@@ -489,7 +495,7 @@ def _promote_phase_opportunities(
             phase_label = phase.get("label", "")
             for opp_item in phase.get("opportunities", []):
                 opp_id = int(opp_item.get("opportunity_id", 0))
-                task_id = f"aac-rm-{short_id}-phase-{opp_id}"
+                task_id = f"aiify-rm-{short_id}-phase-{opp_id}"
 
                 existing = _exec(
                     icdev_conn,
@@ -551,7 +557,7 @@ def _promote_phase_opportunities(
 def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
     """Detect statistical anomalies in a batch of scored opportunities.
 
-    Uses thresholds from the ``anomaly_detection`` section of aac_config.yaml
+    Uses thresholds from the ``anomaly_detection`` section of aiify_config.yaml
     so that sensitivity can be tuned without touching source code.
 
     Args:
@@ -559,7 +565,7 @@ def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
                     ``value_score``, ``feasibility_score``, ``risk_score``,
                     ``composite_score``.
         thresholds: Optional threshold dict; defaults to the
-                    ``anomaly_detection`` section from aac_config.yaml.
+                    ``anomaly_detection`` section from aiify_config.yaml.
 
     Returns:
         List of anomaly dicts; empty means no anomalies.  Each dict has:
@@ -631,7 +637,7 @@ def _clone_git_url(url: str) -> str:
     if not shutil.which("git"):
         raise RuntimeError("git CLI is not installed; cannot clone remote repository")
 
-    clone_dir = tempfile.mkdtemp(prefix="aac_git_")
+    clone_dir = tempfile.mkdtemp(prefix="aiify_git_")
     cmd = ["git", "clone", "--depth", "1", "--single-branch", url, clone_dir]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if proc.returncode != 0:
@@ -640,6 +646,93 @@ def _clone_git_url(url: str) -> str:
             f"git clone failed (exit {proc.returncode}): {proc.stderr.strip()}"
         )
     return clone_dir
+
+
+_WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _is_unc_path(ref: str) -> bool:
+    r"""Windows UNC share (\\server\share) or //server/share."""
+    return ref.startswith("\\\\") or ref.startswith("//")
+
+
+def _fetch_s3(ref: str) -> str:
+    """Download an s3://bucket/prefix tree to a temp dir and return its path."""
+    try:
+        import boto3  # noqa: PLC0415
+    except ImportError as exc:
+        raise RuntimeError(
+            "s3:// input requires the 'boto3' package, which is not installed "
+            "in this environment. Install boto3 or sync the source locally first."
+        ) from exc
+    parsed = urllib.parse.urlparse(ref)
+    bucket, prefix = parsed.netloc, parsed.path.lstrip("/")
+    dest = tempfile.mkdtemp(prefix="aiify_s3_")
+    s3 = boto3.client("s3")
+    count = 0
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if key.endswith("/"):
+                continue
+            rel = key[len(prefix):].lstrip("/") if prefix else key
+            fp = pathlib.Path(dest) / (rel or pathlib.Path(key).name)
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            s3.download_file(bucket, key, str(fp))
+            count += 1
+    if count == 0:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise RuntimeError(f"No objects found at {ref}")
+    return dest
+
+
+def _resolve_input(input_type: str, input_ref: str) -> tuple[str, str | None]:
+    r"""Resolve an input reference to a local filesystem path to scan.
+
+    Returns ``(scan_path, cleanup_path)``; ``cleanup_path`` is a temp directory
+    to remove afterwards (git clone / s3 download) or ``None`` for in-place
+    paths. Supported sources: local path (POSIX/Windows drive), UNC share
+    (\\server\share), git URL (http/https/ssh/.git/git+ssh://), file:// URI,
+    and s3:// (requires boto3). Unsupported schemes (smb://, ftp://, bare
+    http(s) non-repo) raise a clear RuntimeError telling the user to mount/sync
+    locally — we don't pretend to support transports the environment can't reach.
+    """
+    ref = (input_ref or "").strip()
+    if not ref:
+        raise RuntimeError("Empty input reference")
+
+    if (input_type == "git_url" or _is_git_url(ref)
+            or ref.startswith(("git+ssh://", "git+https://", "git+http://"))):
+        url = ref
+        for pre in ("git+ssh://", "git+https://", "git+http://"):
+            if url.startswith(pre):
+                url = url[len("git+"):]
+                break
+        cloned = _clone_git_url(url)
+        return cloned, cloned
+
+    if _is_unc_path(ref) or _WINDOWS_DRIVE_RE.match(ref):
+        return ref, None
+
+    parsed = urllib.parse.urlparse(ref)
+    scheme = parsed.scheme.lower()
+    if scheme == "":
+        return ref, None
+    if scheme == "file":
+        if parsed.netloc and parsed.netloc.lower() not in ("", "localhost"):
+            return urllib.request.url2pathname(f"//{parsed.netloc}{parsed.path}"), None
+        return urllib.request.url2pathname(parsed.path), None
+    if scheme == "s3":
+        path = _fetch_s3(ref)
+        return path, path
+    if scheme in ("smb", "ftp", "http", "https"):
+        raise RuntimeError(
+            f"Input scheme '{scheme}://' is not supported for code scanning here. "
+            f"Use a local path, UNC share (\\\\server\\share), a git URL "
+            f"(https://…/repo.git or git+ssh://…), file://, or s3://. "
+            f"For {scheme}://, mount or sync the source locally and pass its path."
+        )
+    raise RuntimeError(f"Unrecognized input reference scheme: {scheme!r} ({input_ref!r})")
 
 
 def _count_source(path: str) -> tuple[int, int]:
@@ -661,7 +754,7 @@ def run_scan(
     input_ref: str,
     scan_context: dict | None = None,
 ) -> dict:
-    """Run the full AAC pipeline for a given source input.
+    """Run the full AI-ify pipeline for a given source input.
 
     Args:
         input_type:   e.g. 'local_path', 'git_url', 'upload'
@@ -677,12 +770,8 @@ def run_scan(
 
     init_db()
 
-    # ── Git URL normalisation ───────────────────────────────────────────────────
-    cloned_path: str | None = None
-    scan_path = input_ref
-    if input_type == "git_url" or _is_git_url(input_ref):
-        cloned_path = _clone_git_url(input_ref)
-        scan_path = cloned_path
+    # ── Input resolution (local / UNC / git / file:// / s3://) ──────────────────
+    scan_path, cloned_path = _resolve_input(input_type, input_ref)
 
     try:
         total_files, total_loc = _count_source(scan_path)
@@ -718,7 +807,7 @@ def run_scan(
         try:
             scan_id: int = _insert(
                 conn,
-                "INSERT INTO aac_scans "
+                "INSERT INTO aiify_scans "
                 "(input_type, input_ref, language_profile, total_files, total_loc, status) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (input_type, input_ref, _dump(language_profile), total_files, total_loc, "running"),
@@ -727,7 +816,7 @@ def run_scan(
 
             _exec(
                 conn,
-                "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
                 ("scan_started", scan_id, "system", _dump({"input_type": input_type, "input_ref": input_ref})),
             )
             conn.commit()
@@ -749,7 +838,7 @@ def run_scan(
 
                 opp_id: int = _insert(
                     conn,
-                    "INSERT INTO aac_opportunities "
+                    "INSERT INTO aiify_opportunities "
                     "(scan_id, module_path, function_name, line_start, line_end, language, "
                     "pattern_type, pattern_detail, ai_paradigm, il_recommended_model, data_requirements) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -769,12 +858,14 @@ def run_scan(
                     "opportunity_id",
                 )
 
-                score = score_opportunity(pat, scan_context)
+                pat["ai_paradigm"] = paradigm
+                score = score_and_assess(pat, scan_context)
                 _exec(
                     conn,
-                    "INSERT INTO aac_scores "
-                    "(opportunity_id, value_score, feasibility_score, risk_score, composite_score, score_detail) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO aiify_scores "
+                    "(opportunity_id, value_score, feasibility_score, risk_score, composite_score, "
+                    "score_detail, verdict, ai_readiness, rationale, pros, cons, category) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         opp_id,
                         score["value_score"],
@@ -782,6 +873,12 @@ def run_scan(
                         score["risk_score"],
                         score["composite_score"],
                         _dump(score["score_detail"]),
+                        score["verdict"],
+                        score["ai_readiness"],
+                        score["rationale"],
+                        _dump(score["pros"]),
+                        _dump(score["cons"]),
+                        score["category"],
                     ),
                 )
                 conn.commit()
@@ -796,15 +893,21 @@ def run_scan(
         finally:
             conn.close()
 
-        # 4. Generate roadmap (persists to aac_roadmaps internally)
+        # 4. Generate roadmap (persists to aiify_roadmaps internally)
         roadmap = generate_roadmap(scan_id, opp_rows, score_rows)
 
         # 4a. Build and store deterministic project summary
         project_summary = _build_summary(input_ref, opp_rows)
+        overall = roll_up_scan_verdict(score_rows)
         conn = get_connection()
         try:
-            _exec(conn, "UPDATE aac_scans SET project_summary = ? WHERE scan_id = ?",
-                  (project_summary, scan_id))
+            _exec(
+                conn,
+                "UPDATE aiify_scans SET project_summary = ?, overall_verdict = ?, "
+                "overall_ai_readiness = ?, overall_rationale = ? WHERE scan_id = ?",
+                (project_summary, overall["overall_verdict"],
+                 overall["overall_ai_readiness"], overall["overall_rationale"], scan_id),
+            )
             conn.commit()
         finally:
             conn.close()
@@ -821,12 +924,12 @@ def run_scan(
         try:
             _exec(
                 conn,
-                "UPDATE aac_scans SET status = ?, completed_at = ? WHERE scan_id = ?",
+                "UPDATE aiify_scans SET status = ?, completed_at = ? WHERE scan_id = ?",
                 ("completed", _now(), scan_id),
             )
             _exec(
                 conn,
-                "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
                 (
                     "scan_completed",
                     scan_id,
@@ -846,6 +949,9 @@ def run_scan(
             "kanban_promoted": kanban_promoted,
             "phase_promoted": phase_promoted,
             "status": "completed",
+            "overall_verdict": overall["overall_verdict"],
+            "overall_ai_readiness": overall["overall_ai_readiness"],
+            "overall_rationale": overall["overall_rationale"],
             "pillar_scores": readiness_result["pillar_scores"],
             "overall_readiness_score": readiness_result["overall_readiness_score"],
             "icdev_checks": readiness_result["icdev_checks"],
