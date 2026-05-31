@@ -296,8 +296,11 @@ class IngestOutcome:
 # Embedding + vector-store upsert (mirrors ingestion_manager.ingest_source path)
 # --------------------------------------------------------------------------- #
 
-def _embed_and_store(chunks: list, tenant_id: str, errors: list[str]) -> int:
-    """Embed new chunks and upsert into the vector store. Returns count embedded."""
+def _embed_and_store(chunks: list, tenant_id: str, errors: list[str], progress_cb=None) -> int:
+    """Embed new chunks and upsert into the vector store. Returns count embedded.
+
+    progress_cb: optional callable(embedded: int, total: int) called after each chunk.
+    """
     try:
         from tools.llm import get_embedding_provider
         from tools.rag.vector_store_factory import VectorStoreFactory
@@ -326,6 +329,7 @@ def _embed_and_store(chunks: list, tenant_id: str, errors: list[str]) -> int:
             pass
         new_chunks.append(c)
 
+    total = len(new_chunks)
     embedded = 0
     for c in new_chunks:
         try:
@@ -337,6 +341,11 @@ def _embed_and_store(chunks: list, tenant_id: str, errors: list[str]) -> int:
                 )
                 c.embedding = resp.data[0].embedding
             embedded += 1
+            if progress_cb:
+                try:
+                    progress_cb(embedded, total)
+                except Exception:
+                    pass
         except Exception as e:
             errors.append(f"embed chunk failed: {e}")
 
@@ -363,6 +372,7 @@ def ingest_file(
     embed: bool = True,
     bridge_kg: bool = True,
     conn=None,
+    progress_cb=None,
 ) -> IngestOutcome:
     """Route a file through provider -> RAG ingest -> KG bridge -> DIC rows.
 
@@ -374,6 +384,7 @@ def ingest_file(
         embed: when True, embed + upsert chunks into the vector store.
         bridge_kg: when True, extract entities/relationships into the KG.
         conn: optional DB connection (else an RLS-aware one is opened).
+        progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
     p = Path(path)
     if not p.exists() or not p.is_file():
@@ -382,7 +393,15 @@ def ingest_file(
     tid, cls = _resolve_context(tenant_id, classification)
     errors: list[str] = []
 
+    def _emit(stage: str, detail: str, pct: int = 0) -> None:
+        if progress_cb:
+            try:
+                progress_cb(stage, detail, pct)
+            except Exception:
+                pass
+
     # 1) Extract.
+    _emit("extracting", f"Reading {p.name}…", 5)
     extraction = _select_extractor(p)
     text = extraction.text or ""
 
@@ -391,6 +410,7 @@ def ingest_file(
 
     # 2) Chunk (reuse chunker). chunk_content returns VectorChunk objects whose
     #    .chunk_id is the canonical rag_chunks id used by the vector store + KG.
+    _emit("chunking", "Splitting into chunks…", 15)
     chunks = chunk_content(
         text,
         source_type="dic_document",
@@ -401,11 +421,20 @@ def ingest_file(
         project_id=collection_id,
         classification=cls,
     )
+    _emit("chunking", f"{len(chunks)} chunks created", 20)
 
     # 3) Embed + upsert into the vector store (same path ingest_source uses).
     chunks_embedded = 0
     if embed and chunks:
-        chunks_embedded = _embed_and_store(chunks, tid, errors)
+        total_chunks = len(chunks)
+
+        def _embed_progress(done: int, total: int) -> None:
+            pct = 20 + int(done / max(total, 1) * 55)
+            _emit("embedding", f"Embedding {done}/{total} chunks…", pct)
+
+        _emit("embedding", f"Embedding 0/{total_chunks} chunks…", 20)
+        chunks_embedded = _embed_and_store(chunks, tid, errors, progress_cb=_embed_progress)
+        _emit("embedding", f"Embedded {chunks_embedded}/{total_chunks} chunks", 75)
 
     # 4) DIC bookkeeping rows.
     own_conn = conn is None
@@ -478,6 +507,7 @@ def ingest_file(
 
     # 5) KG bridge (best-effort). ingest_chunk reads rag_chunks by id, so this
     #    only finds content when embedding upserted the chunk above.
+    _emit("kg_bridge", "Extracting entities and relationships…", 78)
     kg_entities = 0
     kg_rels = 0
     if bridge_kg and chunks and chunks_embedded:
@@ -505,6 +535,7 @@ def ingest_file(
         except Exception as e:
             errors.append(f"kg bridge unavailable: {e}")
 
+    _emit("done", f"Done — {len(chunks)} chunks, {kg_entities} entities", 100)
     return IngestOutcome(
         doc_id=doc_id,
         version_id=version_id,

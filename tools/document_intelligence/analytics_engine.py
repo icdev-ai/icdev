@@ -23,6 +23,23 @@ def _conn():
     return get_connection()
 
 
+def _dic_graph_ids(conn) -> list[str]:
+    """Return kg_graph ids that belong to DIC-ingested documents only.
+
+    Filters by source_doc_id IN dic_documents so ICDEV system KG graphs
+    (compliance, canvas topology, etc.) are excluded.
+    """
+    try:
+        cur = conn.execute(
+            "SELECT g.id FROM kg_graphs g "
+            "INNER JOIN dic_documents d ON d.doc_id = g.source_doc_id "
+            "WHERE g.source_doc_id IS NOT NULL"
+        )
+        return [row[0] for row in cur.fetchall()]
+    except Exception:
+        return []
+
+
 def _safe(conn, sql: str, params: tuple = ()) -> list[dict]:
     try:
         cur = conn.execute(sql, params)
@@ -48,11 +65,16 @@ def entity_frequency(collection_id: str | None = None, limit: int = 50) -> dict:
     """
     conn = _conn()
     try:
+        gids = _dic_graph_ids(conn)
+        if not gids:
+            return {"by_type": {}, "top_entities": [], "type_counts": {}, "total": 0, "empty": True,
+                    "message": "No DIC documents ingested yet. Upload documents to see analytics."}
+        ph = ",".join(["?" for _ in gids])
         rows = _safe(
             conn,
-            "SELECT n.label, n.entity_type, COUNT(*) as freq, AVG(n.centrality) as avg_centrality "
-            "FROM kg_nodes n GROUP BY n.label, n.entity_type ORDER BY freq DESC LIMIT ?",
-            (limit * 4,),
+            f"SELECT n.label, n.entity_type, COUNT(*) as freq, AVG(n.centrality) as avg_centrality "
+            f"FROM kg_nodes n WHERE n.graph_id IN ({ph}) GROUP BY n.label, n.entity_type ORDER BY freq DESC LIMIT ?",
+            tuple(gids) + (limit * 4,),
         )
     finally:
         conn.close()
@@ -95,15 +117,20 @@ def co_occurrence(min_weight: float = 0.0, limit: int = 60) -> dict:
     """
     conn = _conn()
     try:
+        gids = _dic_graph_ids(conn)
+        if not gids:
+            return {"pairs": [], "hot_pairs": [], "total": 0, "empty": True}
+        ph = ",".join(["?" for _ in gids])
         rows = _safe(
             conn,
-            "SELECT src.label AS source, tgt.label AS target, e.relationship, e.weight "
-            "FROM kg_edges e "
-            "JOIN kg_nodes src ON src.id = e.source_id "
-            "JOIN kg_nodes tgt ON tgt.id = e.target_id "
-            "WHERE (e.weight IS NULL OR e.weight >= ?) "
-            "ORDER BY e.weight DESC LIMIT ?",
-            (min_weight, limit),
+            f"SELECT src.label AS source, tgt.label AS target, e.relationship, e.weight "
+            f"FROM kg_edges e "
+            f"JOIN kg_nodes src ON src.id = e.source_id "
+            f"JOIN kg_nodes tgt ON tgt.id = e.target_id "
+            f"WHERE src.graph_id IN ({ph}) "
+            f"AND (e.weight IS NULL OR e.weight >= ?) "
+            f"ORDER BY e.weight DESC LIMIT ?",
+            tuple(gids) + (min_weight, limit),
         )
     finally:
         conn.close()
@@ -129,43 +156,62 @@ def detect_anomalies() -> dict:
     """
     conn = _conn()
     try:
-        # Orphaned nodes
+        gids = _dic_graph_ids(conn)
+        if not gids:
+            return {
+                "severity": "low", "orphans": [], "single_source": [], "hubs": [],
+                "contradictions": [], "stale_docs": [], "empty": True,
+                "message": "No DIC documents ingested yet.",
+                "summary": {"orphan_count": 0, "single_source_count": 0, "hub_count": 0,
+                            "contradiction_count": 0, "stale_doc_count": 0},
+            }
+        ph = ",".join(["?" for _ in gids])
+        gids_t = tuple(gids)
+
+        # Orphaned nodes (scoped to DIC graphs)
         orphans = _safe(
             conn,
-            "SELECT n.label, n.entity_type FROM kg_nodes n "
-            "WHERE n.id NOT IN (SELECT source_id FROM kg_edges) "
-            "AND n.id NOT IN (SELECT target_id FROM kg_edges) "
-            "ORDER BY n.entity_type, n.label LIMIT 100",
+            f"SELECT n.label, n.entity_type FROM kg_nodes n "
+            f"WHERE n.graph_id IN ({ph}) "
+            f"AND n.id NOT IN (SELECT source_id FROM kg_edges) "
+            f"AND n.id NOT IN (SELECT target_id FROM kg_edges) "
+            f"ORDER BY n.entity_type, n.label LIMIT 100",
+            gids_t,
         )
 
-        # Single-source nodes (appear in only one source_chunk_id)
+        # Single-source nodes (scoped to DIC graphs)
         single_source = _safe(
             conn,
-            "SELECT label, entity_type, source_chunk_id FROM kg_nodes "
-            "WHERE source_chunk_id IS NOT NULL "
-            "GROUP BY label HAVING COUNT(DISTINCT source_chunk_id) = 1 "
-            "ORDER BY entity_type LIMIT 100",
+            f"SELECT label, entity_type, source_chunk_id FROM kg_nodes "
+            f"WHERE graph_id IN ({ph}) AND source_chunk_id IS NOT NULL "
+            f"GROUP BY label HAVING COUNT(DISTINCT source_chunk_id) = 1 "
+            f"ORDER BY entity_type LIMIT 100",
+            gids_t,
         )
 
-        # High-centrality hubs (top 10 by centrality)
+        # High-centrality hubs (scoped to DIC graphs)
         hubs = _safe(
             conn,
-            "SELECT label, entity_type, centrality FROM kg_nodes "
-            "WHERE centrality IS NOT NULL ORDER BY centrality DESC LIMIT 10",
+            f"SELECT label, entity_type, centrality FROM kg_nodes "
+            f"WHERE graph_id IN ({ph}) AND centrality IS NOT NULL "
+            f"ORDER BY centrality DESC LIMIT 10",
+            gids_t,
         )
 
-        # Contradictions: same (source_label, target_label) with multiple relationship types
+        # Contradictions (scoped to DIC graphs)
         contradictions = _safe(
             conn,
-            "SELECT src.label AS source, tgt.label AS target, "
-            "COUNT(DISTINCT e.relationship) AS rel_count, "
-            "GROUP_CONCAT(DISTINCT e.relationship) AS relationships "
-            "FROM kg_edges e "
-            "JOIN kg_nodes src ON src.id = e.source_id "
-            "JOIN kg_nodes tgt ON tgt.id = e.target_id "
-            "GROUP BY src.label, tgt.label "
-            "HAVING rel_count > 1 "
-            "ORDER BY rel_count DESC LIMIT 50",
+            f"SELECT src.label AS source, tgt.label AS target, "
+            f"COUNT(DISTINCT e.relationship) AS rel_count, "
+            f"GROUP_CONCAT(DISTINCT e.relationship) AS relationships "
+            f"FROM kg_edges e "
+            f"JOIN kg_nodes src ON src.id = e.source_id "
+            f"JOIN kg_nodes tgt ON tgt.id = e.target_id "
+            f"WHERE src.graph_id IN ({ph}) "
+            f"GROUP BY src.label, tgt.label "
+            f"HAVING rel_count > 1 "
+            f"ORDER BY rel_count DESC LIMIT 50",
+            gids_t,
         )
 
         # Documents with no KG nodes
@@ -254,16 +300,27 @@ def detect_patterns() -> dict:
     """
     conn = _conn()
     try:
-        node_count = (conn.execute("SELECT COUNT(*) FROM kg_nodes").fetchone() or [0])[0]
-        edge_count = (conn.execute("SELECT COUNT(*) FROM kg_edges").fetchone() or [0])[0]
-        orphan_count = (conn.execute(
-            "SELECT COUNT(*) FROM kg_nodes WHERE id NOT IN "
-            "(SELECT source_id FROM kg_edges) AND id NOT IN (SELECT target_id FROM kg_edges)"
+        gids = _dic_graph_ids(conn)
+        if not gids:
+            return {"patterns": [], "dominant": "UNKNOWN", "flags": {}, "empty": True,
+                    "stats": {"node_count": 0, "edge_count": 0, "orphan_count": 0, "hub_count": 0,
+                              "edge_density": 0.0, "orphan_ratio": 0.0}}
+        ph = ",".join(["?" for _ in gids])
+        gids_t = tuple(gids)
+        node_count = (conn.execute(f"SELECT COUNT(*) FROM kg_nodes WHERE graph_id IN ({ph})", gids_t).fetchone() or [0])[0]
+        edge_count = (conn.execute(
+            f"SELECT COUNT(*) FROM kg_edges e JOIN kg_nodes n ON n.id = e.source_id WHERE n.graph_id IN ({ph})",
+            gids_t,
         ).fetchone() or [0])[0]
-        hub_row = conn.execute(
-            "SELECT COUNT(*) FROM kg_nodes WHERE centrality IS NOT NULL AND centrality > 0.5"
-        ).fetchone()
-        hub_count = (hub_row or [0])[0]
+        orphan_count = (conn.execute(
+            f"SELECT COUNT(*) FROM kg_nodes WHERE graph_id IN ({ph}) AND id NOT IN "
+            f"(SELECT source_id FROM kg_edges) AND id NOT IN (SELECT target_id FROM kg_edges)",
+            gids_t,
+        ).fetchone() or [0])[0]
+        hub_count = (conn.execute(
+            f"SELECT COUNT(*) FROM kg_nodes WHERE graph_id IN ({ph}) AND centrality IS NOT NULL AND centrality > 0.5",
+            gids_t,
+        ).fetchone() or [0])[0]
     except Exception as exc:
         logger.warning("dic.analytics: pattern detection error: %s", exc)
         return {"patterns": [], "dominant": "UNKNOWN", "flags": {}}

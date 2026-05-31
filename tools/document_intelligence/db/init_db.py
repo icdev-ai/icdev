@@ -11,6 +11,21 @@ from tools.logging.icdev_logger import get_logger
 logger = get_logger(__name__)
 
 _SCHEMA_PG = """
+CREATE TABLE IF NOT EXISTS dic_ingest_jobs (
+    job_id        TEXT        PRIMARY KEY,
+    filename      TEXT        NOT NULL,
+    collection_id TEXT        DEFAULT 'default',
+    status        TEXT        DEFAULT 'queued',
+    stage_detail  TEXT        DEFAULT '',
+    chunks_total  INTEGER     DEFAULT 0,
+    chunks_done   INTEGER     DEFAULT 0,
+    doc_id        TEXT,
+    errors_json   TEXT        DEFAULT '[]',
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ DEFAULT NOW(),
+    tenant_id     TEXT        DEFAULT 'default'
+);
+
 CREATE TABLE IF NOT EXISTS dic_collections (
     collection_id   TEXT        PRIMARY KEY,
     name            TEXT        NOT NULL,
@@ -45,6 +60,21 @@ CREATE INDEX IF NOT EXISTS idx_dic_freshness_scans_collection ON dic_freshness_s
 """
 
 _SCHEMA_SQLITE = """
+CREATE TABLE IF NOT EXISTS dic_ingest_jobs (
+    job_id        TEXT    PRIMARY KEY,
+    filename      TEXT    NOT NULL,
+    collection_id TEXT    DEFAULT 'default',
+    status        TEXT    DEFAULT 'queued',
+    stage_detail  TEXT    DEFAULT '',
+    chunks_total  INTEGER DEFAULT 0,
+    chunks_done   INTEGER DEFAULT 0,
+    doc_id        TEXT,
+    errors_json   TEXT    DEFAULT '[]',
+    created_at    TEXT    DEFAULT (datetime('now')),
+    updated_at    TEXT    DEFAULT (datetime('now')),
+    tenant_id     TEXT    DEFAULT 'default'
+);
+
 CREATE TABLE IF NOT EXISTS dic_collections (
     collection_id   TEXT    PRIMARY KEY,
     name            TEXT    NOT NULL,

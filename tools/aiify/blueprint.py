@@ -863,6 +863,237 @@ def api_generate_prd():
     })
 
 
+@aiify_bp.route("/api/prd-dry-run", methods=["POST"])
+def api_prd_dry_run():
+    """Dry-run PRD validation + Kanban preview. Auto AI Boost if score is low.
+
+    Body: {"roadmap_id": str, "phase_id": "P1"|"P2"|"P3"}
+    Returns: {
+        "score": float,
+        "original_score": float,
+        "ai_boosted": bool,
+        "boost_would_trigger": bool,
+        "opportunity_count": int,
+        "tasks": [{"id", "title", "type", "priority"}],
+        "prd_hitl_decision": str | null,
+    }
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    roadmap_id = (data.get("roadmap_id") or "").strip()
+    phase_id = (data.get("phase_id") or "").strip()
+
+    if not roadmap_id or not phase_id:
+        return jsonify({"error": "roadmap_id and phase_id are required"}), 400
+
+    conn = _conn()
+    try:
+        rm = conn.execute(
+            "SELECT scan_id, title, phases FROM aiify_roadmaps WHERE roadmap_id = ?",
+            (roadmap_id,),
+        ).fetchone()
+        if not rm:
+            return jsonify({"error": "roadmap not found"}), 404
+        scan = conn.execute(
+            "SELECT input_ref, project_summary, total_files, total_loc FROM aiify_scans WHERE scan_id = ?",
+            (rm["scan_id"],),
+        ).fetchone()
+        scan_dict = dict(scan) if scan else {}
+        phases = _parse_phases(rm["phases"])
+        target_phase = next(
+            (ph for ph in phases if ph.get("phase_id") == phase_id), None
+        )
+        if not target_phase:
+            return jsonify({"error": f"phase {phase_id} not found"}), 404
+    finally:
+        conn.close()
+
+    opps = target_phase.get("opportunities", [])
+    opp_ids = [o["opportunity_id"] for o in opps if "opportunity_id" in o]
+
+    # Load scores
+    score_map: dict[int, dict] = {}
+    if opp_ids:
+        conn = _conn()
+        try:
+            placeholders = ",".join("?" * len(opp_ids))
+            rows = conn.execute(
+                f"SELECT opportunity_id, composite_score, value_score, feasibility_score, risk_score "
+                f"FROM aiify_scores WHERE opportunity_id IN ({placeholders})",
+                tuple(opp_ids),
+            ).fetchall()
+            for r in rows:
+                score_map[r["opportunity_id"]] = dict(r)
+        finally:
+            conn.close()
+
+    # Load HITL decisions
+    prd_key = f"{roadmap_id}:{phase_id}"
+    prd_hitl_decision: str | None = None
+    hitl_accepted = hitl_total = 0
+    try:
+        aiify = _conn()
+        try:
+            for row in aiify.execute(
+                "SELECT source_type, source_id, decision FROM aiify_hitl_decisions"
+            ).fetchall():
+                hitl_total += 1
+                if row["decision"] == "accept":
+                    hitl_accepted += 1
+            prd_row = aiify.execute(
+                "SELECT decision FROM aiify_hitl_decisions WHERE source_type='prd' AND source_id=?",
+                (prd_key,),
+            ).fetchone()
+            if prd_row:
+                prd_hitl_decision = prd_row["decision"]
+        finally:
+            aiify.close()
+    except Exception:
+        pass
+
+    # ── Generate PRD for scoring ─────────────────────────────────────────────
+    # Re-use _build_prd with minimal engine data (best-effort)
+    innovation_signals: list[dict] = []
+    regulatory_items: list[dict] = []
+    pain_points: list[dict] = []
+    try:
+        from tools.db.storage import get_connection as _icdev_conn
+        icdev = _icdev_conn()
+        try:
+            try:
+                for r in icdev.execute(
+                    "SELECT id, source_type, title, description, composite_score FROM innovation_signals ORDER BY id DESC LIMIT 3"
+                ).fetchall():
+                    innovation_signals.append(dict(r))
+            except Exception:
+                pass
+            try:
+                for r in icdev.execute(
+                    "SELECT id, regulation_name, regulatory_body, deadline, nist_controls FROM research_regulatory_map LIMIT 3"
+                ).fetchall():
+                    regulatory_items.append(dict(r))
+            except Exception:
+                pass
+            try:
+                for r in icdev.execute(
+                    "SELECT id, description, composite_score FROM creative_pain_points ORDER BY composite_score DESC LIMIT 3"
+                ).fetchall():
+                    pain_points.append(dict(r))
+            except Exception:
+                pass
+        finally:
+            icdev.close()
+    except Exception:
+        pass
+
+    prd = _build_prd(
+        phase_id, target_phase, scan_dict, score_map,
+        regulatory_items, pain_points, rm["title"], innovation_signals,
+    )
+
+    def _score_prd(text: str, opp_list: list[dict], scores: dict[int, dict]) -> float:
+        s = 0.3
+        s += min(len(opp_list) * 0.05, 0.2)
+        avg_comp = 0.0
+        if scores:
+            vals = [float(v.get("composite_score", 0.0)) for v in scores.values()]
+            avg_comp = sum(vals) / len(vals)
+        if avg_comp >= 0.6:
+            s += 0.1
+        if "```mermaid" in text:
+            s += 0.1
+        if hitl_total and (hitl_accepted / hitl_total) >= 0.5:
+            s += 0.1
+        if innovation_signals:
+            s += 0.05
+        if regulatory_items:
+            s += 0.05
+        if pain_points:
+            s += 0.05
+        if len(text) > 2000:
+            s += 0.1
+        return round(min(s, 1.0), 2)
+
+    score = _score_prd(prd, opps, score_map)
+    original_score = score
+    ai_boosted = False
+    boost_would_trigger = score < 0.6
+
+    # ── AI Boost ──────────────────────────────────────────────────────────────
+    if boost_would_trigger:
+        try:
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
+            router = LLMRouter()
+            boost_prompt = (
+                "You are an expert technical product manager. Improve the following PRD so it scores higher on:\n"
+                "1. Detailed acceptance criteria per opportunity\n"
+                "2. Clear architecture rationale and GenAI/ML component mapping\n"
+                "3. Quantified business impact and risk mitigation\n"
+                "4. Precise effort estimates with dependencies\n\n"
+                "Return ONLY the improved PRD markdown (no extra commentary).\n\n"
+                f"--- PRD START ---\n{prd}\n--- PRD END ---"
+            )
+            request_obj = LLMRequest(prompt=boost_prompt, max_tokens=4000, temperature=0.3)
+            resp = router.invoke("code_generation", request_obj)
+            boosted = resp.text or ""
+            if boosted and len(boosted) > len(prd) * 0.8:
+                prd = boosted
+                score = _score_prd(prd, opps, score_map)
+                ai_boosted = True
+        except Exception:
+            pass  # Graceful degradation in air-gap / no-LLM mode
+
+    # ── Kanban task preview (no insert) ─────────────────────────────────────
+    _PHASE_PRIORITY = {"P1": "high", "P2": "medium", "P3": "low"}
+    short_id = roadmap_id[:8]
+    ph_key = target_phase.get("phase_id") or (target_phase.get("label", "").split(" ")[0] if target_phase.get("label") else "P3")
+    priority = _PHASE_PRIORITY.get(ph_key, "medium")
+    tasks_preview: list[dict] = []
+
+    epic_id = f"aiify-{short_id}-{ph_key.lower()}-epic"
+    subtitle = target_phase.get("label", "").split("—")[1].strip() if "—" in target_phase.get("label", "") else target_phase.get("label", "")
+    tasks_preview.append({
+        "id": epic_id,
+        "title": f"[{ph_key} Epic] AI-ify — {subtitle}",
+        "type": "epic",
+        "priority": priority,
+    })
+
+    for opp in opps:
+        opp_id = opp.get("opportunity_id", 0)
+        pattern = opp.get("pattern_type", "unknown")
+        module = opp.get("module_path", "?")
+        paradigm = opp.get("ai_paradigm", "llm_generation")
+        scores = score_map.get(opp_id, {})
+        composite = float(scores.get("composite_score", 0.0))
+        child_priority = "high" if composite >= 0.7 else priority
+        base_id = f"aiify-{short_id}-{ph_key.lower()}-{opp_id}"
+        steps = [
+            ("d1", "Design", f"Define interface contract and test cases for {pattern} replacement in {module}"),
+            ("d2", "Implement", f"Replace {pattern} with {paradigm} in {module}"),
+            ("d3", "Test", f"Validate AI output parity for {pattern} in {module}"),
+            ("d4", "Review", f"Security scan + compliance gate for {paradigm} integration in {module}"),
+        ]
+        for suffix, step_name, step_title in steps:
+            child_id = f"{base_id}-{suffix}"
+            tasks_preview.append({
+                "id": child_id,
+                "title": f"[{step_name}] {step_title[:90]}",
+                "type": "task",
+                "priority": child_priority,
+            })
+
+    return jsonify({
+        "score": score,
+        "original_score": original_score,
+        "ai_boosted": ai_boosted,
+        "boost_would_trigger": boost_would_trigger,
+        "opportunity_count": len(opps),
+        "tasks": tasks_preview,
+        "prd_hitl_decision": prd_hitl_decision,
+    })
+
+
 @aiify_bp.route("/api/intelligence-feed", methods=["GET"])
 def api_intelligence_feed():
     """Return signals from Innovation, Creative, and Research engines with HITL state."""
