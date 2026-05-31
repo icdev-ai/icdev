@@ -55,6 +55,7 @@
 <!-- Tabs -->
 <div class="tabs" style="margin-top:20px;">
     <button class="tab-btn active" data-tab="stab-notes">Notes</button>
+    <button class="tab-btn" data-tab="stab-draft">Draft Content</button>
     <button class="tab-btn" data-tab="stab-compliance">Compliance ({{ section.compliance_items | length }})</button>
     <button class="tab-btn" data-tab="stab-findings">Findings ({{ section.findings | length }})</button>
     <button class="tab-btn" data-tab="stab-deps">Dependencies ({{ section.dependencies | length }})</button>
@@ -69,6 +70,56 @@
         <div style="margin-top:8px; display:flex; justify-content:flex-end;">
             <button class="btn btn-primary" onclick="ICDEV™.proposals.saveNotes('{{ section.id }}')">Save Notes</button>
         </div>
+    </div>
+</div>
+
+<!-- Draft Content Tab -->
+<div id="stab-draft" class="tab-content" style="display:none;">
+    <div class="card" style="padding:16px; margin-top:12px;">
+        {% if draft %}
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <div style="display:flex; gap:8px; align-items:center;">
+                {% set ds_colors = {'draft': 'warning', 'reviewed': 'info', 'approved': 'success', 'rejected': 'error'} %}
+                <span class="badge badge-{{ ds_colors.get(draft.status, 'info') }}">{{ draft.status | title }}</span>
+                {% if draft.confidence %}
+                <span class="badge badge-{{ 'success' if draft.confidence >= 0.7 else 'warning' if draft.confidence >= 0.4 else 'error' }}">Confidence: {{ (draft.confidence * 100) | round(0) | int }}%</span>
+                {% endif %}
+                {% if draft.generation_model %}
+                <span class="text-muted" style="font-size:12px;">Model: {{ draft.generation_model }}</span>
+                {% endif %}
+                {% if draft.writeguard %}
+                    {% set wg = draft.writeguard %}
+                {% elif draft.metadata_parsed and draft.metadata_parsed.writeguard %}
+                    {% set wg = draft.metadata_parsed.writeguard %}
+                {% else %}
+                    {% set wg = None %}
+                {% endif %}
+                {% if wg %}
+                {% set wg_score = wg.overall_score | default(0) %}
+                <span class="badge badge-{{ 'success' if wg_score >= 80 else 'warning' if wg_score >= 60 else 'error' }}">WriteGuard: {{ wg_score }}</span>
+                {% endif %}
+            </div>
+            <div style="display:flex; gap:8px;">
+                {% if draft.status in ('draft', 'reviewed') %}
+                <button class="btn btn-sm btn-success" onclick="approveDraft('{{ draft.id }}')">Approve</button>
+                <button class="btn btn-sm btn-error" onclick="rejectDraft('{{ draft.id }}')">Reject</button>
+                {% endif %}
+            </div>
+        </div>
+        {% if draft.reviewed_by %}
+        <div style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">
+            Reviewed by {{ draft.reviewed_by }}{% if draft.reviewed_at %} on {{ draft.reviewed_at }}{% endif %}
+        </div>
+        {% endif %}
+        <div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; padding:16px; max-height:480px; overflow-y:auto; line-height:1.6; white-space:pre-wrap;">
+            {{ draft.draft_content }}
+        </div>
+        {% else %}
+        <p class="text-muted" style="text-align:center;">No draft generated yet for this section.</p>
+        <div style="text-align:center; margin-top:8px;">
+            <a href="/proposals/{{ section.opportunity_id }}" class="btn btn-primary">Go to Opportunity → AI Drafts</a>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -191,5 +242,25 @@ document.addEventListener("DOMContentLoaded", function() {
         ICDEV.proposals.renderStatusPipeline("status-pipeline", "{{ section.status }}");
     }
 });
+
+function approveDraft(draftId) {
+    fetch("/api/govcon/drafts/" + draftId + "/approve", {
+        method: "PUT", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({reviewed_by: "dashboard_user"})
+    }).then(function(r) { return r.json(); }).then(function() {
+        location.reload();
+    });
+}
+
+function rejectDraft(draftId) {
+    var notes = prompt("Rejection reason:");
+    if (notes === null) return;
+    fetch("/api/govcon/drafts/" + draftId + "/reject", {
+        method: "PUT", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({reviewed_by: "dashboard_user", review_notes: notes})
+    }).then(function(r) { return r.json(); }).then(function() {
+        location.reload();
+    });
+}
 </script>
 {% endblock %}

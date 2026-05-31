@@ -136,6 +136,7 @@
                     <th>Writer</th>
                     <th>Status</th>
                     <th>Priority</th>
+                    <th>Draft</th>
                     <th>Words</th>
                     <th>Due Date</th>
                 </tr>
@@ -154,6 +155,15 @@
                     <td>
                         {% set pri_colors = {'critical_path': 'error', 'high': 'warning', 'standard': 'info', 'supporting': 'info'} %}
                         <span class="badge badge-{{ pri_colors.get(sec.priority, 'info') }}">{{ sec.priority | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>
+                        {% if sec.draft_status %}
+                            {% set ds_colors = {'draft': 'warning', 'reviewed': 'info', 'approved': 'success', 'rejected': 'error'} %}
+                            <span class="badge badge-{{ ds_colors.get(sec.draft_status, 'info') }}">{{ sec.draft_status | title }}</span>
+                            <a href="/proposals/{{ opp.id }}/sections/{{ sec.id }}" style="font-size:12px; margin-left:4px;">View</a>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
                     </td>
                     <td>
                         {{ sec.current_word_count or 0 }}{% if sec.word_limit %}/{{ sec.word_limit }}{% endif %}
