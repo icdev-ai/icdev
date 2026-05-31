@@ -6410,8 +6410,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 },
             }
 
-    if _running:
-        print(f"  Kanban: {len(_running)} task(s) executing in claude, waiting...")
+    # 3b. Concurrency gate — only block when we are at MAX_IN_PROGRESS.
+    # With worktree isolation, multiple Claude CLI subprocesses can run
+    # concurrently (each in its own directory).  The stale-cleanup sweep
+    # above already removed any entries whose DB status changed, so
+    # _running only contains genuinely live tasks.
+    if len(_running) >= MAX_IN_PROGRESS:
+        print(f"  Kanban: {len(_running)} task(s) executing (max {MAX_IN_PROGRESS}), waiting...")
         return {
             "success": True,
             "metric_value": len(completed),
@@ -6423,10 +6428,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             },
         }
 
-    # 3b. Check for token-exhausted tasks ready for retry
+    # 3c. Check for token-exhausted tasks ready for retry.
+    # We retry ONE task here, but we do NOT return — the function continues
+    # to normal promotion so remaining slots can be filled in the same cycle.
+    token_retry_dispatched = False
     token_retry_tasks = _check_token_exhausted_tasks()
     if token_retry_tasks:
-        # Re-dispatch the highest-priority token-exhausted task
         task = token_retry_tasks[0]
         retry_count = _get_retry_count(task["id"])
         print(
@@ -6444,21 +6451,24 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             if task["id"] in _running:
                 _move_task(task["id"], "in_progress")
                 _send_notification(task, event="in_progress")
-                return {
-                    "success": True,
-                    "metric_value": 1,
-                    "details": {
-                        "status": "token_retry",
-                        "task_id": task["id"],
-                        "retry_count": retry_count,
-                        "completed_this_cycle": completed,
-                        "telegram_commands": len(tg_results),
-                    },
-                }
+                token_retry_dispatched = True
             else:
                 print(f"  Kanban: token retry dispatch failed for {task['id']}")
         except Exception as e:
             print(f"  Kanban: token retry error for {task['id']}: {e}")
+
+    # If a token retry consumed the last available slot, skip normal promotion.
+    if len(_running) >= MAX_IN_PROGRESS:
+        return {
+            "success": True,
+            "metric_value": (1 if token_retry_dispatched else 0) + len(completed),
+            "details": {
+                "status": "token_retry" if token_retry_dispatched else "executing",
+                "running": list(_running.keys()),
+                "completed_this_cycle": completed,
+                "telegram_commands": len(tg_results),
+            },
+        }
 
     # 3c. Auto-decompose tasks stuck at needs_decomposition
     try:
