@@ -41,7 +41,7 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 
 def _get_db():
-    conn = get_connection()
+    conn = get_connection(db_path=str(_DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

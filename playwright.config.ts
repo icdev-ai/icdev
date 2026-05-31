@@ -62,12 +62,15 @@ export default defineConfig({
     timeout: 60000,
     cwd: ROOT,
     env: {
-      ICDEV_GOVCON_ENABLED: '1',
+      ICDEV_GOVCON_ENABLED: 'true',
       ICDEV_STORAGE_BACKEND: 'sqlite',
       ICDEV_AAC_ENABLED: 'true',
       ICDEV_CUI_BANNER_ENABLED: 'true',
       ICDEV_MISSION_CANVAS_ENABLED: 'true',
       ICDEV_AUTH_BYPASS: 'true',
+      ICDEV_OPS_HUB_ENABLED: 'true',
+      ICDEV_MIGRATION_CANVAS_ENABLED: 'true',
+      ICDEV_INNOVATION_ENABLED: 'true',
     },
   },
 });

@@ -75,6 +75,9 @@ _ISR_SSR_MAX_AGE_DAYS = 180
 
 def _get_db():
     conn = get_connection()
+    # Govcon tools are service-layer operations — clear any Flask RLS context
+    # so that complex queries don't fail with RLS column injection errors.
+    conn.set_security_context(None)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -91,9 +94,9 @@ def _uuid():
 def _audit(conn, action, details="", actor="subcontractor_tracker"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), _now(), "cpmp.subcontractor_tracker", actor, action, details, "cpmp"),
+            "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
         pass

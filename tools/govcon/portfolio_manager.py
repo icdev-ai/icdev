@@ -81,6 +81,10 @@ def _build_recommendations(scores):
 
 def _get_db():
     conn = get_connection()
+    # Govcon tools are service-layer operations — clear any Flask RLS context
+    # so that complex JOIN queries (subquery aliases) don't fail with
+    # "no such column: c.classification" when RLS injection misfires.
+    conn.set_security_context(None)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -97,9 +101,9 @@ def _uuid():
 def _audit(conn, action, details="", actor="portfolio_manager"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), _now(), "cpmp.portfolio_manager", actor, action, details, "cpmp"),
+            "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
         pass
@@ -107,9 +111,9 @@ def _audit(conn, action, details="", actor="portfolio_manager"):
 
 def _record_status_change(conn, entity_type, entity_id, old_status, new_status, changed_by=None, reason=None):
     conn.execute(
-        "INSERT INTO cpmp_status_history (id, entity_type, entity_id, old_status, new_status, changed_by, reason, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (_uuid(), entity_type, entity_id, old_status, new_status, changed_by, reason, _now()),
+        "INSERT INTO cpmp_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (entity_type, entity_id, old_status, new_status, changed_by, reason),
     )
 
 

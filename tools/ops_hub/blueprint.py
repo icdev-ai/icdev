@@ -265,42 +265,38 @@ def create_ops_hub_blueprint() -> Blueprint:
         )
         return jsonify(result)
 
-    @bp.route("/api/ops/slos")
+    @bp.route("/api/ops/slos", methods=["GET", "POST"])
     def api_ops_slos():
+        if request.method == "POST":
+            from tools.ops_hub.aiops_engine import define_slo
+            body = request.get_json(force=True, silent=True) or {}
+            result = define_slo(
+                service=body.get("service", ""),
+                slo_type=body.get("slo_type", "availability"),
+                target=float(body.get("target", 99.9)),
+                window_days=int(body.get("window_days", 30)),
+            )
+            return jsonify(result), 201
         from tools.ops_hub.aiops_engine import get_slo_dashboard
         return jsonify(get_slo_dashboard())
 
-    @bp.route("/api/ops/slos", methods=["POST"])
-    def api_ops_define_slo():
-        from tools.ops_hub.aiops_engine import define_slo
-        body = request.get_json(force=True, silent=True) or {}
-        result = define_slo(
-            service=body.get("service", ""),
-            slo_type=body.get("slo_type", "availability"),
-            target=float(body.get("target", 99.9)),
-            window_days=int(body.get("window_days", 30)),
-        )
-        return jsonify(result), 201
-
-    @bp.route("/api/ops/incidents")
+    @bp.route("/api/ops/incidents", methods=["GET", "POST"])
     def api_ops_incidents():
+        if request.method == "POST":
+            from tools.ops_hub.aiops_engine import create_incident
+            body = request.get_json(force=True, silent=True) or {}
+            result = create_incident(
+                title=body.get("title", ""),
+                severity=body.get("severity", "sev3"),
+                description=body.get("description", ""),
+            )
+            return jsonify(result), 201
         from tools.ops_hub.aiops_engine import get_incidents, get_incident_dashboard
         status_filter = request.args.get("status", "")
         return jsonify({
             "dashboard": get_incident_dashboard(),
             "incidents": get_incidents(status=status_filter, limit=50),
         })
-
-    @bp.route("/api/ops/incidents", methods=["POST"])
-    def api_ops_create_incident():
-        from tools.ops_hub.aiops_engine import create_incident
-        body = request.get_json(force=True, silent=True) or {}
-        result = create_incident(
-            title=body.get("title", ""),
-            severity=body.get("severity", "sev3"),
-            description=body.get("description", ""),
-        )
-        return jsonify(result), 201
 
     @bp.route("/api/ops/runbooks")
     def api_ops_runbooks():

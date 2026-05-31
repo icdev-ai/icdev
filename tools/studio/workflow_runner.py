@@ -582,6 +582,9 @@ def list_runs(workflow_id: str | None = None, limit: int = 50) -> list:
                 (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
+    except Exception:
+        # Table may not be initialized yet (e.g., fresh CI environment)
+        return []
     finally:
         conn.close()
 

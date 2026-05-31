@@ -249,6 +249,7 @@ def list_tasks():
     except (ValueError, TypeError):
         backlog_limit = 100
     conn = get_connection()
+    conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
     try:
         # Execution queue ordering: within the same priority, tasks that
         # will run first appear first. For `backlog` (queued for
@@ -532,6 +533,7 @@ def create_task():
     dep_ids = list(dict.fromkeys(d for d in dep_ids if d))  # dedupe, preserve order
 
     conn = get_connection()
+    conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
     try:
         # Validate all deps via DFS cycle detection
         ok, err = _check_dependency_cycle_dfs(task_id, dep_ids, conn)
@@ -985,6 +987,7 @@ def move_task(task_id):
 
     now = _utcnow()
     conn = get_connection()
+    conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
     try:
         existing = conn.execute("SELECT status, title FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
@@ -1505,19 +1508,35 @@ def kanban_iqe_query():
 # ---------------------------------------------------------------------------
 
 def _parse_plan_markdown(markdown: str):
-    """Extract candidate task titles from markdown headings and list items."""
+    """Extract candidate task titles from markdown headings and list items.
+
+    Handles:
+      - ATX headings: #, ##, ###, #### (any depth)
+      - Bold-only lines used as headings: **Title**
+      - Unordered list items: -, *, + (with optional checkbox)
+      - Ordered list items: 1., 2., 10., etc.
+    """
+    import re as _re
     tasks = []
     for line in markdown.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
         title = None
-        if stripped.startswith("## ") or stripped.startswith("### "):
-            title = stripped.lstrip("#").strip()
-        elif stripped.startswith("- ") or stripped.startswith("* "):
-            title = stripped[2:].strip().strip("*_").strip()
-        elif len(stripped) > 3 and stripped[0].isdigit() and ". " in stripped[:4]:
-            title = stripped.split(". ", 1)[1].strip().strip("*_").strip()
+        # ATX headings: any number of leading # characters
+        if stripped.startswith("#"):
+            title = stripped.lstrip("#").strip().strip("*_").strip()
+        # Unordered list items: -, *, + with optional checkbox [x]/[ ]
+        elif stripped[:2] in ("- ", "* ", "+ "):
+            raw = stripped[2:].strip()
+            raw = _re.sub(r"^\[[xX ]?\]\s*", "", raw)
+            title = raw.strip("*_").strip()
+        # Ordered list items: one or more digits followed by ". "
+        elif _re.match(r"^\d+\.\s", stripped):
+            title = _re.split(r"^\d+\.\s+", stripped, maxsplit=1)[-1].strip().strip("*_").strip()
+        # Bold-only lines used as section headings: **Title**
+        elif stripped.startswith("**") and stripped.endswith("**") and len(stripped) > 4:
+            title = stripped[2:-2].strip()
         if title and len(title) > 3:
             tasks.append(title)
     seen = set()
