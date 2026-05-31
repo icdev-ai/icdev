@@ -55,6 +55,35 @@ DEFAULT_WEIGHTS = {
     "strategic_alignment": 0.10,
 }
 
+# ---------------------------------------------------------------------------
+# pWin model — 5 capture-plan signals (deterministic logistic/weighted score)
+# ---------------------------------------------------------------------------
+
+# Industry-calibrated default weights for GovCon pWin scoring
+PWIN_FACTORS = [
+    "incumbency",
+    "crm_engagement",
+    "competitive_position",
+    "compliance_coverage",
+    "past_performance_fit",
+]
+
+PWIN_WEIGHTS = {
+    "incumbency": 0.30,          # largest win predictor in GovCon
+    "past_performance_fit": 0.25, # CPARS / relevant experience alignment
+    "competitive_position": 0.20, # market position, price competitiveness
+    "compliance_coverage": 0.15,  # mandatory requirement coverage
+    "crm_engagement": 0.10,      # customer relationship depth
+}
+
+# Logistic steepness — k=6 gives pWin ≈ [0.05, 0.95] across realistic inputs
+_LOGISTIC_K = 6.0
+
+
+def _logistic(z):
+    """Sigmoid function: maps z ∈ (-∞, +∞) → (0, 1)."""
+    return 1.0 / (1.0 + math.exp(-z))
+
 MIN_HISTORY = 10  # minimum records for info-gain computation
 
 
@@ -71,20 +100,27 @@ def _get_db():
 
 
 def _audit(conn, event_type, action, details, opportunity_id=None):
-    conn.execute(
-        "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            _gen_id("aud"),
-            _now(),
-            event_type,
-            "bayesian_bid_scorer",
-            action,
-            json.dumps(details) if isinstance(details, dict) else str(details),
-            opportunity_id,
-            None,
-        ),
-    )
+    try:
+        conn.execute("SAVEPOINT bbs_audit")
+        try:
+            conn.execute(
+                "INSERT INTO audit_trail (created_at, event_type, actor, action, details, project_id, session_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    _now(),
+                    event_type,
+                    "bayesian_bid_scorer",
+                    action,
+                    json.dumps(details) if isinstance(details, dict) else str(details),
+                    opportunity_id,
+                    None,
+                ),
+            )
+            conn.execute("RELEASE SAVEPOINT bbs_audit")
+        except Exception:
+            conn.execute("ROLLBACK TO SAVEPOINT bbs_audit")
+    except Exception:
+        pass
 
 
 def _ensure_tables(conn):
@@ -398,6 +434,218 @@ def teaching_dimensions(project_id):
     }
 
 
+def _ensure_pwin_table(conn):
+    """Create pWin assessments table if needed."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS pg_pwin_assessments (
+            id TEXT PRIMARY KEY,
+            opportunity_id TEXT NOT NULL,
+            pwin_score REAL NOT NULL,
+            pwin_pct INTEGER NOT NULL,
+            weighted_value REAL,
+            incumbency REAL,
+            crm_engagement REAL,
+            competitive_position REAL,
+            compliance_coverage REAL,
+            past_performance_fit REAL,
+            factor_breakdown TEXT NOT NULL,
+            method TEXT NOT NULL DEFAULT 'logistic_weighted',
+            assessed_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+
+
+def compute_pwin(opportunity_id, factors, estimated_value=None):
+    """Compute deterministic logistic pWin from 5 capture-plan signals.
+
+    Each factor is a float in [0.0, 1.0]:
+      - 0.0 = very unfavorable
+      - 0.5 = neutral / unknown
+      - 1.0 = highly favorable
+
+    The weighted linear combination is centered at 0.5, then scaled and passed
+    through a logistic function.  Steepness k=6 maps the realistic input range
+    to pWin ∈ (0.05, 0.95).
+
+    Returns a dict with pwin_score, pwin_pct, factor_breakdown, weighted_value.
+    """
+    conn = _get_db()
+    _ensure_pwin_table(conn)
+
+    # Validate and clamp factor values
+    validated = {}
+    for f in PWIN_FACTORS:
+        raw = factors.get(f)
+        if raw is None:
+            raw = 0.5  # neutral default
+        validated[f] = max(0.0, min(1.0, float(raw)))
+
+    # Weighted linear combination: z = sum(w_i * (f_i - 0.5)) * k * 2
+    # Center each factor at 0.5; multiply by k and 2 so full range spans (-k, +k)
+    z = 0.0
+    contributions = {}
+    for f in PWIN_FACTORS:
+        w = PWIN_WEIGHTS[f]
+        v = validated[f]
+        centered = v - 0.5           # range [-0.5, +0.5]
+        contrib = w * centered * 2.0 * _LOGISTIC_K
+        z += contrib
+        contributions[f] = {
+            "score": round(v, 3),
+            "weight": w,
+            "centered": round(centered, 3),
+            "contribution": round(contrib, 4),
+        }
+
+    pwin_score = round(_logistic(z), 4)
+    pwin_pct = round(pwin_score * 100)
+
+    # Weighted pipeline value (mid-point of estimated range if scalar provided)
+    weighted_value = None
+    if estimated_value is not None:
+        try:
+            weighted_value = round(float(estimated_value) * pwin_score, 2)
+        except (TypeError, ValueError):
+            pass
+
+    factor_breakdown = json.dumps(contributions)
+    record_id = _gen_id("pwa")
+
+    conn.execute(
+        "INSERT INTO pg_pwin_assessments "
+        "(id, opportunity_id, pwin_score, pwin_pct, weighted_value, "
+        " incumbency, crm_engagement, competitive_position, compliance_coverage, "
+        " past_performance_fit, factor_breakdown, method, assessed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            record_id,
+            opportunity_id,
+            pwin_score,
+            pwin_pct,
+            weighted_value,
+            validated["incumbency"],
+            validated["crm_engagement"],
+            validated["competitive_position"],
+            validated["compliance_coverage"],
+            validated["past_performance_fit"],
+            factor_breakdown,
+            "logistic_weighted",
+            _now(),
+        ),
+    )
+    _audit(conn, "pwin.compute", f"pWin={pwin_pct}% for {opportunity_id}", {"pwin": pwin_pct}, opportunity_id)
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "ok",
+        "id": record_id,
+        "opportunity_id": opportunity_id,
+        "pwin_score": pwin_score,
+        "pwin_pct": pwin_pct,
+        "weighted_value": weighted_value,
+        "z_score": round(z, 4),
+        "factor_breakdown": contributions,
+        "method": "logistic_weighted",
+    }
+
+
+def get_pwin_assessment(opportunity_id):
+    """Retrieve the most recent pWin assessment for an opportunity."""
+    conn = _get_db()
+    _ensure_pwin_table(conn)
+    row = conn.execute(
+        "SELECT * FROM pg_pwin_assessments WHERE opportunity_id = ? ORDER BY assessed_at DESC LIMIT 1",
+        (opportunity_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+    r = dict(row)
+    try:
+        r["factor_breakdown"] = json.loads(r["factor_breakdown"])
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return r
+
+
+def pipeline_value_rollup():
+    """Compute weighted pipeline value across all active proposals.
+
+    Joins proposal_opportunities with latest pg_pwin_assessments to compute:
+      - weighted_pipeline_value = sum(mid_value * pwin_score)
+      - total_potential_value = sum(mid_value)
+      - count of scored vs unscored opportunities
+    """
+    conn = _get_db()
+    _ensure_pwin_table(conn)
+
+    try:
+        rows = conn.execute(
+            "SELECT id, title, estimated_value_low, estimated_value_high, win_probability, status "
+            "FROM proposal_opportunities WHERE status NOT IN ('won','lost','no_bid','cancelled')"
+        ).fetchall()
+    except Exception:
+        rows = []
+
+    total_potential = 0.0
+    total_weighted = 0.0
+    scored = 0
+    unscored = 0
+    items = []
+
+    for row in rows:
+        r = dict(row)
+        opp_id = r["id"]
+
+        # Mid-point value estimate
+        lo = r.get("estimated_value_low") or 0
+        hi = r.get("estimated_value_high") or lo
+        try:
+            mid_value = (float(lo) + float(hi)) / 2.0
+        except (TypeError, ValueError):
+            mid_value = 0.0
+
+        # Prefer computed pWin; fall back to stored win_probability
+        pwa = get_pwin_assessment(opp_id)
+        if pwa:
+            pwin = pwa["pwin_score"]
+            scored += 1
+        elif r.get("win_probability") is not None:
+            pwin = float(r["win_probability"]) / 100.0
+            unscored += 1
+        else:
+            pwin = 0.5  # neutral default for unscored
+            unscored += 1
+
+        weighted = mid_value * pwin
+        total_potential += mid_value
+        total_weighted += weighted
+
+        items.append({
+            "opportunity_id": opp_id,
+            "title": r.get("title", ""),
+            "status": r.get("status", ""),
+            "mid_value": round(mid_value, 2),
+            "pwin_pct": round(pwin * 100),
+            "weighted_value": round(weighted, 2),
+            "has_pwin_model": pwa is not None,
+            "factor_breakdown": pwa["factor_breakdown"] if pwa else None,
+        })
+
+    conn.close()
+
+    return {
+        "status": "ok",
+        "total_weighted_pipeline_value": round(total_weighted, 2),
+        "total_potential_value": round(total_potential, 2),
+        "scored_count": scored,
+        "unscored_count": unscored,
+        "opportunities": sorted(items, key=lambda x: x["weighted_value"], reverse=True),
+    }
+
+
 def calibrate_from_outcome(bid_decision_id, outcome):
     """Record win/loss outcome for feedback loop."""
     conn = _get_db()
@@ -444,8 +692,12 @@ def main():
     group.add_argument("--score", action="store_true", help="Score an opportunity")
     group.add_argument("--teaching-dims", action="store_true", help="Teaching dimension set")
     group.add_argument("--calibrate", action="store_true", help="Record win/loss outcome")
+    group.add_argument("--pwin", action="store_true", help="Compute pWin from capture-plan signals")
+    group.add_argument("--pipeline-value", action="store_true", help="Weighted pipeline value roll-up")
 
     parser.add_argument("--dimensions", help="JSON dict of dimension scores (0.0-1.0)")
+    parser.add_argument("--factors", help="JSON dict of pWin factor scores (0.0-1.0)")
+    parser.add_argument("--estimated-value", type=float, help="Mid-point contract value for weighted calc")
     parser.add_argument("--decision-id", help="Bid decision ID for calibration")
     parser.add_argument("--outcome", choices=["win", "loss", "no_decision", "protest"], help="Outcome for calibration")
     parser.add_argument("--json", action="store_true")
@@ -469,6 +721,14 @@ def main():
             result = {"status": "error", "message": "Provide --decision-id and --outcome"}
         else:
             result = calibrate_from_outcome(args.decision_id, args.outcome)
+    elif args.pwin:
+        if not args.opportunity_id:
+            result = {"status": "error", "message": "Provide --opportunity-id"}
+        else:
+            f = json.loads(args.factors) if args.factors else {f: 0.5 for f in PWIN_FACTORS}
+            result = compute_pwin(args.opportunity_id, f, args.estimated_value)
+    elif args.pipeline_value:
+        result = pipeline_value_rollup()
 
     print(json.dumps(result, indent=2, default=str))
 

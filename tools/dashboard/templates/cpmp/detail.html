@@ -123,6 +123,7 @@
     <button class="tab-btn" onclick="switchTab('subcontractors')">Subcontractors</button>
     <button class="tab-btn" onclick="switchTab('cpars')">CPARS</button>
     <button class="tab-btn" onclick="switchTab('mods'); loadMods('{{ contract.id }}')">Modifications</button>
+    <button class="tab-btn" onclick="switchTab('risks')">Risks</button>
 </div>
 
 <!-- ===================== Overview Tab ===================== -->
@@ -694,6 +695,134 @@
             <button class="action-btn" style="background:var(--bg-tertiary,#2a2a3a);" onclick="closeTransitionModal()">Cancel</button>
             <button class="action-btn" onclick="submitTransition()">Confirm</button>
         </div>
+    </div>
+</div>
+
+<!-- ===================== Risks Tab ===================== -->
+<div id="tab-risks" class="tab-panel">
+    <style>
+    .risk-matrix-cell { width: 80px; height: 60px; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 11px; cursor: default; border: 1px solid rgba(255,255,255,0.06); }
+    .risk-dot { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: #fff; }
+    .exposure-low      { background: rgba(40,167,69,0.18); }
+    .exposure-medium   { background: rgba(255,193,7,0.18); }
+    .exposure-high     { background: rgba(253,126,20,0.18); }
+    .exposure-critical { background: rgba(220,53,69,0.22); }
+    </style>
+
+    <!-- Risk Summary Stats -->
+    {% set rm = risk_matrix | default({}) %}
+    {% set rms = rm.summary | default({}) %}
+    <div class="stat-grid" style="margin-top: 16px;">
+        <div class="stat-card">
+            <div class="stat-value">{{ rms.total | default(0) }}</div>
+            <div class="stat-label">Total Risks</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {% if rms.open | default(0) > 0 %}text-warning{% endif %}">{{ rms.open | default(0) }}</div>
+            <div class="stat-label">Open</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {% if rms.critical | default(0) > 0 %}text-danger{% endif %}">{{ rms.critical | default(0) }}</div>
+            <div class="stat-label">Critical</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {% if rms.high | default(0) > 0 %}text-warning{% endif %}">{{ rms.high | default(0) }}</div>
+            <div class="stat-label">High</div>
+        </div>
+    </div>
+
+    <!-- 5×5 Risk Matrix -->
+    <div class="card" style="padding: 16px; margin-top: 16px; overflow-x: auto;">
+        <div class="card-label" style="margin-bottom: 12px;">5×5 Risk Matrix (Probability × Impact)</div>
+        {% set rmatrix = rm.matrix | default({}) %}
+        {% set exposure_colors = {1: '#1e3a2f', 2: '#1e3a2f', 3: '#1e3a2f', 4: '#1e3a2f', 5: '#1e3a2f', 6: '#3a3010', 7: '#3a3010', 8: '#3a3010', 9: '#3a3010', 10: '#3a3010', 11: '#3a1e0f', 12: '#3a1e0f', 13: '#3a1e0f', 14: '#3a1e0f', 15: '#3a1e0f', 16: '#3a1020', 17: '#3a1020', 18: '#3a1020', 19: '#3a1020', 20: '#3a1020', 21: '#3a1020', 22: '#3a1020', 23: '#3a1020', 24: '#3a1020', 25: '#3a1020'} %}
+        <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 4px;">
+            <div style="width: 60px; font-size: 10px; color: var(--text-secondary); text-align: right; padding-right: 8px;">Prob ▲</div>
+            {% for imp in range(1, 6) %}
+            <div style="width: 80px; text-align: center; font-size: 10px; color: var(--text-secondary);">Impact {{ imp }}</div>
+            {% endfor %}
+        </div>
+        {% for prob in range(5, 0, -1) %}
+        <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 4px;">
+            <div style="width: 60px; font-size: 10px; color: var(--text-secondary); text-align: right; padding-right: 8px;">P={{ prob }}</div>
+            {% for imp in range(1, 6) %}
+            {% set exp = prob * imp %}
+            {% set cell_items = rmatrix.get(prob|string, {}).get(imp|string, []) if rmatrix else [] %}
+            {% set exp_class = 'exposure-critical' if exp >= 16 else ('exposure-high' if exp >= 11 else ('exposure-medium' if exp >= 6 else 'exposure-low')) %}
+            <div class="risk-matrix-cell {{ exp_class }}" title="Exposure {{ exp }}: {{ cell_items|length }} risk(s)">
+                <div style="font-size: 9px; color: var(--text-secondary); margin-bottom: 2px;">{{ exp }}</div>
+                {% if cell_items|length > 0 %}
+                <div class="risk-dot {% if exp >= 16 %}badge-error{% elif exp >= 11 %}badge-warning{% else %}badge-info{% endif %}" style="background: {% if exp >= 16 %}#dc3545{% elif exp >= 11 %}#fd7e14{% elif exp >= 6 %}#ffc107{% else %}#28a745{% endif %};">
+                    {{ cell_items|length }}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+        <div style="display: flex; gap: 16px; margin-top: 12px; font-size: 11px;">
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:12px;height:12px;border-radius:2px;background:#28a745;display:inline-block;"></span> Low (1–5)</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:12px;height:12px;border-radius:2px;background:#ffc107;display:inline-block;"></span> Medium (6–10)</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:12px;height:12px;border-radius:2px;background:#fd7e14;display:inline-block;"></span> High (11–15)</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:12px;height:12px;border-radius:2px;background:#dc3545;display:inline-block;"></span> Critical (16–25)</span>
+        </div>
+    </div>
+
+    <!-- Risk Register Table -->
+    <div class="table-container" style="margin-top: 16px;">
+        <div class="table-header"><h2>Risk Register</h2></div>
+        <table aria-label="Contract risk register">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Title</th>
+                    <th>Category</th>
+                    <th>P</th>
+                    <th>I</th>
+                    <th>Exposure</th>
+                    <th>Status</th>
+                    <th>Owner</th>
+                    <th>Linked Milestone</th>
+                    <th>Mitigation</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in risks %}
+                {% set exp = r.exposure | default(r.probability * r.impact) %}
+                {% set exp_badge = 'badge-error' if exp >= 16 else ('badge-warning' if exp >= 11 else ('badge-warning' if exp >= 6 else 'badge-success')) %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><strong>{{ r.title or '---' }}</strong></td>
+                    <td>
+                        {% set cat_colors = {'cost': 'warning', 'schedule': 'warning', 'technical': 'info', 'cyber': 'error', 'supply_chain': 'warning', 'compliance': 'error', 'staffing': 'info', 'other': 'info'} %}
+                        <span class="badge badge-{{ cat_colors.get(r.category, 'info') }}">{{ (r.category or 'other') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td style="text-align: center; font-weight: bold;">{{ r.probability | default(3) }}</td>
+                    <td style="text-align: center; font-weight: bold;">{{ r.impact | default(3) }}</td>
+                    <td style="text-align: center;">
+                        <span class="badge {{ exp_badge }}" style="font-weight: bold; min-width: 28px; text-align: center;">{{ exp }}</span>
+                    </td>
+                    <td>
+                        {% set st_colors = {'open': 'error', 'mitigating': 'warning', 'accepted': 'warning', 'closed': 'success', 'transferred': 'info'} %}
+                        <span class="badge badge-{{ st_colors.get(r.status, 'info') }}">{{ (r.status or 'open') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>{{ r.owner or '---' }}</td>
+                    <td>
+                        {% if r.milestone_title %}
+                        <span style="font-size: 12px;">{{ r.milestone_title[:40] }}</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="max-width: 200px; font-size: 12px; color: var(--text-secondary);">
+                        {% if r.mitigation %}{{ r.mitigation[:80] }}{% if r.mitigation|length > 80 %}…{% endif %}{% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="10" class="text-muted" style="text-align: center;">No risks registered for this contract.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 

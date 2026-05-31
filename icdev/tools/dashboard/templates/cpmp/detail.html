@@ -119,8 +119,11 @@
     <button class="tab-btn" onclick="switchTab('wbs')">WBS</button>
     <button class="tab-btn" onclick="switchTab('deliverables')">Deliverables</button>
     <button class="tab-btn" onclick="switchTab('evm')">EVM</button>
+    <button class="tab-btn" onclick="switchTab('schedule')">Schedule</button>
     <button class="tab-btn" onclick="switchTab('subcontractors')">Subcontractors</button>
     <button class="tab-btn" onclick="switchTab('cpars')">CPARS</button>
+    <button class="tab-btn" onclick="switchTab('mods'); loadMods('{{ contract.id }}')">Modifications</button>
+    <button class="tab-btn" onclick="switchTab('risks')">Risks</button>
 </div>
 
 <!-- ===================== Overview Tab ===================== -->
@@ -396,6 +399,85 @@
     </div>
 </div>
 
+<!-- ===================== Schedule Tab ===================== -->
+<div id="tab-schedule" class="tab-panel">
+    <div class="table-container">
+        <div class="table-header"><h2>Milestones</h2></div>
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Milestone</th>
+                    <th>WBS</th>
+                    <th>Baseline</th>
+                    <th>Forecast</th>
+                    <th>Actual</th>
+                    <th>Status</th>
+                    <th>SPI</th>
+                    <th>Variance</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in milestones %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>
+                        <strong>{{ m.title or '---' }}</strong>
+                        {% if m.description %}<br><small style="color:var(--text-secondary)">{{ m.description[:80] }}</small>{% endif %}
+                    </td>
+                    <td>{{ m.wbs_number or '---' }}</td>
+                    <td>{{ m.baseline_date or '---' }}</td>
+                    <td>{{ m.forecast_date or m.baseline_date or '---' }}</td>
+                    <td>{{ m.actual_date or '---' }}</td>
+                    <td>
+                        {% set ms_colors = {'pending': 'info', 'in_progress': 'warning', 'complete': 'success', 'missed': 'error', 'on_hold': 'warning'} %}
+                        <span class="badge badge-{{ ms_colors.get(m.status, 'info') }}">{{ (m.status or 'pending') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>
+                        {% if m.evm_spi is not none and m.evm_spi %}
+                            {% set spi_color = 'text-danger' if m.evm_spi < 0.9 else ('text-warning' if m.evm_spi < 1.0 else '') %}
+                            <span class="{{ spi_color }}">{{ m.evm_spi | round(2) }}</span>
+                        {% else %}
+                            ---
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% set fd = m.forecast_date or m.baseline_date %}
+                        {% set bd = m.baseline_date %}
+                        {% if fd and bd %}
+                            {% if fd > bd %}
+                                <span class="text-danger">Late</span>
+                            {% elif fd < bd %}
+                                <span class="text-success">Early</span>
+                            {% else %}
+                                <span>On Track</span>
+                            {% endif %}
+                        {% else %}
+                            ---
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="9" style="text-align:center; color:var(--text-secondary);">No milestones defined.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if milestones | length > 0 %}
+    <!-- Gantt-Lite Chart -->
+    <div class="card" style="padding:16px; margin-top:16px;">
+        <div class="card-label">Milestone Schedule (Gantt-Lite)</div>
+        <div style="font-size:11px; color:var(--text-secondary); margin:4px 0 10px;">
+            &#9670; Baseline &nbsp; &#9711; Forecast &nbsp; &#9679; Actual &nbsp; <span style="color:#ffc107">&#124;</span> Today
+        </div>
+        <div id="ims-gantt-container" style="overflow-x:auto;">
+            <svg id="ims-gantt-svg" style="display:block; min-width:640px;"></svg>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
 <!-- ===================== Subcontractors Tab ===================== -->
 <div id="tab-subcontractors" class="tab-panel">
     <div class="table-container">
@@ -540,13 +622,324 @@
     </div>
 </div>
 
+<div id="tab-mods" class="tab-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0;font-size:16px;">Contract Modifications</h3>
+        <button class="action-btn" onclick="openModModal()">+ Request Modification</button>
+    </div>
+    <div id="mods-loading" style="color:var(--text-secondary,#a0a0b8);font-size:13px;">Loading...</div>
+    <table id="mods-table" style="width:100%;border-collapse:collapse;display:none;">
+        <thead>
+            <tr style="border-bottom:1px solid var(--border-color,#2a2a3a);font-size:12px;color:var(--text-secondary,#a0a0b8);">
+                <th style="padding:8px 12px;text-align:left;">#</th>
+                <th style="padding:8px 12px;text-align:left;">Type</th>
+                <th style="padding:8px 12px;text-align:left;">Description</th>
+                <th style="padding:8px 12px;text-align:right;">Value Delta</th>
+                <th style="padding:8px 12px;text-align:left;">Status</th>
+                <th style="padding:8px 12px;text-align:left;">Requested By</th>
+                <th style="padding:8px 12px;text-align:left;">Requested At</th>
+                <th style="padding:8px 12px;text-align:left;">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="mods-tbody"></tbody>
+    </table>
+    <div id="mods-empty" style="color:var(--text-secondary,#a0a0b8);font-size:13px;display:none;">No modifications found.</div>
+</div>
+
+<!-- Request Modification Modal -->
+<div id="mod-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:var(--bg-secondary,#1a1a2e);border:1px solid var(--border-color,#2a2a3a);border-radius:8px;padding:24px;width:480px;max-width:95vw;">
+        <h3 style="margin:0 0 16px;font-size:15px;">Request Contract Modification</h3>
+        <div style="margin-bottom:12px;">
+            <label style="font-size:12px;color:var(--text-secondary,#a0a0b8);display:block;margin-bottom:4px;">Type</label>
+            <select id="mod-type" style="width:100%;padding:8px;background:var(--bg-primary,#12121e);border:1px solid var(--border-color,#2a2a3a);border-radius:4px;color:var(--text-primary,#e0e0e0);font-size:13px;">
+                <option value="admin">Administrative</option>
+                <option value="funding">Funding</option>
+                <option value="scope">Scope</option>
+                <option value="pop">Period of Performance</option>
+            </select>
+        </div>
+        <div style="margin-bottom:12px;">
+            <label style="font-size:12px;color:var(--text-secondary,#a0a0b8);display:block;margin-bottom:4px;">Description</label>
+            <textarea id="mod-desc" rows="3" style="width:100%;padding:8px;background:var(--bg-primary,#12121e);border:1px solid var(--border-color,#2a2a3a);border-radius:4px;color:var(--text-primary,#e0e0e0);font-size:13px;box-sizing:border-box;resize:vertical;" placeholder="Describe the modification..."></textarea>
+        </div>
+        <div style="margin-bottom:12px;">
+            <label style="font-size:12px;color:var(--text-secondary,#a0a0b8);display:block;margin-bottom:4px;">Value Delta ($)</label>
+            <input id="mod-value" type="number" step="0.01" value="0" style="width:100%;padding:8px;background:var(--bg-primary,#12121e);border:1px solid var(--border-color,#2a2a3a);border-radius:4px;color:var(--text-primary,#e0e0e0);font-size:13px;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:16px;">
+            <label style="font-size:12px;color:var(--text-secondary,#a0a0b8);display:block;margin-bottom:4px;">Effective Date</label>
+            <input id="mod-eff-date" type="date" style="width:100%;padding:8px;background:var(--bg-primary,#12121e);border:1px solid var(--border-color,#2a2a3a);border-radius:4px;color:var(--text-primary,#e0e0e0);font-size:13px;box-sizing:border-box;">
+        </div>
+        <div id="mod-modal-err" style="color:var(--status-red,#dc3545);font-size:12px;margin-bottom:8px;display:none;"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="action-btn" style="background:var(--bg-tertiary,#2a2a3a);" onclick="closeModModal()">Cancel</button>
+            <button class="action-btn" onclick="submitMod('{{ contract.id }}')">Submit Request</button>
+        </div>
+    </div>
+</div>
+
+<!-- Transition Mod Modal -->
+<div id="mod-transition-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:var(--bg-secondary,#1a1a2e);border:1px solid var(--border-color,#2a2a3a);border-radius:8px;padding:24px;width:420px;max-width:95vw;">
+        <h3 id="transition-modal-title" style="margin:0 0 12px;font-size:15px;">Update Status</h3>
+        <input type="hidden" id="transition-mod-id">
+        <input type="hidden" id="transition-new-status">
+        <input type="hidden" id="transition-contract-id">
+        <div style="margin-bottom:12px;">
+            <label style="font-size:12px;color:var(--text-secondary,#a0a0b8);display:block;margin-bottom:4px;">Reason (optional)</label>
+            <textarea id="transition-reason" rows="2" style="width:100%;padding:8px;background:var(--bg-primary,#12121e);border:1px solid var(--border-color,#2a2a3a);border-radius:4px;color:var(--text-primary,#e0e0e0);font-size:13px;box-sizing:border-box;resize:vertical;"></textarea>
+        </div>
+        <div id="transition-modal-err" style="color:var(--status-red,#dc3545);font-size:12px;margin-bottom:8px;display:none;"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="action-btn" style="background:var(--bg-tertiary,#2a2a3a);" onclick="closeTransitionModal()">Cancel</button>
+            <button class="action-btn" onclick="submitTransition()">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== Risks Tab ===================== -->
+<div id="tab-risks" class="tab-panel">
+    <style>
+    .risk-matrix-cell { width: 80px; height: 60px; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 11px; cursor: default; border: 1px solid rgba(255,255,255,0.06); }
+    .risk-dot { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: #fff; }
+    .exposure-low      { background: rgba(40,167,69,0.18); }
+    .exposure-medium   { background: rgba(255,193,7,0.18); }
+    .exposure-high     { background: rgba(253,126,20,0.18); }
+    .exposure-critical { background: rgba(220,53,69,0.22); }
+    </style>
+
+    <!-- Risk Summary Stats -->
+    {% set rm = risk_matrix | default({}) %}
+    {% set rms = rm.summary | default({}) %}
+    <div class="stat-grid" style="margin-top: 16px;">
+        <div class="stat-card">
+            <div class="stat-value">{{ rms.total | default(0) }}</div>
+            <div class="stat-label">Total Risks</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {% if rms.open | default(0) > 0 %}text-warning{% endif %}">{{ rms.open | default(0) }}</div>
+            <div class="stat-label">Open</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {% if rms.critical | default(0) > 0 %}text-danger{% endif %}">{{ rms.critical | default(0) }}</div>
+            <div class="stat-label">Critical</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {% if rms.high | default(0) > 0 %}text-warning{% endif %}">{{ rms.high | default(0) }}</div>
+            <div class="stat-label">High</div>
+        </div>
+    </div>
+
+    <!-- 5×5 Risk Matrix -->
+    <div class="card" style="padding: 16px; margin-top: 16px; overflow-x: auto;">
+        <div class="card-label" style="margin-bottom: 12px;">5×5 Risk Matrix (Probability × Impact)</div>
+        {% set rmatrix = rm.matrix | default({}) %}
+        {% set exposure_colors = {1: '#1e3a2f', 2: '#1e3a2f', 3: '#1e3a2f', 4: '#1e3a2f', 5: '#1e3a2f', 6: '#3a3010', 7: '#3a3010', 8: '#3a3010', 9: '#3a3010', 10: '#3a3010', 11: '#3a1e0f', 12: '#3a1e0f', 13: '#3a1e0f', 14: '#3a1e0f', 15: '#3a1e0f', 16: '#3a1020', 17: '#3a1020', 18: '#3a1020', 19: '#3a1020', 20: '#3a1020', 21: '#3a1020', 22: '#3a1020', 23: '#3a1020', 24: '#3a1020', 25: '#3a1020'} %}
+        <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 4px;">
+            <div style="width: 60px; font-size: 10px; color: var(--text-secondary); text-align: right; padding-right: 8px;">Prob ▲</div>
+            {% for imp in range(1, 6) %}
+            <div style="width: 80px; text-align: center; font-size: 10px; color: var(--text-secondary);">Impact {{ imp }}</div>
+            {% endfor %}
+        </div>
+        {% for prob in range(5, 0, -1) %}
+        <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 4px;">
+            <div style="width: 60px; font-size: 10px; color: var(--text-secondary); text-align: right; padding-right: 8px;">P={{ prob }}</div>
+            {% for imp in range(1, 6) %}
+            {% set exp = prob * imp %}
+            {% set cell_items = rmatrix.get(prob|string, {}).get(imp|string, []) if rmatrix else [] %}
+            {% set exp_class = 'exposure-critical' if exp >= 16 else ('exposure-high' if exp >= 11 else ('exposure-medium' if exp >= 6 else 'exposure-low')) %}
+            <div class="risk-matrix-cell {{ exp_class }}" title="Exposure {{ exp }}: {{ cell_items|length }} risk(s)">
+                <div style="font-size: 9px; color: var(--text-secondary); margin-bottom: 2px;">{{ exp }}</div>
+                {% if cell_items|length > 0 %}
+                <div class="risk-dot {% if exp >= 16 %}badge-error{% elif exp >= 11 %}badge-warning{% else %}badge-info{% endif %}" style="background: {% if exp >= 16 %}#dc3545{% elif exp >= 11 %}#fd7e14{% elif exp >= 6 %}#ffc107{% else %}#28a745{% endif %};">
+                    {{ cell_items|length }}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+        <div style="display: flex; gap: 16px; margin-top: 12px; font-size: 11px;">
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:12px;height:12px;border-radius:2px;background:#28a745;display:inline-block;"></span> Low (1–5)</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:12px;height:12px;border-radius:2px;background:#ffc107;display:inline-block;"></span> Medium (6–10)</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:12px;height:12px;border-radius:2px;background:#fd7e14;display:inline-block;"></span> High (11–15)</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:12px;height:12px;border-radius:2px;background:#dc3545;display:inline-block;"></span> Critical (16–25)</span>
+        </div>
+    </div>
+
+    <!-- Risk Register Table -->
+    <div class="table-container" style="margin-top: 16px;">
+        <div class="table-header"><h2>Risk Register</h2></div>
+        <table aria-label="Contract risk register">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Title</th>
+                    <th>Category</th>
+                    <th>P</th>
+                    <th>I</th>
+                    <th>Exposure</th>
+                    <th>Status</th>
+                    <th>Owner</th>
+                    <th>Linked Milestone</th>
+                    <th>Mitigation</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in risks %}
+                {% set exp = r.exposure | default(r.probability * r.impact) %}
+                {% set exp_badge = 'badge-error' if exp >= 16 else ('badge-warning' if exp >= 11 else ('badge-warning' if exp >= 6 else 'badge-success')) %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><strong>{{ r.title or '---' }}</strong></td>
+                    <td>
+                        {% set cat_colors = {'cost': 'warning', 'schedule': 'warning', 'technical': 'info', 'cyber': 'error', 'supply_chain': 'warning', 'compliance': 'error', 'staffing': 'info', 'other': 'info'} %}
+                        <span class="badge badge-{{ cat_colors.get(r.category, 'info') }}">{{ (r.category or 'other') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td style="text-align: center; font-weight: bold;">{{ r.probability | default(3) }}</td>
+                    <td style="text-align: center; font-weight: bold;">{{ r.impact | default(3) }}</td>
+                    <td style="text-align: center;">
+                        <span class="badge {{ exp_badge }}" style="font-weight: bold; min-width: 28px; text-align: center;">{{ exp }}</span>
+                    </td>
+                    <td>
+                        {% set st_colors = {'open': 'error', 'mitigating': 'warning', 'accepted': 'warning', 'closed': 'success', 'transferred': 'info'} %}
+                        <span class="badge badge-{{ st_colors.get(r.status, 'info') }}">{{ (r.status or 'open') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>{{ r.owner or '---' }}</td>
+                    <td>
+                        {% if r.milestone_title %}
+                        <span style="font-size: 12px;">{{ r.milestone_title[:40] }}</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="max-width: 200px; font-size: 12px; color: var(--text-secondary);">
+                        {% if r.mitigation %}{{ r.mitigation[:80] }}{% if r.mitigation|length > 80 %}…{% endif %}{% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="10" class="text-muted" style="text-align: center;">No risks registered for this contract.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <script>
+var _IMS_MILESTONES = {{ milestones | tojson }};
+var _IMS_DEPS = {{ milestone_deps | tojson }};
+
 function switchTab(tabName) {
     document.querySelectorAll('.tab-panel').forEach(function(p) { p.style.display = 'none'; p.classList.remove('active'); });
     document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
     var panel = document.getElementById('tab-' + tabName);
     if (panel) { panel.style.display = 'block'; panel.classList.add('active'); }
     event.target.classList.add('active');
+    if (tabName === 'schedule') { renderImsGantt(); }
+}
+
+function renderImsGantt() {
+    var milestones = _IMS_MILESTONES;
+    var deps = _IMS_DEPS;
+    var svg = document.getElementById('ims-gantt-svg');
+    if (!svg || !milestones || !milestones.length) return;
+
+    var LABEL_W = 180, ROW_H = 36, CHART_W = 520, PAD = 16, AXIS_H = 28;
+    var STATUS_FILL = {
+        'pending': '#4a90d9', 'in_progress': '#ffc107',
+        'complete': '#28a745', 'missed': '#dc3545', 'on_hold': '#8a8a9a'
+    };
+
+    var dateMs = [];
+    milestones.forEach(function(m) {
+        if (m.baseline_date) dateMs.push(new Date(m.baseline_date).getTime());
+        if (m.forecast_date) dateMs.push(new Date(m.forecast_date).getTime());
+        if (m.actual_date)   dateMs.push(new Date(m.actual_date).getTime());
+    });
+    if (!dateMs.length) return;
+    var minT = Math.min.apply(null, dateMs);
+    var maxT = Math.max.apply(null, dateMs);
+    var span = Math.max(maxT - minT, 7 * 86400000);
+    var buf = span * 0.08;
+    minT -= buf; maxT += buf;
+
+    function toX(d) {
+        if (!d) return null;
+        var t = new Date(d).getTime();
+        if (isNaN(t)) return null;
+        return LABEL_W + PAD + ((t - minT) / (maxT - minT)) * (CHART_W - PAD * 2);
+    }
+
+    var svgH = PAD + ROW_H * milestones.length + PAD + AXIS_H;
+    var svgW = LABEL_W + CHART_W;
+    svg.setAttribute('width', svgW);
+    svg.setAttribute('height', svgH);
+
+    var p = [];
+    p.push('<defs><marker id="ims-arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0,0 7,3.5 0,7" fill="#4a6090"/></marker></defs>');
+
+    milestones.forEach(function(m, i) {
+        var rowY = PAD + i * ROW_H;
+        p.push('<rect x="0" y="' + rowY + '" width="' + svgW + '" height="' + ROW_H + '" fill="' + (i % 2 ? 'rgba(255,255,255,0.015)' : 'rgba(255,255,255,0.03)') + '"/>');
+    });
+
+    var todayX = toX(new Date().toISOString().slice(0, 10));
+    if (todayX !== null && todayX >= LABEL_W && todayX <= svgW - PAD) {
+        p.push('<line x1="' + todayX + '" y1="' + PAD + '" x2="' + todayX + '" y2="' + (svgH - AXIS_H) + '" stroke="#ffc107" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.8"/>');
+        p.push('<text x="' + (todayX + 3) + '" y="' + (PAD + 11) + '" fill="#ffc107" font-size="9">Today</text>');
+    }
+
+    var msById = {};
+    milestones.forEach(function(m, i) { msById[m.id] = {m: m, i: i}; });
+    deps.forEach(function(dep) {
+        var pp = msById[dep.predecessor_id], ss = msById[dep.successor_id];
+        if (!pp || !ss) return;
+        var x1 = toX(pp.m.baseline_date), y1 = PAD + pp.i * ROW_H + ROW_H / 2;
+        var x2 = toX(ss.m.baseline_date), y2 = PAD + ss.i * ROW_H + ROW_H / 2;
+        if (x1 === null || x2 === null) return;
+        p.push('<path d="M' + x1 + ',' + y1 + ' C' + (x1 + 28) + ',' + y1 + ' ' + (x2 - 28) + ',' + y2 + ' ' + x2 + ',' + y2 + '" stroke="#4a6090" stroke-width="1.5" fill="none" marker-end="url(#ims-arr)" opacity="0.75"/>');
+    });
+
+    milestones.forEach(function(m, i) {
+        var cy = PAD + i * ROW_H + ROW_H / 2;
+        var color = STATUS_FILL[m.status] || '#4a90d9';
+        var label = (m.title || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').slice(0, 26);
+
+        p.push('<text x="' + (LABEL_W - 8) + '" y="' + cy + '" fill="#a0a0b8" font-size="11" text-anchor="end" dominant-baseline="middle">' + label + '</text>');
+
+        var bx = toX(m.baseline_date);
+        if (bx !== null) {
+            var d = 9;
+            p.push('<polygon points="' + bx + ',' + (cy - d) + ' ' + (bx + d) + ',' + cy + ' ' + bx + ',' + (cy + d) + ' ' + (bx - d) + ',' + cy + '" fill="' + color + '" stroke="none"/>');
+            if (m.baseline_date) {
+                p.push('<text x="' + (bx + 12) + '" y="' + (cy + 4) + '" fill="#5a5a7a" font-size="9">' + m.baseline_date + '</text>');
+            }
+        }
+
+        var fx = toX(m.forecast_date);
+        if (fx !== null && bx !== null && Math.abs(fx - bx) > 4) {
+            p.push('<circle cx="' + fx + '" cy="' + cy + '" r="7" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-dasharray="3,2"/>');
+        }
+
+        var ax = toX(m.actual_date);
+        if (ax !== null) {
+            p.push('<circle cx="' + ax + '" cy="' + cy + '" r="5" fill="#28a745" stroke="#1a3a2a" stroke-width="1"/>');
+        }
+    });
+
+    var axisY = svgH - AXIS_H + 6;
+    p.push('<line x1="' + LABEL_W + '" y1="' + axisY + '" x2="' + (svgW - PAD) + '" y2="' + axisY + '" stroke="#3a3a5a" stroke-width="1"/>');
+    var nTicks = 5;
+    for (var t = 0; t <= nTicks; t++) {
+        var tx = LABEL_W + PAD + (CHART_W - PAD * 2) * t / nTicks;
+        var tMs = minT + (maxT - minT) * t / nTicks;
+        var tLabel = new Date(tMs).toISOString().slice(0, 7);
+        p.push('<line x1="' + tx + '" y1="' + axisY + '" x2="' + tx + '" y2="' + (axisY + 4) + '" stroke="#3a3a5a" stroke-width="1"/>');
+        p.push('<text x="' + tx + '" y="' + (svgH - 4) + '" fill="#606080" font-size="9" text-anchor="middle">' + tLabel + '</text>');
+    }
+
+    svg.innerHTML = p.join('');
 }
 
 function runMonteCarlo(contractId) {
@@ -573,6 +966,129 @@ function runMonteCarlo(contractId) {
         statusEl.textContent = 'Network error: ' + err;
         statusEl.style.color = 'var(--status-red, #dc3545)';
     });
+}
+
+// ---------------------------------------------------------------------------
+// Contract Modifications
+// ---------------------------------------------------------------------------
+var _modsLoaded = false;
+var _MOD_STATUS_COLOR = {
+    'requested': '#4a90d9', 'in_review': '#ffc107',
+    'approved': '#28a745', 'rejected': '#dc3545', 'executed': '#6c757d'
+};
+var _MOD_TRANSITIONS = {
+    'requested': ['in_review', 'rejected'],
+    'in_review': ['approved', 'rejected'],
+    'approved': ['executed'],
+    'rejected': [], 'executed': []
+};
+
+function loadMods(contractId) {
+    if (_modsLoaded) return;
+    _modsLoaded = true;
+    fetch('/api/cpmp/contracts/' + contractId + '/mods')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('mods-loading').style.display = 'none';
+            var mods = data.mods || [];
+            if (!mods.length) {
+                document.getElementById('mods-empty').style.display = 'block';
+                return;
+            }
+            var tbody = document.getElementById('mods-tbody');
+            tbody.innerHTML = '';
+            mods.forEach(function(m) {
+                var color = _MOD_STATUS_COLOR[m.status] || '#8a8a9a';
+                var transitions = _MOD_TRANSITIONS[m.status] || [];
+                var actionBtns = transitions.map(function(s) {
+                    return '<button class="action-btn" style="font-size:11px;padding:3px 8px;margin-right:4px;" ' +
+                           'onclick="openTransitionModal(\'' + m.id + '\',\'' + s + '\',\'' + contractId + '\')">' +
+                           s.replace('_', ' ') + '</button>';
+                }).join('');
+                var delta = m.value_delta >= 0 ? '+$' + m.value_delta.toLocaleString() : '-$' + Math.abs(m.value_delta).toLocaleString();
+                tbody.innerHTML += '<tr style="border-bottom:1px solid var(--border-color,#2a2a3a);font-size:13px;">' +
+                    '<td style="padding:8px 12px;">' + m.mod_number + '</td>' +
+                    '<td style="padding:8px 12px;text-transform:capitalize;">' + m.type + '</td>' +
+                    '<td style="padding:8px 12px;max-width:260px;word-break:break-word;">' + (m.description || '') + '</td>' +
+                    '<td style="padding:8px 12px;text-align:right;">' + delta + '</td>' +
+                    '<td style="padding:8px 12px;"><span style="color:' + color + ';font-weight:600;">' + m.status + '</span></td>' +
+                    '<td style="padding:8px 12px;">' + (m.requested_by || '—') + '</td>' +
+                    '<td style="padding:8px 12px;">' + (m.requested_at ? m.requested_at.substring(0,10) : '—') + '</td>' +
+                    '<td style="padding:8px 12px;">' + actionBtns + '</td>' +
+                    '</tr>';
+            });
+            document.getElementById('mods-table').style.display = 'table';
+        })
+        .catch(function(err) {
+            document.getElementById('mods-loading').textContent = 'Error loading modifications: ' + err;
+        });
+}
+
+function openModModal() {
+    document.getElementById('mod-modal').style.display = 'flex';
+    document.getElementById('mod-modal-err').style.display = 'none';
+}
+function closeModModal() {
+    document.getElementById('mod-modal').style.display = 'none';
+}
+
+function submitMod(contractId) {
+    var errEl = document.getElementById('mod-modal-err');
+    var desc = document.getElementById('mod-desc').value.trim();
+    if (!desc) { errEl.textContent = 'Description is required.'; errEl.style.display = 'block'; return; }
+    var payload = {
+        type: document.getElementById('mod-type').value,
+        description: desc,
+        value_delta: parseFloat(document.getElementById('mod-value').value) || 0,
+        effective_date: document.getElementById('mod-eff-date').value || null
+    };
+    fetch('/api/cpmp/contracts/' + contractId + '/mods', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
+        closeModModal();
+        _modsLoaded = false;
+        loadMods(contractId);
+    })
+    .catch(function(err) { errEl.textContent = 'Network error: ' + err; errEl.style.display = 'block'; });
+}
+
+function openTransitionModal(modId, newStatus, contractId) {
+    document.getElementById('transition-mod-id').value = modId;
+    document.getElementById('transition-new-status').value = newStatus;
+    document.getElementById('transition-contract-id').value = contractId;
+    document.getElementById('transition-modal-title').textContent = 'Move to: ' + newStatus.replace('_', ' ');
+    document.getElementById('transition-reason').value = '';
+    document.getElementById('transition-modal-err').style.display = 'none';
+    document.getElementById('mod-transition-modal').style.display = 'flex';
+}
+function closeTransitionModal() {
+    document.getElementById('mod-transition-modal').style.display = 'none';
+}
+
+function submitTransition() {
+    var modId = document.getElementById('transition-mod-id').value;
+    var newStatus = document.getElementById('transition-new-status').value;
+    var contractId = document.getElementById('transition-contract-id').value;
+    var reason = document.getElementById('transition-reason').value.trim();
+    var errEl = document.getElementById('transition-modal-err');
+    fetch('/api/cpmp/mods/' + modId + '/status', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: newStatus, reason: reason || null})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
+        closeTransitionModal();
+        _modsLoaded = false;
+        loadMods(contractId);
+    })
+    .catch(function(err) { errEl.textContent = 'Network error: ' + err; errEl.style.display = 'block'; });
 }
 </script>
 {% endblock %}

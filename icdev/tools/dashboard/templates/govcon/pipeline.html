@@ -15,6 +15,29 @@
     <span id="gc-status-msg" style="margin-left:8px;color:var(--text-secondary);font-size:0.85rem;"></span>
   </div>
 
+  <!-- Weighted Pipeline Value Banner (prop-cap-12) -->
+  {% if pipeline_rollup %}
+  <div style="background:var(--bg-card,#16213e);border:1px solid var(--border-color,#2a2a4a);border-radius:8px;padding:16px 20px;margin-bottom:16px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
+    <div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Weighted Pipeline Value</div>
+      <div style="font-size:1.6rem;font-weight:bold;color:var(--accent-color,#4a90d9);">${{ "{:,.0f}".format(pipeline_rollup.total_weighted_pipeline_value) }}</div>
+    </div>
+    <div style="width:1px;background:var(--border-color);height:40px;"></div>
+    <div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Total Potential</div>
+      <div style="font-size:1.6rem;font-weight:bold;">${{ "{:,.0f}".format(pipeline_rollup.total_potential_value) }}</div>
+    </div>
+    <div style="width:1px;background:var(--border-color);height:40px;"></div>
+    <div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Scored / Total</div>
+      <div style="font-size:1.6rem;font-weight:bold;">{{ pipeline_rollup.scored_count }} / {{ (pipeline_rollup.scored_count + pipeline_rollup.unscored_count) }}</div>
+    </div>
+    <div style="margin-left:auto;">
+      <button class="btn btn-secondary" onclick="refreshPipelineValue()" style="font-size:0.8rem;">Refresh Roll-Up</button>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Stat Grid -->
   <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin:1rem 0;">
     <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">

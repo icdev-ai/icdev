@@ -424,6 +424,34 @@ CREATE TABLE IF NOT EXISTS cpmp_contract_mods (
 )
 """
 
+_CPMP_RISKS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_risks (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'other' CHECK(category IN (
+        'cost', 'schedule', 'technical', 'cyber',
+        'supply_chain', 'compliance', 'staffing', 'other')),
+    probability INTEGER NOT NULL DEFAULT 3 CHECK(probability BETWEEN 1 AND 5),
+    impact INTEGER NOT NULL DEFAULT 3 CHECK(impact BETWEEN 1 AND 5),
+    exposure INTEGER NOT NULL DEFAULT 9,
+    mitigation TEXT,
+    owner TEXT,
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN (
+        'open', 'mitigating', 'accepted', 'closed', 'transferred')),
+    milestone_id TEXT,
+    negative_event_id TEXT,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (contract_id) REFERENCES cpmp_contracts(id),
+    FOREIGN KEY (milestone_id) REFERENCES cpmp_milestones(id),
+    FOREIGN KEY (negative_event_id) REFERENCES cpmp_negative_events(id)
+)
+"""
+
 _CPMP_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_status ON cpmp_contracts(status)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_health ON cpmp_contracts(health)",
@@ -450,6 +478,10 @@ _CPMP_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_contract ON cpmp_milestone_deps(contract_id)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_pred    ON cpmp_milestone_deps(predecessor_id)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_succ    ON cpmp_milestone_deps(successor_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_risk_contract  ON cpmp_risks(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_risk_status    ON cpmp_risks(status)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_risk_exposure  ON cpmp_risks(exposure)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_risk_milestone ON cpmp_risks(milestone_id)",
 ]
 
 _ALL_DDLS = [
@@ -469,6 +501,7 @@ _ALL_DDLS = [
     _CPMP_CONTRACT_MODS_DDL,
     _CPMP_MILESTONES_DDL,
     _CPMP_MILESTONE_DEPS_DDL,
+    _CPMP_RISKS_DDL,
 ]
 
 

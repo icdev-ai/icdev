@@ -822,6 +822,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         conn = _get_db()
         try:
             from tools.govcon.govcon_engine import get_status
+            from tools.govcon.bayesian_bid_scorer import pipeline_value_rollup
 
             stats = get_status()
             try:
@@ -837,8 +838,48 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 linked_opp_ids = {r["sam_gov_opportunity_id"] for r in linked}
             except Exception:
                 pass
+
+            # pWin-weighted pipeline roll-up + active proposals (prop-cap-12)
+            pipeline_rollup = {
+                "total_weighted_pipeline_value": 0, "total_potential_value": 0,
+                "scored_count": 0, "unscored_count": 0, "opportunities": [],
+            }
+            active_proposals = []
+            try:
+                pipeline_rollup = pipeline_value_rollup()
+                rows = conn.execute(
+                    "SELECT id, solicitation_number, title, agency, due_date, estimated_value_low, estimated_value_high, "
+                    "win_probability, status, capture_manager, proposal_manager "
+                    "FROM proposal_opportunities WHERE status NOT IN ('won','lost','no_bid','cancelled') "
+                    "ORDER BY due_date ASC"
+                ).fetchall()
+                pwin_map = {item["opportunity_id"]: item for item in pipeline_rollup.get("opportunities", [])}
+                for row in rows:
+                    opp = dict(row)
+                    item = pwin_map.get(opp["id"])
+                    if item:
+                        opp["computed_pwin_pct"] = item["pwin_pct"]
+                        opp["weighted_value"] = item["weighted_value"]
+                        opp["has_pwin_model"] = item["has_pwin_model"]
+                        opp["pwin_factors"] = item.get("factor_breakdown")
+                    else:
+                        opp["computed_pwin_pct"] = opp.get("win_probability")
+                        opp["weighted_value"] = None
+                        opp["has_pwin_model"] = False
+                        opp["pwin_factors"] = None
+                    try:
+                        from datetime import date
+                        dd = date.fromisoformat(opp["due_date"])
+                        opp["days_left"] = (dd - date.today()).days
+                    except Exception:
+                        opp["days_left"] = None
+                    active_proposals.append(opp)
+            except Exception:
+                pass
+
             return render_template(
-                "govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids
+                "govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids,
+                pipeline_rollup=pipeline_rollup, active_proposals=active_proposals,
             )
         except Exception:
             stats = {

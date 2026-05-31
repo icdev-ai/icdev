@@ -246,8 +246,18 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 "at_risk": pf.get("at_risk_contracts", 0),
                 "health_distribution": pf.get("health_distribution", {"green": 0, "yellow": 0, "red": 0}),
             }
+            try:
+                from tools.govcon.risk_manager import get_portfolio_risk_summary
+
+                risk_summary = get_portfolio_risk_summary().get("summary", {})
+            except Exception:
+                risk_summary = {}
             return render_template(
-                "cpmp/portfolio.html", portfolio=portfolio, contracts=contracts, upcoming_deliverables=upcoming
+                "cpmp/portfolio.html",
+                portfolio=portfolio,
+                contracts=contracts,
+                upcoming_deliverables=upcoming,
+                risk_summary=risk_summary,
             )
         except Exception as e:
             import traceback
@@ -265,6 +275,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 },
                 contracts=[],
                 upcoming_deliverables=[],
+                risk_summary={},
                 error=str(e),
             )
 
@@ -315,6 +326,14 @@ def _register_govcon_pages(app: "Flask", _get_db):
             except Exception:
                 milestones = []
                 milestone_deps = []
+            try:
+                from tools.govcon.risk_manager import list_risks, get_risk_matrix
+
+                risks = list_risks(contract_id).get("risks", [])
+                risk_matrix = get_risk_matrix(contract_id)
+            except Exception:
+                risks = []
+                risk_matrix = {}
             return render_template(
                 "cpmp/detail.html",
                 contract=contract,
@@ -327,6 +346,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 cpars_assessments=cpars_assessments,
                 milestones=milestones,
                 milestone_deps=milestone_deps,
+                risks=risks,
+                risk_matrix=risk_matrix,
             )
         except Exception as e:
             import traceback
@@ -344,6 +365,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 cpars_assessments=[],
                 milestones=[],
                 milestone_deps=[],
+                risks=[],
+                risk_matrix={},
                 error=str(e),
             ), 200
 
@@ -493,8 +516,37 @@ def _register_govcon_pages(app: "Flask", _get_db):
                         opp["days_left"] = None
                 else:
                     opp["days_left"] = None
+
+            # Attach most-recent pWin assessment per opportunity
+            try:
+                from tools.govcon.bayesian_bid_scorer import pipeline_value_rollup
+                rollup = pipeline_value_rollup()
+                pwin_map = {item["opportunity_id"]: item for item in rollup.get("opportunities", [])}
+                for opp in opportunities:
+                    item = pwin_map.get(opp["id"])
+                    if item:
+                        opp["computed_pwin_pct"] = item["pwin_pct"]
+                        opp["weighted_value"] = item["weighted_value"]
+                        opp["has_pwin_model"] = item["has_pwin_model"]
+                        opp["pwin_factors"] = item.get("factor_breakdown")
+                    else:
+                        opp["computed_pwin_pct"] = None
+                        opp["weighted_value"] = None
+                        opp["has_pwin_model"] = False
+                        opp["pwin_factors"] = None
+            except Exception:
+                rollup = {"total_weighted_pipeline_value": 0, "total_potential_value": 0, "scored_count": 0, "unscored_count": 0}
+                for opp in opportunities:
+                    opp["computed_pwin_pct"] = None
+                    opp["weighted_value"] = None
+                    opp["has_pwin_model"] = False
+                    opp["pwin_factors"] = None
+
             return render_template(
-                "proposals/list.html", opportunities=opportunities, nearest_deadline=nearest_deadline
+                "proposals/list.html",
+                opportunities=opportunities,
+                nearest_deadline=nearest_deadline,
+                pipeline_rollup=rollup,
             )
         finally:
             conn.close()
@@ -830,6 +882,64 @@ def _register_govcon_pages(app: "Flask", _get_db):
         finally:
             conn.close()
 
+    @app.route("/proposals/<opp_id>/ptw")
+    def proposals_ptw_page(opp_id):
+        """Black-hat / PTW workspace — competitor intelligence + price-to-win (prop-cap-13)."""
+        conn = _get_db()
+        try:
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            if not opp:
+                return render_template("404.html", message="Opportunity not found"), 404
+            opp = dict(opp)
+            # Load saved black-hat assessments
+            try:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS proposal_blackhat_assessments (
+                        id TEXT PRIMARY KEY, opportunity_id TEXT NOT NULL,
+                        competitor_name TEXT NOT NULL, approach_hypothesis TEXT,
+                        price_estimate_low REAL, price_estimate_high REAL,
+                        strengths TEXT, weaknesses TEXT, win_strategy TEXT,
+                        differentiators TEXT, risk_factors TEXT,
+                        ptw_posture TEXT DEFAULT 'competitive',
+                        leaderboard_rank INTEGER, award_count INTEGER,
+                        total_award_value REAL, naics_diversity INTEGER,
+                        agency_diversity INTEGER, classification TEXT DEFAULT 'CUI',
+                        created_at TEXT NOT NULL, updated_at TEXT, created_by TEXT
+                    )
+                """)
+                conn.commit()
+                bh_rows = conn.execute(
+                    "SELECT * FROM proposal_blackhat_assessments WHERE opportunity_id = ? ORDER BY created_at DESC",
+                    (opp_id,),
+                ).fetchall()
+                assessments = [dict(r) for r in bh_rows]
+            except Exception:
+                assessments = []
+        finally:
+            conn.close()
+        # PTW analysis (rate_benchmarker)
+        ptw = {}
+        try:
+            from tools.govcon.rate_benchmarker import ptw_analysis
+            ptw = ptw_analysis(opp_id)
+        except Exception:
+            ptw = {}
+        # Bayesian bid score with default mid-scores
+        bid_score = None
+        try:
+            from tools.govcon.bayesian_bid_scorer import score_opportunity, DIMENSIONS
+            dims = {d: 0.5 for d in DIMENSIONS}
+            bid_score = score_opportunity(opp_id, dims)
+        except Exception:
+            bid_score = None
+        return render_template(
+            "proposals/ptw.html",
+            opp=opp,
+            assessments=assessments,
+            ptw=ptw,
+            bid_score=bid_score,
+        )
+
     @app.route("/proposals/<opp_id>/compliance/gaps")
     def proposals_compliance_gaps(opp_id):
         """Compliance gap drill-down — all not_addressed requirements (prop-cmp-10)."""
@@ -879,6 +989,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         conn = _get_db()
         try:
             from tools.govcon.govcon_engine import get_status
+            from tools.govcon.bayesian_bid_scorer import pipeline_value_rollup
 
             stats = get_status()
             try:
@@ -894,8 +1005,48 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 linked_opp_ids = {r["sam_gov_opportunity_id"] for r in linked}
             except Exception:
                 pass
+
+            # pWin-weighted pipeline roll-up + active proposals (prop-cap-12)
+            pipeline_rollup = {
+                "total_weighted_pipeline_value": 0, "total_potential_value": 0,
+                "scored_count": 0, "unscored_count": 0, "opportunities": [],
+            }
+            active_proposals = []
+            try:
+                pipeline_rollup = pipeline_value_rollup()
+                rows = conn.execute(
+                    "SELECT id, solicitation_number, title, agency, due_date, estimated_value_low, estimated_value_high, "
+                    "win_probability, status, capture_manager, proposal_manager "
+                    "FROM proposal_opportunities WHERE status NOT IN ('won','lost','no_bid','cancelled') "
+                    "ORDER BY due_date ASC"
+                ).fetchall()
+                pwin_map = {item["opportunity_id"]: item for item in pipeline_rollup.get("opportunities", [])}
+                for row in rows:
+                    opp = dict(row)
+                    item = pwin_map.get(opp["id"])
+                    if item:
+                        opp["computed_pwin_pct"] = item["pwin_pct"]
+                        opp["weighted_value"] = item["weighted_value"]
+                        opp["has_pwin_model"] = item["has_pwin_model"]
+                        opp["pwin_factors"] = item.get("factor_breakdown")
+                    else:
+                        opp["computed_pwin_pct"] = opp.get("win_probability")
+                        opp["weighted_value"] = None
+                        opp["has_pwin_model"] = False
+                        opp["pwin_factors"] = None
+                    try:
+                        from datetime import date
+                        dd = date.fromisoformat(opp["due_date"])
+                        opp["days_left"] = (dd - date.today()).days
+                    except Exception:
+                        opp["days_left"] = None
+                    active_proposals.append(opp)
+            except Exception:
+                pass
+
             return render_template(
-                "govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids
+                "govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids,
+                pipeline_rollup=pipeline_rollup, active_proposals=active_proposals,
             )
         except Exception:
             stats = {
@@ -2867,6 +3018,7 @@ def create_app() -> Flask:
             "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
             "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),
             "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
+            "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
         }
 
         data = flask_request.get_json(silent=True) or {}

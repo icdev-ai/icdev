@@ -67,6 +67,7 @@ _SNIPPETS = [
 _PAGES = [
     {"name": "Collections", "icon": "🗂️", "href": "/document-intelligence/collections", "desc": "Organize documents into collections and manage team access.", "ready": True, "task": "dic-collab-01"},
     {"name": "Search & Chat", "icon": "🔍", "href": "/document-intelligence/search", "desc": "Grounded no-LLM search with mandatory citations · Conversational AI.", "ready": True, "task": "dic-search-01"},
+    {"name": "Analytics", "icon": "📊", "href": "/document-intelligence/analytics", "desc": "Entity frequency, co-occurrence, pattern detection, anomaly detection, and scenario runner.", "ready": True, "task": "dic-analytics-01"},
     {"name": "HITL Review", "icon": "👁️", "href": "/document-intelligence/review", "desc": "Human-in-the-loop oversight for AI-generated drafts and SSP fragments.", "ready": True, "task": "dic-collab-01"},
     {"name": "AI-Assist", "icon": "✨", "href": "/document-intelligence/generate", "desc": "Generate CoD-verified document drafts from your collections.", "ready": True, "task": "dic-generate-01"},
     {"name": "ACOIC", "icon": "🛰️", "href": "/document-intelligence/acoic", "desc": "Flagship bridge: drift → document impact → regen → NIST re-map.", "ready": True, "task": "dic-acoic-01"},
@@ -272,6 +273,94 @@ def api_ingest():
                 os.unlink(tmp_path)
             except Exception:
                 pass
+
+
+# ── API: KG Explorer ─────────────────────────────────────────────────────────
+
+@dic_bp.route("/api/kg-explore", methods=["POST"])
+def api_kg_explore():
+    """Entity and relationship search over the KG extracted from DIC documents.
+
+    Modes:
+      entities  — return all entities matching an optional label filter
+      relations — return relationships involving a specific entity label
+      neighbors — return all entities directly connected to a given entity
+    """
+    data = request.get_json(silent=True) or {}
+    mode = data.get("mode", "entities")
+    label = (data.get("label") or "").strip()
+    entity_type = data.get("entity_type")
+    limit = min(int(data.get("limit", 50)), 200)
+    conn = _conn()
+    try:
+        if mode == "entities":
+            sql = (
+                "SELECT n.id, n.label, n.entity_type, n.centrality, n.source_chunk_id, "
+                "g.source_doc_id FROM kg_nodes n LEFT JOIN kg_graphs g ON g.id = n.graph_id"
+            )
+            params: list = []
+            clauses = []
+            if label:
+                clauses.append("LOWER(n.label) LIKE LOWER(?)")
+                params.append(f"%{label}%")
+            if entity_type:
+                clauses.append("n.entity_type = ?")
+                params.append(entity_type)
+            if clauses:
+                sql += " WHERE " + " AND ".join(clauses)
+            sql += " ORDER BY n.centrality DESC LIMIT ?"
+            params.append(limit)
+            rows = _safe_rows(conn, sql, tuple(params))
+            return jsonify({"entities": rows, "count": len(rows)})
+
+        elif mode == "relations":
+            if not label:
+                return jsonify({"error": "label is required for relations mode"}), 400
+            rows = _safe_rows(
+                conn,
+                "SELECT src.label AS source, tgt.label AS target, e.relationship, e.weight "
+                "FROM kg_edges e "
+                "JOIN kg_nodes src ON src.id = e.source_id "
+                "JOIN kg_nodes tgt ON tgt.id = e.target_id "
+                "WHERE LOWER(src.label) LIKE LOWER(?) OR LOWER(tgt.label) LIKE LOWER(?) "
+                "ORDER BY e.weight DESC LIMIT ?",
+                (f"%{label}%", f"%{label}%", limit),
+            )
+            return jsonify({"relationships": rows, "count": len(rows)})
+
+        elif mode == "neighbors":
+            if not label:
+                return jsonify({"error": "label is required for neighbors mode"}), 400
+            # Find the node id first
+            node_rows = _safe_rows(
+                conn,
+                "SELECT id, label, entity_type FROM kg_nodes WHERE LOWER(label) LIKE LOWER(?) LIMIT 1",
+                (f"%{label}%",),
+            )
+            if not node_rows:
+                return jsonify({"neighbors": [], "relationships": [], "count": 0})
+            node_id = node_rows[0]["id"]
+            neighbors = _safe_rows(
+                conn,
+                "SELECT DISTINCT n.label, n.entity_type, e.relationship, e.weight "
+                "FROM kg_edges e "
+                "JOIN kg_nodes n ON (n.id = e.target_id OR n.id = e.source_id) "
+                "WHERE (e.source_id = ? OR e.target_id = ?) AND n.id != ? "
+                "ORDER BY e.weight DESC LIMIT ?",
+                (node_id, node_id, node_id, limit),
+            )
+            return jsonify({
+                "entity": node_rows[0],
+                "neighbors": neighbors,
+                "count": len(neighbors),
+            })
+
+        return jsonify({"error": f"unknown mode: {mode}"}), 400
+    except Exception as exc:
+        logger.warning("dic: kg-explore error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
 
 
 # ── API: Search ───────────────────────────────────────────────────────────────
@@ -592,6 +681,52 @@ def api_generate():
         return jsonify(result.to_dict())
     except Exception as exc:
         logger.warning("dic: generate error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── Analytics Page + API ─────────────────────────────────────────────────────
+
+@dic_bp.route("/analytics")
+def analytics():
+    return render_template("document_intelligence/analytics.html")
+
+
+@dic_bp.route("/api/analytics", methods=["POST"])
+def api_analytics():
+    data = request.get_json(silent=True) or {}
+    mode = data.get("mode", "full")
+    try:
+        from tools.document_intelligence.analytics_engine import (
+            entity_frequency, co_occurrence, detect_anomalies,
+            detect_patterns, run_full_analytics,
+        )
+        if mode == "frequency":
+            return jsonify(entity_frequency(limit=int(data.get("limit", 50))))
+        elif mode == "cooccurrence":
+            return jsonify(co_occurrence(limit=int(data.get("limit", 60))))
+        elif mode == "anomalies":
+            return jsonify(detect_anomalies())
+        elif mode == "patterns":
+            return jsonify(detect_patterns())
+        else:
+            return jsonify(run_full_analytics())
+    except Exception as exc:
+        logger.warning("dic: analytics error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/scenarios", methods=["POST"])
+def api_scenarios():
+    data = request.get_json(silent=True) or {}
+    scenario_type = (data.get("scenario_type") or "remove_entity").strip()
+    entity_label = (data.get("entity_label") or "").strip()
+    params = data.get("params", {})
+    try:
+        from tools.document_intelligence.analytics_engine import run_scenario
+        result = run_scenario(scenario_type, entity_label=entity_label, params=params)
+        return jsonify(result)
+    except Exception as exc:
+        logger.warning("dic: scenario error: %s", exc)
         return jsonify({"error": str(exc)}), 500
 
 

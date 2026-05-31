@@ -49,8 +49,23 @@
   .rationale{font-size:12px;color:#94a3b8;margin-top:8px;font-style:italic;}
   .spin{display:inline-block;width:16px;height:16px;border:2px solid #334155;border-top-color:#2563eb;border-radius:50%;
     animation:sp 0.8s linear infinite;vertical-align:middle;} @keyframes sp{to{transform:rotate(360deg);}}
-  .prd-box{background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;white-space:pre;
-    font-family:ui-monospace,monospace;font-size:12px;max-height:540px;overflow:auto;}
+  .prd-box{background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;
+    font-size:13px;color:#cbd5e1;max-height:540px;overflow:auto;line-height:1.6;}
+  .prd-box h1,.prd-box h2,.prd-box h3{color:#e2e8f0;margin:14px 0 8px;font-weight:600;}
+  .prd-box h1{font-size:18px;border-bottom:1px solid #334155;padding-bottom:6px;}
+  .prd-box h2{font-size:15px;color:#94a3b8;}
+  .prd-box h3{font-size:14px;color:#94a3b8;}
+  .prd-box table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px;}
+  .prd-box th,.prd-box td{border:1px solid #334155;padding:6px 8px;text-align:left;}
+  .prd-box th{background:#1e293b;color:#94a3b8;font-weight:600;}
+  .prd-box tr:nth-child(even){background:#0f172a;}
+  .prd-box ul,.prd-box ol{margin:6px 0;padding-left:20px;}
+  .prd-box li{margin-bottom:4px;}
+  .prd-box p{margin:8px 0;}
+  .prd-box pre{background:#1e293b;border:1px solid #334155;border-radius:6px;padding:10px;overflow:auto;font-size:12px;}
+  .prd-box code{background:#1e293b;padding:2px 5px;border-radius:4px;font-size:12px;color:#86efac;}
+  .prd-box blockquote{border-left:3px solid #334155;margin:8px 0;padding-left:12px;color:#94a3b8;}
+  .prd-box hr{border:0;border-top:1px solid #334155;margin:14px 0;}
   .err{color:#fca5a5;font-size:13px;margin-top:10px;}
   /* Intelligence feed */
   .intel-cat{margin-bottom:18px;}
@@ -363,12 +378,14 @@
       body:JSON.stringify({roadmap_id:rid,phase_id:state.phaseId})})
     .then(r=>r.json()).then(function(d){
       var md=d.prd||d.error||'(no PRD returned)';
+      var html=d.prd_html||'';
       var m=md.match(/```mermaid\s*([\s\S]*?)```/);
       if(m && window.mermaid){
         dia.innerHTML='<div class="mermaid">'+m[1].trim()+'</div>';
         try{ mermaid.run({nodes:dia.querySelectorAll('.mermaid')}); }catch(e){ dia.textContent=m[1]; }
       } else { dia.textContent = m? m[1] : 'No diagram available.'; }
-      box.textContent=md;
+      if(html && !d.error){ box.innerHTML=html; }
+      else { box.textContent=md; }
     }).catch(e=>{box.innerHTML='<div class="err">PRD failed: '+e+'</div>';});
   };
 

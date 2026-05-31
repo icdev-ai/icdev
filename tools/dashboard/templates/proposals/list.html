@@ -11,6 +11,29 @@
     <p class="subtitle">GovCon proposal writing lifecycle tracker</p>
 </div>
 
+<!-- Weighted Pipeline Value Banner -->
+{% if pipeline_rollup %}
+<div style="background:var(--bg-card,#16213e);border:1px solid var(--border-color,#2a2a4a);border-radius:8px;padding:16px 20px;margin-bottom:16px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
+  <div>
+    <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Weighted Pipeline Value</div>
+    <div style="font-size:1.6rem;font-weight:bold;color:var(--accent-color,#4a90d9);" id="banner-weighted">${{ "{:,.0f}".format(pipeline_rollup.total_weighted_pipeline_value) }}</div>
+  </div>
+  <div style="width:1px;background:var(--border-color);height:40px;"></div>
+  <div>
+    <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Total Potential</div>
+    <div style="font-size:1.6rem;font-weight:bold;">${{ "{:,.0f}".format(pipeline_rollup.total_potential_value) }}</div>
+  </div>
+  <div style="width:1px;background:var(--border-color);height:40px;"></div>
+  <div>
+    <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Scored / Total</div>
+    <div style="font-size:1.6rem;font-weight:bold;">{{ pipeline_rollup.scored_count }} / {{ (pipeline_rollup.scored_count + pipeline_rollup.unscored_count) }}</div>
+  </div>
+  <div style="margin-left:auto;">
+    <button class="btn btn-secondary" onclick="refreshPipelineValue()" style="font-size:0.8rem;">Refresh Roll-Up</button>
+  </div>
+</div>
+{% endif %}
+
 <!-- Stat Grid -->
 <div class="stat-grid" id="prop-stats">
     <div class="stat-card">
@@ -43,6 +66,13 @@
     <a href="/proposals/reviews-dashboard" class="btn btn-secondary">Executive Review Dashboard</a>
 </div>
 
+<!-- pWin Factor Legend -->
+<div id="pwin-legend" style="display:none;background:var(--bg-card,#16213e);border:1px solid var(--border-color,#2a2a4a);border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+  <div style="font-size:0.8rem;font-weight:600;margin-bottom:8px;">pWin Factor Breakdown</div>
+  <div id="pwin-legend-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;font-size:0.78rem;"></div>
+  <button onclick="document.getElementById('pwin-legend').style.display='none'" style="margin-top:8px;font-size:0.75rem;background:none;border:none;color:var(--text-secondary);cursor:pointer;">Close</button>
+</div>
+
 <!-- Opportunity Table -->
 <div class="table-container">
     <div class="table-header">
@@ -59,7 +89,8 @@
                 <th>Type</th>
                 <th>Set-Aside</th>
                 <th>Status</th>
-                <th>Win %</th>
+                <th style="min-width:130px;">pWin</th>
+                <th style="min-width:110px;">Wtd Value</th>
                 <th>Proposal Mgr</th>
             </tr>
         </thead>
@@ -80,22 +111,45 @@
                     <span class="badge badge-{{ status_colors.get(opp.status, 'info') }}">{{ opp.status | replace('_', ' ') | title }}</span>
                 </td>
                 <td>
-                    {% if opp.win_probability is not none %}
-                        {% if opp.win_probability >= 70 %}
-                            <span style="color:var(--status-green); font-weight:bold;">{{ opp.win_probability }}%</span>
-                        {% elif opp.win_probability >= 40 %}
-                            <span style="color:var(--status-yellow, #ffc107); font-weight:bold;">{{ opp.win_probability }}%</span>
-                        {% else %}
-                            <span style="color:var(--status-red); font-weight:bold;">{{ opp.win_probability }}%</span>
-                        {% endif %}
-                    {% else %}
-                        <span style="color:var(--text-secondary);">—</span>
-                    {% endif %}
+                  {# Prefer model-computed pWin; fall back to stored win_probability #}
+                  {% set display_pwin = opp.computed_pwin_pct if opp.computed_pwin_pct is not none else opp.win_probability %}
+                  {% if display_pwin is not none %}
+                    {% set pct = display_pwin | int %}
+                    {% if pct >= 70 %}{% set bar_color = 'var(--status-green,#4caf50)' %}
+                    {% elif pct >= 40 %}{% set bar_color = 'var(--status-yellow,#ffc107)' %}
+                    {% else %}{% set bar_color = 'var(--status-red,#dc3545)' %}{% endif %}
+                    <div style="display:flex;align-items:center;gap:6px;">
+                      <div style="flex:1;background:var(--bg-secondary,#1a1a2e);border-radius:3px;height:8px;min-width:60px;">
+                        <div style="background:{{ bar_color }};height:8px;border-radius:3px;width:{{ pct }}%;"></div>
+                      </div>
+                      <span style="color:{{ bar_color }};font-weight:bold;font-size:0.85rem;min-width:36px;">{{ pct }}%</span>
+                      {% if opp.has_pwin_model %}
+                        <span title="Model score" style="cursor:pointer;font-size:0.7rem;color:var(--accent-color,#4a90d9);"
+                              onclick="showFactors('{{ opp.id }}', {{ opp.pwin_factors | tojson if opp.pwin_factors else 'null' }})">&#9432;</span>
+                      {% else %}
+                        <button onclick="openPwinModal('{{ opp.id }}')" title="Score with pWin model"
+                                style="font-size:0.65rem;padding:1px 5px;background:none;border:1px solid var(--border-color);border-radius:3px;color:var(--text-secondary);cursor:pointer;">Score</button>
+                      {% endif %}
+                    </div>
+                  {% else %}
+                    <div style="display:flex;align-items:center;gap:4px;">
+                      <span style="color:var(--text-secondary);">—</span>
+                      <button onclick="openPwinModal('{{ opp.id }}')" title="Score with pWin model"
+                              style="font-size:0.65rem;padding:1px 5px;background:none;border:1px solid var(--border-color);border-radius:3px;color:var(--text-secondary);cursor:pointer;">Score</button>
+                    </div>
+                  {% endif %}
+                </td>
+                <td style="font-size:0.85rem;">
+                  {% if opp.weighted_value is not none %}
+                    ${{ "{:,.0f}".format(opp.weighted_value) }}
+                  {% else %}
+                    <span style="color:var(--text-secondary);">—</span>
+                  {% endif %}
                 </td>
                 <td>{{ opp.proposal_manager or '—' }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="10" class="text-muted" style="text-align:center;">No opportunities yet. Click "+ New Opportunity" to create one.</td></tr>
+            <tr><td colspan="11" class="text-muted" style="text-align:center;">No opportunities yet. Click "+ New Opportunity" to create one.</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -177,6 +231,54 @@
     </div>
 </div>
 
+<!-- pWin Scoring Modal -->
+<div id="pwin-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width:480px;">
+    <div class="modal-header">
+      <h2>Score pWin</h2>
+      <button class="modal-close" onclick="closePwinModal()">&times;</button>
+    </div>
+    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:12px;">
+      Rate each capture-plan signal 0–10 (0=very unfavorable, 5=neutral, 10=highly favorable).
+    </p>
+    <input type="hidden" id="pwin-opp-id">
+    <div class="form-grid" style="grid-template-columns:1fr;">
+      <div class="form-group">
+        <label>Incumbency <span style="font-weight:normal;color:var(--text-secondary);">(weight 30%)</span></label>
+        <input type="range" id="f-incumbency" min="0" max="10" value="5" oninput="updateSliderLabel(this,'lbl-incumbency')">
+        <span id="lbl-incumbency" style="font-size:0.8rem;color:var(--text-secondary);">5</span>
+      </div>
+      <div class="form-group">
+        <label>Past Performance Fit <span style="font-weight:normal;color:var(--text-secondary);">(weight 25%)</span></label>
+        <input type="range" id="f-past_performance_fit" min="0" max="10" value="5" oninput="updateSliderLabel(this,'lbl-ppf')">
+        <span id="lbl-ppf" style="font-size:0.8rem;color:var(--text-secondary);">5</span>
+      </div>
+      <div class="form-group">
+        <label>Competitive Position <span style="font-weight:normal;color:var(--text-secondary);">(weight 20%)</span></label>
+        <input type="range" id="f-competitive_position" min="0" max="10" value="5" oninput="updateSliderLabel(this,'lbl-cp')">
+        <span id="lbl-cp" style="font-size:0.8rem;color:var(--text-secondary);">5</span>
+      </div>
+      <div class="form-group">
+        <label>Compliance Coverage <span style="font-weight:normal;color:var(--text-secondary);">(weight 15%)</span></label>
+        <input type="range" id="f-compliance_coverage" min="0" max="10" value="5" oninput="updateSliderLabel(this,'lbl-cc')">
+        <span id="lbl-cc" style="font-size:0.8rem;color:var(--text-secondary);">5</span>
+      </div>
+      <div class="form-group">
+        <label>CRM Engagement <span style="font-weight:normal;color:var(--text-secondary);">(weight 10%)</span></label>
+        <input type="range" id="f-crm_engagement" min="0" max="10" value="5" oninput="updateSliderLabel(this,'lbl-crm')">
+        <span id="lbl-crm" style="font-size:0.8rem;color:var(--text-secondary);">5</span>
+      </div>
+    </div>
+    <div id="pwin-preview" style="margin-top:12px;padding:10px;background:var(--bg-secondary,#1a1a2e);border-radius:6px;text-align:center;font-size:0.9rem;display:none;">
+      Estimated pWin: <strong id="pwin-preview-pct">—</strong>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closePwinModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" id="pwin-submit-btn" onclick="submitPwin()">Compute &amp; Save</button>
+    </div>
+  </div>
+</div>
+
 <style>
 .modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:flex; align-items:center; justify-content:center; }
 .modal-content { background:var(--bg-card, #16213e); border:1px solid var(--border-color, #2a2a4a); border-radius:8px; padding:24px; max-width:700px; width:90%; max-height:85vh; overflow-y:auto; }
@@ -188,6 +290,7 @@
 .form-group { display:flex; flex-direction:column; }
 .form-group label { font-size:12px; color:var(--text-secondary, #a0a0b8); margin-bottom:4px; }
 .form-group input, .form-group select { background:var(--bg-secondary, #1a1a2e); border:1px solid var(--border-color, #2a2a4a); color:var(--text-primary, #e0e0e0); padding:8px; border-radius:4px; font-size:14px; }
+.form-group input[type=range] { padding:4px 0; border:none; background:none; }
 .form-group input:focus, .form-group select:focus { outline:none; border-color:var(--accent-blue, #4a90d9); }
 .text-danger { color: var(--status-red, #dc3545) !important; font-weight: bold; }
 .text-warning { color: var(--status-yellow, #ffc107) !important; }
@@ -197,6 +300,7 @@
 
 {% block scripts %}
 <script>
+// ---- Create Opportunity Modal ----
 function openOppModal() {
     document.getElementById('create-opp-modal').style.display = 'flex';
 }
@@ -237,5 +341,129 @@ function submitOppForm(event) {
 document.getElementById('create-opp-modal').addEventListener('click', function(e) {
     if (e.target === this) { closeOppModal(); }
 });
+
+// ---- pWin Modal ----
+var FACTOR_FIELDS = ['incumbency','past_performance_fit','competitive_position','compliance_coverage','crm_engagement'];
+var FACTOR_WEIGHTS = {incumbency:0.30,past_performance_fit:0.25,competitive_position:0.20,compliance_coverage:0.15,crm_engagement:0.10};
+var FACTOR_LABELS = {incumbency:'Incumbency',past_performance_fit:'Past Performance Fit',competitive_position:'Competitive Position',compliance_coverage:'Compliance Coverage',crm_engagement:'CRM Engagement'};
+
+function updateSliderLabel(el, lblId) {
+    document.getElementById(lblId).textContent = el.value;
+    previewPwin();
+}
+
+function previewPwin() {
+    var z = 0;
+    FACTOR_FIELDS.forEach(function(f) {
+        var el = document.getElementById('f-'+f);
+        if (!el) return;
+        var v = parseInt(el.value) / 10.0;
+        var centered = v - 0.5;
+        z += FACTOR_WEIGHTS[f] * centered * 2.0 * 6.0;
+    });
+    var pwin = Math.round(100 / (1 + Math.exp(-z)));
+    var prev = document.getElementById('pwin-preview');
+    var pct = document.getElementById('pwin-preview-pct');
+    prev.style.display = 'block';
+    var color = pwin >= 70 ? 'var(--status-green,#4caf50)' : pwin >= 40 ? 'var(--status-yellow,#ffc107)' : 'var(--status-red,#dc3545)';
+    pct.style.color = color;
+    pct.textContent = pwin + '%';
+}
+
+function openPwinModal(oppId) {
+    document.getElementById('pwin-opp-id').value = oppId;
+    FACTOR_FIELDS.forEach(function(f) {
+        var el = document.getElementById('f-'+f);
+        if (el) el.value = 5;
+    });
+    ['lbl-incumbency','lbl-ppf','lbl-cp','lbl-cc','lbl-crm'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = '5';
+    });
+    document.getElementById('pwin-preview').style.display = 'none';
+    document.getElementById('pwin-modal').style.display = 'flex';
+    previewPwin();
+}
+
+function closePwinModal() {
+    document.getElementById('pwin-modal').style.display = 'none';
+}
+
+function submitPwin() {
+    var oppId = document.getElementById('pwin-opp-id').value;
+    var data = {};
+    FACTOR_FIELDS.forEach(function(f) {
+        var el = document.getElementById('f-'+f);
+        if (el) data[f] = parseInt(el.value) / 10.0;
+    });
+    var btn = document.getElementById('pwin-submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Computing...';
+    fetch('/api/govcon/proposals/' + oppId + '/pwin', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(resp) {
+        if (resp.status === 'ok') {
+            closePwinModal();
+            location.reload();
+        } else {
+            alert('Error: ' + (resp.error || JSON.stringify(resp)));
+            btn.disabled = false;
+            btn.textContent = 'Compute & Save';
+        }
+    })
+    .catch(function(err) {
+        alert('Request failed: ' + err);
+        btn.disabled = false;
+        btn.textContent = 'Compute & Save';
+    });
+}
+
+document.getElementById('pwin-modal').addEventListener('click', function(e) {
+    if (e.target === this) { closePwinModal(); }
+});
+
+// ---- Factor Breakdown Panel ----
+function showFactors(oppId, factors) {
+    if (!factors) return;
+    var legend = document.getElementById('pwin-legend');
+    var content = document.getElementById('pwin-legend-content');
+    content.innerHTML = '';
+    var colorMap = function(score) {
+        if (score >= 0.7) return 'var(--status-green,#4caf50)';
+        if (score >= 0.4) return 'var(--status-yellow,#ffc107)';
+        return 'var(--status-red,#dc3545)';
+    };
+    Object.entries(factors).forEach(function(entry) {
+        var f = entry[0], d = entry[1];
+        var label = FACTOR_LABELS[f] || f;
+        var pct = Math.round(d.score * 100);
+        var color = colorMap(d.score);
+        content.innerHTML += '<div style="padding:6px 8px;background:var(--bg-secondary,#1a1a2e);border-radius:4px;">' +
+            '<div style="font-size:0.75rem;color:var(--text-secondary);">' + label + ' <span style="float:right;color:var(--text-muted);">w=' + (d.weight*100).toFixed(0) + '%</span></div>' +
+            '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;">' +
+            '<div style="flex:1;background:var(--bg-card,#16213e);border-radius:2px;height:6px;">' +
+            '<div style="background:' + color + ';height:6px;border-radius:2px;width:' + pct + '%;"></div></div>' +
+            '<span style="color:' + color + ';font-size:0.8rem;font-weight:bold;">' + pct + '%</span></div></div>';
+    });
+    legend.style.display = 'block';
+    legend.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+// ---- Pipeline Value Refresh ----
+function refreshPipelineValue() {
+    fetch('/api/govcon/pipeline-value')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.status === 'ok') {
+            var el = document.getElementById('banner-weighted');
+            if (el) el.textContent = '$' + d.total_weighted_pipeline_value.toLocaleString('en-US', {maximumFractionDigits:0});
+        }
+    })
+    .catch(function(){});
+}
 </script>
 {% endblock %}

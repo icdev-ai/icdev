@@ -176,6 +176,9 @@ SECTION_TRANSITIONS = {
     "submitted": [],
 }
 
+# Valid color team review types for proposal_reviews (matches DB CHECK constraint)
+REVIEW_TYPES = ("pink_team", "red_team", "gold_team", "white_team", "white_glove", "internal")
+
 # Ordered status list for pipeline rendering
 SECTION_STATUS_ORDER = [
     "not_started",
@@ -408,7 +411,12 @@ def update_opportunity(opp_id):
 
 @proposals_api.route("/opportunities/<opp_id>/status", methods=["PUT"])
 def change_opportunity_status(opp_id):
-    """PUT /api/proposals/opportunities/<id>/status — Change opportunity status."""
+    """PUT /api/proposals/opportunities/<id>/status — Change opportunity status.
+
+    Gate: transition to 'submitted' is blocked unless a 'gold_team' review
+    exists with overall_rating IN ('pass', 'pass_with_findings') and
+    status = 'completed'. Pass force=true to bypass (admin only).
+    """
     data = request.get_json(force=True, silent=True) or {}
     new_status = data.get("status")
     if not new_status:
@@ -419,6 +427,27 @@ def change_opportunity_status(opp_id):
         if not row:
             return jsonify({"error": "Opportunity not found"}), 404
         old_status = row["status"]
+
+        # Gold-team sign-off gate (D-PROP-GOLD): block 'submitted' until Gold passes
+        if new_status == "submitted" and not data.get("force"):
+            gold_review = conn.execute(
+                """SELECT id, overall_rating FROM proposal_reviews
+                   WHERE opportunity_id = ? AND review_type = 'gold_team'
+                     AND status = 'completed'
+                     AND overall_rating IN ('pass', 'pass_with_findings')
+                   ORDER BY created_at DESC LIMIT 1""",
+                (opp_id,),
+            ).fetchone()
+            if not gold_review:
+                return jsonify({
+                    "error": "Gold-team sign-off required before submitting",
+                    "gate": "gold_team_signoff",
+                    "detail": (
+                        "A completed Gold Team review with overall_rating 'pass' or "
+                        "'pass_with_findings' must exist before this opportunity can be submitted."
+                    ),
+                }), 409
+
         conn.execute(
             "UPDATE proposal_opportunities SET status = ?, updated_at = ? WHERE id = ?",
             (new_status, now_iso(), opp_id),
@@ -1012,6 +1041,8 @@ def schedule_review(opp_id):
     data = request.get_json(force=True, silent=True) or {}
     if not data.get("review_type"):
         return jsonify({"error": "review_type is required"}), 400
+    if data["review_type"] not in REVIEW_TYPES:
+        return jsonify({"error": f"Invalid review_type. Must be one of: {', '.join(REVIEW_TYPES)}"}), 400
     rev_id = _uuid()
     conn = _get_db()
     try:
@@ -2221,6 +2252,266 @@ def get_orphaned_requirements(opp_id):
             (opp_id,),
         ).fetchall()
         return jsonify({"orphaned": [dict(r) for r in rows], "count": len(rows)})
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Black-hat / PTW Workspace (prop-cap-13)
+# ---------------------------------------------------------------------------
+
+_SCG_AGG_THRESHOLD = 3  # prop-sec-03: warn when aggregating ≥N competitors
+
+
+def _ensure_blackhat_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS proposal_blackhat_assessments (
+            id TEXT PRIMARY KEY,
+            opportunity_id TEXT NOT NULL,
+            competitor_name TEXT NOT NULL,
+            approach_hypothesis TEXT,
+            price_estimate_low REAL,
+            price_estimate_high REAL,
+            strengths TEXT,
+            weaknesses TEXT,
+            win_strategy TEXT,
+            differentiators TEXT,
+            risk_factors TEXT,
+            ptw_posture TEXT DEFAULT 'competitive',
+            leaderboard_rank INTEGER,
+            award_count INTEGER,
+            total_award_value REAL,
+            naics_diversity INTEGER,
+            agency_diversity INTEGER,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            created_by TEXT
+        )
+    """)
+    conn.commit()
+
+
+def _mask_ptw_sensitive(row):
+    """Mask price fields per prop-sec-01 if MAC clearance insufficient."""
+    ctx = _mac_ctx()
+    if ctx is None:
+        return row
+    from tools.security.classification_enforcer import can_read
+    if not can_read("SECRET", ctx):
+        row = dict(row)
+        for field in ("price_estimate_low", "price_estimate_high"):
+            if field in row and row[field] is not None:
+                row[field] = None
+                row[f"{field}_masked"] = True
+    return row
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/analysis", methods=["GET"])
+def ptw_analysis_endpoint(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/ptw/analysis — rate_benchmarker PTW + SCG gate."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+    finally:
+        conn.close()
+    try:
+        from tools.govcon.rate_benchmarker import ptw_analysis
+        result = ptw_analysis(opp_id)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    # prop-sec-03 SCG aggregation warning
+    n_competitors = result.get("competitor_count", 0)
+    if n_competitors >= _SCG_AGG_THRESHOLD:
+        result["scg_warning"] = (
+            f"Aggregating pricing across {n_competitors} competitors may trigger SCG rule "
+            "SCG-AGG-003 (pattern-of-life disclosure). Review disclosure permissions before sharing."
+        )
+    return jsonify(result)
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/leaderboard", methods=["GET"])
+def ptw_leaderboard(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/ptw/leaderboard — competitor_profiler leaderboard."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+        # Pull opportunity NAICS for default leaderboard filter
+        opp_row = conn.execute(
+            "SELECT naics_code FROM proposal_opportunities WHERE id = ?", (opp_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    naics = request.args.get("naics") or (opp_row["naics_code"] if opp_row else None)
+    agency = request.args.get("agency")
+    limit = int(request.args.get("limit", 20))
+    try:
+        from tools.govcon.competitor_profiler import get_leaderboard
+        result = get_leaderboard(naics=naics, agency=agency, limit=limit)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    if result.get("leaderboard", []) and len(result["leaderboard"]) >= _SCG_AGG_THRESHOLD:
+        result["scg_warning"] = (
+            "Leaderboard aggregates award patterns across multiple vendors. "
+            "Comply with SCG-AGG-003 before external disclosure."
+        )
+    return jsonify(result)
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/vendor-profile", methods=["POST"])
+def ptw_vendor_profile(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/ptw/vendor-profile — profile a competitor."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+    finally:
+        conn.close()
+    data = request.get_json(force=True, silent=True) or {}
+    vendor = data.get("vendor_name", "").strip()
+    if not vendor:
+        return jsonify({"error": "vendor_name is required"}), 400
+    try:
+        from tools.govcon.competitor_profiler import profile_vendor
+        result = profile_vendor(vendor)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/bid-score", methods=["POST"])
+def ptw_bid_score(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/ptw/bid-score — Bayesian bid scorer."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+    finally:
+        conn.close()
+    data = request.get_json(force=True, silent=True) or {}
+    dimensions = data.get("dimensions", {})
+    try:
+        from tools.govcon.bayesian_bid_scorer import score_opportunity, optimal_assessment_order
+        score_result = score_opportunity(opp_id, dimensions)
+        order_result = optimal_assessment_order(opp_id)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"score": score_result, "optimal_order": order_result})
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/blackhat", methods=["GET"])
+def list_blackhat_assessments(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/ptw/blackhat — list black-hat competitor models."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+        _ensure_blackhat_table(conn)
+        rows = conn.execute(
+            "SELECT * FROM proposal_blackhat_assessments WHERE opportunity_id = ? ORDER BY created_at DESC",
+            (opp_id,),
+        ).fetchall()
+        assessments = [_mask_ptw_sensitive(dict(r)) for r in rows]
+        assessments = _mac_filter(assessments)
+        return jsonify({"assessments": assessments, "count": len(assessments)})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/blackhat", methods=["POST"])
+def create_blackhat_assessment(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/ptw/blackhat — create competitor black-hat model."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+        data = request.get_json(force=True, silent=True) or {}
+        if not data.get("competitor_name"):
+            return jsonify({"error": "competitor_name is required"}), 400
+        classification = data.get("classification", "CUI")
+        deny = _mac_deny_write(classification)
+        if deny:
+            return deny
+        _ensure_blackhat_table(conn)
+        bh_id = _uuid()
+        ptw_posture = data.get("ptw_posture", "competitive")
+        if ptw_posture not in ("lpta", "aggressive", "competitive", "premium", "unknown"):
+            ptw_posture = "competitive"
+        conn.execute(
+            """INSERT INTO proposal_blackhat_assessments
+               (id, opportunity_id, competitor_name, approach_hypothesis,
+                price_estimate_low, price_estimate_high, strengths, weaknesses,
+                win_strategy, differentiators, risk_factors, ptw_posture,
+                leaderboard_rank, award_count, total_award_value,
+                naics_diversity, agency_diversity, classification, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                bh_id, opp_id, data["competitor_name"],
+                data.get("approach_hypothesis"),
+                data.get("price_estimate_low"), data.get("price_estimate_high"),
+                data.get("strengths"), data.get("weaknesses"),
+                data.get("win_strategy"), data.get("differentiators"),
+                data.get("risk_factors"), ptw_posture,
+                data.get("leaderboard_rank"), data.get("award_count"),
+                data.get("total_award_value"),
+                data.get("naics_diversity"), data.get("agency_diversity"),
+                classification, now_iso(),
+            ),
+        )
+        conn.commit()
+        return jsonify({"id": bh_id}), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/blackhat/<bh_id>", methods=["PUT"])
+def update_blackhat_assessment(bh_id):
+    """PUT /api/proposals/blackhat/<bh_id> — update a black-hat competitor model."""
+    data = request.get_json(force=True, silent=True) or {}
+    allowed = {
+        "approach_hypothesis", "price_estimate_low", "price_estimate_high",
+        "strengths", "weaknesses", "win_strategy", "differentiators",
+        "risk_factors", "ptw_posture",
+    }
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if "ptw_posture" in updates and updates["ptw_posture"] not in (
+        "lpta", "aggressive", "competitive", "premium", "unknown"
+    ):
+        updates["ptw_posture"] = "competitive"
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+    updates["updated_at"] = now_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        _ensure_blackhat_table(conn)
+        conn.execute(
+            f"UPDATE proposal_blackhat_assessments SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [bh_id],
+        )
+        conn.commit()
+        return jsonify({"id": bh_id})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/blackhat/<bh_id>", methods=["DELETE"])
+def delete_blackhat_assessment(bh_id):
+    """DELETE /api/proposals/blackhat/<bh_id> — remove a black-hat competitor model."""
+    conn = _get_db()
+    try:
+        _ensure_blackhat_table(conn)
+        conn.execute("DELETE FROM proposal_blackhat_assessments WHERE id = ?", (bh_id,))
+        conn.commit()
+        return jsonify({"deleted": bh_id})
     finally:
         conn.close()
 

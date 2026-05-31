@@ -1227,3 +1227,100 @@ def api_govcon_telco_rdof():
         return jsonify(score_rdof_eligibility(network_data))
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+# =====================================================================
+# pWin Model — capture-plan signal scoring + weighted pipeline value
+# =====================================================================
+
+
+@govcon_api.route("/proposals/<opp_id>/pwin", methods=["POST"])
+@require_role(*GOVCON_WRITE_ROLES)
+def compute_proposal_pwin(opp_id):
+    """Compute pWin for a proposal from 5 capture-plan signals.
+
+    POST body (all fields optional, default 0.5 = neutral):
+    {
+      "incumbency": 0.8,          // 0=new entrant, 1=strong incumbent
+      "crm_engagement": 0.6,      // 0=no contact, 1=deep relationship
+      "competitive_position": 0.5, // 0=weak, 1=clear differentiator
+      "compliance_coverage": 0.9,  // 0=gaps, 1=full coverage
+      "past_performance_fit": 0.7, // 0=misaligned, 1=direct match
+      "estimated_value": 5000000   // optional, for weighted value calc
+    }
+    """
+    from tools.govcon.bayesian_bid_scorer import compute_pwin, PWIN_FACTORS
+
+    data = request.get_json(force=True) or {}
+    factors = {f: data[f] for f in PWIN_FACTORS if f in data}
+    estimated_value = data.get("estimated_value")
+
+    # If not provided, try to pull from proposal_opportunities
+    if estimated_value is None:
+        conn = _get_db()
+        try:
+            row = conn.execute(
+                "SELECT estimated_value_low, estimated_value_high FROM proposal_opportunities WHERE id = ?",
+                (opp_id,),
+            ).fetchone()
+            if row:
+                lo = row[0] or 0
+                hi = row[1] or lo
+                try:
+                    estimated_value = (float(lo) + float(hi)) / 2.0
+                except (TypeError, ValueError):
+                    pass
+        except Exception:
+            pass
+        finally:
+            conn.close()
+
+    try:
+        result = compute_pwin(opp_id, factors, estimated_value)
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 500
+
+    # Write the computed pWin back to proposal_opportunities.win_probability
+    conn = _get_db()
+    try:
+        conn.execute(
+            "UPDATE proposal_opportunities SET win_probability = ? WHERE id = ?",
+            (result["pwin_pct"], opp_id),
+        )
+        _audit(conn, "pwin.update_proposal", f"pwin={result['pwin_pct']}% → {opp_id}", opp_id)
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+    return jsonify(result)
+
+
+@govcon_api.route("/proposals/<opp_id>/pwin", methods=["GET"])
+def get_proposal_pwin(opp_id):
+    """Return the most recent pWin assessment for a proposal."""
+    from tools.govcon.bayesian_bid_scorer import get_pwin_assessment
+
+    try:
+        assessment = get_pwin_assessment(opp_id)
+        if not assessment:
+            return jsonify({"status": "not_found", "message": "No pWin assessment found"}), 404
+        return jsonify({"status": "ok", **assessment})
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 500
+
+
+@govcon_api.route("/pipeline-value", methods=["GET"])
+def get_pipeline_value():
+    """Weighted pipeline value roll-up across all active proposals.
+
+    Returns total weighted pipeline value, total potential value, per-opportunity
+    breakdown with pWin scores and factor breakdowns.
+    """
+    from tools.govcon.bayesian_bid_scorer import pipeline_value_rollup
+
+    try:
+        return jsonify(pipeline_value_rollup())
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 500

@@ -97,8 +97,48 @@ def ssp_fragments_adapter(conn: Any) -> list[dict]:
         c.close()
 
 
+def kg_entities_adapter(conn: Any) -> list[dict]:
+    """KG nodes (entities) extracted from ingested DIC documents."""
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT n.id, n.label, n.entity_type, n.centrality, "
+            "n.source_chunk_id, n.created_at, g.source_doc_id "
+            "FROM kg_nodes n LEFT JOIN kg_graphs g ON g.id = n.graph_id "
+            "ORDER BY n.centrality DESC NULLS LAST LIMIT 1000"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        c.close()
+
+
+def kg_relationships_adapter(conn: Any) -> list[dict]:
+    """KG edges (relationships) between entities extracted from DIC documents."""
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT e.id, src.label AS source, tgt.label AS target, "
+            "e.relationship, e.weight, e.created_at "
+            "FROM kg_edges e "
+            "JOIN kg_nodes src ON src.id = e.source_id "
+            "JOIN kg_nodes tgt ON tgt.id = e.target_id "
+            "ORDER BY e.weight DESC NULLS LAST LIMIT 1000"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        c.close()
+
+
 register_collection("dic.documents", documents_adapter)
 register_collection("dic.collections", collections_adapter)
 register_collection("dic.drift_events", drift_events_adapter)
 register_collection("dic.regen_queue", regen_queue_adapter)
 register_collection("dic.ssp_fragments", ssp_fragments_adapter)
+register_collection("dic.kg_entities", kg_entities_adapter)
+register_collection("dic.kg_relationships", kg_relationships_adapter)

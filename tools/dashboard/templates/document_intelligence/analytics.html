@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+{% block title %}Analytics — Document Intelligence — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">📊 Analytics</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Entity frequency · Co-occurrence · Pattern detection · Anomaly detection · Scenario runner</p>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Back to DIC</a>
+    <button onclick="loadAll()" style="background:#1e3a6e;color:#7ab3f0;padding:8px 16px;border:1px solid #2a4a8e;border-radius:5px;cursor:pointer;font-size:13px;">↻ Refresh</button>
+  </div>
+</div>
+
+<!-- Tab Bar -->
+<div style="display:flex;gap:2px;background:#050d1f;border:1px solid #1a3560;border-radius:6px;padding:3px;width:fit-content;margin-bottom:20px;flex-wrap:wrap;">
+  <button id="tab-overview" onclick="switchTab('overview')" style="background:#0f3460;color:#7ab3f0;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Overview</button>
+  <button id="tab-frequency" onclick="switchTab('frequency')" style="background:none;color:#5a7aa0;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Entity Frequency</button>
+  <button id="tab-cooccurrence" onclick="switchTab('cooccurrence')" style="background:none;color:#5a7aa0;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Co-occurrence</button>
+  <button id="tab-patterns" onclick="switchTab('patterns')" style="background:none;color:#5a7aa0;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Patterns</button>
+  <button id="tab-anomalies" onclick="switchTab('anomalies')" style="background:none;color:#5a7aa0;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Anomalies</button>
+  <button id="tab-scenarios" onclick="switchTab('scenarios')" style="background:none;color:#5a7aa0;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Scenarios</button>
+</div>
+
+<!-- Overview -->
+<div id="panel-overview">
+  <div id="overview-loading" style="color:#5a7aa0;font-size:12px;padding:12px 0;">Loading analytics…</div>
+  <div id="overview-content" style="display:none;">
+    <!-- Summary cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px;" id="summary-cards"></div>
+    <!-- Pattern banner -->
+    <div id="pattern-banner" style="display:none;background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:14px 18px;margin-bottom:20px;"></div>
+    <!-- Anomaly alert -->
+    <div id="anomaly-alert" style="display:none;border-radius:8px;padding:10px 16px;margin-bottom:20px;font-size:12px;"></div>
+    <!-- Top entities -->
+    <h3 style="color:#9bb8d8;font-size:12px;text-transform:uppercase;letter-spacing:.6px;margin:0 0 8px;">Top Entities</h3>
+    <div id="top-entities-bar"></div>
+    <!-- Hot co-occurrences -->
+    <h3 style="color:#9bb8d8;font-size:12px;text-transform:uppercase;letter-spacing:.6px;margin:16px 0 8px;">Hottest Relationships</h3>
+    <div id="hot-pairs-list"></div>
+  </div>
+</div>
+
+<!-- Entity Frequency -->
+<div id="panel-frequency" style="display:none;">
+  <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap;">
+    <input type="text" id="freq-filter" placeholder="Filter by entity name…"
+      style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px 12px;border-radius:5px;font-size:12px;width:220px;"
+      oninput="renderFrequency()">
+    <select id="freq-type" onchange="renderFrequency()" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px 10px;border-radius:5px;font-size:12px;">
+      <option value="">All types</option>
+      <option value="PERSON">PERSON</option>
+      <option value="ORG">ORG</option>
+      <option value="SYSTEM">SYSTEM</option>
+      <option value="CONCEPT">CONCEPT</option>
+    </select>
+  </div>
+  <div id="freq-content"></div>
+</div>
+
+<!-- Co-occurrence -->
+<div id="panel-cooccurrence" style="display:none;">
+  <div id="cooc-content"></div>
+</div>
+
+<!-- Patterns -->
+<div id="panel-patterns" style="display:none;">
+  <div id="patterns-content"></div>
+</div>
+
+<!-- Anomalies -->
+<div id="panel-anomalies" style="display:none;">
+  <div id="anomalies-content"></div>
+</div>
+
+<!-- Scenarios -->
+<div id="panel-scenarios" style="display:none;">
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:18px;margin-bottom:18px;">
+    <h3 style="color:#9bb8d8;font-size:13px;margin:0 0 14px;text-transform:uppercase;letter-spacing:.6px;">Run Scenario</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;flex-wrap:wrap;">
+      <div>
+        <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Scenario Type</label>
+        <select id="scenario-type" onchange="updateScenarioForm()" style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:5px;font-size:12px;">
+          <option value="remove_entity">Remove Entity — impact if concept removed</option>
+          <option value="centrality_shift">Hub Removal — remove most central concept</option>
+          <option value="change_concept">Change Concept — reframe entity as something else</option>
+          <option value="cross_doc">Cross-Document — compare concept overlap</option>
+        </select>
+      </div>
+      <div id="entity-input-wrap">
+        <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Entity / Concept</label>
+        <input type="text" id="scenario-entity" placeholder="e.g. Sun Tzu, strategy…"
+          style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:5px;font-size:12px;">
+      </div>
+      <button onclick="runScenario()" style="background:#0f3460;color:#7ab3f0;padding:8px 18px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;white-space:nowrap;">Run</button>
+    </div>
+    <div id="cross-doc-extra" style="display:none;margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div>
+        <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Doc A ID</label>
+        <input type="text" id="cross-doc-a" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px 10px;border-radius:5px;font-size:12px;">
+      </div>
+      <div>
+        <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Doc B ID</label>
+        <input type="text" id="cross-doc-b" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px 10px;border-radius:5px;font-size:12px;">
+      </div>
+    </div>
+    <div id="change-concept-extra" style="display:none;margin-top:12px;">
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">New Concept Label</label>
+      <input type="text" id="new-concept" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px 10px;border-radius:5px;font-size:12px;">
+    </div>
+  </div>
+  <div id="scenario-result"></div>
+</div>
+
+<script>
+var _analyticsCache = null;
+
+function switchTab(tab) {
+  ['overview','frequency','cooccurrence','patterns','anomalies','scenarios'].forEach(function(t) {
+    var btn = document.getElementById('tab-' + t);
+    var panel = document.getElementById('panel-' + t);
+    btn.style.background = t === tab ? '#0f3460' : 'none';
+    btn.style.color = t === tab ? '#7ab3f0' : '#5a7aa0';
+    panel.style.display = t === tab ? 'block' : 'none';
+  });
+  if (tab === 'frequency' && _analyticsCache) renderFrequency();
+  if (tab === 'cooccurrence' && _analyticsCache) renderCooccurrence();
+  if (tab === 'patterns' && _analyticsCache) renderPatterns();
+  if (tab === 'anomalies' && _analyticsCache) renderAnomalies();
+}
+
+function loadAll() {
+  document.getElementById('overview-loading').style.display = 'block';
+  document.getElementById('overview-content').style.display = 'none';
+  fetch('/document-intelligence/api/analytics', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({mode:'full'})
+  }).then(function(r){return r.json();}).then(function(d){
+    _analyticsCache = d;
+    renderOverview(d);
+    document.getElementById('overview-loading').style.display = 'none';
+    document.getElementById('overview-content').style.display = 'block';
+  }).catch(function(){
+    document.getElementById('overview-loading').textContent = 'Failed to load analytics. Upload documents first.';
+  });
+}
+
+function renderOverview(d) {
+  var freq = d.entity_frequency || {};
+  var patt = d.patterns || {};
+  var anom = d.anomalies || {};
+  var cooc = d.co_occurrence || {};
+  var stats = patt.stats || {};
+
+  // Summary cards
+  var cards = [
+    {label:'Total Entities', value: freq.total || 0, color:'#7ab3f0'},
+    {label:'Relationships', value: stats.edge_count || 0, color:'#6ee7b7'},
+    {label:'Dominant Pattern', value: (patt.dominant || '—').replace('_',' '), color:'#c4b5fd'},
+    {label:'Anomaly Severity', value: (anom.severity || '—').toUpperCase(), color: anom.severity==='high'?'#f87171':anom.severity==='medium'?'#fbbf24':'#4ade80'},
+    {label:'Orphaned Entities', value: (anom.summary||{}).orphan_count || 0, color:'#f87171'},
+    {label:'Knowledge Hubs', value: stats.hub_count || 0, color:'#fbbf24'},
+  ];
+  document.getElementById('summary-cards').innerHTML = cards.map(function(c){
+    return '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px 16px;">' +
+      '<div style="font-size:22px;font-weight:700;color:'+c.color+';">'+c.value+'</div>' +
+      '<div style="color:#5a7aa0;font-size:11px;margin-top:4px;text-transform:uppercase;letter-spacing:.4px;">'+c.label+'</div>' +
+      '</div>';
+  }).join('');
+
+  // Pattern banner
+  if (patt.dominant && patt.dominant !== 'UNCLASSIFIED') {
+    var topPatt = (patt.patterns||[]).find(function(p){return p.id===patt.dominant;}) || {};
+    document.getElementById('pattern-banner').style.display = 'block';
+    document.getElementById('pattern-banner').innerHTML =
+      '<span style="color:#c4b5fd;font-weight:600;">📐 Pattern: '+topPatt.name+'</span> ' +
+      '<span style="color:#5a7aa0;font-size:12px;">· '+confidence(topPatt.confidence)+'% confidence</span><br>' +
+      '<span style="color:#7a8cb0;font-size:12px;">'+escHtml(topPatt.description||'')+'</span>';
+  }
+
+  // Anomaly alert
+  if (anom.severity) {
+    var alertEl = document.getElementById('anomaly-alert');
+    alertEl.style.display = 'block';
+    var colors = {high:'background:#2e0505;border:1px solid #5a1a1a;color:#f87171;',medium:'background:#2e2205;border:1px solid #5a4010;color:#fbbf24;',low:'background:#052e16;border:1px solid #1a5a30;color:#4ade80;'};
+    alertEl.style.cssText = colors[anom.severity]||colors.low;
+    var s = anom.summary||{};
+    alertEl.innerHTML = '⚠ Anomaly Severity: <strong>'+anom.severity.toUpperCase()+'</strong> — '+
+      s.orphan_count+' orphans · '+s.single_source_count+' tribal knowledge gaps · '+s.contradiction_count+' contradictions · '+s.stale_doc_count+' docs with no KG nodes';
+  }
+
+  // Top entities bar chart (text-based)
+  var topE = (freq.top_entities||[]).slice(0,15);
+  var maxCount = topE.length ? Math.max.apply(null,topE.map(function(e){return e.count;})) : 1;
+  document.getElementById('top-entities-bar').innerHTML = topE.map(function(e){
+    var pct = Math.round(e.count/maxCount*100);
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+      '<span style="color:#a8c8e0;font-size:12px;width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+escHtml(e.label)+'">'+escHtml(e.label)+'</span>' +
+      '<div style="flex:1;background:#0a1525;border-radius:3px;height:14px;overflow:hidden;">' +
+      '<div style="background:#4f8ef7;height:100%;width:'+pct+'%;"></div></div>' +
+      '<span style="color:#5a7aa0;font-size:11px;width:28px;text-align:right;">'+e.count+'</span>' +
+      '<span style="background:#1e293b;color:#94a3b8;font-size:9px;padding:1px 5px;border-radius:2px;">'+e.entity_type+'</span>' +
+      '</div>';
+  }).join('') || '<p style="color:#5a7aa0;font-size:12px;">No entities yet. Upload a document to get started.</p>';
+
+  // Hot pairs
+  var pairs = (cooc.hot_pairs||[]).slice(0,8);
+  document.getElementById('hot-pairs-list').innerHTML = pairs.map(function(p){
+    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #0d1e30;font-size:12px;">' +
+      '<span style="color:#7ab3f0;">'+escHtml(p.source)+'</span>' +
+      '<span style="color:#5a7aa0;font-style:italic;font-size:11px;">'+escHtml(p.relationship)+'</span>' +
+      '<span style="color:#7ab3f0;">'+escHtml(p.target)+'</span>' +
+      '</div>';
+  }).join('') || '<p style="color:#5a7aa0;font-size:12px;">No relationships yet.</p>';
+}
+
+function renderFrequency() {
+  if (!_analyticsCache) return;
+  var byType = _analyticsCache.entity_frequency.by_type || {};
+  var filter = (document.getElementById('freq-filter').value||'').toLowerCase();
+  var typeF = document.getElementById('freq-type').value;
+  var html = '';
+  Object.keys(byType).forEach(function(t){
+    if (typeF && t !== typeF) return;
+    var items = byType[t].filter(function(e){ return !filter || e.label.toLowerCase().includes(filter); });
+    if (!items.length) return;
+    html += '<div style="margin-bottom:20px;"><div style="color:#9bb8d8;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">'+t+' ('+items.length+')</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+    var maxC = Math.max.apply(null,items.map(function(e){return e.count;}));
+    items.slice(0,60).forEach(function(e){
+      var opacity = 0.5 + e.count/maxC*0.5;
+      html += '<span style="background:#0a1a3a;border:1px solid #1e3a6e;color:#a8c8e0;padding:3px 10px;border-radius:4px;font-size:12px;opacity:'+opacity+';" title="count: '+e.count+' · centrality: '+e.centrality+'">'+escHtml(e.label)+'<span style="color:#5a7aa0;margin-left:5px;font-size:10px;">'+e.count+'</span></span>';
+    });
+    html += '</div></div>';
+  });
+  document.getElementById('freq-content').innerHTML = html || '<p style="color:#5a7aa0;font-size:12px;">No entities found.</p>';
+}
+
+function renderCooccurrence() {
+  if (!_analyticsCache) return;
+  var pairs = _analyticsCache.co_occurrence.pairs || [];
+  if (!pairs.length) {
+    document.getElementById('cooc-content').innerHTML = '<p style="color:#5a7aa0;font-size:12px;">No relationships yet.</p>';
+    return;
+  }
+  document.getElementById('cooc-content').innerHTML =
+    '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;overflow:hidden;">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+    '<thead><tr style="background:#08112a;color:#6090b0;"><th style="padding:7px 12px;text-align:left;">Source</th><th style="padding:7px 12px;text-align:left;">Relationship</th><th style="padding:7px 12px;text-align:left;">Target</th><th style="padding:7px 6px;text-align:right;">Weight</th></tr></thead><tbody>' +
+    pairs.map(function(p){
+      return '<tr style="border-top:1px solid #0d1e30;"><td style="padding:5px 12px;color:#7ab3f0;">'+escHtml(p.source)+'</td><td style="padding:5px 12px;color:#5a7aa0;font-style:italic;">'+escHtml(p.relationship)+'</td><td style="padding:5px 12px;color:#7ab3f0;">'+escHtml(p.target)+'</td><td style="padding:5px 6px;color:#5a7aa0;text-align:right;">'+(p.weight||'—')+'</td></tr>';
+    }).join('') + '</tbody></table></div>';
+}
+
+function renderPatterns() {
+  if (!_analyticsCache) return;
+  var patt = _analyticsCache.patterns;
+  var stats = patt.stats || {};
+  var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:20px;">';
+  (patt.patterns||[]).forEach(function(p){
+    var idom = p.id === patt.dominant;
+    html += '<div style="background:#0b1726;border:1px solid '+(idom?'#c4b5fd':'#1a3560')+';border-radius:8px;padding:14px;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px;">';
+    html += '<strong style="color:#eaeaea;font-size:13px;">'+escHtml(p.name)+'</strong>';
+    html += '<span style="background:'+(idom?'#2a1a52':'#1e293b')+';color:'+(idom?'#c4b5fd':'#94a3b8')+';padding:2px 8px;border-radius:3px;font-size:10px;">'+confidence(p.confidence)+'%</span></div>';
+    html += '<p style="color:#7a8cb0;font-size:12px;margin:0;">'+escHtml(p.description)+'</p>';
+    if (p.signals && p.signals.length) {
+      html += '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">';
+      p.signals.forEach(function(s){ html += '<span style="background:#0a2040;color:#4f8ef7;font-size:10px;padding:1px 6px;border-radius:2px;">'+s+'</span>'; });
+      html += '</div>';
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+  html += '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:6px;padding:12px 16px;font-size:12px;color:#7a8cb0;">';
+  html += '📐 Stats: '+stats.node_count+' nodes · '+stats.edge_count+' edges · density '+stats.edge_density+' · orphan ratio '+stats.orphan_ratio;
+  html += '</div>';
+  document.getElementById('patterns-content').innerHTML = html;
+}
+
+function renderAnomalies() {
+  if (!_analyticsCache) return;
+  var anom = _analyticsCache.anomalies;
+  var s = anom.summary || {};
+  var html = '';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:18px;">';
+  [{k:'orphan_count',l:'Orphaned Entities',c:'#f87171'},{k:'single_source_count',l:'Tribal Knowledge Gaps',c:'#fbbf24'},{k:'hub_count',l:'Critical Hubs',c:'#c4b5fd'},{k:'contradiction_count',l:'Contradictions',c:'#fb923c'},{k:'stale_doc_count',l:'Stale Docs (no KG)',c:'#f87171'}].forEach(function(x){
+    html += '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:6px;padding:12px 14px;"><div style="font-size:20px;font-weight:700;color:'+x.c+';">'+(s[x.k]||0)+'</div><div style="color:#5a7aa0;font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-top:2px;">'+x.l+'</div></div>';
+  });
+  html += '</div>';
+
+  html += section('🔴 Orphaned Entities', anom.orphans||[], function(e){ return e.label+' <span style="color:#5a7aa0;font-size:10px;">('+e.entity_type+')</span>'; }, 'No orphans — all entities are connected.');
+  html += section('⚠ Tribal Knowledge (single-source)', anom.single_source||[], function(e){ return e.label+' <span style="color:#5a7aa0;font-size:10px;">('+e.entity_type+')</span>'; }, 'No tribal knowledge gaps detected.');
+  html += section('🔥 Critical Hubs', anom.hubs||[], function(e){ return e.label+' <span style="color:#5a7aa0;font-size:10px;">('+e.entity_type+' · centrality '+parseFloat(e.centrality||0).toFixed(3)+')</span>'; }, 'No high-centrality hubs.');
+  html += section('⚡ Contradictions', anom.contradictions||[], function(e){ return e.source+' → '+e.target+': <span style="color:#fb923c;">'+escHtml(e.relationships||'')+'</span>'; }, 'No contradictions detected.');
+  html += section('📭 Stale Docs (no KG nodes)', anom.stale_docs||[], function(e){ return escHtml(e.title||e.doc_id); }, 'All documents have KG nodes.');
+
+  document.getElementById('anomalies-content').innerHTML = html;
+}
+
+function section(title, items, rowFn, emptyMsg) {
+  var html = '<div style="margin-bottom:18px;"><h3 style="color:#9bb8d8;font-size:12px;text-transform:uppercase;letter-spacing:.6px;margin:0 0 8px;">'+title+'</h3>';
+  if (!items.length) { return html + '<p style="color:#4ade80;font-size:12px;">'+emptyMsg+'</p></div>'; }
+  html += '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:6px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:6px;">';
+  items.forEach(function(e){ html += '<span style="background:#1e293b;color:#a8c8e0;padding:3px 8px;border-radius:3px;font-size:12px;">'+rowFn(e)+'</span>'; });
+  html += '</div></div>';
+  return html;
+}
+
+function updateScenarioForm() {
+  var t = document.getElementById('scenario-type').value;
+  document.getElementById('cross-doc-extra').style.display = t === 'cross_doc' ? 'grid' : 'none';
+  document.getElementById('change-concept-extra').style.display = t === 'change_concept' ? 'block' : 'none';
+  document.getElementById('entity-input-wrap').style.display = (t === 'centrality_shift') ? 'none' : 'block';
+}
+
+function runScenario() {
+  var type = document.getElementById('scenario-type').value;
+  var entity = (document.getElementById('scenario-entity').value||'').trim();
+  var params = {};
+  if (type === 'cross_doc') {
+    params.doc_a = document.getElementById('cross-doc-a').value.trim();
+    params.doc_b = document.getElementById('cross-doc-b').value.trim();
+  } else if (type === 'change_concept') {
+    params.new_label = document.getElementById('new-concept').value.trim();
+  }
+  var result = document.getElementById('scenario-result');
+  result.innerHTML = '<div style="color:#5a7aa0;font-size:12px;padding:8px 0;">Running scenario…</div>';
+  fetch('/document-intelligence/api/scenarios', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({scenario_type:type, entity_label:entity, params:params})
+  }).then(function(r){return r.json();}).then(function(d){
+    renderScenarioResult(d);
+  }).catch(function(){ result.innerHTML = '<p style="color:#f87171;font-size:12px;">Scenario failed.</p>'; });
+}
+
+function renderScenarioResult(d) {
+  if (d.error) { document.getElementById('scenario-result').innerHTML = '<p style="color:#f87171;font-size:12px;">Error: '+escHtml(d.error)+'</p>'; return; }
+  var riskColor = {critical:'#f87171',high:'#fb923c',medium:'#fbbf24'}[d.risk]||'#4ade80';
+  var html = '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:18px;">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px;">';
+  html += '<h3 style="margin:0;color:#eaeaea;font-size:14px;">'+(d.entity||d.scenario)+'</h3>';
+  if (d.impact_score !== undefined) html += '<span style="background:#1e293b;color:'+riskColor+';padding:3px 10px;border-radius:3px;font-size:12px;">Impact '+d.impact_score+'/100 · '+escHtml(d.risk||'')+'</span>';
+  html += '</div>';
+  if (d.interpretation) html += '<p style="color:#a8c8e0;font-size:12px;margin:0 0 12px;">'+escHtml(d.interpretation)+'</p>';
+
+  if (d.affected_neighbors && d.affected_neighbors.length) {
+    html += '<div style="margin-top:10px;"><div style="color:#9bb8d8;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Affected Neighbors ('+d.affected_neighbors.length+')</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:5px;">';
+    d.affected_neighbors.forEach(function(n){ html += '<span style="background:#1e293b;color:#a8c8e0;padding:2px 8px;border-radius:3px;font-size:12px;">'+escHtml(n.label)+'</span>'; });
+    html += '</div></div>';
+  }
+  if (d.shared_concepts) {
+    html += '<div style="margin-top:10px;"><div style="color:#9bb8d8;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Shared Concepts ('+d.shared_concepts.length+', '+d.overlap_percent+'% overlap)</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:5px;">';
+    d.shared_concepts.forEach(function(c){ html += '<span style="background:#052e16;color:#4ade80;padding:2px 8px;border-radius:3px;font-size:12px;">'+escHtml(c)+'</span>'; });
+    html += '</div></div>';
+  }
+  if (d.relationships) {
+    html += '<div style="margin-top:10px;"><div style="color:#9bb8d8;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Affected Relationships ('+d.relationships.length+')</div>';
+    html += '<div style="background:#050d1f;border-radius:4px;padding:8px 10px;max-height:200px;overflow-y:auto;">';
+    d.relationships.slice(0,20).forEach(function(r){ html += '<div style="font-size:12px;color:#7a8cb0;padding:2px 0;">'+escHtml(r.source)+' → <em>'+escHtml(r.relationship)+'</em> → '+escHtml(r.target)+'</div>'; });
+    html += '</div></div>';
+  }
+  html += '</div>';
+  document.getElementById('scenario-result').innerHTML = html;
+}
+
+function confidence(v) { return Math.round(v||0); }
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Auto-load on page open
+loadAll();
+</script>
+
+{% set iqe_canvas = "dic" %}
+{% set iqe_api_route = "/document-intelligence/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Analytics" %}
+{% set iqe_examples = [
+  {"label": "Top entities", "query": "foreach e in dic.kg_entities select e.label, e.entity_type, e.centrality"},
+  {"label": "All relationships", "query": "foreach r in dic.kg_relationships select r.source, r.relationship, r.target"},
+  {"label": "Stale documents", "query": "foreach d in dic.documents where d.freshness_state == \"stale\" select d.title, d.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

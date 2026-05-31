@@ -152,6 +152,37 @@
     </table>
 </div>
 
+<!-- Risk Register Summary -->
+<div class="table-container" style="margin-top: 20px;">
+    <div class="table-header">
+        <h2>Program Risk Summary</h2>
+    </div>
+    <div style="padding: 16px;">
+        {% set rs = risk_summary | default({}) %}
+        <div class="stat-grid" style="margin-bottom: 16px;">
+            <div class="stat-card">
+                <div class="stat-value">{{ rs.total | default(0) }}</div>
+                <div class="stat-label">Total Risks</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value {% if rs.open | default(0) > 0 %}text-warning{% endif %}">{{ rs.open | default(0) }}</div>
+                <div class="stat-label">Open</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value {% if rs.critical | default(0) > 0 %}text-danger{% endif %}">{{ rs.critical | default(0) }}</div>
+                <div class="stat-label">Critical (≥16)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value {% if rs.high | default(0) > 0 %}text-warning{% endif %}">{{ rs.high | default(0) }}</div>
+                <div class="stat-label">High (11–15)</div>
+            </div>
+        </div>
+        {% if rs.total | default(0) == 0 %}
+        <p class="text-muted" style="text-align: center;">No risks registered. Open a contract to add risks.</p>
+        {% endif %}
+    </div>
+</div>
+
 <!-- Upcoming Deliverables -->
 <div class="table-container" style="margin-top: 20px;">
     <div class="table-header">

@@ -118,9 +118,9 @@
 
   // ─── Review Pipeline (4 Gates) ───────────────────────────────────────────
 
-  var REVIEW_GATES = ['pink_team', 'red_team', 'gold_team', 'white_glove'];
+  var REVIEW_GATES = ['pink_team', 'red_team', 'gold_team', 'white_team', 'white_glove'];
   var REVIEW_COLORS = {
-    pink_team: '#ff69b4', red_team: '#dc3545', gold_team: '#ffc107', white_glove: '#e0e0e0'
+    pink_team: '#ff69b4', red_team: '#dc3545', gold_team: '#ffc107', white_team: '#ffffff', white_glove: '#e0e0e0'
   };
 
   var OUTCOME_RING = {
