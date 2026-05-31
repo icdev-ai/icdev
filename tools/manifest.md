@@ -906,3 +906,13 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Freshness Engine | tools\document_intelligence\freshness_engine.py | Auto-registered: document_intelligence/freshness_engine.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Generate Icdev Proposal Content | tools\govcon\generate_icdev_proposal_content.py | Auto-registered: govcon/generate_icdev_proposal_content.py | --json | JSON |
+| Map Icdev Capabilities | tools\govcon\map_icdev_capabilities.py | Auto-registered: govcon/map_icdev_capabilities.py | --json | JSON |
+| Seed Icdev Knowledge Base | tools\govcon\seed_icdev_knowledge_base.py | Auto-registered: govcon/seed_icdev_knowledge_base.py | --json | JSON |
+| Seed Solicitation Requirements | tools\govcon\seed_solicitation_requirements.py | Auto-registered: govcon/seed_solicitation_requirements.py | --json | JSON |
+| Update Icdev Proposal Metadata | tools\govcon\update_icdev_proposal_metadata.py | Auto-registered: govcon/update_icdev_proposal_metadata.py | --json | JSON |

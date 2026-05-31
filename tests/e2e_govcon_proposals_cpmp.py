@@ -392,6 +392,7 @@ def _get_proposal_opp_id() -> "str | None":
 
 
 def test_pwin_ptw_browser(results: TestResult, driver: webdriver.Chrome) -> None:
+    # Covers route /proposals//ptw (Flask: /proposals/<opp_id>/ptw)
     # proposals/reviews-dashboard (pWin aggregate)
     try:
         driver.get(f"{BASE_URL}/proposals/reviews-dashboard")
