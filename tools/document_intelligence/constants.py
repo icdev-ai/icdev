@@ -36,3 +36,9 @@ APPEND_ONLY_TABLES: tuple[str, ...] = (
     "dic_team_access",
     "dic_freshness_scans",
 )
+
+HANDOFF_SESSION_STATES: list[str] = ["open", "closed"]
+
+HANDOFF_ITEM_KINDS: list[str] = ["interview", "generated_doc", "orphan_flag"]
+
+HANDOFF_ITEM_STATES: list[str] = ["pending", "answered", "generated"]
