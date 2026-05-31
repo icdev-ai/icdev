@@ -27,16 +27,25 @@ Routes:
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import queue as _queue
 import tempfile
+import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
 
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
+
+# ── In-memory SSE job queues ──────────────────────────────────────────────────
+# Maps job_id → queue.Queue[dict | None]  (None = sentinel / stream closed)
+_JOB_QUEUES: dict[str, _queue.Queue] = {}
+_JOB_LOCK = threading.Lock()
 
 dic_bp = Blueprint(
     "dic",
@@ -241,38 +250,167 @@ def api_ingest():
     collection_id = (request.form.get("collection_id") or "default").strip()
     classification = (request.form.get("classification") or "CUI").strip()
     tenant_id, _ = _security_context()
+    filename = file.filename or "upload"
 
-    suffix = Path(file.filename).suffix.lower()
-    tmp_path = None
+    # Save file to temp immediately (before thread starts).
+    suffix = Path(filename).suffix.lower()
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            file.save(tmp)
-            tmp_path = tmp.name
-
-        from tools.document_intelligence.ingest_orchestrator import ingest_file
-        outcome = ingest_file(
-            tmp_path,
-            collection_id,
-            tenant_id=tenant_id,
-            classification=classification,
-            created_by="dashboard_upload",
-        )
-        return jsonify({
-            "status": "ok",
-            "doc_id": outcome.doc_id,
-            "chunks": outcome.chunks,
-            "collection_id": collection_id,
-            "errors": outcome.errors,
-        })
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        file.save(tmp)
+        tmp.close()
+        tmp_path = tmp.name
     except Exception as exc:
-        logger.warning("dic: ingest error: %s", exc)
-        return jsonify({"error": str(exc)}), 500
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
+        return jsonify({"error": f"file save failed: {exc}"}), 500
+
+    # Create job + SSE queue.
+    job_id = uuid.uuid4().hex
+    q: _queue.Queue = _queue.Queue()
+    with _JOB_LOCK:
+        _JOB_QUEUES[job_id] = q
+
+    # Persist job record (best-effort).
+    try:
+        conn = _conn()
+        conn.execute(
+            "INSERT INTO dic_ingest_jobs (job_id, filename, collection_id, status, tenant_id) "
+            "VALUES (?,?,?,?,?)",
+            (job_id, filename, collection_id, "queued", tenant_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+    def _run():
+        outcome = None
+        try:
+            def _cb(stage: str, detail: str, pct: int) -> None:
+                q.put({"stage": stage, "detail": detail, "pct": pct})
+                # Update DB status.
+                try:
+                    c = _conn()
+                    c.execute(
+                        "UPDATE dic_ingest_jobs SET status=?, stage_detail=?, updated_at=? WHERE job_id=?",
+                        (stage, detail, _now(), job_id),
+                    )
+                    c.commit()
+                    c.close()
+                except Exception:
+                    pass
+
+            from tools.document_intelligence.ingest_orchestrator import ingest_file
+            outcome = ingest_file(
+                tmp_path, collection_id,
+                tenant_id=tenant_id, classification=classification,
+                created_by="dashboard_upload", progress_cb=_cb,
+            )
+            q.put({
+                "stage": "done",
+                "doc_id": outcome.doc_id,
+                "chunks": outcome.chunks,
+                "chunks_embedded": outcome.chunks_embedded,
+                "kg_entities": outcome.kg_entities,
+                "errors": outcome.errors,
+                "pct": 100,
+            })
+            # Update DB to done.
+            try:
+                c = _conn()
+                c.execute(
+                    "UPDATE dic_ingest_jobs SET status='done', doc_id=?, chunks_total=?, "
+                    "chunks_done=?, errors_json=?, updated_at=? WHERE job_id=?",
+                    (outcome.doc_id, outcome.chunks, outcome.chunks_embedded,
+                     json.dumps(outcome.errors), _now(), job_id),
+                )
+                c.commit()
+                c.close()
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning("dic: ingest thread error: %s", exc)
+            q.put({"stage": "error", "message": str(exc), "pct": 0})
+            try:
+                c = _conn()
+                c.execute(
+                    "UPDATE dic_ingest_jobs SET status='error', stage_detail=?, updated_at=? WHERE job_id=?",
+                    (str(exc), _now(), job_id),
+                )
+                c.commit()
+                c.close()
+            except Exception:
+                pass
+        finally:
+            q.put(None)  # Sentinel — SSE stream can close.
             try:
                 os.unlink(tmp_path)
             except Exception:
                 pass
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+
+    return jsonify({
+        "job_id": job_id,
+        "filename": filename,
+        "stream_url": f"/document-intelligence/api/ingest/{job_id}/stream",
+        "result_url": f"/document-intelligence/api/ingest/{job_id}/result",
+        "status": "queued",
+    }), 202
+
+
+@dic_bp.route("/api/ingest/<job_id>/stream", methods=["GET"])
+def api_ingest_stream(job_id: str):
+    """SSE stream for ingest job progress. Closes when done/error sentinel received."""
+    with _JOB_LOCK:
+        q = _JOB_QUEUES.get(job_id)
+    if q is None:
+        # Job may have already completed — check DB.
+        conn = _conn()
+        try:
+            row = _safe_rows(conn, "SELECT status, stage_detail, chunks_total, doc_id FROM dic_ingest_jobs WHERE job_id=?", (job_id,))
+        finally:
+            conn.close()
+        if row:
+            r = row[0]
+            data = json.dumps({"stage": r["status"], "detail": r["stage_detail"], "chunks": r["chunks_total"], "doc_id": r["doc_id"], "pct": 100})
+            return Response(f"data: {data}\n\n", mimetype="text/event-stream")
+        return jsonify({"error": "job not found"}), 404
+
+    def _generate():
+        try:
+            while True:
+                try:
+                    event = q.get(timeout=30)
+                except _queue.Empty:
+                    yield "data: {\"stage\": \"heartbeat\"}\n\n"
+                    continue
+                if event is None:
+                    break
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("stage") in ("done", "error"):
+                    break
+        finally:
+            with _JOB_LOCK:
+                _JOB_QUEUES.pop(job_id, None)
+
+    return Response(
+        stream_with_context(_generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@dic_bp.route("/api/ingest/<job_id>/result", methods=["GET"])
+def api_ingest_result(job_id: str):
+    """Return final ingest job outcome."""
+    conn = _conn()
+    try:
+        rows = _safe_rows(conn, "SELECT * FROM dic_ingest_jobs WHERE job_id=?", (job_id,))
+    finally:
+        conn.close()
+    if not rows:
+        return jsonify({"error": "job not found"}), 404
+    return jsonify(rows[0])
 
 
 # ── API: KG Explorer ─────────────────────────────────────────────────────────

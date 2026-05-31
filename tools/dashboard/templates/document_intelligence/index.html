@@ -64,56 +64,119 @@
 (function() {
   var fileInput = document.getElementById('file-input');
   var dropZone = document.getElementById('drop-zone');
+  var bar = document.getElementById('progress-bar');
+  var status = document.getElementById('upload-status');
+  var results = document.getElementById('upload-results');
+  var progress = document.getElementById('upload-progress');
 
-  dropZone.addEventListener('dragover', function(e) {
-    e.preventDefault();
-    dropZone.style.borderColor = '#4f8ef7';
-  });
-  dropZone.addEventListener('dragleave', function() {
-    dropZone.style.borderColor = '#1e3a6e';
-  });
-  dropZone.addEventListener('drop', function(e) {
-    e.preventDefault();
-    dropZone.style.borderColor = '#1e3a6e';
-    uploadFiles(e.dataTransfer.files);
-  });
-  fileInput.addEventListener('change', function() {
-    uploadFiles(fileInput.files);
-  });
+  dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.style.borderColor = '#4f8ef7'; });
+  dropZone.addEventListener('dragleave', function() { dropZone.style.borderColor = '#1e3a6e'; });
+  dropZone.addEventListener('drop', function(e) { e.preventDefault(); dropZone.style.borderColor = '#1e3a6e'; uploadFiles(e.dataTransfer.files); });
+  fileInput.addEventListener('change', function() { uploadFiles(fileInput.files); });
 
   function uploadFiles(files) {
     if (!files || !files.length) return;
     var collectionId = document.getElementById('collection-input').value.trim() || 'default';
-    var progress = document.getElementById('upload-progress');
-    var bar = document.getElementById('progress-bar');
-    var status = document.getElementById('upload-status');
-    var results = document.getElementById('upload-results');
     progress.style.display = 'block';
     results.innerHTML = '';
-    var done = 0, total = files.length;
+    bar.style.width = '2%';
+    status.textContent = 'Sending ' + files[0].name + '…';
 
-    Array.from(files).forEach(function(file) {
+    // Process files sequentially so the progress bar is meaningful.
+    var fileArr = Array.from(files);
+    var idx = 0;
+
+    function processNext() {
+      if (idx >= fileArr.length) {
+        status.textContent = fileArr.length + ' file(s) complete.';
+        bar.style.width = '100%';
+        return;
+      }
+      var file = fileArr[idx++];
       var fd = new FormData();
       fd.append('file', file);
       fd.append('collection_id', collectionId);
-      status.textContent = 'Uploading ' + file.name + '…';
+
+      // Step 1: POST the file — server responds immediately with job_id (202).
       fetch('/document-intelligence/api/ingest', { method: 'POST', body: fd })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-          done++;
-          bar.style.width = Math.round(done / total * 100) + '%';
-          var ok = data.status === 'ok';
-          results.innerHTML += '<div style="padding:4px 8px;font-size:12px;color:' + (ok ? '#4ade80' : '#f87171') + '">' +
-            (ok ? '✓ ' : '✗ ') + file.name + (ok ? ' — ' + (data.chunks || 0) + ' chunks' : ' — ' + (data.error || 'error')) +
-            '</div>';
-          if (done === total) status.textContent = done + ' file(s) processed.';
+          if (data.error) {
+            results.innerHTML += rowHtml(file.name, false, data.error);
+            processNext();
+            return;
+          }
+          if (!data.job_id) {
+            // Fallback: old sync response (shouldn't happen post-fix).
+            results.innerHTML += rowHtml(file.name, true, (data.chunks || 0) + ' chunks');
+            processNext();
+            return;
+          }
+          // Step 2: Open SSE stream for live progress.
+          openStream(data.job_id, file.name, processNext);
         })
         .catch(function(e) {
-          done++;
-          results.innerHTML += '<div style="padding:4px 8px;font-size:12px;color:#f87171;">✗ ' + file.name + ' — network error</div>';
-          if (done === total) status.textContent = 'Done with errors.';
+          results.innerHTML += rowHtml(file.name, false, 'upload failed: ' + e.message);
+          processNext();
         });
-    });
+    }
+
+    processNext();
+  }
+
+  function openStream(jobId, filename, onDone) {
+    var src = new EventSource('/document-intelligence/api/ingest/' + jobId + '/stream');
+    var stageLabel = {
+      extracting: '📄 Extracting text…',
+      chunking:   '✂️ Chunking…',
+      embedding:  '🧠 Embedding',
+      kg_bridge:  '🕸️ Building knowledge graph…',
+      done:       '✓ Done',
+      error:      '✗ Error',
+      heartbeat:  null,
+    };
+
+    src.onmessage = function(e) {
+      var ev;
+      try { ev = JSON.parse(e.data); } catch(ex) { return; }
+
+      var stage = ev.stage || '';
+      if (stage === 'heartbeat') return;
+
+      var pct = ev.pct != null ? ev.pct : 50;
+      bar.style.width = Math.min(pct, 98) + '%';
+
+      if (stage === 'embedding' && ev.pct != null) {
+        status.textContent = filename + ' — ' + ev.detail;
+      } else if (stageLabel[stage]) {
+        status.textContent = filename + ' — ' + (ev.detail || stageLabel[stage]);
+      }
+
+      if (stage === 'done') {
+        bar.style.width = '100%';
+        var info = (ev.chunks || 0) + ' chunks';
+        if (ev.kg_entities) info += ' · ' + ev.kg_entities + ' KG entities';
+        if (ev.errors && ev.errors.length) info += ' · ' + ev.errors.length + ' warn(s)';
+        results.innerHTML += rowHtml(filename, true, info);
+        src.close();
+        if (onDone) onDone();
+      } else if (stage === 'error') {
+        results.innerHTML += rowHtml(filename, false, ev.message || 'ingest error');
+        src.close();
+        if (onDone) onDone();
+      }
+    };
+
+    src.onerror = function() {
+      results.innerHTML += rowHtml(filename, false, 'connection lost — check dashboard logs');
+      src.close();
+      if (onDone) onDone();
+    };
+  }
+
+  function rowHtml(name, ok, msg) {
+    return '<div style="padding:4px 8px;font-size:12px;color:' + (ok ? '#4ade80' : '#f87171') + '">' +
+      (ok ? '✓ ' : '✗ ') + name + ' — ' + msg + '</div>';
   }
 })();
 </script>

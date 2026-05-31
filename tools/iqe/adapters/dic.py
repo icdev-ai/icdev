@@ -97,15 +97,34 @@ def ssp_fragments_adapter(conn: Any) -> list[dict]:
         c.close()
 
 
-def kg_entities_adapter(conn: Any) -> list[dict]:
-    """KG nodes (entities) extracted from ingested DIC documents."""
-    c = _conn(conn)
+def _dic_graph_ids_for_iqe(c) -> list[str]:
+    """Graph IDs scoped to DIC-ingested documents only."""
     try:
         cur = c.execute(
-            "SELECT n.id, n.label, n.entity_type, n.centrality, "
-            "n.source_chunk_id, n.created_at, g.source_doc_id "
-            "FROM kg_nodes n LEFT JOIN kg_graphs g ON g.id = n.graph_id "
-            "ORDER BY n.centrality DESC NULLS LAST LIMIT 1000"
+            "SELECT g.id FROM kg_graphs g "
+            "INNER JOIN dic_documents d ON d.doc_id = g.source_doc_id "
+            "WHERE g.source_doc_id IS NOT NULL"
+        )
+        return [row[0] for row in cur.fetchall()]
+    except Exception:
+        return []
+
+
+def kg_entities_adapter(conn: Any) -> list[dict]:
+    """KG nodes (entities) extracted from ingested DIC documents only."""
+    c = _conn(conn)
+    try:
+        gids = _dic_graph_ids_for_iqe(c)
+        if not gids:
+            return []
+        ph = ",".join(["?" for _ in gids])
+        cur = c.execute(
+            f"SELECT n.id, n.label, n.entity_type, n.centrality, "
+            f"n.source_chunk_id, n.created_at, g.source_doc_id "
+            f"FROM kg_nodes n LEFT JOIN kg_graphs g ON g.id = n.graph_id "
+            f"WHERE n.graph_id IN ({ph}) "
+            f"ORDER BY n.centrality DESC LIMIT 1000",
+            tuple(gids),
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
@@ -116,16 +135,22 @@ def kg_entities_adapter(conn: Any) -> list[dict]:
 
 
 def kg_relationships_adapter(conn: Any) -> list[dict]:
-    """KG edges (relationships) between entities extracted from DIC documents."""
+    """KG edges (relationships) between entities from DIC documents only."""
     c = _conn(conn)
     try:
+        gids = _dic_graph_ids_for_iqe(c)
+        if not gids:
+            return []
+        ph = ",".join(["?" for _ in gids])
         cur = c.execute(
-            "SELECT e.id, src.label AS source, tgt.label AS target, "
-            "e.relationship, e.weight, e.created_at "
-            "FROM kg_edges e "
-            "JOIN kg_nodes src ON src.id = e.source_id "
-            "JOIN kg_nodes tgt ON tgt.id = e.target_id "
-            "ORDER BY e.weight DESC NULLS LAST LIMIT 1000"
+            f"SELECT e.id, src.label AS source, tgt.label AS target, "
+            f"e.relationship, e.weight, e.created_at "
+            f"FROM kg_edges e "
+            f"JOIN kg_nodes src ON src.id = e.source_id "
+            f"JOIN kg_nodes tgt ON tgt.id = e.target_id "
+            f"WHERE src.graph_id IN ({ph}) "
+            f"ORDER BY e.weight DESC LIMIT 1000",
+            tuple(gids),
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]

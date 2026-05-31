@@ -87,6 +87,24 @@
   .sig-state{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#1e293b;}
   .sig-state.accepted{color:#86efac;background:#052e1a;}
   .sig-state.rejected{color:#fca5a5;background:#450a0a;}
+  /* Dry-run */
+  .dryrun-box{background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;font-size:13px;}
+  .dryrun-box h4{margin:0 0 10px;font-size:14px;color:#e2e8f0;}
+  .dryrun-meta{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;}
+  .dryrun-meta .kv{font-size:12px;color:#94a3b8;}
+  .dryrun-meta .kv b{color:#e2e8f0;display:block;font-size:13px;}
+  .score-bar{height:6px;border-radius:3px;background:#1e293b;overflow:hidden;margin-top:4px;}
+  .score-bar i{display:block;height:100%;border-radius:3px;}
+  .score-low i{background:#ef4444;} .score-mid i{background:#f59e0b;} .score-high i{background:#22c55e;}
+  .boost-banner{border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13px;border:1px solid;}
+  .boost-done{background:#052e1a;border-color:#16a34a;color:#86efac;}
+  .boost-needed{background:#3a2c06;border-color:#d97706;color:#fcd34d;}
+  .task-preview{max-height:220px;overflow:auto;border:1px solid #1e293b;border-radius:8px;background:#0f172a;}
+  .task-preview table{width:100%;border-collapse:collapse;font-size:12px;}
+  .task-preview th,.task-preview td{border-bottom:1px solid #1e293b;padding:6px 8px;text-align:left;}
+  .task-preview th{color:#94a3b8;background:#1e293b;position:sticky;top:0;}
+  .task-preview tr:last-child td{border-bottom:none;}
+  .task-preview .tag{font-size:10px;padding:1px 6px;border-radius:4px;background:#1e293b;border:1px solid #334155;}
   /* Diagram zoom/pan */
   .dia-wrap{position:relative;background:#0b1120;border:1px solid #1e293b;border-radius:10px;overflow:hidden;min-height:420px;display:flex;flex-direction:column;}
   .dia-toolbar{position:absolute;top:8px;right:8px;z-index:10;display:flex;gap:6px;}
@@ -196,7 +214,9 @@
     <h3>Product Requirements Document</h3>
     <div class="prd-box" id="prdBox"><span class="spin"></span></div>
     <div class="row"><button class="btn" onclick="go(5)">← Back</button>
+      <button class="btn" onclick="dryRunKanban()">Dry-run</button>
       <button class="btn primary" onclick="sendKanban()">Send phase to Kanban</button></div>
+    <div id="dryRunBox" style="display:none;margin-top:14px;"></div>
     <div class="hint" id="kanbanMsg" style="text-align:right;"></div>
   </div>
 
@@ -402,6 +422,45 @@
       if(html && !d.error){ box.innerHTML=html; }
       else { box.textContent=md; }
     }).catch(e=>{box.innerHTML='<div class="err">PRD failed: '+e+'</div>';});
+  };
+
+  window.dryRunKanban=function(){
+    var rid=state.roadmapId;
+    var box=document.getElementById('dryRunBox');
+    if(!rid){box.innerHTML='<div class="err">No roadmap available.</div>';box.style.display='block';return;}
+    box.innerHTML='<span class="spin"></span> analysing PRD…'; box.style.display='block';
+    fetch(BASE+'/api/prd-dry-run',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({roadmap_id:rid,phase_id:state.phaseId})})
+    .then(r=>r.json()).then(function(d){
+      if(d.error){box.innerHTML='<div class="err">'+d.error+'</div>';return;}
+      var score=d.score||0;
+      var scoreCls=score>=0.7?'score-high':(score>=0.5?'score-mid':'score-low');
+      var boostHtml='';
+      if(d.ai_boosted){
+        boostHtml='<div class="boost-banner boost-done">✓ AI Boost applied — PRD quality improved from '+(d.original_score||0).toFixed(2)+' to '+score.toFixed(2)+'</div>';
+      }else if(d.boost_would_trigger){
+        boostHtml='<div class="boost-banner boost-needed">⚠ AI Boost would trigger (score &lt; 0.6) — run dry-run again after accepting more HITL signals or adding more opportunities.</div>';
+      }
+      var tasksHtml='';
+      if(d.tasks && d.tasks.length){
+        tasksHtml='<div class="task-preview"><table><thead><tr><th>Type</th><th>ID</th><th>Title</th><th>Priority</th></tr></thead><tbody>';
+        d.tasks.forEach(function(t){
+          tasksHtml+='<tr><td><span class="tag">'+t.type+'</span></td><td>'+t.id+'</td><td>'+t.title+'</td><td>'+t.priority+'</td></tr>';
+        });
+        tasksHtml+='</tbody></table></div>';
+      }else{tasksHtml='<p style="color:#64748b;margin:0;">No tasks would be created.</p>';}
+      var prdNote = d.prd_hitl_decision==='reject'
+        ? '<div class="boost-banner" style="background:#450a0a;border-color:#7f1d1d;color:#fca5a5;margin-bottom:12px;">PRD is rejected — sending to Kanban would be blocked. Change your HITL decision first.</div>'
+        : '';
+      box.innerHTML='<div class="dryrun-box">'+prdNote+boostHtml+
+        '<div class="dryrun-meta">'+
+        '<div class="kv"><b>PRD Quality Score</b>'+score.toFixed(2)+'<div class="score-bar '+scoreCls+'"><i style="width:'+Math.round(score*100)+'%"></i></div></div>'+
+        '<div class="kv"><b>Opportunities</b>'+(d.opportunity_count||0)+'</div>'+
+        '<div class="kv"><b>Tasks Preview</b>'+(d.tasks?d.tasks.length:0)+' total</div>'+
+        '</div>'+
+        '<h4>Tasks that would be created</h4>'+tasksHtml+
+        '</div>';
+    }).catch(e=>{box.innerHTML='<div class="err">Dry-run failed: '+e+'</div>';});
   };
 
   window.sendKanban=function(){
