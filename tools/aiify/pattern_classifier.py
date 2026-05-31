@@ -193,9 +193,14 @@ def _detect_via_semgrep(target_path: str) -> list[dict] | None:
     return _map_semgrep_results(data.get("results", []))
 
 
-def _map_semgrep_results(hits: list[dict]) -> list[dict]:
-    """Map raw Semgrep result objects to the canonical AI-ify pattern dict."""
+def _map_semgrep_results(hits: list[dict], max_per_file: int = 5) -> list[dict]:
+    """Map raw Semgrep result objects to the canonical AI-ify pattern dict.
+
+    A per-file cap (default 5) prevents a single noisy rule from flooding
+    the UI with dozens of hits in the same file.
+    """
     results: list[dict] = []
+    file_counts: dict[tuple[str, str], int] = {}
     for hit in hits:
         extra = hit.get("extra", {})
         metadata = extra.get("metadata", {})
@@ -205,6 +210,12 @@ def _map_semgrep_results(hits: list[dict]) -> list[dict]:
 
         path = hit.get("path", "")
         language = _language_from_path(path)
+
+        # Per-file cap to suppress UI noise from overly broad rules
+        key = (path, pattern_type)
+        if file_counts.get(key, 0) >= max_per_file:
+            continue
+        file_counts[key] = file_counts.get(key, 0) + 1
 
         # Prefer metavariable capture of the enclosing function ($FUNC),
         # then fall back to metadata.function_name, then '<unknown>'.
