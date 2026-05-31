@@ -395,7 +395,8 @@ def api_get_scan(scan_id: int):
         opps = [dict(r) for r in conn.execute(
             "SELECT o.opportunity_id, o.module_path, o.function_name, o.language, "
             "o.pattern_type, o.ai_paradigm, o.il_recommended_model, "
-            "s.composite_score, s.value_score "
+            "s.composite_score, s.value_score, s.feasibility_score, s.risk_score, "
+            "s.verdict, s.ai_readiness, s.rationale, s.pros, s.cons, s.category "
             "FROM aiify_opportunities o "
             "LEFT JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
             "WHERE o.scan_id = ? ORDER BY s.composite_score DESC",

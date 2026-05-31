@@ -1334,6 +1334,27 @@ def create_app() -> Flask:
             "pending_tasks_count": pending_count,
         })
 
+    @app.route("/api/kanban/scheduler/status")
+    def kanban_scheduler_status():
+        """GET — whether the kanban scheduler is paused (manual flag or auto)."""
+        from tools.kanban.scheduler_control import status as _sched_status  # noqa: PLC0415
+        return jsonify(_sched_status())
+
+    @app.route("/api/kanban/scheduler/pause", methods=["POST"])
+    def kanban_scheduler_pause():
+        """POST — manually pause the kanban scheduler cycle."""
+        from tools.kanban.scheduler_control import pause as _sched_pause  # noqa: PLC0415
+        body = request.get_json(silent=True) or {}
+        return jsonify(_sched_pause(actor=body.get("actor", "dashboard"),
+                                    reason=body.get("reason", "manual (dashboard)")))
+
+    @app.route("/api/kanban/scheduler/resume", methods=["POST"])
+    def kanban_scheduler_resume():
+        """POST — resume the kanban scheduler cycle."""
+        from tools.kanban.scheduler_control import resume as _sched_resume  # noqa: PLC0415
+        body = request.get_json(silent=True) or {}
+        return jsonify(_sched_resume(actor=body.get("actor", "dashboard")))
+
     @app.route("/api/kanban/recent-events")
     def api_kanban_recent_events():
         """GET /api/kanban/recent-events — Last 24h kanban task events from notifications.
