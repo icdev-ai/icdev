@@ -11,7 +11,7 @@ Schedule: Mondays at 9am (configurable via genesis_config.yaml).
 from __future__ import annotations
 
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
@@ -154,7 +154,7 @@ def _create_remediation_for_trending(trending: Dict[str, int]) -> List[str]:
     try:
         from tools.db.storage import get_connection  # noqa: PLC0415
         from tools.workflow.lesson_learned_remediation import create_prediction  # noqa: PLC0415
-        from tools.workflow.lesson_learned import Lesson, LessonPattern  # noqa: PLC0415
+        from tools.workflow.lesson_learned import Lesson  # noqa: PLC0415
     except ImportError:
         return created
 

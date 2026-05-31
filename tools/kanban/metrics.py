@@ -7,7 +7,7 @@ Provides deterministic SQL-backed metrics without LLM overhead.
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from tools.logging.icdev_logger import get_logger
 

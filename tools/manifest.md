@@ -881,3 +881,14 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Seed Chyg Kanban | tools\kanban\seed_chyg_kanban.py | Auto-registered: kanban/seed_chyg_kanban.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Diagram Generator | tools\aiify\diagram_generator.py | Auto-registered: aiify/diagram_generator.py | --json | JSON |
+| Scheduler Control | tools\kanban\scheduler_control.py | Auto-registered: kanban/scheduler_control.py | --json | JSON |
+| Seed Prop Security Kanban | tools\kanban\seed_prop_security_kanban.py | Auto-registered: kanban/seed_prop_security_kanban.py | --json | JSON |
+| Lesson Learned | tools\workflow\lesson_learned.py | Auto-registered: workflow/lesson_learned.py | --json | JSON |
+| Lesson Learned Remediation | tools\workflow\lesson_learned_remediation.py | Auto-registered: workflow/lesson_learned_remediation.py | --json | JSON |
+| Inspect Adapt | tools\genesis\reflexes\inspect_adapt.py | Auto-registered: reflexes/inspect_adapt.py | --json | JSON |
