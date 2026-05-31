@@ -1,1 +1,0 @@
-{"ts": "2026-05-29T01:25:13.339099+00:00", "level": "WARNING", "component": "icdev.dashboard.api.auth", "message": "ICDEV_JWT_SECRET not set; wrote dev secret to C:\\AI\\ICDev\\.tmp\\worktrees\\ci-fix-26601155261\\.tmp\\jwt_secret_dev. Set ICDEV_JWT_SECRET for production.", "trace_id": null, "session_id": null, "extra": {}}

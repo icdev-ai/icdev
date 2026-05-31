@@ -1,3 +1,0 @@
-{"ts": "2026-05-29T02:35:40.005460+00:00", "level": "INFO", "component": "tools.pulse.writeguard", "message": "Running full WriteGuard quality check...", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-29T02:35:46.632489+00:00", "level": "INFO", "component": "tools.pulse.writeguard", "message": "Running full WriteGuard quality check...", "trace_id": null, "session_id": null, "extra": {}}
-{"ts": "2026-05-29T02:35:53.065424+00:00", "level": "INFO", "component": "tools.pulse.writeguard", "message": "Running full WriteGuard quality check...", "trace_id": null, "session_id": null, "extra": {}}
