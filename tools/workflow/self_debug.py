@@ -517,8 +517,8 @@ def check_and_diagnose(task_id: str, reason: str, cwd: str,
         from tools.workflow.lesson_learned import analyze_task, write_lesson
         lesson = analyze_task(task_id, outcome="quarantined")
         write_lesson(lesson)
-    except Exception:
-        pass
+    except Exception as _ll_exc:
+        logger.warning("lesson_learned hook failed: %s", _ll_exc)
     _notify(task_id, diag_id, diag)
     diag["lesson_entry_id"] = lesson_id
     # Clear history so a future re-queue starts fresh (after human/Oracle acts)
