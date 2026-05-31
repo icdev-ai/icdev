@@ -1044,17 +1044,22 @@ def _register_govcon_pages(app: "Flask", _get_db):
             except Exception:
                 pass
 
-            # pWin-weighted pipeline roll-up + active proposals (prop-cap-12)
+            # pWin-weighted pipeline roll-up (optional — failures don't block the proposals table)
             pipeline_rollup = {
                 "total_weighted_pipeline_value": 0, "total_potential_value": 0,
                 "scored_count": 0, "unscored_count": 0, "opportunities": [],
             }
-            active_proposals = []
             try:
                 pipeline_rollup = pipeline_value_rollup()
+            except Exception:
+                pass
+
+            # Active proposals — always runs independently of rollup
+            active_proposals = []
+            try:
                 rows = conn.execute(
                     "SELECT id, solicitation_number, title, agency, due_date, estimated_value_low, estimated_value_high, "
-                    "win_probability, status, capture_manager, proposal_manager "
+                    "win_probability, status, capture_manager, proposal_manager, capture_phase "
                     "FROM proposal_opportunities WHERE status NOT IN ('won','lost','no_bid','cancelled') "
                     "ORDER BY due_date ASC"
                 ).fetchall()
@@ -1079,8 +1084,10 @@ def _register_govcon_pages(app: "Flask", _get_db):
                     except Exception:
                         opp["days_left"] = None
                     active_proposals.append(opp)
-            except Exception:
-                pass
+            except Exception as _ap_err:
+                import traceback as _tb
+                print(f"[govcon] active_proposals error: {_ap_err}")
+                _tb.print_exc()
 
             return render_template(
                 "govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids,

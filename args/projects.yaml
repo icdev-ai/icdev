@@ -4,6 +4,32 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: cie
+  name: Cie Project
+  description: Auto-registered project for tasks with prefix 'cie-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: cie-
+  default_open: true
+  briefs: []
+  epics:
+  - key: ctx
+    title: CTX
+    priority: medium
+  - key: ref
+    title: REF
+    priority: medium
+  - key: skl
+    title: SKL
+    priority: medium
+  - key: orc
+    title: ORC
+    priority: medium
+  - key: ric
+    title: RIC
+    priority: medium
+  - key: doc
+    title: DOC
+    priority: medium
 - key: chyg
   name: Connection-Hygiene Sweep — eliminate leaked PostgreSQL connections
   description: 'Follow-on to the kanban_tasks lock-storm fixes. Convert bare `conn

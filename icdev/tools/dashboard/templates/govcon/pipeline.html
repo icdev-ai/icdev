@@ -1,245 +1,402 @@
 {% extends "base.html" %}
 {% block title %}GovCon Intelligence - ICDEV™ Dashboard{% endblock %}
 {% block content %}
-<div class="container">
-  <h1>GovCon Intelligence Pipeline</h1>
-  <p style="color:var(--text-secondary);">Phase 59 &mdash; SAM.gov scanning, requirement mining, capability mapping, proposal automation</p>
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
 
-  <!-- Controls -->
-  <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-    <button onclick="runPipeline()" class="btn btn-primary" style="padding:0.4rem 1rem;">Run Full Pipeline</button>
-    <button onclick="runStage('discover')" class="btn btn-secondary" style="padding:0.4rem 0.8rem;">Discover</button>
-    <button onclick="runStage('extract')" class="btn btn-secondary" style="padding:0.4rem 0.8rem;">Extract</button>
-    <button onclick="runStage('map')" class="btn btn-secondary" style="padding:0.4rem 0.8rem;">Map</button>
-    <button onclick="runStage('draft')" class="btn btn-secondary" style="padding:0.4rem 0.8rem;">Draft</button>
-    <span id="gc-status-msg" style="margin-left:8px;color:var(--text-secondary);font-size:0.85rem;"></span>
+<style>
+.gc-hero { background: linear-gradient(135deg, rgba(74,144,217,0.12) 0%, rgba(40,167,69,0.08) 100%); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 20px 24px; margin-bottom: 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.gc-hero-icon { font-size: 2.2rem; }
+.gc-hero-text h1 { margin: 0; font-size: 1.6rem; }
+.gc-hero-text p { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
+.gc-action-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+.gc-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.gc-stat { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 14px 16px; position: relative; overflow: hidden; }
+.gc-stat::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
+.gc-stat.blue::before { background: var(--accent-blue, #4a90d9); }
+.gc-stat.green::before { background: var(--status-green, #28a745); }
+.gc-stat.orange::before { background: var(--severity-high, #e8590c); }
+.gc-stat.purple::before { background: #9c27b0; }
+.gc-stat.yellow::before { background: var(--status-yellow, #ffc107); }
+.gc-stat.teal::before { background: #00897b; }
+.gc-stat.indigo::before { background: #3949ab; }
+.gc-stat.red::before { background: var(--status-red, #dc3545); }
+.gc-stat-icon { font-size: 1.4rem; margin-bottom: 6px; }
+.gc-stat-value { font-size: 1.9rem; font-weight: 700; line-height: 1; }
+.gc-stat.blue .gc-stat-value { color: var(--accent-blue, #4a90d9); }
+.gc-stat.green .gc-stat-value { color: var(--status-green, #28a745); }
+.gc-stat.orange .gc-stat-value { color: var(--severity-high, #e8590c); }
+.gc-stat.purple .gc-stat-value { color: #9c27b0; }
+.gc-stat.yellow .gc-stat-value { color: var(--status-yellow, #ffc107); }
+.gc-stat.teal .gc-stat-value { color: #00897b; }
+.gc-stat.indigo .gc-stat-value { color: #3949ab; }
+.gc-stat.red .gc-stat-value { color: var(--status-red, #dc3545); }
+.gc-stat-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-top: 4px; }
+.gc-pipeline-flow { display: flex; align-items: stretch; gap: 0; margin-bottom: 20px; border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border-color); }
+.gc-stage { flex: 1; padding: 14px 12px; text-align: center; cursor: pointer; transition: filter 0.15s; }
+.gc-stage:hover { filter: brightness(1.15); }
+.gc-stage.discover { background: rgba(74,144,217,0.18); border-right: 1px solid rgba(74,144,217,0.3); }
+.gc-stage.extract  { background: rgba(232,89,12,0.15);  border-right: 1px solid rgba(232,89,12,0.3); }
+.gc-stage.map      { background: rgba(40,167,69,0.15);  border-right: 1px solid rgba(40,167,69,0.3); }
+.gc-stage.draft    { background: rgba(156,39,176,0.15); }
+.gc-stage-icon { font-size: 1.5rem; }
+.gc-stage-name { font-weight: 700; font-size: 0.85rem; margin-top: 4px; }
+.gc-stage.discover .gc-stage-name { color: var(--accent-blue-light, #6db3f8); }
+.gc-stage.extract  .gc-stage-name { color: #f57c4a; }
+.gc-stage.map      .gc-stage-name { color: #4caf50; }
+.gc-stage.draft    .gc-stage-name { color: #ce93d8; }
+.gc-stage-desc { font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px; }
+.gc-rollup { background: linear-gradient(90deg, rgba(74,144,217,0.1) 0%, rgba(156,39,176,0.08) 100%); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 20px; display: flex; gap: 0; align-items: center; flex-wrap: wrap; overflow: hidden; }
+.gc-rollup-item { flex: 1; min-width: 140px; padding: 0 16px; }
+.gc-rollup-item + .gc-rollup-item { border-left: 1px solid var(--border-color); }
+.gc-rollup-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+.gc-rollup-val { font-size: 1.5rem; font-weight: 700; margin-top: 2px; }
+.gc-rollup-val.accent { color: var(--accent-blue, #4a90d9); }
+.gc-section-hdr { display: flex; align-items: center; gap: 8px; margin: 20px 0 10px; }
+.gc-section-hdr h2 { font-size: 1rem; font-weight: 700; margin: 0; }
+.gc-section-hdr .badge { font-size: 0.7rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px; padding: 2px 8px; color: var(--text-muted); }
+.status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; text-transform: capitalize; }
+.status-badge.capture   { background: rgba(74,144,217,0.2);  color: #6db3f8; }
+.status-badge.bid       { background: rgba(232,89,12,0.2);   color: #f57c4a; }
+.status-badge.proposal  { background: rgba(156,39,176,0.2);  color: #ce93d8; }
+.status-badge.review    { background: rgba(255,193,7,0.2);   color: #ffc107; }
+.status-badge.submitted { background: rgba(40,167,69,0.2);   color: #4caf50; }
+.status-badge.default   { background: var(--bg-secondary);   color: var(--text-muted); }
+.gc-table { width: 100%; border-collapse: collapse; }
+.gc-table th { text-align: left; padding: 8px 10px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); border-bottom: 2px solid var(--border-color); white-space: nowrap; }
+.gc-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-color); font-size: 0.88rem; vertical-align: middle; }
+.gc-table tr:last-child td { border-bottom: none; }
+.gc-table tr:hover td { background: var(--bg-card-hover); }
+.domain-bar-wrap { background: var(--bg-secondary); border-radius: 4px; height: 10px; overflow: hidden; min-width: 80px; }
+.domain-bar { height: 10px; border-radius: 4px; }
+</style>
+
+<div class="container">
+
+  <!-- Hero Header -->
+  <div class="gc-hero">
+    <div class="gc-hero-icon">🎯</div>
+    <div class="gc-hero-text">
+      <h1>GovCon Intelligence Pipeline</h1>
+      <p>SAM.gov scanning · Requirement mining · Capability mapping · Proposal automation</p>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button onclick="runPipeline()" class="btn btn-primary" style="padding:0.4rem 1rem;">▶ Run Full Pipeline</button>
+      <span id="gc-status-msg" style="font-size:0.82rem;color:var(--text-secondary);"></span>
+    </div>
   </div>
 
-  <!-- Weighted Pipeline Value Banner (prop-cap-12) -->
-  {% if pipeline_rollup %}
-  <div style="background:var(--bg-card,#16213e);border:1px solid var(--border-color,#2a2a4a);border-radius:8px;padding:16px 20px;margin-bottom:16px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
-    <div>
-      <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Weighted Pipeline Value</div>
-      <div style="font-size:1.6rem;font-weight:bold;color:var(--accent-color,#4a90d9);">${{ "{:,.0f}".format(pipeline_rollup.total_weighted_pipeline_value) }}</div>
+  <!-- Stage Action Bar -->
+  <div class="gc-action-bar">
+    <span style="font-size:0.78rem;color:var(--text-muted);font-weight:600;letter-spacing:0.04em;">RUN STAGE:</span>
+    <button onclick="runStage('discover')" class="btn btn-secondary" style="padding:0.3rem 0.9rem;border-color:rgba(74,144,217,0.4);color:#6db3f8;">🔍 Discover</button>
+    <button onclick="runStage('extract')"  class="btn btn-secondary" style="padding:0.3rem 0.9rem;border-color:rgba(232,89,12,0.4);color:#f57c4a;">⚙️ Extract</button>
+    <button onclick="runStage('map')"      class="btn btn-secondary" style="padding:0.3rem 0.9rem;border-color:rgba(40,167,69,0.4);color:#4caf50;">🗺️ Map</button>
+    <button onclick="runStage('draft')"    class="btn btn-secondary" style="padding:0.3rem 0.9rem;border-color:rgba(156,39,176,0.4);color:#ce93d8;">✍️ Draft</button>
+  </div>
+
+  <!-- Weighted Pipeline Value Banner -->
+  {% if pipeline_rollup and pipeline_rollup.total_potential_value %}
+  <div class="gc-rollup">
+    <div class="gc-rollup-item" style="padding-left:0;">
+      <div class="gc-rollup-label">Weighted Pipeline Value</div>
+      <div class="gc-rollup-val accent">${{ "{:,.0f}".format(pipeline_rollup.total_weighted_pipeline_value) }}</div>
     </div>
-    <div style="width:1px;background:var(--border-color);height:40px;"></div>
-    <div>
-      <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Total Potential</div>
-      <div style="font-size:1.6rem;font-weight:bold;">${{ "{:,.0f}".format(pipeline_rollup.total_potential_value) }}</div>
+    <div class="gc-rollup-item">
+      <div class="gc-rollup-label">Total Potential</div>
+      <div class="gc-rollup-val">${{ "{:,.0f}".format(pipeline_rollup.total_potential_value) }}</div>
     </div>
-    <div style="width:1px;background:var(--border-color);height:40px;"></div>
-    <div>
-      <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Scored / Total</div>
-      <div style="font-size:1.6rem;font-weight:bold;">{{ pipeline_rollup.scored_count }} / {{ (pipeline_rollup.scored_count + pipeline_rollup.unscored_count) }}</div>
+    <div class="gc-rollup-item">
+      <div class="gc-rollup-label">Scored / Total</div>
+      <div class="gc-rollup-val">{{ pipeline_rollup.scored_count }} <span style="font-size:0.85rem;color:var(--text-muted);">/ {{ (pipeline_rollup.scored_count + pipeline_rollup.unscored_count) }}</span></div>
     </div>
-    <div style="margin-left:auto;">
-      <button class="btn btn-secondary" onclick="refreshPipelineValue()" style="font-size:0.8rem;">Refresh Roll-Up</button>
+    <div style="margin-left:auto;padding-right:0;">
+      <button class="btn btn-secondary" onclick="refreshPipelineValue()" style="font-size:0.78rem;">↻ Refresh</button>
     </div>
   </div>
   {% endif %}
 
   <!-- Stat Grid -->
-  <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin:1rem 0;">
-    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
-      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_opportunities }}</div>
-      <div class="stat-label" style="color:var(--text-secondary);">Opportunities</div>
+  <div class="gc-stat-grid">
+    <div class="gc-stat blue">
+      <div class="gc-stat-icon">📋</div>
+      <div class="gc-stat-value">{{ stats.total_opportunities }}</div>
+      <div class="gc-stat-label">Opportunities</div>
     </div>
-    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
-      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_requirements }}</div>
-      <div class="stat-label" style="color:var(--text-secondary);">Requirements</div>
+    <div class="gc-stat orange">
+      <div class="gc-stat-icon">⚙️</div>
+      <div class="gc-stat-value">{{ stats.total_requirements }}</div>
+      <div class="gc-stat-label">Requirements</div>
     </div>
-    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
-      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_patterns }}</div>
-      <div class="stat-label" style="color:var(--text-secondary);">Patterns</div>
+    <div class="gc-stat yellow">
+      <div class="gc-stat-icon">🔬</div>
+      <div class="gc-stat-value">{{ stats.total_patterns }}</div>
+      <div class="gc-stat-label">Patterns</div>
     </div>
-    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
-      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_capability_maps }}</div>
-      <div class="stat-label" style="color:var(--text-secondary);">Mapped</div>
+    <div class="gc-stat green">
+      <div class="gc-stat-icon">🗺️</div>
+      <div class="gc-stat-value">{{ stats.total_capability_maps }}</div>
+      <div class="gc-stat-label">Mapped</div>
     </div>
-    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
-      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_drafts }}</div>
-      <div class="stat-label" style="color:var(--text-secondary);">Drafts</div>
+    <div class="gc-stat purple">
+      <div class="gc-stat-icon">✍️</div>
+      <div class="gc-stat-value">{{ stats.total_drafts }}</div>
+      <div class="gc-stat-label">Drafts</div>
     </div>
-    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
-      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_awards }}</div>
-      <div class="stat-label" style="color:var(--text-secondary);">Awards Tracked</div>
+    <div class="gc-stat teal">
+      <div class="gc-stat-icon">🏆</div>
+      <div class="gc-stat-value">{{ stats.total_awards }}</div>
+      <div class="gc-stat-label">Awards</div>
     </div>
-    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
-      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.knowledge_blocks }}</div>
-      <div class="stat-label" style="color:var(--text-secondary);">KB Blocks</div>
+    <div class="gc-stat indigo">
+      <div class="gc-stat-icon">📚</div>
+      <div class="gc-stat-value">{{ stats.knowledge_blocks }}</div>
+      <div class="gc-stat-label">KB Blocks</div>
     </div>
-    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
-      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.linked_proposals }}</div>
-      <div class="stat-label" style="color:var(--text-secondary);">Linked Proposals</div>
-    </div>
-  </div>
-
-  <!-- Pipeline Flow -->
-  <h2 style="margin-top:1.5rem;">Pipeline Flow</h2>
-  <div style="display:flex;align-items:center;gap:8px;margin:1rem 0;flex-wrap:wrap;">
-    <div style="padding:8px 16px;border-radius:6px;background:var(--accent-blue-light,#e3f2fd);border:1px solid var(--accent-color,#4a90d9);text-align:center;">
-      <div style="font-weight:600;">DISCOVER</div>
-      <div style="font-size:0.8rem;color:var(--text-secondary);">SAM.gov scan</div>
-    </div>
-    <span style="font-size:1.2rem;color:var(--text-secondary);">&#8594;</span>
-    <div style="padding:8px 16px;border-radius:6px;background:var(--accent-blue-light,#e3f2fd);border:1px solid var(--accent-color,#4a90d9);text-align:center;">
-      <div style="font-weight:600;">EXTRACT</div>
-      <div style="font-size:0.8rem;color:var(--text-secondary);">Shall/must/will</div>
-    </div>
-    <span style="font-size:1.2rem;color:var(--text-secondary);">&#8594;</span>
-    <div style="padding:8px 16px;border-radius:6px;background:var(--accent-blue-light,#e3f2fd);border:1px solid var(--accent-color,#4a90d9);text-align:center;">
-      <div style="font-weight:600;">MAP</div>
-      <div style="font-size:0.8rem;color:var(--text-secondary);">Capability match</div>
-    </div>
-    <span style="font-size:1.2rem;color:var(--text-secondary);">&#8594;</span>
-    <div style="padding:8px 16px;border-radius:6px;background:var(--accent-blue-light,#e3f2fd);border:1px solid var(--accent-color,#4a90d9);text-align:center;">
-      <div style="font-weight:600;">DRAFT</div>
-      <div style="font-size:0.8rem;color:var(--text-secondary);">Two-tier LLM</div>
+    <div class="gc-stat red">
+      <div class="gc-stat-icon">🔗</div>
+      <div class="gc-stat-value">{{ stats.linked_proposals }}</div>
+      <div class="gc-stat-label">Linked</div>
     </div>
   </div>
 
-  <!-- Active Proposal Pipeline with pWin (prop-cap-12) -->
-  <h2 style="margin-top:1.5rem;">Active Proposal Pipeline</h2>
-  <div id="pwin-legend" style="display:none;background:var(--bg-card,#16213e);border:1px solid var(--border-color,#2a2a4a);border-radius:8px;padding:12px 16px;margin-bottom:12px;">
-    <div style="font-size:0.8rem;font-weight:600;margin-bottom:8px;">pWin Factor Breakdown</div>
+  <!-- Pipeline Flow Stages -->
+  <div class="gc-section-hdr">
+    <h2>Pipeline Flow</h2>
+  </div>
+  <div class="gc-pipeline-flow">
+    <div class="gc-stage discover" onclick="runStage('discover')">
+      <div class="gc-stage-icon">🔍</div>
+      <div class="gc-stage-name">DISCOVER</div>
+      <div class="gc-stage-desc">SAM.gov scan</div>
+    </div>
+    <div class="gc-stage extract" onclick="runStage('extract')">
+      <div class="gc-stage-icon">⚙️</div>
+      <div class="gc-stage-name">EXTRACT</div>
+      <div class="gc-stage-desc">Shall/must/will</div>
+    </div>
+    <div class="gc-stage map" onclick="runStage('map')">
+      <div class="gc-stage-icon">🗺️</div>
+      <div class="gc-stage-name">MAP</div>
+      <div class="gc-stage-desc">Capability match</div>
+    </div>
+    <div class="gc-stage draft" onclick="runStage('draft')">
+      <div class="gc-stage-icon">✍️</div>
+      <div class="gc-stage-name">DRAFT</div>
+      <div class="gc-stage-desc">Two-tier LLM</div>
+    </div>
+  </div>
+
+  <!-- Active Proposal Pipeline with pWin -->
+  <div class="gc-section-hdr" style="margin-top:4px;">
+    <h2>Active Proposal Pipeline</h2>
+    <span class="badge">{{ active_proposals | length }} active</span>
+  </div>
+
+  {# Stage legend key #}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center;">
+    <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600;letter-spacing:0.04em;">STAGE KEY:</span>
+    <span style="font-size:0.72rem;padding:2px 8px;border-radius:4px;background:rgba(74,144,217,0.15);color:#6db3f8;border:1px solid rgba(74,144,217,0.3);">🔍 Discover</span>
+    <span style="font-size:0.72rem;padding:2px 8px;border-radius:4px;background:rgba(232,89,12,0.15);color:#f57c4a;border:1px solid rgba(232,89,12,0.3);">⚙️ Extract</span>
+    <span style="font-size:0.72rem;padding:2px 8px;border-radius:4px;background:rgba(40,167,69,0.15);color:#4caf50;border:1px solid rgba(40,167,69,0.3);">🗺️ Map</span>
+    <span style="font-size:0.72rem;padding:2px 8px;border-radius:4px;background:rgba(156,39,176,0.15);color:#ce93d8;border:1px solid rgba(156,39,176,0.3);">✍️ Draft</span>
+    <span style="font-size:0.72rem;padding:2px 8px;border-radius:4px;background:rgba(40,167,69,0.12);color:#66bb6a;border:1px solid rgba(40,167,69,0.3);">✅ Submitted</span>
+  </div>
+
+  <div id="pwin-legend" style="display:none;background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-lg);padding:12px 16px;margin-bottom:12px;">
+    <div style="font-size:0.82rem;font-weight:600;margin-bottom:8px;">pWin Factor Breakdown</div>
     <div id="pwin-legend-content" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;font-size:0.78rem;"></div>
-    <button onclick="document.getElementById('pwin-legend').style.display='none'" style="margin-top:8px;font-size:0.75rem;background:none;border:none;color:var(--text-secondary);cursor:pointer;">Close</button>
+    <button onclick="document.getElementById('pwin-legend').style.display='none'" style="margin-top:8px;font-size:0.75rem;background:none;border:none;color:var(--text-secondary);cursor:pointer;">✕ Close</button>
   </div>
+
   <div class="table-container">
-    <table style="width:100%;border-collapse:collapse;">
+    <table class="gc-table">
       <thead>
-        <tr style="border-bottom:2px solid var(--border-color);">
-          <th style="text-align:left;padding:0.5rem;">Solicitation #</th>
-          <th style="text-align:left;padding:0.5rem;">Title</th>
-          <th style="text-align:left;padding:0.5rem;">Agency</th>
-          <th style="text-align:left;padding:0.5rem;">Due Date</th>
-          <th style="text-align:left;padding:0.5rem;">Days Left</th>
-          <th style="text-align:left;padding:0.5rem;">Status</th>
-          <th style="text-align:left;padding:0.5rem;">pWin</th>
-          <th style="text-align:left;padding:0.5rem;">Wtd Value</th>
-          <th style="text-align:left;padding:0.5rem;">Capture Mgr</th>
+        <tr>
+          <th style="width:32px;"></th>
+          <th>Solicitation #</th>
+          <th>Title</th>
+          <th>Agency</th>
+          <th>Due</th>
+          <th>Days</th>
+          <th>Status</th>
+          <th>pWin</th>
+          <th>Wtd Value</th>
+          <th>Capture Mgr</th>
         </tr>
       </thead>
       <tbody>
         {% for opp in active_proposals %}
-        <tr style="border-bottom:1px solid var(--border-color);">
-          <td style="padding:0.5rem;"><a href="/proposals/{{ opp.id }}">{{ opp.solicitation_number }}</a></td>
-          <td style="padding:0.5rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.title }}">{{ opp.title[:55] }}{% if opp.title|length > 55 %}...{% endif %}</td>
-          <td style="padding:0.5rem;">{{ opp.agency or '' }}</td>
-          <td style="padding:0.5rem;">{{ opp.due_date or '' }}</td>
-          <td style="padding:0.5rem;{% if opp.days_left is not none and opp.days_left <= 7 %}color:#dc3545;font-weight:bold;{% elif opp.days_left is not none and opp.days_left <= 14 %}color:#ffc107;{% endif %}">{{ opp.days_left if opp.days_left is not none else '—' }}</td>
-          <td style="padding:0.5rem;"><span style="padding:2px 8px;border-radius:4px;font-size:0.75rem;background:var(--bg-secondary,#1a1a2e);">{{ opp.status | replace('_', ' ') | title }}</span></td>
-          <td style="padding:0.5rem;">
+        {# Determine pipeline stage from status + capture_phase #}
+        {% set st = opp.status %}
+        {% set cp = opp.capture_phase or '' %}
+        {% if st in ('intake', 'bid_no_bid') %}
+          {% set stage_icon = '🔍' %}
+          {% set stage_name = 'Discover' %}
+          {% set stage_color = '#4a90d9' %}
+          {% set stage_bg = 'rgba(74,144,217,0.07)' %}
+          {% set stage_border = 'rgba(74,144,217,0.25)' %}
+        {% elif st == 'go' and cp == 'map' %}
+          {% set stage_icon = '🗺️' %}
+          {% set stage_name = 'Map' %}
+          {% set stage_color = '#4caf50' %}
+          {% set stage_bg = 'rgba(40,167,69,0.07)' %}
+          {% set stage_border = 'rgba(40,167,69,0.25)' %}
+        {% elif st == 'go' %}
+          {% set stage_icon = '⚙️' %}
+          {% set stage_name = 'Extract' %}
+          {% set stage_color = '#f57c4a' %}
+          {% set stage_bg = 'rgba(232,89,12,0.07)' %}
+          {% set stage_border = 'rgba(232,89,12,0.25)' %}
+        {% elif st in ('writing', 'review', 'final') %}
+          {% set stage_icon = '✍️' %}
+          {% set stage_name = 'Draft' %}
+          {% set stage_color = '#ce93d8' %}
+          {% set stage_bg = 'rgba(156,39,176,0.07)' %}
+          {% set stage_border = 'rgba(156,39,176,0.25)' %}
+        {% else %}
+          {% set stage_icon = '✅' %}
+          {% set stage_name = st | replace('_',' ') | title %}
+          {% set stage_color = '#66bb6a' %}
+          {% set stage_bg = 'rgba(40,167,69,0.05)' %}
+          {% set stage_border = 'rgba(40,167,69,0.2)' %}
+        {% endif %}
+        <tr style="border-left:3px solid {{ stage_color }};background:{{ stage_bg }};">
+          <td style="text-align:center;font-size:1rem;" title="{{ stage_name }}">{{ stage_icon }}</td>
+          <td><a href="/proposals/{{ opp.id }}" style="color:{{ stage_color }};font-weight:700;">{{ opp.solicitation_number }}</a></td>
+          <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.title }}">{{ opp.title[:48] }}{% if opp.title|length > 48 %}…{% endif %}</td>
+          <td style="color:var(--text-secondary);font-size:0.82rem;">{{ opp.agency or '—' }}</td>
+          <td style="color:var(--text-secondary);font-size:0.82rem;">{{ opp.due_date or '—' }}</td>
+          <td style="font-weight:700;{% if opp.days_left is not none and opp.days_left <= 7 %}color:var(--status-red,#dc3545);{% elif opp.days_left is not none and opp.days_left <= 14 %}color:var(--status-yellow,#ffc107);{% else %}color:{{ stage_color }};{% endif %}">
+            {{ opp.days_left if opp.days_left is not none else '—' }}
+          </td>
+          <td>
+            <span style="font-size:0.72rem;padding:2px 7px;border-radius:4px;background:rgba(0,0,0,0.2);color:{{ stage_color }};border:1px solid {{ stage_border }};font-weight:600;">
+              {{ stage_icon }} {{ opp.status | replace('_',' ') | title }}
+            </span>
+          </td>
+          <td>
             {% set display_pwin = opp.computed_pwin_pct if opp.computed_pwin_pct is not none else opp.win_probability %}
             {% if display_pwin is not none %}
               {% set pct = display_pwin | int %}
               {% if pct >= 70 %}{% set bar_color = 'var(--status-green,#4caf50)' %}
               {% elif pct >= 40 %}{% set bar_color = 'var(--status-yellow,#ffc107)' %}
               {% else %}{% set bar_color = 'var(--status-red,#dc3545)' %}{% endif %}
-              <div style="display:flex;align-items:center;gap:6px;">
-                <div style="flex:1;background:var(--bg-secondary,#1a1a2e);border-radius:3px;height:8px;min-width:60px;">
-                  <div style="background:{{ bar_color }};height:8px;border-radius:3px;width:{{ pct }}%;"></div>
+              <div style="display:flex;align-items:center;gap:5px;">
+                <div style="flex:1;background:var(--bg-secondary,#1a1a2e);border-radius:3px;height:5px;min-width:44px;">
+                  <div style="background:{{ bar_color }};height:5px;border-radius:3px;width:{{ pct }}%;"></div>
                 </div>
-                <span style="color:{{ bar_color }};font-weight:bold;font-size:0.85rem;min-width:36px;">{{ pct }}%</span>
+                <span style="color:{{ bar_color }};font-weight:700;font-size:0.8rem;min-width:30px;">{{ pct }}%</span>
                 {% if opp.has_pwin_model %}
-                  <span title="Model score" style="cursor:pointer;font-size:0.7rem;color:var(--accent-color,#4a90d9);"
+                  <span title="Model score" style="cursor:pointer;font-size:0.65rem;color:var(--accent-blue,#4a90d9);"
                         onclick="showFactors({{ opp.pwin_factors | tojson if opp.pwin_factors else 'null' }})">ℹ</span>
                 {% endif %}
               </div>
             {% else %}
-              <span style="color:var(--text-secondary);">—</span>
+              <span style="color:var(--text-muted);">—</span>
             {% endif %}
           </td>
-          <td style="padding:0.5rem;font-size:0.85rem;">
+          <td style="font-weight:600;color:var(--status-green,#28a745);font-size:0.85rem;">
             {% if opp.weighted_value is not none %}
               ${{ "{:,.0f}".format(opp.weighted_value) }}
             {% else %}
-              <span style="color:var(--text-secondary);">—</span>
+              <span style="color:var(--text-muted);">—</span>
             {% endif %}
           </td>
-          <td style="padding:0.5rem;">{{ opp.capture_manager or '—' }}</td>
+          <td style="color:var(--text-secondary);font-size:0.82rem;">{{ opp.capture_manager or '—' }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="9" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No active proposals in the pipeline.</td></tr>
+        <tr><td colspan="10" style="text-align:center;padding:1.5rem;color:var(--text-muted);">No active proposals in the pipeline.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 
-  <!-- Domain Distribution -->
-  <h2 style="margin-top:1.5rem;">Requirement Domain Distribution</h2>
+  <!-- Requirement Domain Distribution -->
+  <div class="gc-section-hdr">
+    <h2>Requirement Domain Distribution</h2>
+  </div>
   <div class="table-container">
-    <table style="width:100%;border-collapse:collapse;">
+    <table class="gc-table">
       <thead>
-        <tr style="border-bottom:2px solid var(--border-color);">
-          <th style="text-align:left;padding:0.5rem;">Domain</th>
-          <th style="text-align:right;padding:0.5rem;">Count</th>
-          <th style="text-align:left;padding:0.5rem;">Bar</th>
+        <tr>
+          <th>Domain</th>
+          <th style="text-align:right;">Count</th>
+          <th>Distribution</th>
         </tr>
       </thead>
       <tbody>
         {% set max_count = stats.domain_distribution.values()|max if stats.domain_distribution else 1 %}
+        {% set domain_colors = ['#4a90d9','#e8590c','#28a745','#9c27b0','#ffc107','#00897b','#3949ab','#dc3545'] %}
         {% for domain, count in stats.domain_distribution.items() %}
-        <tr style="border-bottom:1px solid var(--border-color);">
-          <td style="padding:0.5rem;font-weight:600;">{{ domain }}</td>
-          <td style="padding:0.5rem;text-align:right;">{{ count }}</td>
-          <td style="padding:0.5rem;">
-            <div style="background:var(--accent-color,#4a90d9);height:16px;border-radius:3px;width:{{ (count / max_count * 100)|round|int }}%;min-width:4px;"></div>
+        <tr>
+          <td style="font-weight:600;">{{ domain }}</td>
+          <td style="text-align:right;font-weight:700;color:var(--accent-blue-light,#6db3f8);">{{ count }}</td>
+          <td style="min-width:120px;">
+            <div class="domain-bar-wrap">
+              <div class="domain-bar" style="background:{{ domain_colors[loop.index0 % domain_colors|length] }};width:{{ (count / max_count * 100)|round|int }}%;"></div>
+            </div>
           </td>
         </tr>
         {% endfor %}
         {% if not stats.domain_distribution %}
-        <tr><td colspan="3" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No requirements extracted yet. Run the pipeline to begin.</td></tr>
+        <tr><td colspan="3" style="text-align:center;padding:1.5rem;color:var(--text-muted);">No requirements extracted yet. Run the pipeline to begin.</td></tr>
         {% endif %}
       </tbody>
     </table>
   </div>
 
-  <!-- Recent Opportunities -->
-  <h2 style="margin-top:1.5rem;">Recent SAM.gov Opportunities</h2>
+  <!-- Recent SAM.gov Opportunities -->
+  <div class="gc-section-hdr">
+    <h2>Recent SAM.gov Opportunities</h2>
+    <span class="badge">{{ opportunities | length }} cached</span>
+  </div>
   <div class="table-container">
-    <table style="width:100%;border-collapse:collapse;">
+    <table class="gc-table">
       <thead>
-        <tr style="border-bottom:2px solid var(--border-color);">
-          <th style="text-align:left;padding:0.5rem;">Title</th>
-          <th style="text-align:left;padding:0.5rem;">Agency</th>
-          <th style="text-align:left;padding:0.5rem;">NAICS</th>
-          <th style="text-align:left;padding:0.5rem;">Type</th>
-          <th style="text-align:left;padding:0.5rem;">Deadline</th>
-          <th style="text-align:center;padding:0.5rem;">Linked</th>
-          <th style="text-align:center;padding:0.5rem;">Actions</th>
+        <tr>
+          <th>Title</th>
+          <th>Agency</th>
+          <th>NAICS</th>
+          <th>Type</th>
+          <th>Deadline</th>
+          <th style="text-align:center;">Linked</th>
+          <th style="text-align:center;">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for opp in opportunities %}
-        <tr style="border-bottom:1px solid var(--border-color);">
-          <td style="padding:0.5rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.title }}">{{ opp.title[:60] }}{% if opp.title|length > 60 %}...{% endif %}</td>
-          <td style="padding:0.5rem;">{{ opp.agency or '' }}</td>
-          <td style="padding:0.5rem;">{{ opp.naics_code or '' }}</td>
-          <td style="padding:0.5rem;">{{ opp.notice_type or '' }}</td>
-          <td style="padding:0.5rem;">{{ opp.response_deadline or '' }}</td>
-          <td style="padding:0.5rem;text-align:center;">
-            {% if opp.id in linked_opp_ids %}
-              <span style="color:#388e3c;">&#10003;</span>
-            {% else %}
-              <button onclick="importOpp('{{ opp.id }}')" class="btn btn-secondary btn-sm" style="font-size:0.75rem;padding:2px 8px;">Import</button>
+        <tr>
+          <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.title }}">{{ opp.title[:55] }}{% if opp.title|length > 55 %}…{% endif %}</td>
+          <td style="color:var(--text-secondary);">{{ opp.agency or '—' }}</td>
+          <td><code style="font-size:0.78rem;color:var(--text-secondary);">{{ opp.naics_code or '—' }}</code></td>
+          <td>
+            {% if opp.notice_type %}
+              <span style="font-size:0.72rem;padding:2px 6px;border-radius:4px;background:rgba(74,144,217,0.15);color:var(--accent-blue-light,#6db3f8);">{{ opp.notice_type }}</span>
             {% endif %}
           </td>
-          <td style="padding:0.5rem;text-align:center;">
-            <button onclick="extractReqs('{{ opp.id }}')" class="btn btn-secondary btn-sm" style="font-size:0.75rem;padding:2px 8px;">Extract</button>
+          <td style="color:var(--text-secondary);">{{ opp.response_deadline or '—' }}</td>
+          <td style="text-align:center;">
+            {% if opp.id in linked_opp_ids %}
+              <span style="color:var(--status-green,#28a745);font-size:1rem;">✓</span>
+            {% else %}
+              <button onclick="importOpp('{{ opp.id }}')" class="btn btn-secondary" style="font-size:0.72rem;padding:2px 8px;">Import</button>
+            {% endif %}
+          </td>
+          <td style="text-align:center;">
+            <button onclick="extractReqs('{{ opp.id }}')" class="btn btn-secondary" style="font-size:0.72rem;padding:2px 8px;">Extract</button>
           </td>
         </tr>
         {% endfor %}
         {% if not opportunities %}
-        <tr><td colspan="7" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No opportunities cached. Click "Discover" to scan SAM.gov.</td></tr>
+        <tr><td colspan="7" style="text-align:center;padding:1.5rem;color:var(--text-muted);">No opportunities cached. Click "Discover" to scan SAM.gov.</td></tr>
         {% endif %}
       </tbody>
     </table>
   </div>
 
-  <!-- Last Run -->
   {% if stats.last_pipeline_run %}
-  <p style="margin-top:1rem;color:var(--text-secondary);font-size:0.85rem;">Last pipeline run: {{ stats.last_pipeline_run }}</p>
+  <p style="margin-top:0.5rem;color:var(--text-muted);font-size:0.78rem;">Last pipeline run: {{ stats.last_pipeline_run }}</p>
   {% endif %}
 </div>
 
@@ -251,31 +408,31 @@ function setMsg(txt, color) {
 }
 
 function runPipeline() {
-  setMsg('Running full pipeline...', '#1976d2');
+  setMsg('Running full pipeline…', '#4a90d9');
   fetch('/api/govcon/pipeline/run', {method:'POST'})
     .then(r => r.json())
     .then(d => {
       if (d.status === 'ok' || d.status === 'partial') {
         var s = d.summary || {};
-        setMsg('Pipeline complete: ' + (s.new_opportunities||0) + ' opps, ' +
-               (s.requirements_extracted||0) + ' reqs, ' + (s.drafts_created||0) + ' drafts', '#388e3c');
+        setMsg('Done: ' + (s.new_opportunities||0) + ' opps, ' +
+               (s.requirements_extracted||0) + ' reqs, ' + (s.drafts_created||0) + ' drafts', '#28a745');
         setTimeout(function(){ location.reload(); }, 2000);
       } else {
-        setMsg('Pipeline error: ' + (d.error||'unknown'), '#d32f2f');
+        setMsg('Error: ' + (d.error||'unknown'), '#dc3545');
       }
     })
-    .catch(function(e) { setMsg('Error: ' + e, '#d32f2f'); });
+    .catch(function(e) { setMsg('Error: ' + e, '#dc3545'); });
 }
 
 function runStage(stage) {
-  setMsg('Running ' + stage + '...', '#1976d2');
+  setMsg('Running ' + stage + '…', '#4a90d9');
   fetch('/api/govcon/pipeline/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({stage: stage})})
     .then(r => r.json())
     .then(d => {
-      setMsg(stage + ' complete', '#388e3c');
+      setMsg(stage + ' complete ✓', '#28a745');
       setTimeout(function(){ location.reload(); }, 2000);
     })
-    .catch(function(e) { setMsg('Error: ' + e, '#d32f2f'); });
+    .catch(function(e) { setMsg('Error: ' + e, '#dc3545'); });
 }
 
 function importOpp(samId) {
@@ -283,26 +440,26 @@ function importOpp(samId) {
     .then(r => r.json())
     .then(d => {
       if (d.status === 'ok') {
-        setMsg('Imported as proposal opportunity', '#388e3c');
+        setMsg('Imported as proposal opportunity ✓', '#28a745');
         setTimeout(function(){ location.reload(); }, 1500);
       } else {
-        setMsg('Import error: ' + (d.error || d.message || 'unknown'), '#d32f2f');
+        setMsg('Import error: ' + (d.error || d.message || 'unknown'), '#dc3545');
       }
     })
-    .catch(function(e) { setMsg('Error: ' + e, '#d32f2f'); });
+    .catch(function(e) { setMsg('Error: ' + e, '#dc3545'); });
 }
 
 function extractReqs(oppId) {
-  setMsg('Extracting requirements...', '#1976d2');
+  setMsg('Extracting requirements…', '#4a90d9');
   fetch('/api/govcon/opportunities/' + oppId + '/extract-requirements', {method:'POST'})
     .then(r => r.json())
     .then(d => {
-      setMsg('Extracted ' + (d.total_extracted || 0) + ' requirements', '#388e3c');
+      setMsg('Extracted ' + (d.total_extracted || 0) + ' requirements ✓', '#28a745');
     })
-    .catch(function(e) { setMsg('Error: ' + e, '#d32f2f'); });
+    .catch(function(e) { setMsg('Error: ' + e, '#dc3545'); });
 }
 
-// ---- pWin Factor Breakdown + Pipeline Refresh (prop-cap-12) ----
+// pWin Factor Breakdown + Pipeline Refresh (prop-cap-12)
 var FACTOR_LABELS = {incumbency:'Incumbency',past_performance_fit:'Past Performance Fit',competitive_position:'Competitive Position',compliance_coverage:'Compliance Coverage',crm_engagement:'CRM Engagement'};
 
 function showFactors(factors) {
@@ -321,11 +478,11 @@ function showFactors(factors) {
     var pct = Math.round(d.score * 100);
     var color = colorMap(d.score);
     content.innerHTML += '<div style="padding:6px 8px;background:var(--bg-secondary,#1a1a2e);border-radius:4px;">' +
-      '<div style="font-size:0.75rem;color:var(--text-secondary);">' + label + ' <span style="float:right;color:var(--text-muted);">w=' + (d.weight*100).toFixed(0) + '%</span></div>' +
+      '<div style="font-size:0.72rem;color:var(--text-secondary);">' + label + ' <span style="float:right;color:var(--text-muted);">w=' + (d.weight*100).toFixed(0) + '%</span></div>' +
       '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;">' +
-      '<div style="flex:1;background:var(--bg-card,#16213e);border-radius:2px;height:6px;">' +
-      '<div style="background:' + color + ';height:6px;border-radius:2px;width:' + pct + '%;"></div></div>' +
-      '<span style="color:' + color + ';font-size:0.8rem;font-weight:bold;">' + pct + '%</span></div></div>';
+      '<div style="flex:1;background:var(--bg-card,#16213e);border-radius:2px;height:5px;">' +
+      '<div style="background:' + color + ';height:5px;border-radius:2px;width:' + pct + '%;"></div></div>' +
+      '<span style="color:' + color + ';font-size:0.78rem;font-weight:700;">' + pct + '%</span></div></div>';
   });
   legend.style.display = 'block';
   legend.scrollIntoView({behavior:'smooth', block:'nearest'});
@@ -333,13 +490,9 @@ function showFactors(factors) {
 
 function refreshPipelineValue() {
   fetch('/api/govcon/pipeline-value')
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
-    if (d.status === 'ok') {
-      location.reload();
-    }
-  })
-  .catch(function(){});
+    .then(function(r) { return r.json(); })
+    .then(function(d) { if (d.status === 'ok') location.reload(); })
+    .catch(function(){});
 }
 </script>
 {% endblock %}
