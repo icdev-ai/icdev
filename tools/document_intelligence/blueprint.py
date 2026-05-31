@@ -101,6 +101,16 @@ def _ensure_init() -> None:
         init_db()
     except Exception as exc:
         logger.warning("dic: DB init error: %s", exc)
+    # Ensure review-notes schema (lives in ingest_orchestrator).
+    try:
+        from tools.document_intelligence.ingest_orchestrator import _ensure_schema as _ingest_ensure
+        c = _conn()
+        try:
+            _ingest_ensure(c)
+        finally:
+            c.close()
+    except Exception as exc:
+        logger.warning("dic: review schema init error: %s", exc)
     _INIT_DONE = True
 
 
@@ -141,6 +151,57 @@ def _security_context() -> tuple[str, str]:
         return ctx.get("tenant_id", "default"), ctx.get("classification", "CUI")
     except Exception:
         return "default", "CUI"
+
+
+# Role hierarchy for collaboration workflow.
+_ROLE_LEVEL = {"viewer": 0, "editor": 1, "reviewer": 2, "admin": 3}
+
+
+def _current_user() -> str:
+    """Return the best-effort current user id."""
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            ctx = getattr(g, "security_context", None) or {}
+            user = ctx.get("user_id") or ctx.get("username")
+            if user:
+                return user
+    except Exception:
+        pass
+    return "current_user"
+
+
+def _user_role(collection_id: str, user_id: str) -> str:
+    """Look up the user's role in a collection via dic_team_access."""
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT role FROM dic_team_access WHERE collection_id = ? AND user_id = ? LIMIT 1",
+            (collection_id, user_id),
+        ).fetchone()
+        if row:
+            return row[0] if hasattr(row, "__getitem__") else row["role"]
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    return "viewer"
+
+
+def _require_role(collection_id: str, min_role: str) -> bool:
+    """Return True if current user meets or exceeds min_role."""
+    user_id = _current_user()
+    role = _user_role(collection_id, user_id)
+    return _ROLE_LEVEL.get(role, 0) >= _ROLE_LEVEL.get(min_role, 99)
+
+
+def _role_badge(role: str) -> str:
+    return {
+        "viewer": "🔎 Viewer",
+        "editor": "✏️ Editor",
+        "reviewer": "👁️ Reviewer",
+        "admin": "🛡️ Admin",
+    }.get(role, role)
 
 
 # ── Page Routes ───────────────────────────────────────────────────────────────
@@ -188,28 +249,80 @@ def review():
         pending_fragments = _safe_rows(
             conn,
             "SELECT fragment_id, document_id, control_id, fragment_text, cod_verdict_json as cod_verdict, "
-            "status, created_at FROM dic_ssp_fragments WHERE status = 'pending_review' "
+            "status, assigned_to, created_at, reviewed_by FROM dic_ssp_fragments "
+            "WHERE status IN ('pending_review', 'needs_revision') "
             "ORDER BY created_at DESC LIMIT 50",
         )
         pending_versions = _safe_rows(
             conn,
             "SELECT v.version_id, v.doc_id, v.version_no, v.origin, v.status, "
-            "v.created_at, v.created_by, d.title as doc_title "
+            "v.assigned_to, v.created_at, v.created_by, d.title as doc_title, d.collection_id "
             "FROM dic_versions v LEFT JOIN dic_documents d ON d.doc_id = v.doc_id "
-            "WHERE v.status = 'pending_review' ORDER BY v.created_at DESC LIMIT 50",
+            "WHERE v.status IN ('pending_review', 'needs_revision') ORDER BY v.created_at DESC LIMIT 50",
         )
+        # Gather team members per collection for assignment dropdowns.
+        team_map: dict[str, list[dict]] = {}
+        for v in pending_versions:
+            cid = v.get("collection_id") or "default"
+            if cid not in team_map:
+                team_map[cid] = _safe_rows(
+                    conn,
+                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
+                    (cid,),
+                )
+        # Load latest review note per item.
+        notes_map: dict[str, str] = {}
+        for rows in (
+            _safe_rows(conn, "SELECT item_id, note_text FROM dic_review_notes WHERE item_type='version' ORDER BY created_at DESC LIMIT 200"),
+            _safe_rows(conn, "SELECT item_id, note_text FROM dic_review_notes WHERE item_type='fragment' ORDER BY created_at DESC LIMIT 200"),
+        ):
+            for r in rows:
+                if r["item_id"] not in notes_map:
+                    notes_map[r["item_id"]] = r["note_text"] or ""
     finally:
         conn.close()
+
+    # Augment versions/fragments with latest note and current-user role.
+    current_user = _current_user()
+    for v in pending_versions:
+        v["latest_note"] = notes_map.get(v["version_id"], "")
+        v["user_role"] = _user_role(v.get("collection_id") or "default", current_user)
+    for f in pending_fragments:
+        f["latest_note"] = notes_map.get(f["fragment_id"], "")
+        f["user_role"] = _user_role("default", current_user)
+
     return render_template(
         "document_intelligence/review.html",
         pending_fragments=pending_fragments,
         pending_versions=pending_versions,
+        team_map=team_map,
+        current_user=current_user,
+        role_badge=_role_badge,
+        role_levels=_ROLE_LEVEL,
     )
+
+
+# Template defaults for query prefill when arriving from /templates.
+_TEMPLATE_DEFAULTS = {
+    "acoic": "ACOIC drift → impacted document regeneration → NIST 800-53 re-map",
+    "freshness-audit": "Document freshness audit — identify stale documents and remediation plan",
+    "airgap-ingest": "Air-gap ingest pipeline — ingest local documents with zero cloud calls",
+    "hitl-review": "HITL review queue — surface AI-generated drafts for human review",
+    "sop-refresh": "SOP refresh — keep standard operating procedures current against process changes",
+    "knowledge-handoff": "Knowledge handoff — capture retiring SME knowledge into a living collection",
+}
 
 
 @dic_bp.route("/generate")
 def generate():
-    return render_template("document_intelligence/generate.html", templates=_TEMPLATES)
+    preselected = request.args.get("template", "").strip()
+    default_query = _TEMPLATE_DEFAULTS.get(preselected, "")
+    return render_template(
+        "document_intelligence/generate.html",
+        templates=_TEMPLATES,
+        preselected_template=preselected,
+        default_query=default_query,
+    )
 
 
 @dic_bp.route("/acoic")
@@ -738,11 +851,80 @@ def api_team_add(collection_id):
 
 # ── API: Review (HITL) ────────────────────────────────────────────────────────
 
+def _record_review_note(item_id: str, item_type: str, note_text: str, reviewer_id: str) -> None:
+    """Persist a review note (best-effort)."""
+    try:
+        conn = _conn()
+        note_id = f"note_{hashlib.sha256(f'{item_id}:{_now()}'.encode()).hexdigest()[:16]}"
+        conn.execute(
+            "INSERT INTO dic_review_notes (note_id, item_id, item_type, note_text, reviewer_id, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (note_id, item_id, item_type, note_text, reviewer_id, _now()),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+@dic_bp.route("/api/review/<item_id>/assign", methods=["POST"])
+def api_review_assign(item_id):
+    data = request.get_json(silent=True) or {}
+    assigned_to = (data.get("assigned_to") or "").strip()
+    item_type = data.get("type", "version")
+    if not assigned_to:
+        return jsonify({"error": "assigned_to is required"}), 400
+    conn = _conn()
+    try:
+        table = "dic_versions" if item_type == "version" else "dic_ssp_fragments"
+        pk = "version_id" if item_type == "version" else "fragment_id"
+        conn.execute(f"UPDATE {table} SET assigned_to = ? WHERE {pk} = ?", (assigned_to, item_id))
+        conn.commit()
+        return jsonify({"status": "assigned", "item_id": item_id, "assigned_to": assigned_to})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/review/<item_id>/revise", methods=["POST"])
+def api_review_revise(item_id):
+    data = request.get_json(silent=True) or {}
+    reviewer = data.get("reviewer", _current_user())
+    item_type = data.get("type", "fragment")
+    note = (data.get("note") or "").strip()
+    conn = _conn()
+    try:
+        if item_type == "version":
+            conn.execute(
+                "UPDATE dic_versions SET status='needs_revision', review_notes=? WHERE version_id=?",
+                (note, item_id),
+            )
+        else:
+            try:
+                from tools.document_intelligence.acoic import request_revision
+                request_revision(item_id, reviewed_by=reviewer)
+            except Exception:
+                conn.execute(
+                    "UPDATE dic_ssp_fragments SET status='needs_revision', reviewed_by=?, reviewed_at=? WHERE fragment_id=?",
+                    (reviewer, _now(), item_id),
+                )
+        conn.commit()
+        if note:
+            _record_review_note(item_id, item_type, note, reviewer)
+        return jsonify({"status": "needs_revision", "item_id": item_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
 @dic_bp.route("/api/review/<item_id>/approve", methods=["POST"])
 def api_review_approve(item_id):
     data = request.get_json(silent=True) or {}
-    reviewer = data.get("reviewer", "current_user")
+    reviewer = data.get("reviewer", _current_user())
     item_type = data.get("type", "fragment")
+    note = (data.get("note") or "").strip()
     conn = _conn()
     try:
         if item_type == "version":
@@ -753,13 +935,15 @@ def api_review_approve(item_id):
             # Try ACOIC approve helper first.
             try:
                 from tools.document_intelligence.acoic import approve_fragment
-                approve_fragment(item_id, reviewer_id=reviewer, conn=conn)
+                approve_fragment(item_id, reviewed_by=reviewer)
             except Exception:
                 conn.execute(
                     "UPDATE dic_ssp_fragments SET status='approved', reviewed_by=?, reviewed_at=? WHERE fragment_id=?",
                     (reviewer, _now(), item_id),
                 )
         conn.commit()
+        if note:
+            _record_review_note(item_id, item_type, note, reviewer)
         return jsonify({"status": "approved", "item_id": item_id})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -770,8 +954,9 @@ def api_review_approve(item_id):
 @dic_bp.route("/api/review/<item_id>/reject", methods=["POST"])
 def api_review_reject(item_id):
     data = request.get_json(silent=True) or {}
-    reviewer = data.get("reviewer", "current_user")
+    reviewer = data.get("reviewer", _current_user())
     item_type = data.get("type", "fragment")
+    note = (data.get("note") or "").strip()
     conn = _conn()
     try:
         if item_type == "version":
@@ -781,13 +966,15 @@ def api_review_reject(item_id):
         else:
             try:
                 from tools.document_intelligence.acoic import reject_fragment
-                reject_fragment(item_id, reviewer_id=reviewer, conn=conn)
+                reject_fragment(item_id, reviewed_by=reviewer)
             except Exception:
                 conn.execute(
                     "UPDATE dic_ssp_fragments SET status='rejected', reviewed_by=?, reviewed_at=? WHERE fragment_id=?",
                     (reviewer, _now(), item_id),
                 )
         conn.commit()
+        if note:
+            _record_review_note(item_id, item_type, note, reviewer)
         return jsonify({"status": "rejected", "item_id": item_id})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -820,6 +1007,51 @@ def api_generate():
     except Exception as exc:
         logger.warning("dic: generate error: %s", exc)
         return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/generate/section", methods=["POST"])
+def api_generate_section():
+    """Regenerate a single section with targeted evidence retrieval."""
+    data = request.get_json(silent=True) or {}
+    version_id = (data.get("version_id") or "").strip()
+    heading = (data.get("heading") or "").strip()
+    collection_id = data.get("collection_id", "default")
+    if not version_id or not heading:
+        return jsonify({"error": "version_id and heading are required"}), 400
+    tenant_id, classification = _security_context()
+    try:
+        from tools.document_intelligence.doc_generator import regenerate_section
+        result = regenerate_section(
+            version_id, heading, collection_id,
+            tenant_id=tenant_id, classification=classification,
+        )
+        return jsonify(result)
+    except Exception as exc:
+        logger.warning("dic: generate-section error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/versions/<version_id>/sections", methods=["GET"])
+def api_version_sections(version_id):
+    """Return sections for a document version."""
+    conn = _conn()
+    try:
+        rows = _safe_rows(
+            conn,
+            "SELECT section_id, heading, content, citations_json, status, origin "
+            "FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            (version_id,),
+        )
+        for r in rows:
+            try:
+                r["citations"] = json.loads(r.get("citations_json") or "[]")
+            except Exception:
+                r["citations"] = []
+        return jsonify({"sections": rows})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
 
 
 # ── Analytics Page + API ─────────────────────────────────────────────────────

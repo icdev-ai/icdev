@@ -4760,7 +4760,7 @@ projects:
     for technical leads and architects.
 
     '
-  task_prefix: aiify-
+  task_prefix: aac-
   default_open: true
   briefs:
   - 8 AI-augmentable patterns x 6 languages (Python / Java / C# / Go / Rust / TypeScript)

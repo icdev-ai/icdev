@@ -106,6 +106,19 @@ def _evidence_block(results: list) -> str:
     return "\n\n".join(lines) or "(no evidence available)"
 
 
+def _targeted_evidence_block(results: list) -> str:
+    """Same as _evidence_block but includes doc title and page for richer citations."""
+    lines = []
+    for r in results[:8]:
+        chunk_id = getattr(r, "chunk_id", "?")
+        doc_title = getattr(r, "doc_title", None) or getattr(r, "doc_id", "")
+        page = getattr(r, "page", None)
+        content = getattr(r, "content", "")[:400]
+        loc = f"p.{page}" if page else doc_title
+        lines.append(f"[chunk {chunk_id} · {loc}] {content}")
+    return "\n\n".join(lines) or "(no evidence available)"
+
+
 def _llm_generate(prompt: str) -> str | None:
     try:
         for ns in ("icdev.tools.llm.router", "tools.llm.router"):
@@ -156,7 +169,7 @@ def generate_document(
       1. Retrieve top chunks via DICSearchEngine.
       2. Build outline via LLM (grounded on evidence).
       3. Draft each section via LLM + verify with CoT/CoD verifier.
-      4. Write pending_review version to dic_versions.
+      4. Write pending_review version to dic_versions + dic_sections.
 
     Returns GenerateResult with sections and version_id for HITL.
     """
@@ -227,7 +240,7 @@ def generate_document(
 
     result.sections = generated_sections
 
-    # 4. Persist to dic_versions as pending_review.
+    # 4. Persist to dic_versions as pending_review + dic_sections.
     try:
         from tools.db.storage import get_connection
 
@@ -250,12 +263,24 @@ def generate_document(
             )
             conn.execute(
                 "INSERT OR IGNORE INTO dic_versions "
-                "(version_id, doc_id, version_no, origin, status, content_sha256, "
+                "(version_id, doc_id, version_no, origin, status, assigned_to, review_notes, content_sha256, "
                 "created_at, created_by, tenant_id, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (version_id, doc_id, 1, "ai_generated", "pending_review", sha,
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (version_id, doc_id, 1, "ai_generated", "pending_review", None, None, sha,
                  _now_utc(), created_by, tenant_id, classification),
             )
+            # Write individual sections for per-section regeneration.
+            for idx, sec in enumerate(generated_sections, start=1):
+                section_id = f"sec-{uuid.uuid4().hex[:12]}"
+                conn.execute(
+                    "INSERT OR REPLACE INTO dic_sections "
+                    "(section_id, version_id, doc_id, heading, content, citations_json, status, origin, "
+                    "created_at, created_by, tenant_id, classification) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (section_id, version_id, doc_id, sec.heading, sec.content,
+                     json.dumps(sec.citations), "pending_review", "ai_generated",
+                     _now_utc(), created_by, tenant_id, classification),
+                )
             conn.commit()
         finally:
             conn.close()
@@ -267,3 +292,150 @@ def generate_document(
         result.error = str(exc)
 
     return result
+
+
+def regenerate_section(
+    version_id: str,
+    heading: str,
+    collection_id: str,
+    *,
+    tenant_id: str = "default",
+    classification: str = "CUI",
+    created_by: str = "ai_assist",
+) -> dict:
+    """Regenerate a single section with targeted evidence retrieval.
+
+    Steps:
+      1. Read the existing section + document context.
+      2. Search the collection with the heading as query (targeted retrieval).
+      3. Draft the section via LLM using ONLY the targeted evidence.
+      4. CoD-verify and strip unsupported claims.
+      5. Update dic_sections + reassemble dic_versions blob.
+
+    Returns dict with new content, citation_count, and status.
+    """
+    from tools.db.storage import get_connection
+    from tools.document_intelligence.search_engine import DICSearchEngine
+    from tools.document_intelligence.verifier import verify as _verify
+
+    conn = get_connection()
+    try:
+        # 1. Load existing context.
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT doc_id, title FROM dic_documents WHERE doc_id = "
+            "(SELECT doc_id FROM dic_versions WHERE version_id = ? LIMIT 1)",
+            (version_id,),
+        )
+        row = cur.fetchone()
+        doc_id = row[0] if row else ""
+        doc_title = (row[1] if row else "") or heading
+    finally:
+        conn.close()
+
+    # 2. Targeted retrieval.
+    engine = DICSearchEngine(tenant_id=tenant_id)
+    search_results = engine.search(heading, collection_id=collection_id, top_k=8)
+    evidence = _targeted_evidence_block(search_results)
+
+    if not search_results:
+        return {
+            "version_id": version_id,
+            "heading": heading,
+            "content": "(Abstained — no targeted evidence found for this section.)",
+            "citation_count": 0,
+            "status": "pending_review",
+            "abstained": True,
+        }
+
+    # 3. Draft with targeted evidence.
+    prompt = (
+        "You are rewriting ONE section of a technical document.\n\n"
+        f"Document title: {doc_title}\n"
+        f"Section heading: {heading}\n\n"
+        "Source evidence (cite exactly — do not invent facts):\n"
+        f"{evidence}\n\n"
+        "Write the section in clear, professional prose. "
+        "For every factual claim write a bracketed citation: [source: chunk <id>]. "
+        "If the evidence does not support a claim, omit it rather than inventing it."
+    )
+    raw_text = _llm_generate(prompt)
+    if not raw_text:
+        return {
+            "version_id": version_id,
+            "heading": heading,
+            "content": "(Abstained — LLM unavailable.)",
+            "citation_count": 0,
+            "status": "pending_review",
+            "abstained": True,
+        }
+
+    # 4. CoD verify.
+    verified_text = raw_text
+    abstained = False
+    try:
+        vr = _verify(raw_text, [r.content for r in search_results])
+        if vr.abstained:
+            abstained = True
+            verified_text = "(Abstained — insufficient evidence to support this section.)"
+        else:
+            verified_text = vr.verified_text or raw_text
+    except Exception as exc:
+        logger.warning("doc_generator: per-section verify error: %s", exc)
+
+    citations = [r.citation.to_dict() for r in search_results[:5]]
+
+    # 5. Persist update.
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        # Update the section row.
+        cur.execute(
+            "UPDATE dic_sections SET content = ?, citations_json = ?, status = ?, origin = ?, "
+            "created_at = ?, created_by = ? WHERE version_id = ? AND heading = ?",
+            (verified_text, json.dumps(citations), "pending_review", "ai_generated",
+             _now_utc(), created_by, version_id, heading),
+        )
+        if cur.rowcount == 0:
+            # Insert if missing.
+            section_id = f"sec-{uuid.uuid4().hex[:12]}"
+            cur.execute(
+                "INSERT INTO dic_sections (section_id, version_id, doc_id, heading, content, "
+                "citations_json, status, origin, created_at, created_by, tenant_id, classification) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (section_id, version_id, doc_id, heading, verified_text, json.dumps(citations),
+                 "pending_review", "ai_generated", _now_utc(), created_by, tenant_id, classification),
+            )
+        # Reassemble full version blob from all sections.
+        cur.execute(
+            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            (version_id,),
+        )
+        rows = cur.fetchall()
+        full_text = "\n\n".join(
+            f"## {r[0]}\n\n{r[1]}" for r in rows if r[1]
+        )
+        sha = hashlib.sha256(full_text.encode()).hexdigest()
+        cur.execute(
+            "UPDATE dic_versions SET content_sha256 = ? WHERE version_id = ?",
+            (sha, version_id),
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.warning("doc_generator: per-section DB write failed: %s", exc)
+        return {
+            "version_id": version_id,
+            "heading": heading,
+            "error": str(exc),
+        }
+    finally:
+        conn.close()
+
+    return {
+        "version_id": version_id,
+        "heading": heading,
+        "content": verified_text,
+        "citation_count": len(citations),
+        "status": "pending_review",
+        "abstained": abstained,
+    }

@@ -45,22 +45,21 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
 from tools.rag.chunker import chunk_content
 
+logger = get_logger(__name__)
+
+# Import built-in extractors (air-gap safe fallbacks for PDF/DOCX/XLSX/PPTX/images).
+try:
+    from tools.document_intelligence import extractors as _extractors
+except Exception:
+    _extractors = None  # type: ignore
+
 
 # --------------------------------------------------------------------------- #
-# Provider routing (extension -> extractor)
+# Extraction wrapper (built-in extractors + optional provider package)
 # --------------------------------------------------------------------------- #
-
-# Extensions handled directly by the built-in text/markup extractor. Binary
-# formats (.pdf/.docx/.pptx/.xlsx/images) are delegated to the dic-ingest-02
-# provider package when present.
-_TEXT_EXTS = {
-    ".txt", ".md", ".markdown", ".rst", ".log", ".csv", ".tsv",
-    ".json", ".yaml", ".yml", ".xml", ".html", ".htm", ".py",
-    ".sql", ".ini", ".cfg", ".toml",
-}
-
 
 @dataclass
 class Extraction:
@@ -72,49 +71,41 @@ class Extraction:
     page_count: int = 1
     title: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
-
-
-def _strip_html(raw: str) -> str:
-    import re
-
-    raw = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw)
-    raw = re.sub(r"(?s)<[^>]+>", " ", raw)
-    raw = re.sub(r"&nbsp;", " ", raw)
-    raw = re.sub(r"[ \t]+", " ", raw)
-    raw = re.sub(r"\n{3,}", "\n\n", raw)
-    return raw.strip()
+    warnings: list[str] = field(default_factory=list)
 
 
 def _select_extractor(path: Path) -> Extraction:
     """Pick a provider by extension and extract text.
 
-    Prefers the dic-ingest-02 provider registry when importable; otherwise
-    falls back to a built-in text/markup reader.
+    1. Built-in extractors (pypdf, python-docx, openpyxl, python-pptx, OCR, html, text).
+    2. Optional dic-ingest-02 provider registry when importable.
+    3. Last-resort utf-8 decode with a warning.
     """
     ext = path.suffix.lower()
 
+    # 1) Built-in extractors (air-gap safe, no external cloud calls).
+    if _extractors is not None:
+        try:
+            result = _extractors.extract_file(path)
+            if result.warnings:
+                logger.warning("dic: extraction warnings for %s: %s", path.name, result.warnings)
+            return Extraction(
+                text=result.text,
+                provider=result.provider,
+                content_type=result.content_type,
+                page_count=result.page_count,
+                title=result.title,
+                warnings=result.warnings,
+            )
+        except Exception as exc:
+            logger.warning("dic: built-in extractor failed for %s: %s", path.name, exc)
+
+    # 2) Optional provider package (dic-ingest-02).
     provider = _try_provider_package(path, ext)
     if provider is not None:
         return provider
 
-    if ext in _TEXT_EXTS:
-        raw = path.read_text(encoding="utf-8", errors="replace")
-        if ext in (".html", ".htm"):
-            text = _strip_html(raw)
-            ctype = "text/html"
-        else:
-            text = raw
-            ctype = "text/plain"
-        return Extraction(
-            text=text,
-            provider="builtin-text",
-            content_type=ctype,
-            page_count=1,
-            title=path.stem,
-        )
-
-    # Last-resort: best-effort utf-8 decode. Binary blobs degrade to whatever
-    # decodes; callers can re-ingest once a real provider lands.
+    # 3) Last-resort: best-effort utf-8 decode.
     raw = path.read_text(encoding="utf-8", errors="replace")
     return Extraction(
         text=raw,
@@ -122,16 +113,12 @@ def _select_extractor(path: Path) -> Extraction:
         content_type="application/octet-stream",
         page_count=1,
         title=path.stem,
+        warnings=[f"Unrecognized extension '{ext}' — best-effort text decode."],
     )
 
 
 def _try_provider_package(path: Path, ext: str) -> Extraction | None:
-    """Best-effort bridge to the dic-ingest-02 provider registry.
-
-    The provider package is optional. We probe a couple of conventional entry
-    points so this orchestrator works both before and after dic-ingest-02
-    lands, without a hard import dependency.
-    """
+    """Best-effort bridge to the dic-ingest-02 provider registry."""
     try:
         from tools.document_intelligence import providers as prov  # type: ignore
     except Exception:
@@ -194,6 +181,8 @@ _SCHEMA = [
         version_no      INTEGER NOT NULL DEFAULT 1,
         origin          TEXT NOT NULL DEFAULT 'human_authored',
         status          TEXT NOT NULL DEFAULT 'approved',
+        assigned_to     TEXT,
+        review_notes    TEXT,
         content_sha256  TEXT,
         created_at      TEXT NOT NULL,
         created_by      TEXT,
@@ -216,6 +205,44 @@ _SCHEMA = [
         classification  TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS dic_review_notes (
+        note_id         TEXT PRIMARY KEY,
+        item_id         TEXT NOT NULL,
+        item_type       TEXT NOT NULL DEFAULT 'version',
+        note_text       TEXT,
+        reviewer_id     TEXT,
+        created_at      TEXT NOT NULL,
+        tenant_id       TEXT,
+        classification  TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS dic_sections (
+        section_id      TEXT PRIMARY KEY,
+        version_id      TEXT NOT NULL,
+        doc_id          TEXT NOT NULL,
+        heading         TEXT NOT NULL,
+        content         TEXT,
+        citations_json  TEXT,
+        status          TEXT DEFAULT 'draft',
+        origin          TEXT DEFAULT 'ai_generated',
+        created_at      TEXT NOT NULL,
+        created_by      TEXT,
+        tenant_id       TEXT,
+        classification  TEXT
+    )
+    """,
+
+]
+
+
+# Columns that may need adding to existing tables (idempotent ALTER TABLE).
+# SQLite does not support ADD COLUMN IF NOT EXISTS, so we catch OperationalError.
+_ALTER_MIGRATIONS = [
+    ("dic_versions", "assigned_to", "TEXT"),
+    ("dic_versions", "review_notes", "TEXT"),
+    ("dic_ssp_fragments", "assigned_to", "TEXT"),
 ]
 
 
@@ -223,6 +250,12 @@ def _ensure_schema(conn) -> None:
     cur = conn.cursor()
     for ddl in _SCHEMA:
         cur.execute(ddl)
+    # Best-effort add missing columns for backward compatibility.
+    for table, col, dtype in _ALTER_MIGRATIONS:
+        try:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {dtype}")
+        except Exception:
+            pass
     conn.commit()
 
 
@@ -405,46 +438,93 @@ def ingest_file(
     extraction = _select_extractor(p)
     text = extraction.text or ""
 
-    doc_id = _doc_id(collection_id, str(p))
-    source_id = doc_id  # rag source id for these chunks
+    # Surface extraction warnings as outcome errors so the UI can display them.
+    if extraction.warnings:
+        errors.extend(extraction.warnings)
 
-    # 2) Chunk (reuse chunker). chunk_content returns VectorChunk objects whose
-    #    .chunk_id is the canonical rag_chunks id used by the vector store + KG.
-    _emit("chunking", "Splitting into chunks…", 15)
-    chunks = chunk_content(
-        text,
-        source_type="dic_document",
-        source_id=source_id,
-        source_table="dic_documents",
-        metadata={"filename": p.name, "collection_id": collection_id},
-        tenant_id=tid,
-        project_id=collection_id,
-        classification=cls,
-    )
-    _emit("chunking", f"{len(chunks)} chunks created", 20)
+    # Compute content hash early for duplicate detection.
+    content_hash = _sha256(text)
 
-    # 3) Embed + upsert into the vector store (same path ingest_source uses).
-    chunks_embedded = 0
-    if embed and chunks:
-        total_chunks = len(chunks)
-
-        def _embed_progress(done: int, total: int) -> None:
-            pct = 20 + int(done / max(total, 1) * 55)
-            _emit("embedding", f"Embedding {done}/{total} chunks…", pct)
-
-        _emit("embedding", f"Embedding 0/{total_chunks} chunks…", 20)
-        chunks_embedded = _embed_and_store(chunks, tid, errors, progress_cb=_embed_progress)
-        _emit("embedding", f"Embedded {chunks_embedded}/{total_chunks} chunks", 75)
-
-    # 4) DIC bookkeeping rows.
+    # ── Duplicate detection + bookkeeping ─────────────────────────────────────
+    # Open a single DB connection (or reuse caller's) for dedup + writes.
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
         _ensure_schema(conn)
+
+        # Dedup: if same content already exists in this collection, return the latest
+        # version idempotently (no new rows — aligns with test_reingest_is_idempotent).
+        dup_row = conn.execute(
+            "SELECT doc_id FROM dic_documents WHERE content_sha256 = ? AND collection_id = ? LIMIT 1",
+            (content_hash, collection_id),
+        ).fetchone()
+        if dup_row:
+            existing_doc_id = dup_row[0]
+            ver_row = conn.execute(
+                "SELECT version_id, version_no FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC LIMIT 1",
+                (existing_doc_id,),
+            ).fetchone()
+            if ver_row:
+                version_id = ver_row[0] if hasattr(ver_row, "__getitem__") else ver_row["version_id"]
+            else:
+                version_id = f"{existing_doc_id}_v1"
+            # Report the existing chunk count so callers see consistent metrics.
+            chunk_row = conn.execute(
+                "SELECT COUNT(*) FROM dic_chunk_links WHERE version_id = ?",
+                (version_id,),
+            ).fetchone()
+            existing_chunks = chunk_row[0] if chunk_row else 0
+            _emit("done", f"Idempotent — duplicate of {existing_doc_id}", 100)
+            return IngestOutcome(
+                doc_id=existing_doc_id,
+                version_id=version_id,
+                collection_id=collection_id,
+                source_id=existing_doc_id,
+                provider=extraction.provider,
+                chunks=existing_chunks,
+                chunks_embedded=existing_chunks,
+                kg_entities=0,
+                kg_relationships=0,
+                tenant_id=tid,
+                classification=cls,
+                errors=errors + ["Duplicate file — returned existing document without changes."],
+            )
+
+        doc_id = _doc_id(collection_id, str(p))
+        source_id = doc_id  # rag source id for these chunks
+
+        # 2) Chunk (reuse chunker). chunk_content returns VectorChunk objects whose
+        #    .chunk_id is the canonical rag_chunks id used by the vector store + KG.
+        _emit("chunking", "Splitting into chunks…", 15)
+        chunks = chunk_content(
+            text,
+            source_type="dic_document",
+            source_id=source_id,
+            source_table="dic_documents",
+            metadata={"filename": p.name, "collection_id": collection_id},
+            tenant_id=tid,
+            project_id=collection_id,
+            classification=cls,
+        )
+        _emit("chunking", f"{len(chunks)} chunks created", 20)
+
+        # 3) Embed + upsert into the vector store (same path ingest_source uses).
+        chunks_embedded = 0
+        if embed and chunks:
+            total_chunks = len(chunks)
+
+            def _embed_progress(done: int, total: int) -> None:
+                pct = 20 + int(done / max(total, 1) * 55)
+                _emit("embedding", f"Embedding {done}/{total} chunks…", pct)
+
+            _emit("embedding", f"Embedding 0/{total_chunks} chunks…", 20)
+            chunks_embedded = _embed_and_store(chunks, tid, errors, progress_cb=_embed_progress)
+            _emit("embedding", f"Embedded {chunks_embedded}/{total_chunks} chunks", 75)
+
+        # 4) DIC bookkeeping rows.
         now = _now()
         version_id = f"{doc_id}_v1"
-        content_hash = _sha256(text)
         cur = conn.cursor()
 
         cur.execute(
@@ -498,55 +578,48 @@ def ingest_file(
                 ),
             )
         conn.commit()
+
+        # 5) KG bridge (best-effort). ingest_chunk reads rag_chunks by id, so this
+        #    only finds content when embedding upserted the chunk above.
+        _emit("kg_bridge", "Extracting entities and relationships…", 78)
+        kg_entities = 0
+        kg_rels = 0
+        if bridge_kg and chunks and chunks_embedded:
+            try:
+                from tools.rag.rag_to_kg_ingester import ingest_chunk
+
+                for chunk in chunks:
+                    cid = getattr(chunk, "chunk_id", None)
+                    if not cid:
+                        continue
+                    try:
+                        summary = ingest_chunk(conn, cid)
+                    except Exception as e:
+                        errors.append(f"kg chunk failed: {e}")
+                        continue
+                    kg_entities += int(summary.get("nodes_written", 0) or 0)
+                    kg_rels += int(summary.get("edges_written", 0) or 0)
+            except Exception as e:
+                errors.append(f"kg bridge unavailable: {e}")
+
+        _emit("done", f"Done — {len(chunks)} chunks, {kg_entities} entities", 100)
+        return IngestOutcome(
+            doc_id=doc_id,
+            version_id=version_id,
+            collection_id=collection_id,
+            source_id=source_id,
+            provider=extraction.provider,
+            chunks=len(chunks),
+            chunks_embedded=chunks_embedded,
+            kg_entities=kg_entities,
+            kg_relationships=kg_rels,
+            tenant_id=tid,
+            classification=cls,
+            errors=errors,
+        )
     finally:
         if own_conn:
             try:
                 conn.close()
             except Exception:
                 pass
-
-    # 5) KG bridge (best-effort). ingest_chunk reads rag_chunks by id, so this
-    #    only finds content when embedding upserted the chunk above.
-    _emit("kg_bridge", "Extracting entities and relationships…", 78)
-    kg_entities = 0
-    kg_rels = 0
-    if bridge_kg and chunks and chunks_embedded:
-        try:
-            from tools.rag.rag_to_kg_ingester import ingest_chunk
-
-            kg_conn = get_connection()
-            try:
-                for chunk in chunks:
-                    cid = getattr(chunk, "chunk_id", None)
-                    if not cid:
-                        continue
-                    try:
-                        summary = ingest_chunk(kg_conn, cid)
-                    except Exception as e:
-                        errors.append(f"kg chunk failed: {e}")
-                        continue
-                    kg_entities += int(summary.get("nodes_written", 0) or 0)
-                    kg_rels += int(summary.get("edges_written", 0) or 0)
-            finally:
-                try:
-                    kg_conn.close()
-                except Exception:
-                    pass
-        except Exception as e:
-            errors.append(f"kg bridge unavailable: {e}")
-
-    _emit("done", f"Done — {len(chunks)} chunks, {kg_entities} entities", 100)
-    return IngestOutcome(
-        doc_id=doc_id,
-        version_id=version_id,
-        collection_id=collection_id,
-        source_id=source_id,
-        provider=extraction.provider,
-        chunks=len(chunks),
-        chunks_embedded=chunks_embedded,
-        kg_entities=kg_entities,
-        kg_relationships=kg_rels,
-        tenant_id=tid,
-        classification=cls,
-        errors=errors,
-    )
