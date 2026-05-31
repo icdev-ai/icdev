@@ -242,10 +242,10 @@ def scan_collection(
             # Persist per-doc freshness.
             try:
                 cur.execute(
-                    "INSERT INTO dic_doc_freshness (doc_id, collection_id, state, reason, source_event, updated_at, tenant_id, classification) "
-                    "VALUES (?,?,?,?,?,?,?,?) "
-                    "ON CONFLICT (doc_id) DO UPDATE SET state=EXCLUDED.state, reason=EXCLUDED.reason, source_event=EXCLUDED.source_event, updated_at=EXCLUDED.updated_at",
-                    (did, collection_id, fres.state, fres.reason, fres.source_event, _now_utc(), tenant_id, doc_cls),
+                    "INSERT INTO dic_doc_freshness (doc_id, collection_id, state, reason, source_event, score, updated_at, tenant_id, classification) "
+                    "VALUES (?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT (doc_id) DO UPDATE SET state=EXCLUDED.state, reason=EXCLUDED.reason, source_event=EXCLUDED.source_event, score=EXCLUDED.score, updated_at=EXCLUDED.updated_at",
+                    (did, collection_id, fres.state, fres.reason, fres.source_event, fres.score, _now_utc(), tenant_id, doc_cls),
                 )
             except Exception as exc:
                 logger.warning("freshness: upsert dic_doc_freshness failed for %s: %s", did, exc)
