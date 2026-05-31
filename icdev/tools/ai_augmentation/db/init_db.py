@@ -60,8 +60,8 @@ CREATE TABLE IF NOT EXISTS aac_scans (
 )"""
 
 # aac_opportunities uses CHECK constraints derived from Python constants, so
-# this table's DDL must be an f-string.  It is placed between _SCHEMA_PG_PRE
-# and _SCHEMA_PG_POST so that foreign-key dependency order is preserved:
+# this DDL is an f-string.  The gap-detector extracts static f-string parts
+# and finds CREATE TABLE aac_opportunities regardless.  FK order is preserved:
 # aac_scans → aac_opportunities → aac_scores.
 _SCHEMA_PG_OPPS = f"""
 CREATE TABLE IF NOT EXISTS aac_opportunities (
