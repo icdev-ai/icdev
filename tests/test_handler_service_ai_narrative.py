@@ -719,6 +719,105 @@ def test_cmmc_assessment_handler_facts_include_key_fields(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Tests for handle_aiify_roadmap_handler (aiify-opp-5942)
+# ---------------------------------------------------------------------------
+
+def test_aiify_roadmap_handler_narrative_attached(monkeypatch):
+    """handle_aiify_roadmap_handler attaches narrative when LLM is available."""
+    roadmap_row = {
+        "roadmap_id": "rm-55fc0a0e6a", "title": "AI-ify Roadmap v41",
+        "total_effort_days": 30, "generated_at": "2026-06-02",
+    }
+    phase_summary_rows = [
+        {"phase": "Phase 1 — Quick Wins", "opp_count": 12, "avg_score": 0.78},
+        {"phase": "Phase 2 — Medium Term", "opp_count": 8, "avg_score": 0.67},
+    ]
+    top_opp_rows = [
+        {"opportunity_id": 5942, "function_name": "handle_aiify_roadmap_handler", "pattern_type": "db_render_notify_chain", "composite_score": 0.7585},
+        {"opportunity_id": 5907, "function_name": "handle_aiify_opportunity_handler", "pattern_type": "db_render_notify_chain", "composite_score": 0.759},
+    ]
+    scan_row = {"total_files": 87, "overall_verdict": "high_value", "overall_ai_readiness": "ready"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[roadmap_row, phase_summary_rows, top_opp_rows, scan_row])
+    _fake_router(monkeypatch, content="Roadmap rm-55fc0a0e6a covers 20 opportunities across 2 phases; begin Phase 1 Quick Wins immediately to capture near-term value.")
+
+    result = handler_service.handle_aiify_roadmap_handler(
+        "rm-55fc0a0e6a", "41", "tech-lead@example.com", ai_narrative=True
+    )
+
+    assert result["status"] == "sent"
+    assert result["roadmap_id"] == "rm-55fc0a0e6a"
+    assert result["scan_id"] == "41"
+    assert result["narrative"] == "Roadmap rm-55fc0a0e6a covers 20 opportunities across 2 phases; begin Phase 1 Quick Wins immediately to capture near-term value."
+
+
+def test_aiify_roadmap_handler_no_narrative_by_default(monkeypatch):
+    """handle_aiify_roadmap_handler returns narrative=None when ai_narrative=False."""
+    roadmap_row = {
+        "roadmap_id": "rm-abc123", "title": "AI-ify Roadmap v38",
+        "total_effort_days": 15, "generated_at": "2026-05-30",
+    }
+    _fake_handler_conn(monkeypatch, rows_by_call=[roadmap_row, [], [], None])
+
+    result = handler_service.handle_aiify_roadmap_handler("rm-abc123", "38", "ops@example.com")
+
+    assert result["status"] == "sent"
+    assert result["narrative"] is None
+    assert result["roadmap_id"] == "rm-abc123"
+
+
+def test_aiify_roadmap_handler_narrative_none_on_llm_failure(monkeypatch):
+    """Notification ships even when the LLM raises for the roadmap handler."""
+    roadmap_row = {
+        "roadmap_id": "rm-xyz999", "title": "AI-ify Roadmap v39",
+        "total_effort_days": 20, "generated_at": "2026-05-31",
+    }
+    phase_summary_rows = [{"phase": "Phase 1 — Quick Wins", "opp_count": 5, "avg_score": 0.72}]
+    top_opp_rows = []
+    scan_row = {"total_files": 60, "overall_verdict": "medium_value", "overall_ai_readiness": "partial"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[roadmap_row, phase_summary_rows, top_opp_rows, scan_row])
+    _fake_router(monkeypatch, raises=RuntimeError("llm unavailable"))
+
+    result = handler_service.handle_aiify_roadmap_handler(
+        "rm-xyz999", "39", "dev@example.com", ai_narrative=True
+    )
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_aiify_roadmap_handler_facts_include_key_fields(monkeypatch):
+    """Narrative prompt must ground on roadmap title, phase count, opportunities, and scan metadata."""
+    roadmap_row = {
+        "roadmap_id": "rm-55fc0a0e6a", "title": "AI-ify Roadmap v41",
+        "total_effort_days": 30, "generated_at": "2026-06-02",
+    }
+    phase_summary_rows = [
+        {"phase": "Phase 1 — Quick Wins", "opp_count": 10, "avg_score": 0.80},
+        {"phase": "Phase 2 — Medium Term", "opp_count": 7, "avg_score": 0.65},
+        {"phase": "Phase 3 — Long Term", "opp_count": 5, "avg_score": 0.58},
+    ]
+    top_opp_rows = [
+        {"opportunity_id": 5942, "function_name": "handle_aiify_roadmap_handler", "pattern_type": "db_render_notify_chain", "composite_score": 0.7585},
+    ]
+    scan_row = {"total_files": 100, "overall_verdict": "high_value", "overall_ai_readiness": "ready"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[roadmap_row, phase_summary_rows, top_opp_rows, scan_row])
+    captured = _fake_router(monkeypatch, content="Roadmap covers 22 opportunities across 3 phases; prioritize Quick Wins for immediate delivery.")
+
+    handler_service.handle_aiify_roadmap_handler(
+        "rm-55fc0a0e6a", "41", "lead@example.com", ai_narrative=True
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "roadmap_id" in user_msg
+    assert "phase_count" in user_msg
+    assert "total_opportunities" in user_msg
+    assert "total_effort_days" in user_msg
+    assert "overall_verdict" in user_msg
+    assert "overall_ai_readiness" in user_msg
+    assert "quick_win_count" in user_msg
+
+
+# ---------------------------------------------------------------------------
 # Tests for handle_supply_chain_risk_handler (aiify-opp-5948)
 # ---------------------------------------------------------------------------
 
@@ -813,3 +912,125 @@ def test_supply_chain_risk_handler_facts_include_key_fields(monkeypatch):
     assert "top_cve" in user_msg
     assert "risk_level" in user_msg
     assert "patch_available" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# handle_aiify_opportunity_handler — opp-177 (aiify-rm-c5c56-phase-177)
+#
+# Opportunity 177: db_render_notify_chain -> llm_generation in handler_service.py
+# scan_id=2, roadmap_id="rm-c5c5642863", function_name="<unknown>",
+# scores: composite=0.7607, value=0.886, feasibility=0.82, risk=0.625.
+# The AI narrative is already implemented (aiify-opp-5592); these tests pin
+# the exact scanner data so any future rename or score drift is caught.
+# ---------------------------------------------------------------------------
+
+def _make_opp_row_177():
+    return {
+        "opportunity_id": 177,
+        "function_name": "<unknown>",
+        "pattern_type": "db_render_notify_chain",
+        "module_path": "tools/notification_service/handler_service.py",
+    }
+
+
+def _make_score_row_177():
+    return {
+        "composite_score": 0.7607,
+        "value_score": 0.886,
+        "feasibility_score": 0.82,
+        "risk_score": 0.625,
+    }
+
+
+def _make_roadmap_row_177():
+    return {"roadmap_id": "rm-c5c5642863", "phase": "Phase 1 — Quick Wins"}
+
+
+def test_opp_177_no_narrative_by_default(monkeypatch):
+    """handle_aiify_opportunity_handler(177) returns narrative=None when ai_narrative=False."""
+    _fake_handler_conn(
+        monkeypatch,
+        rows_by_call=[_make_opp_row_177(), _make_score_row_177(), _make_roadmap_row_177()],
+    )
+
+    result = handler_service.handle_aiify_opportunity_handler(177, "2", "ops@example.com")
+
+    assert result["status"] == "sent"
+    assert result["opportunity_id"] == 177
+    assert result["narrative"] is None
+
+
+def test_opp_177_handler_executes_without_error(monkeypatch):
+    """handle_aiify_opportunity_handler(177) completes when all DB rows are present."""
+    _fake_handler_conn(
+        monkeypatch,
+        rows_by_call=[_make_opp_row_177(), _make_score_row_177(), _make_roadmap_row_177()],
+    )
+
+    result = handler_service.handle_aiify_opportunity_handler(177, "2", "dev@example.com")
+
+    assert result["status"] == "sent"
+    assert result["opportunity_id"] == 177
+
+
+def test_opp_177_narrative_attached_when_llm_available(monkeypatch):
+    """narrative contains LLM text for opp-177 when ai_narrative=True and LLM succeeds."""
+    _fake_handler_conn(
+        monkeypatch,
+        rows_by_call=[_make_opp_row_177(), _make_score_row_177(), _make_roadmap_row_177()],
+    )
+    _fake_router(
+        monkeypatch,
+        content=(
+            "Opportunity 177 identifies a db_render_notify_chain pattern in handler_service.py; "
+            "LLM narrative augmentation is already active — opt in via ai_narrative=True."
+        ),
+    )
+
+    result = handler_service.handle_aiify_opportunity_handler(
+        177, "2", "tech-lead@example.com", ai_narrative=True
+    )
+
+    assert result["status"] == "sent"
+    assert result["opportunity_id"] == 177
+    assert result["narrative"] == (
+        "Opportunity 177 identifies a db_render_notify_chain pattern in handler_service.py; "
+        "LLM narrative augmentation is already active — opt in via ai_narrative=True."
+    )
+
+
+def test_opp_177_narrative_none_on_llm_failure(monkeypatch):
+    """handle_aiify_opportunity_handler(177) degrades to narrative=None when LLM raises."""
+    _fake_handler_conn(
+        monkeypatch,
+        rows_by_call=[_make_opp_row_177(), _make_score_row_177(), _make_roadmap_row_177()],
+    )
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = handler_service.handle_aiify_opportunity_handler(
+        177, "2", "ops@example.com", ai_narrative=True
+    )
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_opp_177_narrative_prompt_grounded_in_facts(monkeypatch):
+    """LLM prompt for opp-177 must include pattern_type, score dimensions, and handler_kind."""
+    _fake_handler_conn(
+        monkeypatch,
+        rows_by_call=[_make_opp_row_177(), _make_score_row_177(), _make_roadmap_row_177()],
+    )
+    captured = _fake_router(monkeypatch, content="Narrative for opp-177.")
+
+    handler_service.handle_aiify_opportunity_handler(
+        177, "2", "lead@example.com", ai_narrative=True
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "db_render_notify_chain" in user_msg
+    assert "composite_score" in user_msg
+    assert "value_score" in user_msg
+    assert "feasibility_score" in user_msg
+    assert "risk_score" in user_msg
+    assert "AI-ify opportunity triage notification" in user_msg
