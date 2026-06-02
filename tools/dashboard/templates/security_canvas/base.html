@@ -59,6 +59,28 @@
       </div>
     </div>
     <a href="/security/sops" class="nav-link {% if request.path == '/security/sops' %}active{% endif %}">SOPs</a>
+    <div class="nav-mega">
+      <button class="nav-link nav-mega-btn {% if '/security/zig' in request.path %}active{% endif %}">ZIG &#x25BE;</button>
+      <div class="nav-mega-panel">
+        <div class="mega-group">
+          <div class="mega-label">NSA Zero Trust Guide</div>
+          <a href="/security/zig/" class="mega-item">&#x1f6e1; ZIG Overview</a>
+          <a href="/security/zig/phase" class="mega-item">&#x1f4c5; Phase Tracker</a>
+          <a href="/security/zig/assessment" class="mega-item">&#x1f4ca; Assessment</a>
+          <a href="/security/zig/roadmap" class="mega-item">&#x1f5fa; Roadmap</a>
+        </div>
+        <div class="mega-group">
+          <div class="mega-label">ZIG Pillars</div>
+          <a href="/security/zig/pillar/user" class="mega-item">&#x1f464; User (ICAM)</a>
+          <a href="/security/zig/pillar/device" class="mega-item">&#x1f4bb; Device</a>
+          <a href="/security/zig/pillar/network" class="mega-item">&#x1f310; Network</a>
+          <a href="/security/zig/pillar/application" class="mega-item">&#x1f4e6; Application</a>
+          <a href="/security/zig/pillar/data" class="mega-item">&#x1f5c4; Data</a>
+          <a href="/security/zig/pillar/visibility" class="mega-item">&#x1f441; Visibility</a>
+          <a href="/security/zig/pillar/automation" class="mega-item">&#x1f916; Automation</a>
+        </div>
+      </div>
+    </div>
     <a href="/security/canvas/new" class="nav-link btn-primary-sm">+ New</a>
     <a href="/network/" class="nav-link" style="font-size:0.8rem;color:var(--text-dim);">NDC</a>
     <a href="/" class="nav-link" style="font-size:0.8rem;color:var(--text-dim);">Dashboard</a>

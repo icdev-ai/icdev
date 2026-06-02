@@ -13,7 +13,8 @@ from typing import Iterable
 
 from tools.db.storage import get_connection
 from .event_service import (
-    render_template, render_to_string, send, sendmail, notify, emit, publish, dispatch, _now_iso,
+    render_template, render_to_string, render_string,
+    send, sendmail, notify, emit, publish, dispatch, _now_iso,
 )
 
 CANVAS_REPORT_TEMPLATES = {
@@ -50,8 +51,7 @@ ASSESSMENT_SUMMARY_TEMPLATES = {
 }
 
 # ---------------------------------------------------------------------------
-# AI-ification (aiify-opp-5539, aiify-opp-5563): optional LLM-synthesized
-# executive summary.
+# AI-ification (aiify-opp-5539): optional LLM-synthesized executive summary.
 #
 # The db → render → notify chains below produce deterministic, template-based
 # report text that remains the AUTHORITATIVE payload — stakeholders must never
@@ -327,7 +327,7 @@ def deliver_assessment_summary(
         # --- Render ---
         tmpl_str = ASSESSMENT_SUMMARY_TEMPLATES.get(framework, "Assessment: $framework ($project_id)")
         rendered = Template(tmpl_str).safe_substitute(vars_)
-        render_template(
+        rendered_html = render_template(
             f"reports/{framework}_summary.html",
             framework=framework,
             project_id=project_id,

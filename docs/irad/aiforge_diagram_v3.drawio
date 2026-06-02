@@ -1,0 +1,72 @@
+<mxfile host="app.diagrams.net" version="21.0.0">
+  <diagram id="aiforge-concise" name="AI-Forge Concise">
+    <mxGraphModel dx="1200" dy="600" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="900" pageHeight="550" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ROW 1: Signal -->
+        <mxCell id="c1" value="① Signal" style="swimlane;startSize=25;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="660" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="n1" value="&lt;b&gt;AI-ify Scan&lt;/b&gt;&lt;br/&gt;&lt;font style='font-size:9px'&gt;composite ≥ 0.70&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="c1">
+          <mxGeometry x="20" y="27" width="175" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="&lt;b&gt;Pattern Router&lt;/b&gt;&lt;br/&gt;&lt;font style='font-size:9px'&gt;8 types → code template&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="c1">
+          <mxGeometry x="240" y="27" width="175" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="&lt;b&gt;Priority Queue&lt;/b&gt;&lt;br/&gt;&lt;font style='font-size:9px'&gt;SHA-256 dedup&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="c1">
+          <mxGeometry x="460" y="27" width="175" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" source="n1" target="n2" parent="c1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" edge="1" source="n2" target="n3" parent="c1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- ROW 2: Synthesize and Validate -->
+        <mxCell id="c2" value="② Synthesize and Validate" style="swimlane;startSize=25;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="20" y="125" width="660" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" value="&lt;b&gt;IL-aware LLM&lt;/b&gt;&lt;br/&gt;&lt;font style='font-size:9px'&gt;Bedrock IL4/5 · Ollama IL5/6&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="c2">
+          <mxGeometry x="20" y="27" width="175" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" value="&lt;b&gt;Test Suite&lt;/b&gt;&lt;br/&gt;&lt;font style='font-size:9px'&gt;existing + generated tests&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="c2">
+          <mxGeometry x="240" y="27" width="175" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n6" value="Tests Pass?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="c2">
+          <mxGeometry x="455" y="12" width="175" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" source="n4" target="n5" parent="c2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" edge="1" source="n5" target="n6" parent="c2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <!-- Rollback -->
+        <mxCell id="e5" value="no" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=0;entryX=0.5;entryY=0;fontSize=9;fontStyle=2;" edge="1" source="n6" target="n4" parent="c2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="542" y="10" />
+              <mxPoint x="107" y="10" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ROW 3: Integrate and Ship -->
+        <mxCell id="c3" value="③ Integrate and Ship" style="swimlane;startSize=25;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="20" y="230" width="660" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="n7" value="&lt;b&gt;HITL Review&lt;/b&gt;&lt;br/&gt;&lt;font style='font-size:9px'&gt;accept / edit / reject&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="c3">
+          <mxGeometry x="20" y="27" width="175" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n8" value="&lt;b&gt;Git PR + Kanban&lt;/b&gt;&lt;br/&gt;&lt;font style='font-size:9px'&gt;CUI-marked diff · 4 tasks&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="c3">
+          <mxGeometry x="240" y="27" width="175" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n9" value="&lt;b&gt;ATO Evidence&lt;/b&gt;&lt;br/&gt;&lt;font style='font-size:9px'&gt;NIST AI RMF MANAGE-1&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="c3">
+          <mxGeometry x="460" y="27" width="175" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" source="n7" target="n8" parent="c3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" edge="1" source="n8" target="n9" parent="c3"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Inter-row connections -->
+        <mxCell id="cross1" value="" edge="1" source="n3" target="n4" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="cross2" value="yes" style="fontSize=9;fontStyle=2;" edge="1" source="n6" target="n7" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

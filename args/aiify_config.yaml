@@ -21,7 +21,7 @@ risk_weights:
   compliance_impact_inv: 0.35
   dep_simplicity: 0.25
 
-confidence_threshold: 0.55
+confidence_threshold: 0.65  # only register high-confidence AI augmentation candidates
 
 scan_depth: full  # options: full | shallow | summary
 

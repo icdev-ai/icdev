@@ -639,6 +639,7 @@
     function initTables() {
         var containers = document.querySelectorAll("div.table-container");
         for (var i = 0; i < containers.length; i++) {
+            if (containers[i].hasAttribute("data-no-enhance")) continue;
             enhanceTable(containers[i]);
         }
     }

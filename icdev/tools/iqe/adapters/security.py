@@ -128,3 +128,90 @@ register_collection("attack.nodes", nodes_adapter)
 register_collection("attack.edges", edges_adapter)
 register_collection("attack.paths", paths_adapter)
 register_collection("security.ai_decisions", ai_decisions_adapter)
+
+
+# ── NSA ZIG Collections ───────────────────────────────────────────────────────
+
+def zig_pillars_adapter(conn: Any) -> list[dict]:
+    """Return one row per ZIG pillar with current maturity score."""
+    try:
+        from tools.security_canvas.zig_pillar_scorer import score_all_pillars  # noqa: PLC0415
+        return score_all_pillars()
+    except Exception:
+        return []
+
+
+def zig_capabilities_adapter(conn: Any) -> list[dict]:
+    """Return all 42 ZIG target capabilities with implementation status."""
+    try:
+        from tools.security_canvas.db.init_db import get_connection as _sc_conn  # noqa: PLC0415
+        _conn = _sc_conn()
+        try:
+            rows = _conn.execute(
+                "SELECT id, pillar_slug, title, phase, maturity_level, implementation_status, description "
+                "FROM zig_capabilities ORDER BY pillar_slug, phase"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            _conn.close()
+    except Exception:
+        return []
+
+
+def zig_activities_adapter(conn: Any) -> list[dict]:
+    """Return all 91 ZIG activities with completion status."""
+    try:
+        from tools.security_canvas.db.init_db import get_connection as _sc_conn  # noqa: PLC0415
+        _conn = _sc_conn()
+        try:
+            rows = _conn.execute(
+                "SELECT a.id, a.title, a.phase, a.nist_control_ref, a.capability_id, "
+                "c.pillar_slug, COALESCE(ac.status, 'not_started') as completion_status "
+                "FROM zig_activities a "
+                "JOIN zig_capabilities c ON a.capability_id=c.id "
+                "LEFT JOIN zig_activity_completions ac ON a.id=ac.activity_id "
+                "ORDER BY a.phase, c.pillar_slug"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            _conn.close()
+    except Exception:
+        return []
+
+
+def zig_maturity_adapter(conn: Any) -> list[dict]:
+    """Return aggregated ZIG maturity summary."""
+    try:
+        from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score  # noqa: PLC0415
+        from tools.security_canvas.zig_phase_tracker import compute_fy2027_readiness  # noqa: PLC0415
+        pillar_scores = score_all_pillars()
+        agg = aggregate_zig_score(pillar_scores)
+        fy2027 = compute_fy2027_readiness()
+        return [{"type": "aggregate", **agg, **fy2027}]
+    except Exception:
+        return []
+
+
+def zig_gaps_adapter(conn: Any) -> list[dict]:
+    """Return ZIG capability gaps (not started or planned only)."""
+    try:
+        from tools.security_canvas.db.init_db import get_connection as _sc_conn  # noqa: PLC0415
+        _conn = _sc_conn()
+        try:
+            rows = _conn.execute(
+                "SELECT id, pillar_slug, title, phase, maturity_level, implementation_status "
+                "FROM zig_capabilities WHERE implementation_status IN ('not_started','planned') "
+                "ORDER BY CASE phase WHEN 'discovery' THEN 1 WHEN 'phase1' THEN 2 ELSE 3 END, pillar_slug"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            _conn.close()
+    except Exception:
+        return []
+
+
+register_collection("zig.pillars", zig_pillars_adapter)
+register_collection("zig.capabilities", zig_capabilities_adapter)
+register_collection("zig.activities", zig_activities_adapter)
+register_collection("zig.maturity", zig_maturity_adapter)
+register_collection("zig.gaps", zig_gaps_adapter)

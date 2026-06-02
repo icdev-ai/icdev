@@ -482,6 +482,37 @@ competitive_intel:
     - name: temporal
       repo: temporalio/temporal
       category: workflow_orchestration
+    # --- AI Data Mapping & ETL Integration competitors ---
+    - name: mapforce
+      website: https://www.altova.com/mapforce.html
+      category: data_mapping
+    - name: adeptia
+      website: https://www.adeptia.com/products/artificial-intelligence-mapping
+      category: data_mapping
+    - name: mulesoft
+      website: https://www.mulesoft.com
+      category: data_integration
+    - name: talend
+      website: https://www.talend.com
+      category: data_integration
+    - name: informatica
+      website: https://www.informatica.com
+      category: data_integration
+    - name: boomi
+      website: https://boomi.com
+      category: data_integration
+    - name: snaplogic
+      website: https://www.snaplogic.com
+      category: data_integration
+    - name: jitterbit
+      website: https://www.jitterbit.com
+      category: data_integration
+    - name: airbyte
+      repo: airbytehq/airbyte
+      category: data_integration
+    - name: fivetran
+      website: https://www.fivetran.com
+      category: data_integration
 
 # =========================================================================
 # Standards Body Monitoring

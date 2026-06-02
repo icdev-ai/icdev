@@ -916,3 +916,17 @@
 | Seed Icdev Knowledge Base | tools\govcon\seed_icdev_knowledge_base.py | Auto-registered: govcon/seed_icdev_knowledge_base.py | --json | JSON |
 | Seed Solicitation Requirements | tools\govcon\seed_solicitation_requirements.py | Auto-registered: govcon/seed_solicitation_requirements.py | --json | JSON |
 | Update Icdev Proposal Metadata | tools\govcon\update_icdev_proposal_metadata.py | Auto-registered: govcon/update_icdev_proposal_metadata.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Run Writeguard On Drafts | tools\govcon\run_writeguard_on_drafts.py | Auto-registered: govcon/run_writeguard_on_drafts.py | --json | JSON |
+| Seed Zig Kanban | tools\kanban\seed_zig_kanban.py | Auto-registered: kanban/seed_zig_kanban.py | --json | JSON |
+| Zig Activity Tracker | tools\security_canvas\zig_activity_tracker.py | Auto-registered: security_canvas/zig_activity_tracker.py | --json | JSON |
+| Zig Artifact Generator | tools\security_canvas\zig_artifact_generator.py | Auto-registered: security_canvas/zig_artifact_generator.py | --json | JSON |
+| Zig Assessor | tools\security_canvas\zig_assessor.py | Auto-registered: security_canvas/zig_assessor.py | --json | JSON |
+| Zig Phase Tracker | tools\security_canvas\zig_phase_tracker.py | Auto-registered: security_canvas/zig_phase_tracker.py | --json | JSON |
+| Zig Pillar Scorer | tools\security_canvas\zig_pillar_scorer.py | Auto-registered: security_canvas/zig_pillar_scorer.py | --json | JSON |
+| Zig Roadmap Generator | tools\security_canvas\zig_roadmap_generator.py | Auto-registered: security_canvas/zig_roadmap_generator.py | --json | JSON |
+| Qa Verify Backgrounds | tools\testing\qa_verify_backgrounds.py | Auto-registered: testing/qa_verify_backgrounds.py | --json | JSON |

@@ -1,0 +1,120 @@
+{% extends "security_canvas/base.html" %}
+{% block title %}Phase Tracker — NSA ZIG{% endblock %}
+{% block head %}
+<style>
+.phase-header{display:flex;align-items:center;gap:16px;padding:16px 20px;border-radius:8px;margin-bottom:20px;}
+.phase-header.discovery{background:linear-gradient(90deg,#3a2e1e,#1a1a2e);}
+.phase-header.phase1{background:linear-gradient(90deg,#1e2e3a,#1a1a2e);}
+.phase-header.phase2{background:linear-gradient(90deg,#1e3a2e,#1a1a2e);}
+.phase-pct-ring{width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:700;flex-shrink:0;}
+.act-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #2a2a3a;}
+.act-item:last-child{border-bottom:none;}
+.act-check{width:18px;height:18px;border-radius:3px;border:2px solid #e94560;cursor:pointer;flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:11px;}
+.act-check.complete{background:#4ade80;border-color:#4ade80;color:#000;}
+.act-check.in_progress{background:#f59e0b;border-color:#f59e0b;color:#000;}
+.pillar-tag{display:inline-block;padding:1px 7px;border-radius:8px;font-size:0.7rem;background:#2a2a4a;color:#aaa;margin-left:6px;}
+.stat-box{background:#2a2a4a;border-radius:6px;padding:8px 14px;font-size:0.8rem;color:#aaa;}
+.stat-box strong{color:#fff;}
+</style>
+{% endblock %}
+{% block content %}
+<div style="padding:24px;max-width:1200px;margin:0 auto;">
+
+  <div style="font-size:0.8rem;color:#666;margin-bottom:16px;">
+    <a href="/security/zig/" style="color:#60a5fa;">ZIG Overview</a> &rsaquo; Phase Tracker
+  </div>
+
+  <h1 style="color:#fff;margin:0 0 24px;font-size:1.5rem;">ZIG Phase Tracker</h1>
+
+  {% set phase_colors = {'discovery': '#f59e0b', 'phase1': '#60a5fa', 'phase2': '#4ade80'} %}
+  {% set phase_labels = {'discovery': 'Discovery Phase', 'phase1': 'Phase 1 — Target Foundation', 'phase2': 'Phase 2 — Target Integration (FY2027)'} %}
+  {% set phase_css = {'discovery': 'discovery', 'phase1': 'phase1', 'phase2': 'phase2'} %}
+
+  {% for phase_slug in ['discovery', 'phase1', 'phase2'] %}
+  {% set acts = activities_by_phase.get(phase_slug, []) %}
+  {% set pstat = phases_status|selectattr('slug', 'eq', phase_slug)|first %}
+  {% set color = phase_colors[phase_slug] %}
+  {% set pct = pstat.pct_complete if pstat else 0 %}
+
+  <div style="background:#1a1a2e;border-radius:10px;border:1px solid #2a2a4a;margin-bottom:24px;overflow:hidden;">
+    <!-- Phase Header -->
+    <div class="phase-header {{ phase_css[phase_slug] }}">
+      <div class="phase-pct-ring" style="border:3px solid {{ color }};color:{{ color }};">{{ pct }}%</div>
+      <div style="flex:1;">
+        <div style="color:#fff;font-weight:600;font-size:1rem;">{{ phase_labels[phase_slug] }}</div>
+        <div style="font-size:0.8rem;color:#aaa;margin-top:4px;">
+          {% if pstat %}{{ pstat.complete }}/{{ pstat.total }} activities complete &bull; {{ pstat.in_progress }} in progress{% endif %}
+        </div>
+        <div style="background:#2a2a4a;border-radius:4px;height:6px;margin-top:8px;overflow:hidden;">
+          <div style="height:100%;background:{{ color }};border-radius:4px;width:{{ pct }}%;"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <span class="stat-box"><strong>{{ pstat.complete if pstat else 0 }}</strong> done</span>
+        <span class="stat-box"><strong>{{ pstat.in_progress if pstat else 0 }}</strong> active</span>
+        <span class="stat-box"><strong>{{ pstat.not_started if pstat else 0 }}</strong> pending</span>
+      </div>
+    </div>
+
+    <!-- Activities -->
+    <div style="padding:16px 20px;">
+      {% set grouped = {} %}
+      {% for act in acts %}
+        {% if act.pillar_slug not in grouped %}{% set _ = grouped.update({act.pillar_slug: []}) %}{% endif %}
+        {% set _ = grouped[act.pillar_slug].append(act) %}
+      {% endfor %}
+
+      {% for pillar_slug, pillar_acts in grouped.items() %}
+      <div style="margin-bottom:16px;">
+        <div style="font-size:0.75rem;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
+          {{ pillar_slug|title }} Pillar
+        </div>
+        {% for act in pillar_acts %}
+        <div class="act-item">
+          <div class="act-check {{ act.status }}" data-act="{{ act.id }}" title="Toggle status">
+            {% if act.status == 'complete' %}&#x2713;{% elif act.status == 'in_progress' %}&#x25cf;{% endif %}
+          </div>
+          <div style="flex:1;">
+            <div style="color:#fff;font-size:0.85rem;">{{ act.title }}
+              <span class="pillar-tag">{{ act.cap_title[:40] }}</span>
+            </div>
+            {% if act.nist_control_ref %}
+            <div style="font-size:0.7rem;color:#555;margin-top:3px;">NIST {{ act.nist_control_ref }}</div>
+            {% endif %}
+          </div>
+          <div style="font-size:0.75rem;color:#{{ 'aaa' if act.status == 'not_started' else ('f59e0b' if act.status == 'in_progress' else '4ade80') }};">
+            {{ act.status|replace('_',' ')|title }}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div style="margin-top:16px;text-align:center;">
+    <a href="/security/zig/" style="color:#60a5fa;">&larr; ZIG Overview</a>
+    &nbsp;&nbsp;
+    <a href="/security/zig/assessment" style="color:#60a5fa;">Run Assessment &rarr;</a>
+  </div>
+</div>
+
+<script>
+const STATUS_CYCLE = {'not_started': 'in_progress', 'in_progress': 'complete', 'complete': 'not_started'};
+document.querySelectorAll('.act-check').forEach(el => {
+  el.addEventListener('click', async () => {
+    const actId = el.dataset.act;
+    const current = el.classList.contains('complete') ? 'complete' :
+                    el.classList.contains('in_progress') ? 'in_progress' : 'not_started';
+    const next = STATUS_CYCLE[current];
+    const resp = await fetch(`/security/api/zig/activities/${actId}/complete`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: next})
+    });
+    if (resp.ok) location.reload();
+  });
+});
+</script>
+{% endblock %}

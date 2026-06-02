@@ -1,0 +1,8 @@
+# Intent: Surface field pairs flagged as needs_review — AI confidence below 0.50.
+#         These require explicit human confirmation before transformation code can
+#         be generated. A backlog here indicates a HITL bottleneck.
+# Expected shape: field pairs with status == needs_review, sorted by confidence asc.
+
+foreach m in data.field_mappings
+  where m.status == "needs_review"
+  select m.id, m.session_name, m.source_field, m.target_field, m.confidence, m.match_method

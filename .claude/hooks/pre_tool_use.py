@@ -471,6 +471,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # DoD/IC PKI + Continuous Auth (G-05/G-11/G-14, NIST AU-2/AU-12/IA-11)
         "abac_audit",
         "session_risk_log",
+        # AI Data Mapping — transformation artifact audit (NIST AU-9, append-only)
+        "dd_mapping_transforms",
     ]
 
     if tool_name == "Bash":

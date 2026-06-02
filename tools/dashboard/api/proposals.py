@@ -409,6 +409,46 @@ def update_opportunity(opp_id):
         conn.close()
 
 
+@proposals_api.route("/opportunities/<opp_id>/language-config", methods=["GET"])
+def get_language_config(opp_id):
+    """GET /api/proposals/opportunities/<id>/language-config — Aggregated language settings.
+
+    Returns the opportunity's glossary, wall-of-truth, taxonomy, and active style templates.
+    """
+    conn = _get_db()
+    try:
+        existing = conn.execute(
+            "SELECT classification, compartments FROM proposal_opportunities WHERE id = ?", (opp_id,)
+        ).fetchone()
+        if not existing:
+            return jsonify({"error": "Opportunity not found"}), 404
+        denied = _mac_deny_read(existing)
+        if denied:
+            return denied
+
+        glossary = conn.execute(
+            "SELECT * FROM wg_glossary WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY term_type, term",
+            (opp_id,),
+        ).fetchall()
+        taxonomy = conn.execute(
+            "SELECT * FROM proposal_taxonomy WHERE opportunity_id = ? AND is_active = 1 ORDER BY label",
+            (opp_id,),
+        ).fetchall()
+        style_guides = conn.execute(
+            "SELECT id, guide_name, version, created_at FROM wg_style_guides WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY guide_name",
+            (opp_id,),
+        ).fetchall()
+        return jsonify({
+            "opportunity_id": opp_id,
+            "glossary": [dict(r) for r in glossary],
+            "wall_of_truth": [dict(r) for r in glossary if r["term_type"] in ("banned", "deprecated")],
+            "taxonomy": [dict(r) for r in taxonomy],
+            "style_guides": [dict(r) for r in style_guides],
+        })
+    finally:
+        conn.close()
+
+
 @proposals_api.route("/opportunities/<opp_id>/status", methods=["PUT"])
 def change_opportunity_status(opp_id):
     """PUT /api/proposals/opportunities/<id>/status — Change opportunity status.

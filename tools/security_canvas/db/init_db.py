@@ -250,6 +250,76 @@ CREATE TABLE IF NOT EXISTS sdc_sops (
 );
 CREATE INDEX IF NOT EXISTS idx_sdc_sops_type ON sdc_sops(sop_type);
 CREATE INDEX IF NOT EXISTS idx_sdc_sops_status ON sdc_sops(approval_status);
+
+-- ── NSA ZIG (Zero Trust Implementation Guide) Tables ────────────────────────
+
+CREATE TABLE IF NOT EXISTS zig_pillars (
+    slug            TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    full_name       TEXT,
+    pillar_weight   REAL DEFAULT 0.14,
+    icon            TEXT,
+    color           TEXT,
+    csi_url         TEXT,
+    description     TEXT,
+    ficam_components TEXT DEFAULT '[]',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS zig_capabilities (
+    id              TEXT PRIMARY KEY,
+    pillar_slug     TEXT NOT NULL REFERENCES zig_pillars(slug),
+    title           TEXT NOT NULL,
+    phase           TEXT NOT NULL CHECK(phase IN ('discovery','phase1','phase2')),
+    maturity_level  TEXT NOT NULL CHECK(maturity_level IN ('basic','intermediate','advanced')),
+    description     TEXT,
+    nist_controls   TEXT DEFAULT '[]',
+    target_fy2027   INTEGER DEFAULT 1,
+    implementation_status TEXT DEFAULT 'not_started'
+        CHECK(implementation_status IN ('not_started','planned','in_progress','implemented')),
+    evidence_note   TEXT,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_zig_cap_pillar ON zig_capabilities(pillar_slug);
+CREATE INDEX IF NOT EXISTS idx_zig_cap_phase ON zig_capabilities(phase);
+
+CREATE TABLE IF NOT EXISTS zig_activities (
+    id              TEXT PRIMARY KEY,
+    capability_id   TEXT NOT NULL REFERENCES zig_capabilities(id),
+    phase           TEXT NOT NULL CHECK(phase IN ('discovery','phase1','phase2')),
+    title           TEXT NOT NULL,
+    description     TEXT,
+    nist_control_ref TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_zig_act_cap ON zig_activities(capability_id);
+CREATE INDEX IF NOT EXISTS idx_zig_act_phase ON zig_activities(phase);
+
+CREATE TABLE IF NOT EXISTS zig_activity_completions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    activity_id     TEXT NOT NULL REFERENCES zig_activities(id),
+    status          TEXT NOT NULL DEFAULT 'not_started'
+        CHECK(status IN ('not_started','in_progress','complete')),
+    evidence_note   TEXT,
+    completed_by    TEXT,
+    completed_at    TEXT,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_zig_comp_act ON zig_activity_completions(activity_id);
+
+CREATE TABLE IF NOT EXISTS zig_maturity_scores (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    pillar_slug     TEXT NOT NULL,
+    score           REAL NOT NULL DEFAULT 0.0,
+    maturity_level  TEXT,
+    capability_count INTEGER DEFAULT 0,
+    activity_count  INTEGER DEFAULT 0,
+    complete_activities INTEGER DEFAULT 0,
+    assessment_run_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_zig_score_pillar ON zig_maturity_scores(pillar_slug);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -1440,10 +1510,78 @@ SNIPPETS = [
 ]
 
 
+def _seed_zig(conn):
+    """Seed ZIG pillars, capabilities, and activities (idempotent)."""
+    try:
+        from tools.security_canvas.constants import (
+            ZIG_PILLARS, ZIG_CAPABILITIES, ZIG_ACTIVITIES,
+        )
+    except ImportError:
+        try:
+            import sys
+            sys.path.insert(0, str(_ICDEV_ROOT))
+            from tools.security_canvas.constants import (
+                ZIG_PILLARS, ZIG_CAPABILITIES, ZIG_ACTIVITIES,
+            )
+        except ImportError:
+            print("[init_db] WARNING: Could not import ZIG constants — skipping ZIG seed.")
+            return
+
+    # Seed pillars
+    p_added = 0
+    for p in ZIG_PILLARS:
+        exists = conn.execute("SELECT 1 FROM zig_pillars WHERE slug=?", (p["slug"],)).fetchone()
+        if not exists:
+            conn.execute(
+                "INSERT INTO zig_pillars (slug, name, full_name, pillar_weight, icon, color, csi_url, description, ficam_components) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (p["slug"], p["name"], p.get("full_name", p["name"]),
+                 p.get("pillar_weight", 0.143),
+                 p.get("icon", "shield"), p.get("color", "#6366f1"),
+                 p.get("csi_url", ""), p.get("description", ""),
+                 json.dumps(p.get("ficam_components", []))),
+            )
+            p_added += 1
+    if p_added:
+        conn.commit()
+
+    # Seed capabilities
+    c_added = 0
+    for c in ZIG_CAPABILITIES:
+        exists = conn.execute("SELECT 1 FROM zig_capabilities WHERE id=?", (c["id"],)).fetchone()
+        if not exists:
+            conn.execute(
+                "INSERT INTO zig_capabilities (id, pillar_slug, title, phase, maturity_level, description, nist_controls) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (c["id"], c["pillar"], c["title"], c["phase"], c["maturity_level"],
+                 c.get("description", ""), json.dumps(c.get("nist_controls", []))),
+            )
+            c_added += 1
+    if c_added:
+        conn.commit()
+
+    # Seed activities
+    a_added = 0
+    for a in ZIG_ACTIVITIES:
+        exists = conn.execute("SELECT 1 FROM zig_activities WHERE id=?", (a["id"],)).fetchone()
+        if not exists:
+            conn.execute(
+                "INSERT INTO zig_activities (id, capability_id, phase, title, description, nist_control_ref) "
+                "VALUES (?,?,?,?,?,?)",
+                (a["id"], a["capability_id"], a["phase"], a["title"],
+                 a.get("description", ""), a.get("nist_control_ref", "")),
+            )
+            a_added += 1
+    if a_added:
+        conn.commit()
+
+    print(f"[init_db] ZIG seed: {p_added} pillars, {c_added} capabilities, {a_added} activities added.")
+
+
 def init_db():
     """Initialize the Security Design Canvas database.
 
-    Creates all tables, audit immutability triggers, and seeds templates.
+    Creates all tables, audit immutability triggers, seeds templates, and seeds ZIG data.
     """
     conn = get_connection()
     try:
@@ -1551,6 +1689,9 @@ def init_db():
             print(f"[init_db] Seeded {snip_added} new snippets (total: {snip_count + snip_added}).")
         else:
             print(f"[init_db] All {snip_count} snippets up to date.")
+
+        # Seed ZIG framework data
+        _seed_zig(conn)
 
     finally:
         conn.close()

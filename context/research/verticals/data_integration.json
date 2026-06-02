@@ -1,0 +1,245 @@
+{
+  "id": "vert-data-integration",
+  "name": "AI Data Mapping & Integration Platforms",
+  "slug": "data_integration",
+  "description": "Visual schema-to-schema data mapping, AI-assisted field matching, ETL transformation pipelines, data integration platforms, and compliance-aware data movement for regulated environments (Gov/DoD IL4-IL6, HIPAA, GDPR, FedRAMP).",
+  "keywords": [
+    "data mapping",
+    "AI data mapping",
+    "schema mapping",
+    "field mapping",
+    "ETL mapping",
+    "data transformation",
+    "source to target mapping",
+    "MapForce",
+    "Altova MapForce",
+    "Adeptia",
+    "MuleSoft DataWeave",
+    "Talend data mapper",
+    "Informatica PowerCenter",
+    "Informatica IDMC",
+    "IBM DataStage",
+    "Azure Data Factory",
+    "AWS Glue",
+    "Boomi",
+    "SnapLogic",
+    "Jitterbit",
+    "Apache NiFi",
+    "Airbyte",
+    "Fivetran",
+    "data integration platform",
+    "drag and drop mapping",
+    "visual mapping",
+    "schema matching",
+    "automated field mapping",
+    "AI schema matching",
+    "semantic field mapping",
+    "data wrangling",
+    "data preparation",
+    "column mapping",
+    "field transformation",
+    "XSLT mapping",
+    "SQL transformation",
+    "crosswalk mapping",
+    "schema alignment",
+    "data pipeline mapping",
+    "data lineage",
+    "ETL pipeline",
+    "ELT pipeline",
+    "data integration"
+  ],
+  "regulatory_bodies": [
+    "NIST",
+    "CISA",
+    "NARA",
+    "DoD CIO",
+    "HHS OCR",
+    "FTC",
+    "ENISA",
+    "ISO"
+  ],
+  "competitors": [
+    {
+      "name": "MapForce (Altova)",
+      "website": "https://www.altova.com/mapforce.html",
+      "category": "visual_data_mapping",
+      "strengths": ["multi-format support", "visual drag-and-drop", "code generation (XSLT/XQuery/SQL)", "EDI support"],
+      "weaknesses": ["no AI field suggestions", "desktop-only", "steep learning curve", "expensive licensing"]
+    },
+    {
+      "name": "Adeptia AI Mapping",
+      "website": "https://www.adeptia.com/products/artificial-intelligence-mapping",
+      "category": "ai_data_mapping",
+      "strengths": ["AI field suggestions", "confidence scoring", "learns from corrections", "HITL workflow"],
+      "weaknesses": ["cloud-only", "limited compliance certifications", "small market presence"]
+    },
+    {
+      "name": "MuleSoft Anypoint",
+      "website": "https://www.mulesoft.com",
+      "category": "integration_platform",
+      "strengths": ["large ecosystem", "DataWeave language", "Salesforce backing"],
+      "weaknesses": ["very expensive", "complex", "requires specialized skills"]
+    },
+    {
+      "name": "Talend",
+      "website": "https://www.talend.com",
+      "category": "data_integration",
+      "strengths": ["open source edition", "broad connector library", "data quality built-in"],
+      "weaknesses": ["complex UI", "Java-heavy", "acquired by Qlik — roadmap uncertain"]
+    },
+    {
+      "name": "Informatica IDMC",
+      "website": "https://www.informatica.com",
+      "category": "data_integration",
+      "strengths": ["enterprise-grade", "AI-powered (CLAIRE engine)", "governance built-in"],
+      "weaknesses": ["extremely expensive", "complex deployment", "overkill for SMB"]
+    },
+    {
+      "name": "Airbyte",
+      "website": "https://airbyte.com",
+      "category": "data_integration",
+      "strengths": ["open source", "large connector library", "ELT focus"],
+      "weaknesses": ["no visual mapping UI", "transformation is downstream (dbt)", "no compliance certs"]
+    }
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.DB",
+      "cs.AI",
+      "cs.IR",
+      "cs.LG"
+    ],
+    "ieee": [
+      "schema matching",
+      "data integration",
+      "ETL pipeline",
+      "data transformation",
+      "field mapping automation"
+    ],
+    "acm": [
+      "data integration",
+      "schema alignment",
+      "ontology matching",
+      "data wrangling",
+      "data mapping automation"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/dataengineering",
+      "r/ETL",
+      "r/Database",
+      "r/datascience",
+      "r/GovIT",
+      "r/MuleSoft"
+    ],
+    "stackexchange": [
+      "stackoverflow.com/questions/tagged/data-mapping",
+      "stackoverflow.com/questions/tagged/etl",
+      "stackoverflow.com/questions/tagged/schema-mapping",
+      "dba.stackexchange.com"
+    ],
+    "discord": [],
+    "forums": [
+      "https://community.mulesoft.com",
+      "https://community.talend.com"
+    ]
+  },
+  "review_sites": {
+    "g2": [
+      "data-integration",
+      "etl-tools",
+      "data-mapping-software",
+      "integration-platform-as-a-service"
+    ],
+    "capterra": [
+      "data-integration-software",
+      "etl-software",
+      "data-management-software"
+    ],
+    "trustpilot": []
+  },
+  "open_source": {
+    "github_topics": [
+      "data-mapping",
+      "schema-matching",
+      "etl",
+      "data-integration",
+      "data-transformation",
+      "field-mapping",
+      "data-wrangling"
+    ],
+    "awesome_lists": [
+      "awesome-data-engineering",
+      "awesome-etl",
+      "awesome-data-integration"
+    ],
+    "package_registries": {
+      "pypi": [
+        "dedupe",
+        "fuzzywuzzy",
+        "rapidfuzz",
+        "recordlinkage",
+        "py-stringmatching",
+        "schema",
+        "jsonschema",
+        "dataflows"
+      ],
+      "npm": [
+        "fuse.js",
+        "jsonata"
+      ],
+      "crates": []
+    }
+  },
+  "news_sources": {
+    "rss_feeds": [],
+    "keywords": [
+      "AI data mapping",
+      "automated schema matching",
+      "ETL automation AI",
+      "data integration AI",
+      "schema alignment machine learning",
+      "field mapping automation",
+      "data transformation AI"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "G06F16/21",
+      "G06F16/215",
+      "G06F16/22",
+      "G06N20/00",
+      "G06F40/30"
+    ],
+    "keywords": [
+      "schema mapping automation",
+      "AI field matching",
+      "data transformation pipeline",
+      "schema alignment similarity",
+      "semantic schema matching"
+    ]
+  },
+  "compliance_frameworks": [
+    "NIST_800_53",
+    "NIST_800_171",
+    "FedRAMP",
+    "CMMC",
+    "HIPAA",
+    "GDPR",
+    "FISMA"
+  ],
+  "video_sources": {
+    "youtube_channels": [],
+    "youtube_search_queries": [
+      "AI data mapping tools 2026",
+      "MapForce tutorial",
+      "Adeptia AI mapping demo",
+      "automated schema matching",
+      "ETL field mapping automation",
+      "MuleSoft DataWeave mapping",
+      "data integration platform comparison 2026"
+    ],
+    "manual_urls": []
+  }
+}
