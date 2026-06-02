@@ -522,10 +522,24 @@ reflexes:
       name: patterns_detected
       threshold: 0
       operator: gte  # 0 = no patterns (healthy), > 0 = new patterns found
+    # Thresholds moved from hardcoded Python constants — anomaly_detection layer
+    # adapts min_pattern_frequency at runtime without code changes.
     min_pattern_frequency: 3
     min_chain_length: 3
     lookback_days: 7
+    max_gap_seconds: 300
+    top_k: 20
+    session_ids_cap: 10
     max_goals_per_run: 3
+    # Adaptive IQR-based frequency threshold (anomaly_detection paradigm).
+    # When enabled, min_pattern_frequency becomes a fallback used only when
+    # there are fewer than min_samples distinct n-grams in the dataset.
+    anomaly_detection:
+      enabled: true          # replace static threshold with IQR-based detection
+      min_samples: 4         # minimum distinct n-grams before adaptive mode activates
+      sensitivity: 1.0       # IQR multiplier: 1.0 = Q3 (75th percentile), 2.0 = upper fence
+      fallback_to_static: true  # use min_pattern_frequency when data is insufficient
+      frequency_floor: 2     # adaptive threshold never drops below this
 
   # ── Goal Learner — Self-Improving Goals from Experience ─────────────────────
 
@@ -539,6 +553,7 @@ reflexes:
       threshold: 0
       operator: gte  # 0 = no novel events (healthy), > 0 = new goals learned
     novelty_threshold: 0.6     # minimum novelty score (0–1) to qualify for goal generation
+    min_evidence_count: 2      # minimum audit+kanban events a domain must have to qualify
     max_goals_per_run: 3       # cap on goals emitted per scan
     lookback_days: 7           # audit/kanban look-back window
     quality_weights:           # scoring dimension weights (must sum to 1.0)
@@ -724,6 +739,30 @@ reflexes:
       threshold: 0
       operator: gte  # 0 = all migrations healthy, >0 = issues surfaced
 
+  aadc_compliance:
+    enabled: true
+    risk_tier: green
+    schedule: "on_event"
+    description: "AADC design compliance scoring — NIST AI RMF / OWASP LLM / MITRE ATLAS node-coverage"
+    success_metric:
+      name: overall_score
+      threshold: 0
+      operator: gte
+    # Thresholds moved from hardcoded Python constants — anomaly_detection layer
+    # adapts them at runtime using z-score over historical aadc_assessments data.
+    critical_threshold: 40.0       # framework coverage below this triggers a Kanban suggestion
+    memory_delta_threshold: 5.0    # min overall_score change (points) to write a memory insight
+    anomaly_detection:
+      enabled: true                # replace static thresholds with z-score adaptive ones
+      min_samples: 5               # historical assessments needed before adaptive mode activates
+      z_score: 2.0                 # std deviations below historical mean sets adaptive critical_threshold
+      fallback_to_static: true     # use critical_threshold/memory_delta_threshold when data is sparse
+      adaptive_bounds:
+        critical_threshold_floor: 20.0    # adaptive threshold never drops below this
+        critical_threshold_ceiling: 60.0  # adaptive threshold never exceeds this
+        memory_delta_floor: 2.0           # adaptive delta never drops below this
+        memory_delta_ceiling: 15.0        # adaptive delta never exceeds this
+
   academy_reflex:
     enabled: true
     risk_tier: green
@@ -843,6 +882,31 @@ audit:
     - genesis.convergence.retrospective_triggered
     - genesis.stagnation.detected
     - genesis.stagnation.plateau_broken
+
+# ── Eval Harness Gates (AI-ify Phase 2 — anomaly_detection) ────────────────
+# Thresholds moved from hardcoded Python constants to config so the
+# anomaly_detection layer can adapt them without code changes.
+harness:
+  gates:
+    precision_min: 0.80       # oracle_triage/heal: alert when precision < this
+    ece_max: 0.15             # calibration: alert when ECE > this
+    false_heal_max: 0.20      # heal: alert when false-heal rate > this
+    heal_success_min: 0.60    # heal: alert when heal success rate < this
+    min_decisions: 10         # skip gate check when fewer decisions than this
+  anomaly_detection:
+    enabled: true             # use adaptive z-score anomaly detection
+    min_samples: 10           # minimum historical windows before adaptive mode activates
+    window_days: 90           # rolling window in days for snapshot collection
+    chunk_size: 20            # decision rows per sliding snapshot
+    z_score: 2.0              # std deviations from mean to set adaptive threshold
+    fallback_to_static: true  # fall back to gates.* thresholds when insufficient data
+    # Hard safety bounds for adaptive thresholds — prevents z-score from producing
+    # nonsensical values when history is noisy or sparse.
+    adaptive_bounds:
+      precision_min_floor: 0.50      # adaptive precision_min never goes below this
+      ece_max_ceiling: 0.50          # adaptive ece_max never goes above this
+      false_heal_max_ceiling: 0.60   # adaptive false_heal_max never goes above this
+      heal_success_min_floor: 0.30   # adaptive heal_success_min never goes below this
 
 # ── Convergence Gates (Phase 65 — Ouroboros-inspired) ──────────────────────
 

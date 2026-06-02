@@ -425,6 +425,10 @@ routing:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
 
+  harness_anomaly_detection:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
   oracle_triage_nlp_extract:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low

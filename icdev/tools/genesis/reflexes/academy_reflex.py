@@ -5,15 +5,19 @@
 Two-phase reflex that keeps the Academy curriculum current autonomously:
 
 Phase 1 — Pattern → Draft:
-  Query genesis_gkp for proven_pattern artifacts (confidence >= 0.7, status promoted).
-  For each pattern not yet mapped to a mission, insert a draft scaffold into fa_missions
-  (status='draft') for human review and activation.
+  Query genesis_gkp for proven_pattern artifacts (confidence >= adaptive threshold,
+  status promoted). For each pattern not yet mapped to a mission, insert a draft
+  scaffold into fa_missions (status='draft') for human review and activation.
 
 Phase 2 — Staleness → Kanban:
-  Run the LensStalenesssDetector Oracle lens. For every prediction with
-  confidence >= CONFIDENCE_THRESHOLD, create a kanban_tasks row with
-  status='suggested' and source='academy_reflex'. The Kanban scheduler
-  surfaces these to reviewers.
+  Run the LensStalenesssDetector Oracle lens. For every prediction whose
+  confidence exceeds the adaptive anomaly-detection threshold, create a
+  kanban_tasks row with status='suggested' and source='academy_reflex'. The
+  Kanban scheduler surfaces these to reviewers.
+
+Threshold: computed adaptively from the distribution of recent genesis_gkp
+confidence scores (mean − z*std, floored at FALLBACK_THRESHOLD=0.70).
+Falls back to FALLBACK_THRESHOLD when history is insufficient (<10 samples).
 
 COOLDOWN_HOURS = 6 (enforced by Genesis daemon).
 
@@ -24,23 +28,94 @@ from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
 
 import json
+import statistics
 import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 COOLDOWN_HOURS = 6
-CONFIDENCE_THRESHOLD = 0.70
+FALLBACK_THRESHOLD = 0.70   # used when adaptive computation is unavailable
+CONFIDENCE_THRESHOLD = FALLBACK_THRESHOLD  # backward-compat alias
+
+_THRESHOLD_CACHE: Optional[float] = None  # reset each run() invocation
 
 try:
     from tools.db.storage import get_connection
 except ImportError:
     get_connection = None  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# Adaptive confidence threshold (anomaly detection)
+# ---------------------------------------------------------------------------
+
+def _fetch_pattern_confidence_history(conn: Any, limit: int = 100) -> List[float]:
+    """Return recent genesis_gkp confidence scores for distribution estimation."""
+    try:
+        rows = conn.execute(
+            "SELECT confidence FROM genesis_gkp "
+            "WHERE confidence IS NOT NULL ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [float(r["confidence"]) for r in rows if r["confidence"] is not None]
+    except Exception:
+        return []
+
+
+def _compute_adaptive_threshold(
+    history: List[float],
+    *,
+    floor: float = FALLBACK_THRESHOLD,
+    z_score: float = 1.5,
+    min_samples: int = 10,
+) -> Optional[float]:
+    """Derive adaptive minimum confidence from the historical distribution.
+
+    Returns max(floor, mean − z_score * std). Returns None when history is
+    insufficient (< min_samples) or the distribution is degenerate (std == 0).
+    """
+    if len(history) < min_samples or len(history) < 2:
+        return None
+    std = statistics.stdev(history)
+    if std == 0.0:
+        return None
+    mean = statistics.mean(history)
+    return max(floor, round(mean - z_score * std, 4))
+
+
+def _get_adaptive_threshold(conn: Any) -> float:
+    """Return the adaptive confidence threshold, computing it once per run.
+
+    Reads z_score / min_samples from harness config when available, then
+    derives the threshold from recent genesis_gkp confidence scores.
+    Falls back to FALLBACK_THRESHOLD on insufficient history.
+    """
+    global _THRESHOLD_CACHE
+    if _THRESHOLD_CACHE is not None:
+        return _THRESHOLD_CACHE
+
+    z_score = 1.5
+    min_samples = 10
+    try:
+        from tools.genesis.harness.eval_harness import _load_harness_config
+        ad = _load_harness_config().get("anomaly_detection", {})
+        z_score = float(ad.get("z_score", z_score))
+        min_samples = int(ad.get("min_samples", min_samples))
+    except Exception:
+        pass
+
+    history = _fetch_pattern_confidence_history(conn)
+    adaptive = _compute_adaptive_threshold(
+        history, floor=FALLBACK_THRESHOLD, z_score=z_score, min_samples=min_samples
+    )
+    _THRESHOLD_CACHE = adaptive if adaptive is not None else FALLBACK_THRESHOLD
+    return _THRESHOLD_CACHE
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +142,7 @@ def _slugify(text: str) -> str:
 # Phase 1 — proven_pattern GKPs → fa_missions draft scaffolds
 # ---------------------------------------------------------------------------
 
-def _fetch_unmatched_patterns(conn: Any) -> List[Dict]:
+def _fetch_unmatched_patterns(conn: Any, threshold: float = FALLBACK_THRESHOLD) -> List[Dict]:
     """Return genesis_gkp rows that are proven_pattern and not yet a mission."""
     try:
         rows = conn.execute(
@@ -80,7 +155,7 @@ def _fetch_unmatched_patterns(conn: Any) -> List[Dict]:
             ORDER BY confidence DESC
             LIMIT 20
             """,
-            (CONFIDENCE_THRESHOLD,),
+            (threshold,),
         ).fetchall()
     except Exception:
         return []
@@ -172,12 +247,17 @@ def _run_staleness_lens() -> List[Dict]:
         return []
 
 
-def _promote_to_kanban(conn: Any, predictions: List[Dict], dry_run: bool = False) -> int:
+def _promote_to_kanban(
+    conn: Any,
+    predictions: List[Dict],
+    dry_run: bool = False,
+    threshold: float = FALLBACK_THRESHOLD,
+) -> int:
     """Create kanban_tasks rows (status='suggested') for qualifying predictions."""
     now = _utcnow_iso()
     count = 0
     for pred in predictions:
-        if pred.get("confidence", 0) < CONFIDENCE_THRESHOLD:
+        if pred.get("confidence", 0) < threshold:
             continue
         task_id   = str(uuid.uuid4())
         title     = f"[Academy] {pred.get('title', 'Curriculum review')}"
@@ -228,6 +308,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
       dry_run (bool)  — log actions without writing to DB
       max_drafts (int) — cap on new draft missions per run (default 5)
     """
+    global _THRESHOLD_CACHE
+    _THRESHOLD_CACHE = None  # reset per-run so the threshold is recomputed fresh
+
     dry_run   = bool(config.get("dry_run", False))
     max_drafts = int(config.get("max_drafts", 5))
 
@@ -236,8 +319,11 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     conn = get_connection()
 
+    # Compute adaptive threshold once; both phases use the same cutoff.
+    threshold = _get_adaptive_threshold(conn)
+
     # ── Phase 1: Pattern → Draft ─────────────────────────────────────────────
-    patterns     = _fetch_unmatched_patterns(conn)[:max_drafts]
+    patterns     = _fetch_unmatched_patterns(conn, threshold=threshold)[:max_drafts]
     drafts_created = 0
     draft_slugs: List[str] = []
     for pat in patterns:
@@ -246,20 +332,21 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             draft_slugs.append(pat["slug"])
 
     # ── Phase 2: Staleness → Kanban ──────────────────────────────────────────
-    stale_preds       = _run_staleness_lens()
-    kanban_created    = _promote_to_kanban(conn, stale_preds, dry_run=dry_run)
+    stale_preds    = _run_staleness_lens()
+    kanban_created = _promote_to_kanban(conn, stale_preds, dry_run=dry_run, threshold=threshold)
 
     total_metric = drafts_created + kanban_created
     return {
         "success": True,
         "metric_value": float(total_metric),
         "details": {
-            "dry_run":          dry_run,
-            "patterns_found":   len(patterns),
-            "drafts_created":   drafts_created,
-            "draft_slugs":      draft_slugs,
-            "stale_predictions": len(stale_preds),
-            "kanban_tasks_created": kanban_created,
+            "dry_run":               dry_run,
+            "confidence_threshold":  threshold,
+            "patterns_found":        len(patterns),
+            "drafts_created":        drafts_created,
+            "draft_slugs":           draft_slugs,
+            "stale_predictions":     len(stale_preds),
+            "kanban_tasks_created":  kanban_created,
         },
     }
 

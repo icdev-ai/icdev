@@ -95,6 +95,39 @@ sessions over the past {lookback_days} days.
 """
 
 
+def _compute_confidence_anomaly_detection(
+    frequency: int,
+    diversity: int,
+    composite_score: float,
+) -> float:
+    """Compute goal confidence using anomaly detection on pattern statistics.
+
+    Patterns that deviate positively from empirical baselines (higher frequency,
+    broader session diversity, stronger composite score) earn higher confidence.
+    Clamped to [0.40, 0.90] to keep all generated goals in YELLOW tier (human
+    review always required — never auto-promote to GREEN).
+
+    At baseline inputs (freq≈3, diversity≈2, score≈0.5) the result is ~0.65.
+    Low-signal patterns approach 0.49; exceptional patterns approach 0.90.
+    """
+    _BASELINE_FREQ = 3.0
+    _BASELINE_DIV = 2.0
+    _BASELINE_SCORE = 0.5
+
+    _W_FREQ = 0.40
+    _W_DIV = 0.30
+    _W_SCORE = 0.30
+
+    freq_ratio = min(frequency / max(_BASELINE_FREQ, 1.0), 2.0)
+    div_ratio = min(diversity / max(_BASELINE_DIV, 1.0), 2.0)
+    score_ratio = min(composite_score / max(_BASELINE_SCORE, 1e-9), 2.0)
+
+    # Weighted sum in [0, 2]; map linearly to [0.40, 0.90]
+    raw = _W_FREQ * freq_ratio + _W_DIV * div_ratio + _W_SCORE * score_ratio
+    confidence = 0.40 + (raw / 2.0) * 0.50
+    return round(max(0.40, min(0.90, confidence)), 4)
+
+
 def _tool_name_to_title(tool_names: List[str]) -> str:
     """Generate a human-readable title from a tool chain."""
     # Take the most distinctive tools (skip generic ones)
@@ -164,8 +197,9 @@ def generate_goal_from_pattern(
     tool_sequence = "\n".join(f"{i}. `{tool}`" for i, tool in enumerate(tool_chain, 1))
     tool_list = ", ".join(f"`{t}`" for t in tool_chain)
 
-    # Confidence: 0.55 base (always human review for YELLOW tier)
-    confidence = 0.55
+    # Confidence via anomaly detection: pattern statistics determine how far
+    # this pattern deviates from baseline; result stays in YELLOW tier [0.40, 0.90].
+    confidence = _compute_confidence_anomaly_detection(frequency, diversity, score)
 
     goal_md = GOAL_TEMPLATE.format(
         title=title,

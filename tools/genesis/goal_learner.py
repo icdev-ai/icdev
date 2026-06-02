@@ -64,6 +64,7 @@ QUALITY_WEIGHTS = {
 _REFLEX_DEFAULTS: Dict[str, Any] = {
     "novelty_threshold": DEFAULT_NOVELTY_THRESHOLD,
     "max_goals_per_run": MAX_GOALS_PER_RUN,
+    "min_evidence_count": 2,            # Min audit/kanban events a domain must have to qualify
     "lookback_days": 7,
     "write_files": True,
     "top_terms_count": 60,
@@ -411,6 +412,7 @@ def _cluster_into_domains(
     *,
     top_terms_count: int = 60,
     max_keywords_per_domain: int = 30,
+    min_evidence_count: int = 2,
 ) -> List[Dict[str, Any]]:
     """Group audit events + kanban completions into candidate domains.
 
@@ -492,7 +494,7 @@ def _cluster_into_domains(
         n_score = _novelty_score(kws, all_goal_keywords)
         dom["novelty_score"] = round(n_score, 3)
         dom["keywords"] = kws[:max_keywords_per_domain]
-        if n_score >= novelty_threshold:
+        if n_score >= novelty_threshold and dom["evidence_count"] >= min_evidence_count:
             domains.append(dom)
 
     domains.sort(key=lambda d: d["novelty_score"], reverse=True)
@@ -893,6 +895,7 @@ def scan_and_generate(
 
     top_terms_count = int(cfg.get("top_terms_count", 60))
     max_keywords_per_domain = int(cfg.get("max_keywords_per_domain", 30))
+    min_evidence_count = int(cfg.get("min_evidence_count", 2))
     max_audit_events = int(cfg.get("max_audit_events", 500))
     max_kanban_completions = int(cfg.get("max_kanban_completions", 200))
     quality_weights = cfg.get("quality_weights", QUALITY_WEIGHTS)
@@ -915,6 +918,7 @@ def scan_and_generate(
         effective_threshold,
         top_terms_count=top_terms_count,
         max_keywords_per_domain=max_keywords_per_domain,
+        min_evidence_count=min_evidence_count,
     )
 
     generated: List[Dict[str, Any]] = []
@@ -997,6 +1001,7 @@ def scan_and_generate(
         "novelty_threshold": novelty_threshold,
         "effective_novelty_threshold": round(effective_threshold, 4),
         "adaptive_threshold_active": effective_threshold != novelty_threshold,
+        "min_evidence_count": min_evidence_count,
         "audit_events_scanned": len(audit_events),
         "kanban_tasks_scanned": len(kanban_tasks),
         "candidate_domains": len(domains),
