@@ -106,3 +106,38 @@ def test_facts_sorted_for_cache_stability(monkeypatch):
     pos_m = user_msg.index("m_middle")
     pos_z = user_msg.index("z_last")
     assert pos_a < pos_m < pos_z
+
+
+def test_digest_kind_appears_in_prompt(monkeypatch):
+    """The digest_kind label must appear in the user message for model framing."""
+    captured = _fake_router(monkeypatch, content="Some narrative.")
+
+    digest_service._ai_digest_narrative(
+        "AI-ify weekly opportunity digest",
+        {"scan_count": 3, "avg_readiness_pct": 72.5},
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "AI-ify weekly opportunity digest" in user_msg
+    assert "scan_count" in user_msg
+
+
+def test_classification_is_cui(monkeypatch):
+    """LLM requests for digest narratives must carry CUI classification."""
+    captured = _fake_router(monkeypatch, content="Narrative.")
+
+    digest_service._ai_digest_narrative("ZIG zero-trust maturity report", {"overall_pct": 68.0})
+
+    assert captured["request"].classification == "CUI"
+
+
+def test_max_tokens_and_temperature(monkeypatch):
+    """Narrative requests must use max_tokens=512 and temperature=0.3."""
+    captured = _fake_router(monkeypatch, content="Narrative.")
+
+    digest_service._ai_digest_narrative(
+        "POA&M due-soon digest", {"due_count": 5, "overdue_count": 1}
+    )
+
+    assert captured["request"].max_tokens == 512
+    assert captured["request"].temperature == 0.3
