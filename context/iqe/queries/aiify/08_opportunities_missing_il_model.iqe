@@ -1,0 +1,3 @@
+foreach o in aiify.opportunities
+  where o.il_recommended_model == ''
+  select o.module_path, o.function_name, o.pattern_type, o.ai_paradigm

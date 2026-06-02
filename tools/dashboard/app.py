@@ -503,6 +503,20 @@ def _register_govcon_pages(app: "Flask", _get_db):
             opportunities = [dict(r) for r in rows]
             from datetime import date
 
+            # Attach section count per opportunity so we can bubble up proposals with content
+            try:
+                sec_counts = conn.execute(
+                    "SELECT opportunity_id, COUNT(*) as cnt FROM proposal_sections GROUP BY opportunity_id"
+                ).fetchall()
+                sec_map = {r["opportunity_id"]: r["cnt"] for r in sec_counts}
+            except Exception:
+                sec_map = {}
+            for opp in opportunities:
+                opp["section_count"] = sec_map.get(opp["id"], 0)
+
+            # Sort: proposals with content first (by section_count desc), then by due_date asc
+            opportunities.sort(key=lambda o: (-o["section_count"], o.get("due_date") or "9999-99-99"))
+
             today = date.today()
             nearest_deadline = None
             for opp in opportunities:
@@ -920,6 +934,44 @@ def _register_govcon_pages(app: "Flask", _get_db):
         finally:
             conn.close()
 
+    @app.route("/proposals/<opp_id>/language")
+    def proposals_language_page(opp_id):
+        """Proposal Language Settings — glossary, wall of truth, taxonomy, style templates."""
+        conn = _get_db()
+        try:
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            if not opp:
+                return render_template("404.html", message="Opportunity not found"), 404
+            opp = dict(opp)
+            glossary = [
+                dict(r) for r in conn.execute(
+                    "SELECT * FROM wg_glossary WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY term_type, term",
+                    (opp_id,),
+                ).fetchall()
+            ]
+            taxonomy = [
+                dict(r) for r in conn.execute(
+                    "SELECT * FROM proposal_taxonomy WHERE opportunity_id = ? AND is_active = 1 ORDER BY label",
+                    (opp_id,),
+                ).fetchall()
+            ]
+            style_guides = [
+                dict(r) for r in conn.execute(
+                    "SELECT id, guide_name, version, created_at FROM wg_style_guides WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY guide_name",
+                    (opp_id,),
+                ).fetchall()
+            ]
+            return render_template(
+                "proposals/language.html",
+                opp=opp,
+                opp_id=opp_id,
+                glossary=glossary,
+                taxonomy=taxonomy,
+                style_guides=style_guides,
+            )
+        finally:
+            conn.close()
+
     @app.route("/proposals/<opp_id>/ptw")
     def proposals_ptw_page(opp_id):
         """Black-hat / PTW workspace — competitor intelligence + price-to-win (prop-cap-13)."""
@@ -1084,10 +1136,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                     except Exception:
                         opp["days_left"] = None
                     active_proposals.append(opp)
-            except Exception as _ap_err:
-                import traceback as _tb
-                print(f"[govcon] active_proposals error: {_ap_err}")
-                _tb.print_exc()
+            except Exception:
+                pass
 
             return render_template(
                 "govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids,
@@ -1971,6 +2021,10 @@ def create_app() -> Flask:
         except Exception as exc:
             app.logger.warning("Canvas KG failed to register: %s", exc)
 
+        @app.route("/canvas-kg")
+        def canvas_kg_page():
+            return render_template("canvas_kg.html")
+
     # ---- Unified Canvas Compliance Dashboard ----
     @app.route("/canvas-compliance")
     def canvas_compliance_page():
@@ -2515,7 +2569,7 @@ def create_app() -> Flask:
                 try:
                     stig_row = conn.execute(
                         "SELECT "
-                        "SUM(CASE WHEN status = 'not_a_finding' THEN 1 ELSE 0 END) as passed, "
+                        "SUM(CASE WHEN status IN ('not_a_finding','not_applicable') THEN 1 ELSE 0 END) as passed, "
                         "SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_cnt, "
                         "COUNT(*) as total FROM govlift_stig_checks"
                     ).fetchone()
@@ -2534,6 +2588,79 @@ def create_app() -> Flask:
                             overall_scores.append(stig_score)
                 except Exception:
                     pass  # GovLift tables may not be initialized yet
+
+                # ZIG Zero Trust maturity (security_canvas.db — zig_* tables)
+                try:
+                    zig_db_path = BASE_DIR / "data" / "security_canvas.db"
+                    if zig_db_path.exists():
+                        zconn = get_connection(str(zig_db_path))
+                        try:
+                            r = zconn.execute(
+                                "SELECT AVG(score) FROM zig_maturity_scores m1 "
+                                "WHERE assessment_run_at = ("
+                                "  SELECT MAX(assessment_run_at) FROM zig_maturity_scores m2 "
+                                "  WHERE m2.pillar_slug = m1.pillar_slug)"
+                            ).fetchone()
+                            zig_raw = float(r[0] or 0)
+                            if zig_raw == 0:
+                                cap_r = zconn.execute(
+                                    "SELECT COUNT(*) as total, "
+                                    "SUM(CASE WHEN implementation_status='implemented' THEN 1.0 "
+                                    "    WHEN implementation_status='in_progress' THEN 0.5 ELSE 0.0 END) as impl "
+                                    "FROM zig_capabilities"
+                                ).fetchone()
+                                cap_total = float(cap_r["total"] or 0)
+                                cap_rate = (float(cap_r["impl"] or 0) / cap_total) if cap_total > 0 else 0.0
+                                act_r = zconn.execute(
+                                    "SELECT COUNT(za.id) as total, "
+                                    "SUM(CASE WHEN zac.status='complete' THEN 1.0 "
+                                    "    WHEN zac.status='in_progress' THEN 0.5 ELSE 0.0 END) as comp "
+                                    "FROM zig_activities za "
+                                    "LEFT JOIN zig_activity_completions zac ON zac.activity_id = za.id"
+                                ).fetchone()
+                                act_total = float(act_r["total"] or 0)
+                                act_rate = (float(act_r["comp"] or 0) / act_total) if act_total > 0 else 0.0
+                                zig_raw = 0.6 * act_rate + 0.4 * cap_rate
+                            zig_score = round(zig_raw * 100, 1)
+                            canvas_compliance.append({
+                                "name": "Zero Trust",
+                                "score": zig_score,
+                                "open_findings": 0,
+                                "closed_findings": 0,
+                            })
+                            if zig_score > 0:
+                                overall_scores.append(zig_score)
+                        finally:
+                            zconn.close()
+                except Exception:
+                    pass  # ZIG tables may not be initialized yet
+
+                # AI-ify compliance posture (deterministic AI-governance grade —
+                # the same score shown on /ai-ify/posture and the /compliance hub).
+                # Uses the backend-aware canvas connection (PG or SQLite), NOT the
+                # stale SQLite file, and the posture engine, NOT opportunity value.
+                try:
+                    from tools.aiify.posture import compute_posture as _aiify_cp
+                    from tools.aiify.db.init_db import get_connection as _aiify_cn
+                    _ac = _aiify_cn()
+                    try:
+                        _ap = _aiify_cp(_ac)
+                    finally:
+                        _ac.close()
+                    if _ap.get("counts", {}).get("total_scans", 0) > 0:
+                        aiify_score = _ap.get("overall_score", 0.0)
+                        _weak = [d for d in _ap.get("dimensions", [])
+                                 if d.get("score") is not None and d["score"] < 80]
+                        canvas_compliance.append({
+                            "name": "AI-ify",
+                            "score": aiify_score,
+                            "open_findings": len(_weak),
+                            "closed_findings": 0,
+                        })
+                        if aiify_score > 0:
+                            overall_scores.append(aiify_score)
+                except Exception:
+                    pass  # AI-ify tables may not be initialized yet
 
                 overall_score = round(sum(overall_scores) / len(overall_scores), 1) if overall_scores else 0.0
                 _CANVAS_COMPLIANCE_CACHE["entry"] = {
@@ -2687,6 +2814,58 @@ def create_app() -> Flask:
                     cconn.close()
             except Exception:
                 results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
+
+        # ZIG trend — daily average of pillar scores from zig_maturity_scores
+        try:
+            zig_db_path = BASE_DIR / "data" / "security_canvas.db"
+            if zig_db_path.exists():
+                zconn = get_connection(str(zig_db_path))
+                try:
+                    rows = zconn.execute(
+                        "SELECT AVG(score) * 100 as raw_score, DATE(assessment_run_at) as day "
+                        "FROM zig_maturity_scores "
+                        "WHERE assessment_run_at >= DATE('now', '-30 days') "
+                        "GROUP BY DATE(assessment_run_at) ORDER BY day DESC LIMIT 30"
+                    ).fetchall()
+                    scores = [{"score": round(float(r["raw_score"] or 0), 1), "date": r["day"]} for r in rows]
+                    direction, delta = "flat", 0.0
+                    if len(scores) >= 2:
+                        delta = round(scores[0]["score"] - scores[-1]["score"], 1)
+                        direction = "up" if delta >= 2.0 else "down" if delta <= -2.0 else "flat"
+                    results.append({"name": "Zero Trust", "scores": scores, "direction": direction, "delta": delta})
+                finally:
+                    zconn.close()
+            else:
+                results.append({"name": "Zero Trust", "scores": [], "direction": "flat", "delta": 0.0})
+        except Exception:
+            results.append({"name": "Zero Trust", "scores": [], "direction": "flat", "delta": 0.0})
+
+        # AI-ify trend — per-scan average composite_score grouped by day
+        try:
+            aiify_db_path = BASE_DIR / "data" / "aiify_canvas.db"
+            if aiify_db_path.exists():
+                aconn = get_connection(str(aiify_db_path))
+                try:
+                    rows = aconn.execute(
+                        "SELECT AVG(s.composite_score) * 100 as raw_score, DATE(sc.created_at) as day "
+                        "FROM aiify_scores s "
+                        "JOIN aiify_opportunities o ON o.opportunity_id = s.opportunity_id "
+                        "JOIN aiify_scans sc ON sc.scan_id = o.scan_id "
+                        "WHERE sc.created_at >= DATE('now', '-30 days') "
+                        "GROUP BY DATE(sc.created_at) ORDER BY day DESC LIMIT 30"
+                    ).fetchall()
+                    scores = [{"score": round(float(r["raw_score"] or 0), 1), "date": r["day"]} for r in rows]
+                    direction, delta = "flat", 0.0
+                    if len(scores) >= 2:
+                        delta = round(scores[0]["score"] - scores[-1]["score"], 1)
+                        direction = "up" if delta >= 2.0 else "down" if delta <= -2.0 else "flat"
+                    results.append({"name": "AI-ify", "scores": scores, "direction": direction, "delta": delta})
+                finally:
+                    aconn.close()
+            else:
+                results.append({"name": "AI-ify", "scores": [], "direction": "flat", "delta": 0.0})
+        except Exception:
+            results.append({"name": "AI-ify", "scores": [], "direction": "flat", "delta": 0.0})
 
         _CANVAS_TREND_CACHE["entry"] = {"ts": _now, "data": results}
         return jsonify({"canvases": results})
@@ -3069,7 +3248,7 @@ def create_app() -> Flask:
             "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
             "strategos":      ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
             "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
-            "aiify":            ("tools.iqe.adapters.aiify", ["aiify.opportunities", "aiify.scans", "aiify.roadmaps"]),
+            "aiify":            ("tools.iqe.adapters.aiify", ["aiify.opportunities", "aiify.scans", "aiify.roadmaps", "aiify.posture"]),
             "dic":              ("tools.iqe.adapters.dic",   ["dic.drift_events", "dic.regen_queue", "dic.ssp_fragments"]),
             "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
             "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
@@ -3803,8 +3982,63 @@ def create_app() -> Flask:
 
     @app.route("/writeguard")
     def writeguard_page():
-        """WriteGuard — content quality & AI detection dashboard."""
-        return render_template("writeguard.html")
+        """WriteGuard — content quality & AI detection dashboard.
+
+        Query params:
+          opp_id  — pre-load all section drafts for this proposal opportunity
+          sec_id  — pre-load a specific section draft
+        """
+        from flask import request as _req
+        opp_id = _req.args.get("opp_id")
+        sec_id = _req.args.get("sec_id")
+        preload_sections = []
+        preload_title = ""
+        if opp_id or sec_id:
+            try:
+                conn = _get_db()
+                if sec_id:
+                    row = conn.execute(
+                        "SELECT d.draft_content, s.title as section_title, o.title as opp_title "
+                        "FROM proposal_section_drafts d "
+                        "JOIN proposal_sections s ON d.section_id = s.id "
+                        "JOIN proposal_opportunities o ON s.opportunity_id = o.id "
+                        "WHERE d.id = ? ORDER BY d.created_at DESC LIMIT 1",
+                        (sec_id,),
+                    ).fetchone()
+                    if row:
+                        preload_sections = [{"title": row["section_title"], "content": row["draft_content"]}]
+                        preload_title = row["opp_title"]
+                elif opp_id:
+                    opp = conn.execute(
+                        "SELECT title FROM proposal_opportunities WHERE id = ?", (opp_id,)
+                    ).fetchone()
+                    if opp:
+                        preload_title = opp["title"]
+                    drafts = conn.execute(
+                        "SELECT d.draft_content, s.title as section_title, s.section_number "
+                        "FROM proposal_section_drafts d "
+                        "JOIN proposal_sections s ON d.section_id = s.id "
+                        "WHERE s.opportunity_id = ? "
+                        "AND d.created_at = ("
+                        "  SELECT MAX(d2.created_at) FROM proposal_section_drafts d2 "
+                        "  WHERE d2.section_id = d.section_id"
+                        ") "
+                        "ORDER BY s.section_number ASC",
+                        (opp_id,),
+                    ).fetchall()
+                    preload_sections = [
+                        {"title": f"{r['section_number']}: {r['section_title']}", "content": r["draft_content"]}
+                        for r in drafts
+                    ]
+                conn.close()
+            except Exception:
+                pass
+        return render_template(
+            "writeguard.html",
+            preload_sections=preload_sections,
+            preload_title=preload_title,
+            opp_id=opp_id or "",
+        )
 
     # ---- Phase roadmap route ----
 
@@ -4611,6 +4845,27 @@ def create_app() -> Flask:
                 "owasp_pct": 0,
                 "total_findings": 0,
             },
+            "aiify": {
+                "available": False,
+                "grade": "--",
+                "overall_score": None,
+                "posture": "unrated",
+                "scan_count": 0,
+                "opportunity_count": 0,
+                "weakest_dimension": None,
+            },
+            "aadc": {
+                "available": False,
+                "grade": "--",
+                "design_count": 0,
+                "scored_designs": 0,
+                "avg_score": None,
+                "nist_rmf_avg": None,
+                "owasp_avg": None,
+                "omb_compliant": 0,
+                "safety_impacting": 0,
+                "rights_impacting": 0,
+            },
             "heatmap": [],
         }
 
@@ -4739,6 +4994,77 @@ def create_app() -> Flask:
                         pass
             except Exception:
                 pass
+
+        # --- AI-ify: aiify_canvas — AI-governance posture (live compute) ---
+        try:
+            from tools.aiify.posture import compute_posture as _aiify_posture
+            from tools.aiify.db.init_db import get_connection as _aiify_conn
+
+            ac = _aiify_conn()
+            try:
+                ap = _aiify_posture(ac)
+            finally:
+                ac.close()
+            counts = ap.get("counts", {})
+            applicable = [d for d in ap.get("dimensions", []) if d.get("score") is not None]
+            weakest = min(applicable, key=lambda d: d["score"], default=None)
+            result["aiify"] = {
+                "available": counts.get("total_scans", 0) > 0,
+                "grade": ap.get("grade", "--"),
+                "overall_score": ap.get("overall_score"),
+                "posture": ap.get("posture", "unrated"),
+                "scan_count": counts.get("total_scans", 0),
+                "opportunity_count": counts.get("total_opportunities", 0),
+                "weakest_dimension": (
+                    {"label": weakest["label"], "score": weakest["score"]} if weakest else None
+                ),
+            }
+        except Exception:
+            pass
+
+        # --- AADC: agentic_ai_canvas — portfolio assessment posture ---
+        try:
+            from tools.agentic_ai_canvas.db.init_db import get_connection as _aadc_conn
+
+            gc = _aadc_conn()
+            try:
+                design_count = gc.execute("SELECT COUNT(*) FROM aadc_designs").fetchone()[0]
+                result["aadc"]["design_count"] = design_count
+                result["aadc"]["available"] = design_count > 0
+                # Latest assessment per design
+                rows = gc.execute(
+                    "SELECT a.score, a.nist_rmf_score, a.owasp_score, a.omb_compliant, "
+                    "a.safety_impacting, a.rights_impacting "
+                    "FROM aadc_assessments a "
+                    "JOIN (SELECT design_id, MAX(created_at) AS mx FROM aadc_assessments "
+                    "      GROUP BY design_id) m "
+                    "  ON a.design_id = m.design_id AND a.created_at = m.mx"
+                ).fetchall()
+            finally:
+                gc.close()
+            if rows:
+                def _col(r, key, idx):
+                    try:
+                        return r[key]
+                    except (KeyError, IndexError, TypeError):
+                        return r[idx]
+                scores = [_col(r, "score", 0) or 0 for r in rows]
+                nists = [_col(r, "nist_rmf_score", 1) or 0 for r in rows]
+                owasps = [_col(r, "owasp_score", 2) or 0 for r in rows]
+                avg = round(sum(scores) / len(scores), 1)
+                result["aadc"]["scored_designs"] = len(rows)
+                result["aadc"]["avg_score"] = avg
+                result["aadc"]["nist_rmf_avg"] = round(sum(nists) / len(nists), 1)
+                result["aadc"]["owasp_avg"] = round(sum(owasps) / len(owasps), 1)
+                result["aadc"]["omb_compliant"] = sum(1 for r in rows if _col(r, "omb_compliant", 3))
+                result["aadc"]["safety_impacting"] = sum(1 for r in rows if _col(r, "safety_impacting", 4))
+                result["aadc"]["rights_impacting"] = sum(1 for r in rows if _col(r, "rights_impacting", 5))
+                result["aadc"]["grade"] = (
+                    "A" if avg >= 90 else "B" if avg >= 80 else "C" if avg >= 70
+                    else "D" if avg >= 60 else "F"
+                )
+        except Exception:
+            pass
 
         # --- NIST 800-53 heatmap from icdev.db project_controls ---
         try:

@@ -135,6 +135,18 @@ CREATE TABLE IF NOT EXISTS aiify_hitl_decisions (
     reason      TEXT,
     actor       TEXT NOT NULL DEFAULT 'user',
     decided_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS aiify_posture_snapshots (
+    id                SERIAL PRIMARY KEY,
+    overall_score     REAL DEFAULT 0,
+    grade             TEXT DEFAULT 'F',
+    posture           TEXT DEFAULT 'critical',
+    scan_count        INTEGER DEFAULT 0,
+    opportunity_count INTEGER DEFAULT 0,
+    dimensions_json   JSONB,
+    snapshot_json     JSONB,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"""
 
 SCHEMA_PG = _SCHEMA_PG_PRE + ";\n" + _SCHEMA_PG_OPPS + ";\n" + _SCHEMA_PG_POST

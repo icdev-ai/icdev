@@ -1259,6 +1259,7 @@ def api_iqe_query():
             "aiify.opportunities",
             "aiify.scans",
             "aiify.roadmaps",
+            "aiify.posture",
         ]
         iqe_str = nl_to_iqe(question, collections=collections)
         ast = _parse(iqe_str)
@@ -1266,3 +1267,37 @@ def api_iqe_query():
         return jsonify({"iqe": iqe_str, "results": results, "row_count": len(results)})
     except Exception as exc:
         return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+
+# ── Compliance Posture ────────────────────────────────────────────────────────
+@aiify_bp.route("/posture")
+def posture_page():
+    """AI-ify compliance posture overview (AI-governance grade + dimensions)."""
+    return render_template("aiify/posture.html")
+
+
+@aiify_bp.route("/api/posture-summary", methods=["GET"])
+def api_posture_summary():
+    """Return the live AI-ify compliance posture plus recent snapshot trend."""
+    from tools.aiify.posture import compute_posture, posture_trend
+
+    conn = _conn()
+    try:
+        posture = compute_posture(conn)
+        posture["trend"] = posture_trend(conn, limit=20)
+    finally:
+        conn.close()
+    return jsonify(posture)
+
+
+@aiify_bp.route("/api/posture/snapshot", methods=["POST"])
+def api_posture_snapshot():
+    """Compute and persist a posture snapshot (audit evidence). Returns the posture."""
+    from tools.aiify.posture import snapshot_posture
+
+    conn = _conn()
+    try:
+        posture = snapshot_posture(conn, actor="user")
+    finally:
+        conn.close()
+    return jsonify({"status": "ok", "posture": posture})

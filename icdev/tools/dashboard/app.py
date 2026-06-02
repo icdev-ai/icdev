@@ -41,6 +41,7 @@ from flask import (
     url_for,
     send_from_directory,
     make_response,
+    Response,
 )  # noqa: E402
 
 from tools.dashboard.config import (  # noqa: E402
@@ -55,7 +56,7 @@ from tools.dashboard.config import (  # noqa: E402
     HOST,
     DEBUG,
 )
-from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event  # noqa: E402
+from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event, require_role  # noqa: E402
 from tools.dashboard.websocket import init_socketio, get_socketio  # noqa: E402
 from tools.dashboard.findings_aggregator import (  # noqa: E402
     aggregate_findings as _aggregate_findings,
@@ -157,7 +158,9 @@ _CANVAS_DEFS = [
     ("pmc", "ICDEV_PMC_ENABLED", "tools.pmc_canvas.blueprint", "create_pmc_blueprint"),
     ("ccc", "ICDEV_CCC_ENABLED", "tools.ccc_canvas.blueprint", "create_ccc_blueprint"),
     ("dsoc", "ICDEV_DSOC_ENABLED", "tools.dsoc_canvas.blueprint", "create_dsoc_blueprint"),
-    ("aac",  "ICDEV_AAC_ENABLED",  "tools.ai_augmentation.blueprint", "aac_bp"),
+    ("aiify",  "ICDEV_AIIFY_ENABLED",  "tools.aiify.blueprint", "aiify_bp"),
+    ("aiify_compat", "ICDEV_AIIFY_ENABLED", "tools.aiify.blueprint", "aiify_compat_bp"),
+    ("dic", "ICDEV_DIC_ENABLED", "tools.document_intelligence.blueprint", "dic_bp"),
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
 ]
 
@@ -244,8 +247,18 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 "at_risk": pf.get("at_risk_contracts", 0),
                 "health_distribution": pf.get("health_distribution", {"green": 0, "yellow": 0, "red": 0}),
             }
+            try:
+                from tools.govcon.risk_manager import get_portfolio_risk_summary
+
+                risk_summary = get_portfolio_risk_summary().get("summary", {})
+            except Exception:
+                risk_summary = {}
             return render_template(
-                "cpmp/portfolio.html", portfolio=portfolio, contracts=contracts, upcoming_deliverables=upcoming
+                "cpmp/portfolio.html",
+                portfolio=portfolio,
+                contracts=contracts,
+                upcoming_deliverables=upcoming,
+                risk_summary=risk_summary,
             )
         except Exception as e:
             import traceback
@@ -263,6 +276,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 },
                 contracts=[],
                 upcoming_deliverables=[],
+                risk_summary={},
                 error=str(e),
             )
 
@@ -305,6 +319,22 @@ def _register_govcon_pages(app: "Flask", _get_db):
             except Exception:
                 cpars_prediction = {}
                 cpars_assessments = []
+            try:
+                from tools.govcon.milestone_manager import list_milestones, list_deps
+
+                milestones = list_milestones(contract_id).get("milestones", [])
+                milestone_deps = list_deps(contract_id).get("deps", [])
+            except Exception:
+                milestones = []
+                milestone_deps = []
+            try:
+                from tools.govcon.risk_manager import list_risks, get_risk_matrix
+
+                risks = list_risks(contract_id).get("risks", [])
+                risk_matrix = get_risk_matrix(contract_id)
+            except Exception:
+                risks = []
+                risk_matrix = {}
             return render_template(
                 "cpmp/detail.html",
                 contract=contract,
@@ -315,12 +345,31 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 evm=evm,
                 cpars_prediction=cpars_prediction,
                 cpars_assessments=cpars_assessments,
+                milestones=milestones,
+                milestone_deps=milestone_deps,
+                risks=risks,
+                risk_matrix=risk_matrix,
             )
         except Exception as e:
             import traceback
 
             traceback.print_exc()
-            return render_template("404.html", message=f"Error loading contract: {e}"), 500
+            return render_template(
+                "cpmp/detail.html",
+                contract={},
+                clins=[],
+                wbs_elements=[],
+                deliverables=[],
+                subcontractors=[],
+                evm={},
+                cpars_prediction={},
+                cpars_assessments=[],
+                milestones=[],
+                milestone_deps=[],
+                risks=[],
+                risk_matrix={},
+                error=str(e),
+            ), 200
 
     @app.route("/cpmp/<contract_id>/deliverables/<deliverable_id>")
     def cpmp_deliverable_detail_page(contract_id, deliverable_id):
@@ -347,7 +396,14 @@ def _register_govcon_pages(app: "Flask", _get_db):
             import traceback
 
             traceback.print_exc()
-            return render_template("404.html", message=f"Error loading deliverable: {e}"), 500
+            return render_template(
+                "cpmp/deliverable_detail.html",
+                contract={},
+                deliverable={},
+                generations=[],
+                status_history=[],
+                error=str(e),
+            ), 200
 
     @app.route("/cpmp/cor")
     def cpmp_cor_portal_page():
@@ -414,15 +470,12 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 cpars_assessments = []
             try:
                 conn.execute(
-                    "INSERT INTO cpmp_cor_access_log (id, user_id, contract_id, action, accessed_at, classification) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO cpmp_cor_access_log (user_id, contract_id, action) "
+                    "VALUES (?, ?, ?)",
                     (
-                        str(uuid.uuid4()),
                         cor_email,
                         contract_id,
                         "view_contract",
-                        datetime.now(timezone.utc).isoformat(),
-                        DEFAULT_CLASSIFICATION,
                     ),
                 )
                 conn.commit()
@@ -450,6 +503,20 @@ def _register_govcon_pages(app: "Flask", _get_db):
             opportunities = [dict(r) for r in rows]
             from datetime import date
 
+            # Attach section count per opportunity so we can bubble up proposals with content
+            try:
+                sec_counts = conn.execute(
+                    "SELECT opportunity_id, COUNT(*) as cnt FROM proposal_sections GROUP BY opportunity_id"
+                ).fetchall()
+                sec_map = {r["opportunity_id"]: r["cnt"] for r in sec_counts}
+            except Exception:
+                sec_map = {}
+            for opp in opportunities:
+                opp["section_count"] = sec_map.get(opp["id"], 0)
+
+            # Sort: proposals with content first (by section_count desc), then by due_date asc
+            opportunities.sort(key=lambda o: (-o["section_count"], o.get("due_date") or "9999-99-99"))
+
             today = date.today()
             nearest_deadline = None
             for opp in opportunities:
@@ -464,8 +531,37 @@ def _register_govcon_pages(app: "Flask", _get_db):
                         opp["days_left"] = None
                 else:
                     opp["days_left"] = None
+
+            # Attach most-recent pWin assessment per opportunity
+            try:
+                from tools.govcon.bayesian_bid_scorer import pipeline_value_rollup
+                rollup = pipeline_value_rollup()
+                pwin_map = {item["opportunity_id"]: item for item in rollup.get("opportunities", [])}
+                for opp in opportunities:
+                    item = pwin_map.get(opp["id"])
+                    if item:
+                        opp["computed_pwin_pct"] = item["pwin_pct"]
+                        opp["weighted_value"] = item["weighted_value"]
+                        opp["has_pwin_model"] = item["has_pwin_model"]
+                        opp["pwin_factors"] = item.get("factor_breakdown")
+                    else:
+                        opp["computed_pwin_pct"] = None
+                        opp["weighted_value"] = None
+                        opp["has_pwin_model"] = False
+                        opp["pwin_factors"] = None
+            except Exception:
+                rollup = {"total_weighted_pipeline_value": 0, "total_potential_value": 0, "scored_count": 0, "unscored_count": 0}
+                for opp in opportunities:
+                    opp["computed_pwin_pct"] = None
+                    opp["weighted_value"] = None
+                    opp["has_pwin_model"] = False
+                    opp["pwin_factors"] = None
+
             return render_template(
-                "proposals/list.html", opportunities=opportunities, nearest_deadline=nearest_deadline
+                "proposals/list.html",
+                opportunities=opportunities,
+                nearest_deadline=nearest_deadline,
+                pipeline_rollup=rollup,
             )
         finally:
             conn.close()
@@ -482,12 +578,20 @@ def _register_govcon_pages(app: "Flask", _get_db):
             sections = [
                 dict(r)
                 for r in conn.execute(
-                    """SELECT s.*, v.volume_number, v.title as volume_title
+                    """SELECT s.*, v.volume_number, v.title as volume_title,
+                          latest_draft.status as draft_status,
+                          latest_draft.id as draft_id
                    FROM proposal_sections s
                    LEFT JOIN proposal_volumes v ON s.volume_id = v.id
+                   LEFT JOIN (
+                       SELECT section_id, id, status,
+                              ROW_NUMBER() OVER (PARTITION BY section_id ORDER BY created_at DESC) as rn
+                       FROM proposal_section_drafts
+                       WHERE opportunity_id = ?
+                   ) latest_draft ON s.id = latest_draft.section_id AND latest_draft.rn = 1
                    WHERE s.opportunity_id = ?
                    ORDER BY v.volume_number, s.section_number""",
-                    (opp_id,),
+                    (opp_id, opp_id),
                 ).fetchall()
             ]
             from datetime import date
@@ -565,10 +669,24 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 rid = f.get("review_id")
                 if rid:
                     findings_by_review.setdefault(rid, []).append(f)
+            # Load reviewer assignments per review (prop-rev-09)
+            assignments_by_review = {}
+            try:
+                all_asgns = conn.execute(
+                    """SELECT a.* FROM proposal_reviewer_assignments a
+                       JOIN proposal_reviews r ON a.review_id = r.id
+                       WHERE r.opportunity_id = ? ORDER BY a.created_at DESC""",
+                    (opp_id,),
+                ).fetchall()
+                for a in all_asgns:
+                    assignments_by_review.setdefault(a["review_id"], []).append(dict(a))
+            except Exception:
+                conn.rollback()
             reviews_data = []
             for rev in reviews:
                 rd = dict(rev)
                 rd["findings"] = findings_by_review.get(rev["id"], [])
+                rd["assignments"] = assignments_by_review.get(rev["id"], [])
                 reviews_data.append(rd)
             days_left = None
             if opp.get("due_date"):
@@ -699,6 +817,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                     draft["writeguard"] = draft["metadata_parsed"]["writeguard"]
                 else:
                     draft["writeguard"] = None
+
             section["compliance_items"] = [
                 dict(r)
                 for r in conn.execute(
@@ -794,6 +913,15 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 except Exception:
                     opp["days_left"] = None
                 opps.append(opp)
+            # Count pending reviewer assignments (prop-rev-09)
+            pending_assignments = 0
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM proposal_reviewer_assignments WHERE status = 'pending'"
+                ).fetchone()
+                pending_assignments = row["cnt"] if row else 0
+            except Exception:
+                pass
             return render_template(
                 "proposals/reviews_dashboard.html",
                 opportunities=opps,
@@ -801,9 +929,106 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 passed=passed,
                 pass_with_findings=pass_with_findings,
                 failed=failed,
+                pending_assignments=pending_assignments,
             )
         finally:
             conn.close()
+
+    @app.route("/proposals/<opp_id>/language")
+    def proposals_language_page(opp_id):
+        """Proposal Language Settings — glossary, wall of truth, taxonomy, style templates."""
+        conn = _get_db()
+        try:
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            if not opp:
+                return render_template("404.html", message="Opportunity not found"), 404
+            opp = dict(opp)
+            glossary = [
+                dict(r) for r in conn.execute(
+                    "SELECT * FROM wg_glossary WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY term_type, term",
+                    (opp_id,),
+                ).fetchall()
+            ]
+            taxonomy = [
+                dict(r) for r in conn.execute(
+                    "SELECT * FROM proposal_taxonomy WHERE opportunity_id = ? AND is_active = 1 ORDER BY label",
+                    (opp_id,),
+                ).fetchall()
+            ]
+            style_guides = [
+                dict(r) for r in conn.execute(
+                    "SELECT id, guide_name, version, created_at FROM wg_style_guides WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY guide_name",
+                    (opp_id,),
+                ).fetchall()
+            ]
+            return render_template(
+                "proposals/language.html",
+                opp=opp,
+                opp_id=opp_id,
+                glossary=glossary,
+                taxonomy=taxonomy,
+                style_guides=style_guides,
+            )
+        finally:
+            conn.close()
+
+    @app.route("/proposals/<opp_id>/ptw")
+    def proposals_ptw_page(opp_id):
+        """Black-hat / PTW workspace — competitor intelligence + price-to-win (prop-cap-13)."""
+        conn = _get_db()
+        try:
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            if not opp:
+                return render_template("404.html", message="Opportunity not found"), 404
+            opp = dict(opp)
+            # Load saved black-hat assessments
+            try:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS proposal_blackhat_assessments (
+                        id TEXT PRIMARY KEY, opportunity_id TEXT NOT NULL,
+                        competitor_name TEXT NOT NULL, approach_hypothesis TEXT,
+                        price_estimate_low REAL, price_estimate_high REAL,
+                        strengths TEXT, weaknesses TEXT, win_strategy TEXT,
+                        differentiators TEXT, risk_factors TEXT,
+                        ptw_posture TEXT DEFAULT 'competitive',
+                        leaderboard_rank INTEGER, award_count INTEGER,
+                        total_award_value REAL, naics_diversity INTEGER,
+                        agency_diversity INTEGER, classification TEXT DEFAULT 'CUI',
+                        created_at TEXT NOT NULL, updated_at TEXT, created_by TEXT
+                    )
+                """)
+                conn.commit()
+                bh_rows = conn.execute(
+                    "SELECT * FROM proposal_blackhat_assessments WHERE opportunity_id = ? ORDER BY created_at DESC",
+                    (opp_id,),
+                ).fetchall()
+                assessments = [dict(r) for r in bh_rows]
+            except Exception:
+                assessments = []
+        finally:
+            conn.close()
+        # PTW analysis (rate_benchmarker)
+        ptw = {}
+        try:
+            from tools.govcon.rate_benchmarker import ptw_analysis
+            ptw = ptw_analysis(opp_id)
+        except Exception:
+            ptw = {}
+        # Bayesian bid score with default mid-scores
+        bid_score = None
+        try:
+            from tools.govcon.bayesian_bid_scorer import score_opportunity, DIMENSIONS
+            dims = {d: 0.5 for d in DIMENSIONS}
+            bid_score = score_opportunity(opp_id, dims)
+        except Exception:
+            bid_score = None
+        return render_template(
+            "proposals/ptw.html",
+            opp=opp,
+            assessments=assessments,
+            ptw=ptw,
+            bid_score=bid_score,
+        )
 
     @app.route("/proposals/<opp_id>/compliance/gaps")
     def proposals_compliance_gaps(opp_id):
@@ -844,7 +1069,11 @@ def _register_govcon_pages(app: "Flask", _get_db):
         finally:
             conn.close()
 
+    # GovCon RBAC (prop-fix-09, roles per prop-fix-08): GovCon is the BD/capture
+    # pre-award intelligence domain. View pages are read-only dashboards open to
+    # the capture roles + management; deny -> 403 + audit via require_role().
     @app.route("/govcon")
+    @require_role("admin", "bd", "capture_mgr", "pm")
     def govcon_pipeline_page():
         """GovCon Intelligence — pipeline status, recent opportunities, domain distribution."""
         conn = _get_db()
@@ -867,17 +1096,22 @@ def _register_govcon_pages(app: "Flask", _get_db):
             except Exception:
                 pass
 
-            # pWin-weighted pipeline roll-up + active proposals (prop-cap-12)
+            # pWin-weighted pipeline roll-up (optional — failures don't block the proposals table)
             pipeline_rollup = {
                 "total_weighted_pipeline_value": 0, "total_potential_value": 0,
                 "scored_count": 0, "unscored_count": 0, "opportunities": [],
             }
-            active_proposals = []
             try:
                 pipeline_rollup = pipeline_value_rollup()
+            except Exception:
+                pass
+
+            # Active proposals — always runs independently of rollup
+            active_proposals = []
+            try:
                 rows = conn.execute(
                     "SELECT id, solicitation_number, title, agency, due_date, estimated_value_low, estimated_value_high, "
-                    "win_probability, status, capture_manager, proposal_manager "
+                    "win_probability, status, capture_manager, proposal_manager, capture_phase "
                     "FROM proposal_opportunities WHERE status NOT IN ('won','lost','no_bid','cancelled') "
                     "ORDER BY due_date ASC"
                 ).fetchall()
@@ -927,6 +1161,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/govcon/requirements")
+    @require_role("admin", "bd", "capture_mgr", "pm")
     def govcon_requirements_page():
         """GovCon Requirements — pattern frequency, domain heatmap, statement types."""
         conn = _get_db()
@@ -986,6 +1221,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/govcon/capabilities")
+    @require_role("admin", "bd", "capture_mgr", "pm")
     def govcon_capabilities_page():
         """GovCon Capabilities — coverage by domain, gap list, enhancement recommendations."""
         conn = _get_db()
@@ -994,32 +1230,44 @@ def _register_govcon_pages(app: "Flask", _get_db):
             try:
                 rows = conn.execute(
                     """SELECT
-                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as L,
-                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as M,
-                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as N,
+                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as "L",
+                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as "M",
+                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as "N",
                         COUNT(*) as total
                     FROM rfp_shall_statements s
                     LEFT JOIN icdev_capability_map m ON s.id = m.pattern_id"""
                 ).fetchone()
-                if rows and rows["total"] > 0:
-                    coverage["L"] = rows["L"] or 0
-                    coverage["M"] = rows["M"] or 0
-                    coverage["N"] = rows["N"] or 0
-                    coverage["rate"] = round(coverage["L"] / rows["total"] * 100)
+                if rows:
+                    r = dict(rows)
+                    total = r.get("total", 0) or 0
+                    if total > 0:
+                        coverage["L"] = r.get("L", r.get("l", 0)) or 0
+                        coverage["M"] = r.get("M", r.get("m", 0)) or 0
+                        coverage["N"] = r.get("N", r.get("n", 0)) or 0
+                        coverage["rate"] = round(coverage["L"] / total * 100)
             except Exception:
                 pass
             domain_coverage = []
             try:
                 rows = conn.execute(
                     """SELECT s.domain_category as domain, COUNT(*) as total,
-                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as L,
-                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as M,
-                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as N
+                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as "L",
+                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as "M",
+                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as "N"
                     FROM rfp_shall_statements s
                     LEFT JOIN icdev_capability_map m ON s.id = m.pattern_id
                     GROUP BY s.domain_category ORDER BY total DESC"""
                 ).fetchall()
-                domain_coverage = [dict(r) for r in rows]
+                domain_coverage = [
+                    {
+                        "domain": dict(r).get("domain", ""),
+                        "total": dict(r).get("total", 0) or 0,
+                        "L": dict(r).get("L", dict(r).get("l", 0)) or 0,
+                        "M": dict(r).get("M", dict(r).get("m", 0)) or 0,
+                        "N": dict(r).get("N", dict(r).get("n", 0)) or 0,
+                    }
+                    for r in rows
+                ]
             except Exception:
                 pass
             gaps = []
@@ -1301,6 +1549,27 @@ def create_app() -> Flask:
             200,
         )
 
+    @app.route("/api/_introspect/routes", methods=["GET"])
+    def _introspect_routes():
+        """Internal: real GET-able, parameter-free page routes for the health prober.
+
+        Sourced from the live Flask url_map so the prober tests the actual mounted
+        paths (with blueprint url_prefixes applied) instead of decorator-relative
+        paths. Excludes /static, /api/* (endpoints, not pages — many are POST/param),
+        and parameterized rules (can't HEAD without a real id).
+        """
+        routes = set()
+        for rule in app.url_map.iter_rules():
+            if rule.arguments:
+                continue  # parameterized — skip
+            if "GET" not in (rule.methods or set()):
+                continue  # not GET-probeable
+            path = rule.rule
+            if path.startswith("/static") or path.startswith("/api/"):
+                continue  # static assets / API endpoints, not user-facing pages
+            routes.add(path)
+        return jsonify({"routes": sorted(routes), "count": len(routes)})
+
     @app.route("/favicon.ico")
     def favicon():
         return make_response("", 204)
@@ -1380,6 +1649,27 @@ def create_app() -> Flask:
             "tasks": tasks,
             "pending_tasks_count": pending_count,
         })
+
+    @app.route("/api/kanban/scheduler/status")
+    def kanban_scheduler_status():
+        """GET — whether the kanban scheduler is paused (manual flag or auto)."""
+        from tools.kanban.scheduler_control import status as _sched_status  # noqa: PLC0415
+        return jsonify(_sched_status())
+
+    @app.route("/api/kanban/scheduler/pause", methods=["POST"])
+    def kanban_scheduler_pause():
+        """POST — manually pause the kanban scheduler cycle."""
+        from tools.kanban.scheduler_control import pause as _sched_pause  # noqa: PLC0415
+        body = flask_request.get_json(silent=True) or {}
+        return jsonify(_sched_pause(actor=body.get("actor", "dashboard"),
+                                    reason=body.get("reason", "manual (dashboard)")))
+
+    @app.route("/api/kanban/scheduler/resume", methods=["POST"])
+    def kanban_scheduler_resume():
+        """POST — resume the kanban scheduler cycle."""
+        from tools.kanban.scheduler_control import resume as _sched_resume  # noqa: PLC0415
+        body = flask_request.get_json(silent=True) or {}
+        return jsonify(_sched_resume(actor=body.get("actor", "dashboard")))
 
     @app.route("/api/kanban/recent-events")
     def api_kanban_recent_events():
@@ -1589,7 +1879,8 @@ def create_app() -> Flask:
             "pmc_enabled": _CANVAS_FLAGS.get("pmc", False),
             "ccc_enabled": _CANVAS_FLAGS.get("ccc", False),
             "dsoc_enabled": _CANVAS_FLAGS.get("dsoc", False),
-            "aac_enabled": _CANVAS_FLAGS.get("aac", False),
+            "aiify_enabled": _CANVAS_FLAGS.get("aiify", False),
+            "dic_enabled": _CANVAS_FLAGS.get("dic", False),
             "demo_runner_enabled": _CANVAS_FLAGS.get("demo_runner", False),
             "govlift_enabled": _CANVAS_FLAGS.get("govlift", False),
             "info_ops_enabled": _CANVAS_FLAGS.get("iop", False),
@@ -1679,10 +1970,10 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Studio DB init skipped: %s", _exc)
 
-    # ---- Kanban DB init (kanban/ci-fix-26590745782) ----
+    # ---- Kanban DB init (ci-fix-26601155261) ----
     try:
-        from tools.kanban.init_db import init_kanban_tables
-        init_kanban_tables()
+        from tools.kanban.init_db import init_kanban_tables as _init_kanban
+        _init_kanban()
     except Exception as _exc:
         app.logger.warning("Kanban DB init skipped: %s", _exc)
 
@@ -1702,7 +1993,6 @@ def create_app() -> Flask:
             _seed_conn.close()
     except Exception as _exc:
         app.logger.debug("E2E session seed skipped: %s", _exc)
-
     # ---- Geospatial Dashboard (task-a866147c27-d4) ----
     try:
         from src.routes.dashboard import bp as _geo_bp
@@ -1730,6 +2020,10 @@ def create_app() -> Flask:
                 app.logger.info("Canvas KG registered at /canvas-kg")
         except Exception as exc:
             app.logger.warning("Canvas KG failed to register: %s", exc)
+
+        @app.route("/canvas-kg")
+        def canvas_kg_page():
+            return render_template("canvas_kg.html")
 
     # ---- Unified Canvas Compliance Dashboard ----
     @app.route("/canvas-compliance")
@@ -2275,7 +2569,7 @@ def create_app() -> Flask:
                 try:
                     stig_row = conn.execute(
                         "SELECT "
-                        "SUM(CASE WHEN status = 'not_a_finding' THEN 1 ELSE 0 END) as passed, "
+                        "SUM(CASE WHEN status IN ('not_a_finding','not_applicable') THEN 1 ELSE 0 END) as passed, "
                         "SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_cnt, "
                         "COUNT(*) as total FROM govlift_stig_checks"
                     ).fetchone()
@@ -2294,6 +2588,79 @@ def create_app() -> Flask:
                             overall_scores.append(stig_score)
                 except Exception:
                     pass  # GovLift tables may not be initialized yet
+
+                # ZIG Zero Trust maturity (security_canvas.db — zig_* tables)
+                try:
+                    zig_db_path = BASE_DIR / "data" / "security_canvas.db"
+                    if zig_db_path.exists():
+                        zconn = get_connection(str(zig_db_path))
+                        try:
+                            r = zconn.execute(
+                                "SELECT AVG(score) FROM zig_maturity_scores m1 "
+                                "WHERE assessment_run_at = ("
+                                "  SELECT MAX(assessment_run_at) FROM zig_maturity_scores m2 "
+                                "  WHERE m2.pillar_slug = m1.pillar_slug)"
+                            ).fetchone()
+                            zig_raw = float(r[0] or 0)
+                            if zig_raw == 0:
+                                cap_r = zconn.execute(
+                                    "SELECT COUNT(*) as total, "
+                                    "SUM(CASE WHEN implementation_status='implemented' THEN 1.0 "
+                                    "    WHEN implementation_status='in_progress' THEN 0.5 ELSE 0.0 END) as impl "
+                                    "FROM zig_capabilities"
+                                ).fetchone()
+                                cap_total = float(cap_r["total"] or 0)
+                                cap_rate = (float(cap_r["impl"] or 0) / cap_total) if cap_total > 0 else 0.0
+                                act_r = zconn.execute(
+                                    "SELECT COUNT(za.id) as total, "
+                                    "SUM(CASE WHEN zac.status='complete' THEN 1.0 "
+                                    "    WHEN zac.status='in_progress' THEN 0.5 ELSE 0.0 END) as comp "
+                                    "FROM zig_activities za "
+                                    "LEFT JOIN zig_activity_completions zac ON zac.activity_id = za.id"
+                                ).fetchone()
+                                act_total = float(act_r["total"] or 0)
+                                act_rate = (float(act_r["comp"] or 0) / act_total) if act_total > 0 else 0.0
+                                zig_raw = 0.6 * act_rate + 0.4 * cap_rate
+                            zig_score = round(zig_raw * 100, 1)
+                            canvas_compliance.append({
+                                "name": "Zero Trust",
+                                "score": zig_score,
+                                "open_findings": 0,
+                                "closed_findings": 0,
+                            })
+                            if zig_score > 0:
+                                overall_scores.append(zig_score)
+                        finally:
+                            zconn.close()
+                except Exception:
+                    pass  # ZIG tables may not be initialized yet
+
+                # AI-ify compliance posture (deterministic AI-governance grade —
+                # the same score shown on /ai-ify/posture and the /compliance hub).
+                # Uses the backend-aware canvas connection (PG or SQLite), NOT the
+                # stale SQLite file, and the posture engine, NOT opportunity value.
+                try:
+                    from tools.aiify.posture import compute_posture as _aiify_cp
+                    from tools.aiify.db.init_db import get_connection as _aiify_cn
+                    _ac = _aiify_cn()
+                    try:
+                        _ap = _aiify_cp(_ac)
+                    finally:
+                        _ac.close()
+                    if _ap.get("counts", {}).get("total_scans", 0) > 0:
+                        aiify_score = _ap.get("overall_score", 0.0)
+                        _weak = [d for d in _ap.get("dimensions", [])
+                                 if d.get("score") is not None and d["score"] < 80]
+                        canvas_compliance.append({
+                            "name": "AI-ify",
+                            "score": aiify_score,
+                            "open_findings": len(_weak),
+                            "closed_findings": 0,
+                        })
+                        if aiify_score > 0:
+                            overall_scores.append(aiify_score)
+                except Exception:
+                    pass  # AI-ify tables may not be initialized yet
 
                 overall_score = round(sum(overall_scores) / len(overall_scores), 1) if overall_scores else 0.0
                 _CANVAS_COMPLIANCE_CACHE["entry"] = {
@@ -2447,6 +2814,58 @@ def create_app() -> Flask:
                     cconn.close()
             except Exception:
                 results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
+
+        # ZIG trend — daily average of pillar scores from zig_maturity_scores
+        try:
+            zig_db_path = BASE_DIR / "data" / "security_canvas.db"
+            if zig_db_path.exists():
+                zconn = get_connection(str(zig_db_path))
+                try:
+                    rows = zconn.execute(
+                        "SELECT AVG(score) * 100 as raw_score, DATE(assessment_run_at) as day "
+                        "FROM zig_maturity_scores "
+                        "WHERE assessment_run_at >= DATE('now', '-30 days') "
+                        "GROUP BY DATE(assessment_run_at) ORDER BY day DESC LIMIT 30"
+                    ).fetchall()
+                    scores = [{"score": round(float(r["raw_score"] or 0), 1), "date": r["day"]} for r in rows]
+                    direction, delta = "flat", 0.0
+                    if len(scores) >= 2:
+                        delta = round(scores[0]["score"] - scores[-1]["score"], 1)
+                        direction = "up" if delta >= 2.0 else "down" if delta <= -2.0 else "flat"
+                    results.append({"name": "Zero Trust", "scores": scores, "direction": direction, "delta": delta})
+                finally:
+                    zconn.close()
+            else:
+                results.append({"name": "Zero Trust", "scores": [], "direction": "flat", "delta": 0.0})
+        except Exception:
+            results.append({"name": "Zero Trust", "scores": [], "direction": "flat", "delta": 0.0})
+
+        # AI-ify trend — per-scan average composite_score grouped by day
+        try:
+            aiify_db_path = BASE_DIR / "data" / "aiify_canvas.db"
+            if aiify_db_path.exists():
+                aconn = get_connection(str(aiify_db_path))
+                try:
+                    rows = aconn.execute(
+                        "SELECT AVG(s.composite_score) * 100 as raw_score, DATE(sc.created_at) as day "
+                        "FROM aiify_scores s "
+                        "JOIN aiify_opportunities o ON o.opportunity_id = s.opportunity_id "
+                        "JOIN aiify_scans sc ON sc.scan_id = o.scan_id "
+                        "WHERE sc.created_at >= DATE('now', '-30 days') "
+                        "GROUP BY DATE(sc.created_at) ORDER BY day DESC LIMIT 30"
+                    ).fetchall()
+                    scores = [{"score": round(float(r["raw_score"] or 0), 1), "date": r["day"]} for r in rows]
+                    direction, delta = "flat", 0.0
+                    if len(scores) >= 2:
+                        delta = round(scores[0]["score"] - scores[-1]["score"], 1)
+                        direction = "up" if delta >= 2.0 else "down" if delta <= -2.0 else "flat"
+                    results.append({"name": "AI-ify", "scores": scores, "direction": direction, "delta": delta})
+                finally:
+                    aconn.close()
+            else:
+                results.append({"name": "AI-ify", "scores": [], "direction": "flat", "delta": 0.0})
+        except Exception:
+            results.append({"name": "AI-ify", "scores": [], "direction": "flat", "delta": 0.0})
 
         _CANVAS_TREND_CACHE["entry"] = {"ts": _now, "data": results}
         return jsonify({"canvases": results})
@@ -2829,11 +3248,13 @@ def create_app() -> Flask:
             "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
             "strategos":      ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
             "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
-            "aac":            ("tools.iqe.adapters.ai_augmentation", ["ai_augmentation.opportunities", "ai_augmentation.scans", "ai_augmentation.roadmaps"]),
+            "aiify":            ("tools.iqe.adapters.aiify", ["aiify.opportunities", "aiify.scans", "aiify.roadmaps", "aiify.posture"]),
+            "dic":              ("tools.iqe.adapters.dic",   ["dic.drift_events", "dic.regen_queue", "dic.ssp_fragments"]),
             "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
             "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
             "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),
             "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
+            "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
@@ -3561,8 +3982,63 @@ def create_app() -> Flask:
 
     @app.route("/writeguard")
     def writeguard_page():
-        """WriteGuard — content quality & AI detection dashboard."""
-        return render_template("writeguard.html")
+        """WriteGuard — content quality & AI detection dashboard.
+
+        Query params:
+          opp_id  — pre-load all section drafts for this proposal opportunity
+          sec_id  — pre-load a specific section draft
+        """
+        from flask import request as _req
+        opp_id = _req.args.get("opp_id")
+        sec_id = _req.args.get("sec_id")
+        preload_sections = []
+        preload_title = ""
+        if opp_id or sec_id:
+            try:
+                conn = _get_db()
+                if sec_id:
+                    row = conn.execute(
+                        "SELECT d.draft_content, s.title as section_title, o.title as opp_title "
+                        "FROM proposal_section_drafts d "
+                        "JOIN proposal_sections s ON d.section_id = s.id "
+                        "JOIN proposal_opportunities o ON s.opportunity_id = o.id "
+                        "WHERE d.id = ? ORDER BY d.created_at DESC LIMIT 1",
+                        (sec_id,),
+                    ).fetchone()
+                    if row:
+                        preload_sections = [{"title": row["section_title"], "content": row["draft_content"]}]
+                        preload_title = row["opp_title"]
+                elif opp_id:
+                    opp = conn.execute(
+                        "SELECT title FROM proposal_opportunities WHERE id = ?", (opp_id,)
+                    ).fetchone()
+                    if opp:
+                        preload_title = opp["title"]
+                    drafts = conn.execute(
+                        "SELECT d.draft_content, s.title as section_title, s.section_number "
+                        "FROM proposal_section_drafts d "
+                        "JOIN proposal_sections s ON d.section_id = s.id "
+                        "WHERE s.opportunity_id = ? "
+                        "AND d.created_at = ("
+                        "  SELECT MAX(d2.created_at) FROM proposal_section_drafts d2 "
+                        "  WHERE d2.section_id = d.section_id"
+                        ") "
+                        "ORDER BY s.section_number ASC",
+                        (opp_id,),
+                    ).fetchall()
+                    preload_sections = [
+                        {"title": f"{r['section_number']}: {r['section_title']}", "content": r["draft_content"]}
+                        for r in drafts
+                    ]
+                conn.close()
+            except Exception:
+                pass
+        return render_template(
+            "writeguard.html",
+            preload_sections=preload_sections,
+            preload_title=preload_title,
+            opp_id=opp_id or "",
+        )
 
     # ---- Phase roadmap route ----
 
@@ -3729,6 +4205,59 @@ def create_app() -> Flask:
                 scope=data.get("scope", "project"),
                 scope_id=data.get("scope_id", ""),
                 template_name=data.get("template"),
+                created_by=data.get("created_by", "dashboard"),
+            )
+            return jsonify(result), 201 if "error" not in result else 400
+        except (ImportError, Exception) as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/dev-profiles/api/export/cursor/<scope>/<scope_id>")
+    def dev_profiles_api_export_cursor(scope, scope_id):
+        """Export a resolved dev profile as Cursor AI .cursorrules or .mdc."""
+        try:
+            from tools.builder.cursor_profile_generator import generate
+
+            fmt = flask_request.args.get("format", "cursorrules")
+            result = generate(scope, scope_id, fmt=fmt)
+            if "error" in result:
+                return jsonify(result), 404 if "not found" in result["error"].lower() else 400
+
+            content = result["content"]
+            filename = result["filename"]
+
+            if flask_request.args.get("download"):
+                response = Response(
+                    content,
+                    mimetype="text/plain",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+                )
+                return response
+            return jsonify({
+                "status": "generated",
+                "format": fmt,
+                "filename": filename,
+                "scope": scope,
+                "scope_id": scope_id,
+                "dimensions": result.get("dimensions", []),
+                "content": content,
+            })
+        except (ImportError, Exception) as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/dev-profiles/api/import/cursor", methods=["POST"])
+    def dev_profiles_api_import_cursor():
+        """Scan .cursor/rules/*.mdc files and seed a dev profile from them."""
+        try:
+            from tools.builder.cursor_profile_importer import seed_profile
+
+            data = flask_request.get_json(silent=True) or {}
+            scope = data.get("scope", "platform")
+            scope_id = data.get("scope_id", "default")
+            directory = data.get("directory")
+            result = seed_profile(
+                scope=scope,
+                scope_id=scope_id,
+                directory=directory,
                 created_by=data.get("created_by", "dashboard"),
             )
             return jsonify(result), 201 if "error" not in result else 400
@@ -4193,35 +4722,47 @@ def create_app() -> Flask:
         conn = _get_db()
         result = {"controls_implemented": 0, "open_poams": 0, "cat1_findings": 0, "ato_status": "--", "frameworks": []}
         try:
+            # 1. Controls implemented — prefer ssp_controls, fall back to project_controls
             try:
                 row = conn.execute(
                     "SELECT COUNT(*) as cnt FROM ssp_controls WHERE implementation_status = 'implemented'"
                 ).fetchone()
                 result["controls_implemented"] = row["cnt"]
             except Exception:
-                pass
+                conn.rollback()
+                try:
+                    row = conn.execute(
+                        "SELECT COUNT(*) as cnt FROM project_controls WHERE implementation_status = 'implemented'"
+                    ).fetchone()
+                    result["controls_implemented"] = row["cnt"]
+                except Exception:
+                    conn.rollback()
+            # 2. Open POAMs
             try:
                 row = conn.execute(
                     "SELECT COUNT(*) as cnt FROM poam_items WHERE status NOT IN ('completed', 'closed')"
                 ).fetchone()
                 result["open_poams"] = row["cnt"]
             except Exception:
-                pass
+                conn.rollback()
+            # 3. CAT I STIG findings
             try:
                 row = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM stig_findings WHERE severity = 'CAT I' AND status = 'Open'"
+                    "SELECT COUNT(*) as cnt FROM stig_findings WHERE severity = 'CAT1' AND status = 'Open'"
                 ).fetchone()
                 result["cat1_findings"] = row["cnt"]
             except Exception:
-                pass
+                conn.rollback()
+            # 4. ATO status
             try:
                 row = conn.execute(
                     "SELECT authorization_status FROM ato_packages ORDER BY created_at DESC LIMIT 1"
                 ).fetchone()
                 result["ato_status"] = row["authorization_status"] if row else "Not Started"
             except Exception:
+                conn.rollback()
                 result["ato_status"] = "Not Started"
-            # Framework summaries
+            # 5. Framework summaries — prefer ssp_controls, fall back to project_controls
             frameworks = [
                 ("NIST 800-53", "ssp_controls", "implementation_status", "implemented"),
                 ("FedRAMP", "ssp_controls", "implementation_status", "implemented"),
@@ -4235,7 +4776,16 @@ def create_app() -> Flask:
                     ).fetchone()["cnt"]
                     result["frameworks"].append({"name": name, "total": total, "implemented": impl, "status": "Active"})
                 except Exception:
-                    pass
+                    conn.rollback()
+                    try:
+                        total = conn.execute("SELECT COUNT(*) as cnt FROM project_controls").fetchone()["cnt"]
+                        impl = conn.execute(
+                            "SELECT COUNT(*) as cnt FROM project_controls WHERE implementation_status = ?",
+                            (val,),
+                        ).fetchone()["cnt"]
+                        result["frameworks"].append({"name": name, "total": total, "implemented": impl, "status": "Active"})
+                    except Exception:
+                        conn.rollback()
         finally:
             conn.close()
         return jsonify(result)
@@ -4294,6 +4844,27 @@ def create_app() -> Flask:
                 "ssdf_pct": 0,
                 "owasp_pct": 0,
                 "total_findings": 0,
+            },
+            "aiify": {
+                "available": False,
+                "grade": "--",
+                "overall_score": None,
+                "posture": "unrated",
+                "scan_count": 0,
+                "opportunity_count": 0,
+                "weakest_dimension": None,
+            },
+            "aadc": {
+                "available": False,
+                "grade": "--",
+                "design_count": 0,
+                "scored_designs": 0,
+                "avg_score": None,
+                "nist_rmf_avg": None,
+                "owasp_avg": None,
+                "omb_compliant": 0,
+                "safety_impacting": 0,
+                "rights_impacting": 0,
             },
             "heatmap": [],
         }
@@ -4423,6 +4994,77 @@ def create_app() -> Flask:
                         pass
             except Exception:
                 pass
+
+        # --- AI-ify: aiify_canvas — AI-governance posture (live compute) ---
+        try:
+            from tools.aiify.posture import compute_posture as _aiify_posture
+            from tools.aiify.db.init_db import get_connection as _aiify_conn
+
+            ac = _aiify_conn()
+            try:
+                ap = _aiify_posture(ac)
+            finally:
+                ac.close()
+            counts = ap.get("counts", {})
+            applicable = [d for d in ap.get("dimensions", []) if d.get("score") is not None]
+            weakest = min(applicable, key=lambda d: d["score"], default=None)
+            result["aiify"] = {
+                "available": counts.get("total_scans", 0) > 0,
+                "grade": ap.get("grade", "--"),
+                "overall_score": ap.get("overall_score"),
+                "posture": ap.get("posture", "unrated"),
+                "scan_count": counts.get("total_scans", 0),
+                "opportunity_count": counts.get("total_opportunities", 0),
+                "weakest_dimension": (
+                    {"label": weakest["label"], "score": weakest["score"]} if weakest else None
+                ),
+            }
+        except Exception:
+            pass
+
+        # --- AADC: agentic_ai_canvas — portfolio assessment posture ---
+        try:
+            from tools.agentic_ai_canvas.db.init_db import get_connection as _aadc_conn
+
+            gc = _aadc_conn()
+            try:
+                design_count = gc.execute("SELECT COUNT(*) FROM aadc_designs").fetchone()[0]
+                result["aadc"]["design_count"] = design_count
+                result["aadc"]["available"] = design_count > 0
+                # Latest assessment per design
+                rows = gc.execute(
+                    "SELECT a.score, a.nist_rmf_score, a.owasp_score, a.omb_compliant, "
+                    "a.safety_impacting, a.rights_impacting "
+                    "FROM aadc_assessments a "
+                    "JOIN (SELECT design_id, MAX(created_at) AS mx FROM aadc_assessments "
+                    "      GROUP BY design_id) m "
+                    "  ON a.design_id = m.design_id AND a.created_at = m.mx"
+                ).fetchall()
+            finally:
+                gc.close()
+            if rows:
+                def _col(r, key, idx):
+                    try:
+                        return r[key]
+                    except (KeyError, IndexError, TypeError):
+                        return r[idx]
+                scores = [_col(r, "score", 0) or 0 for r in rows]
+                nists = [_col(r, "nist_rmf_score", 1) or 0 for r in rows]
+                owasps = [_col(r, "owasp_score", 2) or 0 for r in rows]
+                avg = round(sum(scores) / len(scores), 1)
+                result["aadc"]["scored_designs"] = len(rows)
+                result["aadc"]["avg_score"] = avg
+                result["aadc"]["nist_rmf_avg"] = round(sum(nists) / len(nists), 1)
+                result["aadc"]["owasp_avg"] = round(sum(owasps) / len(owasps), 1)
+                result["aadc"]["omb_compliant"] = sum(1 for r in rows if _col(r, "omb_compliant", 3))
+                result["aadc"]["safety_impacting"] = sum(1 for r in rows if _col(r, "safety_impacting", 4))
+                result["aadc"]["rights_impacting"] = sum(1 for r in rows if _col(r, "rights_impacting", 5))
+                result["aadc"]["grade"] = (
+                    "A" if avg >= 90 else "B" if avg >= 80 else "C" if avg >= 70
+                    else "D" if avg >= 60 else "F"
+                )
+        except Exception:
+            pass
 
         # --- NIST 800-53 heatmap from icdev.db project_controls ---
         try:
@@ -9504,7 +10146,7 @@ def create_app() -> Flask:
             """GET /api/platform/health — Composite platform health across 10 domains."""
             from tools.dashboard.platform_health import _invalidate_cache  # noqa: E402
 
-            if request.args.get("invalidate") == "1":  # noqa: F821
+            if flask_request.args.get("invalidate") == "1":  # noqa: F821
                 _invalidate_cache()
             result = get_platform_health()
             # Shape domains for API response (omit all_findings for brevity)

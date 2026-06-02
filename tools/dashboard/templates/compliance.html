@@ -10,7 +10,7 @@
     </nav>
 
     <h1>Unified Compliance Posture</h1>
-    <p class="text-muted">Aggregated posture across Security Design Canvas (SDC), Network Design Canvas (NDC), and Pipeline Design Canvas (PDC) — with NIST 800-53 Rev 5 control family heatmap.</p>
+    <p class="text-muted">Aggregated posture across Security Design Canvas (SDC), Network Design Canvas (NDC), Pipeline Design Canvas (PDC), AI-ify, and the Agentic AI Design Canvas — with NIST 800-53 Rev 5 control family heatmap.</p>
 
     <!-- Summary Banner -->
     <div id="compliance-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
@@ -160,6 +160,88 @@
             </div>
             <div id="pdc-unavail" style="display:none;position:absolute;inset:0;background:rgba(255,255,255,0.85);display:flex;align-items:center;justify-content:center;border-radius:6px;">
                 <span style="font-size:0.85rem;color:#999;">No pipelines yet — <a href="/devops" style="color:#1976d2;">create one</a></span>
+            </div>
+        </div>
+
+        <!-- AI-ify Card -->
+        <div class="card" style="padding:1.4rem;position:relative;" id="aiify-card">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                    <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#555;margin-bottom:0.3rem;">AI-ify (AI Governance)</div>
+                    <div style="font-size:0.82rem;color:#888;" id="aiify-scans">-- scans</div>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:2.4rem;font-weight:bold;line-height:1;" id="aiify-grade">--</div>
+                    <div style="font-size:0.75rem;color:#888;">Posture Grade</div>
+                </div>
+            </div>
+            <div style="margin-top:1rem;display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;text-align:center;">
+                <div>
+                    <div style="font-size:1.3rem;font-weight:bold;color:#1976d2;" id="aiify-score">--</div>
+                    <div style="font-size:0.72rem;color:#888;">Overall Score</div>
+                </div>
+                <div>
+                    <div style="font-size:1.3rem;font-weight:bold;color:#7b1fa2;" id="aiify-opps">--</div>
+                    <div style="font-size:0.72rem;color:#888;">Opportunities</div>
+                </div>
+            </div>
+            <div style="margin-top:1rem;">
+                <div style="display:flex;justify-content:space-between;font-size:0.78rem;color:#666;margin-bottom:0.25rem;">
+                    <span>Weakest Control</span>
+                    <span id="aiify-weak">--</span>
+                </div>
+                <div style="background:#e0e0e0;border-radius:4px;height:8px;overflow:hidden;">
+                    <div id="aiify-bar" style="height:100%;background:#16a34a;width:0%;transition:width 0.6s ease;"></div>
+                </div>
+            </div>
+            <div style="margin-top:0.75rem;">
+                <a href="/ai-ify/posture" style="font-size:0.8rem;color:#1976d2;text-decoration:none;">Open AI-ify Posture &rarr;</a>
+            </div>
+            <div id="aiify-unavail" style="display:none;position:absolute;inset:0;background:rgba(255,255,255,0.85);display:flex;align-items:center;justify-content:center;border-radius:6px;">
+                <span style="font-size:0.85rem;color:#999;">No scans yet — <a href="/ai-ify/" style="color:#1976d2;">run one</a></span>
+            </div>
+        </div>
+
+        <!-- Agentic AI Card -->
+        <div class="card" style="padding:1.4rem;position:relative;" id="aadc-card">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                    <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#555;margin-bottom:0.3rem;">Agentic AI Design Canvas</div>
+                    <div style="font-size:0.82rem;color:#888;" id="aadc-designs">-- designs</div>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:2.4rem;font-weight:bold;line-height:1;" id="aadc-grade">--</div>
+                    <div style="font-size:0.75rem;color:#888;">Posture Grade</div>
+                </div>
+            </div>
+            <div style="margin-top:1rem;display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;text-align:center;">
+                <div>
+                    <div style="font-size:1.3rem;font-weight:bold;color:#1976d2;" id="aadc-nist">--</div>
+                    <div style="font-size:0.72rem;color:#888;">NIST AI RMF</div>
+                </div>
+                <div>
+                    <div style="font-size:1.3rem;font-weight:bold;color:#7b1fa2;" id="aadc-owasp">--</div>
+                    <div style="font-size:0.72rem;color:#888;">OWASP LLM</div>
+                </div>
+                <div>
+                    <div style="font-size:1.3rem;font-weight:bold;color:#388e3c;" id="aadc-omb">--</div>
+                    <div style="font-size:0.72rem;color:#888;">OMB Compliant</div>
+                </div>
+            </div>
+            <div style="margin-top:1rem;">
+                <div style="display:flex;justify-content:space-between;font-size:0.78rem;color:#666;margin-bottom:0.25rem;">
+                    <span>Avg Assessment Score</span>
+                    <span id="aadc-avg">--</span>
+                </div>
+                <div style="background:#e0e0e0;border-radius:4px;height:8px;overflow:hidden;">
+                    <div id="aadc-bar" style="height:100%;background:#1976d2;width:0%;transition:width 0.6s ease;"></div>
+                </div>
+            </div>
+            <div style="margin-top:0.75rem;">
+                <a href="/agentic-ai/" style="font-size:0.8rem;color:#1976d2;text-decoration:none;">Open Agentic AI &rarr;</a>
+            </div>
+            <div id="aadc-unavail" style="display:none;position:absolute;inset:0;background:rgba(255,255,255,0.85);display:flex;align-items:center;justify-content:center;border-radius:6px;">
+                <span style="font-size:0.85rem;color:#999;">No designs yet — <a href="/agentic-ai/" style="color:#1976d2;">create one</a></span>
             </div>
         </div>
 
@@ -360,6 +442,8 @@ document.addEventListener('DOMContentLoaded', function () {
         populateSDC(d.sdc);
         populateNDC(d.ndc);
         populatePDC(d.pdc);
+        populateAIIFY(d.aiify);
+        populateAADC(d.aadc);
         renderHeatmap(d.heatmap);
     }).catch(function () {
         document.getElementById('heatmap-loading').textContent = 'Heatmap data unavailable.';
@@ -422,6 +506,47 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!p.available) {
             document.getElementById('pdc-unavail').style.display = 'flex';
         }
+    }
+
+    // ── AI-ify ───────────────────────────────────────────────────────────────
+    function bandColor(score) {
+        if (score === null || score === undefined) return '#999';
+        return score >= 80 ? '#388e3c' : score >= 60 ? '#f57c00' : '#d32f2f';
+    }
+
+    function populateAIIFY(a) {
+        if (!a) return;
+        document.getElementById('aiify-scans').textContent = a.scan_count + ' scan' + (a.scan_count !== 1 ? 's' : '');
+        var gEl = document.getElementById('aiify-grade');
+        gEl.textContent = a.grade || '--';
+        gEl.style.color = gradeColor(a.grade);
+        document.getElementById('aiify-score').textContent = a.overall_score !== null ? a.overall_score : '--';
+        document.getElementById('aiify-opps').textContent = a.opportunity_count;
+        var weak = a.weakest_dimension;
+        document.getElementById('aiify-weak').textContent = weak ? (weak.label + ' (' + Math.round(weak.score) + ')') : '—';
+        var pct = a.overall_score || 0;
+        var bar = document.getElementById('aiify-bar');
+        bar.style.width = pct + '%';
+        bar.style.background = bandColor(a.overall_score);
+        if (!a.available) document.getElementById('aiify-unavail').style.display = 'flex';
+    }
+
+    // ── Agentic AI ───────────────────────────────────────────────────────────
+    function populateAADC(a) {
+        if (!a) return;
+        document.getElementById('aadc-designs').textContent = a.design_count + ' design' + (a.design_count !== 1 ? 's' : '');
+        var gEl = document.getElementById('aadc-grade');
+        gEl.textContent = a.grade || '--';
+        gEl.style.color = gradeColor(a.grade);
+        document.getElementById('aadc-nist').textContent = a.nist_rmf_avg !== null ? Math.round(a.nist_rmf_avg) : '--';
+        document.getElementById('aadc-owasp').textContent = a.owasp_avg !== null ? Math.round(a.owasp_avg) : '--';
+        document.getElementById('aadc-omb').textContent = a.omb_compliant + '/' + (a.scored_designs || 0);
+        document.getElementById('aadc-avg').textContent = a.avg_score !== null ? a.avg_score : '--';
+        var pct = a.avg_score || 0;
+        var bar = document.getElementById('aadc-bar');
+        bar.style.width = pct + '%';
+        bar.style.background = bandColor(a.avg_score);
+        if (!a.available) document.getElementById('aadc-unavail').style.display = 'flex';
     }
 
     // ── NIST 800-53 Heatmap ───────────────────────────────────────────────────
