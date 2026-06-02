@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5636, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742).
+"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5636, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742, aiify-opp-5776, aiify-opp-5780).
 
 The db -> render -> notify chains in ``tools.notification_service.alert_service``
 gained an opt-in LLM triage narrative. These tests pin the two load-bearing
@@ -544,3 +544,33 @@ def test_send_security_alert_digest_emit_event_name(monkeypatch):
     alert_service.send_security_alert_digest("sec@icdev.local")
 
     assert emitted == ["security.alert_digest_sent"]
+
+
+# ---------------------------------------------------------------------------
+# Tests for _NARRATIVE_SYSTEM_PROMPT content (aiify-opp-5778)
+# ---------------------------------------------------------------------------
+
+def test_system_prompt_passed_to_llm_request(monkeypatch):
+    """The system_prompt on the LLMRequest must be the module-level _NARRATIVE_SYSTEM_PROMPT."""
+    captured = _fake_router(monkeypatch, content="Narrative.")
+
+    alert_service._ai_alert_narrative("CAT-I security finding escalation", {"finding_title": "Test"})
+
+    assert captured["request"].system_prompt is alert_service._NARRATIVE_SYSTEM_PROMPT
+
+
+def test_system_prompt_contains_dod_ic_framing(monkeypatch):
+    """_NARRATIVE_SYSTEM_PROMPT must include DoD/IC analyst framing so the model context is correct."""
+    assert "DoD/IC" in alert_service._NARRATIVE_SYSTEM_PROMPT
+
+
+def test_system_prompt_prohibits_invented_facts(monkeypatch):
+    """_NARRATIVE_SYSTEM_PROMPT must instruct the model not to invent VIDs, dates, or system names."""
+    prompt = alert_service._NARRATIVE_SYSTEM_PROMPT
+    assert "never invent" in prompt.lower() or "never invent" in prompt
+
+
+def test_system_prompt_specifies_output_format(monkeypatch):
+    """_NARRATIVE_SYSTEM_PROMPT must ask for plain prose without markdown headers."""
+    prompt = alert_service._NARRATIVE_SYSTEM_PROMPT
+    assert "no markdown" in prompt.lower() or "no headers" in prompt.lower()

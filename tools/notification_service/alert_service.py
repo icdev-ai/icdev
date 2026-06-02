@@ -60,7 +60,7 @@ POAM_REMINDER_TEMPLATE = (
 )
 
 # ---------------------------------------------------------------------------
-# AI-ification (aiify-opp-5525, aiify-opp-5544, aiify-opp-5599, aiify-opp-5601, aiify-opp-5632, aiify-opp-5634, aiify-opp-5636, aiify-opp-5665, aiify-opp-5667, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742): optional LLM-synthesized triage narrative.
+# AI-ification (aiify-opp-5525, aiify-opp-5544, aiify-opp-5599, aiify-opp-5601, aiify-opp-5632, aiify-opp-5634, aiify-opp-5636, aiify-opp-5665, aiify-opp-5667, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742, aiify-opp-5776, aiify-opp-5778, aiify-opp-5780): optional LLM-synthesized triage narrative.
 #
 # The db → render → notify chains above produce deterministic, template-based
 # alert text that remains the AUTHORITATIVE payload — security operations must
