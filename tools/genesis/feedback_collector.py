@@ -18,7 +18,12 @@ import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None  # type: ignore[assignment]
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -26,6 +31,16 @@ sys.path.insert(0, str(BASE_DIR))
 from tools.db.storage import get_connection  # noqa: E402
 
 FEEDBACK_DIR = BASE_DIR / "data" / "genesis" / "feedback"
+
+# Static fallback thresholds — used only when < 3 historical data points exist.
+# Production values are computed dynamically via compute_anomaly_thresholds().
+_THRESHOLD_DEFAULTS: Dict[str, float] = {
+    "runtime_failures": 5.0,
+    "coverage_gaps": 10.0,
+    "high_demand_signals": 3.0,
+    "trace_recommendations": 0.0,
+    "maintainability_score_max": 50.0,
+}
 
 
 def _utcnow_iso() -> str:
@@ -69,12 +84,22 @@ def collect_quality_trends(lookback_hours: int = 168) -> List[Dict]:
     )
 
 
-def collect_coverage_gaps() -> List[Dict]:
-    """Identify tools with low maintainability scores."""
+def collect_coverage_gaps(max_score: Optional[float] = None) -> List[Dict]:
+    """Identify tools with anomalously low maintainability scores.
+
+    When max_score is omitted, the threshold is computed dynamically via
+    compute_anomaly_thresholds() — mean - z*std of historical DB scores —
+    falling back to _THRESHOLD_DEFAULTS when history is thin.
+    """
+    if max_score is None:
+        max_score = compute_anomaly_thresholds().get(
+            "maintainability_score_max", _THRESHOLD_DEFAULTS["maintainability_score_max"]
+        )
     return _safe_query(
         "SELECT file_path, maintainability_score, avg_cyclomatic, smells "
-        "FROM code_quality_metrics WHERE maintainability_score < 50 "
-        "ORDER BY maintainability_score ASC LIMIT 30"
+        "FROM code_quality_metrics WHERE maintainability_score < ? "
+        "ORDER BY maintainability_score ASC LIMIT 30",
+        (max_score,),
     )
 
 
@@ -105,6 +130,75 @@ def collect_trace_recommendations() -> List[Dict]:
         "created_at FROM harness_trace_recommendations "
         "ORDER BY created_at DESC LIMIT 20"
     )
+
+
+def _read_genesis_anomaly_config() -> Dict[str, Any]:
+    """Read anomaly_detection settings from args/genesis_config.yaml.
+
+    Returns the convergence.anomaly_detection sub-dict, or {} on any failure.
+    """
+    config_path = BASE_DIR / "args" / "genesis_config.yaml"
+    if _yaml is None or not config_path.exists():
+        return {}
+    try:
+        data = _yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        return data.get("convergence", {}).get("anomaly_detection", {})
+    except Exception:
+        return {}
+
+
+def compute_anomaly_thresholds(lookback_days: int = 7, z_score: float = 2.0, min_samples: int = 5) -> Dict[str, float]:
+    """Compute data-driven anomaly thresholds from historical feedback files.
+
+    Uses mean + z_score * std per metric over the last ``lookback_days`` days.
+    Falls back to ``_THRESHOLD_DEFAULTS`` when fewer than ``min_samples`` data
+    points exist.  Config values from ``args/genesis_config.yaml``
+    (convergence.anomaly_detection) override the defaults when present.
+    """
+    cfg = _read_genesis_anomaly_config()
+    z_score = float(cfg.get("z_score", z_score))
+    min_samples = int(cfg.get("min_samples", min_samples))
+
+    FEEDBACK_DIR.mkdir(parents=True, exist_ok=True)
+    history = sorted(FEEDBACK_DIR.glob("feedback-*.json"))[-lookback_days:]
+
+    buckets: Dict[str, List[float]] = {k: [] for k in _THRESHOLD_DEFAULTS if k != "maintainability_score_max"}
+
+    for f in history:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            s = data.get("summary", {})
+            for key in buckets:
+                val = s.get(key)
+                if val is not None:
+                    buckets[key].append(float(val))
+        except Exception:
+            continue
+
+    thresholds: Dict[str, float] = {}
+    for key, values in buckets.items():
+        if len(values) >= min_samples:
+            mean = sum(values) / len(values)
+            variance = sum((v - mean) ** 2 for v in values) / len(values)
+            thresholds[key] = mean + z_score * (variance ** 0.5)
+        else:
+            thresholds[key] = _THRESHOLD_DEFAULTS[key]
+
+    # Compute maintainability_score_max dynamically from actual DB scores.
+    # Anomalously LOW scores use mean - z*std; clamped to >= 0.0.
+    # Falls back to _THRESHOLD_DEFAULTS when fewer than min_samples rows exist.
+    ms_rows = _safe_query(
+        "SELECT maintainability_score FROM code_quality_metrics "
+        "WHERE maintainability_score IS NOT NULL ORDER BY created_at DESC LIMIT 200"
+    )
+    ms_values = [float(r["maintainability_score"]) for r in ms_rows if r.get("maintainability_score") is not None]
+    if len(ms_values) >= min_samples:
+        mean_ms = sum(ms_values) / len(ms_values)
+        var_ms = sum((v - mean_ms) ** 2 for v in ms_values) / len(ms_values)
+        thresholds["maintainability_score_max"] = max(0.0, mean_ms - z_score * (var_ms ** 0.5))
+    else:
+        thresholds["maintainability_score_max"] = _THRESHOLD_DEFAULTS["maintainability_score_max"]
+    return thresholds
 
 
 def collect_all() -> Dict[str, Any]:
@@ -218,24 +312,29 @@ def prioritize_reflexes() -> Dict[str, Any]:
 
     summary = latest.get("summary", {})
     priorities = {}
+    thresholds = compute_anomaly_thresholds()
 
     # High runtime failures → boost heal and audit
-    if summary.get("runtime_failures", 0) > 5:
-        priorities["heal"] = {"priority": "boost", "reason": f"{summary['runtime_failures']} failures in last 24h"}
+    failures = summary.get("runtime_failures", 0)
+    if failures > thresholds["runtime_failures"]:
+        priorities["heal"] = {"priority": "boost", "reason": f"{failures} failures exceeds anomaly threshold ({thresholds['runtime_failures']:.1f})"}
         priorities["audit"] = {"priority": "boost", "reason": "High failure rate warrants audit"}
 
     # Coverage gaps → boost test and evolve
-    if summary.get("coverage_gaps", 0) > 10:
-        priorities["test"] = {"priority": "boost", "reason": f"{summary['coverage_gaps']} low-quality modules"}
+    gaps = summary.get("coverage_gaps", 0)
+    if gaps > thresholds["coverage_gaps"]:
+        priorities["test"] = {"priority": "boost", "reason": f"{gaps} low-quality modules exceeds anomaly threshold ({thresholds['coverage_gaps']:.1f})"}
         priorities["evolve"] = {"priority": "boost", "reason": "Many quality gaps to address"}
 
     # High demand signals → boost publish and research
-    if summary.get("high_demand_signals", 0) > 3:
-        priorities["publish"] = {"priority": "boost", "reason": f"{summary['high_demand_signals']} high-demand topics"}
+    demand = summary.get("high_demand_signals", 0)
+    if demand > thresholds["high_demand_signals"]:
+        priorities["publish"] = {"priority": "boost", "reason": f"{demand} high-demand topics exceeds anomaly threshold ({thresholds['high_demand_signals']:.1f})"}
         priorities["research"] = {"priority": "boost", "reason": "Active demand requires fresh research"}
 
     # Trace recommendations → boost learn
-    if summary.get("trace_recommendations", 0) > 0:
+    traces = summary.get("trace_recommendations", 0)
+    if traces > thresholds["trace_recommendations"]:
         priorities["learn"] = {"priority": "boost", "reason": "Harness recommendations available for learning"}
 
     # Default: all others normal
@@ -259,6 +358,7 @@ def prioritize_reflexes() -> Dict[str, Any]:
 
     return {
         "priorities": priorities,
+        "thresholds": thresholds,
         "feedback_date": latest.get("collected_at", ""),
         "boost_count": len([p for p in priorities.values() if p["priority"] == "boost"]),
         "timestamp": _utcnow_iso(),

@@ -101,3 +101,23 @@ nlp_ref_extractor:
   enabled: false
   model: claude-haiku-4-5-20251001
   max_tokens: 128
+
+research_nlp_scraper:
+  # NLP extractor for html_scrape feed type in tools/genesis/reflexes/research.py.
+  # Replaces regex href extraction with Claude Haiku NLP extraction for topic-aware
+  # link filtering. Falls back to regex if disabled or LLM unavailable.
+  # Opt-in: set enabled: true here OR export ICDEV_RESEARCH_NLP_SCRAPER=true.
+  enabled: false
+  model: claude-haiku-4-5-20251001
+  max_tokens: 256
+
+research_reflex:
+  # Configurable thresholds for tools/genesis/reflexes/research.py.
+  # Replaces hardcoded constants so anomaly-detection behavior can be tuned
+  # without modifying source code (aiify-rm-ff651-phase-5344).
+  max_entries_per_feed: 10   # new entries processed per feed per cycle
+  max_json_items: 20         # items parsed from generic JSON array feeds
+  max_kev_vulns: 20          # KEV vulnerability entries to parse per cycle
+  signal_confidence: 0.7     # GKP export confidence for research signals
+  signal_base_score: 50      # base relevance score for research signals
+  html_snippet_limit: 4000   # max HTML chars sent to NLP link extractor

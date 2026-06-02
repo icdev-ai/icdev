@@ -159,6 +159,52 @@ def send_oracle_weekly_digest(recipient: str, ai_narrative: bool = False) -> dic
     return {"status": "sent", "recipient": recipient, "prediction_groups": len(predictions), "narrative": narrative}
 
 
+def send_aiify_weekly_digest(recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch week's AI-ify scan summary, render digest, and deliver."""
+    conn = get_connection()
+    scans = conn.execute(
+        "SELECT scan_id, status, overall_ai_readiness, created_at FROM aiify_scans "
+        "WHERE created_at >= DATE('now', '-7 days') ORDER BY created_at DESC LIMIT 10"
+    ).fetchall()
+    top_opps = conn.execute(
+        "SELECT o.function_name, o.pattern_type, s.composite_score "
+        "FROM aiify_scores s JOIN aiify_opportunities o ON o.opportunity_id = s.opportunity_id "
+        "WHERE o.scan_id IN (SELECT scan_id FROM aiify_scans WHERE created_at >= DATE('now', '-7 days')) "
+        "ORDER BY s.composite_score DESC LIMIT 5"
+    ).fetchall()
+    pattern_summary = conn.execute(
+        "SELECT pattern_type, COUNT(*) as cnt FROM aiify_opportunities "
+        "WHERE scan_id IN (SELECT scan_id FROM aiify_scans WHERE created_at >= DATE('now', '-7 days')) "
+        "GROUP BY pattern_type ORDER BY cnt DESC"
+    ).fetchall()
+    conn.close()
+    avg_readiness = (
+        round(sum(float(r["overall_ai_readiness"] or 0) for r in scans) / len(scans), 2)
+        if scans else 0.0
+    )
+    rendered = render_template(
+        "digests/aiify_weekly.html",
+        scans=scans, top_opps=top_opps, pattern_summary=pattern_summary,
+        avg_readiness=avg_readiness,
+    )
+    narrative = _ai_digest_narrative("aiify weekly AI-readiness digest", {
+        "scan_count": len(scans),
+        "avg_readiness": avg_readiness,
+        "top_pattern_type": top_opps[0]["pattern_type"] if top_opps else "none",
+        "top_opportunities": "; ".join(
+            f"{o['function_name']} ({o['pattern_type']}, score {round(float(o['composite_score'] or 0), 2)})"
+            for o in top_opps[:3]
+        ) or "none",
+        "pattern_type_count": len(pattern_summary),
+    }) if ai_narrative else None
+    sendmail(to=recipient, subject=f"AI-ify Weekly Digest — {_now_iso()[:10]}", html=rendered)
+    payload = {"scan_count": len(scans), "recipient": recipient}
+    if narrative:
+        payload["narrative"] = narrative
+    emit("aiify.weekly_digest", payload)
+    return {"status": "sent", "recipient": recipient, "scan_count": len(scans), "narrative": narrative}
+
+
 def send_compliance_posture_report(recipient: str, canvas_filter: list | None = None, ai_narrative: bool = False) -> dict:
     """Fetch canvas compliance scores, render posture report, and deliver."""
     conn = get_connection()

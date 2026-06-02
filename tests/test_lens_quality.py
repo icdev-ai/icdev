@@ -104,9 +104,14 @@ class TestQualityLensScore:
         assert "quality_regression" in cats
 
     def test_uqs_improving_trend_detected(self):
+        # 7 old values at 70 (EWMA warmup) then 3 recent at 95 — clear step up.
+        # More history is needed because EWMA dampens single-point steps; the
+        # warmed-up delta_rise (≈12) comfortably exceeds warn_delta (≈11.5).
         analysis = {**self._empty(), "uqs_history": [
-            {"uqs_score": 90}, {"uqs_score": 92}, {"uqs_score": 91},
-            {"uqs_score": 60}, {"uqs_score": 62},
+            {"uqs_score": 95}, {"uqs_score": 95}, {"uqs_score": 95},
+            {"uqs_score": 70}, {"uqs_score": 70}, {"uqs_score": 70},
+            {"uqs_score": 70}, {"uqs_score": 70}, {"uqs_score": 70},
+            {"uqs_score": 70},
         ]}
         cats = [p.category for p in QualityLens().score(analysis)]
         assert "quality_improvement" in cats

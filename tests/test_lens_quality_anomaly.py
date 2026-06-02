@@ -4,6 +4,7 @@
 Verifies that hardcoded thresholds have been replaced with statistically-derived,
 config-driven adaptive thresholds and that prediction data includes observability keys.
 """
+import json
 import pytest
 from unittest.mock import patch
 
@@ -117,7 +118,8 @@ class TestUQSTrendDetection:
     def test_clear_improvement_is_flagged(self):
         """A large UQS improvement triggers an improving-trend prediction."""
         lens = _make_lens()
-        analysis = _uqs_analysis([90.0, 91.0, 92.0, 70.0, 71.0])
+        # 7 old values at 70 warm up the EWMA; delta_rise (≈10.4) > warn_delta (≈9.6)
+        analysis = _uqs_analysis([90.0, 91.0, 92.0, 70.0, 70.0, 70.0, 70.0, 70.0, 70.0, 70.0])
         predictions = lens.score(analysis)
         assert any(p.title == "UQS Improving Trend" for p in predictions)
 
@@ -286,3 +288,174 @@ class TestFindingsSpikeDetection:
         analysis = _findings_analysis([50])
         predictions = lens.score(analysis)
         assert not any(p.category == "findings_spike" for p in predictions)
+
+
+# ── UQS window constants ──────────────────────────────────────────────────────
+
+class TestUQSWindowConstants:
+    def test_score_window_and_recent_window_exported(self):
+        """_UQS_SCORE_WINDOW and _UQS_RECENT_WINDOW must be importable module constants."""
+        from tools.oracle.lenses.lens_quality import _UQS_SCORE_WINDOW, _UQS_RECENT_WINDOW
+        assert isinstance(_UQS_SCORE_WINDOW, int) and _UQS_SCORE_WINDOW >= 1
+        assert isinstance(_UQS_RECENT_WINDOW, int) and _UQS_RECENT_WINDOW >= 1
+
+    def test_recent_window_smaller_than_score_window(self):
+        """recent_window must be < score_window so the 'older' slice is non-empty."""
+        from tools.oracle.lenses.lens_quality import _UQS_SCORE_WINDOW, _UQS_RECENT_WINDOW
+        assert _UQS_RECENT_WINDOW < _UQS_SCORE_WINDOW
+
+    def test_avg_recent_and_avg_older_respect_score_window(self):
+        """avg_recent/avg_older in prediction data come only from the windowed slice.
+
+        Uses a moderate tail (not extreme) so it doesn't inflate std enough to suppress
+        the prediction, while still being distinct from older_val — verifying that the
+        tail is excluded from the avg computation.
+        """
+        from tools.oracle.lenses.lens_quality import _UQS_SCORE_WINDOW, _UQS_RECENT_WINDOW
+        lens = _make_lens()
+        recent_val = 60.0
+        older_val = 90.0
+        # Tail values deliberately distinct from older_val; moderate so std stays manageable.
+        tail_val = 50.0
+        recent = [recent_val] * _UQS_RECENT_WINDOW
+        older = [older_val] * (_UQS_SCORE_WINDOW - _UQS_RECENT_WINDOW)
+        tail = [tail_val] * 4
+        analysis = _uqs_analysis(recent + older + tail)
+        preds = lens.score(analysis)
+        regression_preds = [p for p in preds if p.category == "quality_regression"]
+        assert len(regression_preds) >= 1, "Expected a declining-trend prediction from windowed data"
+        data = regression_preds[0].data
+        # avg_recent must equal recent_val (tail not included)
+        assert abs(data["avg_recent"] - recent_val) < 0.01, (
+            f"avg_recent={data['avg_recent']} should be {recent_val} (window-only)"
+        )
+        # avg_older must equal older_val, not contaminated by tail_val
+        assert abs(data["avg_older"] - older_val) < 0.01, (
+            f"avg_older={data['avg_older']} should be {older_val}, not tail-contaminated"
+        )
+
+    def test_uqs_guard_uses_min_samples(self):
+        """Score() must require at least _MIN_SAMPLES entries; fewer → no UQS predictions."""
+        from tools.oracle.lenses.lens_quality import _MIN_SAMPLES
+        lens = _make_lens()
+        # Supply exactly _MIN_SAMPLES - 1 entries → no UQS prediction
+        analysis = _uqs_analysis([60.0] * (_MIN_SAMPLES - 1))
+        preds = lens.score(analysis)
+        uqs_preds = [p for p in preds if p.title in ("UQS Declining Trend", "UQS Improving Trend")]
+        assert uqs_preds == []
+
+
+# ── LLM anomaly threshold calibration ────────────────────────────────────────
+
+class TestLLMCalibration:
+    def test_empty_inputs_returns_empty(self):
+        """No data → skip LLM call and return {}."""
+        from tools.oracle.lenses.lens_quality import _calibrate_quality_anomaly_thresholds
+        assert _calibrate_quality_anomaly_thresholds([], [], {}) == {}
+
+    def test_disabled_returns_empty(self):
+        """_LLM_CAL_ENABLED=False short-circuits without calling LLM."""
+        from tools.oracle.lenses.lens_quality import _calibrate_quality_anomaly_thresholds
+        with patch("tools.oracle.lenses.lens_quality._LLM_CAL_ENABLED", False):
+            result = _calibrate_quality_anomaly_thresholds([80.0, 90.0, 70.0], [0.5], [10.0])
+        assert result == {}
+
+    def test_llm_failure_returns_empty(self):
+        """Any LLM exception → graceful {} fallback, no exception raised."""
+        from tools.oracle.lenses.lens_quality import _calibrate_quality_anomaly_thresholds
+        with patch("tools.oracle.lenses.lens_quality._LLM_CAL_ENABLED", True), \
+             patch("tools.llm.router.LLMRouter", side_effect=Exception("unavailable")):
+            result = _calibrate_quality_anomaly_thresholds([80.0, 90.0, 70.0], [0.5], [10.0])
+        assert result == {}
+
+    def test_llm_response_parsed_and_validated(self):
+        """Valid LLM JSON is parsed; all five threshold keys are returned."""
+        from tools.oracle.lenses.lens_quality import _calibrate_quality_anomaly_thresholds
+        payload = json.dumps({
+            "uqs_warn_delta": 3.0, "uqs_crit_delta": 6.0,
+            "gate_rate_warn": 0.4, "gate_rate_crit": 0.7,
+            "spike_multiplier": 1.8,
+        })
+        mock_response = type("R", (), {"content": payload})()
+        mock_router = type("Router", (), {"invoke": lambda self, fn, req: mock_response})()
+        with patch("tools.oracle.lenses.lens_quality._LLM_CAL_ENABLED", True), \
+             patch("tools.llm.router.LLMRouter", return_value=mock_router), \
+             patch("tools.llm.provider.LLMRequest"):
+            result = _calibrate_quality_anomaly_thresholds([75.0, 80.0, 85.0, 70.0], [0.5, 0.3], [15.0, 10.0])
+        assert result.get("uqs_warn_delta") == pytest.approx(3.0)
+        assert result.get("uqs_crit_delta") == pytest.approx(6.0)
+        assert result.get("gate_rate_warn") == pytest.approx(0.4)
+        assert result.get("gate_rate_crit") == pytest.approx(0.7)
+        assert result.get("spike_multiplier") == pytest.approx(1.8)
+
+    def test_values_below_floor_are_clamped(self):
+        """Values below validation floors are clamped to their minimum, not rejected."""
+        from tools.oracle.lenses.lens_quality import (
+            _calibrate_quality_anomaly_thresholds,
+            _LLM_VAL_UQS_WARN_MIN, _LLM_VAL_UQS_CRIT_MIN,
+            _LLM_VAL_RATE_WARN_MIN, _LLM_VAL_RATE_CRIT_MIN,
+            _LLM_VAL_SPIKE_MUL_MIN,
+        )
+        payload = json.dumps({
+            "uqs_warn_delta": 0.01, "uqs_crit_delta": 0.02,
+            "gate_rate_warn": 0.001, "gate_rate_crit": 0.002,
+            "spike_multiplier": 0.1,
+        })
+        mock_response = type("R", (), {"content": payload})()
+        mock_router = type("Router", (), {"invoke": lambda self, fn, req: mock_response})()
+        with patch("tools.oracle.lenses.lens_quality._LLM_CAL_ENABLED", True), \
+             patch("tools.llm.router.LLMRouter", return_value=mock_router), \
+             patch("tools.llm.provider.LLMRequest"):
+            result = _calibrate_quality_anomaly_thresholds([75.0, 80.0, 85.0, 70.0], [0.5], [10.0])
+        assert result["uqs_warn_delta"] >= _LLM_VAL_UQS_WARN_MIN
+        assert result["uqs_crit_delta"] >= _LLM_VAL_UQS_CRIT_MIN
+        assert result["gate_rate_warn"] >= _LLM_VAL_RATE_WARN_MIN
+        assert result["gate_rate_crit"] >= _LLM_VAL_RATE_CRIT_MIN
+        assert result["spike_multiplier"] >= _LLM_VAL_SPIKE_MUL_MIN
+
+    def test_score_uses_calibrated_uqs_warn_delta_to_suppress(self):
+        """A very high uqs_warn_delta from LLM suppresses a normally-flagged decline."""
+        lens = _make_lens()
+        # [60,61,62,80,81] normally triggers UQS Declining Trend
+        analysis = _uqs_analysis([60.0, 61.0, 62.0, 80.0, 81.0])
+        analysis["llm_calibrated_thresholds"] = {"uqs_warn_delta": 100.0, "uqs_crit_delta": 200.0}
+        preds = lens.score(analysis)
+        assert not any(p.title == "UQS Declining Trend" for p in preds)
+
+    def test_score_uses_calibrated_uqs_warn_delta_to_surface(self):
+        """A very low uqs_warn_delta from LLM surfaces a decline that would otherwise be ignored."""
+        lens = _make_lens()
+        # Tiny drop: avg_recent≈76, avg_older≈78, delta≈1.67; default warn_delta≈2.0 → not flagged
+        analysis = _uqs_analysis([76.0, 76.0, 77.0, 78.0, 78.0])
+        analysis["llm_calibrated_thresholds"] = {"uqs_warn_delta": 0.5, "uqs_crit_delta": 2.0}
+        preds = lens.score(analysis)
+        assert any(p.title == "UQS Declining Trend" for p in preds)
+
+    def test_score_no_calibration_key_uses_defaults(self):
+        """score() works normally when llm_calibrated_thresholds is absent from analysis."""
+        lens = _make_lens()
+        analysis = _uqs_analysis([60.0, 61.0, 62.0, 80.0, 81.0])
+        # No llm_calibrated_thresholds key at all
+        preds = lens.score(analysis)
+        assert any(p.title == "UQS Declining Trend" for p in preds)
+
+    def test_score_calibrated_gate_rate_warn_suppresses(self):
+        """A very high gate_rate_warn from LLM suppresses a normally-flagged gate."""
+        lens = _make_lens()
+        results = [
+            {"gate_id": "CAT1", "status": "fail", "executed_at": f"2024-01-{i:02d}"}
+            for i in range(1, 4)
+        ]
+        analysis = _gate_analysis(results)
+        analysis["llm_calibrated_thresholds"] = {"gate_rate_warn": 0.99, "gate_rate_crit": 1.0}
+        preds = lens.score(analysis)
+        assert not any(p.category == "gate_failure_pattern" for p in preds)
+
+    def test_analyze_includes_llm_calibrated_thresholds_key(self):
+        """analyze() always returns llm_calibrated_thresholds even when DBs are absent."""
+        lens = _make_lens()
+        with patch("tools.oracle.lenses.lens_quality.QDC_DB", type("P", (), {"exists": lambda self: False})()),\
+             patch("tools.oracle.lenses.lens_quality.GENESIS_QDB", type("P", (), {"exists": lambda self: False})()):
+            data = lens.analyze()
+        assert "llm_calibrated_thresholds" in data
+        assert isinstance(data["llm_calibrated_thresholds"], dict)

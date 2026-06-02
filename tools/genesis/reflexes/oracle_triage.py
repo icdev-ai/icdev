@@ -56,12 +56,32 @@ from tools.logging.icdev_logger import get_logger
 import argparse
 import json
 import logging
+import os
 import re
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+# Sentinel used by the NLP subject cache to distinguish "not yet cached" from
+# "cached as None" (i.e. extraction failed).
+_NLP_CACHE_MISS = object()
+
+# Per-process result cache for _nlp_extract_subject keyed by (title, lens).
+# Avoids repeated LLM calls for the same title/lens pair within a triage run.
+_NLP_SUBJECT_CACHE: Dict[Tuple[str, str], Optional[str]] = {}
+
+# Per-process cache for _nlp_extract_batch_lens keyed by title.
+_NLP_BATCH_LENS_CACHE: Dict[str, Optional[str]] = {}
+
+# Per-process cache for _nlp_extract_batch_subjects keyed by (lens, description[:600]).
+_NLP_BATCH_SUBJECTS_CACHE: Dict[Tuple[str, str], List[str]] = {}
+
+# Env var that controls which model the NLP extractor uses.
+# Defaults to claude-haiku-4-5 for low latency / low cost extraction tasks.
+_ORACLE_NLP_MODEL_ENV = "ICDEV_ORACLE_NLP_MODEL"
+_ORACLE_NLP_MODEL_DEFAULT = "claude-haiku-4-5-20251001"
 
 LOG = get_logger("oracle_triage")
 
@@ -84,6 +104,17 @@ except ImportError:
 # Dynamic heuristics loaded once per process from args/oracle_heuristics.yaml
 _DYNAMIC_HEURISTICS: list[dict] | None = None
 
+# Triage config loaded once per process from args/oracle_triage_config.yaml
+_TRIAGE_CONFIG: dict | None = None
+
+# Adaptive anomaly-detection thresholds, computed once per triage() run from the
+# historical oracle_predictions confidence distribution.  None = not yet loaded.
+_ADAPTIVE_THRESHOLDS_CACHE: dict | None = None
+
+# Minimum history samples for adaptive threshold computation (module-level fallback
+# used when config value is unavailable).
+_MIN_HISTORY_FOR_ADAPTIVE = 10
+
 
 def _load_dynamic_heuristics() -> list[dict]:
     global _DYNAMIC_HEURISTICS
@@ -101,6 +132,37 @@ def _load_dynamic_heuristics() -> list[dict]:
         LOG.warning("[oracle_triage] failed to load oracle_heuristics.yaml: %s", exc)
         _DYNAMIC_HEURISTICS = []
     return _DYNAMIC_HEURISTICS
+
+
+def _load_triage_config() -> dict:
+    """Load oracle_triage_config.yaml once per process; return defaults on failure."""
+    global _TRIAGE_CONFIG
+    if _TRIAGE_CONFIG is not None:
+        return _TRIAGE_CONFIG
+    defaults: dict = {
+        "orphan_min_refs": 1,
+        "anomaly_detection": {
+            "low_confidence_threshold": 0.3,
+            "orphan_min_refs_low_confidence": 3,
+            "high_confidence_threshold": 0.85,
+            "min_history_for_adaptive": 10,
+        },
+    }
+    try:
+        import yaml
+        config_path = BASE_DIR / "args" / "oracle_triage_config.yaml"
+        if config_path.exists():
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                _TRIAGE_CONFIG = {**defaults, **data}
+                ad_defaults = defaults["anomaly_detection"]
+                ad_loaded = data.get("anomaly_detection", {}) or {}
+                _TRIAGE_CONFIG["anomaly_detection"] = {**ad_defaults, **ad_loaded}
+                return _TRIAGE_CONFIG
+    except Exception as exc:
+        LOG.warning("[oracle_triage] failed to load oracle_triage_config.yaml: %s", exc)
+    _TRIAGE_CONFIG = defaults
+    return _TRIAGE_CONFIG
 
 
 def _apply_dynamic_heuristics(task: dict) -> tuple[str, str] | None:
@@ -125,6 +187,7 @@ def _apply_dynamic_heuristics(task: dict) -> tuple[str, str] | None:
 
     return None
 
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -133,10 +196,6 @@ _MIGRATIONS_DIR = BASE_DIR / "migrations"
 _TOOLS_DIR = BASE_DIR / "tools"
 _DASHBOARD_DIR = _TOOLS_DIR / "dashboard"
 _DEFAULT_API_BASE = "http://localhost:5050"
-
-# Minimum code-reference count to treat an orphan table as a real gap.
-# Tables with zero refs are dead references → dismiss.
-_ORPHAN_MIN_REFS = 1
 
 # oracle_lens values this reflex handles.
 _HANDLED_LENSES = {"tool_not_in_manifest", "route_not_listed", "orphan_db_table"}
@@ -339,21 +398,173 @@ def _count_code_refs(table: str) -> int:
     return count
 
 
-def _verify_orphan_db_table(table: str) -> Tuple[str, str]:
+def _compute_adaptive_thresholds(
+    history: List[float],
+    *,
+    min_history: int = _MIN_HISTORY_FOR_ADAPTIVE,
+    static_high: float = 0.85,
+    static_low: float = 0.30,
+    low_confidence_refs: int = 3,
+) -> Optional[Dict[str, Any]]:
+    """Compute adaptive anomaly-detection thresholds from historical confidence scores.
+
+    Uses mean ± 1 standard deviation to define high/low confidence bands, clamped
+    to the static config bounds.  Returns None when history is insufficient
+    (< min_history samples) or the distribution is degenerate (std = 0).
+
+    Args:
+        history: oracle_predictions.confidence values in [0, 1]
+        min_history: minimum sample count to activate adaptive computation
+        static_high: upper bound from config (adaptive high ≤ this)
+        static_low: lower bound from config (adaptive low ≥ this)
+        low_confidence_refs: orphan_min_refs_low_confidence passed through unchanged
+
+    Returns:
+        dict matching the anomaly_detection config block, or None.
+    """
+    if len(history) < min_history:
+        return None
+
+    n = len(history)
+    mean = sum(history) / n
+    variance = sum((x - mean) ** 2 for x in history) / n
+    std = variance ** 0.5
+
+    if std == 0.0:
+        return None  # degenerate distribution — static config is more meaningful
+
+    high_threshold = min(static_high, mean + std)
+    low_threshold = max(static_low, mean - std)
+
+    if high_threshold <= low_threshold:
+        return None  # collapsed band — static config is safer
+
+    return {
+        "high_confidence_threshold": round(high_threshold, 4),
+        "low_confidence_threshold": round(low_threshold, 4),
+        "orphan_min_refs_low_confidence": low_confidence_refs,
+    }
+
+
+def _fetch_confidence_history(limit: int = 100) -> List[float]:
+    """Return recent oracle_predictions.confidence values for adaptive threshold computation.
+
+    Returns an empty list when the DB is unavailable or the table does not exist.
+    """
+    if get_connection is None:
+        return []
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                """
+                SELECT confidence FROM oracle_predictions
+                WHERE confidence IS NOT NULL
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [float(r[0]) for r in rows if r[0] is not None]
+        finally:
+            conn.close()
+    except Exception as exc:
+        LOG.debug("[oracle_triage] _fetch_confidence_history failed: %s", exc)
+        return []
+
+
+def _get_active_anomaly_thresholds() -> Dict[str, Any]:
+    """Return the active anomaly-detection threshold dict for this triage run.
+
+    Computes adaptive thresholds (mean ± 1 std) from recent oracle confidence
+    scores when sufficient history exists.  Falls back to the static values in
+    oracle_triage_config.yaml / module defaults when history is unavailable or
+    the distribution is degenerate.  Result is cached for the duration of the
+    current process (reset by triage() at the start of each run).
+    """
+    global _ADAPTIVE_THRESHOLDS_CACHE
+    if _ADAPTIVE_THRESHOLDS_CACHE is not None:
+        return _ADAPTIVE_THRESHOLDS_CACHE
+
+    cfg = _load_triage_config()
+    static_ad = cfg.get("anomaly_detection", {})
+    history = _fetch_confidence_history()
+    adaptive = _compute_adaptive_thresholds(
+        history,
+        min_history=int(static_ad.get("min_history_for_adaptive", _MIN_HISTORY_FOR_ADAPTIVE)),
+        static_high=float(static_ad.get("high_confidence_threshold", 0.85)),
+        static_low=float(static_ad.get("low_confidence_threshold", 0.30)),
+        low_confidence_refs=int(static_ad.get("orphan_min_refs_low_confidence", 3)),
+    )
+    _ADAPTIVE_THRESHOLDS_CACHE = adaptive if adaptive is not None else dict(static_ad)
+    return _ADAPTIVE_THRESHOLDS_CACHE
+
+
+def _get_orphan_min_refs(oracle_confidence: Optional[float] = None) -> int:
+    """Return the minimum code-reference count for the orphan_db_table verifier.
+
+    Applies anomaly detection: low-confidence oracle predictions require more
+    code references before a gap is considered real (reduces false promotions
+    from noisy / uncertain predictions).  High-confidence predictions bypass
+    the refs check entirely.
+
+    Args:
+        oracle_confidence: oracle prediction confidence in [0, 1], or None.
+
+    Returns:
+        Required min refs, or 0 when confidence is high enough to skip the check.
+    """
+    cfg = _load_triage_config()
+    base_min_refs: int = int(cfg.get("orphan_min_refs", 1))
+
+    if oracle_confidence is not None:
+        ad = _get_active_anomaly_thresholds()
+        high_threshold: float = float(ad.get("high_confidence_threshold", 0.85))
+        low_threshold: float = float(ad.get("low_confidence_threshold", 0.3))
+        if oracle_confidence >= high_threshold:
+            # High confidence — trust Oracle, skip the refs check
+            return 0
+        if oracle_confidence < low_threshold:
+            # Low confidence — anomalous prediction, require more evidence
+            return int(ad.get("orphan_min_refs_low_confidence", 3))
+
+    return base_min_refs
+
+
+def _verify_orphan_db_table(
+    table: str,
+    oracle_confidence: Optional[float] = None,
+) -> Tuple[str, str]:
     """Verify an orphan table gap.
 
     If a CREATE TABLE migration already exists → dismiss (gap_detector missed it).
-    If no migration and code refs >= _ORPHAN_MIN_REFS → promote (real gap).
-    If no migration and 0 refs → dismiss (dead reference, no active code path).
+    If no migration and code refs >= min_refs threshold → promote (real gap).
+    If no migration and refs < min_refs → dismiss (dead/weak reference).
+
+    The min_refs threshold is read from args/oracle_triage_config.yaml and
+    adjusted by anomaly detection: low-confidence oracle predictions require
+    more code references; high-confidence predictions skip the check entirely.
     """
     if _migration_has_create(table):
         return "dismiss", f"CREATE TABLE {table} found in migrations — gap_detector false positive"
 
+    min_refs = _get_orphan_min_refs(oracle_confidence)
     refs = _count_code_refs(table)
-    if refs >= _ORPHAN_MIN_REFS:
+
+    if min_refs == 0:
+        # High-confidence oracle — trust the prediction even with few refs
+        return "promote", (
+            f"No CREATE TABLE migration; Oracle high-confidence — write migration"
+            + (f" ({refs} code ref(s))" if refs else " (0 code refs)")
+        )
+
+    if refs >= min_refs:
         return "promote", f"No CREATE TABLE migration; {refs} code reference(s) — write migration"
 
-    return "dismiss", "No CREATE TABLE migration and 0 code references — dead reference, dismiss"
+    return "dismiss", (
+        f"No CREATE TABLE migration and {refs} code reference(s) "
+        f"(< min_refs={min_refs}) — dead/weak reference, dismiss"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -383,8 +594,6 @@ def _verify_no_lens(task: Dict[str, Any]) -> Tuple[str, str]:
 # Batch card helper
 # ---------------------------------------------------------------------------
 
-_BATCH_SUBJECT_RE = re.compile(r"^\s+-\s+(\S+)", re.MULTILINE)
-
 
 def _parse_batch_subjects(description: str) -> List[str]:
     """Extract the subjects list from a [Batch] card description."""
@@ -413,13 +622,20 @@ def _verify_batch(task: Dict[str, Any]) -> Tuple[str, str]:
     # Detect lens from title: "[Batch] <lens>: N gap findings"
     lens_match = re.match(r"\[Batch\]\s+(\w+):", title)
     if not lens_match:
-        return "skip", "Batch card with unrecognised lens format"
-    lens = lens_match.group(1)
+        nlp_lens = _nlp_extract_batch_lens(title)
+        if not nlp_lens:
+            return "skip", "Batch card with unrecognised lens format"
+        lens = nlp_lens
+    else:
+        lens = lens_match.group(1)
 
     subjects = _parse_batch_subjects(desc)
     if not subjects:
+        subjects = _nlp_extract_batch_subjects(lens, desc)
+    if not subjects:
         return "skip", "Batch card — could not parse subjects from description"
 
+    batch_confidence: Optional[float] = task.get("oracle_confidence")
     promotions = 0
     dismissals = 0
     reasons: List[str] = []
@@ -429,7 +645,7 @@ def _verify_batch(task: Dict[str, Any]) -> Tuple[str, str]:
         elif lens == "route_not_listed":
             action, reason = _verify_route_not_listed(subj)
         elif lens == "orphan_db_table":
-            action, reason = _verify_orphan_db_table(subj)
+            action, reason = _verify_orphan_db_table(subj, oracle_confidence=batch_confidence)
         else:
             action, reason = "skip", f"Unknown lens {lens!r}"
 
@@ -450,6 +666,305 @@ def _verify_batch(task: Dict[str, Any]) -> Tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# NLP subject extractor (fallback for non-standard task titles)
+# ---------------------------------------------------------------------------
+
+# Canonical prefixes the gap_detector stamps on titles for each lens.
+_LENS_PREFIX_RE: Dict[str, re.Pattern] = {
+    "tool_not_in_manifest": re.compile(r"^tool_not_in_manifest gap:\s*"),
+    "route_not_listed": re.compile(r"^route_not_listed gap:\s*"),
+    "orphan_db_table": re.compile(r"^orphan_db_table gap:\s*"),
+}
+
+_LENS_SUBJECT_HINTS: Dict[str, str] = {
+    "tool_not_in_manifest": "a file path (e.g. tools/foo/bar.py)",
+    "route_not_listed": "a URL route path (e.g. /api/foo or /canvas/page)",
+    "orphan_db_table": "a database table name (e.g. foo_events)",
+}
+
+# Per-lens validators — extracted subjects must match to be accepted.
+_LENS_VALIDATORS: Dict[str, re.Pattern] = {
+    "tool_not_in_manifest": re.compile(
+        r"^[\w/\\.-]+\.(py|yaml|yml|json|md|sh|txt|toml|cfg|ini)$"
+    ),
+    "route_not_listed": re.compile(r"^/[\w/.<>_-]*$"),
+    "orphan_db_table": re.compile(r"^\w{2,64}$"),
+}
+
+# Lens-specific few-shot examples for the LLM extractor.
+_LENS_EXTRACT_EXAMPLES: Dict[str, str] = {
+    "tool_not_in_manifest": (
+        "Examples:\n"
+        "  'tool_not_in_manifest gap: tools/ttx/engine.py' → tools/ttx/engine.py\n"
+        "  'Missing manifest entry for tools/audit/scanner.py' → tools/audit/scanner.py\n"
+        "  'New tool at icdev/tools/reporting/pdf.py not registered' → icdev/tools/reporting/pdf.py"
+    ),
+    "route_not_listed": (
+        "Examples:\n"
+        "  'route_not_listed gap: /api/agents/status' → /api/agents/status\n"
+        "  'Flask route /studio/narrate missing from start.md' → /studio/narrate\n"
+        "  'Undocumented route /canvas/zig/report' → /canvas/zig/report"
+    ),
+    "orphan_db_table": (
+        "Examples:\n"
+        "  'orphan_db_table gap: harness_eval' → harness_eval\n"
+        "  'Table oracle_predictions has no migration' → oracle_predictions\n"
+        "  'Missing CREATE TABLE for ai_sessions' → ai_sessions"
+    ),
+}
+
+_NLP_EXTRACTOR_SYSTEM = """\
+You are an entity extractor for an automated DevSecOps triage system.
+Given a kanban task title and optional context, extract the single specific artifact.
+
+Rules:
+- For file paths: return the relative path as-is (e.g., tools/foo/bar.py)
+- For URL routes: return the path starting with "/" (e.g., /api/canvas/report)
+- For database tables: return just the snake_case table name (e.g., kanban_tasks)
+- Return ONLY the extracted value — no explanation, no quotes, no surrounding text
+- If you cannot identify a specific artifact, return the empty string
+"""
+
+_NLP_BATCH_SUBJECTS_SYSTEM = """\
+You are a subject-list extractor for an automated DevSecOps triage system.
+Given a batch kanban task description and lens type, extract all artifact subjects.
+
+Rules:
+- For "tool_not_in_manifest": extract relative file paths (e.g., tools/foo/bar.py)
+- For "route_not_listed": extract URL route paths starting with "/" (e.g., /api/canvas/report)
+- For "orphan_db_table": extract snake_case table names (e.g., kanban_tasks)
+- Return one subject per line — no bullets, no numbering, no explanation, no blank lines
+- If you cannot identify any subjects, return an empty response
+"""
+
+_NLP_LENS_INFER_SYSTEM = """\
+You are a DevSecOps triage classifier for an automated kanban system.
+Given a task title, classify it into the most appropriate gap lens and extract the artifact subject.
+
+Gap lenses:
+- tool_not_in_manifest: A Python/config file exists but is not registered in the manifest
+- route_not_listed: A Flask URL route exists in code but is missing from documentation
+- orphan_db_table: A database table has code references but no CREATE TABLE migration
+- none: The task does not clearly match any of the above lenses
+
+Respond with exactly two lines:
+Line 1: the lens name (tool_not_in_manifest, route_not_listed, orphan_db_table, or none)
+Line 2: the extracted artifact (file path, URL route, or table name), or empty if lens is none
+
+Examples:
+  "Missing manifest entry for tools/audit/scanner.py" → tool_not_in_manifest\ntools/audit/scanner.py
+  "Flask route /studio/narrate not in start.md" → route_not_listed\n/studio/narrate
+  "No migration for oracle_predictions table" → orphan_db_table\noracle_predictions
+  "Oracle RCA: config loading error in reflex" → none\n
+"""
+
+
+def _nlp_infer_lens_and_subject(
+    title: str, description: str = ""
+) -> tuple[Optional[str], Optional[str]]:
+    """Use LLM to infer the gap lens and extract the artifact subject for lens-less tasks.
+
+    Gated by ICDEV_ORACLE_NLP_EXTRACTOR=true (same gate as _nlp_extract_subject).
+    Returns (lens, subject) when confident; (None, None) if gate is off, LLM
+    unavailable, or the inference fails lens-specific validation.
+    """
+    if os.getenv("ICDEV_ORACLE_NLP_EXTRACTOR", "").lower() not in ("true", "1"):
+        return None, None
+
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        model_id = os.getenv(_ORACLE_NLP_MODEL_ENV, _ORACLE_NLP_MODEL_DEFAULT)
+        user_content = f"Task title: {title}"
+        if description:
+            user_content += f"\nContext: {description[:300]}"
+
+        request = LLMRequest(
+            messages=[{"role": "user", "content": user_content}],
+            system_prompt=_NLP_LENS_INFER_SYSTEM,
+            model=model_id,
+            max_tokens=64,
+            temperature=0.0,
+            skip_injection_scan=True,
+        )
+        router = LLMRouter()
+        response = router.invoke("oracle_triage_nlp_infer", request)
+        if not response or not response.content:
+            return None, None
+
+        lines = [ln.strip() for ln in response.content.strip().splitlines() if ln.strip()]
+        if not lines:
+            return None, None
+
+        inferred_lens: Optional[str] = lines[0] if lines[0] in _HANDLED_LENSES else None
+        inferred_subject: Optional[str] = lines[1].strip() if len(lines) > 1 and lines[1].strip() else None
+
+        if inferred_lens and inferred_subject and _validate_extracted_subject(inferred_subject, inferred_lens):
+            return inferred_lens, inferred_subject
+
+        return inferred_lens, None
+    except Exception as exc:
+        LOG.debug("[oracle_triage] nlp_infer_lens_and_subject failed: %s", exc)
+        return None, None
+
+
+def _nlp_extract_batch_lens(title: str) -> Optional[str]:
+    """Use LLM to extract the oracle lens type from a non-standard batch card title.
+
+    Wraps _nlp_infer_lens_and_subject with per-title caching.
+    Returns a valid lens name from _HANDLED_LENSES, or None on failure / gate off.
+    """
+    if title in _NLP_BATCH_LENS_CACHE:
+        return _NLP_BATCH_LENS_CACHE[title]
+
+    lens, _ = _nlp_infer_lens_and_subject(title)
+    result = lens if (lens and lens in _HANDLED_LENSES) else None
+    _NLP_BATCH_LENS_CACHE[title] = result
+    return result
+
+
+def _validate_extracted_subject(subject: str, lens: str) -> bool:
+    """Return True if the extracted subject matches expected format for the lens."""
+    if not subject or not subject.strip():
+        return False
+    validator = _LENS_VALIDATORS.get(lens)
+    if validator is None:
+        return True
+    return bool(validator.match(subject.strip()))
+
+
+def _nlp_extract_subject(title: str, lens: str, description: str = "") -> Optional[str]:
+    """Use an LLM to extract the triage subject from a non-standard task title.
+
+    Gated by ICDEV_ORACLE_NLP_EXTRACTOR=true in .env (default off).
+    Results are cached per (title, lens) to avoid redundant LLM calls within a
+    single triage run.  Model can be overridden via ICDEV_ORACLE_NLP_MODEL.
+
+    Returns the validated extracted subject, or None if gate is off /
+    LLM unavailable / result fails lens validation.
+    """
+    if os.getenv("ICDEV_ORACLE_NLP_EXTRACTOR", "").lower() not in ("true", "1"):
+        return None
+
+    cache_key: Tuple[str, str] = (title, lens)
+    cached = _NLP_SUBJECT_CACHE.get(cache_key, _NLP_CACHE_MISS)
+    if cached is not _NLP_CACHE_MISS:
+        return cached  # type: ignore[return-value]
+
+    result: Optional[str] = None
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        hint = _LENS_SUBJECT_HINTS.get(lens, "the relevant artifact name")
+        examples = _LENS_EXTRACT_EXAMPLES.get(lens, "")
+        user_content = (
+            f"Extract {hint} from this task title.\n"
+            f"{examples}\n"
+            f"Title: {title}"
+        )
+        if description:
+            user_content += f"\nContext: {description[:200]}"
+
+        model_id = os.getenv(_ORACLE_NLP_MODEL_ENV, _ORACLE_NLP_MODEL_DEFAULT)
+        request = LLMRequest(
+            messages=[{"role": "user", "content": user_content}],
+            system_prompt=_NLP_EXTRACTOR_SYSTEM,
+            model=model_id,
+            max_tokens=64,
+            temperature=0.0,
+            skip_injection_scan=True,
+        )
+        router = LLMRouter()
+        response = router.invoke("oracle_triage_nlp_extract", request)
+        if response and response.content:
+            extracted = response.content.strip().strip('"').strip("'").strip()
+            if _validate_extracted_subject(extracted, lens):
+                result = extracted
+            else:
+                LOG.debug(
+                    "[oracle_triage] nlp_extract returned invalid subject %r for lens %s",
+                    extracted, lens,
+                )
+    except Exception as exc:
+        LOG.debug("[oracle_triage] nlp_extract_subject failed: %s", exc)
+
+    _NLP_SUBJECT_CACHE[cache_key] = result
+    return result
+
+
+def _extract_subject(title: str, lens: str, description: str = "") -> str:
+    """Extract the triage subject from a task title.
+
+    Priority:
+    1. Canonical prefix regex — fast deterministic path; validates result.
+    2. NLP extraction via LLM (gated by ICDEV_ORACLE_NLP_EXTRACTOR=true).
+    3. Raw title as last resort.
+    """
+    prefix_re = _LENS_PREFIX_RE.get(lens)
+    if prefix_re:
+        m = prefix_re.match(title)
+        if m:
+            candidate = prefix_re.sub("", title).strip()
+            if _validate_extracted_subject(candidate, lens):
+                return candidate
+            # Regex matched but result fails lens validation — try NLP.
+            nlp_result = _nlp_extract_subject(title, lens, description)
+            return nlp_result if nlp_result else candidate
+    nlp_result = _nlp_extract_subject(title, lens, description)
+    return nlp_result if nlp_result else title
+
+
+def _nlp_extract_batch_subjects(lens: str, description: str) -> List[str]:
+    """Use an LLM to extract batch subjects from a non-standard description.
+
+    Gated by ICDEV_ORACLE_NLP_EXTRACTOR=true (same gate as _nlp_extract_subject).
+    Results are cached per (lens, description[:600]) to avoid redundant LLM calls.
+    Returns a list of validated subjects, or [] if gate is off / LLM unavailable.
+    """
+    if os.getenv("ICDEV_ORACLE_NLP_EXTRACTOR", "").lower() not in ("true", "1"):
+        return []
+
+    cache_key: Tuple[str, str] = (lens, description[:600])
+    cached = _NLP_BATCH_SUBJECTS_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    result: List[str] = []
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        model_id = os.getenv(_ORACLE_NLP_MODEL_ENV, _ORACLE_NLP_MODEL_DEFAULT)
+        hint = _LENS_SUBJECT_HINTS.get(lens, "artifact names")
+        user_content = (
+            f"Lens: {lens}\n"
+            f"Extract all {hint} subjects from this batch task description.\n"
+            f"Description:\n{description[:600]}"
+        )
+
+        request = LLMRequest(
+            messages=[{"role": "user", "content": user_content}],
+            system_prompt=_NLP_BATCH_SUBJECTS_SYSTEM,
+            model=model_id,
+            max_tokens=256,
+            temperature=0.0,
+            skip_injection_scan=True,
+        )
+        router = LLMRouter()
+        response = router.invoke("oracle_triage_nlp_extract", request)
+        if response and response.content:
+            lines = [ln.strip() for ln in response.content.splitlines() if ln.strip()]
+            result = [s for s in lines if _validate_extracted_subject(s, lens)]
+    except Exception as exc:
+        LOG.debug("[oracle_triage] nlp_extract_batch_subjects failed: %s", exc)
+
+    _NLP_BATCH_SUBJECTS_CACHE[cache_key] = result
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Core triage engine
 # ---------------------------------------------------------------------------
 
@@ -461,24 +976,38 @@ def _triage_one(task: Dict[str, Any]) -> Tuple[str, str]:
     """
     title: str = task.get("title", "")
     lens: Optional[str] = task.get("oracle_lens")
+    desc: str = task.get("description", "") or ""
 
     # [Batch] cards have a compound title; treat them specially
     if title.startswith("[Batch]"):
         return _verify_batch(task)
 
+    confidence: Optional[float] = task.get("oracle_confidence")
+
     if lens == "tool_not_in_manifest":
-        subject = re.sub(r"^tool_not_in_manifest gap:\s*", "", title).strip()
-        return _verify_tool_not_in_manifest(subject)
+        return _verify_tool_not_in_manifest(_extract_subject(title, lens, desc))
 
     if lens == "route_not_listed":
-        subject = re.sub(r"^route_not_listed gap:\s*", "", title).strip()
-        return _verify_route_not_listed(subject)
+        return _verify_route_not_listed(_extract_subject(title, lens, desc))
 
     if lens == "orphan_db_table":
-        subject = re.sub(r"^orphan_db_table gap:\s*", "", title).strip()
-        return _verify_orphan_db_table(subject)
+        return _verify_orphan_db_table(_extract_subject(title, lens, desc), oracle_confidence=confidence)
 
     if lens is None:
+        # NLP lens inference: attempt to classify the title into a known lens before
+        # falling back to the heuristic path (dynamic rules → LLM triage).
+        inferred_lens, inferred_subject = _nlp_infer_lens_and_subject(title, desc)
+        if inferred_lens and inferred_subject:
+            LOG.debug(
+                "[oracle_triage] NLP inferred lens=%s subject=%s for %s",
+                inferred_lens, inferred_subject, task.get("id"),
+            )
+            if inferred_lens == "tool_not_in_manifest":
+                return _verify_tool_not_in_manifest(inferred_subject)
+            if inferred_lens == "route_not_listed":
+                return _verify_route_not_listed(inferred_subject)
+            if inferred_lens == "orphan_db_table":
+                return _verify_orphan_db_table(inferred_subject, oracle_confidence=confidence)
         return _verify_no_lens(task)
 
     # Unknown lens — try LLM fallback before giving up
@@ -537,8 +1066,9 @@ def triage(
 
     Returns a summary dict with counts and per-task decisions.
     """
-    global _flask_routes_cache
-    _flask_routes_cache = None  # reset cache each run
+    global _flask_routes_cache, _ADAPTIVE_THRESHOLDS_CACHE
+    _flask_routes_cache = None          # reset per-run caches
+    _ADAPTIVE_THRESHOLDS_CACHE = None
 
     tasks = _fetch_suggested_tasks()
     if not tasks:

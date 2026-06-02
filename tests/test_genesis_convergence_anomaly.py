@@ -295,3 +295,80 @@ def test_convergence_gate_partial_config_merges_with_defaults():
     assert gate.thresholds["max_acceptable_drift"] == pytest.approx(0.45, abs=1e-9)
     assert gate.thresholds["convergence_similarity"] == _DEFAULT_CONVERGENCE_SIMILARITY
     assert gate.thresholds["max_ambiguity"] == _DEFAULT_MAX_AMBIGUITY
+
+
+# ── Configurable slope_normalizer and clarity_keyword_divisor ─────────────────
+
+
+def test_convergence_gate_defaults_slope_normalizer():
+    gate = ConvergenceGate({})
+    assert gate._slope_normalizer == _SLOPE_NORMALIZER
+
+
+def test_convergence_gate_defaults_clarity_keyword_divisor():
+    gate = ConvergenceGate({})
+    assert gate._clarity_keyword_divisor == _CLARITY_KEYWORD_DIVISOR
+
+
+def test_convergence_gate_reads_slope_normalizer_from_config():
+    cfg = {"anomaly_detection": {"slope_normalizer": 5.0}}
+    gate = ConvergenceGate(cfg)
+    assert gate._slope_normalizer == pytest.approx(5.0, abs=1e-9)
+
+
+def test_convergence_gate_reads_clarity_keyword_divisor_from_config():
+    cfg = {"anomaly_detection": {"clarity_keyword_divisor": 5}}
+    gate = ConvergenceGate(cfg)
+    assert gate._clarity_keyword_divisor == 5
+
+
+def test_slope_normalizer_affects_metric_drift():
+    """Higher slope_normalizer → slope has more leverage → lower drift for same slope.
+
+    DB rows are ORDER BY created_at DESC, so reversed() yields ascending chronological
+    order before appending current. Use slope ≈ 0.03 which falls between the two
+    normalizers' saturation points (1/2=0.5 vs 1/20=0.05).
+    """
+    def _make_gate_with_normalizer(n):
+        return ConvergenceGate({"anomaly_detection": {"slope_normalizer": n, "min_samples": 99}})
+
+    # DESC rows → reversed → [0.0, 0.03]; append current 0.06 → [0.0, 0.03, 0.06]
+    # slope ≈ 0.03; drift(norm=2) = 1-min(0.03*2,1)=0.94, drift(norm=20)=1-min(0.03*20,1)=0.40
+    rows = [(0.03,), (0.0,)]  # most-recent-first (DESC)
+
+    conn2 = MagicMock()
+    conn2.execute.return_value.fetchall.return_value = rows
+    conn2.execute.return_value.fetchone.return_value = None
+    with patch("tools.db.storage.get_connection", return_value=conn2):
+        drift_small_norm, _ = _make_gate_with_normalizer(2.0)._compute_metric_drift("r", 0.06)
+
+    conn3 = MagicMock()
+    conn3.execute.return_value.fetchall.return_value = rows
+    conn3.execute.return_value.fetchone.return_value = None
+    with patch("tools.db.storage.get_connection", return_value=conn3):
+        drift_large_norm, _ = _make_gate_with_normalizer(20.0)._compute_metric_drift("r", 0.06)
+
+    # Larger normalizer amplifies slope contribution → smaller drift value
+    assert drift_small_norm > drift_large_norm
+
+
+def test_clarity_keyword_divisor_affects_ambiguity():
+    """Smaller divisor → fewer keywords needed for full clarity → lower ambiguity."""
+    text = "problem issue gap fix test"  # 2 problem words, 1 solution, 1 verification
+
+    gate_strict = ConvergenceGate({
+        "ambiguity_weights": {"problem_clarity": 0.4, "solution_clarity": 0.3, "verification_clarity": 0.3},
+        "anomaly_detection": {"clarity_keyword_divisor": 6},
+    })
+    gate_loose = ConvergenceGate({
+        "ambiguity_weights": {"problem_clarity": 0.4, "solution_clarity": 0.3, "verification_clarity": 0.3},
+        "anomaly_detection": {"clarity_keyword_divisor": 1},
+    })
+
+    with patch("tools.genesis.convergence._NLPExtractor.extract",
+               return_value={"problem", "issue", "fix", "test"}):
+        ambig_strict = gate_strict._compute_ambiguity(text)
+        ambig_loose = gate_loose._compute_ambiguity(text)
+
+    # Loose (divisor=1) → each keyword hit saturates dimension → lower ambiguity
+    assert ambig_loose < ambig_strict

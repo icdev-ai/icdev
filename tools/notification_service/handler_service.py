@@ -469,6 +469,69 @@ def handle_aiify_scan_complete_handler(
         conn.close()
 
 
+def handle_aiify_roadmap_handler(
+    roadmap_id: str, scan_id: str, recipient: str, ai_narrative: bool = False
+) -> dict:
+    """Fetch AI-ify roadmap details and deliver phase progress notification.
+
+    Per aiify-opp-5942: adds a db→render→notify chain for AI-ify roadmaps so
+    tech leads receive a grounded narrative describing roadmap scope, phase
+    breakdown, effort estimate, and top-priority opportunities — enabling rapid
+    sprint planning against Phase 1 Quick Win items.
+    """
+    conn = get_connection()
+    try:
+        roadmap = conn.execute(
+            "SELECT roadmap_id, title, total_effort_days, generated_at "
+            "FROM aiify_roadmaps WHERE roadmap_id = ?", (roadmap_id,)
+        ).fetchone()
+        phase_summary = conn.execute(
+            "SELECT ri.phase, COUNT(*) as opp_count, "
+            "AVG(s.composite_score) as avg_score "
+            "FROM aiify_roadmap_items ri "
+            "LEFT JOIN aiify_scores s ON s.opportunity_id = ri.opportunity_id "
+            "WHERE ri.roadmap_id = ? GROUP BY ri.phase", (roadmap_id,)
+        ).fetchall()
+        top_opps = conn.execute(
+            "SELECT o.opportunity_id, o.function_name, o.pattern_type, s.composite_score "
+            "FROM aiify_roadmap_items ri "
+            "JOIN aiify_opportunities o ON o.opportunity_id = ri.opportunity_id "
+            "LEFT JOIN aiify_scores s ON s.opportunity_id = ri.opportunity_id "
+            "WHERE ri.roadmap_id = ? AND ri.phase LIKE '%Quick Win%' "
+            "ORDER BY s.composite_score DESC LIMIT 5", (roadmap_id,)
+        ).fetchall()
+        scan = conn.execute(
+            "SELECT total_files, overall_verdict, overall_ai_readiness "
+            "FROM aiify_scans WHERE scan_id = ?", (scan_id,)
+        ).fetchone()
+        rendered = render_template(
+            "handlers/aiify_roadmap.html",
+            roadmap=roadmap, phase_summary=phase_summary,
+            top_opps=top_opps, scan=scan,
+        )
+        total_opps = sum(int((r or {}).get("opp_count", 0) or 0) for r in phase_summary)
+        narrative = _ai_handler_narrative("AI-ify roadmap phase progress notification", {
+            "roadmap_id": roadmap_id,
+            "scan_id": scan_id,
+            "roadmap_title": (roadmap or {}).get("title", roadmap_id),
+            "total_effort_days": int((roadmap or {}).get("total_effort_days", 0) or 0),
+            "phase_count": len(phase_summary),
+            "total_opportunities": total_opps,
+            "quick_win_count": len(top_opps),
+            "overall_verdict": (scan or {}).get("overall_verdict", "unknown"),
+            "overall_ai_readiness": (scan or {}).get("overall_ai_readiness", "unknown"),
+            "total_files": int((scan or {}).get("total_files", 0) or 0),
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="AI-ify Roadmap Ready", html=rendered)
+        payload = {"roadmap_id": roadmap_id, "scan_id": scan_id, "total_opportunities": total_opps}
+        if narrative:
+            payload["narrative"] = narrative
+        emit("aiify.roadmap_notified", payload)
+        return {"status": "sent", "roadmap_id": roadmap_id, "scan_id": scan_id, "narrative": narrative}
+    finally:
+        conn.close()
+
+
 def handle_cmmc_assessment_handler(
     assessment_id: str, system_id: str, recipient: str, ai_narrative: bool = False
 ) -> dict:
