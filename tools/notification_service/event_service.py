@@ -137,6 +137,126 @@ ORACLE_ALERT_TEMPLATES = {
     "false_positive": "Oracle prediction $pred_id marked false positive by $actor.",
 }
 
+AIIFY_OPPORTUNITY_TEMPLATES = {
+    "opportunity_detected":   "New AI-ify opportunity #$opportunity_id detected: $pattern_type in $module_path ($function_name). Composite score: $composite_score.",
+    "opportunity_dispatched": "AI-ify opportunity #$opportunity_id dispatched as task $task_id. Module: $module_path — paradigm: $ai_paradigm.",
+    "opportunity_completed":  "AI-ify opportunity #$opportunity_id completed in $module_path ($function_name). Paradigm: $ai_paradigm.",
+    "opportunity_skipped":    "AI-ify opportunity #$opportunity_id skipped (duplicate or low-priority). Module: $module_path.",
+    "opportunity_failed":     "AI-ify opportunity #$opportunity_id FAILED after $attempts attempts: $error. Module: $module_path.",
+}
+
+
+def notify_aiify_opportunity_event(
+    opportunity_id: int,
+    event_type: str,
+    channels: Iterable[str],
+    extra: dict | None = None,
+    ai_narrative: bool = False,
+) -> dict:
+    """Query the AI-ify kanban task, render an opportunity event notification, and deliver.
+
+    Covers the db → render → notify chain for AI-ify opportunity lifecycle events
+    (detected, dispatched, completed, skipped, failed). Callers supply the
+    ``opportunity_id`` and event-specific context via ``extra``; the function
+    fetches the associated kanban task from the main ICDEV DB to ground the
+    rendered message in authoritative state.
+
+    Args:
+        opportunity_id: Numeric ID of the AI-ify opportunity (e.g. 5792).
+        event_type:     One of the keys in ``AIIFY_OPPORTUNITY_TEMPLATES``.
+        channels:       Delivery targets from ``CHANNEL_REGISTRY``.
+        extra:          Opportunity facts: module_path, function_name,
+            pattern_type, ai_paradigm, composite_score, task_id, etc.
+        ai_narrative:   If True, attach an optional LLM narrative under
+            ``narrative``; ``None`` if generation is unavailable.
+
+    Returns:
+        Delivery receipt with per-channel status and rendered message.
+    """
+    conn = get_connection()
+    try:
+        task_id = (extra or {}).get("task_id", f"aiify-opp-{opportunity_id}")
+        task_row = conn.execute(
+            "SELECT id, title, status, actor, attempts, created_at, updated_at "
+            "FROM kanban_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        audit_rows = conn.execute(
+            "SELECT event, created_at FROM audit_trail "
+            "WHERE resource_id = ? ORDER BY created_at DESC LIMIT 5",
+            (task_id,),
+        ).fetchall()
+
+        vars_ = {
+            "opportunity_id": opportunity_id,
+            "task_id": task_id,
+            "title": (task_row["title"] if task_row else f"aiify-opp-{opportunity_id}"),
+            "actor": (task_row["actor"] if task_row else "system"),
+            "attempts": (task_row["attempts"] if task_row else 1),
+            "module_path": (extra or {}).get("module_path", "(unknown)"),
+            "function_name": (extra or {}).get("function_name", "(unknown)"),
+            "pattern_type": (extra or {}).get("pattern_type", "(unknown)"),
+            "ai_paradigm": (extra or {}).get("ai_paradigm", "(unknown)"),
+            "composite_score": (extra or {}).get("composite_score", 0.0),
+            "error": (extra or {}).get("error", ""),
+        }
+        if extra:
+            vars_.update(extra)
+
+        tmpl_str = AIIFY_OPPORTUNITY_TEMPLATES.get(
+            event_type, "AI-ify opportunity #$opportunity_id: $event_type in $module_path."
+        )
+        rendered = Template(tmpl_str).safe_substitute(vars_)
+
+        narrative = _ai_event_narrative(
+            f"aiify opportunity {event_type} notification",
+            {k: str(v) for k, v in vars_.items()},
+        ) if ai_narrative else None
+
+        receipts = {}
+        for ch in channels:
+            if ch == "audit":
+                conn.execute(
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('aiify_notification', ?, ?, 'system', ?)",
+                    (str(opportunity_id), event_type, rendered),
+                )
+                conn.commit()
+                receipts[ch] = "inserted"
+            elif ch in ("slack", "teams", "webhook"):
+                payload = {
+                    "text": rendered,
+                    "opportunity_id": opportunity_id,
+                    "event": event_type,
+                }
+                publish(ch, payload)
+                receipts[ch] = "published"
+            elif ch in ("email", "smtp"):
+                send(
+                    to=(extra or {}).get("email", "engineering@icdev.local"),
+                    subject=f"AI-ify: {event_type} — opp #{opportunity_id}",
+                    body=rendered,
+                )
+                receipts[ch] = "sent"
+            elif ch == "console":
+                emit("aiify.opportunity_event", {"message": rendered, "opportunity_id": opportunity_id})
+                receipts[ch] = "emitted"
+            else:
+                notify(ch, rendered)
+                receipts[ch] = "dispatched"
+
+        return {
+            "status": "delivered",
+            "opportunity_id": opportunity_id,
+            "event_type": event_type,
+            "rendered": rendered,
+            "narrative": narrative,
+            "receipts": receipts,
+            "audit_history": [dict(r) for r in audit_rows],
+        }
+    finally:
+        conn.close()
+
 
 def notify_kanban_event(
     task_id: str,
