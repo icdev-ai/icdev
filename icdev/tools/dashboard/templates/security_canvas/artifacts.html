@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header">
   <h1>ATO Artifact Export</h1>
-  <p class="text-muted">{{ design.name }} — Generate SSP, SAR, and POA&M documents</p>
+  <p class="text-muted">{{ design.name }} — Generate SSP, SAR, POA&M, and ZIG Assessment documents</p>
 </div>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;padding:0 16px 24px;">
   <div class="card" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;">
@@ -21,9 +21,14 @@
     <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">POA&M with phased remediation actions, deadlines, and effort estimates.</p>
     <button class="btn btn-primary" onclick="exportArtifact('poam')" style="background:#f39c12;border-color:#e67e22;width:100%;">Generate POA&M</button>
   </div>
+  <div class="card" style="background:var(--bg2);border:1px solid #8e44ad;border-radius:8px;padding:20px;">
+    <h3 style="color:#8e44ad;margin-bottom:8px;">ZIG Assessment Report</h3>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">NSA Zero Trust Implementation Guide gap assessment across all 7 pillars with maturity scores and recommended next steps.</p>
+    <button class="btn btn-primary" onclick="exportZIG()" style="background:#8e44ad;border-color:#6c3483;width:100%;">Generate ZIG Report</button>
+  </div>
   <div class="card" style="background:var(--bg2);border:1px solid #27ae60;border-radius:8px;padding:20px;">
     <h3 style="color:#27ae60;margin-bottom:8px;">Full ATO Package</h3>
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Download all three artifacts as a single bundle.</p>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Download all three ATO artifacts as a single bundle.</p>
     <button class="btn btn-primary" onclick="exportArtifact('artifact-bundle')" style="background:#27ae60;border-color:#1e8449;width:100%;">Generate All</button>
   </div>
 </div>
@@ -58,6 +63,21 @@ function exportArtifact(type) {
         _lastArtifact = {name: type + '.md', content: d.content};
       }
     });
+}
+function exportZIG() {
+  fetch('/security/api/zig/artifact')
+    .then(r => {
+      if (!r.ok) { return r.text().then(t => { throw new Error(t || r.statusText); }); }
+      return r.text();
+    })
+    .then(content => {
+      const preview = document.getElementById('artifact-preview');
+      preview.classList.remove('hidden');
+      document.getElementById('artifact-title').textContent = 'ZIG Assessment Report Preview';
+      document.getElementById('artifact-content').textContent = content;
+      _lastArtifact = {name: 'zig_assessment_report.md', content: content};
+    })
+    .catch(err => alert('Error generating ZIG report: ' + err.message));
 }
 function downloadArtifact() {
   if (!_lastArtifact) return;

@@ -580,6 +580,94 @@ def reject_draft(draft_id):
         conn.close()
 
 
+@govcon_api.route("/drafts/<draft_id>/rewrite-save", methods=["POST"])
+@require_role(*GOVCON_WRITE_ROLES)
+def rewrite_save_draft(draft_id):
+    """POST /api/govcon/drafts/<id>/rewrite-save — Save a WriteGuard rewrite as a new draft row.
+
+    Creates a new append-only draft row with the rewritten content,
+    preserving the original draft's metadata and linking.
+    """
+    conn = _get_db()
+    try:
+        data = request.get_json(silent=True) or {}
+        reviewer = data.get("reviewed_by", "writeguard_inline")
+        reason = data.get("reason", "WriteGuard rewrite accepted")
+        new_content = data.get("draft_content", "").strip()
+        if not new_content:
+            return jsonify({"error": "draft_content is required"}), 400
+
+        # Fetch original draft to inherit links
+        orig = conn.execute(
+            "SELECT * FROM proposal_section_drafts WHERE id = ? ORDER BY created_at DESC LIMIT 1",
+            (draft_id,),
+        ).fetchone()
+        if not orig:
+            return jsonify({"error": "Draft not found"}), 404
+
+        import json as _json
+        metadata = {}
+        try:
+            metadata = _json.loads(orig.get("metadata") or "{}")
+        except (ValueError, TypeError):
+            pass
+        metadata["writeguard"] = metadata.get("writeguard", {})
+        metadata["writeguard"]["rewritten"] = True
+        metadata["writeguard"]["rewrite_reason"] = reason
+        metadata["writeguard"]["rewritten_at"] = now_isoformat()
+        metadata["writeguard"]["original_draft_id"] = draft_id
+
+        new_id = _uuid()
+        conn.execute(
+            """INSERT INTO proposal_section_drafts
+               (id, section_id, opportunity_id, shall_statement_id, capability_ids,
+                draft_content, draft_method, confidence, generation_model, knowledge_block_ids,
+                status, reviewed_by, reviewed_at, review_notes, metadata, created_at, classification)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)""",
+            (
+                new_id,
+                orig.get("section_id"),
+                orig.get("opportunity_id"),
+                orig.get("shall_statement_id"),
+                orig.get("capability_ids"),
+                new_content,
+                orig.get("draft_method"),
+                orig.get("confidence"),
+                orig.get("generation_model"),
+                orig.get("knowledge_block_ids"),
+                reviewer,
+                now_isoformat(),
+                reason,
+                _json.dumps(metadata),
+                now_isoformat(),
+                orig.get("classification", DEFAULT_CLASSIFICATION),
+            ),
+        )
+        _audit(conn, "rewrite_draft", f"Draft {draft_id} rewritten by {reviewer}: {reason}")
+        conn.commit()
+        return jsonify({"status": "ok", "draft_id": new_id, "previous_draft_id": draft_id})
+    finally:
+        conn.close()
+
+
+@govcon_api.route("/opportunities/<opp_id>/bulk-writeguard", methods=["POST"])
+@require_role(*GOVCON_WRITE_ROLES)
+def bulk_writeguard(opp_id):
+    """POST /api/govcon/opportunities/<id>/bulk-writeguard — Run WriteGuard on all drafts.
+
+    Delegates to tools.govcon.run_writeguard_on_drafts.run(opp_id=...) and
+    returns a summary with per-section scores and findings.
+    """
+    try:
+        from tools.govcon.run_writeguard_on_drafts import run as _run_wg
+
+        summary = _run_wg(opp_id=opp_id)
+        return jsonify(summary)
+    except Exception as e:
+        logger.error("Bulk WriteGuard failed for %s: %s", opp_id, e)
+        return jsonify({"error": str(e)}), 500
+
+
 # =====================================================================
 # Gap Analysis
 # =====================================================================

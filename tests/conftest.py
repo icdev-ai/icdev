@@ -701,6 +701,114 @@ CREATE TABLE IF NOT EXISTS dic_handoff_items (
     classification  TEXT    DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_dic_handoff_items_session ON dic_handoff_items(session_id);
+CREATE TABLE IF NOT EXISTS dd_mapping_sessions (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL DEFAULT 'Untitled Mapping',
+    source_format   TEXT NOT NULL DEFAULT 'json_schema',
+    target_format   TEXT NOT NULL DEFAULT 'sql_ddl',
+    source_schema_json TEXT DEFAULT '{}',
+    target_schema_json TEXT DEFAULT '{}',
+    status          TEXT NOT NULL DEFAULT 'pending',
+    field_count     INTEGER DEFAULT 0,
+    confirmed_count INTEGER DEFAULT 0,
+    rejected_count  INTEGER DEFAULT 0,
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_by      TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_field_mappings (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    source_field    TEXT NOT NULL,
+    source_type     TEXT DEFAULT '',
+    source_path     TEXT DEFAULT '',
+    target_field    TEXT NOT NULL,
+    target_type     TEXT DEFAULT '',
+    target_path     TEXT DEFAULT '',
+    confidence      REAL NOT NULL DEFAULT 0.0,
+    match_method    TEXT DEFAULT 'name',
+    status          TEXT NOT NULL DEFAULT 'pending',
+    transform_expr  TEXT DEFAULT '',
+    notes           TEXT DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_mapping_transforms (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    artifact_type   TEXT NOT NULL DEFAULT 'sql',
+    artifact_text   TEXT NOT NULL DEFAULT '',
+    field_count     INTEGER DEFAULT 0,
+    generated_by    TEXT DEFAULT 'ai',
+    model_used      TEXT DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS zig_pillars (
+    slug            TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    full_name       TEXT,
+    pillar_weight   REAL DEFAULT 0.14,
+    icon            TEXT,
+    color           TEXT,
+    csi_url         TEXT,
+    description     TEXT,
+    ficam_components TEXT DEFAULT '[]',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS zig_capabilities (
+    id              TEXT PRIMARY KEY,
+    pillar_slug     TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    phase           TEXT NOT NULL,
+    maturity_level  TEXT NOT NULL,
+    description     TEXT,
+    nist_controls   TEXT DEFAULT '[]',
+    target_fy2027   INTEGER DEFAULT 1,
+    implementation_status TEXT DEFAULT 'not_started',
+    evidence_note   TEXT,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS zig_activities (
+    id              TEXT PRIMARY KEY,
+    capability_id   TEXT NOT NULL,
+    phase           TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    description     TEXT,
+    nist_control_ref TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS zig_activity_completions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    activity_id     TEXT NOT NULL UNIQUE,
+    status          TEXT NOT NULL DEFAULT 'not_started',
+    evidence_note   TEXT,
+    completed_by    TEXT,
+    completed_at    TEXT,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS zig_maturity_scores (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    pillar_slug     TEXT NOT NULL,
+    score           REAL NOT NULL DEFAULT 0.0,
+    maturity_level  TEXT,
+    capability_count INTEGER DEFAULT 0,
+    activity_count  INTEGER DEFAULT 0,
+    complete_activities INTEGER DEFAULT 0,
+    assessment_run_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 

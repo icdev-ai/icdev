@@ -44,6 +44,12 @@
   .dc-sidebar.collapsed { width: 34px; }
   .dc-sidebar.collapsed .dc-tabs { display: none; }
   .dc-sidebar.collapsed .dc-tab-content { display: none !important; }
+  /* ── Right panel collapse ── */
+  .dc-right-panel { transition: width 0.22s ease; overflow: hidden; }
+  .dc-right-panel.collapsed { width: 34px; min-width: 34px; }
+  .dc-right-panel.collapsed .dc-right-panel-body { display: none; }
+  .dc-right-panel.collapsed #dc-panel-title { display: none; }
+  .dc-right-panel.collapsed .dc-panel-close-btn { display: none; }
   /* ── Zoom label ── */
   #dc-zoom-label { font-size: 10px; color: #5a6e8c; min-width: 34px; text-align: center; user-select: none; }
   .dc-toolbar input { background: #0a1628; border: 1px solid #1e3a6e; color: #eaeaea; padding: 4px 10px; border-radius: 4px; font-size: 13px; width: 250px; }
@@ -123,7 +129,10 @@
   <div class="dc-right-panel" id="dc-right-panel">
     <div class="dc-right-panel-header">
       <span id="dc-panel-title">Results</span>
-      <button onclick="closeRightPanel()">&#10005;</button>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button id="dc-right-panel-toggle-btn" onclick="toggleRightPanel()" title="Collapse panel">&#9668;</button>
+        <button class="dc-panel-close-btn" onclick="closeRightPanel()">&#10005;</button>
+      </div>
     </div>
     <div class="dc-right-panel-body" id="dc-panel-body"></div>
   </div>
@@ -162,6 +171,17 @@ function toggleSidebar() {
   btn.innerHTML = collapsed ? '&#9654;' : '&#9776;';
   btn.title = collapsed ? 'Expand palette' : 'Collapse palette';
 }
+function toggleRightPanel() {
+  const panel = document.getElementById('dc-right-panel');
+  const btn = document.getElementById('dc-right-panel-toggle-btn');
+  const collapsed = panel.classList.toggle('collapsed');
+  btn.innerHTML = collapsed ? '&#9654;' : '&#9668;';
+  btn.title = collapsed ? 'Expand panel' : 'Collapse panel';
+}
+document.addEventListener('DOMContentLoaded', function() {
+  const btn = document.getElementById('dc-right-panel-toggle-btn');
+  if (btn) { btn.innerHTML = '&#9668;'; }
+});
 document.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); canvasSave(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); canvasUndo(); }

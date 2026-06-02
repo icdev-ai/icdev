@@ -115,24 +115,45 @@ def _run_writeguard_on_text(text: str) -> dict:
     return result
 
 
-def _get_latest_drafts(conn) -> list[dict]:
-    """Fetch latest draft per section for target opportunities."""
-    rows = conn.execute(
-        """SELECT d.*, s.section_number, s.title as section_title, s.status as section_status
-           FROM proposal_section_drafts d
-           JOIN (
-               SELECT section_id, MAX(created_at) as max_created
-               FROM proposal_section_drafts
-               WHERE opportunity_id IN (?, ?, ?)
-                 AND status IN ('draft', 'reviewed', 'approved')
-               GROUP BY section_id
-           ) latest ON d.section_id = latest.section_id AND d.created_at = latest.max_created
-           LEFT JOIN proposal_sections s ON d.section_id = s.id
-           WHERE d.opportunity_id IN (?, ?, ?)
-             AND d.status IN ('draft', 'reviewed', 'approved')
-           ORDER BY d.opportunity_id, s.section_number""",
-        (*_TARGET_OPP_IDS, *_TARGET_OPP_IDS),
-    ).fetchall()
+def _get_latest_drafts(conn, opp_id: str | None = None) -> list[dict]:
+    """Fetch latest draft per section for target opportunities.
+
+    If ``opp_id`` is provided, scopes to that single opportunity.
+    """
+    if opp_id:
+        rows = conn.execute(
+            """SELECT d.*, s.section_number, s.title as section_title, s.status as section_status
+               FROM proposal_section_drafts d
+               JOIN (
+                   SELECT section_id, MAX(created_at) as max_created
+                   FROM proposal_section_drafts
+                   WHERE opportunity_id = ?
+                     AND status IN ('draft', 'reviewed', 'approved')
+                   GROUP BY section_id
+               ) latest ON d.section_id = latest.section_id AND d.created_at = latest.max_created
+               LEFT JOIN proposal_sections s ON d.section_id = s.id
+               WHERE d.opportunity_id = ?
+                 AND d.status IN ('draft', 'reviewed', 'approved')
+               ORDER BY s.section_number""",
+            (opp_id, opp_id),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT d.*, s.section_number, s.title as section_title, s.status as section_status
+               FROM proposal_section_drafts d
+               JOIN (
+                   SELECT section_id, MAX(created_at) as max_created
+                   FROM proposal_section_drafts
+                   WHERE opportunity_id IN (?, ?, ?)
+                     AND status IN ('draft', 'reviewed', 'approved')
+                   GROUP BY section_id
+               ) latest ON d.section_id = latest.section_id AND d.created_at = latest.max_created
+               LEFT JOIN proposal_sections s ON d.section_id = s.id
+               WHERE d.opportunity_id IN (?, ?, ?)
+                 AND d.status IN ('draft', 'reviewed', 'approved')
+               ORDER BY d.opportunity_id, s.section_number""",
+            (*_TARGET_OPP_IDS, *_TARGET_OPP_IDS),
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -360,10 +381,10 @@ def _process_draft(conn, draft: dict) -> dict:
     }
 
 
-def run(reporter=None) -> dict:
+def run(reporter=None, opp_id: str | None = None) -> dict:
     conn = get_connection()
     try:
-        drafts = _get_latest_drafts(conn)
+        drafts = _get_latest_drafts(conn, opp_id=opp_id)
         logger.info("Found %d drafts to review.", len(drafts))
 
         results: list[dict] = []

@@ -424,25 +424,6 @@ def create_security_blueprint():
             pass
         return jsonify({"id": design_id, "updated_at": now})
 
-    @bp.route("/api/clear-designs", methods=["DELETE", "POST"])
-    @sc_login_required
-    def sc_api_clear_all_designs():
-        """Delete ALL security designs and related records."""
-        with get_connection() as conn:
-            for table in (
-                "sc_data_flows",
-                "sc_trust_boundaries",
-                "sc_controls",
-                "sc_threats",
-                "sc_assets",
-                "sc_remediation_plans",
-                "sc_assessments",
-                "security_designs",
-            ):
-                conn.execute(f"DELETE FROM {table}")  # nosec B608 -- table from hardcoded tuple
-        _audit("DELETE", "design", "ALL", "clear-all")
-        return jsonify({"deleted": "all"})
-
     @bp.route("/api/designs/<design_id>", methods=["DELETE"])
     @sc_login_required
     def sc_api_delete_design(design_id):
@@ -462,6 +443,27 @@ def create_security_blueprint():
             conn.execute("DELETE FROM security_designs WHERE id=?", (design_id,))
         _audit("DELETE", "design", design_id, "")
         return jsonify({"deleted": design_id})
+
+    @bp.route("/api/clear-designs", methods=["DELETE", "POST"])
+    @sc_login_required
+    def sc_api_clear_all_designs():
+        """Delete ALL security designs and all related records."""
+        child_tables = (
+            "sc_data_flows",
+            "sc_trust_boundaries",
+            "sc_controls",
+            "sc_threats",
+            "sc_assets",
+            "sc_remediation_plans",
+            "sc_assessments",
+            "sc_versions",
+        )
+        with get_connection() as conn:
+            for table in child_tables:
+                conn.execute(f"DELETE FROM {table}")  # nosec B608 -- table from hardcoded tuple
+            conn.execute("DELETE FROM security_designs")
+        _audit("DELETE", "design", "ALL", "clear-all")
+        return jsonify({"deleted": "all"})
 
     @bp.route("/api/clear-assessments", methods=["DELETE", "POST"])
     @sc_login_required
@@ -2238,6 +2240,280 @@ def create_security_blueprint():
                             tactic_map[tactic].append(ttp)
 
             return jsonify({"ok": True, "design_id": design_id, "tactics": tactic_map, "ttps": list(seen)})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    # ── NSA ZIG (Zero Trust Implementation Guide) Routes ────────────────────
+
+    @bp.route("/zig/")
+    @bp.route("/zig")
+    def zig_index():
+        """ZIG home — 7-pillar radar, phase progress, FY2027 status."""
+        from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
+        from tools.security_canvas.zig_phase_tracker import get_all_phases_status, compute_fy2027_readiness
+        from tools.security_canvas.constants import ZIG_PILLARS
+        pillar_scores = score_all_pillars()
+        aggregate = aggregate_zig_score(pillar_scores)
+        phases = get_all_phases_status()
+        fy2027 = compute_fy2027_readiness(phases)
+        return render_template(
+            "security_canvas/zig/index.html",
+            pillar_scores=pillar_scores,
+            aggregate=aggregate,
+            phases=phases,
+            fy2027=fy2027,
+            zig_pillars=ZIG_PILLARS,
+        )
+
+    @bp.route("/zig/pillar/<pillar_slug>")
+    def zig_pillar_detail(pillar_slug):
+        """Per-pillar ZIG detail — capabilities checklist + activities."""
+        from tools.security_canvas.zig_phase_tracker import get_capability_status_by_pillar
+        from tools.security_canvas.zig_pillar_scorer import score_pillar
+        from tools.security_canvas.db.init_db import get_connection
+        from tools.security_canvas.constants import ZIG_PILLARS
+
+        pillar_meta = next((p for p in ZIG_PILLARS if p["slug"] == pillar_slug), None)
+        if not pillar_meta:
+            return render_template("security_canvas/zig/index.html"), 404
+
+        capabilities = get_capability_status_by_pillar(pillar_slug)
+        score_data = score_pillar(pillar_slug)
+
+        conn = get_connection()
+        try:
+            activities_by_cap = {}
+            for cap in capabilities:
+                acts = conn.execute(
+                    "SELECT a.id, a.title, a.description, a.phase, a.nist_control_ref, "
+                    "COALESCE(ac.status, 'not_started') as status, ac.evidence_note "
+                    "FROM zig_activities a "
+                    "LEFT JOIN zig_activity_completions ac ON a.id=ac.activity_id "
+                    "WHERE a.capability_id=? ORDER BY a.phase",
+                    (cap["id"],),
+                ).fetchall()
+                activities_by_cap[cap["id"]] = [dict(a) for a in acts]
+        finally:
+            conn.close()
+
+        return render_template(
+            "security_canvas/zig/pillar.html",
+            pillar=pillar_meta,
+            capabilities=capabilities,
+            score=score_data,
+            activities_by_cap=activities_by_cap,
+        )
+
+    @bp.route("/zig/phase")
+    def zig_phase_tracker():
+        """Phase tracker — Discovery / Phase 1 / Phase 2 activity grids."""
+        from tools.security_canvas.zig_phase_tracker import get_all_phases_status
+        from tools.security_canvas.db.init_db import get_connection
+
+        conn = get_connection()
+        try:
+            activities_by_phase = {}
+            for phase_slug in ("discovery", "phase1", "phase2"):
+                acts = conn.execute(
+                    "SELECT a.id, a.title, a.phase, a.nist_control_ref, a.capability_id, "
+                    "c.title as cap_title, c.pillar_slug, "
+                    "COALESCE(ac.status, 'not_started') as status "
+                    "FROM zig_activities a "
+                    "JOIN zig_capabilities c ON a.capability_id=c.id "
+                    "LEFT JOIN zig_activity_completions ac ON a.id=ac.activity_id "
+                    "WHERE a.phase=? ORDER BY c.pillar_slug, c.id",
+                    (phase_slug,),
+                ).fetchall()
+                activities_by_phase[phase_slug] = [dict(a) for a in acts]
+        finally:
+            conn.close()
+
+        phases_status = get_all_phases_status()
+        return render_template(
+            "security_canvas/zig/phase.html",
+            activities_by_phase=activities_by_phase,
+            phases_status=phases_status,
+        )
+
+    @bp.route("/zig/assessment")
+    def zig_assessment_page():
+        """ZIG assessment page — run gap assessment, view results."""
+        from tools.security_canvas.zig_assessor import get_latest_zig_maturity
+        latest = get_latest_zig_maturity()
+        return render_template("security_canvas/zig/assessment.html", latest=latest)
+
+    @bp.route("/zig/roadmap")
+    def zig_roadmap_page():
+        """ZIG roadmap — FY2027/FY2032 milestone timeline."""
+        from tools.security_canvas.zig_roadmap_generator import generate_roadmap
+        roadmap = generate_roadmap()
+        return render_template("security_canvas/zig/roadmap.html", roadmap=roadmap)
+
+    # ── ZIG API Endpoints ────────────────────────────────────────────────────
+
+    @bp.route("/api/zig/pillars")
+    def zig_api_pillars():
+        """GET /security/api/zig/pillars — all pillars with current maturity scores."""
+        from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
+        pillar_scores = score_all_pillars()
+        aggregate = aggregate_zig_score(pillar_scores)
+        return jsonify({"ok": True, "pillars": pillar_scores, "aggregate": aggregate})
+
+    @bp.route("/api/zig/pillars/<pillar_slug>")
+    def zig_api_pillar_detail(pillar_slug):
+        """GET /security/api/zig/pillars/<slug> — pillar + capabilities + maturity."""
+        from tools.security_canvas.zig_pillar_scorer import score_pillar
+        from tools.security_canvas.zig_phase_tracker import get_capability_status_by_pillar
+        from tools.security_canvas.constants import ZIG_PILLARS
+        meta = next((p for p in ZIG_PILLARS if p["slug"] == pillar_slug), None)
+        if not meta:
+            return jsonify({"ok": False, "error": "pillar not found"}), 404
+        score = score_pillar(pillar_slug)
+        capabilities = get_capability_status_by_pillar(pillar_slug)
+        return jsonify({"ok": True, "pillar": meta, "score": score, "capabilities": capabilities})
+
+    @bp.route("/api/zig/capabilities")
+    def zig_api_capabilities():
+        """GET /security/api/zig/capabilities?pillar=&phase=&status= — filterable list."""
+        from tools.security_canvas.db.init_db import get_connection
+        pillar = request.args.get("pillar")
+        phase = request.args.get("phase")
+        status = request.args.get("status")
+
+        sql = "SELECT * FROM zig_capabilities WHERE 1=1"
+        params = []
+        if pillar:
+            sql += " AND pillar_slug=?"; params.append(pillar)
+        if phase:
+            sql += " AND phase=?"; params.append(phase)
+        if status:
+            sql += " AND implementation_status=?"; params.append(status)
+        sql += " ORDER BY pillar_slug, phase"
+
+        conn = get_connection()
+        try:
+            caps = [dict(c) for c in conn.execute(sql, params).fetchall()]
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "capabilities": caps, "count": len(caps)})
+
+    @bp.route("/api/zig/capabilities/<cap_id>", methods=["PATCH"])
+    def zig_api_cap_status(cap_id):
+        """PATCH /security/api/zig/capabilities/<id> — update implementation_status."""
+        from tools.security_canvas.db.init_db import get_connection
+        data = request.get_json(silent=True) or {}
+        new_status = data.get("implementation_status")
+        evidence_note = data.get("evidence_note")
+        valid = {"not_started", "planned", "in_progress", "implemented"}
+        if new_status not in valid:
+            return jsonify({"ok": False, "error": f"status must be one of {valid}"}), 400
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE zig_capabilities SET implementation_status=?, evidence_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (new_status, evidence_note, cap_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "id": cap_id, "implementation_status": new_status})
+
+    @bp.route("/api/zig/activities")
+    def zig_api_activities():
+        """GET /security/api/zig/activities?capability=&phase= — filterable list."""
+        from tools.security_canvas.db.init_db import get_connection
+        capability = request.args.get("capability")
+        phase = request.args.get("phase")
+
+        sql = ("SELECT a.id, a.title, a.phase, a.description, a.nist_control_ref, a.capability_id, "
+               "c.pillar_slug, c.title as cap_title, "
+               "COALESCE(ac.status, 'not_started') as status, ac.evidence_note "
+               "FROM zig_activities a "
+               "JOIN zig_capabilities c ON a.capability_id=c.id "
+               "LEFT JOIN zig_activity_completions ac ON a.id=ac.activity_id WHERE 1=1")
+        params = []
+        if capability:
+            sql += " AND a.capability_id=?"; params.append(capability)
+        if phase:
+            sql += " AND a.phase=?"; params.append(phase)
+        sql += " ORDER BY a.phase, c.pillar_slug"
+
+        conn = get_connection()
+        try:
+            acts = [dict(a) for a in conn.execute(sql, params).fetchall()]
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "activities": acts, "count": len(acts)})
+
+    @bp.route("/api/zig/activities/<activity_id>/complete", methods=["PATCH"])
+    def zig_api_activity_complete(activity_id):
+        """PATCH /security/api/zig/activities/<id>/complete — set completion status."""
+        from tools.security_canvas.zig_activity_tracker import set_activity_status
+        data = request.get_json(silent=True) or {}
+        status = data.get("status", "complete")
+        evidence_note = data.get("evidence_note")
+        completed_by = data.get("completed_by")
+        try:
+            result = set_activity_status(activity_id, status, evidence_note, completed_by)
+            return jsonify({"ok": True, **result})
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    @bp.route("/api/zig/maturity")
+    def zig_api_maturity():
+        """GET /security/api/zig/maturity — aggregate scores + FY2027 readiness."""
+        from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
+        from tools.security_canvas.zig_phase_tracker import compute_fy2027_readiness
+        pillar_scores = score_all_pillars()
+        aggregate = aggregate_zig_score(pillar_scores)
+        fy2027 = compute_fy2027_readiness()
+        return jsonify({
+            "ok": True,
+            "pillar_scores": pillar_scores,
+            "aggregate": aggregate,
+            "fy2027": fy2027,
+        })
+
+    @bp.route("/api/zig/assess", methods=["POST"])
+    def zig_api_assess():
+        """POST /security/api/zig/assess — run full ZIG assessment."""
+        from tools.security_canvas.zig_assessor import run_zig_assessment
+        try:
+            result = run_zig_assessment()
+            return jsonify({"ok": True, **result})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/zig/phases")
+    def zig_api_phases():
+        """GET /security/api/zig/phases — Discovery/Ph1/Ph2 completion metrics."""
+        from tools.security_canvas.zig_phase_tracker import get_all_phases_status, compute_fy2027_readiness
+        phases = get_all_phases_status()
+        fy2027 = compute_fy2027_readiness(phases)
+        return jsonify({"ok": True, "phases": phases, "fy2027": fy2027})
+
+    @bp.route("/api/zig/roadmap")
+    def zig_api_roadmap():
+        """GET /security/api/zig/roadmap — milestone timeline JSON."""
+        from tools.security_canvas.zig_roadmap_generator import generate_roadmap
+        try:
+            roadmap = generate_roadmap()
+            return jsonify({"ok": True, **roadmap})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/zig/artifact")
+    def zig_api_artifact():
+        """GET /security/api/zig/artifact — download ZIG gap assessment report."""
+        from tools.security_canvas.zig_artifact_generator import generate_zig_artifact
+        try:
+            report = generate_zig_artifact()
+            from flask import Response
+            return Response(
+                report["markdown"],
+                mimetype="text/markdown",
+                headers={"Content-Disposition": "attachment; filename=zig_assessment_report.md"},
+            )
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 

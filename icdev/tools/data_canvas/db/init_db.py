@@ -540,6 +540,134 @@ CREATE TABLE IF NOT EXISTS dm_csp_sync_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dm_csp_provider ON dm_csp_sync_log(provider, created_at);
+
+CREATE TABLE IF NOT EXISTS dm_product_slas (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    sla_type        TEXT NOT NULL,
+    target_value    REAL NOT NULL,
+    unit            TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_product_slas_product ON dm_product_slas(product_id);
+
+CREATE TABLE IF NOT EXISTS dm_product_subscriptions (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    subscriber_team TEXT NOT NULL,
+    purpose         TEXT DEFAULT '',
+    approved        INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_subscriptions_product ON dm_product_subscriptions(product_id);
+
+CREATE TABLE IF NOT EXISTS dm_data_contracts (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT DEFAULT '',
+    product_id      TEXT DEFAULT '',
+    name            TEXT NOT NULL,
+    contract_yaml   TEXT DEFAULT '',
+    version         TEXT DEFAULT '1.0.0',
+    status          TEXT DEFAULT 'draft',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_domain ON dm_data_contracts(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_product ON dm_data_contracts(product_id);
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_status  ON dm_data_contracts(status);
+
+CREATE TABLE IF NOT EXISTS dm_contract_test_runs (
+    id              TEXT PRIMARY KEY,
+    contract_id     TEXT REFERENCES dm_data_contracts(id) ON DELETE CASCADE,
+    passed          INTEGER DEFAULT 0,
+    error_count     INTEGER DEFAULT 0,
+    warnings        INTEGER DEFAULT 0,
+    result_json     TEXT DEFAULT '{}',
+    method          TEXT DEFAULT 'internal',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_test_runs_contract ON dm_contract_test_runs(contract_id);
+
+-- ── AI Data Mapping ───────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS dd_mapping_sessions (
+    id                  TEXT PRIMARY KEY,
+    name                TEXT NOT NULL DEFAULT 'Untitled Mapping',
+    source_format       TEXT NOT NULL DEFAULT 'json_schema',
+    target_format       TEXT NOT NULL DEFAULT 'sql_ddl',
+    source_schema_json  TEXT DEFAULT '{}',
+    target_schema_json  TEXT DEFAULT '{}',
+    status              TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','ingested','suggested','complete','error')),
+    field_count         INTEGER DEFAULT 0,
+    confirmed_count     INTEGER DEFAULT 0,
+    rejected_count      INTEGER DEFAULT 0,
+    classification      TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id           TEXT NOT NULL DEFAULT 'default',
+    created_by          TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_ms_tenant  ON dd_mapping_sessions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dd_ms_status  ON dd_mapping_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_dd_ms_created ON dd_mapping_sessions(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS dd_field_mappings (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES dd_mapping_sessions(id) ON DELETE CASCADE,
+    source_field    TEXT NOT NULL,
+    source_type     TEXT DEFAULT '',
+    source_path     TEXT DEFAULT '',
+    target_field    TEXT NOT NULL,
+    target_type     TEXT DEFAULT '',
+    target_path     TEXT DEFAULT '',
+    confidence      REAL NOT NULL DEFAULT 0.0,
+    match_method    TEXT DEFAULT 'name'
+                    CHECK (match_method IN ('name','semantic','type','combined','manual')),
+    status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','confirmed','rejected','needs_review')),
+    transform_expr  TEXT DEFAULT '',
+    notes           TEXT DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_fm_session    ON dd_field_mappings(session_id);
+CREATE INDEX IF NOT EXISTS idx_dd_fm_status     ON dd_field_mappings(status);
+CREATE INDEX IF NOT EXISTS idx_dd_fm_confidence ON dd_field_mappings(confidence DESC);
+
+CREATE TABLE IF NOT EXISTS dd_mapping_transforms (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES dd_mapping_sessions(id),
+    artifact_type   TEXT NOT NULL DEFAULT 'sql'
+                    CHECK (artifact_type IN ('sql','python','dbt','xslt')),
+    artifact_text   TEXT NOT NULL DEFAULT '',
+    field_count     INTEGER DEFAULT 0,
+    generated_by    TEXT DEFAULT 'ai',
+    model_used      TEXT DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_mt_session ON dd_mapping_transforms(session_id);
+CREATE INDEX IF NOT EXISTS idx_dd_mt_created ON dd_mapping_transforms(created_at DESC);
+
+CREATE TRIGGER IF NOT EXISTS dd_mapping_transforms_no_update
+    BEFORE UPDATE ON dd_mapping_transforms
+    BEGIN SELECT RAISE(ABORT,'dd_mapping_transforms is append-only — NIST AU-9'); END;
+
+CREATE TRIGGER IF NOT EXISTS dd_mapping_transforms_no_delete
+    BEFORE DELETE ON dd_mapping_transforms
+    BEGIN SELECT RAISE(ABORT,'dd_mapping_transforms is append-only — NIST AU-9'); END;
 """
 
 
@@ -2472,6 +2600,21 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
                 conn.execute(f"ALTER TABLE dm_domains ADD COLUMN {_col} TEXT DEFAULT {_default}")
                 conn.commit()
                 print(f"[init_db] Migration applied: dm_domains.{_col} added.")
+            except Exception as _e:
+                if "duplicate column" in str(_e).lower() or "already exists" in str(_e).lower():
+                    pass
+                else:
+                    raise
+
+        for _col, _default in [
+            ("output_port_type", "'table'"),
+            ("sla_tier", "'standard'"),
+            ("owner_team", "''"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE dm_data_products ADD COLUMN {_col} TEXT DEFAULT {_default}")
+                conn.commit()
+                print(f"[init_db] Migration applied: dm_data_products.{_col} added.")
             except Exception as _e:
                 if "duplicate column" in str(_e).lower() or "already exists" in str(_e).lower():
                     pass

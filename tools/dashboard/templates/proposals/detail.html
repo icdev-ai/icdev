@@ -57,6 +57,7 @@
             <button class="btn btn-secondary btn-sm" onclick="govconAction('map', '{{ opp.id }}')" title="Map extracted requirements to ICDEV™ capabilities">Map Capabilities</button>
             <button class="btn btn-secondary btn-sm" onclick="govconAction('compliance', '{{ opp.id }}')" title="Auto-populate L/M/N compliance matrix">Auto-Compliance</button>
             <button class="btn btn-primary btn-sm" onclick="govconAction('draft', '{{ opp.id }}')" title="AI-draft responses using two-tier LLM (qwen3 + Claude)">AI Draft All</button>
+            <button class="btn btn-secondary btn-sm" onclick="runBulkWriteGuard('{{ opp.id }}')" title="Run WriteGuard red-team review on all section drafts">🛡️ WriteGuard All</button>
             <button class="btn btn-secondary btn-sm" onclick="govconAction('bid', '{{ opp.id }}')" title="Get bid/no-bid recommendation based on coverage">Bid Recommendation</button>
         </div>
     </div>
@@ -91,6 +92,7 @@
     <button class="tab-btn" data-tab="tab-questions">Questions <span class="badge badge-info" style="font-size:10px; vertical-align:middle;">{{ question_stats.total }}</span></button>
     <button class="tab-btn" data-tab="tab-amendments">Amendments <span class="badge badge-info" style="font-size:10px; vertical-align:middle;">{{ amendments|length }}</span></button>
     <button class="tab-btn" data-tab="tab-capture">Capture</button>
+    <a href="/proposals/{{ opp.id }}/language" class="tab-btn" style="text-decoration:none; border-left:1px solid var(--border-color); color:var(--accent-blue);" title="Language Settings: glossary, wall of truth, taxonomy">Language &rsaquo;</a>
     <a href="/proposals/{{ opp.id }}/ptw" class="tab-btn" style="text-decoration:none; border-left:1px solid var(--border-color);" title="Black-hat / Price-to-Win Workspace">PTW &rsaquo;</a>
 </div>
 
@@ -1438,6 +1440,79 @@ function govconAction(action, oppId) {
         statusEl.textContent = "Network error: " + err;
         statusEl.style.color = "var(--status-red, #dc3545)";
     });
+}
+
+// ── Bulk WriteGuard (D-WG-14) ────────────────────────────────────
+function runBulkWriteGuard(oppId) {
+    var statusEl = document.getElementById("govcon-status");
+    statusEl.style.display = "block";
+    statusEl.textContent = "Running WriteGuard on all drafts…";
+    statusEl.style.color = "var(--accent-color, #4a90d9)";
+
+    fetch("/api/govcon/opportunities/" + oppId + "/bulk-writeguard", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            statusEl.textContent = "Error: " + data.error;
+            statusEl.style.color = "var(--status-red, #dc3545)";
+            return;
+        }
+        var msg = "WriteGuard complete: " + data.processed + " drafts reviewed, " +
+                  data.findings_total + " findings, " + data.sections_updated + " sections updated.";
+        statusEl.textContent = msg;
+        statusEl.style.color = "var(--status-green, #28a745)";
+        showBulkWriteGuardModal(data);
+    })
+    .catch(function(err) {
+        statusEl.textContent = "Network error: " + err;
+        statusEl.style.color = "var(--status-red, #dc3545)";
+    });
+}
+
+function showBulkWriteGuardModal(data) {
+    var existing = document.getElementById('wg-bulk-modal');
+    if (existing) existing.remove();
+    var modal = document.createElement('div');
+    modal.id = 'wg-bulk-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;';
+    var html = '<div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;padding:1.25rem;max-width:640px;width:90%;max-height:80vh;overflow-y:auto;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">';
+    html += '<span style="font-size:0.95rem;font-weight:700;color:var(--text-primary);">WriteGuard Bulk Results</span>';
+    html += '<button onclick="this.closest(\'#wg-bulk-modal\').remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.2rem;">&times;</button>';
+    html += '</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem;margin-bottom:1rem;">';
+    html += '<div style="text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-blue);">' + (data.total_drafts || 0) + '</div><div style="font-size:0.72rem;color:var(--text-muted);">Total Drafts</div></div>';
+    html += '<div style="text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:#e53e3e;">' + (data.findings_total || 0) + '</div><div style="font-size:0.72rem;color:var(--text-muted);">Findings</div></div>';
+    html += '<div style="text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:#00c864;">' + (data.sections_updated || 0) + '</div><div style="font-size:0.72rem;color:var(--text-muted);">Sections Updated</div></div>';
+    html += '</div>';
+    var results = data.results || [];
+    if (results.length > 0) {
+        html += '<div style="max-height:300px;overflow-y:auto;">';
+        html += '<table style="width:100%;font-size:0.82rem;">';
+        html += '<thead><tr><th>Section</th><th>Score</th><th>Rating</th><th>Findings</th></tr></thead><tbody>';
+        results.forEach(function(r) {
+            if (r.skipped) return;
+            var color = r.overall_score >= 80 ? '#00c864' : r.overall_score >= 60 ? '#ffa500' : '#e53e3e';
+            html += '<tr>';
+            html += '<td><a href="/proposals/' + oppId + '/sections/' + (r.section_id || '') + '" style="color:var(--accent-blue);text-decoration:none;">' + (r.section_id ? r.section_id.slice(0,8) : '—') + '</a></td>';
+            html += '<td style="color:' + color + ';font-weight:700;">' + (r.overall_score || 0).toFixed(1) + '</td>';
+            html += '<td><span class="badge badge-' + (r.overall_rating === 'pass' ? 'success' : r.overall_rating === 'pass_with_findings' ? 'warning' : 'error') + '">' + (r.overall_rating || '—') + '</span></td>';
+            html += '<td>' + (r.findings_created || 0) + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        html += '</div>';
+    }
+    html += '<div style="margin-top:1rem;text-align:right;">';
+    html += '<button class="btn btn-primary btn-sm" onclick="this.closest(\'#wg-bulk-modal\').remove(); location.reload();">Close &amp; Refresh</button>';
+    html += '</div>';
+    html += '</div>';
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
 }
 
 // ── CPMP Transition (D-CPMP-9) ──────────────────────────────────

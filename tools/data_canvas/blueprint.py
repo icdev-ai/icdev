@@ -59,6 +59,12 @@ from tools.data_canvas.constants import (  # noqa: E402
     DATA_OBJECTS,
     DATA_CLASSIFICATION_LEVELS,
     DATA_COMPLIANCE_RULES,
+    MAPPING_SOURCE_FORMATS,
+    MAPPING_TARGET_FORMATS,
+    MAPPING_FIELD_STATUSES,
+    MAPPING_ARTIFACT_TYPES,
+    MAPPING_CONF_AUTO_CONFIRM,
+    MAPPING_CONF_SUGGEST,
 )  # DATA_NIST_FAMILIES available via data_engine
 from tools.data_canvas.data_engine import (  # noqa: E402
     assess_data_design,
@@ -3236,5 +3242,388 @@ def create_data_canvas_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         result = _test_contract(contract_id, conn_params=data.get("conn_params"))
         return jsonify(result)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # AI DATA MAPPING — /mapping/ page routes + /api/mapping/ API routes
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/mapping/")
+    @dc_login_required
+    def dc_mapping_index():
+        conn = get_connection()
+        try:
+            sessions = [
+                row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT id, name, source_format, target_format, status, "
+                    "field_count, confirmed_count, rejected_count, "
+                    "classification, tenant_id, created_at, updated_at "
+                    "FROM dd_mapping_sessions ORDER BY updated_at DESC LIMIT 50"
+                ).fetchall()
+            ]
+            total = conn.execute("SELECT COUNT(*) FROM dd_mapping_sessions").fetchone()[0]
+            pending = conn.execute(
+                "SELECT COUNT(*) FROM dd_mapping_sessions WHERE status IN ('pending','ingested')"
+            ).fetchone()[0]
+            complete = conn.execute(
+                "SELECT COUNT(*) FROM dd_mapping_sessions WHERE status='complete'"
+            ).fetchone()[0]
+        except Exception:
+            sessions, total, pending, complete = [], 0, 0, 0
+        finally:
+            conn.close()
+        return render_template(
+            "data_canvas/mapping.html",
+            sessions=sessions,
+            total=total,
+            pending=pending,
+            complete=complete,
+            source_formats=MAPPING_SOURCE_FORMATS,
+            target_formats=MAPPING_TARGET_FORMATS,
+            field_statuses=MAPPING_FIELD_STATUSES,
+            classification_levels=DATA_CLASSIFICATION_LEVELS,
+        )
+
+    @bp.route("/mapping/new")
+    @dc_login_required
+    def dc_mapping_new():
+        return render_template(
+            "data_canvas/mapping.html",
+            sessions=[],
+            total=0, pending=0, complete=0,
+            source_formats=MAPPING_SOURCE_FORMATS,
+            target_formats=MAPPING_TARGET_FORMATS,
+            field_statuses=MAPPING_FIELD_STATUSES,
+            classification_levels=DATA_CLASSIFICATION_LEVELS,
+            show_new_form=True,
+        )
+
+    @bp.route("/mapping/<session_id>")
+    @dc_login_required
+    def dc_mapping_editor(session_id):
+        conn = get_connection()
+        try:
+            sess_row = conn.execute(
+                "SELECT * FROM dd_mapping_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if not sess_row:
+                return render_template("data_canvas/mapping.html",
+                                       error="Session not found",
+                                       sessions=[], total=0, pending=0, complete=0,
+                                       source_formats=MAPPING_SOURCE_FORMATS,
+                                       target_formats=MAPPING_TARGET_FORMATS,
+                                       field_statuses=MAPPING_FIELD_STATUSES,
+                                       classification_levels=DATA_CLASSIFICATION_LEVELS), 404
+            sess = row_to_dict(sess_row)
+            field_mappings = [
+                row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM dd_field_mappings WHERE session_id=? ORDER BY confidence DESC",
+                    (session_id,),
+                ).fetchall()
+            ]
+            import json as _json
+            try:
+                src_fields = _json.loads(sess.get("source_schema_json") or "[]")
+                tgt_fields = _json.loads(sess.get("target_schema_json") or "[]")
+            except Exception:
+                src_fields, tgt_fields = [], []
+        finally:
+            conn.close()
+        return render_template(
+            "data_canvas/mapping_editor.html",
+            sess=sess,
+            field_mappings=field_mappings,
+            src_fields=src_fields,
+            tgt_fields=tgt_fields,
+            conf_auto=MAPPING_CONF_AUTO_CONFIRM,
+            conf_suggest=MAPPING_CONF_SUGGEST,
+            artifact_types=MAPPING_ARTIFACT_TYPES,
+            classification_levels=DATA_CLASSIFICATION_LEVELS,
+        )
+
+    # ── Mapping API ───────────────────────────────────────────────────────────
+
+    @bp.route("/api/mapping/sessions", methods=["POST"])
+    @dc_login_required
+    def dc_api_mapping_create():
+        data = request.get_json(force=True, silent=True) or {}
+        name = (data.get("name") or "Untitled Mapping").strip()
+        src_fmt = data.get("source_format", "json_schema")
+        tgt_fmt = data.get("target_format", "sql_ddl")
+        classification = data.get("classification", "CUI")
+        tenant_id = data.get("tenant_id", session.get("tenant_id", "default"))
+        if src_fmt not in MAPPING_SOURCE_FORMATS:
+            return jsonify({"error": f"Invalid source_format: {src_fmt}"}), 400
+        if tgt_fmt not in MAPPING_TARGET_FORMATS:
+            return jsonify({"error": f"Invalid target_format: {tgt_fmt}"}), 400
+        sid = f"mses-{_uuid.uuid4().hex[:12]}"
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO dd_mapping_sessions "
+                "(id, name, source_format, target_format, classification, tenant_id, created_by) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (sid, name, src_fmt, tgt_fmt, classification, tenant_id,
+                 session.get("username", "")),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        _audit(sid, session.get("username", ""), "mapping_session.create", name)
+        return jsonify({"session_id": sid, "status": "pending"}), 201
+
+    @bp.route("/api/mapping/<session_id>/ingest", methods=["POST"])
+    @dc_login_required
+    def dc_api_mapping_ingest(session_id):
+        from tools.data_canvas.ai_mapper import parse_schema as _parse
+        import json as _json
+        _MAX_BYTES = 512_000
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT source_format, target_format FROM dd_mapping_sessions WHERE id=?",
+                (session_id,),
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Session not found"}), 404
+            src_fmt = data.get("source_format") or row[0]
+            tgt_fmt = data.get("target_format") or row[1]
+            src_raw = data.get("source_schema", "")
+            tgt_raw = data.get("target_schema", "")
+            if len((src_raw + tgt_raw).encode()) > _MAX_BYTES * 2:
+                return jsonify({"error": "Schema payload exceeds 500 KB limit"}), 413
+            src_fields = _parse(src_raw, src_fmt)
+            tgt_fields = _parse(tgt_raw, tgt_fmt)
+            conn.execute(
+                "UPDATE dd_mapping_sessions SET source_schema_json=?, target_schema_json=?, "
+                "status='ingested', updated_at=datetime('now') WHERE id=?",
+                (_json.dumps(src_fields), _json.dumps(tgt_fields), session_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        _audit(session_id, session.get("username", ""), "mapping_session.ingest",
+               f"src={len(src_fields)} fields, tgt={len(tgt_fields)} fields")
+        return jsonify({
+            "source_fields": src_fields,
+            "target_fields": tgt_fields,
+            "field_counts": {"source": len(src_fields), "target": len(tgt_fields)},
+        })
+
+    @bp.route("/api/mapping/<session_id>/suggest", methods=["POST"])
+    @dc_login_required
+    def dc_api_mapping_suggest(session_id):
+        from tools.data_canvas.ai_mapper import (
+            score_field_pairs as _score,
+            assign_status as _status,
+        )
+        import json as _json
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT source_schema_json, target_schema_json, classification, tenant_id "
+                "FROM dd_mapping_sessions WHERE id=?",
+                (session_id,),
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Session not found"}), 404
+            try:
+                src_fields = _json.loads(row[0] or "[]")
+                tgt_fields = _json.loads(row[1] or "[]")
+            except Exception:
+                return jsonify({"error": "Schema not yet ingested"}), 422
+            if not src_fields or not tgt_fields:
+                return jsonify({"error": "Ingest source and target schemas first"}), 422
+
+            pairs = _score(src_fields, tgt_fields)
+
+            # Collect source fields that already have a human decision (confirmed/rejected).
+            # These survive re-suggest — we never overwrite an explicit human choice.
+            decided_rows = conn.execute(
+                "SELECT source_field FROM dd_field_mappings "
+                "WHERE session_id=? AND status IN ('confirmed','rejected')",
+                (session_id,),
+            ).fetchall()
+            decided_fields = {r[0] for r in decided_rows}
+
+            # Delete stale pending/needs_review rows; keep confirmed/rejected
+            conn.execute(
+                "DELETE FROM dd_field_mappings WHERE session_id=? AND status IN ('pending','needs_review')",
+                (session_id,),
+            )
+
+            # Only suggest for source fields that have no human decision yet
+            pairs = [p for p in pairs if p["src"]["name"] not in decided_fields]
+
+            classification = row[2] or "CUI"
+            tenant_id = row[3] or "default"
+            auto_confirmed = 0
+            needs_review = 0
+            field_mappings = []
+            for p in pairs:
+                status = _status(p["confidence"])
+                if status == "confirmed":
+                    auto_confirmed += 1
+                elif status == "needs_review":
+                    needs_review += 1
+                fmap = {
+                    "id": p["id"],
+                    "session_id": session_id,
+                    "source_field": p["src"]["name"],
+                    "source_type": p["src"].get("type", ""),
+                    "source_path": p["src"].get("path", ""),
+                    "target_field": p["tgt"]["name"],
+                    "target_type": p["tgt"].get("type", ""),
+                    "target_path": p["tgt"].get("path", ""),
+                    "confidence": p["confidence"],
+                    "match_method": p["match_method"],
+                    "status": status,
+                    "classification": classification,
+                    "tenant_id": tenant_id,
+                }
+                conn.execute(
+                    "INSERT INTO dd_field_mappings "
+                    "(id, session_id, source_field, source_type, source_path, "
+                    "target_field, target_type, target_path, confidence, match_method, "
+                    "status, classification, tenant_id) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (fmap["id"], session_id,
+                     fmap["source_field"], fmap["source_type"], fmap["source_path"],
+                     fmap["target_field"], fmap["target_type"], fmap["target_path"],
+                     fmap["confidence"], fmap["match_method"], fmap["status"],
+                     classification, tenant_id),
+                )
+                field_mappings.append(fmap)
+            # Count all confirmed/rejected after insert (includes pre-existing human decisions)
+            total_confirmed = conn.execute(
+                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=? AND status='confirmed'",
+                (session_id,),
+            ).fetchone()[0]
+            total_fields = conn.execute(
+                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=?",
+                (session_id,),
+            ).fetchone()[0]
+            conn.execute(
+                "UPDATE dd_mapping_sessions SET status='suggested', "
+                "field_count=?, confirmed_count=?, updated_at=datetime('now') WHERE id=?",
+                (total_fields, total_confirmed, session_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        _audit(session_id, session.get("username", ""), "mapping_session.suggest",
+               f"new_pairs={len(pairs)} auto_confirmed={auto_confirmed} needs_review={needs_review} skipped_decided={len(decided_fields)}")
+        return jsonify({
+            "field_mappings": field_mappings,
+            "auto_confirmed": auto_confirmed,
+            "needs_review": needs_review,
+            "total": len(pairs),
+            "skipped_decided": len(decided_fields),
+        })
+
+    @bp.route("/api/mapping/<session_id>/fields/<field_id>", methods=["PUT"])
+    @dc_login_required
+    def dc_api_mapping_field_update(session_id, field_id):
+        data = request.get_json(force=True, silent=True) or {}
+        new_status = data.get("status", "")
+        if new_status not in MAPPING_FIELD_STATUSES:
+            return jsonify({"error": f"Invalid status: {new_status}"}), 400
+        transform_expr = data.get("transform_expr", "")
+        notes = data.get("notes", "")
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT id FROM dd_field_mappings WHERE id=? AND session_id=?",
+                (field_id, session_id),
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Field mapping not found"}), 404
+            conn.execute(
+                "UPDATE dd_field_mappings SET status=?, transform_expr=?, notes=?, "
+                "updated_at=datetime('now') WHERE id=?",
+                (new_status, transform_expr, notes, field_id),
+            )
+            confirmed = conn.execute(
+                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=? AND status='confirmed'",
+                (session_id,),
+            ).fetchone()[0]
+            rejected = conn.execute(
+                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=? AND status='rejected'",
+                (session_id,),
+            ).fetchone()[0]
+            conn.execute(
+                "UPDATE dd_mapping_sessions SET confirmed_count=?, rejected_count=?, "
+                "updated_at=datetime('now') WHERE id=?",
+                (confirmed, rejected, session_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        _audit(session_id, session.get("username", ""), "field_mapping.update",
+               f"field={field_id} status={new_status}")
+        return jsonify({
+            "updated": True,
+            "session_stats": {"confirmed": confirmed, "rejected": rejected},
+        })
+
+    @bp.route("/api/mapping/<session_id>/generate", methods=["POST"])
+    @dc_login_required
+    def dc_api_mapping_generate(session_id):
+        from tools.data_canvas.ai_mapper import generate_transforms as _gen
+        data = request.get_json(force=True, silent=True) or {}
+        artifact_type = data.get("artifact_type", "sql")
+        if artifact_type not in MAPPING_ARTIFACT_TYPES:
+            return jsonify({"error": f"Invalid artifact_type: {artifact_type}"}), 400
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT classification, tenant_id, confirmed_count "
+                "FROM dd_mapping_sessions WHERE id=?",
+                (session_id,),
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Session not found"}), 404
+            if row[2] == 0:
+                return jsonify({"error": "Confirm at least one field mapping before generating"}), 422
+            classification = row[0] or "CUI"
+            tenant_id = row[1] or "default"
+            confirmed_rows = conn.execute(
+                "SELECT source_field, source_type, target_field, target_type, transform_expr "
+                "FROM dd_field_mappings WHERE session_id=? AND status='confirmed'",
+                (session_id,),
+            ).fetchall()
+            pairs = [dict(zip(
+                ["source_field", "source_type", "target_field", "target_type", "transform_expr"],
+                r,
+            )) for r in confirmed_rows]
+            artifact_text, model_used = _gen(session_id, pairs, artifact_type, classification)
+            artifact_id = f"mart-{_uuid.uuid4().hex[:12]}"
+            conn.execute(
+                "INSERT INTO dd_mapping_transforms "
+                "(id, session_id, artifact_type, artifact_text, field_count, "
+                "generated_by, model_used, classification, tenant_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (artifact_id, session_id, artifact_type, artifact_text, len(pairs),
+                 "ai" if model_used != "template" else "template",
+                 model_used, classification, tenant_id),
+            )
+            conn.execute(
+                "UPDATE dd_mapping_sessions SET status='complete', updated_at=datetime('now') WHERE id=?",
+                (session_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        _audit(session_id, session.get("username", ""), "mapping_session.generate",
+               f"artifact_type={artifact_type} fields={len(pairs)} model={model_used}")
+        return jsonify({
+            "artifact_id": artifact_id,
+            "artifact_type": artifact_type,
+            "artifact_text": artifact_text,
+            "field_count": len(pairs),
+            "model_used": model_used,
+        })
 
     return bp

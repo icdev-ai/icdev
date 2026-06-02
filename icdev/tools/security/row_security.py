@@ -62,6 +62,77 @@ def _primary_alias(sql: str) -> str | None:
     return m.group(2) or m.group(1)
 
 
+def _find_outer_where(sql: str) -> re.Match | None:
+    """Find the first WHERE keyword at depth-0 (not inside a subquery/parens).
+
+    A naive `_RE_WHERE.search(sql)` hits the first WHERE in the string, which
+    may be inside a correlated subquery.  PostgreSQL then rejects RLS predicates
+    that reference outer-query aliases from within the subquery scope.
+    This walks the string once, counting paren depth, and returns a regex
+    Match anchored at the first depth-0 WHERE so callers can use .end() safely.
+    """
+    depth = 0
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == '(':
+            depth += 1
+            i += 1
+        elif ch == ')':
+            depth -= 1
+            i += 1
+        elif ch in ("'", '"'):
+            quote = ch
+            i += 1
+            while i < n and sql[i] != quote:
+                if sql[i] == '\\':
+                    i += 1
+                i += 1
+            i += 1  # closing quote
+        elif depth == 0:
+            m = _RE_WHERE.match(sql, i)
+            if m:
+                return m
+            i += 1
+        else:
+            i += 1
+    return None
+
+
+_RE_PLACEHOLDER = re.compile(r"\?|%s", re.IGNORECASE)
+
+
+def _count_params_before(sql: str, pos: int) -> int:
+    """Count positional placeholders (? or %s) in sql[:pos], skipping string literals.
+
+    Used to determine how many existing params precede the RLS injection point
+    so that extra_params can be inserted at the correct position rather than
+    blindly prepended/appended.
+    """
+    count = 0
+    i = 0
+    while i < pos:
+        ch = sql[i]
+        if ch in ("'", '"'):
+            quote = ch
+            i += 1
+            while i < pos and sql[i] != quote:
+                if sql[i] == '\\':
+                    i += 1
+                i += 1
+            i += 1
+        elif sql[i:i+2] == '%s':
+            count += 1
+            i += 2
+        elif ch == '?':
+            count += 1
+            i += 1
+        else:
+            i += 1
+    return count
+
+
 def inject_row_predicate(
     sql: str,
     tenant_id: Optional[str],
@@ -73,7 +144,7 @@ def inject_row_predicate(
     lac_column: str = "lac_label",
     coi_tags: Optional[Set[str]] = None,
     coi_column: str = "coi_tag",
-) -> Tuple[str, Tuple[Any, ...]]:
+) -> Tuple[str, Tuple[Any, ...], int]:
     """Inject tenant, classification, LAC, and COI predicates into a SQL string.
 
     LAC (Label-Based Access Control, G-03): rows with lac_label=NULL are
@@ -84,9 +155,12 @@ def inject_row_predicate(
     to all within tenant+classification; rows with a tag must match the caller.
 
     Returns:
-        (modified_sql, extra_params) where extra_params should be prepended
-        to the caller's existing parameter tuple (for SELECT) or appended
-        (for UPDATE/DELETE — see _inject_rls in storage.py).
+        (modified_sql, extra_params, n_params_before) where:
+        - extra_params must be inserted at index n_params_before in the
+          caller's existing params tuple so positional binding stays correct
+          even when subqueries appear before the outer WHERE clause.
+        - For UPDATE/DELETE n_params_before is set to len(existing_params)
+          (i.e. append), since SET params precede all WHERE params.
     """
     extra_clauses: list[str] = []
     extra_params: list[Any] = []
@@ -146,7 +220,7 @@ def inject_row_predicate(
         extra_params.extend(sorted_coi)
 
     if not extra_clauses:
-        return sql, ()
+        return sql, (), 0
 
     # Determine injection point
     predicate = " AND ".join(extra_clauses)
@@ -158,44 +232,53 @@ def inject_row_predicate(
         or sql.strip().upper().startswith("PRAGMA")
         or sql.strip().upper().startswith("CREATE")
     ):
-        return sql, ()
+        return sql, (), 0
 
     # UPDATE/DELETE: predicate appended to the END of the WHERE clause so that
     # SQLite parameter binding stays correct — SET-slot params come first in
     # the param tuple, WHERE-slot params (including the injected predicate)
-    # come after.  Callers (storage._inject_rls) must APPEND these extra_params
-    # rather than prepend them.  PostgreSQL additionally enforces this via its
-    # native policy engine.
+    # come after.  n_params_before=None signals "append" to the caller.
     if _RE_UPDATE.match(sql) or _RE_DELETE.match(sql):
-        where_match = _RE_WHERE.search(sql)
+        where_match = _find_outer_where(sql)
         if where_match:
-            # Append after all existing WHERE conditions
             new_sql = sql.rstrip().rstrip(";") + " AND " + predicate
         else:
             new_sql = sql.rstrip().rstrip(";") + " WHERE " + predicate
-        return new_sql, tuple(extra_params)
+        # -1 sentinel → caller appends (UPDATE/DELETE existing convention)
+        return new_sql, tuple(extra_params), -1
 
-    # SELECT (and anything else): predicate injected at the START of the WHERE
-    # clause so callers prepend extra_params before existing params.
-    where_match = _RE_WHERE.search(sql)
+    # SELECT (and anything else): predicate injected at the START of the outer
+    # WHERE clause.  Use _find_outer_where so we skip any WHERE that lives
+    # inside a correlated subquery — PostgreSQL cannot resolve outer-query
+    # aliases (e.g. "s.classification") from within a subquery scope and will
+    # raise "invalid reference to FROM-clause entry … HINT: use LATERAL".
+    # n_params_before tells the caller how many existing params precede the
+    # injection point, so extra_params can be inserted at the correct position
+    # rather than blindly prepended (which breaks subqueries with their own ?).
+    where_match = _find_outer_where(sql)
     if where_match:
+        inject_at = where_match.start()  # position of WHERE keyword in original sql
+        n_before = _count_params_before(sql, inject_at)
         pos = where_match.end()
         new_sql = sql[:pos] + " " + predicate + " AND" + sql[pos:]
-        return new_sql, tuple(extra_params)
+        return new_sql, tuple(extra_params), n_before
 
-    # No WHERE — inject before the first SQL clause that follows the FROM/JOIN.
-    # Must check GROUP BY before ORDER BY: WHERE is only valid before GROUP BY
-    # in standard SQL (SELECT … FROM … WHERE … GROUP BY … ORDER BY …).
+    # No WHERE — inject before ORDER BY / GROUP BY / LIMIT; all existing params
+    # come before these clauses so n_params_before = total existing params count.
+    # Compute from original sql (caller will provide the count at merge time).
+    # We return n_before = _count_params_before(sql, len(sql)) which equals the
+    # total placeholder count — meaning "insert after all existing params".
+    n_total = _count_params_before(sql, len(sql))
     for pattern in (_RE_GROUP_BY, _RE_ORDER_BY, _RE_LIMIT):
         m = pattern.search(sql)
         if m:
             pos = m.start()
             new_sql = sql[:pos] + " WHERE " + predicate + " " + sql[pos:]
-            return new_sql, tuple(extra_params)
+            return new_sql, tuple(extra_params), n_total
 
     # No WHERE, no ORDER/GROUP/LIMIT — append at end
     new_sql = sql.rstrip().rstrip(";") + " WHERE " + predicate
-    return new_sql, tuple(extra_params)
+    return new_sql, tuple(extra_params), n_total
 
 
 # ---------------------------------------------------------------------------

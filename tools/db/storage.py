@@ -768,7 +768,7 @@ class StorageCursor:
         if not ctx:
             return sql, params
         try:
-            from tools.security.row_security import inject_row_predicate, _RE_UPDATE, _RE_DELETE
+            from tools.security.row_security import inject_row_predicate
             tenant_id = getattr(ctx, "tenant_id", None)
             classification = getattr(ctx, "classification", None)
             # Derive LAC and COI label sets from the compartments frozenset.
@@ -777,7 +777,7 @@ class StorageCursor:
             compartments = getattr(ctx, "compartments", frozenset()) or frozenset()
             lac_labels = {c for c in compartments if c.upper().startswith("LAC_")} or None
             coi_tags = {c for c in compartments if c.upper().startswith("COI_")} or None
-            new_sql, extra = inject_row_predicate(
+            new_sql, extra, n_before = inject_row_predicate(
                 sql,
                 tenant_id=tenant_id,
                 classification=classification,
@@ -785,17 +785,18 @@ class StorageCursor:
                 coi_tags=coi_tags,
             )
             if extra:
-                # UPDATE/DELETE: predicate is at the END of the WHERE clause,
-                # so extra_params must be APPENDED (not prepended) to preserve
-                # SQLite's SET-slot → WHERE-slot parameter ordering.
-                # SELECT: predicate is at the START of WHERE, so PREPEND.
-                is_write = bool(_RE_UPDATE.match(sql) or _RE_DELETE.match(sql))
-                if params is None:
-                    params = extra
-                elif isinstance(params, (list, tuple)):
-                    params = (tuple(params) + tuple(extra)) if is_write else (tuple(extra) + tuple(params))
+                # n_before == -1  → UPDATE/DELETE: APPEND extra_params after all existing params.
+                # n_before >= 0   → SELECT: INSERT extra_params at position n_before so that
+                #                   subquery placeholders before the outer WHERE keep their
+                #                   correct positional bindings.
+                existing = tuple(params) if params is not None else ()
+                if n_before < 0:
+                    params = existing + tuple(extra)
                 else:
-                    params = (params,) + tuple(extra) if is_write else tuple(extra) + (params,)
+                    # n_before is the count of ? in the original SQL before the injection site.
+                    # Insert extra at that index in the existing params tuple.
+                    idx = min(n_before, len(existing))
+                    params = existing[:idx] + tuple(extra) + existing[idx:]
                 if AUDIT_RLS:
                     _write_rls_audit(
                         self._table_name or "unknown",

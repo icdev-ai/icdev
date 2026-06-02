@@ -311,7 +311,7 @@ def dispatch_stig_alert(
 
         # --- Render ---
         rendered = Template(STIG_ALERT_TEMPLATE).safe_substitute(vars_)
-        render_template(
+        rendered_html = render_template(
             "alerts/stig_finding.html",
             check=check_row,
             workload=workload_row,

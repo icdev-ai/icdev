@@ -1,0 +1,23 @@
+# NSA ZIG IQE Seed Queries
+# Collection: zig.*
+
+# Query 1: Overall ZIG maturity summary
+foreach m in zig.maturity select m.score, m.maturity_level, m.pct_complete, m.fy2027_target_activities
+
+# Query 2: All pillar maturity scores
+foreach p in zig.pillars select p.name, p.score, p.maturity_level, p.complete_activities, p.activity_count
+
+# Query 3: Phase 1 incomplete activities
+foreach a in zig.activities where a.phase = "phase1" and a.completion_status != "complete" select a.title, a.pillar_slug, a.nist_control_ref, a.completion_status
+
+# Query 4: Top capability gaps (discovery and phase1 only)
+foreach g in zig.gaps where g.phase != "phase2" select g.pillar_slug, g.title, g.phase, g.maturity_level
+
+# Query 5: Implemented capabilities count by pillar
+foreach c in zig.capabilities where c.implementation_status = "implemented" select c.pillar_slug, c.title, c.phase
+
+# Query 6: Discovery phase completion status
+foreach a in zig.activities where a.phase = "discovery" select a.title, a.completion_status, a.pillar_slug
+
+# Query 7: FY2027 readiness — all incomplete activities
+foreach a in zig.activities where a.completion_status != "complete" select a.phase, a.pillar_slug, a.title, a.completion_status order by a.phase

@@ -34,29 +34,54 @@
 </div>
 {% endif %}
 
-<!-- Stat Grid -->
-<div class="stat-grid" id="prop-stats">
-    <div class="stat-card">
-        <div class="stat-value" id="stat-total">{{ opportunities | length }}</div>
-        <div class="stat-label">Total</div>
+<!-- Stat Grid — govcon-matched colors -->
+<style>
+.prop-stat{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-lg);padding:14px 16px;position:relative;overflow:hidden;}
+.prop-stat::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:var(--radius-lg) 0 0 var(--radius-lg);}
+.prop-stat.blue::before{background:var(--accent-blue,#4a90d9);}
+.prop-stat.orange::before{background:#e8590c;}
+.prop-stat.purple::before{background:#9c27b0;}
+.prop-stat.green::before{background:var(--status-green,#28a745);}
+.prop-stat.yellow::before{background:var(--status-yellow,#ffc107);}
+.prop-stat-val{font-size:1.9rem;font-weight:700;line-height:1;}
+.prop-stat.blue .prop-stat-val{color:var(--accent-blue,#4a90d9);}
+.prop-stat.orange .prop-stat-val{color:#f57c4a;}
+.prop-stat.purple .prop-stat-val{color:#ce93d8;}
+.prop-stat.green .prop-stat-val{color:var(--status-green,#28a745);}
+.prop-stat.yellow .prop-stat-val{color:var(--status-yellow,#ffc107);}
+.prop-stat-lbl{font-size:0.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-top:4px;}
+.prop-stage-badge{display:inline-block;font-size:0.7rem;padding:2px 7px;border-radius:4px;font-weight:600;border:1px solid;}
+.prop-stage-discover{background:rgba(74,144,217,.15);color:#6db3f8;border-color:rgba(74,144,217,.3);}
+.prop-stage-extract {background:rgba(232,89,12,.15); color:#f57c4a;border-color:rgba(232,89,12,.3);}
+.prop-stage-map     {background:rgba(40,167,69,.15);  color:#4caf50;border-color:rgba(40,167,69,.3);}
+.prop-stage-draft   {background:rgba(156,39,176,.15); color:#ce93d8;border-color:rgba(156,39,176,.3);}
+.prop-stage-submit  {background:rgba(40,167,69,.12);  color:#66bb6a;border-color:rgba(40,167,69,.25);}
+.prop-stage-won     {background:rgba(0,137,123,.15);  color:#26a69a;border-color:rgba(0,137,123,.3);}
+.prop-stage-lost    {background:rgba(220,53,69,.15);  color:#ef5350;border-color:rgba(220,53,69,.3);}
+.prop-content-pill{display:inline-flex;align-items:center;gap:3px;font-size:0.67rem;padding:1px 6px;border-radius:10px;background:rgba(74,144,217,.15);color:#6db3f8;border:1px solid rgba(74,144,217,.25);vertical-align:middle;margin-left:4px;}
+</style>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;" id="prop-stats">
+    <div class="prop-stat blue">
+        <div class="prop-stat-val" id="stat-total">{{ opportunities | length }}</div>
+        <div class="prop-stat-lbl">Total</div>
     </div>
-    <div class="stat-card">
-        <div class="stat-value" id="stat-writing">{{ opportunities | selectattr('status', 'equalto', 'writing') | list | length }}</div>
-        <div class="stat-label">In Writing</div>
+    <div class="prop-stat orange">
+        <div class="prop-stat-val" id="stat-writing">{{ opportunities | selectattr('status', 'in', ['writing']) | list | length }}</div>
+        <div class="prop-stat-lbl">In Writing</div>
     </div>
-    <div class="stat-card">
-        <div class="stat-value" id="stat-review">{{ opportunities | selectattr('status', 'equalto', 'review') | list | length }}</div>
-        <div class="stat-label">In Review</div>
+    <div class="prop-stat purple">
+        <div class="prop-stat-val" id="stat-review">{{ opportunities | selectattr('status', 'equalto', 'review') | list | length }}</div>
+        <div class="prop-stat-lbl">In Review</div>
     </div>
-    <div class="stat-card">
-        <div class="stat-value" id="stat-submitted">{{ opportunities | selectattr('status', 'equalto', 'submitted') | list | length }}</div>
-        <div class="stat-label">Submitted</div>
+    <div class="prop-stat green">
+        <div class="prop-stat-val" id="stat-submitted">{{ opportunities | selectattr('status', 'equalto', 'submitted') | list | length }}</div>
+        <div class="prop-stat-lbl">Submitted</div>
     </div>
-    <div class="stat-card">
-        <div class="stat-value {% if nearest_deadline and nearest_deadline <= 7 %}text-danger{% elif nearest_deadline and nearest_deadline <= 14 %}text-warning{% endif %}" id="stat-deadline">
+    <div class="prop-stat yellow">
+        <div class="prop-stat-val {% if nearest_deadline and nearest_deadline <= 7 %}text-danger{% elif nearest_deadline and nearest_deadline <= 14 %}text-warning{% endif %}" id="stat-deadline">
             {{ nearest_deadline if nearest_deadline is not none else '—' }}
         </div>
-        <div class="stat-label">Days to Nearest Deadline</div>
+        <div class="prop-stat-lbl">Days to Deadline</div>
     </div>
 </div>
 
@@ -74,86 +99,137 @@
 </div>
 
 <!-- Opportunity Table -->
-<div class="table-container">
-    <div class="table-header">
-        <h2>Opportunities</h2>
+<div class="table-container" data-no-enhance="true">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border-color);">
+        <div style="display:flex;align-items:center;gap:8px;">
+            <h2 style="margin:0;">Opportunities</h2>
+            <span style="font-size:0.7rem;padding:2px 8px;border-radius:12px;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-muted);">{{ opportunities | length }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            {# Stage legend #}
+            <span class="prop-stage-badge prop-stage-discover">🔍 Discover</span>
+            <span class="prop-stage-badge prop-stage-extract">⚙️ Extract</span>
+            <span class="prop-stage-badge prop-stage-map">🗺️ Map</span>
+            <span class="prop-stage-badge prop-stage-draft">✍️ Draft</span>
+            <span class="prop-stage-badge prop-stage-submit">✅ Submitted</span>
+            <input type="text" id="opp-search" placeholder="Search..." oninput="filterOpps(this.value)"
+                   style="padding:4px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-input);color:var(--text-primary);font-size:0.82rem;width:160px;">
+            <a href="/api/proposals/export/csv" class="btn btn-secondary" style="font-size:0.78rem;padding:4px 10px;">Export CSV</a>
+        </div>
     </div>
-    <table>
+    <table id="opp-table" style="width:100%;border-collapse:collapse;">
         <thead>
             <tr>
+                <th style="width:28px;"></th>
                 <th>Solicitation #</th>
                 <th>Title</th>
                 <th>Agency</th>
-                <th>Due Date</th>
-                <th>Days Left</th>
+                <th>Due</th>
+                <th>Days</th>
                 <th>Type</th>
                 <th>Set-Aside</th>
                 <th>Status</th>
-                <th style="min-width:130px;">pWin</th>
-                <th style="min-width:110px;">Wtd Value</th>
-                <th>Proposal Mgr</th>
+                <th style="min-width:110px;">pWin</th>
+                <th style="min-width:100px;">Wtd Value</th>
+                <th>Mgr</th>
             </tr>
         </thead>
         <tbody>
             {% for opp in opportunities %}
-            <tr>
-                <td><a href="/proposals/{{ opp.id }}">{{ opp.solicitation_number }}</a></td>
-                <td><a href="/proposals/{{ opp.id }}">{{ opp.title }}</a></td>
-                <td>{{ opp.agency }}</td>
-                <td>{{ opp.due_date }}</td>
-                <td class="{% if opp.days_left is not none and opp.days_left <= 7 %}text-danger{% elif opp.days_left is not none and opp.days_left <= 14 %}text-warning{% endif %}">
+            {# Determine pipeline stage #}
+            {% set st = opp.status %}
+            {% set cp = opp.capture_phase or '' %}
+            {% if st in ('intake', 'bid_no_bid') %}
+              {% set stage_icon = '🔍' %}{% set stage_cls = 'prop-stage-discover' %}{% set row_color = 'rgba(74,144,217,.06)' %}{% set border_color = '#4a90d9' %}
+            {% elif st == 'go' and cp == 'map' %}
+              {% set stage_icon = '🗺️' %}{% set stage_cls = 'prop-stage-map' %}{% set row_color = 'rgba(40,167,69,.06)' %}{% set border_color = '#4caf50' %}
+            {% elif st == 'go' %}
+              {% set stage_icon = '⚙️' %}{% set stage_cls = 'prop-stage-extract' %}{% set row_color = 'rgba(232,89,12,.06)' %}{% set border_color = '#f57c4a' %}
+            {% elif st in ('writing', 'review', 'final') %}
+              {% set stage_icon = '✍️' %}{% set stage_cls = 'prop-stage-draft' %}{% set row_color = 'rgba(156,39,176,.06)' %}{% set border_color = '#ce93d8' %}
+            {% elif st == 'submitted' %}
+              {% set stage_icon = '✅' %}{% set stage_cls = 'prop-stage-submit' %}{% set row_color = 'rgba(40,167,69,.04)' %}{% set border_color = '#66bb6a' %}
+            {% elif st == 'won' %}
+              {% set stage_icon = '🏆' %}{% set stage_cls = 'prop-stage-won' %}{% set row_color = 'rgba(0,137,123,.06)' %}{% set border_color = '#26a69a' %}
+            {% else %}
+              {% set stage_icon = '—' %}{% set stage_cls = 'prop-stage-lost' %}{% set row_color = 'rgba(220,53,69,.04)' %}{% set border_color = '#ef5350' %}
+            {% endif %}
+            <tr style="border-left:3px solid {{ border_color }};background:{{ row_color }};" class="opp-row">
+                <td style="text-align:center;font-size:0.95rem;" title="{{ st | replace('_',' ') | title }}">{{ stage_icon }}</td>
+                <td style="white-space:nowrap;">
+                    <a href="/proposals/{{ opp.id }}" style="color:{{ border_color }};font-weight:700;font-size:0.85rem;">{{ opp.solicitation_number }}</a>
+                </td>
+                <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.title }}">
+                    <a href="/proposals/{{ opp.id }}" style="color:var(--text-primary);">{{ opp.title[:52] }}{% if opp.title|length > 52 %}…{% endif %}</a>
+                    {% if opp.section_count %}
+                    <span class="prop-content-pill" title="{{ opp.section_count }} section(s) with content">📄 {{ opp.section_count }}</span>
+                    {% endif %}
+                </td>
+                <td style="color:var(--text-secondary);font-size:0.82rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.agency }}">{{ opp.agency[:30] }}{% if opp.agency|length > 30 %}…{% endif %}</td>
+                <td style="color:var(--text-secondary);font-size:0.82rem;white-space:nowrap;">{{ opp.due_date or '—' }}</td>
+                <td style="font-weight:700;font-size:0.88rem;white-space:nowrap;{% if opp.days_left is not none and opp.days_left <= 7 %}color:var(--status-red,#dc3545);{% elif opp.days_left is not none and opp.days_left <= 14 %}color:var(--status-yellow,#ffc107);{% else %}color:{{ border_color }};{% endif %}">
                     {{ opp.days_left if opp.days_left is not none else '—' }}
                 </td>
-                <td><span class="badge badge-info">{{ opp.proposal_type }}</span></td>
-                <td>{{ opp.set_aside_type or '—' }}</td>
+                <td><span style="font-size:0.72rem;padding:2px 6px;border-radius:3px;background:rgba(74,144,217,.15);color:#6db3f8;border:1px solid rgba(74,144,217,.25);">{{ opp.proposal_type }}</span></td>
+                <td style="color:var(--text-secondary);font-size:0.8rem;">{{ opp.set_aside_type or '—' }}</td>
                 <td>
-                    {% set status_colors = {'intake': 'info', 'bid_no_bid': 'warning', 'go': 'success', 'writing': 'info', 'review': 'warning', 'final': 'success', 'submitted': 'success', 'won': 'success', 'lost': 'error', 'no_bid': 'warning', 'cancelled': 'error'} %}
-                    <span class="badge badge-{{ status_colors.get(opp.status, 'info') }}">{{ opp.status | replace('_', ' ') | title }}</span>
+                    <span class="prop-stage-badge {{ stage_cls }}">{{ stage_icon }} {{ st | replace('_',' ') | title }}</span>
+                    {% if opp.section_count %}
+                    <a href="/writeguard?opp_id={{ opp.id }}" title="Open in WriteGuard" style="font-size:0.68rem;margin-left:4px;color:var(--text-muted);text-decoration:none;padding:1px 5px;border:1px solid var(--border-color);border-radius:3px;" target="_blank">WG</a>
+                    {% endif %}
                 </td>
                 <td>
-                  {# Prefer model-computed pWin; fall back to stored win_probability #}
                   {% set display_pwin = opp.computed_pwin_pct if opp.computed_pwin_pct is not none else opp.win_probability %}
                   {% if display_pwin is not none %}
                     {% set pct = display_pwin | int %}
                     {% if pct >= 70 %}{% set bar_color = 'var(--status-green,#4caf50)' %}
                     {% elif pct >= 40 %}{% set bar_color = 'var(--status-yellow,#ffc107)' %}
                     {% else %}{% set bar_color = 'var(--status-red,#dc3545)' %}{% endif %}
-                    <div style="display:flex;align-items:center;gap:6px;">
-                      <div style="flex:1;background:var(--bg-secondary,#1a1a2e);border-radius:3px;height:8px;min-width:60px;">
-                        <div style="background:{{ bar_color }};height:8px;border-radius:3px;width:{{ pct }}%;"></div>
+                    <div style="display:flex;align-items:center;gap:5px;">
+                      <div style="flex:1;background:var(--bg-secondary);border-radius:3px;height:5px;min-width:44px;">
+                        <div style="background:{{ bar_color }};height:5px;border-radius:3px;width:{{ pct }}%;"></div>
                       </div>
-                      <span style="color:{{ bar_color }};font-weight:bold;font-size:0.85rem;min-width:36px;">{{ pct }}%</span>
+                      <span style="color:{{ bar_color }};font-weight:700;font-size:0.8rem;min-width:30px;">{{ pct }}%</span>
                       {% if opp.has_pwin_model %}
-                        <span title="Model score" style="cursor:pointer;font-size:0.7rem;color:var(--accent-color,#4a90d9);"
-                              onclick="showFactors('{{ opp.id }}', {{ opp.pwin_factors | tojson if opp.pwin_factors else 'null' }})">&#9432;</span>
+                        <span style="cursor:pointer;font-size:0.65rem;color:var(--accent-blue,#4a90d9);"
+                              onclick="showFactors('{{ opp.id }}', {{ opp.pwin_factors | tojson if opp.pwin_factors else 'null' }})">ℹ</span>
                       {% else %}
-                        <button onclick="openPwinModal('{{ opp.id }}')" title="Score with pWin model"
-                                style="font-size:0.65rem;padding:1px 5px;background:none;border:1px solid var(--border-color);border-radius:3px;color:var(--text-secondary);cursor:pointer;">Score</button>
+                        <button onclick="openPwinModal('{{ opp.id }}')" style="font-size:0.62rem;padding:1px 5px;background:none;border:1px solid var(--border-color);border-radius:3px;color:var(--text-secondary);cursor:pointer;">Score</button>
                       {% endif %}
                     </div>
                   {% else %}
-                    <div style="display:flex;align-items:center;gap:4px;">
-                      <span style="color:var(--text-secondary);">—</span>
-                      <button onclick="openPwinModal('{{ opp.id }}')" title="Score with pWin model"
-                              style="font-size:0.65rem;padding:1px 5px;background:none;border:1px solid var(--border-color);border-radius:3px;color:var(--text-secondary);cursor:pointer;">Score</button>
-                    </div>
+                    <span style="color:var(--text-muted);">—</span>
+                    <button onclick="openPwinModal('{{ opp.id }}')" style="font-size:0.62rem;padding:1px 5px;background:none;border:1px solid var(--border-color);border-radius:3px;color:var(--text-secondary);cursor:pointer;margin-left:4px;">Score</button>
                   {% endif %}
                 </td>
-                <td style="font-size:0.85rem;">
-                  {% if opp.weighted_value is not none %}
-                    ${{ "{:,.0f}".format(opp.weighted_value) }}
-                  {% else %}
-                    <span style="color:var(--text-secondary);">—</span>
-                  {% endif %}
+                <td style="font-size:0.85rem;font-weight:600;color:var(--status-green,#28a745);">
+                  {% if opp.weighted_value is not none %}${{ "{:,.0f}".format(opp.weighted_value) }}
+                  {% else %}<span style="color:var(--text-muted);">—</span>{% endif %}
                 </td>
-                <td>{{ opp.proposal_manager or '—' }}</td>
+                <td style="color:var(--text-secondary);font-size:0.82rem;">{{ opp.proposal_manager or '—' }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="11" class="text-muted" style="text-align:center;">No opportunities yet. Click "+ New Opportunity" to create one.</td></tr>
+            <tr><td colspan="12" style="text-align:center;padding:1.5rem;color:var(--text-muted);">No opportunities yet. Click "+ New Opportunity" to create one.</td></tr>
             {% endfor %}
         </tbody>
     </table>
+    <div style="padding:8px 12px;font-size:0.75rem;color:var(--text-muted);border-top:1px solid var(--border-color);" id="opp-count">
+        Showing {{ opportunities | length }} rows
+    </div>
 </div>
+<script>
+function filterOpps(q) {
+    q = q.toLowerCase();
+    var rows = document.querySelectorAll('#opp-table tbody .opp-row');
+    var count = 0;
+    rows.forEach(function(r) {
+        var match = r.textContent.toLowerCase().includes(q);
+        r.style.display = match ? '' : 'none';
+        if (match) count++;
+    });
+    document.getElementById('opp-count').textContent = 'Showing ' + count + ' rows';
+}
+</script>
 
 <!-- Create Opportunity Modal -->
 <div id="create-opp-modal" class="modal-overlay" style="display:none;">

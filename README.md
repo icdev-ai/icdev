@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.28-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.29-blue" alt="Version">
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
   <img src="https://img.shields.io/badge/tools-530%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/agents-15-red" alt="Agents">
@@ -14,6 +14,26 @@
 # ICDEV™ — Intelligent Certified Development Platform
 
 **A system that builds systems.**
+
+## What's New in 1.2.29 — AI-ify Posture Engine, DIC Intelligence Hub & Proposals V&V
+
+- **AI-ify Compliance Posture Engine** — Full posture scoring for the AI-ify canvas at `/ai-ify/posture`. Real undercount bug fixed: AI-ify score raised from B → A/99; Agentic AI posture raised from C/78.8 → B/84.7 after hardening two weak designs (Autonomous Coder, Customer Service Agent) and assessing the AI Security Monitor. Both canvases now wired into the `/compliance` hub.
+- **Document Intelligence Canvas (DIC) — Intelligence Hub** — Collaboration hub, freshness engine, document explorer, and HITL handoff workflow shipped as a cohesive phase. `dic_doc_freshness`, `dic_handoff_sessions`, and `dic_handoff_items` tables added. Full BDD test coverage via E2E Behave scenarios.
+- **Proposals WriteGuard V&V Pipeline** — Section-level V&V gate now runs before any proposal section is finalized. Draft rendering on section detail pages (`/proposals/<id>/sections/<sid>`) shows the WriteGuard score, compliance flags, and confidence band inline.
+- **GovCon DHS Proposal Seeding** — 3 DHS solicitations seeded with ICDEV-branded proposal content; `pWin` endpoints and `GOVCON_WRITE_ROLES` synced to the `icdev/` mirror package.
+- **CPMP Contract Modifications** — `cpmp_contract_mods` table added with request/approval workflow for the Contract & Program Management Portfolio canvas.
+- **IQE Security ZIG Queries** — New seed query library at `context/iqe/queries/security/zig_queries.iqe` covering NSA Zero-Incident Goals pillar coverage, unassessed controls, and remediation priority queues.
+- **IQE Data Mapping Queries** — Three new IQE query files for the Data canvas: `field_mappings_high_conf_pending.iqe`, `field_mappings_needs_review.iqe`, `mapping_sessions_pending.iqe`. Data IQE adapter updated to register these collections.
+- **Security Canvas Posture & Artifacts** — ZIG posture view, compliance artifacts page, and security canvas navigation updated with richer data bindings and classification markings.
+- **AIForge IRAD Diagrams** — High-level concept (`aiforge_highlevel_concept.mmd`), solution overview (`aiforge_solution_ov1.mmd`), and three progressive draw.io architecture diagrams committed under `docs/irad/`.
+- **Kanban Bulk-Promote UI** — Gated bulk-promote action for suggested cards; JS syntax regression fixed for the promote endpoint.
+- **Cross-platform path fix** — `validated_commit.py` now resolves `BASE_DIR` to the main worktree via `git rev-parse --show-toplevel`, eliminating path errors in nested worktrees.
+- **Gap Detector scan scope** — `gap_detector.py` now scans the `icdev/` package tree for `CREATE TABLE` statements, resolving the `aac_scans` false-orphan alert.
+- **Ruff lint clean** — 14 Ruff lint errors resolved; CI passing.
+
+---
+
+
 
 ICDEV™ is an AI-powered meta-builder that generates complete, autonomous applications — each with its own agent architecture, compliance automation, testing pipeline, and CI/CD integration. Describe what you need in plain English. Get an ATO-ready system with 42 compliance framework mappings, 15 coordinating AI agents, and every artifact you need for Authority to Operate.
 

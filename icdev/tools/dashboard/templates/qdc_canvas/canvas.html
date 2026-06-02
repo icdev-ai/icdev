@@ -165,7 +165,10 @@
   <div class="dc-right-panel" id="dc-right-panel" style="width:0;min-width:0;overflow:hidden;background:#0a1628;border-left:1px solid #1e3a6e;transition:width 0.2s,min-width 0.2s;">
     <div class="dc-right-panel-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #1e3a6e;">
       <span id="dc-panel-title" style="font-size:14px;font-weight:600;color:#2196f3;">Results</span>
-      <button onclick="closeRightPanel()" style="background:none;border:none;color:#7a8cb0;font-size:16px;cursor:pointer;padding:2px 6px;" title="Close panel">&times;</button>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <button id="dc-right-panel-toggle" class="dc-right-panel-toggle" onclick="toggleRightPanel()" title="Collapse panel">&#9664;</button>
+        <button class="dc-close-btn" onclick="closeRightPanel()" style="background:none;border:none;color:#7a8cb0;font-size:16px;cursor:pointer;padding:2px 6px;" title="Close panel">&times;</button>
+      </div>
     </div>
     <div class="dc-right-panel-body" id="dc-panel-body" style="padding:12px;overflow-y:auto;height:calc(100% - 44px);color:#eaeaea;font-size:13px;">
     </div>
@@ -183,6 +186,14 @@
 .dc-palette-header.open .dc-chevron { transform: rotate(180deg); }
 .dc-toolbar button:hover { opacity: 0.85; }
 .dc-right-panel.open { width: 360px !important; min-width: 360px !important; }
+/* Right panel collapse-to-icon */
+.dc-right-panel-toggle { background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:13px;padding:2px 5px;line-height:1;transition:color 0.15s; }
+.dc-right-panel-toggle:hover { color:#2196f3; }
+.dc-right-panel.open.collapsed { width:34px !important;min-width:34px !important; }
+.dc-right-panel.open.collapsed .dc-right-panel-body { display:none !important; }
+.dc-right-panel.open.collapsed .dc-right-panel-header { flex-direction:column;padding:8px 0;justify-content:flex-start;align-items:center;gap:8px;border-bottom:none; }
+.dc-right-panel.open.collapsed #dc-panel-title,
+.dc-right-panel.open.collapsed .dc-close-btn { display:none; }
 
 /* Scrollbar styling */
 .dc-sidebar::-webkit-scrollbar,
@@ -450,7 +461,17 @@
   };
 
   window.closeRightPanel = function() {
-    document.getElementById('dc-right-panel').classList.remove('open');
+    var panel = document.getElementById('dc-right-panel');
+    panel.classList.remove('open', 'collapsed');
+    var btn = document.getElementById('dc-right-panel-toggle');
+    if (btn) btn.innerHTML = '&#9664;';
+  };
+
+  window.toggleRightPanel = function() {
+    var panel = document.getElementById('dc-right-panel');
+    var btn = document.getElementById('dc-right-panel-toggle');
+    var isCollapsed = panel.classList.toggle('collapsed');
+    if (btn) btn.innerHTML = isCollapsed ? '&#9654;' : '&#9664;';
   };
 
   // ── Render helpers ────────────────────────────────────────────
@@ -722,6 +743,12 @@
     if (menu && menu.style.display !== 'none' && !e.target.closest('[onclick*="toggleExportMenu"]') && !e.target.closest('#export-menu')) {
       menu.style.display = 'none';
     }
+  });
+
+  // ── Right panel toggle initialization ─────────────────────────
+  document.addEventListener('DOMContentLoaded', function() {
+    var btn = document.getElementById('dc-right-panel-toggle');
+    if (btn) btn.innerHTML = '&#9664;';
   });
 
 })();

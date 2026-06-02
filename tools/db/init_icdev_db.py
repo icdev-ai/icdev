@@ -7242,7 +7242,7 @@ CREATE TABLE IF NOT EXISTS wg_glossary (
     id TEXT PRIMARY KEY,
     term TEXT NOT NULL,
     term_type TEXT NOT NULL CHECK(term_type IN (
-        'acronym','preferred','deprecated','banned','custom_spell'
+        'acronym','preferred','deprecated','banned','custom_spell','required'
     )),
     expansion TEXT NOT NULL DEFAULT '',      -- full form for acronyms
     replacement TEXT NOT NULL DEFAULT '',    -- what to use instead (deprecated/banned)
@@ -7268,6 +7268,21 @@ CREATE INDEX IF NOT EXISTS idx_wg_glossary_type   ON wg_glossary(term_type);
 CREATE INDEX IF NOT EXISTS idx_wg_glossary_scope  ON wg_glossary(scope, scope_id);
 CREATE INDEX IF NOT EXISTS idx_wg_glossary_domain ON wg_glossary(domain);
 CREATE INDEX IF NOT EXISTS idx_wg_glossary_active ON wg_glossary(is_active);
+
+-- 7a. Proposal taxonomy — customer-specific topic trees (D-WG-14)
+CREATE TABLE IF NOT EXISTS proposal_taxonomy (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    parent_id TEXT REFERENCES proposal_taxonomy(id),
+    label TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    weight REAL NOT NULL DEFAULT 1.0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_prop_tax_opp ON proposal_taxonomy(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_prop_tax_parent ON proposal_taxonomy(parent_id);
 
 -- 8. Style profiles — per-user/project writing style snapshots (D-WG-10b)
 CREATE TABLE IF NOT EXISTS wg_style_profiles (
@@ -10853,6 +10868,53 @@ def init_db(db_path=None):
             conn.execute(sql)
         except sqlite3.OperationalError:
             pass
+
+    # D-WG-14: Migrate wg_glossary CHECK constraint to include 'required'
+    try:
+        _cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='wg_glossary'")
+        _row = _cur.fetchone()
+        if _row and _row[0] and "'required'" not in _row[0]:
+            conn.execute("BEGIN TRANSACTION")
+            conn.execute("""
+                CREATE TABLE wg_glossary_new (
+                    id TEXT PRIMARY KEY,
+                    term TEXT NOT NULL,
+                    term_type TEXT NOT NULL CHECK(term_type IN (
+                        'acronym','preferred','deprecated','banned','custom_spell','required'
+                    )),
+                    expansion TEXT NOT NULL DEFAULT '',
+                    replacement TEXT NOT NULL DEFAULT '',
+                    definition TEXT NOT NULL DEFAULT '',
+                    domain TEXT NOT NULL DEFAULT 'general'
+                        CHECK(domain IN ('general','far','nist','cyber','project')),
+                    scope TEXT NOT NULL DEFAULT 'platform'
+                        CHECK(scope IN ('platform','tenant','program','project','user')),
+                    scope_id TEXT NOT NULL DEFAULT '',
+                    case_sensitive INTEGER NOT NULL DEFAULT 1,
+                    enforcement TEXT NOT NULL DEFAULT 'suggest'
+                        CHECK(enforcement IN ('suggest','warn','block')),
+                    source TEXT NOT NULL DEFAULT 'admin'
+                        CHECK(source IN ('builtin','admin','user','import:far','import:nist','import:cui')),
+                    approved_by TEXT NOT NULL DEFAULT '',
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    classification TEXT NOT NULL DEFAULT 'CUI'
+                )
+            """)
+            conn.execute("INSERT INTO wg_glossary_new SELECT * FROM wg_glossary")
+            conn.execute("DROP TABLE wg_glossary")
+            conn.execute("ALTER TABLE wg_glossary_new RENAME TO wg_glossary")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_wg_glossary_term ON wg_glossary(term)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_wg_glossary_type ON wg_glossary(term_type)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_wg_glossary_scope ON wg_glossary(scope, scope_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_wg_glossary_domain ON wg_glossary(domain)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_wg_glossary_active ON wg_glossary(is_active)")
+            conn.execute("COMMIT")
+    except Exception as _wg_exc:
+        # If migration fails (e.g., foreign keys), continue — schema still valid for new installs
+        print(f"Note: wg_glossary migration skipped ({_wg_exc})")
+
     conn.commit()
     conn.close()
     print(f"ICDEV™ database initialized at {path}")

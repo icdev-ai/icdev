@@ -883,6 +883,45 @@ scheduling:
     timezone: UTC
   scan_timeout_seconds: 300
 
+# AI Data Mapping domain — visual schema mapping, AI field suggestions, ETL transformation
+data_mapping:
+  name: "AI data mapping"
+  g2_category_url: "https://www.g2.com/categories/data-integration"
+  capterra_category_url: "https://www.capterra.com/data-integration-software/"
+  trustradius_category_url: "https://www.trustradius.com/data-integration"
+  producthunt_topic: "data-integration"
+  keywords:
+    - data mapping
+    - AI data mapping
+    - schema mapping
+    - field mapping
+    - ETL mapping
+    - data transformation
+    - source to target mapping
+    - mapping tool
+    - MapForce
+    - Altova MapForce
+    - Adeptia
+    - MuleSoft DataWeave
+    - Talend data mapper
+    - Informatica mapping
+    - data integration platform
+    - drag and drop mapping
+    - visual mapping
+    - schema matching
+    - automated field mapping
+    - AI schema matching
+    - semantic field mapping
+    - data wrangling
+    - data preparation
+    - column mapping
+    - field transformation
+    - crosswalk mapping
+    - schema alignment
+    - data pipeline mapping
+    - XSLT mapping
+    - SQL transformation
+
 # =========================================================================
 # Audit & Governance
 # =========================================================================
