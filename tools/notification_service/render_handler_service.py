@@ -1135,6 +1135,62 @@ def render_and_notify_intake_session_summary(session_id: str, recipient: str, ai
         conn.close()
 
 
+def render_and_notify_data_mapping_run(run_id: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch AI data mapping run results, render mapping report, and notify the data ops lead.
+
+    aiify-opp-179: extends the render-notify chain to cover AI-assisted data
+    field mapping runs so data ops leads receive a grounded LLM narrative
+    alongside the deterministic mapping report rendered from data_mapping_runs,
+    data_mapping_field_matches, and data_mapping_schemas.
+    """
+    conn = get_connection()
+    try:
+        run = conn.execute(
+            "SELECT id, source_schema, target_schema, status, match_count, created_at "
+            "FROM data_mapping_runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        matches = conn.execute(
+            "SELECT source_field, target_field, confidence, match_type "
+            "FROM data_mapping_field_matches WHERE run_id = ? "
+            "ORDER BY confidence DESC LIMIT 20", (run_id,)
+        ).fetchall()
+        schemas = conn.execute(
+            "SELECT schema_name, schema_type, field_count "
+            "FROM data_mapping_schemas WHERE run_id = ? ORDER BY schema_type", (run_id,)
+        ).fetchall()
+        high_confidence_count = sum(
+            1 for m in matches if float((m or {}).get("confidence", 0) or 0) >= 0.85
+        )
+        body = render(
+            "data_mapping_run.html",
+            run=run,
+            matches=matches,
+            schemas=schemas,
+        )
+        narrative = _ai_render_narrative("AI data mapping run render notification", {
+            "run_id": run_id,
+            "source_schema": (run or {}).get("source_schema", "unknown"),
+            "target_schema": (run or {}).get("target_schema", "unknown"),
+            "run_status": (run or {}).get("status", "unknown"),
+            "match_count": int((run or {}).get("match_count", 0) or 0),
+            "high_confidence_match_count": high_confidence_count,
+            "schema_count": len(schemas),
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="AI Data Mapping Run Report", html=body)
+        payload = {"run_id": run_id, "match_count": int((run or {}).get("match_count", 0) or 0)}
+        if narrative:
+            payload["narrative"] = narrative
+        emit("data_mapping.run_notified", payload)
+        return {
+            "status": "sent",
+            "run_id": run_id,
+            "match_count": int((run or {}).get("match_count", 0) or 0),
+            "narrative": narrative,
+        }
+    finally:
+        conn.close()
+
+
 def render_and_notify_simulation_coa_result(run_id: str, recipient: str, ai_narrative: bool = False) -> dict:
     """Fetch Digital Program Twin simulation COA results, render report, and notify program lead.
 
