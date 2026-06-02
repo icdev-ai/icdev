@@ -610,6 +610,149 @@ def deliver_aiify_roadmap_report(
         conn.close()
 
 
+def deliver_aiify_scan_report(
+    scan_id: int,
+    recipients: Iterable[str],
+    channels: Iterable[str],
+    ai_narrative: bool = False,
+) -> dict:
+    """Query AI-ify scan findings, render report, and deliver to stakeholders.
+
+    Fetches the scan record, aggregates opportunity stats by pattern type and
+    module, and renders a structured scan findings report; delivers via all
+    requested channels.
+
+    When ``ai_narrative`` is True, additionally synthesizes a short LLM
+    executive summary of the scan findings and recommended next steps
+    (returned under ``narrative``). The deterministic templated report remains
+    the authoritative payload; the summary is best-effort and is ``None`` when
+    the LLM is unavailable (air-gap, no credentials, network failure).
+    """
+    conn = get_connection()
+    try:
+        # --- DB: fetch scan metadata ---
+        scan_row = conn.execute(
+            "SELECT scan_id, overall_ai_readiness, status, input_ref, created_at "
+            "FROM aiify_scans WHERE scan_id = ?",
+            (scan_id,),
+        ).fetchone()
+
+        if not scan_row:
+            rendered = f"AI-ify scan {scan_id} not found. Run icdev-secure to generate."
+            return {"status": "no_data", "rendered": rendered}
+
+        # --- DB: opportunity pattern breakdown ---
+        pattern_rows = conn.execute(
+            "SELECT o.pattern_type, COUNT(*) as opp_count, "
+            "AVG(s.composite_score) as avg_score "
+            "FROM aiify_opportunities o "
+            "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
+            "WHERE o.scan_id = ? GROUP BY o.pattern_type ORDER BY opp_count DESC",
+            (scan_id,),
+        ).fetchall()
+
+        # --- DB: top modules by opportunity density ---
+        module_rows = conn.execute(
+            "SELECT o.module_path, COUNT(*) as opp_count "
+            "FROM aiify_opportunities o "
+            "WHERE o.scan_id = ? GROUP BY o.module_path "
+            "ORDER BY opp_count DESC LIMIT 10",
+            (scan_id,),
+        ).fetchall()
+
+        # --- DB: highest-value opportunities ---
+        top_opps = conn.execute(
+            "SELECT o.function_name, o.pattern_type, o.module_path, s.composite_score "
+            "FROM aiify_opportunities o "
+            "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
+            "WHERE o.scan_id = ? ORDER BY s.composite_score DESC LIMIT 5",
+            (scan_id,),
+        ).fetchall()
+
+        readiness = round(float(scan_row["overall_ai_readiness"] or 0), 1)
+        total_opps = sum(int(p["opp_count"]) for p in pattern_rows)
+        avg_composite = round(
+            sum(float(p["avg_score"] or 0) for p in pattern_rows) / max(len(pattern_rows), 1), 3
+        )
+
+        vars_ = {
+            "scan_id": scan_id,
+            "readiness": readiness,
+            "total_opportunities": total_opps,
+            "pattern_count": len(pattern_rows),
+            "top_pattern": pattern_rows[0]["pattern_type"] if pattern_rows else "none",
+            "avg_composite_score": avg_composite,
+            "scan_status": scan_row["status"] or "unknown",
+            "input_ref": scan_row["input_ref"] or "",
+            "created_at": scan_row["created_at"] or _now_iso(),
+        }
+
+        rendered = (
+            f"AI-ify Scan Report: scan-{scan_id}\n"
+            f"AI Readiness: {readiness}/100 | Opportunities: {total_opps}\n"
+            f"Patterns: {len(pattern_rows)} | Top: {vars_['top_pattern']} | Avg score: {avg_composite}\n"
+            f"Input: {vars_['input_ref']} | Status: {vars_['scan_status']}"
+        )
+        rendered_html = render_template(
+            "reports/aiify_scan.html",
+            scan=scan_row,
+            patterns=pattern_rows,
+            modules=module_rows,
+            top_opps=top_opps,
+            readiness=readiness,
+        )
+
+        # --- AI (optional): synthesize executive summary; None if unavailable ---
+        narrative = _ai_report_narrative(
+            "AI-ify scan findings report", vars_
+        ) if ai_narrative else None
+
+        # --- Deliver ---
+        receipts = {}
+        for recipient in recipients:
+            sendmail(
+                to=recipient,
+                subject=f"[ICDEV] AI-ify Scan Report — scan-{scan_id} ({readiness}/100 readiness)",
+                html=rendered_html,
+            )
+            receipts[f"email:{recipient}"] = "sent"
+
+        for ch in channels:
+            if ch == "audit":
+                conn.execute(
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('aiify_scan_report', ?, 'report_delivered', 'system', ?)",
+                    (str(scan_id), rendered),
+                )
+                conn.commit()
+                receipts["audit"] = "inserted"
+            elif ch in ("slack", "teams", "webhook"):
+                payload = {
+                    "scan_id": scan_id,
+                    "readiness": readiness,
+                    "total_opportunities": total_opps,
+                }
+                if narrative:
+                    payload["narrative"] = narrative
+                publish(ch, payload)
+                receipts[ch] = "published"
+            else:
+                notify(ch, rendered)
+                receipts[ch] = "notified"
+
+        return {
+            "status": "delivered",
+            "scan_id": scan_id,
+            "readiness": readiness,
+            "total_opportunities": total_opps,
+            "rendered": rendered,
+            "narrative": narrative,
+            "receipts": receipts,
+        }
+    finally:
+        conn.close()
+
+
 def _summarise_findings(findings_json: str | None) -> str:
     if not findings_json:
         return "none"
