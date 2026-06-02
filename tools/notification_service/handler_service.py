@@ -354,6 +354,57 @@ def handle_zig_pillar_handler(pillar_slug: str, recipient: str, ai_narrative: bo
         conn.close()
 
 
+def handle_aiify_opportunity_handler(
+    opportunity_id: int, scan_id: str, recipient: str, ai_narrative: bool = False
+) -> dict:
+    """Fetch AI-ify opportunity details and deliver triage notification.
+
+    Per aiify-opp-5907: adds a db→render→notify chain for individual AI-ify
+    opportunities so developers receive a grounded narrative describing which
+    pattern was found, its composite score, and the recommended next action.
+    """
+    conn = get_connection()
+    try:
+        opportunity = conn.execute(
+            "SELECT opportunity_id, function_name, pattern_type, module_path "
+            "FROM aiify_opportunities WHERE opportunity_id = ? AND scan_id = ?",
+            (opportunity_id, scan_id),
+        ).fetchone()
+        scores = conn.execute(
+            "SELECT composite_score, value_score, feasibility_score, risk_score "
+            "FROM aiify_scores WHERE opportunity_id = ?", (opportunity_id,)
+        ).fetchone()
+        roadmap = conn.execute(
+            "SELECT roadmap_id, phase FROM aiify_roadmaps r "
+            "JOIN aiify_roadmap_items ri ON ri.roadmap_id = r.roadmap_id "
+            "WHERE ri.opportunity_id = ? LIMIT 1", (opportunity_id,)
+        ).fetchone()
+        rendered = render_template(
+            "handlers/aiify_opportunity.html",
+            opportunity=opportunity, scores=scores, roadmap=roadmap
+        )
+        narrative = _ai_handler_narrative("AI-ify opportunity triage notification", {
+            "opportunity_id": opportunity_id,
+            "function_name": (opportunity or {}).get("function_name", "unknown"),
+            "pattern_type": (opportunity or {}).get("pattern_type", "unknown"),
+            "module_path": (opportunity or {}).get("module_path", "unknown"),
+            "composite_score": round(float((scores or {}).get("composite_score", 0) or 0), 3),
+            "value_score": round(float((scores or {}).get("value_score", 0) or 0), 3),
+            "feasibility_score": round(float((scores or {}).get("feasibility_score", 0) or 0), 3),
+            "risk_score": round(float((scores or {}).get("risk_score", 0) or 0), 3),
+            "roadmap_id": (roadmap or {}).get("roadmap_id", "none"),
+            "phase": (roadmap or {}).get("phase", "unscheduled"),
+        }) if ai_narrative else None
+        send(to=recipient, subject="AI-ify Opportunity Detected", body=rendered)
+        payload = {"opportunity_id": opportunity_id, "scan_id": scan_id}
+        if narrative:
+            payload["narrative"] = narrative
+        emit("aiify.opportunity_notified", payload)
+        return {"status": "sent", "opportunity_id": opportunity_id, "narrative": narrative}
+    finally:
+        conn.close()
+
+
 def handle_agent_incident_handler(
     agent_id: str, incident_type: str, recipient: str, ai_narrative: bool = False
 ) -> dict:

@@ -440,3 +440,84 @@ def test_zig_pillar_handler_no_narrative_by_default(monkeypatch):
 
     assert result["narrative"] is None
     assert result["status"] == "sent"
+
+
+# ---------------------------------------------------------------------------
+# Tests for handle_aiify_opportunity_handler (aiify-opp-5907)
+# ---------------------------------------------------------------------------
+
+def test_aiify_opportunity_handler_narrative_attached(monkeypatch):
+    """handle_aiify_opportunity_handler attaches narrative when LLM is available."""
+    opp_row = {
+        "opportunity_id": 5907, "function_name": "db_render_notify_chain",
+        "pattern_type": "db_render_notify_chain",
+        "module_path": "tools/notification_service/handler_service.py",
+    }
+    scores_row = {"composite_score": 0.759, "value_score": 0.882, "feasibility_score": 0.82, "risk_score": 0.625}
+    roadmap_row = {"roadmap_id": "rm-2b005631fb", "phase": "Phase 1 — Quick Wins"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[opp_row, scores_row, roadmap_row])
+    _fake_router(monkeypatch, content="High-value AI-ify opportunity found; implement llm_generation pattern in the handler service to enrich notifications.")
+
+    result = handler_service.handle_aiify_opportunity_handler(5907, "scan-40", "dev@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["opportunity_id"] == 5907
+    assert result["narrative"] == "High-value AI-ify opportunity found; implement llm_generation pattern in the handler service to enrich notifications."
+
+
+def test_aiify_opportunity_handler_no_narrative_by_default(monkeypatch):
+    """handle_aiify_opportunity_handler returns narrative=None when ai_narrative=False."""
+    opp_row = {
+        "opportunity_id": 5800, "function_name": "handle_task_status",
+        "pattern_type": "db_render_notify_chain",
+        "module_path": "tools/notification_service/handler_service.py",
+    }
+    scores_row = {"composite_score": 0.71, "value_score": 0.80, "feasibility_score": 0.75, "risk_score": 0.60}
+    roadmap_row = None
+    _fake_handler_conn(monkeypatch, rows_by_call=[opp_row, scores_row, roadmap_row])
+
+    result = handler_service.handle_aiify_opportunity_handler(5800, "scan-38", "ops@example.com")
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+    assert result["opportunity_id"] == 5800
+
+
+def test_aiify_opportunity_handler_narrative_none_on_llm_failure(monkeypatch):
+    """Notification ships even when the LLM raises for the AI-ify opportunity handler."""
+    opp_row = {
+        "opportunity_id": 5501, "function_name": "unknown",
+        "pattern_type": "string_template_rendering",
+        "module_path": "tools/alert_service.py",
+    }
+    scores_row = {"composite_score": 0.65, "value_score": 0.70, "feasibility_score": 0.80, "risk_score": 0.50}
+    roadmap_row = {"roadmap_id": "rm-abc123", "phase": "Phase 2"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[opp_row, scores_row, roadmap_row])
+    _fake_router(monkeypatch, raises=RuntimeError("llm unavailable"))
+
+    result = handler_service.handle_aiify_opportunity_handler(5501, "scan-35", "dev@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_aiify_opportunity_handler_facts_include_scores(monkeypatch):
+    """The narrative prompt must include all four score dimensions for grounding."""
+    opp_row = {
+        "opportunity_id": 9001, "function_name": "compute_digest",
+        "pattern_type": "db_render_notify_chain",
+        "module_path": "tools/digest_service.py",
+    }
+    scores_row = {"composite_score": 0.80, "value_score": 0.90, "feasibility_score": 0.85, "risk_score": 0.70}
+    roadmap_row = {"roadmap_id": "rm-xyz", "phase": "Phase 1 — Quick Wins"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[opp_row, scores_row, roadmap_row])
+    captured = _fake_router(monkeypatch, content="Grounded narrative text.")
+
+    handler_service.handle_aiify_opportunity_handler(9001, "scan-42", "lead@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "composite_score" in user_msg
+    assert "value_score" in user_msg
+    assert "feasibility_score" in user_msg
+    assert "risk_score" in user_msg
+    assert "pattern_type" in user_msg
