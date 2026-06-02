@@ -225,3 +225,125 @@ def test_send_platform_event_digest_graceful_degradation_on_llm_failure(monkeypa
 
     assert result["status"] == "sent"
     assert result["narrative"] is None
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: notify_aiify_opportunity_event (aiify-opp-5792)
+# ---------------------------------------------------------------------------
+
+def _stub_aiify_db(monkeypatch):
+    """Monkeypatch get_connection to return an in-memory SQLite DB with the
+    tables notify_aiify_opportunity_event queries (kanban_tasks, audit_trail)."""
+    import sqlite3
+
+    class _FakeConn:
+        def __init__(self):
+            self._db = sqlite3.connect(":memory:")
+            self._db.row_factory = sqlite3.Row
+            self._db.execute(
+                "CREATE TABLE kanban_tasks "
+                "(id TEXT, title TEXT, status TEXT, actor TEXT, attempts INTEGER, "
+                "created_at TEXT, updated_at TEXT)"
+            )
+            self._db.execute(
+                "INSERT INTO kanban_tasks VALUES "
+                "('aiify-opp-5792', 'LLM narrative for event_service', 'in_progress', "
+                "'kanban-scheduler', 1, '2026-06-02T00:00:00', '2026-06-02T01:00:00')"
+            )
+            self._db.execute(
+                "CREATE TABLE audit_trail "
+                "(resource_type TEXT, resource_id TEXT, event TEXT, actor TEXT, "
+                "detail TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+            )
+            self._db.commit()
+
+        def execute(self, sql, params=()):
+            return self._db.execute(sql, params)
+
+        def commit(self):
+            self._db.commit()
+
+        def close(self):
+            self._db.close()
+
+    monkeypatch.setattr(event_service, "get_connection", _FakeConn)
+    monkeypatch.setattr(event_service, "publish", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "emit", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "notify", lambda *a, **kw: None)
+
+
+def test_notify_aiify_opportunity_event_no_narrative_by_default(monkeypatch):
+    """When ai_narrative is omitted, narrative must be None and delivery succeeds."""
+    _stub_aiify_db(monkeypatch)
+
+    result = event_service.notify_aiify_opportunity_event(
+        opportunity_id=5792,
+        event_type="opportunity_dispatched",
+        channels=["slack"],
+        extra={
+            "module_path": "tools/notification_service/event_service.py",
+            "function_name": "<unknown>",
+            "pattern_type": "db_render_notify_chain",
+            "ai_paradigm": "llm_generation",
+            "composite_score": 0.7769,
+        },
+    )
+
+    assert result["status"] == "delivered"
+    assert result["opportunity_id"] == 5792
+    assert result["event_type"] == "opportunity_dispatched"
+    assert result["narrative"] is None
+    assert "slack" in result["receipts"]
+
+
+def test_notify_aiify_opportunity_event_attaches_narrative_when_enabled(monkeypatch):
+    """With ai_narrative=True and a functioning LLM, narrative is attached."""
+    _stub_aiify_db(monkeypatch)
+    _fake_router(
+        monkeypatch,
+        content="Opportunity 5792 detected a db→render→notify chain in event_service; apply LLM narrative immediately.",
+    )
+
+    result = event_service.notify_aiify_opportunity_event(
+        opportunity_id=5792,
+        event_type="opportunity_detected",
+        channels=["console"],
+        extra={
+            "module_path": "tools/notification_service/event_service.py",
+            "function_name": "<unknown>",
+            "pattern_type": "db_render_notify_chain",
+            "ai_paradigm": "llm_generation",
+            "composite_score": 0.7769,
+        },
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] == (
+        "Opportunity 5792 detected a db→render→notify chain in event_service; "
+        "apply LLM narrative immediately."
+    )
+
+
+def test_notify_aiify_opportunity_event_graceful_degradation_on_llm_failure(monkeypatch):
+    """If the LLM raises, narrative is None but the notification is still delivered."""
+    _stub_aiify_db(monkeypatch)
+    _fake_router(monkeypatch, raises=RuntimeError("LLM unavailable"))
+
+    result = event_service.notify_aiify_opportunity_event(
+        opportunity_id=5792,
+        event_type="opportunity_completed",
+        channels=["webhook"],
+        extra={
+            "module_path": "tools/notification_service/event_service.py",
+            "function_name": "<unknown>",
+            "pattern_type": "db_render_notify_chain",
+            "ai_paradigm": "llm_generation",
+            "composite_score": 0.7769,
+        },
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] is None
+    assert "webhook" in result["receipts"]
