@@ -121,13 +121,61 @@ _EXTENDED_TIMEOUT_PATTERNS = [
 ]
 
 
+def _nlp_extract_timeout_hint(desc: str) -> Optional[int]:
+    """Use LLM (Haiku) to extract a timeout in seconds from natural language.
+
+    Augments the structured ``timeout_hint:NNN`` regex so human-written phrases
+    like "allow 25 minutes" or "needs about 1 hour" are also understood.
+
+    Returns seconds (clamped 60–3600) or None.  Never raises — any failure
+    falls through silently so existing heuristics remain in control.
+    """
+    if not desc or len(desc) < 20:
+        return None
+    try:
+        import json as _json
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        req = LLMRequest(
+            system_prompt=(
+                "Extract a timeout duration from the task description. "
+                "If the text states a specific time budget (e.g. '25 minutes', "
+                "'allow 30 min', 'needs 1 hour', 'takes about 20 minutes'), "
+                "return JSON: {\"timeout_seconds\": <integer>}. "
+                "If no timeout intent is found, return JSON: {\"timeout_seconds\": null}. "
+                "Return ONLY the JSON object, nothing else."
+            ),
+            messages=[{"role": "user", "content": desc[:500]}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=32,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("timeout_extraction", req)
+        if resp and resp.content:
+            raw = resp.content.strip()
+            # Strip markdown fences if present
+            import re as _re2
+            raw = _re2.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=_re2.MULTILINE).strip()
+            data = _json.loads(raw)
+            secs = data.get("timeout_seconds")
+            if secs is not None:
+                return min(3600, max(60, int(secs)))
+    except Exception:
+        pass
+    return None
+
+
 def _get_task_timeout(task_id: str) -> int:
     """Return per-task timeout budget in seconds.
 
     pytest / E2E suite / regression tasks get MAX_EXECUTION_SECONDS_PYTEST (40 min);
     codelens / coherence / single-E2E tasks get MAX_EXECUTION_SECONDS_SCAN (20 min);
     everything else gets MAX_EXECUTION_SECONDS (15 min).
-    Also checks the task description for a TIMEOUT_HINT:NNNs directive.
+    Also checks the task description for a TIMEOUT_HINT:NNNs directive or
+    natural language timeout hints via NLP extraction.
     """
     task_id_lower = task_id.lower()
     for pattern, timeout in _EXTENDED_TIMEOUT_PATTERNS:
@@ -144,10 +192,14 @@ def _get_task_timeout(task_id: str) -> int:
         d = dict(row) if row else {}
         desc = (d.get("description") or "").lower()
         task_type = (d.get("task_type") or "").lower()
-        # Explicit override always wins
+        # Explicit structured override always wins
         m = re.search(r"timeout_hint:\s*(\d+)", desc, re.IGNORECASE)
         if m:
             return min(3600, int(m.group(1)))  # cap at 1 hour
+        # NLP fallback: understand natural language timeout hints
+        nlp_secs = _nlp_extract_timeout_hint(desc)
+        if nlp_secs is not None:
+            return nlp_secs
         # PYTEST-level (40 min): full test suites, E2E suites, regression runs
         _pytest_kw = ("pytest", "regression", "full test", "test suite",
                       "e2e suite", "e2e test", "test_orchestrator")
@@ -5912,7 +5964,7 @@ def _auto_decompose_stalled_tasks() -> list:
                 processed.append(tid)
                 continue
 
-            _decompose_one_task(task)
+            _decompose_one_task(task, ai_narrative=True)
             processed.append(tid)
         except Exception as exc:
             logger.warning("auto_decompose: LLM failed for %s: %s — falling back to backlog reset", tid, exc)
@@ -6650,7 +6702,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 f"(score={_cscore}) — decomposing upfront to avoid wasted token run"
             )
             try:
-                _decompose_one_task(task)
+                _decompose_one_task(task, ai_narrative=True)
             except Exception as _pd_exc:
                 logger.warning(
                     "pre-dispatch decompose failed for %s (%s) — dispatching anyway",
