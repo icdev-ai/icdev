@@ -521,3 +521,295 @@ def test_aiify_opportunity_handler_facts_include_scores(monkeypatch):
     assert "feasibility_score" in user_msg
     assert "risk_score" in user_msg
     assert "pattern_type" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# Tests for handle_cmmc_assessment_handler (aiify-opp-5905)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Tests for handle_aiify_scan_complete_handler (aiify-opp-5946)
+# ---------------------------------------------------------------------------
+
+def test_aiify_scan_complete_handler_narrative_attached(monkeypatch):
+    """handle_aiify_scan_complete_handler attaches narrative when LLM is available."""
+    scan_row = {
+        "scan_id": "41", "input_ref": "C:/AI/ICDev", "total_files": 87,
+        "total_loc": 42000, "status": "completed", "overall_verdict": "high_value",
+        "overall_ai_readiness": "ready", "completed_at": "2026-06-02T10:00:00",
+    }
+    top_opp_rows = [
+        {"opportunity_id": 5946, "function_name": "db_render_notify_chain", "pattern_type": "db_render_notify_chain", "composite_score": 0.759},
+        {"opportunity_id": 5907, "function_name": "handle_aiify_opportunity_handler", "pattern_type": "db_render_notify_chain", "composite_score": 0.741},
+    ]
+    roadmap_row = {"roadmap_id": "rm-55fc0a0e6a", "title": "AI-ify Roadmap v41", "total_effort_days": 30}
+    score_summary_row = {"opp_count": 23, "min_score": 0.55, "max_score": 0.91, "avg_score": 0.72}
+    _fake_handler_conn(monkeypatch, rows_by_call=[scan_row, top_opp_rows, roadmap_row, score_summary_row])
+    _fake_router(monkeypatch, content="Scan 41 identified 23 AI-ify opportunities across 87 modules; prioritize Phase 1 Quick Wins to maximize near-term value.")
+
+    result = handler_service.handle_aiify_scan_complete_handler(
+        "41", "rm-55fc0a0e6a", "tech-lead@example.com", ai_narrative=True
+    )
+
+    assert result["status"] == "sent"
+    assert result["scan_id"] == "41"
+    assert result["roadmap_id"] == "rm-55fc0a0e6a"
+    assert result["narrative"] == "Scan 41 identified 23 AI-ify opportunities across 87 modules; prioritize Phase 1 Quick Wins to maximize near-term value."
+
+
+def test_aiify_scan_complete_handler_no_narrative_by_default(monkeypatch):
+    """handle_aiify_scan_complete_handler returns narrative=None when ai_narrative=False."""
+    scan_row = {
+        "scan_id": "40", "input_ref": "C:/AI/ICDev", "total_files": 75,
+        "total_loc": 38000, "status": "completed", "overall_verdict": "medium_value",
+        "overall_ai_readiness": "partial", "completed_at": "2026-06-01T09:00:00",
+    }
+    _fake_handler_conn(monkeypatch, rows_by_call=[scan_row, [], None, None])
+
+    result = handler_service.handle_aiify_scan_complete_handler("40", "rm-abc123", "ops@example.com")
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+    assert result["scan_id"] == "40"
+
+
+def test_aiify_scan_complete_handler_narrative_none_on_llm_failure(monkeypatch):
+    """Notification ships even when the LLM raises for the scan complete handler."""
+    scan_row = {
+        "scan_id": "39", "input_ref": "C:/AI/ICDev", "total_files": 60,
+        "total_loc": 28000, "status": "completed", "overall_verdict": "low_value",
+        "overall_ai_readiness": "not_ready", "completed_at": "2026-05-31T08:00:00",
+    }
+    top_opp_rows = [
+        {"opportunity_id": 5800, "function_name": "send_daily_digest", "pattern_type": "db_render_notify_chain", "composite_score": 0.68},
+    ]
+    roadmap_row = {"roadmap_id": "rm-xyz999", "title": "AI-ify Roadmap v39", "total_effort_days": 15}
+    score_summary_row = {"opp_count": 10, "min_score": 0.60, "max_score": 0.85, "avg_score": 0.68}
+    _fake_handler_conn(monkeypatch, rows_by_call=[scan_row, top_opp_rows, roadmap_row, score_summary_row])
+    _fake_router(monkeypatch, raises=RuntimeError("llm unavailable"))
+
+    result = handler_service.handle_aiify_scan_complete_handler(
+        "39", "rm-xyz999", "dev@example.com", ai_narrative=True
+    )
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_aiify_scan_complete_handler_facts_include_score_summary(monkeypatch):
+    """Narrative prompt must ground on score stats, opportunity count, and scan metadata."""
+    scan_row = {
+        "scan_id": "41", "input_ref": "C:/AI/ICDev", "total_files": 100,
+        "total_loc": 55000, "status": "completed", "overall_verdict": "high_value",
+        "overall_ai_readiness": "ready", "completed_at": "2026-06-02T11:00:00",
+    }
+    top_opp_rows = []
+    roadmap_row = {"roadmap_id": "rm-55fc0a0e6a", "title": "AI-ify Roadmap v41", "total_effort_days": 30}
+    score_summary_row = {"opp_count": 30, "min_score": 0.50, "max_score": 0.95, "avg_score": 0.78}
+    _fake_handler_conn(monkeypatch, rows_by_call=[scan_row, top_opp_rows, roadmap_row, score_summary_row])
+    captured = _fake_router(monkeypatch, content="Score range 0.5–0.95 indicates high actionability; begin with avg 0.78+ opportunities for best ROI.")
+
+    handler_service.handle_aiify_scan_complete_handler(
+        "41", "rm-55fc0a0e6a", "lead@example.com", ai_narrative=True
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "opportunity_count" in user_msg
+    assert "total_files" in user_msg
+    assert "min_composite_score" in user_msg
+    assert "max_composite_score" in user_msg
+    assert "avg_composite_score" in user_msg
+    assert "overall_verdict" in user_msg
+    assert "overall_ai_readiness" in user_msg
+
+
+def test_aiify_scan_complete_handler_narrative_none_on_null_score_summary(monkeypatch):
+    """Handler degrades cleanly when score_summary query returns None (empty scan)."""
+    scan_row = {
+        "scan_id": "38", "input_ref": "C:/AI/ICDev/tools/aiify", "total_files": 5,
+        "total_loc": 500, "status": "completed", "overall_verdict": None,
+        "overall_ai_readiness": None, "completed_at": "2026-05-30T07:00:00",
+    }
+    _fake_handler_conn(monkeypatch, rows_by_call=[scan_row, [], None, None])
+
+    result = handler_service.handle_aiify_scan_complete_handler(
+        "38", "rm-empty", "qa@example.com", ai_narrative=True
+    )
+
+    assert result["status"] == "sent"
+    assert result["scan_id"] == "38"
+
+
+def test_cmmc_assessment_handler_narrative_attached(monkeypatch):
+    """handle_cmmc_assessment_handler attaches narrative when LLM is available."""
+    assessment_row = {
+        "id": "cmmc-1", "level": 2, "overall_score": 88.5,
+        "status": "compliant", "assessed_at": "2026-06-02",
+    }
+    system_row = {"name": "ACOIC Platform", "classification": "CUI", "boundary": "IL4"}
+    gap_rows = [
+        {"practice_id": "AC.L2-3.1.1", "domain": "Access Control", "status": "not_met", "gap_description": "Least privilege not enforced on 3 accounts"},
+        {"practice_id": "AU.L2-3.3.1", "domain": "Audit", "status": "partial", "gap_description": "Audit log retention below 90 days"},
+    ]
+    _fake_handler_conn(monkeypatch, rows_by_call=[assessment_row, system_row, gap_rows])
+    _fake_router(monkeypatch, content="ACOIC Platform achieved CMMC Level 2 compliance with 2 practice gaps; resolve AC.L2-3.1.1 least-privilege finding before the next authorization review.")
+
+    result = handler_service.handle_cmmc_assessment_handler("cmmc-1", "sys-10", "isso@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["assessment_id"] == "cmmc-1"
+    assert result["system_id"] == "sys-10"
+    assert result["narrative"] == "ACOIC Platform achieved CMMC Level 2 compliance with 2 practice gaps; resolve AC.L2-3.1.1 least-privilege finding before the next authorization review."
+
+
+def test_cmmc_assessment_handler_no_narrative_by_default(monkeypatch):
+    """handle_cmmc_assessment_handler returns narrative=None when ai_narrative=False."""
+    assessment_row = {
+        "id": "cmmc-2", "level": 3, "overall_score": 72.0,
+        "status": "non_compliant", "assessed_at": "2026-06-01",
+    }
+    system_row = {"name": "SecureNet", "classification": "CUI", "boundary": "IL5"}
+    gap_rows = []
+    _fake_handler_conn(monkeypatch, rows_by_call=[assessment_row, system_row, gap_rows])
+
+    result = handler_service.handle_cmmc_assessment_handler("cmmc-2", "sys-20", "sec@example.com")
+
+    assert result["status"] == "sent"
+    assert result["narrative"] is None
+
+
+def test_cmmc_assessment_handler_narrative_none_on_llm_failure(monkeypatch):
+    """Notification ships even when the LLM raises for the CMMC assessment handler."""
+    assessment_row = {
+        "id": "cmmc-3", "level": 2, "overall_score": 91.0,
+        "status": "compliant", "assessed_at": "2026-06-02",
+    }
+    system_row = {"name": "DataMesh", "classification": "CUI", "boundary": "IL4"}
+    gap_rows = []
+    _fake_handler_conn(monkeypatch, rows_by_call=[assessment_row, system_row, gap_rows])
+    _fake_router(monkeypatch, raises=RuntimeError("llm unavailable"))
+
+    result = handler_service.handle_cmmc_assessment_handler("cmmc-3", "sys-30", "ops@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_cmmc_assessment_handler_facts_include_key_fields(monkeypatch):
+    """Narrative prompt must ground on system name, CMMC level, score, and gap count."""
+    assessment_row = {
+        "id": "cmmc-4", "level": 3, "overall_score": 79.5,
+        "status": "non_compliant", "assessed_at": "2026-06-02",
+    }
+    system_row = {"name": "LogiCore", "classification": "CUI//CTI", "boundary": "IL5"}
+    gap_rows = [
+        {"practice_id": "SC.L3-3.13.10", "domain": "System & Comms", "status": "not_met", "gap_description": "Key mgmt policy absent"},
+    ]
+    _fake_handler_conn(monkeypatch, rows_by_call=[assessment_row, system_row, gap_rows])
+    captured = _fake_router(monkeypatch, content="CMMC Level 3 non-compliant; prioritize SC.L3-3.13.10 key management remediation.")
+
+    handler_service.handle_cmmc_assessment_handler("cmmc-4", "sys-40", "lead@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "cmmc_level" in user_msg
+    assert "overall_score" in user_msg
+    assert "gap_count" in user_msg
+    assert "system_name" in user_msg
+    assert "assessment_status" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# Tests for handle_supply_chain_risk_handler (aiify-opp-5948)
+# ---------------------------------------------------------------------------
+
+def test_supply_chain_risk_handler_narrative_attached(monkeypatch):
+    """handle_supply_chain_risk_handler attaches narrative when LLM is available."""
+    sbom_row = {
+        "id": "sbom-1", "component_name": "openssl", "version": "3.0.7",
+        "vendor": "OpenSSL Foundation", "component_type": "library",
+    }
+    vuln_rows = [
+        {"cve_id": "CVE-2026-4321", "cvss_score": 9.1, "severity": "critical",
+         "affected_versions": "<=3.0.7", "fixed_version": "3.0.8"},
+        {"cve_id": "CVE-2026-1111", "cvss_score": 7.5, "severity": "high",
+         "affected_versions": "<=3.0.7", "fixed_version": "3.0.8"},
+    ]
+    risk_row = {
+        "risk_level": "critical", "exploitability": "active",
+        "patch_available": True, "last_assessed": "2026-06-02",
+    }
+    _fake_handler_conn(monkeypatch, rows_by_call=[sbom_row, vuln_rows, risk_row])
+    _fake_router(monkeypatch, content="OpenSSL 3.0.7 has a critical CVE; patch to 3.0.8 immediately and isolate affected services.")
+
+    result = handler_service.handle_supply_chain_risk_handler(
+        "sbom-1", "openssl", "sco@example.com", ai_narrative=True
+    )
+
+    assert result["status"] == "sent"
+    assert result["sbom_id"] == "sbom-1"
+    assert result["component_name"] == "openssl"
+    assert result["narrative"] == "OpenSSL 3.0.7 has a critical CVE; patch to 3.0.8 immediately and isolate affected services."
+
+
+def test_supply_chain_risk_handler_no_narrative_by_default(monkeypatch):
+    """handle_supply_chain_risk_handler returns narrative=None when ai_narrative=False."""
+    sbom_row = {
+        "id": "sbom-2", "component_name": "log4j", "version": "2.17.1",
+        "vendor": "Apache", "component_type": "library",
+    }
+    vuln_rows = []
+    risk_row = {"risk_level": "low", "exploitability": "none", "patch_available": False, "last_assessed": "2026-06-01"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[sbom_row, vuln_rows, risk_row])
+
+    result = handler_service.handle_supply_chain_risk_handler("sbom-2", "log4j", "sec@example.com")
+
+    assert result["status"] == "sent"
+    assert result["narrative"] is None
+    assert result["sbom_id"] == "sbom-2"
+
+
+def test_supply_chain_risk_handler_narrative_none_on_llm_failure(monkeypatch):
+    """Notification ships even when the LLM raises; narrative degrades to None."""
+    sbom_row = {
+        "id": "sbom-3", "component_name": "curl", "version": "8.4.0",
+        "vendor": "curl contributors", "component_type": "utility",
+    }
+    vuln_rows = [
+        {"cve_id": "CVE-2026-9999", "cvss_score": 8.0, "severity": "high",
+         "affected_versions": "<=8.4.0", "fixed_version": "8.5.0"},
+    ]
+    risk_row = {"risk_level": "high", "exploitability": "poc_available", "patch_available": True, "last_assessed": "2026-06-02"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[sbom_row, vuln_rows, risk_row])
+    _fake_router(monkeypatch, raises=RuntimeError("llm unavailable"))
+
+    result = handler_service.handle_supply_chain_risk_handler(
+        "sbom-3", "curl", "sec@example.com", ai_narrative=True
+    )
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_supply_chain_risk_handler_facts_include_key_fields(monkeypatch):
+    """Narrative prompt must ground on component, CVEs, CVSS score, and risk level."""
+    sbom_row = {
+        "id": "sbom-4", "component_name": "zlib", "version": "1.2.11",
+        "vendor": "zlib authors", "component_type": "library",
+    }
+    vuln_rows = [
+        {"cve_id": "CVE-2026-5555", "cvss_score": 7.8, "severity": "high",
+         "affected_versions": "1.2.11", "fixed_version": "1.2.13"},
+    ]
+    risk_row = {"risk_level": "high", "exploitability": "public_exploit", "patch_available": True, "last_assessed": "2026-06-02"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[sbom_row, vuln_rows, risk_row])
+    captured = _fake_router(monkeypatch, content="zlib 1.2.11 has a public exploit; upgrade to 1.2.13 and rebuild dependent containers.")
+
+    handler_service.handle_supply_chain_risk_handler("sbom-4", "zlib", "ops@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "component_name" in user_msg
+    assert "vulnerability_count" in user_msg
+    assert "top_cvss_score" in user_msg
+    assert "top_cve" in user_msg
+    assert "risk_level" in user_msg
+    assert "patch_available" in user_msg
