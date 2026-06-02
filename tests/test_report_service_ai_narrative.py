@@ -252,3 +252,164 @@ def test_scan_report_narrative_none_on_llm_failure(monkeypatch):
     )
     assert result["narrative"] is None
     assert result["status"] == "delivered"  # deterministic report still delivered
+
+
+# ---------------------------------------------------------------------------
+# deliver_aiify_opportunity_report integration tests (aiify-opp-5844)
+# ---------------------------------------------------------------------------
+
+def _fake_opp_conn(monkeypatch, *, opp_row=None, score_row=None, scan_row=None):
+    """Patch get_connection() for opportunity-level report tests."""
+    rows_by_call = [opp_row, score_row, scan_row]
+    call_counter = {"n": 0}
+
+    class _FakeCursor:
+        def __init__(self, result):
+            self._result = result
+
+        def fetchone(self):
+            return self._result
+
+        def fetchall(self):
+            return []
+
+        def execute(self, *a):
+            return self
+
+    class _FakeConn:
+        def execute(self, sql, params=()):
+            result = rows_by_call[call_counter["n"]] if call_counter["n"] < len(rows_by_call) else None
+            call_counter["n"] += 1
+            return _FakeCursor(result)
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    fake_conn = _FakeConn()
+    import tools.notification_service.report_service as rs
+    monkeypatch.setattr(rs, "get_connection", lambda: fake_conn)
+    monkeypatch.setattr(rs, "sendmail", lambda **kw: None)
+    monkeypatch.setattr(rs, "render_template", lambda *a, **kw: "<html/>")
+    monkeypatch.setattr(rs, "notify", lambda *a, **kw: None)
+    monkeypatch.setattr(rs, "publish", lambda *a, **kw: None)
+    return fake_conn
+
+
+def _make_opp_row(opportunity_id=5844, scan_id=38, roadmap_id="rm-843f22be0d"):
+    return {
+        "opportunity_id": opportunity_id,
+        "scan_id": scan_id,
+        "roadmap_id": roadmap_id,
+        "function_name": "<unknown>",
+        "module_path": "tools/notification_service/report_service.py",
+        "pattern_type": "db_render_notify_chain",
+        "ai_paradigm": "llm_generation",
+        "phase": "Phase 1 — Quick Wins",
+        "status": "open",
+        "created_at": "2026-06-02T00:00:00",
+    }
+
+
+def _make_score_row():
+    return {
+        "composite_score": 0.7769,
+        "value_score": 0.922,
+        "feasibility_score": 0.82,
+        "risk_score": 0.625,
+    }
+
+
+def _make_opp_scan_row():
+    return {"overall_ai_readiness": 78.5, "status": "complete"}
+
+
+def test_opportunity_report_no_narrative_by_default(monkeypatch):
+    """deliver_aiify_opportunity_report returns narrative=None when ai_narrative=False."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row(),
+        score_row=_make_score_row(),
+        scan_row=_make_opp_scan_row(),
+    )
+
+    result = report_service.deliver_aiify_opportunity_report(5844, ["ops@example.com"], [])
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"
+    assert result["opportunity_id"] == 5844
+    assert result["pattern_type"] == "db_render_notify_chain"
+
+
+def test_opportunity_report_composite_score_in_result(monkeypatch):
+    """composite_score must be surfaced in the return dict."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row(),
+        score_row=_make_score_row(),
+        scan_row=_make_opp_scan_row(),
+    )
+
+    result = report_service.deliver_aiify_opportunity_report(5844, [], [])
+    assert result["composite_score"] == 0.7769
+
+
+def test_opportunity_report_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row(),
+        score_row=_make_score_row(),
+        scan_row=_make_opp_scan_row(),
+    )
+    _fake_router(monkeypatch, content="High-value db_render_notify_chain; implement LLM narrative first.")
+
+    result = report_service.deliver_aiify_opportunity_report(
+        5844, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] == "High-value db_render_notify_chain; implement LLM narrative first."
+    assert result["status"] == "delivered"
+
+
+def test_opportunity_report_narrative_none_on_llm_failure(monkeypatch):
+    """deliver_aiify_opportunity_report degrades to narrative=None when LLM raises."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row(),
+        score_row=_make_score_row(),
+        scan_row=_make_opp_scan_row(),
+    )
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = report_service.deliver_aiify_opportunity_report(
+        5844, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"
+
+
+def test_opportunity_report_no_data_when_missing(monkeypatch):
+    """Returns status=no_data when the opportunity row is absent."""
+    _fake_opp_conn(monkeypatch, opp_row=None)
+
+    result = report_service.deliver_aiify_opportunity_report(9999, [], [])
+    assert result["status"] == "no_data"
+    assert "9999" in result["rendered"]
+
+
+def test_opportunity_report_rendered_contains_key_fields(monkeypatch):
+    """Rendered text must include pattern_type, ai_paradigm, phase, and scores."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row(),
+        score_row=_make_score_row(),
+        scan_row=_make_opp_scan_row(),
+    )
+
+    result = report_service.deliver_aiify_opportunity_report(5844, [], [])
+    rendered = result["rendered"]
+    assert "db_render_notify_chain" in rendered
+    assert "llm_generation" in rendered
+    assert "Phase 1" in rendered
+    assert "0.7769" in rendered
