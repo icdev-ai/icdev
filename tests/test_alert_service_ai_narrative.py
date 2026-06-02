@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5636, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742, aiify-opp-5776, aiify-opp-5780, aiify-opp-5814, aiify-opp-5816, aiify-opp-5850).
+"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5636, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742, aiify-opp-5776, aiify-opp-5780, aiify-opp-5814, aiify-opp-5816, aiify-opp-5850, aiify-opp-5926).
 
 The db -> render -> notify chains in ``tools.notification_service.alert_service``
 gained an opt-in LLM triage narrative. These tests pin the two load-bearing
@@ -848,5 +848,85 @@ def test_send_poam_reminder_narrative_absent_from_teams_payload_when_none(monkey
     alert_service.send_poam_reminder("POAM-42", "P-1", ["teams"], ai_narrative=True)
 
     assert dispatched, "dispatch() was never called for teams channel"
+    _, payload = dispatched[0]
+    assert "narrative" not in payload
+
+
+# ---------------------------------------------------------------------------
+# Tests for slack-channel narrative propagation in escalate_cat1_finding and
+# send_poam_reminder (aiify-opp-5926)
+# Both functions handle "slack" and "teams" in the same branch; these tests
+# pin that the slack variant carries the narrative through identically.
+# ---------------------------------------------------------------------------
+
+def test_escalate_cat1_narrative_in_slack_payload(monkeypatch):
+    """escalate_cat1_finding must include narrative in the slack publish() payload."""
+    published = _fake_cat1_conn_with_publish(monkeypatch)
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda kind, facts: "Patch OpenSSL immediately — CAT-I SLA is 24 hours.",
+    )
+
+    result = alert_service.escalate_cat1_finding("F-1", "P-1", ["slack"], ai_narrative=True)
+
+    assert result["narrative"] == "Patch OpenSSL immediately — CAT-I SLA is 24 hours."
+    assert published, "publish() was never called for slack channel"
+    ch, payload = published[0]
+    assert ch == "slack"
+    assert payload.get("narrative") == "Patch OpenSSL immediately — CAT-I SLA is 24 hours."
+
+
+def test_escalate_cat1_narrative_absent_from_slack_payload_when_none(monkeypatch):
+    """When narrative is None the slack publish() payload must not contain a 'narrative' key."""
+    published = _fake_cat1_conn_with_publish(monkeypatch)
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: None)
+
+    alert_service.escalate_cat1_finding("F-1", "P-1", ["slack"], ai_narrative=True)
+
+    assert published, "publish() was never called for slack channel"
+    _, payload = published[0]
+    assert "narrative" not in payload
+
+
+def test_escalate_cat1_narrative_absent_from_slack_payload_when_ai_narrative_false(monkeypatch):
+    """When ai_narrative=False the slack publish() payload must never contain a narrative key."""
+    published = _fake_cat1_conn_with_publish(monkeypatch)
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda *a: "SHOULD NOT APPEAR",
+    )
+
+    alert_service.escalate_cat1_finding("F-1", "P-1", ["slack"], ai_narrative=False)
+
+    assert published, "publish() was never called for slack channel"
+    _, payload = published[0]
+    assert "narrative" not in payload
+
+
+def test_send_poam_reminder_narrative_in_slack_payload(monkeypatch):
+    """send_poam_reminder must include narrative in the slack dispatch() payload."""
+    dispatched = _fake_poam_conn_with_dispatch(monkeypatch)
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda kind, facts: "Renew the cert within 10 days or the POA&M will breach.",
+    )
+
+    result = alert_service.send_poam_reminder("POAM-42", "P-1", ["slack"], ai_narrative=True)
+
+    assert result["narrative"] == "Renew the cert within 10 days or the POA&M will breach."
+    assert dispatched, "dispatch() was never called for slack channel"
+    ch, payload = dispatched[0]
+    assert ch == "slack"
+    assert payload.get("narrative") == "Renew the cert within 10 days or the POA&M will breach."
+
+
+def test_send_poam_reminder_narrative_absent_from_slack_payload_when_none(monkeypatch):
+    """When narrative is None the slack dispatch() payload must not contain a 'narrative' key."""
+    dispatched = _fake_poam_conn_with_dispatch(monkeypatch)
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: None)
+
+    alert_service.send_poam_reminder("POAM-42", "P-1", ["slack"], ai_narrative=True)
+
+    assert dispatched, "dispatch() was never called for slack channel"
     _, payload = dispatched[0]
     assert "narrative" not in payload
