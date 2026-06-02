@@ -1953,3 +1953,147 @@ def test_opp_181_rag_query_ships_on_no_llm(monkeypatch):
     assert result["query_ref"] == "q-opp181"
     assert result["chunk_count"] == 1
     assert result["narrative"] is None
+
+
+# ---------------------------------------------------------------------------
+# aiify-rm-c5c56-phase-183: opp-183 pinning tests
+#
+# Opportunity 183: db_render_notify_chain -> llm_generation in
+# render_handler_service.py; scan_id=2, roadmap_id="rm-c5c5642863",
+# function_name="<unknown>", scores: composite=0.7593, value=0.883,
+# feasibility=0.82, risk=0.625.
+#
+# The _ai_render_narrative helper is fully implemented; these tests pin the
+# core degradation and grounding guarantees so any future refactor is caught.
+# ---------------------------------------------------------------------------
+
+def _make_opp_183_facts():
+    return {
+        "opportunity_id": 183,
+        "scan_id": "2",
+        "roadmap_id": "rm-c5c5642863",
+        "pattern_type": "db_render_notify_chain",
+        "module_path": "tools/notification_service/render_handler_service.py",
+        "composite_score": 0.7593,
+        "value_score": 0.883,
+        "feasibility_score": 0.82,
+        "risk_score": 0.625,
+    }
+
+
+def test_opp_183_helper_returns_content_when_llm_available(monkeypatch):
+    """_ai_render_narrative returns LLM content for opp-183 representative facts."""
+    captured = _fake_router(
+        monkeypatch,
+        content=(
+            "Opportunity 183 in render_handler_service.py is a high-value "
+            "db_render_notify_chain pattern; LLM narrative is active via ai_narrative=True."
+        ),
+    )
+
+    out = rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_183_facts())
+
+    assert out == (
+        "Opportunity 183 in render_handler_service.py is a high-value "
+        "db_render_notify_chain pattern; LLM narrative is active via ai_narrative=True."
+    )
+    assert captured["function"] == "narrative_generation"
+
+
+def test_opp_183_helper_degrades_to_none_on_llm_failure(monkeypatch):
+    """_ai_render_narrative degrades to None when LLM raises for opp-183 facts."""
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    out = rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_183_facts())
+
+    assert out is None
+
+
+def test_opp_183_helper_degrades_to_none_on_empty_response(monkeypatch):
+    """_ai_render_narrative returns None when LLM returns empty string for opp-183."""
+    _fake_router(monkeypatch, content="")
+
+    out = rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_183_facts())
+
+    assert out is None
+
+
+def test_opp_183_prompt_grounded_in_facts(monkeypatch):
+    """LLM prompt for opp-183 must include the render_kind and all supplied facts."""
+    captured = _fake_router(monkeypatch, content="Narrative for opp-183.")
+
+    rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_183_facts())
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "AI-ify opportunity render notification" in user_msg
+    assert "composite_score" in user_msg
+    assert "value_score" in user_msg
+    assert "feasibility_score" in user_msg
+    assert "risk_score" in user_msg
+    assert "pattern_type" in user_msg
+    assert "roadmap_id" in user_msg
+    assert "rm-c5c5642863" in user_msg
+
+
+def test_opp_183_facts_sorted_in_prompt(monkeypatch):
+    """Facts for opp-183 must appear sorted alphabetically in the LLM prompt."""
+    captured = _fake_router(monkeypatch, content="Sorted narrative.")
+
+    rhs._ai_render_narrative(
+        "AI-ify opportunity render notification",
+        {"z_risk": 0.625, "a_composite": 0.7593, "m_value": 0.883},
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    pos_a = user_msg.index("a_composite")
+    pos_m = user_msg.index("m_value")
+    pos_z = user_msg.index("z_risk")
+    assert pos_a < pos_m < pos_z
+
+
+def test_opp_183_classification_and_params(monkeypatch):
+    """LLM request for opp-183 must carry CUI classification, max_tokens=512, temperature=0.3."""
+    captured = _fake_router(monkeypatch, content="Narrative.")
+
+    rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_183_facts())
+
+    assert captured["request"].classification == "CUI"
+    assert captured["request"].max_tokens == 512
+    assert captured["request"].temperature == 0.3
+    assert captured["request"].skip_injection_scan is True
+
+
+def test_opp_183_render_chain_ships_deterministic_on_no_llm(monkeypatch):
+    """A render_and_* function delivers its notification when LLM is unavailable (air-gap)."""
+    assessment_row = {
+        "id": "zta-opp183", "pillar": "identity", "maturity_level": "managed",
+        "score": 74.0, "assessed_at": "2026-06-02",
+    }
+    _fake_conn(monkeypatch, rows_by_call=[assessment_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("air-gap mode — no LLM available"))
+
+    result = rhs.render_and_notify_zta_posture_report("zta-opp183", "ztlead@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["assessment_id"] == "zta-opp183"
+    assert result["narrative"] is None
+
+
+def test_opp_183_intake_session_ships_on_no_llm(monkeypatch):
+    """render_and_notify_intake_session_summary delivers its notification without LLM (opp-183 module)."""
+    session_row = {
+        "id": "sess-opp183", "title": "Opp-183 regression pin session",
+        "status": "complete", "readiness_score": 83.0, "created_at": "2026-06-02",
+    }
+    req_rows = [
+        {"id": "req-opp183", "title": "AI narrative pin requirement", "priority": 1, "category": "ai", "status": "captured"},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[session_row, req_rows, []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_notify_intake_session_summary("sess-opp183", "lead@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["session_id"] == "sess-opp183"
+    assert result["requirement_count"] == 1
+    assert result["narrative"] is None
