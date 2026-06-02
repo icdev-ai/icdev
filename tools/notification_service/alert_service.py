@@ -1,0 +1,496 @@
+# CUI // SP-CTI
+"""Security alert and escalation service for ICDEV™ compliance events.
+
+Handles CAT I finding escalation, STIG alert dispatch, and POA&M
+deadline reminders via db → render → notify chains.
+"""
+
+from __future__ import annotations
+
+import json
+from string import Template
+from typing import Iterable
+
+from tools.db.storage import get_connection
+from .event_service import (
+    render_template, render_to_string, render_string,
+    send, sendmail, notify, emit, publish, dispatch, _now_iso,
+)
+
+ESCALATION_LEVELS = {
+    "cat1": {"priority": "CRITICAL", "sla_hours": 24,  "auto_escalate": True,  "page": True},
+    "cat2": {"priority": "HIGH",     "sla_hours": 72,  "auto_escalate": True,  "page": False},
+    "cat3": {"priority": "MEDIUM",   "sla_hours": 168, "auto_escalate": False, "page": False},
+    "info": {"priority": "LOW",      "sla_hours": 720, "auto_escalate": False, "page": False},
+}
+
+STIG_SEVERITY_MAP = {
+    "I":   "CAT I — Critical",
+    "II":  "CAT II — High",
+    "III": "CAT III — Medium",
+}
+
+CAT1_ALERT_TEMPLATE = (
+    "[CAT I SECURITY FINDING]\n"
+    "Finding: $finding_title\n"
+    "VID: $vid | Severity: $severity\n"
+    "System: $system_name | Component: $component\n"
+    "SLA: Remediate within $sla_hours hours\n"
+    "POA&M ID: $poam_id\n"
+    "Detected: $detected_at"
+)
+
+STIG_ALERT_TEMPLATE = (
+    "[STIG ALERT — $stig_severity]\n"
+    "Check: $check_id — $check_name\n"
+    "System: $system_name | Workload: $workload_id\n"
+    "Status: $status → Action Required: $action\n"
+    "Remediation: $remediation\n"
+    "Reference: $reference_url"
+)
+
+POAM_REMINDER_TEMPLATE = (
+    "[POA&M DEADLINE REMINDER]\n"
+    "Item: $poam_id — $title\n"
+    "Project: $project_id | Framework: $framework\n"
+    "Due: $due_date ($days_remaining days remaining)\n"
+    "Severity: $severity | Owner: $owner\n"
+    "Current Status: $status\n"
+    "Milestone: $milestone"
+)
+
+# ---------------------------------------------------------------------------
+# AI-ification (aiify-opp-5525, aiify-opp-5544): optional LLM-synthesized triage narrative.
+#
+# The db → render → notify chains above produce deterministic, template-based
+# alert text that remains the AUTHORITATIVE payload — security operations must
+# never depend on LLM availability for a CAT-I escalation. When a caller opts
+# in via ``ai_narrative=True`` we ADDITIONALLY synthesize a short, grounded
+# triage narrative (what happened, why it matters, recommended next action)
+# and attach it under the ``narrative`` return key. Any failure — no-LLM mode,
+# air-gap, network, missing credentials — degrades silently to ``None`` so the
+# deterministic alert always ships.
+# ---------------------------------------------------------------------------
+
+_NARRATIVE_SYSTEM_PROMPT = (
+    "You are a DoD/IC cybersecurity analyst triaging a compliance alert for "
+    "security operations. Write a concise narrative (2-4 sentences) that: "
+    "(1) states what the alert means in plain language, (2) explains why it "
+    "matters given the severity and SLA, and (3) recommends the single most "
+    "important next action. Use only the facts provided — never invent VIDs, "
+    "dates, counts, or system names. Output only the narrative prose; no "
+    "headers, no markdown, no preamble."
+)
+
+
+def _ai_alert_narrative(alert_kind: str, facts: dict) -> str | None:
+    """Synthesize an optional LLM triage narrative for a rendered alert.
+
+    Args:
+        alert_kind: Human label for the alert family (e.g. "CAT-I security
+            finding escalation"). Steers the model's framing.
+        facts: Grounding facts already assembled for template rendering
+            (the ``vars_`` dict). Passed verbatim so the narrative cannot
+            drift from the deterministic payload.
+
+    Returns:
+        A short narrative string, or ``None`` if generation is unavailable
+        or fails for any reason. Callers MUST treat ``None`` as "no
+        narrative" and ship the deterministic alert unchanged.
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        # Stable, ordered fact list keeps the prompt cache-friendly and the
+        # output reproducible across calls with identical inputs.
+        fact_lines = "\n".join(f"- {k}: {v}" for k, v in sorted(facts.items()))
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Alert type: {alert_kind}\n"
+                        f"Facts:\n{fact_lines}\n\n"
+                        "Write the triage narrative."
+                    ),
+                }
+            ],
+            system_prompt=_NARRATIVE_SYSTEM_PROMPT,
+            max_tokens=512,
+            temperature=0.3,
+            skip_injection_scan=True,  # trusted first-party fact dict, not user input
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("narrative_generation", req)
+        if resp and resp.content:
+            return resp.content.strip()
+    except Exception:
+        pass  # Graceful degradation — deterministic alert is authoritative.
+    return None
+
+
+def escalate_cat1_finding(
+    finding_id: str,
+    project_id: str,
+    escalation_channels: Iterable[str],
+    override_recipients: list[str] | None = None,
+    ai_narrative: bool = False,
+) -> dict:
+    """Query CAT I finding, render escalation notice, and page security ops.
+
+    Fetches finding details and associated POA&M from the DB, renders a
+    severity-appropriate alert using the CAT-I template, and delivers to
+    all security escalation channels (pager, email, Slack). Writes an
+    immutable audit record on delivery.
+
+    When ``ai_narrative`` is True, additionally synthesizes a short LLM
+    triage narrative (returned under ``narrative`` and attached to Slack/
+    Teams payloads). The deterministic template output remains the
+    authoritative alert; the narrative is best-effort and is ``None`` when
+    the LLM is unavailable.
+    """
+    conn = get_connection()
+    try:
+        # --- DB: fetch finding, POAM, and system metadata ---
+        finding_row = conn.execute(
+            "SELECT id, title, severity, vid, component, check_id, detected_at, remediation "
+            "FROM stig_findings WHERE id = ? AND project_id = ?",
+            (finding_id, project_id),
+        ).fetchone()
+        poam_row = conn.execute(
+            "SELECT id, status, due_date, milestone, owner FROM poam_items "
+            "WHERE finding_ref = ? AND project_id = ? LIMIT 1",
+            (finding_id, project_id),
+        ).fetchone()
+        project_row = conn.execute(
+            "SELECT name, classification, system_owner FROM projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+        open_cat1_count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM stig_findings "
+            "WHERE project_id = ? AND severity = 'I' AND status = 'open'",
+            (project_id,),
+        ).fetchone()
+
+        if not finding_row:
+            return {"status": "error", "reason": f"finding {finding_id!r} not found"}
+
+        sla = ESCALATION_LEVELS["cat1"]["sla_hours"]
+        vars_ = {
+            "finding_title": finding_row["title"] or "(untitled)",
+            "vid": finding_row["vid"] or "",
+            "severity": STIG_SEVERITY_MAP.get(finding_row["severity"] or "I", "CAT I"),
+            "component": finding_row["component"] or "unspecified",
+            "system_name": (project_row or {}).get("name", project_id),
+            "sla_hours": sla,
+            "poam_id": (poam_row or {}).get("id", "TBD"),
+            "detected_at": finding_row["detected_at"] or _now_iso(),
+            "open_cat1_count": int((open_cat1_count or {}).get("cnt", 1)),
+        }
+
+        # --- Render: plain text + HTML ---
+        rendered = Template(CAT1_ALERT_TEMPLATE).safe_substitute(vars_)
+        rendered_html = render_template(
+            "alerts/cat1_escalation.html",
+            finding=finding_row,
+            poam=poam_row,
+            project=project_row,
+            sla_hours=sla,
+            open_count=vars_["open_cat1_count"],
+        )
+        rendered_sms = render_string(
+            "[ICDEV CAT-I] $finding_title in $system_name. POA&M: $poam_id. SLA: $sla_hours h.",
+            **vars_,
+        )
+
+        # --- AI (optional): synthesize triage narrative; None if unavailable ---
+        narrative = _ai_alert_narrative(
+            "CAT-I security finding escalation", vars_
+        ) if ai_narrative else None
+
+        # --- Notify: page + email + audit ---
+        recipients = override_recipients or ["security-ops@icdev.local", "isso@icdev.local"]
+        receipts = {}
+        for ch in escalation_channels:
+            if ch in ("email", "smtp"):
+                for rcpt in recipients:
+                    sendmail(to=rcpt, subject=f"[CAT-I ESCALATION] {vars_['finding_title']}", html=rendered_html)
+                    receipts[f"email:{rcpt}"] = "sent"
+            elif ch == "pager":
+                send(to="pagerduty", subject="CAT-I", body=rendered_sms)
+                receipts["pager"] = "paged"
+            elif ch in ("slack", "teams"):
+                payload = {"text": rendered, "urgency": "critical", "finding_id": finding_id}
+                if narrative:
+                    payload["narrative"] = narrative
+                publish(ch, payload)
+                receipts[ch] = "published"
+            elif ch == "audit":
+                conn.execute(
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('cat1_escalation', ?, 'escalated', 'alert_service', ?)",
+                    (finding_id, json.dumps({"rendered": rendered, "recipients": recipients})),
+                )
+                conn.commit()
+                receipts["audit"] = "inserted"
+            else:
+                notify(ch, rendered)
+                receipts[ch] = "notified"
+
+        return {
+            "status": "escalated",
+            "finding_id": finding_id,
+            "severity": "cat1",
+            "sla_hours": sla,
+            "open_cat1_count": vars_["open_cat1_count"],
+            "rendered": rendered,
+            "narrative": narrative,
+            "receipts": receipts,
+        }
+    finally:
+        conn.close()
+
+
+def dispatch_stig_alert(
+    check_id: str,
+    workload_id: str,
+    channels: Iterable[str],
+    auto_create_poam: bool = True,
+    ai_narrative: bool = False,
+) -> dict:
+    """Query STIG check result, render severity-appropriate alert, and dispatch.
+
+    Looks up the STIG check and workload in the DB, selects the appropriate
+    severity template, renders a structured alert with remediation guidance,
+    and dispatches to the configured channels. Optionally auto-creates a
+    POA&M item for open findings. When ``ai_narrative`` is True, attaches a
+    best-effort LLM triage narrative (``None`` if the LLM is unavailable);
+    the deterministic template output stays authoritative.
+    """
+    conn = get_connection()
+    try:
+        # --- DB: fetch check details and workload info ---
+        check_row = conn.execute(
+            "SELECT check_id, check_name, severity, status, remediation, reference_url, workload_id "
+            "FROM govlift_stig_checks WHERE check_id = ? AND workload_id = ?",
+            (check_id, workload_id),
+        ).fetchone()
+        workload_row = conn.execute(
+            "SELECT name, classification, owner FROM govlift_workloads WHERE id = ?",
+            (workload_id,),
+        ).fetchone()
+        existing_poam = conn.execute(
+            "SELECT id FROM poam_items WHERE finding_ref = ? LIMIT 1",
+            (check_id,),
+        ).fetchone()
+
+        if not check_row:
+            return {"status": "error", "reason": f"STIG check {check_id!r} not found for workload {workload_id!r}"}
+
+        stig_sev = STIG_SEVERITY_MAP.get(check_row["severity"] or "III", "CAT III")
+        action_map = {
+            "open": "Immediate remediation required",
+            "not_reviewed": "Review and apply fix within SLA",
+            "not_applicable": "Confirm N/A applicability with ISSO",
+            "fixed": "Verify fix and collect evidence",
+        }
+
+        vars_ = {
+            "check_id": check_id,
+            "check_name": check_row["check_name"] or "",
+            "stig_severity": stig_sev,
+            "severity": check_row["severity"] or "III",
+            "system_name": (workload_row or {}).get("name", workload_id),
+            "workload_id": workload_id,
+            "status": check_row["status"] or "open",
+            "action": action_map.get(check_row["status"] or "open", "Review required"),
+            "remediation": check_row["remediation"] or "See STIG viewer for guidance",
+            "reference_url": check_row["reference_url"] or "",
+        }
+
+        # --- Render ---
+        rendered = Template(STIG_ALERT_TEMPLATE).safe_substitute(vars_)
+        render_template(
+            "alerts/stig_finding.html",
+            check=check_row,
+            workload=workload_row,
+            stig_severity=stig_sev,
+        )
+
+        # --- AI (optional): synthesize triage narrative; None if unavailable ---
+        narrative = _ai_alert_narrative(
+            "STIG check finding alert", vars_
+        ) if ai_narrative else None
+
+        # --- Auto-create POA&M if needed ---
+        poam_id = None
+        if auto_create_poam and not existing_poam and check_row["status"] == "open":
+            poam_cursor = conn.execute(
+                "INSERT INTO poam_items (finding_ref, title, severity, status, workload_id, due_date) "
+                "VALUES (?, ?, ?, 'open', ?, DATE('now', '+90 days'))",
+                (check_id, check_row["check_name"], check_row["severity"], workload_id),
+            )
+            poam_id = poam_cursor.lastrowid
+            conn.commit()
+
+        # --- Dispatch ---
+        receipts = {}
+        for ch in channels:
+            if ch in ("email", "smtp"):
+                send(
+                    to="compliance@icdev.local",
+                    subject=f"[{stig_sev}] STIG Finding: {check_id}",
+                    body=rendered,
+                )
+                receipts["email"] = "sent"
+            elif ch in ("slack", "teams"):
+                payload = {"text": rendered, "check_id": check_id, "severity": stig_sev}
+                if narrative:
+                    payload["narrative"] = narrative
+                publish(ch, payload)
+                receipts[ch] = "published"
+            elif ch == "audit":
+                conn.execute(
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('stig_alert', ?, 'dispatched', 'alert_service', ?)",
+                    (check_id, rendered),
+                )
+                conn.commit()
+                receipts["audit"] = "inserted"
+            else:
+                emit("stig.alert", {"check_id": check_id, "severity": stig_sev, "message": rendered})
+                receipts[ch] = "emitted"
+
+        return {
+            "status": "dispatched",
+            "check_id": check_id,
+            "severity": stig_sev,
+            "poam_id": poam_id,
+            "rendered": rendered,
+            "narrative": narrative,
+            "receipts": receipts,
+        }
+    finally:
+        conn.close()
+
+
+def send_poam_reminder(
+    poam_id: str,
+    project_id: str,
+    channels: Iterable[str],
+    days_threshold: int = 14,
+    ai_narrative: bool = False,
+) -> dict:
+    """Query POA&M item, render deadline reminder, and deliver to owner.
+
+    Fetches the POA&M item and associated finding from the DB, calculates
+    days remaining until the scheduled completion date, renders a priority-
+    appropriate reminder, and delivers to the item owner and configured
+    channels. When ``ai_narrative`` is True, attaches a best-effort LLM
+    triage narrative (``None`` if the LLM is unavailable); the deterministic
+    template output stays authoritative.
+    """
+    conn = get_connection()
+    try:
+        # --- DB: fetch POA&M item + finding + owner contact ---
+        poam_row = conn.execute(
+            "SELECT id, title, severity, status, due_date, milestone, owner, finding_ref, framework "
+            "FROM poam_items WHERE id = ? AND project_id = ?",
+            (poam_id, project_id),
+        ).fetchone()
+        days_row = conn.execute(
+            "SELECT CAST(julianday(due_date) - julianday('now') AS INTEGER) as days_remaining "
+            "FROM poam_items WHERE id = ?",
+            (poam_id,),
+        ).fetchone()
+        owner_row = conn.execute(
+            "SELECT email, name, phone FROM users WHERE username = ?",
+            ((poam_row or {}).get("owner", ""),),
+        ).fetchone()
+        related_findings = conn.execute(
+            "SELECT title, severity FROM stig_findings WHERE id = ? LIMIT 1",
+            ((poam_row or {}).get("finding_ref", ""),),
+        ).fetchone()
+
+        if not poam_row:
+            return {"status": "error", "reason": f"POA&M {poam_id!r} not found"}
+
+        days_remaining = int((days_row or {}).get("days_remaining", 0))
+        urgency_map = {True: "critical", False: "high"}
+        urgency = urgency_map.get(days_remaining in range(days_threshold), "normal") if days_remaining else "high"
+
+        vars_ = {
+            "poam_id": poam_id,
+            "title": poam_row["title"] or "(untitled)",
+            "project_id": project_id,
+            "framework": poam_row["framework"] or "general",
+            "severity": poam_row["severity"] or "medium",
+            "status": poam_row["status"] or "open",
+            "due_date": poam_row["due_date"] or "unknown",
+            "days_remaining": days_remaining,
+            "owner": poam_row["owner"] or "unassigned",
+            "milestone": poam_row["milestone"] or "none",
+        }
+
+        # --- Render ---
+        rendered = Template(POAM_REMINDER_TEMPLATE).safe_substitute(vars_)
+        rendered_html = render_template(
+            "alerts/poam_reminder.html",
+            poam=poam_row,
+            days_remaining=days_remaining,
+            urgency=urgency,
+            owner=owner_row,
+            finding=related_findings,
+        )
+        rendered_brief = render_to_string("alerts/poam_sms.txt", vars_)
+
+        # --- AI (optional): synthesize triage narrative; None if unavailable ---
+        narrative = _ai_alert_narrative(
+            "POA&M deadline reminder", vars_
+        ) if ai_narrative else None
+
+        # --- Deliver ---
+        receipts = {}
+        owner_email = (owner_row or {}).get("email", "compliance@icdev.local")
+        for ch in channels:
+            if ch in ("email", "smtp"):
+                sendmail(
+                    to=owner_email,
+                    subject=f"[POA&M REMINDER] {vars_['title']} — {days_remaining}d remaining",
+                    html=rendered_html,
+                )
+                receipts[f"email:{owner_email}"] = "sent"
+            elif ch in ("slack", "teams"):
+                payload = {"text": rendered, "urgency": urgency, "poam_id": poam_id}
+                if narrative:
+                    payload["narrative"] = narrative
+                dispatch(ch, payload)
+                receipts[ch] = "dispatched"
+            elif ch == "audit":
+                conn.execute(
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('poam_reminder', ?, 'reminder_sent', 'system', ?)",
+                    (poam_id, rendered),
+                )
+                conn.commit()
+                receipts["audit"] = "inserted"
+            elif ch == "sms" and urgency == "critical":
+                send(to=(owner_row or {}).get("phone", ""), subject="", body=rendered_brief)
+                receipts["sms"] = "sent"
+            else:
+                notify(ch, rendered)
+                receipts[ch] = "notified"
+
+        return {
+            "status": "delivered",
+            "poam_id": poam_id,
+            "days_remaining": days_remaining,
+            "urgency": urgency,
+            "owner": poam_row["owner"],
+            "rendered": rendered,
+            "narrative": narrative,
+            "receipts": receipts,
+        }
+    finally:
+        conn.close()
