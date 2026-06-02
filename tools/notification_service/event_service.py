@@ -4,6 +4,12 @@
 Centralises Kanban task events, Genesis daemon milestones, and Oracle
 prediction alerts into a single db → render → notify pipeline so that
 multiple canvas consumers don't each re-implement delivery logic.
+
+Per aiify-opp-5716 the deterministic chain is now AI-augmented: callers may
+opt in via ``ai_narrative=True`` to additionally receive a short, grounded
+LLM narrative (returned under ``narrative``). The templated notification
+remains the authoritative payload and ships unchanged when the LLM is
+unavailable. See ``_ai_event_narrative``.
 """
 
 from __future__ import annotations
@@ -14,6 +20,79 @@ from string import Template
 from typing import Iterable
 
 from tools.db.storage import get_connection
+
+# ---------------------------------------------------------------------------
+# AI-ification (aiify-opp-5716): optional LLM-synthesized event narrative.
+#
+# Each notify_* function below is a deterministic db → render → notify chain.
+# The rendered notification it produces remains the AUTHORITATIVE payload —
+# recipients must never depend on LLM availability to receive their alert.
+# When a caller opts in via ``ai_narrative=True`` we ADDITIONALLY synthesize a
+# short, grounded narrative (what the event means, why it matters, and the
+# single most important next action) and attach it under the ``narrative``
+# return key. Any failure — no-LLM mode, air-gap, network, missing credentials
+# — degrades silently to ``None`` so the deterministic notification always ships.
+#
+# Mirrors the established pattern in ``handler_service._ai_handler_narrative``
+# and ``alert_service._ai_alert_narrative``.
+# ---------------------------------------------------------------------------
+
+_EVENT_NARRATIVE_SYSTEM_PROMPT = (
+    "You are a DoD/IC operations analyst writing an event notification summary. "
+    "Write a concise narrative (2-4 sentences) that: (1) states what the event "
+    "means in plain language, (2) explains why it matters given the context and "
+    "severity, and (3) recommends the single most important next action for the "
+    "recipient. Use only the facts provided — never invent IDs, dates, counts, "
+    "scores, names, or identifiers. Output only the narrative prose; no headers, "
+    "no markdown, no preamble."
+)
+
+
+def _ai_event_narrative(event_kind: str, facts: dict) -> str | None:
+    """Synthesize an optional LLM narrative for a rendered event notification.
+
+    Args:
+        event_kind: Human label for the event family (e.g. "kanban task
+            completed notification"). Steers the model's framing.
+        facts: Grounding facts (scalar values/labels) already derived for the
+            deterministic notification. Passed verbatim so the narrative cannot
+            drift from the authoritative payload.
+
+    Returns:
+        A short narrative string, or ``None`` if generation is unavailable or
+        fails for any reason. Callers MUST treat ``None`` as "no narrative"
+        and ship the deterministic notification unchanged.
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        # Stable, ordered fact list keeps the prompt cache-friendly and the
+        # output reproducible across calls with identical inputs.
+        fact_lines = "\n".join(f"- {k}: {v}" for k, v in sorted(facts.items()))
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Event type: {event_kind}\n"
+                        f"Facts:\n{fact_lines}\n\n"
+                        "Write the event notification narrative."
+                    ),
+                }
+            ],
+            system_prompt=_EVENT_NARRATIVE_SYSTEM_PROMPT,
+            max_tokens=512,
+            temperature=0.3,
+            skip_injection_scan=True,  # trusted first-party fact dict, not user input
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("narrative_generation", req)
+        if resp and resp.content:
+            return resp.content.strip()
+    except Exception:
+        pass  # Graceful degradation — deterministic notification is authoritative.
+    return None
 
 # ---------------------------------------------------------------------------
 # Notification channel registry (extensible via args/notification_config.yaml)
@@ -64,6 +143,7 @@ def notify_kanban_event(
     event_type: str,
     channels: Iterable[str],
     extra: dict | None = None,
+    ai_narrative: bool = False,
 ) -> dict:
     """Query task state, render event notification, and deliver to channels.
 
@@ -119,6 +199,11 @@ def notify_kanban_event(
         rendered = Template(tmpl_str).safe_substitute(vars_)
         rendered_html = render_to_string("notifications/kanban_event.html", vars_)
 
+        narrative = _ai_event_narrative(
+            f"kanban {event_type} notification",
+            {k: str(v) for k, v in vars_.items()},
+        ) if ai_narrative else None
+
         # --- Notify each channel ---
         receipts = {}
         for ch in channels:
@@ -149,6 +234,7 @@ def notify_kanban_event(
             "task_id": task_id,
             "event_type": event_type,
             "rendered": rendered,
+            "narrative": narrative,
             "receipts": receipts,
             "audit_history": [dict(r) for r in audit_rows],
         }
@@ -161,6 +247,7 @@ def notify_genesis_milestone(
     milestone_type: str,
     channels: Iterable[str],
     phase_data: dict | None = None,
+    ai_narrative: bool = False,
 ) -> dict:
     """Query Genesis design state, render milestone message, and deliver.
 
@@ -213,6 +300,11 @@ def notify_genesis_milestone(
             milestone=milestone_type, body=rendered, ts=_now_iso()
         )
 
+        narrative = _ai_event_narrative(
+            f"genesis {milestone_type} milestone notification",
+            {k: str(v) for k, v in vars_.items()},
+        ) if ai_narrative else None
+
         # --- Notify ---
         receipts = {}
         for ch in channels:
@@ -243,6 +335,7 @@ def notify_genesis_milestone(
             "design_id": design_id,
             "milestone": milestone_type,
             "rendered": rendered,
+            "narrative": narrative,
             "receipts": receipts,
         }
     finally:
@@ -255,6 +348,7 @@ def notify_oracle_alert(
     prediction_ids: list[str],
     channels: Iterable[str],
     urgency: str = "normal",
+    ai_narrative: bool = False,
 ) -> dict:
     """Query Oracle predictions, render severity-appropriate alert, and deliver.
 
@@ -307,6 +401,11 @@ def notify_oracle_alert(
             urgency=urgency,
         )
 
+        narrative = _ai_event_narrative(
+            f"oracle {alert_type} alert notification",
+            {k: str(v) for k, v in vars_.items()},
+        ) if ai_narrative else None
+
         # --- Notify ---
         receipts = {}
         for ch in channels:
@@ -333,6 +432,7 @@ def notify_oracle_alert(
             "lens_id": lens_id,
             "alert_type": alert_type,
             "rendered": rendered,
+            "narrative": narrative,
             "prediction_count": len(pred_rows),
             "receipts": receipts,
         }

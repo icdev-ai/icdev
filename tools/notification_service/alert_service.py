@@ -60,7 +60,7 @@ POAM_REMINDER_TEMPLATE = (
 )
 
 # ---------------------------------------------------------------------------
-# AI-ification (aiify-opp-5525, aiify-opp-5544, aiify-opp-5599, aiify-opp-5601, aiify-opp-5634, aiify-opp-5636): optional LLM-synthesized triage narrative.
+# AI-ification (aiify-opp-5525, aiify-opp-5544, aiify-opp-5599, aiify-opp-5601, aiify-opp-5632, aiify-opp-5634, aiify-opp-5636, aiify-opp-5665, aiify-opp-5667, aiify-opp-5698, aiify-opp-5700): optional LLM-synthesized triage narrative.
 #
 # The db → render → notify chains above produce deterministic, template-based
 # alert text that remains the AUTHORITATIVE payload — security operations must
@@ -491,6 +491,99 @@ def send_poam_reminder(
             "rendered": rendered,
             "narrative": narrative,
             "receipts": receipts,
+        }
+    finally:
+        conn.close()
+
+
+def send_security_alert_digest(
+    recipient: str,
+    project_id: str | None = None,
+    days: int = 7,
+    ai_narrative: bool = False,
+) -> dict:
+    """Fetch recent security alerts, render a digest summary, and deliver.
+
+    Aggregates open CAT-I findings, recent STIG CAT-I/II open checks, and
+    POA&M items due within ``days`` days into a single digest and delivers to
+    ``recipient``. When ``ai_narrative`` is True, attaches a best-effort LLM
+    triage narrative (``None`` if unavailable); the deterministic summary
+    remains authoritative.
+    """
+    conn = get_connection()
+    try:
+        # --- DB: fetch open CAT-I findings ---
+        cat1_rows = conn.execute(
+            "SELECT id, title, severity, vid, component, detected_at "
+            "FROM stig_findings WHERE severity = 'I' AND status = 'open'"
+            + (" AND project_id = ?" if project_id else "")
+            + " ORDER BY detected_at DESC LIMIT 20",
+            (project_id,) if project_id else (),
+        ).fetchall()
+
+        # --- DB: fetch open STIG CAT-I/II checks ---
+        stig_rows = conn.execute(
+            "SELECT check_id, check_name, severity, status "
+            "FROM govlift_stig_checks WHERE severity IN ('I','II') AND status = 'open' "
+            "ORDER BY severity, check_id LIMIT 20",
+        ).fetchall()
+
+        # --- DB: fetch POA&M items due within the window ---
+        poam_rows = conn.execute(
+            "SELECT id, title, severity, due_date, owner, status "
+            "FROM poam_items WHERE status = 'open' "
+            "AND julianday(due_date) - julianday('now') BETWEEN 0 AND ?"
+            + (" AND project_id = ?" if project_id else ""),
+            (days, project_id) if project_id else (days,),
+        ).fetchall()
+
+        cat1_count = len(cat1_rows)
+        stig_count = len(stig_rows)
+        poam_due_count = len(poam_rows)
+
+        vars_ = {
+            "cat1_count": cat1_count,
+            "days_window": days,
+            "poam_due_count": poam_due_count,
+            "project_id": project_id or "all",
+            "stig_critical_count": stig_count,
+        }
+
+        # --- Render ---
+        rendered = render_template(
+            "alerts/security_alert_digest.html",
+            cat1_findings=cat1_rows,
+            stig_checks=stig_rows,
+            poam_items=poam_rows,
+            days=days,
+        )
+
+        # --- AI (optional): synthesize narrative; None if unavailable ---
+        narrative = _ai_alert_narrative(
+            "security alert digest summary", vars_
+        ) if ai_narrative else None
+
+        # --- Deliver ---
+        sendmail(
+            to=recipient,
+            subject=(
+                f"[SECURITY DIGEST] {cat1_count} CAT-I findings, "
+                f"{poam_due_count} POA&M items due in {days}d"
+            ),
+            html=rendered,
+        )
+        payload = {**vars_, "recipient": recipient}
+        if narrative:
+            payload["narrative"] = narrative
+        emit("security.alert_digest_sent", payload)
+
+        return {
+            "status": "sent",
+            "recipient": recipient,
+            "cat1_count": cat1_count,
+            "stig_critical_count": stig_count,
+            "poam_due_count": poam_due_count,
+            "narrative": narrative,
         }
     finally:
         conn.close()
