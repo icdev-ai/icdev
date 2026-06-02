@@ -168,6 +168,78 @@ def _nlp_extract_timeout_hint(desc: str) -> Optional[int]:
     return None
 
 
+def _nlp_extract_gap_subject(title: str, description: str, gap_type: str) -> Optional[str]:
+    """Use LLM (Haiku) to extract a gap entity from natural language task text.
+
+    Augments regex patterns in _pre_dispatch_check that require specific
+    formatting (e.g. "tool_not_in_manifest: tools/foo.py") so natural language
+    variants ("register tools/foo.py in the manifest") are also understood.
+
+    gap_type must be one of: "tool_not_in_manifest", "route_not_listed".
+    Returns the extracted entity string or None. Never raises.
+    """
+    if not title and not description:
+        return None
+
+    _PROMPTS = {
+        "tool_not_in_manifest": (
+            "Extract the Python tool file path (e.g. 'tools/foo/bar.py') that "
+            "needs to be registered in the manifest. "
+            "Return JSON: {\"subject\": \"<path>\"} or {\"subject\": null} if not found."
+        ),
+        "route_not_listed": (
+            "Extract the URL route path (e.g. '/dashboard/foo') that needs to be "
+            "listed in the Pages configuration. "
+            "Return JSON: {\"subject\": \"<route>\"} or {\"subject\": null} if not found."
+        ),
+        "orphan_db_table": (
+            "Extract the database table name from a task about an orphaned DB table. "
+            "Look for patterns like 'orphan_db_table gap: <name>', 'orphan_db_table on <name>', "
+            "'Subject: <name>', or 'table: <name>'. "
+            "Return JSON: {\"subject\": \"<table_name>\"} or {\"subject\": null} if not found."
+        ),
+        "db_table": (
+            "Extract the database table name that needs to be created. "
+            "Look for phrases like 'CREATE TABLE <name>', 'add table <name>', "
+            "'add DB table <name>', or 'add schema <name>'. "
+            "Return JSON: {\"subject\": \"<table_name>\"} or {\"subject\": null} if not found."
+        ),
+    }
+
+    system_prompt = _PROMPTS.get(gap_type)
+    if not system_prompt:
+        return None
+
+    combined = f"Title: {title}\n\nDescription: {description[:400]}"
+    try:
+        import json as _json
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        import re as _re2
+
+        req = LLMRequest(
+            system_prompt=system_prompt + " Return ONLY the JSON object, nothing else.",
+            messages=[{"role": "user", "content": combined}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=48,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("gap_subject_extraction", req)
+        if resp and resp.content:
+            raw = _re2.sub(
+                r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re2.MULTILINE
+            ).strip()
+            data = _json.loads(raw)
+            subject = data.get("subject")
+            if subject and isinstance(subject, str):
+                return subject.strip()
+    except Exception:
+        pass
+    return None
+
+
 def _get_task_timeout(task_id: str) -> int:
     """Return per-task timeout budget in seconds.
 
@@ -274,6 +346,53 @@ def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optiona
     return False, None
 
 
+def _nlp_extract_resume_at(reset_hint: str, now: datetime) -> Optional[datetime]:
+    """Use LLM (Haiku) to parse a reset time hint into a UTC datetime.
+
+    Augments the structured regex in _parse_resume_at for natural language
+    expressions like "in about twenty minutes", "at noon", "try again tomorrow".
+
+    Returns a UTC datetime or None. Never raises.
+    """
+    if not reset_hint or len(reset_hint) < 2:
+        return None
+    try:
+        import json as _json
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        import re as _re2
+
+        now_str = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+        req = LLMRequest(
+            system_prompt=(
+                f"Current time is {now_str}. "
+                "Parse the rate-limit reset hint and return how many seconds from now "
+                "to wait before retrying. "
+                "Return JSON: {\"wait_seconds\": <integer>} or "
+                "{\"wait_seconds\": null} if the hint is unparseable. "
+                "Clamp to [60, 21600]. Return ONLY the JSON object, nothing else."
+            ),
+            messages=[{"role": "user", "content": reset_hint[:200]}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=32,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("resume_at_extraction", req)
+        if resp and resp.content:
+            raw = _re2.sub(
+                r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re2.MULTILINE
+            ).strip()
+            data = _json.loads(raw)
+            secs = data.get("wait_seconds")
+            if secs is not None:
+                return now + timedelta(seconds=min(21600, max(60, int(secs))))
+    except Exception:
+        pass
+    return None
+
+
 def _parse_resume_at(reset_hint: Optional[str]) -> datetime:
     """Parse a reset hint into an absolute UTC datetime for resume.
 
@@ -282,6 +401,7 @@ def _parse_resume_at(reset_hint: Optional[str]) -> datetime:
       - "1 hour" / "2h" / "1 hr"            → now + N hours
       - "300 seconds" / "300s"               → now + N seconds
       - "2:00 AM" / "2:00 pm" / "14:00"     → next occurrence of that wall-clock time (local TZ)
+      - Natural language (e.g. "twenty minutes", "at noon") → NLP extraction via Haiku
       - None / unparseable                   → now + TOKEN_RETRY_DELAY_SECONDS (5 min fallback)
     """
     now = datetime.now(timezone.utc)
@@ -329,6 +449,11 @@ def _parse_resume_at(reset_hint: Optional[str]) -> datetime:
             return target.astimezone(timezone.utc)
         except (ValueError, OverflowError):
             pass
+
+    # NLP fallback: understand natural language hints the regex couldn't parse
+    nlp_dt = _nlp_extract_resume_at(hint, now)
+    if nlp_dt is not None:
+        return nlp_dt
 
     return fallback
 
@@ -3431,34 +3556,47 @@ def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
     tool_match = re.search(r"tool_not_in_manifest[^:]*:\s*(tools/[A-Za-z0-9_/\-]+\.py)", title)
     if not tool_match:
         tool_match = re.search(r"(tools/[A-Za-z0-9_/\-]+\.py)", description)
-    if tool_match and ("tool_not_in_manifest" in title or "tool_not_in_manifest" in description):
-        tool_path = tool_match.group(1)
-        try:
-            manifest_text = (BASE_DIR / "tools" / "manifest.md").read_text(encoding="utf-8")
-            if tool_path in manifest_text:
-                return True, (
-                    f"Pre-dispatch check: {tool_path} is already in tools/manifest.md "
-                    f"(false-positive gap)"
-                )
-            # Also search shard files under tools/manifest/
-            manifest_dir = BASE_DIR / "tools" / "manifest"
-            if manifest_dir.is_dir():
-                for shard in manifest_dir.glob("*.md"):
-                    try:
-                        if tool_path in shard.read_text(encoding="utf-8"):
-                            return True, (
-                                f"Pre-dispatch check: {tool_path} is already in "
-                                f"tools/manifest/{shard.name} (false-positive gap)"
-                            )
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+    if ("tool_not_in_manifest" in title or "tool_not_in_manifest" in description):
+        tool_path = (
+            tool_match.group(1) if tool_match
+            else _nlp_extract_gap_subject(title, description, "tool_not_in_manifest")
+        )
+        if tool_path:
+            try:
+                manifest_text = (BASE_DIR / "tools" / "manifest.md").read_text(encoding="utf-8")
+                if tool_path in manifest_text:
+                    return True, (
+                        f"Pre-dispatch check: {tool_path} is already in tools/manifest.md "
+                        f"(false-positive gap)"
+                    )
+                # Also search shard files under tools/manifest/
+                manifest_dir = BASE_DIR / "tools" / "manifest"
+                if manifest_dir.is_dir():
+                    for shard in manifest_dir.glob("*.md"):
+                        try:
+                            if tool_path in shard.read_text(encoding="utf-8"):
+                                return True, (
+                                    f"Pre-dispatch check: {tool_path} is already in "
+                                    f"tools/manifest/{shard.name} (false-positive gap)"
+                                )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
     # route_not_listed gap: is the route already in start.md Pages line?
     route_match = re.search(r"route_not_listed[^:]*:\s*(/[A-Za-z0-9_<>/\-]+)", title)
-    if route_match:
+    if not route_match and "route_not_listed" in (title + description).lower():
+        nlp_route = _nlp_extract_gap_subject(title, description, "route_not_listed")
+        if nlp_route:
+            route = nlp_route
+        else:
+            route = None
+    elif route_match:
         route = route_match.group(1)
+    else:
+        route = None
+    if route:
         # API routes don't belong in Pages list — treat as resolved
         if route.startswith("/api/"):
             return True, f"Pre-dispatch check: {route} is an API route (N/A for Pages list)"
@@ -4588,6 +4726,9 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             route_match = re.search(r"gap: (/[A-Za-z0-9_<>/\-]+)", title)
         if route_match:
             route = route_match.group(1)
+        else:
+            route = _nlp_extract_gap_subject(title, description, "route_not_listed")
+        if route:
             # API routes don't need to be in Pages list
             if not route.startswith("/api/"):
                 try:
@@ -4621,6 +4762,8 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
         )
         if m:
             table_name = m.group(1)
+        else:
+            table_name = _nlp_extract_gap_subject(title, description, "orphan_db_table")
         # Skip pg_*, sqlite_*, information_schema.* — system catalogs are
         # never "orphan" tables to create.
         if table_name and re.match(r"^(pg_|sqlite_|information_schema)", table_name, re.IGNORECASE):
@@ -4656,6 +4799,8 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             }
             if table_name and table_name.lower() in _PROSE_WORDS:
                 table_name = None
+        if not table_name:
+            table_name = _nlp_extract_gap_subject(title, description, "db_table")
     if table_name:
         # For orphan_db_table fixes, the agent commits a new migration
         # file with CREATE TABLE <name>, but that migration has not been

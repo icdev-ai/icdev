@@ -102,14 +102,113 @@ def _parse_rss_entries(xml_text: str) -> List[Dict[str, str]]:
     return entries
 
 
+_FEED_CAP_MIN = 5
+_FEED_CAP_DEFAULT = 15
+_FEED_CAP_MAX = 50
+_ANOMALY_Z_THRESHOLD = 2.0
+_NOVELTY_SCORE_MIN = 20
+_NOVELTY_SCORE_MAX = 80
+_NOVELTY_SCORE_DEFAULT = 40
+
+
+def _compute_adaptive_cap(feed_name: str, current_batch_size: int) -> int:
+    """Return an adaptive per-cycle entry cap via Z-score anomaly detection.
+
+    Queries historical daily ingest totals for this feed, computes mean/std,
+    then compares current_batch_size against that distribution.  Anomalously
+    large batches are capped more aggressively; normal batches use the
+    generous upper bound.  Falls back to _FEED_CAP_DEFAULT on any error.
+    """
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            """
+            SELECT SUBSTR(created_at, 1, 10) AS day, COUNT(*) AS cnt
+              FROM innovation_signals
+             WHERE source = ?
+             GROUP BY SUBSTR(created_at, 1, 10)
+             ORDER BY day DESC
+             LIMIT 60
+            """,
+            (f"genesis_ingest:{feed_name}",),
+        ).fetchall()
+        conn.close()
+
+        if len(rows) < 3:
+            return _FEED_CAP_DEFAULT
+
+        counts = [(r["cnt"] if isinstance(r, dict) else r[1]) for r in rows]
+        mean = sum(counts) / len(counts)
+        variance = sum((c - mean) ** 2 for c in counts) / len(counts)
+        std = variance ** 0.5 or 1.0
+
+        z_score = (current_batch_size - mean) / std
+        if z_score > _ANOMALY_Z_THRESHOLD:
+            cap = max(_FEED_CAP_MIN, int(mean + std))
+        else:
+            cap = min(_FEED_CAP_MAX, max(_FEED_CAP_DEFAULT, int(mean + 2 * std)))
+        return cap
+    except Exception:
+        return _FEED_CAP_DEFAULT
+
+
+def _load_recent_titles(limit: int = 100) -> List[str]:
+    """Fetch recent signal titles for novelty comparison."""
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT title FROM innovation_signals ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [(r["title"] if isinstance(r, dict) else r[0]) or "" for r in rows]
+    except Exception:
+        return []
+
+
+def _compute_novelty_score(title: str, description: str, recent_titles: List[str]) -> int:
+    """Score entry novelty using Jaccard-similarity anomaly detection.
+
+    Entries dissimilar from recent signals (low max-Jaccard — anomalously
+    novel) receive higher innovation scores.  Returns a value in
+    [_NOVELTY_SCORE_MIN, _NOVELTY_SCORE_MAX].
+    """
+    if not recent_titles:
+        return _NOVELTY_SCORE_DEFAULT
+
+    def _tokens(text: str) -> set:
+        return set(text.lower().split())
+
+    entry_tokens = _tokens(f"{title} {description}")
+    if not entry_tokens:
+        return _NOVELTY_SCORE_DEFAULT
+
+    max_sim = 0.0
+    for t in recent_titles[:50]:
+        rt = _tokens(t)
+        if not rt:
+            continue
+        union = len(entry_tokens | rt)
+        if union:
+            sim = len(entry_tokens & rt) / union
+            if sim > max_sim:
+                max_sim = sim
+
+    score = int(_NOVELTY_SCORE_MAX - max_sim * (_NOVELTY_SCORE_MAX - _NOVELTY_SCORE_MIN))
+    return max(_NOVELTY_SCORE_MIN, min(_NOVELTY_SCORE_MAX, score))
+
+
 def _ingest_to_knowledge_graph(entries: List[Dict], feed_name: str, category: str) -> int:
     """Insert entries into innovation_signals table for knowledge enrichment."""
     import hashlib
 
+    cap = _compute_adaptive_cap(feed_name, len(entries))
+    recent_titles = _load_recent_titles()
+
     conn = get_connection()
     ingested = 0
     try:
-        for entry in entries[:15]:  # Cap per feed per cycle
+        for entry in entries[:cap]:
             title = entry.get("title", "")
             if not title:
                 continue
@@ -124,6 +223,7 @@ def _ingest_to_knowledge_graph(entries: List[Dict], feed_name: str, category: st
                 continue
 
             signal_id = f"sig-{uuid.uuid4().hex[:8]}"
+            novelty_score = _compute_novelty_score(title, entry.get("description", ""), recent_titles)
             conn.execute(
                 """INSERT INTO innovation_signals
                    (id, source, source_type, title, description, content_hash,
@@ -136,7 +236,7 @@ def _ingest_to_knowledge_graph(entries: List[Dict], feed_name: str, category: st
                     title[:500],
                     entry.get("description", "")[:2000],
                     content_hash,
-                    40,  # Lower score than research signals
+                    novelty_score,
                     "new",
                     _utcnow_iso(),
                     _utcnow_iso(),

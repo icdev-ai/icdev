@@ -12,6 +12,18 @@
 
 classification: "CUI // SP-CTI"
 
+# ── Daemon Defaults ──────────────────────────────────────────────────────────
+# Configurable fallback thresholds used when a per-reflex override is absent.
+# Moving these out of Python constants lets the anomaly_detection convergence
+# layer adapt them over time without code changes.
+
+defaults:
+  # Watchdog timeout for any reflex that doesn't set its own timeout_seconds.
+  reflex_timeout_seconds: 300
+  # Lines-of-code heuristics for stub detection in _classify_reflex_impl.
+  stub_loc_min: 10
+  stub_loc_full: 15
+
 # ── Master Switch ────────────────────────────────────────────────────────────
 
 enabled: true  # D-GEN-9: enabled for persistent daemon
@@ -526,8 +538,27 @@ reflexes:
       name: goals_generated
       threshold: 0
       operator: gte  # 0 = no novel events (healthy), > 0 = new goals learned
-    novelty_threshold: 0.6
-    max_goals_per_run: 3
+    novelty_threshold: 0.6     # minimum novelty score (0–1) to qualify for goal generation
+    max_goals_per_run: 3       # cap on goals emitted per scan
+    lookback_days: 7           # audit/kanban look-back window
+    quality_weights:           # scoring dimension weights (must sum to 1.0)
+      novelty_score: 0.40
+      evidence_count: 0.25
+      domain_clarity: 0.20
+      tool_coverage: 0.15
+    evidence_count_normalizer: 4.0  # (count-1)/N → 1.0 at 5+ events
+    domain_clarity_divisor: 10.0   # avg keyword length ÷ N → 1.0 at 10-char avg
+    tool_coverage_placeholder: 0.5  # static until tool-analysis is implemented
+    max_audit_events: 500           # LIMIT for genesis_audit scan query
+    max_kanban_completions: 200     # LIMIT for kanban_tasks completions query
+    top_terms_count: 60             # top-N frequency terms used for domain clustering
+    max_keywords_per_domain: 30     # keyword cap stored per domain
+    write_files: true               # write suggested goal .md files to data/genesis/suggested_goals/
+    # Adaptive threshold via anomaly detection — inherits convergence.anomaly_detection
+    # when not set here; local keys override the global block.
+    anomaly_detection:
+      min_samples: 5    # min historical records before adaptive threshold activates
+      z_score: 2.0      # std deviations above historical mean sets the threshold
 
   # ── Oracle Predictive Intelligence (tools/oracle/) ──────────────────────────
 
@@ -833,6 +864,14 @@ convergence:
     trigger_every_n_cycles: 5
     trigger_on_drift_above: 0.30
   window_size: 10
+  # Anomaly detection: adaptive thresholds derived from per-reflex historical data.
+  # When n_samples >= min_samples, thresholds become mean + z_score*std instead of
+  # the static values above. Falls back to static thresholds until history builds up.
+  anomaly_detection:
+    min_samples: 5    # minimum records before adaptive thresholds activate
+    z_score: 2.0      # std deviations above historical mean to set threshold
+    slope_normalizer: 10.0  # maps linear metric slope → [0,1] drift; slope ≥ 1/slope_normalizer → zero drift
+    clarity_keyword_divisor: 3  # keyword hits per dimension needed to score full clarity
 
 # ── Stagnation Detector (Phase 65 — Ouroboros-inspired) ────────────────────
 

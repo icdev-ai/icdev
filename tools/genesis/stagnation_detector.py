@@ -14,6 +14,7 @@
 ADRs: D-GEN-2 (scanner-tier only), D21 (deterministic detection), D6 (append-only)
 """
 
+import hashlib
 import json
 import re
 import sys
@@ -116,6 +117,78 @@ def _jaccard(a: set, b: set) -> float:
         return 1.0
     union = a | b
     return len(a & b) / len(union) if union else 1.0
+
+
+class _NLPExtractor:
+    """LLM-backed semantic keyword extractor with regex fallback.
+
+    Uses scanner-tier LLM (Haiku) for richer concept extraction when available;
+    silently falls back to _tokenize() in air-gap / no-LLM environments.
+    ADR D-GEN-2: scanner-tier only, zero Claude cost.
+    """
+
+    _SYSTEM = (
+        "Extract semantically meaningful keywords from the supplied text. "
+        "Return ONLY a JSON array of lowercase strings — no explanation, no markdown. "
+        "Include technical terms, domain nouns, and action verbs. "
+        "Exclude stopwords, articles, and prepositions. At most 30 keywords."
+    )
+    _FUNCTION = "stagnation_nlp_extract"
+    _cache: Dict[str, Set[str]] = {}
+
+    @classmethod
+    def extract(cls, text: str) -> Set[str]:
+        """Return keyword set. Uses LLM when available, else regex fallback."""
+        if not text:
+            return set()
+        key = hashlib.sha256(text.encode()).hexdigest()[:16]
+        if key in cls._cache:
+            return cls._cache[key]
+        result = cls._llm_extract(text) or _tokenize(text)
+        cls._cache[key] = result
+        return result
+
+    @classmethod
+    def _llm_extract(cls, text: str) -> Optional[Set[str]]:
+        """Attempt LLM extraction. Returns keyword set or None on any failure."""
+        try:
+            from icdev.tools.llm.router import LLMRequest, LLMRouter
+
+            router = LLMRouter()
+            if router.is_no_llm_mode() or not router.has_any_llm():
+                return None
+            resp = router.invoke(
+                cls._FUNCTION,
+                LLMRequest(
+                    messages=[{"role": "user", "content": text[:2000]}],
+                    system_prompt=cls._SYSTEM,
+                ),
+            )
+            keywords = json.loads(resp.content.strip())
+            if isinstance(keywords, list):
+                return {str(k).lower() for k in keywords if k} - _STOPWORDS
+        except Exception:
+            return None
+        return None
+
+
+def _parse_json_array(text: str) -> Optional[List[Dict]]:
+    """Extract first JSON array from text using bracket counting (no regex)."""
+    start = text.find("[")
+    if start == -1:
+        return None
+    depth = 0
+    for i, ch in enumerate(text[start:], start):
+        if ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start : i + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
 
 
 class StagnationDetector:
@@ -283,11 +356,11 @@ class StagnationDetector:
         if len(rows) < 2:
             return None
 
-        # Tokenize each output
+        # Extract keywords from each output via NLP (regex fallback in air-gap)
         token_sets = []
         for row in rows:
             payload = row[0] if row[0] else ""
-            token_sets.append(_tokenize(payload))
+            token_sets.append(_NLPExtractor.extract(payload))
 
         # Compute pairwise Jaccard
         similarities = []
@@ -343,12 +416,8 @@ class StagnationDetector:
             )
             result = router.invoke("code_analysis", request)
             text = result.content if result and result.content else ""
-            # Parse JSON array from response
-            import re as _re
-
-            match = _re.search(r"\[.*\]", text, _re.DOTALL)
-            if match:
-                parsed = json.loads(match.group())
+            parsed = _parse_json_array(text)
+            if parsed is not None:
                 for item in parsed[: self.max_alts]:
                     if isinstance(item, dict) and "description" in item:
                         alternatives.append(item)

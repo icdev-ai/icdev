@@ -51,7 +51,7 @@ ASSESSMENT_SUMMARY_TEMPLATES = {
 }
 
 # ---------------------------------------------------------------------------
-# AI-ification (aiify-opp-5539): optional LLM-synthesized executive summary.
+# AI-ification (aiify-opp-5539, aiify-opp-5922): optional LLM-synthesized executive summary.
 #
 # The db → render → notify chains below produce deterministic, template-based
 # report text that remains the AUTHORITATIVE payload — stakeholders must never

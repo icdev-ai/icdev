@@ -56,9 +56,10 @@ CONFIG_PATH = BASE_DIR / "args" / "genesis_config.yaml"
 PID_FILE = BASE_DIR / ".tmp" / "genesis" / "daemon.pid"
 STATE_FILE = BASE_DIR / ".tmp" / "genesis" / "state.json"
 
-# Per-reflex watchdog timeout (seconds). A reflex exceeding this is abandoned so
-# one hang (e.g. a network fetch with no socket timeout) can't wedge the whole
-# sequential loop. Override per-reflex via reflexes.<name>.timeout_seconds.
+# Last-resort fallback timeout (seconds) — only used when genesis_config.yaml
+# is unavailable AND no per-reflex timeout_seconds is set.  In normal operation
+# the value is read from config.defaults.reflex_timeout_seconds so it can be
+# tuned without code changes.
 DEFAULT_REFLEX_TIMEOUT_SECONDS = 300
 
 REFLEX_NAMES = [
@@ -140,6 +141,12 @@ class GenesisDaemon(DaemonBase):
         super().__init__(config)
         raw = config.get("trust_mode", "full")
         self.trust_mode: str = raw if raw in TRUST_MODES else "full"
+        _defaults = config.get("defaults", {})
+        self._default_reflex_timeout: float = float(
+            _defaults.get("reflex_timeout_seconds", DEFAULT_REFLEX_TIMEOUT_SECONDS)
+        )
+        self._stub_loc_min: int = int(_defaults.get("stub_loc_min", 10))
+        self._stub_loc_full: int = int(_defaults.get("stub_loc_full", 15))
 
     def ensure_tables(self) -> None:
         """Create genesis tables if they do not exist."""
@@ -277,9 +284,9 @@ class GenesisDaemon(DaemonBase):
                     source = inspect.getsource(module.run)
                     status["loc"] = len(source.splitlines())
                     # Heuristic: if run() contains "stub" in return or is very short, mark stub
-                    if impl == "stub" or ("stub" in source.lower() and status["loc"] < 10):
+                    if impl == "stub" or ("stub" in source.lower() and status["loc"] < self._stub_loc_min):
                         status["is_stub"] = True
-                    elif impl in ("full", "partial") or status["loc"] > 15:
+                    elif impl in ("full", "partial") or status["loc"] > self._stub_loc_full:
                         status["is_stub"] = False
                 except Exception:
                     pass
@@ -326,12 +333,12 @@ class GenesisDaemon(DaemonBase):
         base records it as a failure, so a persistently-hanging reflex trips its
         circuit breaker after `max_consecutive_failures` and stops being attempted.
 
-        Timeout is per-reflex via `reflexes.<name>.timeout_seconds`, default
-        ``DEFAULT_REFLEX_TIMEOUT_SECONDS``.
+        Timeout is per-reflex via `reflexes.<name>.timeout_seconds`, falling back
+        to `defaults.reflex_timeout_seconds` in genesis_config.yaml.
         """
         import threading
 
-        timeout = float(config.get("timeout_seconds", DEFAULT_REFLEX_TIMEOUT_SECONDS))
+        timeout = float(config.get("timeout_seconds", self._default_reflex_timeout))
         box: Dict[str, Any] = {}
 
         def _target() -> None:

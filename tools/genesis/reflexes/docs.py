@@ -10,15 +10,19 @@ Scans for documentation drift between code reality and docs:
   5. README staleness — version/feature count mismatches
 
 GREEN tier (read-only analysis, no writes).
-Scanner-tier only (zero Claude tokens).
+NLP extraction: set ICDEV_DOCS_NLP_ENABLED=true to use Claude Haiku for
+richer tool-ref and route extraction from docs (falls back to regex otherwise).
+Model override: ICDEV_DOCS_NLP_MODEL (default: claude-haiku-4-5-20251001).
 """
 IMPLEMENTATION_STATUS = "full"
 
+import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -29,18 +33,117 @@ def _utcnow_iso() -> str:
 
 
 # ---------------------------------------------------------------------------
+# NLP extraction helpers (Phase 2 — Core Modernization)
+# ---------------------------------------------------------------------------
+
+_NLP_TOOL_REF_SYSTEM = (
+    "You are a documentation analyzer. Given markdown content, extract all Python tool "
+    "file paths mentioned. Return ONLY a JSON array of strings, each matching the pattern "
+    '"tools/path/to/file.py". Include paths with or without a leading "python " prefix. '
+    "If none found, return []. Example: [\"tools/foo/bar.py\", \"tools/baz/qux.py\"]"
+)
+
+_NLP_ROUTE_SYSTEM = (
+    "You are a documentation analyzer. Given CLAUDE.md content, extract all dashboard page "
+    "routes that are documented (not API endpoints). Return ONLY a JSON array of URL path "
+    'strings like "/route-name". Remove <param> placeholders and trailing slashes. '
+    "If none found, return []. Example: [\"/dashboard\", \"/security/zig\"]"
+)
+
+
+def _nlp_extract_tool_refs(content: str, doc_name: str) -> Optional[List[str]]:
+    """Use Claude Haiku to extract tool file paths from a markdown doc.
+
+    Returns a list of 'tools/...' path strings, or None if the LLM is unavailable.
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        model_id = os.getenv("ICDEV_DOCS_NLP_MODEL", "claude-haiku-4-5-20251001")
+        truncated = content[:4000] if len(content) > 4000 else content
+        request = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Extract all tool file paths from this doc ({doc_name}):\n\n{truncated}",
+                }
+            ],
+            system_prompt=_NLP_TOOL_REF_SYSTEM,
+            model=model_id,
+            max_tokens=256,
+            temperature=0.0,
+            skip_injection_scan=True,
+        )
+        router = LLMRouter()
+        response = router.invoke("docs_nlp_extract_tool_refs", request)
+        if response and response.content:
+            refs = json.loads(response.content.strip())
+            if isinstance(refs, list):
+                return [r for r in refs if isinstance(r, str) and r.startswith("tools/")]
+    except Exception:
+        pass
+    return None
+
+
+def _nlp_extract_documented_routes(content: str) -> Optional[Set[str]]:
+    """Use Claude Haiku to extract documented dashboard routes from CLAUDE.md.
+
+    Returns a set of normalized route strings, or None if the LLM is unavailable.
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        model_id = os.getenv("ICDEV_DOCS_NLP_MODEL", "claude-haiku-4-5-20251001")
+        truncated = content[:6000] if len(content) > 6000 else content
+        request = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Extract all documented dashboard routes from this CLAUDE.md:\n\n{truncated}",
+                }
+            ],
+            system_prompt=_NLP_ROUTE_SYSTEM,
+            model=model_id,
+            max_tokens=512,
+            temperature=0.0,
+            skip_injection_scan=True,
+        )
+        router = LLMRouter()
+        response = router.invoke("docs_nlp_extract_routes", request)
+        if response and response.content:
+            routes = json.loads(response.content.strip())
+            if isinstance(routes, list):
+                result: Set[str] = set()
+                for r in routes:
+                    if isinstance(r, str) and r.startswith("/"):
+                        normalized = re.sub(r"<[^>]+>", "", r).rstrip("/")
+                        if normalized:
+                            result.add(normalized)
+                return result
+    except Exception:
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Check 1: Feature docs referencing missing tools/files
 # ---------------------------------------------------------------------------
 
 
 def _check_stale_feature_docs() -> List[Dict[str, Any]]:
-    """Scan docs/features/*.md for references to non-existent tool paths."""
+    """Scan docs/features/*.md for references to non-existent tool paths.
+
+    Uses NLP extraction when ICDEV_DOCS_NLP_ENABLED=true; falls back to regex.
+    """
     issues = []
     docs_dir = BASE_DIR / "docs" / "features"
     if not docs_dir.exists():
         return issues
 
-    # Pattern: python tools/some/path.py or tools/some/path.py
+    nlp_enabled = os.getenv("ICDEV_DOCS_NLP_ENABLED", "false").lower() in ("1", "true", "yes")
+    # Regex fallback: python tools/some/path.py or tools/some/path.py
     tool_ref_pattern = re.compile(r"(?:python\s+)?(tools/[\w/]+\.py)")
 
     for doc_file in docs_dir.glob("*.md"):
@@ -49,7 +152,13 @@ def _check_stale_feature_docs() -> List[Dict[str, Any]]:
         except OSError:
             continue
 
-        refs = tool_ref_pattern.findall(content)
+        # Prefer NLP extraction; fall back to regex if unavailable or disabled
+        refs: Optional[List[str]] = None
+        if nlp_enabled:
+            refs = _nlp_extract_tool_refs(content, doc_file.name)
+        if refs is None:
+            refs = tool_ref_pattern.findall(content)
+
         for ref in refs:
             ref_path = BASE_DIR / ref
             if not ref_path.exists():
@@ -59,6 +168,7 @@ def _check_stale_feature_docs() -> List[Dict[str, Any]]:
                         "doc": str(doc_file.relative_to(BASE_DIR)),
                         "missing_tool": ref,
                         "severity": "medium",
+                        "extraction_method": "nlp" if nlp_enabled and refs is not None else "regex",
                     }
                 )
 
@@ -184,15 +294,19 @@ def _check_claude_md_route_drift() -> List[Dict[str, Any]]:
     except OSError:
         return issues
 
-    # Extract routes documented in CLAUDE.md (pattern: /route_name — description)
-    doc_route_pattern = re.compile(r"#\s+(/[\w\-<>/]+)\s+—")
-    documented_routes = set()
-    for m in doc_route_pattern.finditer(claude_content):
-        route = m.group(1).strip()
-        # Normalize: remove <param> parts
-        route = re.sub(r"<[^>]+>", "", route).rstrip("/")
-        if route:
-            documented_routes.add(route)
+    # Extract routes documented in CLAUDE.md — NLP preferred, regex fallback
+    nlp_enabled = os.getenv("ICDEV_DOCS_NLP_ENABLED", "false").lower() in ("1", "true", "yes")
+    documented_routes: Optional[Set[str]] = None
+    if nlp_enabled:
+        documented_routes = _nlp_extract_documented_routes(claude_content)
+    if documented_routes is None:
+        doc_route_pattern = re.compile(r"#\s+(/[\w\-<>/]+)\s+—")
+        documented_routes = set()
+        for m in doc_route_pattern.finditer(claude_content):
+            route = m.group(1).strip()
+            route = re.sub(r"<[^>]+>", "", route).rstrip("/")
+            if route:
+                documented_routes.add(route)
 
     # Extract actual routes from app.py
     flask_route_pattern = re.compile(r'@\w+\.route\(["\']([^"\']+)')

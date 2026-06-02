@@ -11,6 +11,7 @@ Schedule: Mondays at 9am (configurable via genesis_config.yaml).
 from __future__ import annotations
 
 import json
+import os
 from collections import Counter
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -113,8 +114,62 @@ def _fetch_lessons(days: int) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def _nlp_extract_patterns(lessons: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Use Claude Haiku NLP to extract systemic patterns and themes from lesson content.
+
+    Returns a dict with keys: systemic_patterns, root_cause_themes, recommendation.
+    Falls back to empty dict if anthropic is unavailable or the call fails.
+    """
+    try:
+        import anthropic  # noqa: PLC0415
+    except ImportError:
+        logger.debug("anthropic not available; skipping NLP pattern extraction")
+        return {}
+
+    model = os.environ.get("ICDEV_NLP_MODEL", "claude-haiku-4-5-20251001")
+    client = anthropic.Anthropic()
+
+    lesson_texts: List[str] = []
+    for i, lesson in enumerate(lessons[:50]):  # cap to control token spend
+        parts: List[str] = []
+        if lesson.get("task_title"):
+            parts.append(f"Task: {lesson['task_title']}")
+        if lesson.get("pattern"):
+            parts.append(f"Pattern: {lesson['pattern']}")
+        if lesson.get("last_failure_reason"):
+            parts.append(f"Reason: {lesson['last_failure_reason'][:200]}")
+        if parts:
+            lesson_texts.append(f"{i + 1}. " + " | ".join(parts))
+
+    if not lesson_texts:
+        return {}
+
+    prompt = (
+        "Analyze these kanban retrospective lessons and extract:\n"
+        "1. top_systemic_patterns — up to 5 recurring issue patterns (short snake_case labels)\n"
+        "2. root_cause_themes — up to 5 root causes (e.g. missing_tests, scope_creep, api_changes)\n"
+        "3. recommendation — one concise actionable improvement sentence\n\n"
+        "Lessons:\n" + "\n".join(lesson_texts) + "\n\n"
+        'Respond with ONLY valid JSON: {"systemic_patterns": [...], "root_cause_themes": [...], "recommendation": "..."}'
+    )
+
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text.strip()
+        if "{" in text:
+            text = text[text.index("{") : text.rindex("}") + 1]
+        return json.loads(text)
+    except Exception as exc:
+        logger.debug("NLP pattern extraction failed: %s", exc)
+        return {}
+
+
 def _build_report(lessons: List[Dict[str, Any]], window_days: int) -> Dict[str, Any]:
-    """Aggregate lessons into a structured report."""
+    """Aggregate lessons into a structured report, enhanced with NLP pattern extraction."""
     patterns = Counter(l.get("pattern", "unknown") for l in lessons)
     categories = Counter(l.get("category", "Unknown") for l in lessons)
     outcomes = Counter(l.get("outcome", "unknown") for l in lessons)
@@ -139,6 +194,13 @@ def _build_report(lessons: List[Dict[str, Any]], window_days: int) -> Dict[str, 
         "outcome_breakdown": dict(outcomes.most_common(5)),
         "top_prefixes": dict(prefix_counter.most_common(10)),
     }
+
+    nlp_insights = _nlp_extract_patterns(lessons)
+    if nlp_insights:
+        report["nlp_systemic_patterns"] = nlp_insights.get("systemic_patterns", [])
+        report["nlp_root_cause_themes"] = nlp_insights.get("root_cause_themes", [])
+        report["nlp_recommendation"] = nlp_insights.get("recommendation", "")
+
     return report
 
 
@@ -235,6 +297,22 @@ def _write_report_to_disk(report: Dict[str, Any]) -> None:
     ])
     for prefix, count in report.get("top_prefixes", {}).items():
         lines.append(f"| {prefix} | {count} |")
+
+    nlp_patterns = report.get("nlp_systemic_patterns", [])
+    nlp_themes = report.get("nlp_root_cause_themes", [])
+    nlp_rec = report.get("nlp_recommendation", "")
+    if nlp_patterns or nlp_themes or nlp_rec:
+        lines.extend([
+            "",
+            "## NLP Insights (Claude Haiku)",
+            "",
+        ])
+        if nlp_patterns:
+            lines.append("**Systemic patterns:** " + ", ".join(f"`{p}`" for p in nlp_patterns))
+        if nlp_themes:
+            lines.append("**Root cause themes:** " + ", ".join(f"`{t}`" for t in nlp_themes))
+        if nlp_rec:
+            lines.append(f"**Recommendation:** {nlp_rec}")
 
     lines.extend([
         "",
