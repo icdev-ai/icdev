@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5636, aiify-opp-5698, aiify-opp-5700).
+"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5636, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742).
 
 The db -> render -> notify chains in ``tools.notification_service.alert_service``
 gained an opt-in LLM triage narrative. These tests pin the two load-bearing
@@ -231,3 +231,316 @@ def test_send_security_alert_digest_degrades_on_llm_failure(monkeypatch):
     assert "cat1_count" in result
     assert "stig_critical_count" in result
     assert "poam_due_count" in result
+
+
+# ---------------------------------------------------------------------------
+# Tests for escalate_cat1_finding (aiify-opp-5738)
+# ---------------------------------------------------------------------------
+
+_CAT1_FINDING_ROW = {
+    "title": "Unpatched OpenSSL", "severity": "I", "vid": "V-12345",
+    "component": "web", "check_id": "SV-1", "detected_at": "2026-06-01",
+    "remediation": "Apply patch",
+}
+_OPEN_CAT1_COUNT_ROW = {"cnt": 3}
+
+
+def _fake_cat1_conn(monkeypatch):
+    rows = [
+        _CAT1_FINDING_ROW,
+        {},
+        {"name": "TestSys", "classification": "CUI", "system_owner": "J"},
+        _OPEN_CAT1_COUNT_ROW,
+    ]
+    idx = [0]
+
+    class _Cur:
+        def __init__(self, row):
+            self._row = row
+            self.lastrowid = None
+
+        def fetchone(self):
+            return self._row
+
+        def fetchall(self):
+            return []
+
+    class _Conn:
+        def execute(self, sql, params=()):
+            row = rows[idx[0]] if idx[0] < len(rows) else None
+            idx[0] += 1
+            return _Cur(row)
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(alert_service, "get_connection", lambda: _Conn())
+    monkeypatch.setattr(alert_service, "render_template", lambda *a, **kw: "<html/>")
+    monkeypatch.setattr(alert_service, "render_string", lambda *a, **kw: "sms")
+
+
+def test_escalate_cat1_narrative_none_by_default(monkeypatch):
+    """escalate_cat1_finding must not invoke LLM when ai_narrative=False."""
+    _fake_cat1_conn(monkeypatch)
+    called = []
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: called.append(True) or "x")
+
+    result = alert_service.escalate_cat1_finding("F-1", "P-1", [])
+
+    assert result["narrative"] is None
+    assert not called
+
+
+def test_escalate_cat1_attaches_narrative(monkeypatch):
+    """escalate_cat1_finding includes LLM narrative in result when ai_narrative=True."""
+    _fake_cat1_conn(monkeypatch)
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda kind, facts: "Patch OpenSSL immediately to close the CAT-I gap.",
+    )
+
+    result = alert_service.escalate_cat1_finding("F-1", "P-1", [], ai_narrative=True)
+
+    assert result["narrative"] == "Patch OpenSSL immediately to close the CAT-I gap."
+    assert result["status"] == "escalated"
+
+
+def test_escalate_cat1_degrades_on_llm_failure(monkeypatch):
+    """escalate_cat1_finding returns complete result even when narrative is None."""
+    _fake_cat1_conn(monkeypatch)
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: None)
+
+    result = alert_service.escalate_cat1_finding("F-1", "P-1", [], ai_narrative=True)
+
+    assert result["status"] == "escalated"
+    assert result["narrative"] is None
+    assert "sla_hours" in result
+    assert "open_cat1_count" in result
+
+
+# ---------------------------------------------------------------------------
+# Tests for dispatch_stig_alert (aiify-opp-5738)
+# ---------------------------------------------------------------------------
+
+_STIG_CHECK_ROW = {
+    "check_id": "SV-99999", "check_name": "SSH cipher config", "severity": "I",
+    "status": "open", "remediation": "Disable weak ciphers", "reference_url": "https://stig.disa.mil/",
+    "workload_id": "WL-1",
+}
+
+
+def _fake_stig_conn(monkeypatch):
+    rows = [
+        _STIG_CHECK_ROW,
+        {"name": "TestWorkload", "classification": "CUI", "owner": "ops"},
+        None,  # no existing_poam
+    ]
+    idx = [0]
+
+    class _Cur:
+        def __init__(self, row):
+            self._row = row
+            self.lastrowid = 42
+
+        def fetchone(self):
+            return self._row
+
+        def fetchall(self):
+            return []
+
+    class _Conn:
+        def execute(self, sql, params=()):
+            row = rows[idx[0]] if idx[0] < len(rows) else None
+            idx[0] += 1
+            return _Cur(row)
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(alert_service, "get_connection", lambda: _Conn())
+    monkeypatch.setattr(alert_service, "render_template", lambda *a, **kw: "<html/>")
+
+
+def test_dispatch_stig_narrative_none_by_default(monkeypatch):
+    """dispatch_stig_alert must not invoke LLM when ai_narrative=False."""
+    _fake_stig_conn(monkeypatch)
+    called = []
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: called.append(True) or "x")
+
+    result = alert_service.dispatch_stig_alert("SV-99999", "WL-1", [], auto_create_poam=False)
+
+    assert result["narrative"] is None
+    assert not called
+
+
+def test_dispatch_stig_attaches_narrative(monkeypatch):
+    """dispatch_stig_alert includes LLM narrative in result when ai_narrative=True."""
+    _fake_stig_conn(monkeypatch)
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda kind, facts: "Disable weak SSH ciphers to close this CAT-I STIG finding.",
+    )
+
+    result = alert_service.dispatch_stig_alert(
+        "SV-99999", "WL-1", [], auto_create_poam=False, ai_narrative=True
+    )
+
+    assert result["narrative"] == "Disable weak SSH ciphers to close this CAT-I STIG finding."
+    assert result["status"] == "dispatched"
+
+
+def test_dispatch_stig_degrades_on_llm_failure(monkeypatch):
+    """dispatch_stig_alert returns complete result even when narrative is None."""
+    _fake_stig_conn(monkeypatch)
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: None)
+
+    result = alert_service.dispatch_stig_alert(
+        "SV-99999", "WL-1", [], auto_create_poam=False, ai_narrative=True
+    )
+
+    assert result["status"] == "dispatched"
+    assert result["narrative"] is None
+    assert "check_id" in result
+    assert "severity" in result
+
+
+# ---------------------------------------------------------------------------
+# Tests for send_poam_reminder (aiify-opp-5738)
+# ---------------------------------------------------------------------------
+
+_POAM_ROW = {
+    "id": "POAM-42", "title": "Fix expired cert", "severity": "II",
+    "status": "open", "due_date": "2026-07-01", "milestone": "Q3",
+    "owner": "jdoe", "finding_ref": "F-99", "framework": "NIST",
+}
+_DAYS_ROW = {"days_remaining": 10}
+
+
+def _fake_poam_conn(monkeypatch):
+    rows = [
+        _POAM_ROW,
+        _DAYS_ROW,
+        {"email": "jdoe@icdev.local", "name": "Jane", "phone": ""},
+        None,  # related_findings
+    ]
+    idx = [0]
+
+    class _Cur:
+        def __init__(self, row):
+            self._row = row
+            self.lastrowid = None
+
+        def fetchone(self):
+            return self._row
+
+        def fetchall(self):
+            return []
+
+    class _Conn:
+        def execute(self, sql, params=()):
+            row = rows[idx[0]] if idx[0] < len(rows) else None
+            idx[0] += 1
+            return _Cur(row)
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(alert_service, "get_connection", lambda: _Conn())
+    monkeypatch.setattr(alert_service, "render_template", lambda *a, **kw: "<html/>")
+    monkeypatch.setattr(alert_service, "render_to_string", lambda *a, **kw: "brief")
+
+
+def test_send_poam_reminder_narrative_none_by_default(monkeypatch):
+    """send_poam_reminder must not invoke LLM when ai_narrative=False."""
+    _fake_poam_conn(monkeypatch)
+    called = []
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: called.append(True) or "x")
+
+    result = alert_service.send_poam_reminder("POAM-42", "P-1", [])
+
+    assert result["narrative"] is None
+    assert not called
+
+
+def test_send_poam_reminder_attaches_narrative(monkeypatch):
+    """send_poam_reminder includes LLM narrative in result when ai_narrative=True."""
+    _fake_poam_conn(monkeypatch)
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda kind, facts: "Renew the expired cert within 10 days to avoid POA&M breach.",
+    )
+
+    result = alert_service.send_poam_reminder("POAM-42", "P-1", [], ai_narrative=True)
+
+    assert result["narrative"] == "Renew the expired cert within 10 days to avoid POA&M breach."
+    assert result["status"] == "delivered"
+
+
+def test_send_poam_reminder_degrades_on_llm_failure(monkeypatch):
+    """send_poam_reminder returns complete result even when narrative is None."""
+    _fake_poam_conn(monkeypatch)
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: None)
+
+    result = alert_service.send_poam_reminder("POAM-42", "P-1", [], ai_narrative=True)
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] is None
+    assert "days_remaining" in result
+    assert "urgency" in result
+
+
+# ---------------------------------------------------------------------------
+# Tests for send_security_alert_digest emit-payload narrative (aiify-opp-5742)
+# ---------------------------------------------------------------------------
+
+def test_send_security_alert_digest_narrative_in_emit_payload(monkeypatch):
+    """send_security_alert_digest must include the narrative in the emitted event payload."""
+    _fake_alert_conn(monkeypatch)
+    emitted = []
+    monkeypatch.setattr(alert_service, "emit", lambda event, payload: emitted.append((event, payload)))
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda kind, facts: "Three CAT-I findings open; escalate to ISSO immediately.",
+    )
+
+    result = alert_service.send_security_alert_digest("sec@icdev.local", ai_narrative=True)
+
+    assert result["narrative"] == "Three CAT-I findings open; escalate to ISSO immediately."
+    assert emitted, "emit() was never called"
+    event_name, payload = emitted[0]
+    assert event_name == "security.alert_digest_sent"
+    assert payload.get("narrative") == "Three CAT-I findings open; escalate to ISSO immediately."
+
+
+def test_send_security_alert_digest_emit_payload_no_narrative_key_when_none(monkeypatch):
+    """When narrative is None the emitted payload must not contain a 'narrative' key."""
+    _fake_alert_conn(monkeypatch)
+    emitted = []
+    monkeypatch.setattr(alert_service, "emit", lambda event, payload: emitted.append((event, payload)))
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: None)
+
+    alert_service.send_security_alert_digest("sec@icdev.local", ai_narrative=True)
+
+    assert emitted, "emit() was never called"
+    _, payload = emitted[0]
+    assert "narrative" not in payload
+
+
+def test_send_security_alert_digest_emit_event_name(monkeypatch):
+    """The emit event name must be 'security.alert_digest_sent' regardless of narrative."""
+    _fake_alert_conn(monkeypatch)
+    emitted = []
+    monkeypatch.setattr(alert_service, "emit", lambda event, payload: emitted.append(event))
+
+    alert_service.send_security_alert_digest("sec@icdev.local")
+
+    assert emitted == ["security.alert_digest_sent"]
