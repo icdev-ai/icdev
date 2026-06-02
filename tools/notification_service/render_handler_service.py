@@ -626,3 +626,447 @@ def render_and_notify_compliance_gate(gate_id: str, project_id: str, recipient: 
         return {"status": "sent", "gate_id": gate_id, "narrative": narrative}
     finally:
         conn.close()
+
+
+def render_and_send_supply_chain_alert(assessment_id: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch supply chain risk assessment, render alert, and notify supply-chain ops.
+
+    aiify-opp-5916: extends the render-notify chain to cover supply-chain risk
+    assessments so recipients receive a grounded triage narrative alongside the
+    deterministic HTML alert.
+    """
+    conn = get_connection()
+    try:
+        assessment = conn.execute(
+            "SELECT id, vendor_name, risk_level, assessed_at, overall_score "
+            "FROM supply_chain_assessments WHERE id = ?", (assessment_id,)
+        ).fetchone()
+        findings = conn.execute(
+            "SELECT title, severity, category, status FROM supply_chain_findings "
+            "WHERE assessment_id = ? ORDER BY severity LIMIT 20", (assessment_id,)
+        ).fetchall()
+        vendors = conn.execute(
+            "SELECT vendor_name, risk_tier FROM supply_chain_vendors "
+            "WHERE assessment_id = ? ORDER BY risk_tier LIMIT 5", (assessment_id,)
+        ).fetchall()
+        critical_count = sum(1 for f in findings if (f or {}).get("severity") in ("critical", "high"))
+        body = render("supply_chain_alert.html", assessment=assessment, findings=findings, vendors=vendors)
+        narrative = _ai_render_narrative("supply chain risk assessment render notification", {
+            "assessment_id": assessment_id,
+            "vendor_name": (assessment or {}).get("vendor_name", assessment_id),
+            "risk_level": (assessment or {}).get("risk_level", "unknown"),
+            "overall_score": round(float((assessment or {}).get("overall_score", 0) or 0), 1),
+            "finding_count": len(findings),
+            "critical_high_count": critical_count,
+            "vendor_count": len(vendors),
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="Supply Chain Risk Alert", html=body)
+        payload = {"assessment_id": assessment_id}
+        if narrative:
+            payload["narrative"] = narrative
+        dispatch("supply_chain.alert_sent", payload)
+        return {"status": "sent", "assessment_id": assessment_id, "narrative": narrative}
+    finally:
+        conn.close()
+
+
+def render_and_deliver_fedramp_ato_status(package_id: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch FedRAMP ATO package status, render status card, and deliver to ISSO.
+
+    aiify-opp-5916: extends the render-notify chain to cover FedRAMP authorization
+    package status so compliance leads receive a grounded narrative alongside the
+    deterministic ATO status render.
+    """
+    conn = get_connection()
+    try:
+        package = conn.execute(
+            "SELECT id, system_name, ato_status, authorization_date, expiry_date "
+            "FROM fedramp_ato_packages WHERE id = ?", (package_id,)
+        ).fetchone()
+        controls = conn.execute(
+            "SELECT implementation_status, COUNT(*) as cnt "
+            "FROM fedramp_controls WHERE package_id = ? GROUP BY implementation_status",
+            (package_id,),
+        ).fetchall()
+        open_poams = conn.execute(
+            "SELECT id, title, severity, due_date FROM poam_items "
+            "WHERE project_id = ? AND status != 'closed' ORDER BY severity LIMIT 10",
+            (package_id,),
+        ).fetchall()
+        control_breakdown = "; ".join(f"{r['implementation_status']}:{r['cnt']}" for r in controls) or "none"
+        body = render("fedramp_ato_status.html", package=package, controls=controls, open_poams=open_poams)
+        narrative = _ai_render_narrative("FedRAMP ATO status render notification", {
+            "package_id": package_id,
+            "system_name": (package or {}).get("system_name", package_id),
+            "ato_status": (package or {}).get("ato_status", "unknown"),
+            "authorization_date": (package or {}).get("authorization_date", "unknown"),
+            "expiry_date": (package or {}).get("expiry_date", "unknown"),
+            "control_breakdown": control_breakdown,
+            "open_poam_count": len(open_poams),
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="FedRAMP ATO Status Update", html=body)
+        payload = {"package_id": package_id}
+        if narrative:
+            payload["narrative"] = narrative
+        publish("fedramp.ato_status_delivered", payload)
+        return {"status": "sent", "package_id": package_id, "narrative": narrative}
+    finally:
+        conn.close()
+
+
+def render_and_notify_innovation_cycle(cycle_id: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch innovation cycle results, render summary, and notify ops lead.
+
+    aiify-opp-5916: extends the render-notify chain to cover innovation engine
+    cycle completions so leads receive a grounded narrative alongside the
+    deterministic cycle summary render.
+    """
+    conn = get_connection()
+    try:
+        cycle = conn.execute(
+            "SELECT id, cycle_type, status, started_at, completed_at "
+            "FROM innovation_cycles WHERE id = ?", (cycle_id,)
+        ).fetchone()
+        findings = conn.execute(
+            "SELECT title, category, priority, status FROM innovation_findings "
+            "WHERE cycle_id = ? ORDER BY priority LIMIT 15", (cycle_id,)
+        ).fetchall()
+        actions = conn.execute(
+            "SELECT action_type, target, outcome FROM innovation_actions "
+            "WHERE cycle_id = ? ORDER BY created_at DESC LIMIT 5", (cycle_id,)
+        ).fetchall()
+        top_category = findings[0]["category"] if findings else "none"
+        body = render("innovation_cycle.html", cycle=cycle, findings=findings, actions=actions)
+        narrative = _ai_render_narrative("innovation cycle render notification", {
+            "cycle_id": cycle_id,
+            "cycle_type": (cycle or {}).get("cycle_type", "unknown"),
+            "cycle_status": (cycle or {}).get("status", "unknown"),
+            "finding_count": len(findings),
+            "action_count": len(actions),
+            "top_category": top_category,
+        }) if ai_narrative else None
+        send(to=recipient, subject="Innovation Cycle Complete", body=body)
+        payload = {"cycle_id": cycle_id}
+        if narrative:
+            payload["narrative"] = narrative
+        emit("innovation.cycle_notified", payload)
+        return {"status": "sent", "cycle_id": cycle_id, "narrative": narrative}
+    finally:
+        conn.close()
+
+
+def render_and_notify_awareness_drift_report(run_id: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch Internal Awareness Engine drift detections, render report, and notify ops lead.
+
+    aiify-opp-5915: extends the render-notify chain to cover D-AWARE drift
+    detections so operators receive a grounded LLM narrative alongside the
+    deterministic drift-regression report rendered from oracle_predictions
+    (lens_name='internal_awareness').
+    """
+    conn = get_connection()
+    try:
+        run = conn.execute(
+            "SELECT id, probe_run_id, status, created_at FROM awareness_run_log WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+        regressions = conn.execute(
+            "SELECT title, severity, confidence, outcome, created_at "
+            "FROM oracle_predictions "
+            "WHERE lens_name = 'internal_awareness' AND prediction_run_id = ? "
+            "ORDER BY severity, confidence DESC LIMIT 20",
+            (run_id,),
+        ).fetchall()
+        component_health = conn.execute(
+            "SELECT node_id, probe_type, status FROM awareness_component_health "
+            "WHERE probe_run_id = ? ORDER BY status LIMIT 10",
+            (run_id,),
+        ).fetchall()
+        failed_count = sum(1 for r in regressions if (r or {}).get("severity") in ("critical", "high"))
+        body = render(
+            "awareness_drift_report.html",
+            run=run,
+            regressions=regressions,
+            component_health=component_health,
+        )
+        narrative = _ai_render_narrative("D-AWARE drift detection render notification", {
+            "run_id": run_id,
+            "run_status": (run or {}).get("status", "unknown"),
+            "regression_count": len(regressions),
+            "critical_high_count": failed_count,
+            "component_snapshot_count": len(component_health),
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="Awareness Engine Drift Report", html=body)
+        payload = {"run_id": run_id, "regression_count": len(regressions)}
+        if narrative:
+            payload["narrative"] = narrative
+        dispatch("awareness.drift_notified", payload)
+        return {"status": "sent", "run_id": run_id, "regression_count": len(regressions), "narrative": narrative}
+    finally:
+        conn.close()
+
+
+def render_and_notify_finetune_job_result(job_id: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch fine-tuning job outcome, render result card, and notify the AI-ops lead.
+
+    aiify-opp-5917: extends the render-notify chain to cover fine-tuning job
+    completions so AI-ops teams receive a grounded LLM narrative alongside the
+    deterministic job-result render.
+    """
+    conn = get_connection()
+    try:
+        job = conn.execute(
+            "SELECT id, model_base, status, epochs, started_at, completed_at "
+            "FROM finetune_jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        metrics = conn.execute(
+            "SELECT metric_name, value, epoch FROM finetune_metrics "
+            "WHERE job_id = ? ORDER BY epoch DESC LIMIT 10", (job_id,)
+        ).fetchall()
+        eval_results = conn.execute(
+            "SELECT benchmark_name, score, delta FROM finetune_eval_results "
+            "WHERE job_id = ? ORDER BY score DESC LIMIT 5", (job_id,)
+        ).fetchall()
+        best_score = max((float(r["score"] or 0) for r in eval_results), default=0.0)
+        body = render(
+            "finetune_job_result.html",
+            job=job,
+            metrics=metrics,
+            eval_results=eval_results,
+        )
+        narrative = _ai_render_narrative("fine-tuning job result render notification", {
+            "job_id": job_id,
+            "model_base": (job or {}).get("model_base", "unknown"),
+            "job_status": (job or {}).get("status", "unknown"),
+            "epochs": int((job or {}).get("epochs", 0) or 0),
+            "metric_count": len(metrics),
+            "eval_result_count": len(eval_results),
+            "best_eval_score": round(best_score, 4),
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="Fine-Tuning Job Result", html=body)
+        payload = {"job_id": job_id}
+        if narrative:
+            payload["narrative"] = narrative
+        publish("finetune.job_result_notified", payload)
+        return {"status": "sent", "job_id": job_id, "narrative": narrative}
+    finally:
+        conn.close()
+
+
+def render_and_notify_research_findings(report_id: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch research engine report, render findings summary, and notify the research lead.
+
+    aiify-opp-5955: extends the render-notify chain to cover the Research Engine
+    output so leads receive a grounded LLM narrative alongside the deterministic
+    findings summary rendered from research_reports and research_findings.
+    """
+    conn = get_connection()
+    try:
+        report = conn.execute(
+            "SELECT id, topic, status, confidence, created_at FROM research_reports WHERE id = ?",
+            (report_id,),
+        ).fetchone()
+        findings = conn.execute(
+            "SELECT title, category, confidence, summary FROM research_findings "
+            "WHERE report_id = ? ORDER BY confidence DESC LIMIT 15",
+            (report_id,),
+        ).fetchall()
+        sources = conn.execute(
+            "SELECT source_url, source_type, relevance_score FROM research_sources "
+            "WHERE report_id = ? ORDER BY relevance_score DESC LIMIT 5",
+            (report_id,),
+        ).fetchall()
+        avg_confidence = (
+            round(
+                sum(float(f["confidence"] or 0) for f in findings) / len(findings), 4
+            )
+            if findings else 0.0
+        )
+        body = render(
+            "research_findings.html",
+            report=report,
+            findings=findings,
+            sources=sources,
+            avg_confidence=avg_confidence,
+        )
+        narrative = _ai_render_narrative("research engine findings render notification", {
+            "report_id": report_id,
+            "topic": (report or {}).get("topic", report_id)[:100],
+            "report_status": (report or {}).get("status", "unknown"),
+            "overall_confidence": round(float((report or {}).get("confidence", 0) or 0), 4),
+            "finding_count": len(findings),
+            "source_count": len(sources),
+            "avg_finding_confidence": avg_confidence,
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="Research Engine Findings Report", html=body)
+        payload = {"report_id": report_id, "finding_count": len(findings)}
+        if narrative:
+            payload["narrative"] = narrative
+        emit("research.findings_notified", payload)
+        return {
+            "status": "sent",
+            "report_id": report_id,
+            "finding_count": len(findings),
+            "narrative": narrative,
+        }
+    finally:
+        conn.close()
+
+
+def render_and_notify_rag_query_result(query_ref: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch RAG search result details, render result card, and notify requestor.
+
+    aiify-opp-5952: extends the render-notify chain to cover RAG knowledge
+    searches so requestors receive a grounded LLM narrative alongside the
+    deterministic result card rendered from rag_queries and rag_chunks.
+    """
+    conn = get_connection()
+    try:
+        query = conn.execute(
+            "SELECT id, query_text, lens, status, created_at FROM rag_queries WHERE id = ?",
+            (query_ref,),
+        ).fetchone()
+        chunks = conn.execute(
+            "SELECT id, source_doc, relevance_score, excerpt FROM rag_chunks "
+            "WHERE query_id = ? ORDER BY relevance_score DESC LIMIT 10",
+            (query_ref,),
+        ).fetchall()
+        citations = conn.execute(
+            "SELECT source_doc, citation_text, confidence FROM rag_citations "
+            "WHERE query_id = ? ORDER BY confidence DESC LIMIT 5",
+            (query_ref,),
+        ).fetchall()
+        top_score = round(max((float(c["relevance_score"] or 0) for c in chunks), default=0.0), 4)
+        body = render(
+            "rag_query_result.html",
+            query=query,
+            chunks=chunks,
+            citations=citations,
+        )
+        narrative = _ai_render_narrative("RAG knowledge search result render notification", {
+            "query_ref": query_ref,
+            "query_text": (query or {}).get("query_text", query_ref)[:120],
+            "lens": (query or {}).get("lens", "default"),
+            "query_status": (query or {}).get("status", "unknown"),
+            "chunk_count": len(chunks),
+            "citation_count": len(citations),
+            "top_relevance_score": top_score,
+        }) if ai_narrative else None
+        send(to=recipient, subject="RAG Knowledge Search Result", body=body)
+        payload = {"query_ref": query_ref, "chunk_count": len(chunks)}
+        if narrative:
+            payload["narrative"] = narrative
+        emit("rag.query_result_notified", payload)
+        return {"status": "sent", "query_ref": query_ref, "chunk_count": len(chunks), "narrative": narrative}
+    finally:
+        conn.close()
+
+
+def render_and_send_aiify_weekly_digest(week_label: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch weekly AI-ify scan summary, render digest, and deliver to AI-ops lead.
+
+    aiify-opp-5913: extends the render-notify chain for the AI-ify weekly digest
+    (parallel to digest_service.send_aiify_weekly_digest) so callers can opt in to
+    a grounded LLM narrative about the week's AI readiness posture.
+    """
+    conn = get_connection()
+    try:
+        scans = conn.execute(
+            "SELECT scan_id, status, overall_ai_readiness, created_at FROM aiify_scans "
+            "WHERE created_at >= date('now', '-7 days') ORDER BY created_at DESC LIMIT 10"
+        ).fetchall()
+        top_opps = conn.execute(
+            "SELECT o.function_name, o.pattern_type, s.composite_score "
+            "FROM aiify_scores s JOIN aiify_opportunities o ON o.opportunity_id = s.opportunity_id "
+            "WHERE o.scan_id IN (SELECT scan_id FROM aiify_scans WHERE created_at >= date('now', '-7 days')) "
+            "ORDER BY s.composite_score DESC LIMIT 5"
+        ).fetchall()
+        roadmaps = conn.execute(
+            "SELECT roadmap_id, scan_id FROM aiify_roadmaps "
+            "WHERE scan_id IN (SELECT scan_id FROM aiify_scans WHERE created_at >= date('now', '-7 days'))"
+        ).fetchall()
+        avg_readiness = (
+            round(
+                sum(float(r["overall_ai_readiness"] or 0) for r in scans) / len(scans), 1
+            )
+            if scans else 0.0
+        )
+        top_pattern = top_opps[0]["pattern_type"] if top_opps else "none"
+        body = render(
+            "aiify_weekly_digest.html",
+            week_label=week_label,
+            scans=scans,
+            top_opps=top_opps,
+            roadmaps=roadmaps,
+            avg_readiness=avg_readiness,
+        )
+        narrative = _ai_render_narrative("AI-ify weekly digest render notification", {
+            "week_label": week_label,
+            "scan_count": len(scans),
+            "opportunity_count": len(top_opps),
+            "roadmap_count": len(roadmaps),
+            "avg_readiness": avg_readiness,
+            "top_pattern_type": top_pattern,
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject=f"AI-ify Weekly Digest — {week_label}", html=body)
+        payload = {"week_label": week_label, "scan_count": len(scans)}
+        if narrative:
+            payload["narrative"] = narrative
+        publish("aiify.weekly_digest_sent", payload)
+        return {
+            "status": "sent",
+            "week_label": week_label,
+            "scan_count": len(scans),
+            "narrative": narrative,
+        }
+    finally:
+        conn.close()
+
+
+def render_and_notify_simulation_coa_result(run_id: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch Digital Program Twin simulation COA results, render report, and notify program lead.
+
+    aiify-opp-5953: extends the render-notify chain to cover simulation COA
+    completions so program leads receive a grounded LLM narrative alongside the
+    deterministic COA result render from simulation_runs and simulation_coas.
+    """
+    conn = get_connection()
+    try:
+        run = conn.execute(
+            "SELECT id, scenario_name, status, started_at, completed_at "
+            "FROM simulation_runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        coas = conn.execute(
+            "SELECT coa_id, title, feasibility_score, risk_score, recommended "
+            "FROM simulation_coas WHERE run_id = ? ORDER BY feasibility_score DESC LIMIT 10",
+            (run_id,),
+        ).fetchall()
+        metrics = conn.execute(
+            "SELECT metric_name, value, unit FROM simulation_metrics "
+            "WHERE run_id = ? ORDER BY metric_name LIMIT 10",
+            (run_id,),
+        ).fetchall()
+        recommended_count = sum(1 for c in coas if (c or {}).get("recommended"))
+        top_feasibility = round(max((float(c["feasibility_score"] or 0) for c in coas), default=0.0), 3)
+        body = render(
+            "simulation_coa_result.html",
+            run=run,
+            coas=coas,
+            metrics=metrics,
+        )
+        narrative = _ai_render_narrative("simulation COA result render notification", {
+            "run_id": run_id,
+            "scenario_name": (run or {}).get("scenario_name", run_id),
+            "run_status": (run or {}).get("status", "unknown"),
+            "coa_count": len(coas),
+            "recommended_count": recommended_count,
+            "top_feasibility_score": top_feasibility,
+            "metric_count": len(metrics),
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="Simulation COA Result", html=body)
+        payload = {"run_id": run_id, "coa_count": len(coas)}
+        if narrative:
+            payload["narrative"] = narrative
+        publish("simulation.coa_result_notified", payload)
+        return {"status": "sent", "run_id": run_id, "coa_count": len(coas), "narrative": narrative}
+    finally:
+        conn.close()
