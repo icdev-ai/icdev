@@ -405,6 +405,189 @@ def handle_aiify_opportunity_handler(
         conn.close()
 
 
+def handle_aiify_scan_complete_handler(
+    scan_id: str, roadmap_id: str, recipient: str, ai_narrative: bool = False
+) -> dict:
+    """Fetch AI-ify scan results and deliver completion summary notification.
+
+    Per aiify-opp-5946: adds a db→render→notify chain for completed AI-ify
+    scans so module owners and tech leads receive a grounded narrative
+    describing scan scope, opportunity count, score distribution, and
+    roadmap alignment — enabling rapid triage of Phase 1 Quick Win items.
+    """
+    conn = get_connection()
+    try:
+        scan = conn.execute(
+            "SELECT scan_id, input_ref, total_files, total_loc, status, "
+            "overall_verdict, overall_ai_readiness, completed_at "
+            "FROM aiify_scans WHERE scan_id = ?", (scan_id,)
+        ).fetchone()
+        top_opps = conn.execute(
+            "SELECT o.opportunity_id, o.function_name, o.pattern_type, s.composite_score "
+            "FROM aiify_opportunities o "
+            "LEFT JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
+            "WHERE o.scan_id = ? ORDER BY s.composite_score DESC LIMIT 5", (scan_id,)
+        ).fetchall()
+        roadmap = conn.execute(
+            "SELECT roadmap_id, title, total_effort_days "
+            "FROM aiify_roadmaps WHERE roadmap_id = ?", (roadmap_id,)
+        ).fetchone()
+        score_summary = conn.execute(
+            "SELECT COUNT(*) as opp_count, "
+            "MIN(s.composite_score) as min_score, MAX(s.composite_score) as max_score, "
+            "AVG(s.composite_score) as avg_score "
+            "FROM aiify_scores s "
+            "JOIN aiify_opportunities o ON o.opportunity_id = s.opportunity_id "
+            "WHERE o.scan_id = ?", (scan_id,)
+        ).fetchone()
+        rendered = render_template(
+            "handlers/aiify_scan_complete.html",
+            scan=scan, top_opps=top_opps, roadmap=roadmap, score_summary=score_summary,
+        )
+        opp_count = int((score_summary or {}).get("opp_count", 0) or 0)
+        narrative = _ai_handler_narrative("AI-ify scan completion notification", {
+            "scan_id": scan_id,
+            "roadmap_id": roadmap_id,
+            "input_ref": (scan or {}).get("input_ref", "unknown"),
+            "total_files": int((scan or {}).get("total_files", 0) or 0),
+            "scan_status": (scan or {}).get("status", "unknown"),
+            "overall_verdict": (scan or {}).get("overall_verdict", "unknown"),
+            "overall_ai_readiness": (scan or {}).get("overall_ai_readiness", "unknown"),
+            "opportunity_count": opp_count,
+            "top_opportunity_count": len(top_opps),
+            "min_composite_score": round(float((score_summary or {}).get("min_score", 0) or 0), 3),
+            "max_composite_score": round(float((score_summary or {}).get("max_score", 0) or 0), 3),
+            "avg_composite_score": round(float((score_summary or {}).get("avg_score", 0) or 0), 3),
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="AI-ify Scan Complete", html=rendered)
+        payload = {"scan_id": scan_id, "roadmap_id": roadmap_id, "opportunity_count": opp_count}
+        if narrative:
+            payload["narrative"] = narrative
+        emit("aiify.scan_complete", payload)
+        return {"status": "sent", "scan_id": scan_id, "roadmap_id": roadmap_id, "narrative": narrative}
+    finally:
+        conn.close()
+
+
+def handle_cmmc_assessment_handler(
+    assessment_id: str, system_id: str, recipient: str, ai_narrative: bool = False
+) -> dict:
+    """Fetch CMMC assessment results and deliver compliance notification.
+
+    Per aiify-opp-5905: adds a db→render→notify chain for CMMC Level 2/3
+    assessments so authorizing officials and system owners receive a grounded
+    narrative describing the assessment outcome, practice gaps, and recommended
+    next action.
+    """
+    conn = get_connection()
+    try:
+        assessment = conn.execute(
+            "SELECT id, level, overall_score, status, assessed_at "
+            "FROM cmmc_assessments WHERE id = ? AND system_id = ?",
+            (assessment_id, system_id),
+        ).fetchone()
+        system = conn.execute(
+            "SELECT name, classification, boundary FROM cmmc_systems WHERE id = ?",
+            (system_id,),
+        ).fetchone()
+        gaps = conn.execute(
+            "SELECT practice_id, domain, status, gap_description "
+            "FROM cmmc_practice_gaps WHERE assessment_id = ? ORDER BY domain LIMIT 10",
+            (assessment_id,),
+        ).fetchall()
+        rendered = render_template(
+            "handlers/cmmc_assessment.html",
+            assessment=assessment, system=system, gaps=gaps,
+        )
+        gap_count = len(gaps)
+        narrative = _ai_handler_narrative("CMMC assessment compliance notification", {
+            "assessment_id": assessment_id,
+            "system_id": system_id,
+            "system_name": (system or {}).get("name", system_id),
+            "classification": (system or {}).get("classification", "unknown"),
+            "cmmc_level": (assessment or {}).get("level", "unknown"),
+            "overall_score": round(float((assessment or {}).get("overall_score", 0) or 0), 1),
+            "assessment_status": (assessment or {}).get("status", "unknown"),
+            "gap_count": gap_count,
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="CMMC Assessment Result", html=rendered)
+        payload = {"assessment_id": assessment_id, "system_id": system_id}
+        if narrative:
+            notify("compliance", f"{rendered}\n\nNarrative: {narrative}")
+        else:
+            notify("compliance", rendered)
+        return {
+            "status": "sent",
+            "assessment_id": assessment_id,
+            "system_id": system_id,
+            "narrative": narrative,
+        }
+    finally:
+        conn.close()
+
+
+def handle_supply_chain_risk_handler(
+    sbom_id: str, component_name: str, recipient: str, ai_narrative: bool = False
+) -> dict:
+    """Fetch SBOM/supply chain risk data and deliver vulnerability notification.
+
+    Per aiify-opp-5948: adds a db→render→notify chain for supply chain risk
+    findings so security operations and supply chain officers receive a grounded
+    narrative describing the vulnerable component, CVSS severity, and the
+    recommended isolation or patch action.
+    """
+    conn = get_connection()
+    try:
+        sbom = conn.execute(
+            "SELECT id, component_name, version, vendor, component_type "
+            "FROM sbom_components WHERE id = ? AND component_name = ?",
+            (sbom_id, component_name),
+        ).fetchone()
+        vulns = conn.execute(
+            "SELECT cve_id, cvss_score, severity, affected_versions, fixed_version "
+            "FROM supply_chain_vulnerabilities WHERE sbom_id = ? "
+            "ORDER BY cvss_score DESC LIMIT 5",
+            (sbom_id,),
+        ).fetchall()
+        risk = conn.execute(
+            "SELECT risk_level, exploitability, patch_available, last_assessed "
+            "FROM supply_chain_risk_scores WHERE sbom_id = ? "
+            "ORDER BY last_assessed DESC LIMIT 1",
+            (sbom_id,),
+        ).fetchone()
+        rendered = render_template(
+            "handlers/supply_chain_risk.html",
+            sbom=sbom, vulns=vulns, risk=risk,
+        )
+        top_vuln = vulns[0] if vulns else {}
+        narrative = _ai_handler_narrative("supply chain risk vulnerability notification", {
+            "sbom_id": sbom_id,
+            "component_name": component_name,
+            "version": (sbom or {}).get("version", "unknown"),
+            "vendor": (sbom or {}).get("vendor", "unknown"),
+            "component_type": (sbom or {}).get("component_type", "unknown"),
+            "vulnerability_count": len(vulns),
+            "top_cvss_score": round(float((top_vuln or {}).get("cvss_score", 0) or 0), 1),
+            "top_cve": (top_vuln or {}).get("cve_id", "none"),
+            "risk_level": (risk or {}).get("risk_level", "unknown"),
+            "exploitability": (risk or {}).get("exploitability", "unknown"),
+            "patch_available": bool((risk or {}).get("patch_available", False)),
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="Supply Chain Risk Alert", html=rendered)
+        payload = {"sbom_id": sbom_id, "component_name": component_name}
+        if narrative:
+            payload["narrative"] = narrative
+        dispatch("supply_chain.risk_alert", payload)
+        return {
+            "status": "sent",
+            "sbom_id": sbom_id,
+            "component_name": component_name,
+            "narrative": narrative,
+        }
+    finally:
+        conn.close()
+
+
 def handle_agent_incident_handler(
     agent_id: str, incident_type: str, recipient: str, ai_narrative: bool = False
 ) -> dict:
