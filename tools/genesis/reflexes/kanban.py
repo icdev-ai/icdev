@@ -6028,8 +6028,87 @@ def _complexity_score(task: dict) -> int:
     return score
 
 
-def _decompose_one_task(task: dict) -> None:
-    """Call LLM to decompose a single needs_decomposition task into subtasks."""
+# ---------------------------------------------------------------------------
+# AI-ification (aiify-opp-5304): optional LLM-synthesized decomposition
+# narrative (metadata_extraction → llm_generation).
+#
+# _decompose_one_task already uses an LLM to decide *how* to split a task.
+# This companion helper synthesises a short, grounded narrative that explains
+# *what* was decided — useful for Telegram notifications, audit trails, and
+# operator dashboards. Any failure degrades silently so the deterministic
+# decomposition always completes.
+# ---------------------------------------------------------------------------
+
+_DECOMPOSE_NARRATIVE_SYSTEM_PROMPT = (
+    "You are a DoD/IC engineering lead writing a brief decomposition note for "
+    "a kanban task. Write a concise narrative (2-4 sentences) that: "
+    "(1) states what the original task was and why it needed splitting, "
+    "(2) describes the resulting subtasks and their execution order, and "
+    "(3) highlights the single most important risk or dependency to watch. "
+    "Use only the facts provided — never invent task IDs, titles, or counts. "
+    "Output only the narrative prose; no headers, no markdown, no preamble."
+)
+
+
+def _ai_decompose_narrative(task_id: str, facts: dict) -> str | None:
+    """Synthesize an optional LLM narrative for a completed task decomposition.
+
+    Args:
+        task_id: The parent task ID being decomposed. Used for log context only;
+            the model receives it through ``facts``.
+        facts: Grounding facts already derived from the deterministic
+            decomposition (task title, subtask count, subtask titles, failure
+            reason if any). Passed verbatim so the narrative cannot drift from
+            the authoritative result.
+
+    Returns:
+        A short narrative string, or ``None`` if generation is unavailable or
+        fails for any reason. Callers MUST treat ``None`` as "no narrative"
+        and proceed with the deterministic decomposition unchanged.
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        fact_lines = "\n".join(f"- {k}: {v}" for k, v in sorted(facts.items()))
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Task decomposition: {task_id}\n"
+                        f"Facts:\n{fact_lines}\n\n"
+                        "Write the decomposition narrative."
+                    ),
+                }
+            ],
+            system_prompt=_DECOMPOSE_NARRATIVE_SYSTEM_PROMPT,
+            max_tokens=512,
+            temperature=0.3,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("narrative_generation", req)
+        if resp and resp.content:
+            return resp.content.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _decompose_one_task(task: dict, ai_narrative: bool = False) -> dict:
+    """Call LLM to decompose a single needs_decomposition task into subtasks.
+
+    Args:
+        task: Kanban task row dict containing at minimum ``id``.
+        ai_narrative: When ``True``, an optional LLM narrative is synthesized
+            from the decomposition facts and returned under the ``narrative``
+            key. Defaults to ``False`` for backward compatibility.
+
+    Returns:
+        Dict with keys ``subtasks`` (list of inserted child IDs) and
+        ``narrative`` (str or None).
+    """
     from tools.llm.router import LLMRouter, LLMRequest
 
     tid = task["id"]
@@ -6175,16 +6254,37 @@ def _decompose_one_task(task: dict) -> None:
             + ", ".join(inserted)
         )
 
+        # Optional LLM narrative (aiify-opp-5304: metadata_extraction → llm_generation)
+        narrative: str | None = None
+        if ai_narrative:
+            sub_titles = [
+                str(subtasks[i].get("title") or f"{title} — part {i+1}")[:80]
+                for i in range(len(subtasks[:5]))
+            ]
+            narrative = _ai_decompose_narrative(tid, {
+                "task_id": tid,
+                "task_title": title,
+                "subtask_count": len(inserted),
+                "subtask_ids": ", ".join(inserted),
+                "subtask_titles": "; ".join(sub_titles),
+                "failure_reason": failure_reason if not is_upfront else "none (upfront decomposition)",
+            })
+
         # Telegram notification
         try:
             import os as _os
             if not (_os.environ.get("PYTEST_CURRENT_TEST") or
                     _os.environ.get("ICDEV_SUPPRESS_NOTIFICATIONS") == "1"):
                 from tools.notifications.adapters.telegram import send as tg_send
+                body = (
+                    f"Task {tid} was split into {len(inserted)} subtasks: "
+                    + ", ".join(inserted)
+                )
+                if narrative:
+                    body = f"{narrative}\n\nSubtasks: " + ", ".join(inserted)
                 tg_send(
                     f"AUTO-DECOMPOSED: {title[:50]}",
-                    f"Task {tid} was split into {len(inserted)} subtasks: "
-                    + ", ".join(inserted),
+                    body,
                     severity="info",
                 )
         except Exception:
@@ -6192,6 +6292,8 @@ def _decompose_one_task(task: dict) -> None:
 
     finally:
         conn.close()
+
+    return {"subtasks": inserted, "narrative": narrative}
 
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
