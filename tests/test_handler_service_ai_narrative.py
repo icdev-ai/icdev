@@ -276,3 +276,167 @@ def test_agent_incident_handler_no_narrative_by_default(monkeypatch):
     assert result["status"] == "sent"
     assert result["narrative"] is None
     assert result["agent_id"] == "agent-7"
+
+
+# ---------------------------------------------------------------------------
+# Extended integration tests for remaining handler functions (aiify-opp-5836)
+# ---------------------------------------------------------------------------
+
+def test_canvas_assessment_handler_narrative_attached(monkeypatch):
+    """handle_canvas_assessment_handler attaches narrative when LLM is available."""
+    assessment_row = {"id": "a-1", "score": 87.5, "cat1_findings": 0, "created_at": "2026-06-02"}
+    design_row = {"name": "ZIG Canvas", "classification": "CUI"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[assessment_row, design_row])
+    _fake_router(monkeypatch, content="Canvas assessment passed with no CAT I findings; proceed to ATO milestone.")
+
+    result = handler_service.handle_canvas_assessment_handler("c-42", "compliance@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["canvas_id"] == "c-42"
+    assert result["narrative"] == "Canvas assessment passed with no CAT I findings; proceed to ATO milestone."
+
+
+def test_canvas_assessment_handler_no_narrative_by_default(monkeypatch):
+    """handle_canvas_assessment_handler returns narrative=None when ai_narrative=False."""
+    assessment_row = {"id": "a-2", "score": 60.0, "cat1_findings": 3, "created_at": "2026-06-02"}
+    design_row = {"name": "DIC Canvas", "classification": "CUI"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[assessment_row, design_row])
+
+    result = handler_service.handle_canvas_assessment_handler("c-99", "sec@example.com")
+
+    assert result["status"] == "sent"
+    assert result["narrative"] is None
+
+
+def test_oracle_prediction_handler_narrative_attached(monkeypatch):
+    """handle_oracle_prediction_handler attaches narrative when LLM is available."""
+    pred_row = {
+        "id": "P-55", "title": "Supply chain disruption risk",
+        "severity": "high", "confidence": 0.91, "lens_id": "lens-3", "created_at": "2026-06-02",
+    }
+    lens_row = {"name": "Supply Chain", "horizon_days": 90}
+    _fake_handler_conn(monkeypatch, rows_by_call=[pred_row, lens_row])
+    _fake_router(monkeypatch, content="High-confidence supply chain disruption predicted; engage alternate vendors within 30 days.")
+
+    result = handler_service.handle_oracle_prediction_handler("P-55", "ops@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["prediction_id"] == "P-55"
+    assert result["narrative"] == "High-confidence supply chain disruption predicted; engage alternate vendors within 30 days."
+
+
+def test_oracle_prediction_handler_no_narrative_by_default(monkeypatch):
+    """handle_oracle_prediction_handler returns narrative=None when ai_narrative=False."""
+    pred_row = {"id": "P-01", "title": "Low risk event", "severity": "low", "confidence": 0.4, "lens_id": "lens-1"}
+    lens_row = {"name": "Ops", "horizon_days": 30}
+    _fake_handler_conn(monkeypatch, rows_by_call=[pred_row, lens_row])
+
+    result = handler_service.handle_oracle_prediction_handler("P-01", "watch@example.com")
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_genesis_reflex_handler_narrative_attached(monkeypatch):
+    """handle_genesis_reflex_handler attaches narrative when LLM is available."""
+    reflex_row = {"id": "r-7", "name": "gap_fill_reflex", "confidence": 0.85, "fired_at": "2026-06-02"}
+    design_row = {"name": "ACOIC Genesis", "status": "in_progress", "current_phase": "integrate"}
+    event_rows = [
+        {"phase": "architect", "status": "done"},
+        {"phase": "navigate", "status": "done"},
+    ]
+    _fake_handler_conn(monkeypatch, rows_by_call=[reflex_row, design_row, event_rows])
+    _fake_router(monkeypatch, content="Genesis reflex fired with high confidence; review integrate phase outputs before proceeding.")
+
+    result = handler_service.handle_genesis_reflex_handler("r-7", "d-12", "dev@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["reflex_id"] == "r-7"
+    assert result["narrative"] == "Genesis reflex fired with high confidence; review integrate phase outputs before proceeding."
+
+
+def test_genesis_reflex_handler_narrative_none_on_llm_failure(monkeypatch):
+    """Notification ships even when the LLM raises for genesis reflex handler."""
+    reflex_row = {"id": "r-8", "name": "drift_reflex", "confidence": 0.6, "fired_at": "2026-06-02"}
+    design_row = {"name": "Test Design", "status": "active", "current_phase": "verify"}
+    event_rows = []
+    _fake_handler_conn(monkeypatch, rows_by_call=[reflex_row, design_row, event_rows])
+    _fake_router(monkeypatch, raises=RuntimeError("llm unavailable"))
+
+    result = handler_service.handle_genesis_reflex_handler("r-8", "d-20", "dev@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_poam_deadline_handler_narrative_attached(monkeypatch):
+    """handle_poam_deadline_handler attaches narrative when LLM is available."""
+    poam_row = {
+        "id": "POAM-10", "title": "Patch OpenSSL 3.0.x", "severity": "high",
+        "due_date": "2026-07-01", "owner": "alice", "status": "open",
+        "milestone": "Sprint 14", "finding_ref": "stig-99",
+    }
+    finding_row = {"title": "OpenSSL CVE-2026-1234", "severity": "high"}
+    owner_row = {"email": "alice@example.com", "name": "Alice Dev"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[poam_row, finding_row, owner_row])
+    _fake_router(monkeypatch, content="POA&M deadline for OpenSSL patch is in 29 days; assign sprint resources immediately.")
+
+    result = handler_service.handle_poam_deadline_handler("POAM-10", "proj-1", "fallback@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["poam_id"] == "POAM-10"
+    assert result["narrative"] == "POA&M deadline for OpenSSL patch is in 29 days; assign sprint resources immediately."
+
+
+def test_poam_deadline_handler_no_narrative_by_default(monkeypatch):
+    """handle_poam_deadline_handler returns narrative=None when ai_narrative=False."""
+    poam_row = {
+        "id": "POAM-20", "title": "Update TLS certs", "severity": "medium",
+        "due_date": "2026-08-01", "owner": "bob", "status": "in_progress",
+        "milestone": "Sprint 15", "finding_ref": "",
+    }
+    finding_row = None
+    owner_row = {"email": "bob@example.com", "name": "Bob Ops"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[poam_row, finding_row, owner_row])
+
+    result = handler_service.handle_poam_deadline_handler("POAM-20", "proj-2", "sec@example.com")
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_zig_pillar_handler_narrative_attached(monkeypatch):
+    """handle_zig_pillar_handler attaches narrative when LLM is available."""
+    scores_row = {
+        "pillar_slug": "identity", "score": 0.74, "maturity_level": "managed",
+        "complete_activities": 31, "activity_count": 42,
+    }
+    cap_rows = [
+        {"title": "MFA enforcement", "implementation_status": "done", "phase": 1},
+        {"title": "PAM integration", "implementation_status": "in_progress", "phase": 2},
+    ]
+    activity_rows = [
+        {"title": "Enable FIDO2 keys", "status": "complete"},
+        {"title": "Vault PAM install", "status": "in_progress"},
+    ]
+    _fake_handler_conn(monkeypatch, rows_by_call=[scores_row, cap_rows, activity_rows])
+    _fake_router(monkeypatch, content="Identity pillar at 74% maturity; focus on PAM integration to advance to optimizing level.")
+
+    result = handler_service.handle_zig_pillar_handler("identity", "zig@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["pillar_slug"] == "identity"
+    assert result["narrative"] == "Identity pillar at 74% maturity; focus on PAM integration to advance to optimizing level."
+
+
+def test_zig_pillar_handler_no_narrative_by_default(monkeypatch):
+    """handle_zig_pillar_handler returns narrative=None when ai_narrative=False."""
+    scores_row = {"pillar_slug": "data", "score": 0.5, "maturity_level": "initial", "complete_activities": 10, "activity_count": 20}
+    cap_rows = []
+    activity_rows = []
+    _fake_handler_conn(monkeypatch, rows_by_call=[scores_row, cap_rows, activity_rows])
+
+    result = handler_service.handle_zig_pillar_handler("data", "zig@example.com")
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
