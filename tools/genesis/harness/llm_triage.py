@@ -6,11 +6,13 @@ an unknown lens or no matching heuristic. Routes through LLMRouter at scanner
 tier (qwen3-local → Claude fallback).
 
 Gate: ICDEV_ORACLE_LLM_FALLBACK=true in .env (default off).
-Min confidence: 0.65 — below this the original "skip" is preserved.
+Min confidence: adaptive (mean - z*std from harness_eval history); falls back
+to 0.65 when insufficient history exists.
 """
 from __future__ import annotations
 
 import json
+import statistics
 
 from tools.logging.icdev_logger import get_logger
 import os
@@ -18,7 +20,97 @@ from typing import Any
 
 LOG = get_logger(__name__)
 
-_MIN_CONFIDENCE = 0.65
+_MIN_CONFIDENCE_DEFAULT = 0.65  # floor / fallback when history is insufficient
+_CONFIDENCE_THRESHOLD_CACHE: float | None = None  # reset at start of each triage run
+
+
+# ---------------------------------------------------------------------------
+# Adaptive confidence threshold (anomaly detection)
+# ---------------------------------------------------------------------------
+
+def _fetch_llm_confidence_history(limit: int = 50) -> list[float]:
+    """Return recent oracle_triage confidence scores from harness_eval.
+
+    Returns an empty list when the DB is unavailable or the table does not exist.
+    """
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                """
+                SELECT confidence FROM harness_eval
+                WHERE reflex = 'oracle_triage'
+                  AND confidence IS NOT NULL
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [float(r[0]) for r in rows if r[0] is not None]
+        finally:
+            conn.close()
+    except Exception as exc:
+        LOG.debug("[llm_triage] _fetch_llm_confidence_history failed: %s", exc)
+        return []
+
+
+def _compute_adaptive_min_confidence(
+    history: list[float],
+    *,
+    floor: float = _MIN_CONFIDENCE_DEFAULT,
+    z_score: float = 1.5,
+    min_samples: int = 10,
+) -> float | None:
+    """Derive adaptive minimum confidence from historical distribution.
+
+    Computes max(floor, mean - z_score * std). Returns None when history is
+    insufficient (< min_samples) or distribution is degenerate (std == 0).
+    """
+    if len(history) < min_samples or len(history) < 2:
+        return None
+    std = statistics.stdev(history)
+    if std == 0.0:
+        return None
+    mean = statistics.mean(history)
+    return max(floor, round(mean - z_score * std, 4))
+
+
+def _get_adaptive_min_confidence() -> float:
+    """Return cached adaptive min confidence; compute on first call per process.
+
+    Falls back to _MIN_CONFIDENCE_DEFAULT if history is insufficient or the
+    distribution is degenerate.
+    """
+    global _CONFIDENCE_THRESHOLD_CACHE
+    if _CONFIDENCE_THRESHOLD_CACHE is not None:
+        return _CONFIDENCE_THRESHOLD_CACHE
+
+    z_score = 1.5
+    min_samples = 10
+    try:
+        from tools.genesis.harness.eval_harness import _load_harness_config
+        ad = _load_harness_config().get("anomaly_detection", {})
+        z_score = float(ad.get("z_score", z_score))
+        min_samples = int(ad.get("min_samples", min_samples))
+    except Exception:
+        pass
+
+    history = _fetch_llm_confidence_history()
+    adaptive = _compute_adaptive_min_confidence(
+        history,
+        floor=_MIN_CONFIDENCE_DEFAULT,
+        z_score=z_score,
+        min_samples=min_samples,
+    )
+    _CONFIDENCE_THRESHOLD_CACHE = adaptive if adaptive is not None else _MIN_CONFIDENCE_DEFAULT
+    return _CONFIDENCE_THRESHOLD_CACHE
+
+
+def reset_confidence_threshold_cache() -> None:
+    """Reset the adaptive confidence threshold cache (call at start of each triage run)."""
+    global _CONFIDENCE_THRESHOLD_CACHE
+    _CONFIDENCE_THRESHOLD_CACHE = None
 
 _SYSTEM_PROMPT = """\
 You are the Oracle Triage classifier for ICDEV™, a DevSecOps platform.
@@ -131,7 +223,7 @@ def llm_triage_task(task: dict[str, Any]) -> tuple[str, str, float]:
             action = "skip"
             confidence = 0.0
 
-        if confidence < _MIN_CONFIDENCE:
+        if confidence < _get_adaptive_min_confidence():
             return "skip", f"llm_low_confidence({confidence:.2f}): {reason}", confidence
 
         return action, f"[llm] {reason}", confidence

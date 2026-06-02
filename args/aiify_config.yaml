@@ -121,3 +121,18 @@ research_reflex:
   signal_confidence: 0.7     # GKP export confidence for research signals
   signal_base_score: 50      # base relevance score for research signals
   html_snippet_limit: 4000   # max HTML chars sent to NLP link extractor
+
+cato_monitor:
+  # Configurable thresholds for tools/genesis/reflexes/cato_monitor.py.
+  # Replaces the hardcoded `total_violations > 0` check with a tunable value
+  # so POAM generation sensitivity can be adjusted without modifying source
+  # code (aiify-rm-ff651-phase-5259).
+  violation_threshold: 1     # generate POAM when violations >= this value (default: any violation)
+
+  # Optional LLM-based anomaly assessment of compliance violation patterns.
+  # Opt-in: set enabled: true here. When disabled (default), the reflex runs
+  # scanner-tier with zero Claude token consumption. Air-gap safe.
+  llm_anomaly_detection:
+    enabled: false
+    model: claude-haiku-4-5-20251001
+    max_tokens: 256

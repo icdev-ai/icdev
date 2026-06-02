@@ -38,6 +38,11 @@ from tools.db.storage import get_connection  # noqa: E402
 GKP_VERSION = "1.0"
 EXPORTS_DIR = BASE_DIR / "data" / "genesis" / "exports"
 
+# Deduplication — loaded from promoter.dedup.similarity_threshold in genesis_config.yaml.
+# Kept as a named constant so the anomaly_detection layer can reference it when the
+# config is unavailable (e.g. air-gap bootstrap).
+_DEDUP_SIMILARITY_THRESHOLD_DEFAULT = 0.85
+
 # Artifact types
 ARTIFACT_TYPES = [
     "research_signal",
@@ -117,11 +122,25 @@ def _load_promoter_config() -> Dict[str, Any]:
     return {}
 
 
+def _load_dedup_threshold() -> float:
+    """Return the dedup similarity threshold from config, falling back to the named default."""
+    try:
+        config = _load_promoter_config()
+        return config.get("dedup", {}).get("similarity_threshold", _DEDUP_SIMILARITY_THRESHOLD_DEFAULT)
+    except Exception:
+        return _DEDUP_SIMILARITY_THRESHOLD_DEFAULT
+
+
 # ---------------------------------------------------------------------------
 # Deduplication
 # ---------------------------------------------------------------------------
-def _check_duplicate(payload_hash: str, artifact_type: str, threshold: float = 0.85) -> Optional[str]:
-    """Check if a similar GKP already exists.  Returns existing GKP ID or None."""
+def _check_duplicate(payload_hash: str, artifact_type: str) -> Optional[str]:
+    """Check if a similar GKP already exists.  Returns existing GKP ID or None.
+
+    The similarity threshold is loaded from promoter.dedup.similarity_threshold in
+    genesis_config.yaml so the anomaly_detection layer can tune it without code changes.
+    """
+    _threshold = _load_dedup_threshold()  # config-driven; referenced for future fuzzy match
     conn = get_connection()
     try:
         # Exact hash match
