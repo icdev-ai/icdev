@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5636, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742, aiify-opp-5776, aiify-opp-5780, aiify-opp-5814).
+"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5636, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742, aiify-opp-5776, aiify-opp-5780, aiify-opp-5814, aiify-opp-5816, aiify-opp-5850).
 
 The db -> render -> notify chains in ``tools.notification_service.alert_service``
 gained an opt-in LLM triage narrative. These tests pin the two load-bearing
@@ -574,3 +574,279 @@ def test_system_prompt_specifies_output_format(monkeypatch):
     """_NARRATIVE_SYSTEM_PROMPT must ask for plain prose without markdown headers."""
     prompt = alert_service._NARRATIVE_SYSTEM_PROMPT
     assert "no markdown" in prompt.lower() or "no headers" in prompt.lower()
+
+
+# ---------------------------------------------------------------------------
+# Tests for dispatch_stig_alert channel-payload propagation (aiify-opp-5816)
+# Lines 280-386: the dispatch loop must include narrative in Slack/Teams
+# publish() calls and omit it when narrative is None.
+# ---------------------------------------------------------------------------
+
+def _fake_stig_conn_with_publish(monkeypatch):
+    """Fake DB + render for dispatch_stig_alert; returns the captured publish calls."""
+    rows = [
+        _STIG_CHECK_ROW,
+        {"name": "TestWorkload", "classification": "CUI", "owner": "ops"},
+        None,  # no existing_poam
+    ]
+    idx = [0]
+
+    class _Cur:
+        def __init__(self, row):
+            self._row = row
+            self.lastrowid = 42
+
+        def fetchone(self):
+            return self._row
+
+        def fetchall(self):
+            return []
+
+    class _Conn:
+        def execute(self, sql, params=()):
+            row = rows[idx[0]] if idx[0] < len(rows) else None
+            idx[0] += 1
+            return _Cur(row)
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    published = []
+    monkeypatch.setattr(alert_service, "get_connection", lambda: _Conn())
+    monkeypatch.setattr(alert_service, "render_template", lambda *a, **kw: "<html/>")
+    monkeypatch.setattr(alert_service, "publish", lambda ch, payload: published.append((ch, payload)))
+    return published
+
+
+def test_dispatch_stig_narrative_in_slack_payload(monkeypatch):
+    """When dispatch_stig_alert sends to slack with ai_narrative=True the narrative
+    must appear in the publish() payload so SecOps tooling can surface it."""
+    published = _fake_stig_conn_with_publish(monkeypatch)
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda kind, facts: "Disable weak SSH ciphers; this CAT-I check is open.",
+    )
+
+    result = alert_service.dispatch_stig_alert(
+        "SV-99999", "WL-1", ["slack"], auto_create_poam=False, ai_narrative=True
+    )
+
+    assert result["narrative"] == "Disable weak SSH ciphers; this CAT-I check is open."
+    assert published, "publish() was never called"
+    _, payload = published[0]
+    assert payload.get("narrative") == "Disable weak SSH ciphers; this CAT-I check is open."
+
+
+def test_dispatch_stig_narrative_absent_from_slack_payload_when_none(monkeypatch):
+    """When narrative is None the publish() payload must not contain a 'narrative' key."""
+    published = _fake_stig_conn_with_publish(monkeypatch)
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: None)
+
+    alert_service.dispatch_stig_alert(
+        "SV-99999", "WL-1", ["slack"], auto_create_poam=False, ai_narrative=True
+    )
+
+    assert published, "publish() was never called"
+    _, payload = published[0]
+    assert "narrative" not in payload
+
+
+def test_dispatch_stig_narrative_absent_when_ai_narrative_false(monkeypatch):
+    """When ai_narrative=False the publish() payload must never contain a narrative key."""
+    published = _fake_stig_conn_with_publish(monkeypatch)
+    # Patch to a sentinel that would expose a bug if called.
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda *a: "SHOULD NOT APPEAR",
+    )
+
+    alert_service.dispatch_stig_alert(
+        "SV-99999", "WL-1", ["slack"], auto_create_poam=False, ai_narrative=False
+    )
+
+    assert published, "publish() was never called"
+    _, payload = published[0]
+    assert "narrative" not in payload
+
+
+# ---------------------------------------------------------------------------
+# Tests for teams-channel narrative propagation (aiify-opp-5850)
+# The publish/dispatch loops handle "slack" and "teams" identically; these
+# tests pin that the teams branch carries the narrative through so SecOps
+# tooling using Teams webhooks also receives the triage context.
+# ---------------------------------------------------------------------------
+
+def _fake_cat1_conn_with_publish(monkeypatch):
+    """Fake DB + render for escalate_cat1_finding; returns captured publish calls."""
+    rows = [
+        _CAT1_FINDING_ROW,
+        {},
+        {"name": "TestSys", "classification": "CUI", "system_owner": "J"},
+        _OPEN_CAT1_COUNT_ROW,
+    ]
+    idx = [0]
+
+    class _Cur:
+        def __init__(self, row):
+            self._row = row
+            self.lastrowid = None
+
+        def fetchone(self):
+            return self._row
+
+        def fetchall(self):
+            return []
+
+    class _Conn:
+        def execute(self, sql, params=()):
+            row = rows[idx[0]] if idx[0] < len(rows) else None
+            idx[0] += 1
+            return _Cur(row)
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    published = []
+    monkeypatch.setattr(alert_service, "get_connection", lambda: _Conn())
+    monkeypatch.setattr(alert_service, "render_template", lambda *a, **kw: "<html/>")
+    monkeypatch.setattr(alert_service, "render_string", lambda *a, **kw: "sms")
+    monkeypatch.setattr(alert_service, "publish", lambda ch, payload: published.append((ch, payload)))
+    return published
+
+
+def _fake_poam_conn_with_dispatch(monkeypatch):
+    """Fake DB + render for send_poam_reminder; returns captured dispatch calls."""
+    rows = [
+        _POAM_ROW,
+        _DAYS_ROW,
+        {"email": "jdoe@icdev.local", "name": "Jane", "phone": ""},
+        None,
+    ]
+    idx = [0]
+
+    class _Cur:
+        def __init__(self, row):
+            self._row = row
+            self.lastrowid = None
+
+        def fetchone(self):
+            return self._row
+
+        def fetchall(self):
+            return []
+
+    class _Conn:
+        def execute(self, sql, params=()):
+            row = rows[idx[0]] if idx[0] < len(rows) else None
+            idx[0] += 1
+            return _Cur(row)
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    dispatched = []
+    monkeypatch.setattr(alert_service, "get_connection", lambda: _Conn())
+    monkeypatch.setattr(alert_service, "render_template", lambda *a, **kw: "<html/>")
+    monkeypatch.setattr(alert_service, "render_to_string", lambda *a, **kw: "brief")
+    monkeypatch.setattr(alert_service, "dispatch", lambda ch, payload: dispatched.append((ch, payload)))
+    return dispatched
+
+
+def test_escalate_cat1_narrative_in_teams_payload(monkeypatch):
+    """escalate_cat1_finding must include narrative in the teams publish() payload."""
+    published = _fake_cat1_conn_with_publish(monkeypatch)
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda kind, facts: "Patch OpenSSL immediately — CAT-I SLA is 24 hours.",
+    )
+
+    result = alert_service.escalate_cat1_finding("F-1", "P-1", ["teams"], ai_narrative=True)
+
+    assert result["narrative"] == "Patch OpenSSL immediately — CAT-I SLA is 24 hours."
+    assert published, "publish() was never called for teams channel"
+    ch, payload = published[0]
+    assert ch == "teams"
+    assert payload.get("narrative") == "Patch OpenSSL immediately — CAT-I SLA is 24 hours."
+
+
+def test_escalate_cat1_narrative_absent_from_teams_payload_when_none(monkeypatch):
+    """When narrative is None the teams publish() payload must not contain a 'narrative' key."""
+    published = _fake_cat1_conn_with_publish(monkeypatch)
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: None)
+
+    alert_service.escalate_cat1_finding("F-1", "P-1", ["teams"], ai_narrative=True)
+
+    assert published, "publish() was never called for teams channel"
+    _, payload = published[0]
+    assert "narrative" not in payload
+
+
+def test_dispatch_stig_narrative_in_teams_payload(monkeypatch):
+    """dispatch_stig_alert must include narrative in the teams publish() payload."""
+    published = _fake_stig_conn_with_publish(monkeypatch)
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda kind, facts: "Disable weak SSH ciphers; CAT-I STIG check is open.",
+    )
+
+    result = alert_service.dispatch_stig_alert(
+        "SV-99999", "WL-1", ["teams"], auto_create_poam=False, ai_narrative=True
+    )
+
+    assert result["narrative"] == "Disable weak SSH ciphers; CAT-I STIG check is open."
+    assert published, "publish() was never called for teams channel"
+    ch, payload = published[0]
+    assert ch == "teams"
+    assert payload.get("narrative") == "Disable weak SSH ciphers; CAT-I STIG check is open."
+
+
+def test_dispatch_stig_narrative_absent_from_teams_payload_when_none(monkeypatch):
+    """When narrative is None the teams publish() payload must not contain a 'narrative' key."""
+    published = _fake_stig_conn_with_publish(monkeypatch)
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: None)
+
+    alert_service.dispatch_stig_alert(
+        "SV-99999", "WL-1", ["teams"], auto_create_poam=False, ai_narrative=True
+    )
+
+    assert published, "publish() was never called for teams channel"
+    _, payload = published[0]
+    assert "narrative" not in payload
+
+
+def test_send_poam_reminder_narrative_in_teams_payload(monkeypatch):
+    """send_poam_reminder must include narrative in the teams dispatch() payload."""
+    dispatched = _fake_poam_conn_with_dispatch(monkeypatch)
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda kind, facts: "Renew the cert within 10 days or the POA&M will breach.",
+    )
+
+    result = alert_service.send_poam_reminder("POAM-42", "P-1", ["teams"], ai_narrative=True)
+
+    assert result["narrative"] == "Renew the cert within 10 days or the POA&M will breach."
+    assert dispatched, "dispatch() was never called for teams channel"
+    ch, payload = dispatched[0]
+    assert ch == "teams"
+    assert payload.get("narrative") == "Renew the cert within 10 days or the POA&M will breach."
+
+
+def test_send_poam_reminder_narrative_absent_from_teams_payload_when_none(monkeypatch):
+    """When narrative is None the teams dispatch() payload must not contain a 'narrative' key."""
+    dispatched = _fake_poam_conn_with_dispatch(monkeypatch)
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: None)
+
+    alert_service.send_poam_reminder("POAM-42", "P-1", ["teams"], ai_narrative=True)
+
+    assert dispatched, "dispatch() was never called for teams channel"
+    _, payload = dispatched[0]
+    assert "narrative" not in payload
