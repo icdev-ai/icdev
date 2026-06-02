@@ -138,3 +138,117 @@ def test_max_tokens_and_temperature(monkeypatch):
 
     assert captured["request"].max_tokens == 512
     assert captured["request"].temperature == 0.3
+
+
+# ---------------------------------------------------------------------------
+# deliver_aiify_scan_report integration tests (aiify-opp-5804)
+# ---------------------------------------------------------------------------
+
+def _fake_conn(monkeypatch, *, scan_row=None, pattern_rows=(), module_rows=(), top_opps=()):
+    """Patch get_connection() to return a stub with canned query results."""
+    import types
+
+    rows_by_call = [scan_row, pattern_rows, module_rows, top_opps]
+    call_counter = {"n": 0}
+
+    class _FakeCursor:
+        def __init__(self, result):
+            self._result = result
+
+        def fetchone(self):
+            return self._result if not isinstance(self._result, (list, tuple)) else None
+
+        def fetchall(self):
+            return list(self._result) if isinstance(self._result, (list, tuple)) else []
+
+    class _FakeConn:
+        def execute(self, sql, params=()):
+            result = rows_by_call[call_counter["n"]] if call_counter["n"] < len(rows_by_call) else None
+            call_counter["n"] += 1
+            return _FakeCursor(result)
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    fake_conn = _FakeConn()
+
+    import tools.notification_service.report_service as rs
+
+    monkeypatch.setattr(rs, "get_connection", lambda: fake_conn)
+    monkeypatch.setattr(rs, "sendmail", lambda **kw: None)
+    monkeypatch.setattr(rs, "render_template", lambda *a, **kw: "<html/>")
+    monkeypatch.setattr(rs, "notify", lambda *a, **kw: None)
+    monkeypatch.setattr(rs, "publish", lambda *a, **kw: None)
+    return fake_conn
+
+
+def _make_scan_row(scan_id=37, readiness=78.5, status="complete", input_ref="tools/"):
+    return {
+        "scan_id": scan_id,
+        "overall_ai_readiness": readiness,
+        "status": status,
+        "input_ref": input_ref,
+        "created_at": "2026-06-02T00:00:00",
+    }
+
+
+def _make_pattern_rows():
+    return [
+        {"pattern_type": "db_render_notify_chain", "opp_count": 12, "avg_score": 0.77},
+        {"pattern_type": "llm_classification", "opp_count": 5, "avg_score": 0.65},
+    ]
+
+
+def test_scan_report_no_narrative_by_default(monkeypatch):
+    """deliver_aiify_scan_report must return narrative=None when ai_narrative=False."""
+    _fake_conn(
+        monkeypatch,
+        scan_row=_make_scan_row(),
+        pattern_rows=_make_pattern_rows(),
+        module_rows=[],
+        top_opps=[],
+    )
+
+    result = report_service.deliver_aiify_scan_report(37, ["ops@example.com"], [])
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"
+
+
+def test_scan_report_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    _fake_conn(
+        monkeypatch,
+        scan_row=_make_scan_row(),
+        pattern_rows=_make_pattern_rows(),
+        module_rows=[],
+        top_opps=[],
+    )
+    _fake_router(monkeypatch, content="Scan complete; prioritize db_render_notify_chain.")
+
+    result = report_service.deliver_aiify_scan_report(
+        37, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] == "Scan complete; prioritize db_render_notify_chain."
+    assert result["readiness"] == 78.5
+    assert result["total_opportunities"] == 17  # 12 + 5
+
+
+def test_scan_report_narrative_none_on_llm_failure(monkeypatch):
+    """deliver_aiify_scan_report degrades to narrative=None when LLM raises."""
+    _fake_conn(
+        monkeypatch,
+        scan_row=_make_scan_row(),
+        pattern_rows=_make_pattern_rows(),
+        module_rows=[],
+        top_opps=[],
+    )
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = report_service.deliver_aiify_scan_report(
+        37, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"  # deterministic report still delivered
