@@ -1314,3 +1314,225 @@ def test_simulation_coa_result_narrative_facts_grounded(monkeypatch):
     assert "coa_count" in user_msg
     assert "recommended_count" in user_msg
     assert "simulation COA result" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# aiify-opp-5956: ZTA posture assessment render chain
+# ---------------------------------------------------------------------------
+
+def test_zta_posture_report_no_narrative_by_default(monkeypatch):
+    """render_and_notify_zta_posture_report returns narrative=None when ai_narrative=False."""
+    assessment_row = {
+        "id": "zta-1", "pillar": "identity", "maturity_level": "managed",
+        "score": 74.0, "assessed_at": "2026-06-02",
+    }
+    control_rows = [
+        {"control_id": "ZT-ID-01", "title": "MFA enforcement", "status": "implemented", "implementation_level": "full"},
+    ]
+    gap_rows = [
+        {"title": "PAM integration missing", "severity": "high", "pillar": "identity", "recommended_action": "Deploy PAM"},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[assessment_row, control_rows, gap_rows])
+
+    result = rhs.render_and_notify_zta_posture_report("zta-1", "ztlead@example.com")
+
+    assert result["status"] == "sent"
+    assert result["assessment_id"] == "zta-1"
+    assert result["gap_count"] == 1
+    assert result["narrative"] is None
+
+
+def test_zta_posture_report_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    assessment_row = {
+        "id": "zta-2", "pillar": "network", "maturity_level": "advanced",
+        "score": 88.5, "assessed_at": "2026-06-02",
+    }
+    control_rows = [
+        {"control_id": "ZT-NW-01", "title": "Micro-segmentation", "status": "implemented", "implementation_level": "full"},
+        {"control_id": "ZT-NW-02", "title": "East-west inspection", "status": "in_progress", "implementation_level": "partial"},
+    ]
+    gap_rows = []
+    _fake_conn(monkeypatch, rows_by_call=[assessment_row, control_rows, gap_rows])
+    _fake_router(monkeypatch, content="ZTA network pillar at 88.5% maturity with no critical gaps; complete east-west inspection to reach optimized level.")
+
+    result = rhs.render_and_notify_zta_posture_report("zta-2", "ztlead@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["assessment_id"] == "zta-2"
+    assert result["gap_count"] == 0
+    assert result["narrative"] == "ZTA network pillar at 88.5% maturity with no critical gaps; complete east-west inspection to reach optimized level."
+
+
+def test_zta_posture_report_narrative_none_on_llm_failure(monkeypatch):
+    """ZTA notification ships even when the LLM raises; narrative degrades to None."""
+    assessment_row = {
+        "id": "zta-3", "pillar": "device", "maturity_level": "initial",
+        "score": 42.0, "assessed_at": "2026-06-02",
+    }
+    _fake_conn(monkeypatch, rows_by_call=[assessment_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_notify_zta_posture_report("zta-3", "ztlead@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_zta_posture_report_narrative_facts_grounded(monkeypatch):
+    """Narrative prompt must include assessment_id, pillar, maturity_level, and gap_count."""
+    assessment_row = {
+        "id": "zta-4", "pillar": "application", "maturity_level": "managed",
+        "score": 65.0, "assessed_at": "2026-06-02",
+    }
+    control_rows = [
+        {"control_id": "ZT-AP-01", "title": "App-layer auth", "status": "implemented", "implementation_level": "full"},
+    ]
+    gap_rows = [
+        {"title": "API gateway hardening", "severity": "critical", "pillar": "application", "recommended_action": "Enforce mTLS"},
+        {"title": "Runtime isolation gap", "severity": "high", "pillar": "application", "recommended_action": "Enable seccomp"},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[assessment_row, control_rows, gap_rows])
+    captured = _fake_router(monkeypatch, content="2 ZTA gaps in application pillar.")
+
+    rhs.render_and_notify_zta_posture_report("zta-4", "ztlead@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "assessment_id" in user_msg
+    assert "pillar" in user_msg
+    assert "maturity_level" in user_msg
+    assert "gap_count" in user_msg
+    assert "critical_high_gap_count" in user_msg
+    assert "ZTA posture assessment" in user_msg
+
+
+def test_zta_posture_report_critical_gap_count_derived(monkeypatch):
+    """critical_high_gap_count must count only critical and high severity gaps."""
+    assessment_row = {"id": "zta-5", "pillar": "data", "maturity_level": "initial", "score": 30.0}
+    control_rows = []
+    gap_rows = [
+        {"title": "Data classification missing", "severity": "critical", "pillar": "data", "recommended_action": "Tag all data"},
+        {"title": "Encryption at rest partial", "severity": "high", "pillar": "data", "recommended_action": "Enable full AES-256"},
+        {"title": "Audit log gaps", "severity": "medium", "pillar": "data", "recommended_action": "Enable verbose logging"},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[assessment_row, control_rows, gap_rows])
+    captured = _fake_router(monkeypatch, content="3 ZTA data gaps; 2 are critical or high severity.")
+
+    rhs.render_and_notify_zta_posture_report("zta-5", "ztlead@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "critical_high_gap_count" in user_msg
+    assert "2" in user_msg  # two critical/high gaps counted correctly
+
+
+def test_zta_posture_report_no_assessment_still_returns(monkeypatch):
+    """When no assessment row exists, function still returns without error."""
+    _fake_conn(monkeypatch, rows_by_call=[None, [], []])
+
+    result = rhs.render_and_notify_zta_posture_report("zta-99", "ztlead@example.com")
+
+    assert result["status"] == "sent"
+    assert result["assessment_id"] == "zta-99"
+    assert result["gap_count"] == 0
+    assert result["narrative"] is None
+
+
+# ---------------------------------------------------------------------------
+# aiify-opp-5954: requirements intake session summary render chain
+# ---------------------------------------------------------------------------
+
+def test_intake_session_summary_no_narrative_by_default(monkeypatch):
+    """render_and_notify_intake_session_summary returns narrative=None when ai_narrative=False."""
+    session_row = {
+        "id": "sess-1", "title": "ACOIC Phase 3 Intake", "status": "complete",
+        "readiness_score": 82.5, "created_at": "2026-06-02",
+    }
+    req_rows = [
+        {"id": "req-1", "title": "Multi-tenant RBAC", "priority": 1, "category": "security", "status": "captured"},
+        {"id": "req-2", "title": "AI inference latency SLA", "priority": 2, "category": "performance", "status": "captured"},
+    ]
+    gap_rows = [{"title": "Missing NFR for data residency", "gap_type": "non_functional", "severity": "high"}]
+    _fake_conn(monkeypatch, rows_by_call=[session_row, req_rows, gap_rows])
+
+    result = rhs.render_and_notify_intake_session_summary("sess-1", "lead@example.com")
+
+    assert result["status"] == "sent"
+    assert result["session_id"] == "sess-1"
+    assert result["requirement_count"] == 2
+    assert result["narrative"] is None
+
+
+def test_intake_session_summary_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    session_row = {
+        "id": "sess-2", "title": "IL5 Migration Requirements", "status": "complete",
+        "readiness_score": 91.0, "created_at": "2026-06-02",
+    }
+    req_rows = [
+        {"id": "req-3", "title": "FedRAMP High boundary definition", "priority": 1, "category": "compliance", "status": "captured"},
+        {"id": "req-4", "title": "Zero-downtime migration SLA", "priority": 1, "category": "ops", "status": "captured"},
+        {"id": "req-5", "title": "Data classification taxonomy", "priority": 2, "category": "data", "status": "captured"},
+    ]
+    gap_rows = []
+    _fake_conn(monkeypatch, rows_by_call=[session_row, req_rows, gap_rows])
+    _fake_router(monkeypatch, content="IL5 Migration intake is 91% ready with 3 requirements captured and no gaps; schedule elaboration sprint.")
+
+    result = rhs.render_and_notify_intake_session_summary("sess-2", "lead@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["session_id"] == "sess-2"
+    assert result["requirement_count"] == 3
+    assert result["narrative"] == "IL5 Migration intake is 91% ready with 3 requirements captured and no gaps; schedule elaboration sprint."
+
+
+def test_intake_session_summary_narrative_none_on_llm_failure(monkeypatch):
+    """Intake notification ships even when the LLM raises; narrative degrades to None."""
+    session_row = {
+        "id": "sess-3", "title": "SaaS Portal Intake", "status": "in_progress",
+        "readiness_score": 55.0, "created_at": "2026-06-02",
+    }
+    _fake_conn(monkeypatch, rows_by_call=[session_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_notify_intake_session_summary("sess-3", "lead@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_intake_session_summary_narrative_facts_grounded(monkeypatch):
+    """Narrative prompt must include session_id, session_title, readiness_score, and gap_count."""
+    session_row = {
+        "id": "sess-4", "title": "DIC Canvas Requirements", "status": "complete",
+        "readiness_score": 77.0, "created_at": "2026-06-02",
+    }
+    req_rows = [
+        {"id": "req-6", "title": "Document ingestion pipeline SLA", "priority": 1, "category": "data", "status": "captured"},
+    ]
+    gap_rows = [
+        {"title": "Missing RAG latency NFR", "gap_type": "non_functional", "severity": "medium"},
+        {"title": "Undefined retention policy", "gap_type": "policy", "severity": "high"},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[session_row, req_rows, gap_rows])
+    captured = _fake_router(monkeypatch, content="1 requirement captured with 2 gaps; address high-severity retention policy gap before sprint planning.")
+
+    rhs.render_and_notify_intake_session_summary("sess-4", "lead@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "session_id" in user_msg
+    assert "session_title" in user_msg
+    assert "readiness_score" in user_msg
+    assert "gap_count" in user_msg
+    assert "requirements intake session summary" in user_msg
+
+
+def test_intake_session_summary_no_session_still_returns(monkeypatch):
+    """When no session row exists, function still returns without error."""
+    _fake_conn(monkeypatch, rows_by_call=[None, [], []])
+
+    result = rhs.render_and_notify_intake_session_summary("sess-99", "lead@example.com")
+
+    assert result["status"] == "sent"
+    assert result["session_id"] == "sess-99"
+    assert result["requirement_count"] == 0
+    assert result["narrative"] is None
