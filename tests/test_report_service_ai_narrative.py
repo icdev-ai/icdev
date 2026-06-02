@@ -100,3 +100,41 @@ def test_facts_sorted_for_cache_stability(monkeypatch):
     pos_m = user_msg.index("m_delta")
     pos_z = user_msg.index("z_score")
     assert pos_a < pos_m < pos_z
+
+
+def test_report_kind_appears_in_prompt(monkeypatch):
+    """The report_kind label must appear in the user message for model framing."""
+    captured = _fake_router(monkeypatch, content="Some narrative.")
+
+    report_service._ai_report_narrative(
+        "AI-ify roadmap readiness report",
+        {"roadmap_id": "rm-abc123", "readiness": 72.5, "opportunity_count": 14},
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "AI-ify roadmap readiness report" in user_msg
+    assert "roadmap_id" in user_msg
+
+
+def test_classification_is_cui(monkeypatch):
+    """LLM requests for report narratives must carry CUI classification."""
+    captured = _fake_router(monkeypatch, content="Narrative.")
+
+    report_service._ai_report_narrative(
+        "canvas assessment report", {"canvas_name": "OHC", "score": 88.0}
+    )
+
+    assert captured["request"].classification == "CUI"
+
+
+def test_max_tokens_and_temperature(monkeypatch):
+    """Narrative requests must use max_tokens=512 and temperature=0.3."""
+    captured = _fake_router(monkeypatch, content="Narrative.")
+
+    report_service._ai_report_narrative(
+        "fedramp compliance assessment summary",
+        {"controls_total": 325, "controls_pass": 310},
+    )
+
+    assert captured["request"].max_tokens == 512
+    assert captured["request"].temperature == 0.3

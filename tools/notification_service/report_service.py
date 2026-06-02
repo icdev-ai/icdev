@@ -481,6 +481,135 @@ def deliver_posture_digest(
         conn.close()
 
 
+def deliver_aiify_roadmap_report(
+    roadmap_id: str,
+    recipients: Iterable[str],
+    channels: Iterable[str],
+    ai_narrative: bool = False,
+) -> dict:
+    """Query AI-ify roadmap data, render report, and deliver to stakeholders.
+
+    Fetches the roadmap, its top-scoring opportunities (by composite score),
+    and the parent scan's overall AI readiness score; renders a structured
+    report; and delivers via all requested channels.
+
+    When ``ai_narrative`` is True, additionally synthesizes a short LLM
+    executive summary of the AI readiness posture and recommended next steps
+    (returned under ``narrative``). The deterministic templated report remains
+    the authoritative payload; the summary is best-effort and is ``None`` when
+    the LLM is unavailable (air-gap, no credentials, network failure).
+    """
+    conn = get_connection()
+    try:
+        # --- DB: fetch roadmap + top opportunities + scan readiness ---
+        roadmap_row = conn.execute(
+            "SELECT roadmap_id, scan_id, phases_json, created_at "
+            "FROM aiify_roadmaps WHERE roadmap_id = ?",
+            (roadmap_id,),
+        ).fetchone()
+
+        if not roadmap_row:
+            rendered = f"AI-ify roadmap {roadmap_id} not found. Run icdev-secure to generate."
+            return {"status": "no_data", "rendered": rendered}
+
+        scan_id = roadmap_row["scan_id"]
+        top_opps = conn.execute(
+            "SELECT o.function_name, o.pattern_type, o.ai_paradigm, "
+            "s.composite_score, s.value_score, s.feasibility_score "
+            "FROM aiify_opportunities o "
+            "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
+            "WHERE o.roadmap_id = ? ORDER BY s.composite_score DESC LIMIT 10",
+            (roadmap_id,),
+        ).fetchall()
+        scan_row = conn.execute(
+            "SELECT overall_ai_readiness, status, input_ref FROM aiify_scans "
+            "WHERE scan_id = ?",
+            (scan_id,),
+        ).fetchone()
+
+        opp_count = len(top_opps)
+        readiness = round(float((scan_row or {}).get("overall_ai_readiness", 0) or 0), 1)
+        top_pattern = top_opps[0]["pattern_type"] if top_opps else "none"
+        avg_composite = round(
+            sum(float(o["composite_score"] or 0) for o in top_opps) / max(opp_count, 1), 3
+        )
+
+        vars_ = {
+            "roadmap_id": roadmap_id,
+            "readiness": readiness,
+            "opportunity_count": opp_count,
+            "top_pattern": top_pattern,
+            "avg_composite_score": avg_composite,
+            "scan_status": (scan_row or {}).get("status", "unknown"),
+            "input_ref": (scan_row or {}).get("input_ref", ""),
+            "created_at": roadmap_row["created_at"] or _now_iso(),
+        }
+
+        rendered = (
+            f"AI-ify Roadmap Report: {roadmap_id}\n"
+            f"AI Readiness: {readiness}/100 | Opportunities: {opp_count}\n"
+            f"Top pattern: {top_pattern} | Avg composite score: {avg_composite}\n"
+            f"Scan status: {vars_['scan_status']} | Input: {vars_['input_ref']}"
+        )
+        rendered_html = render_template(
+            "reports/aiify_roadmap.html",
+            roadmap=roadmap_row,
+            opportunities=top_opps,
+            scan=scan_row,
+            readiness=readiness,
+        )
+
+        # --- AI (optional): synthesize executive summary; None if unavailable ---
+        narrative = _ai_report_narrative(
+            "AI-ify roadmap readiness report", vars_
+        ) if ai_narrative else None
+
+        # --- Deliver ---
+        receipts = {}
+        for recipient in recipients:
+            sendmail(
+                to=recipient,
+                subject=f"[ICDEV] AI-ify Roadmap Report — {roadmap_id} ({readiness}/100 readiness)",
+                html=rendered_html,
+            )
+            receipts[f"email:{recipient}"] = "sent"
+
+        for ch in channels:
+            if ch == "audit":
+                conn.execute(
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('aiify_report', ?, 'report_delivered', 'system', ?)",
+                    (roadmap_id, rendered),
+                )
+                conn.commit()
+                receipts["audit"] = "inserted"
+            elif ch in ("slack", "teams", "webhook"):
+                payload = {
+                    "roadmap_id": roadmap_id,
+                    "readiness": readiness,
+                    "opportunities": opp_count,
+                }
+                if narrative:
+                    payload["narrative"] = narrative
+                publish(ch, payload)
+                receipts[ch] = "published"
+            else:
+                notify(ch, rendered)
+                receipts[ch] = "notified"
+
+        return {
+            "status": "delivered",
+            "roadmap_id": roadmap_id,
+            "readiness": readiness,
+            "opportunity_count": opp_count,
+            "rendered": rendered,
+            "narrative": narrative,
+            "receipts": receipts,
+        }
+    finally:
+        conn.close()
+
+
 def _summarise_findings(findings_json: str | None) -> str:
     if not findings_json:
         return "none"
