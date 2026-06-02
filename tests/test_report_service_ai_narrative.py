@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for the AI-ified executive summary in the report service (aiify-opp-5539, aiify-opp-5596).
+"""Tests for the AI-ified executive summary in the report service (aiify-opp-5539, aiify-opp-5596, aiify-opp-5957).
 
 The db -> render -> notify chains in ``tools.notification_service.report_service``
 gained an opt-in LLM executive summary. These tests pin the two load-bearing
@@ -1033,6 +1033,519 @@ def test_opp_5883_narrative_prompt_grounded_in_facts(monkeypatch):
 
     report_service.deliver_aiify_opportunity_report(
         5883, [], [], ai_narrative=True
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "db_render_notify_chain" in user_msg
+    assert "llm_generation" in user_msg
+    assert "0.7769" in user_msg
+    assert "AI-ify opportunity readiness report" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# deliver_aiify_opportunity_report — opp-5918 (aiify-rm-2b005631fb-phase-5918)
+#
+# Opportunity 5918: db_render_notify_chain -> llm_generation in report_service.py
+# scan_id=40, roadmap_id="rm-2b005631fb", scores: composite=0.7769, value=0.922,
+# feasibility=0.82, risk=0.625.  These tests pin the exact data the scanner
+# recorded for this duplicate opportunity so any future rename or score drift
+# is caught immediately.  The AI narrative is already implemented (aiify-opp-5539).
+# ---------------------------------------------------------------------------
+
+def _make_opp_row_5918():
+    return {
+        "opportunity_id": 5918,
+        "scan_id": 40,
+        "roadmap_id": "rm-2b005631fb",
+        "function_name": "<unknown>",
+        "module_path": "tools/notification_service/report_service.py",
+        "pattern_type": "db_render_notify_chain",
+        "ai_paradigm": "llm_generation",
+        "phase": "P1 — Quick Wins",
+        "status": "open",
+        "created_at": "2026-06-02T00:00:00",
+    }
+
+
+def _make_score_row_5918():
+    return {
+        "composite_score": 0.7769,
+        "value_score": 0.922,
+        "feasibility_score": 0.82,
+        "risk_score": 0.625,
+    }
+
+
+def _make_scan_row_5918():
+    return {"overall_ai_readiness": 82.0, "status": "complete"}
+
+
+def test_opp_5918_no_narrative_by_default(monkeypatch):
+    """deliver_aiify_opportunity_report(5918) returns narrative=None when ai_narrative=False."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5918(),
+        score_row=_make_score_row_5918(),
+        scan_row=_make_scan_row_5918(),
+    )
+
+    result = report_service.deliver_aiify_opportunity_report(5918, ["ops@example.com"], [])
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"
+    assert result["opportunity_id"] == 5918
+    assert result["pattern_type"] == "db_render_notify_chain"
+
+
+def test_opp_5918_scores_surfaced_in_result(monkeypatch):
+    """composite_score and rendered text must reflect opp-5918 scanner values."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5918(),
+        score_row=_make_score_row_5918(),
+        scan_row=_make_scan_row_5918(),
+    )
+
+    result = report_service.deliver_aiify_opportunity_report(5918, [], [])
+    assert result["composite_score"] == 0.7769
+    rendered = result["rendered"]
+    assert "db_render_notify_chain" in rendered
+    assert "llm_generation" in rendered
+    assert "0.7769" in rendered
+    assert "rm-2b005631fb" in rendered
+
+
+def test_opp_5918_narrative_attached_when_llm_available(monkeypatch):
+    """narrative contains LLM text for opp-5918 when ai_narrative=True and LLM succeeds."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5918(),
+        score_row=_make_score_row_5918(),
+        scan_row=_make_scan_row_5918(),
+    )
+    _fake_router(monkeypatch, content="High-value db_render_notify_chain opportunity in report_service; AI narrative already active.")
+
+    result = report_service.deliver_aiify_opportunity_report(
+        5918, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] == "High-value db_render_notify_chain opportunity in report_service; AI narrative already active."
+    assert result["status"] == "delivered"
+    assert result["composite_score"] == 0.7769
+
+
+def test_opp_5918_narrative_none_on_llm_failure(monkeypatch):
+    """deliver_aiify_opportunity_report(5918) degrades to narrative=None when LLM raises."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5918(),
+        score_row=_make_score_row_5918(),
+        scan_row=_make_scan_row_5918(),
+    )
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = report_service.deliver_aiify_opportunity_report(
+        5918, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"
+
+
+def test_opp_5918_narrative_prompt_grounded_in_facts(monkeypatch):
+    """LLM prompt for opp-5918 must include pattern_type, paradigm, and scores."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5918(),
+        score_row=_make_score_row_5918(),
+        scan_row=_make_scan_row_5918(),
+    )
+    captured = _fake_router(monkeypatch, content="Narrative for opp-5918.")
+
+    report_service.deliver_aiify_opportunity_report(
+        5918, [], [], ai_narrative=True
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "db_render_notify_chain" in user_msg
+    assert "llm_generation" in user_msg
+    assert "0.7769" in user_msg
+    assert "AI-ify opportunity readiness report" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# deliver_aiify_opportunity_report — opp-5920 (aiify-rm-2b005631fb-phase-5920)
+#
+# Opportunity 5920: db_render_notify_chain -> llm_generation in report_service.py
+# scan_id=40, roadmap_id="rm-2b005631fb", scores: composite=0.7769, value=0.922,
+# feasibility=0.82, risk=0.625.  These tests pin the exact scanner data for this
+# opportunity so any future rename or score drift is caught immediately.
+# The AI narrative is already implemented (aiify-opp-5539); this is a duplicate
+# from the same scan (cf. opp-5918) and exercises the same code path.
+# ---------------------------------------------------------------------------
+
+def _make_opp_row_5920():
+    return {
+        "opportunity_id": 5920,
+        "scan_id": 40,
+        "roadmap_id": "rm-2b005631fb",
+        "function_name": "<unknown>",
+        "module_path": "tools/notification_service/report_service.py",
+        "pattern_type": "db_render_notify_chain",
+        "ai_paradigm": "llm_generation",
+        "phase": "Phase 1 — Quick Wins",
+        "status": "open",
+        "created_at": "2026-06-02T00:00:00",
+    }
+
+
+def _make_score_row_5920():
+    return {
+        "composite_score": 0.7769,
+        "value_score": 0.922,
+        "feasibility_score": 0.82,
+        "risk_score": 0.625,
+    }
+
+
+def _make_scan_row_5920():
+    return {"overall_ai_readiness": 82.0, "status": "complete"}
+
+
+def test_opp_5920_no_narrative_by_default(monkeypatch):
+    """deliver_aiify_opportunity_report(5920) returns narrative=None when ai_narrative=False."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5920(),
+        score_row=_make_score_row_5920(),
+        scan_row=_make_scan_row_5920(),
+    )
+
+    result = report_service.deliver_aiify_opportunity_report(5920, ["ops@example.com"], [])
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"
+    assert result["opportunity_id"] == 5920
+    assert result["pattern_type"] == "db_render_notify_chain"
+
+
+def test_opp_5920_scores_surfaced_in_result(monkeypatch):
+    """composite_score and rendered text must reflect opp-5920 scanner values."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5920(),
+        score_row=_make_score_row_5920(),
+        scan_row=_make_scan_row_5920(),
+    )
+
+    result = report_service.deliver_aiify_opportunity_report(5920, [], [])
+    assert result["composite_score"] == 0.7769
+    rendered = result["rendered"]
+    assert "db_render_notify_chain" in rendered
+    assert "llm_generation" in rendered
+    assert "0.7769" in rendered
+    assert "rm-2b005631fb" in rendered
+
+
+def test_opp_5920_narrative_attached_when_llm_available(monkeypatch):
+    """narrative contains LLM text for opp-5920 when ai_narrative=True and LLM succeeds."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5920(),
+        score_row=_make_score_row_5920(),
+        scan_row=_make_scan_row_5920(),
+    )
+    _fake_router(monkeypatch, content="High-value db_render_notify_chain opportunity in report_service; AI narrative already active.")
+
+    result = report_service.deliver_aiify_opportunity_report(
+        5920, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] == "High-value db_render_notify_chain opportunity in report_service; AI narrative already active."
+    assert result["status"] == "delivered"
+    assert result["composite_score"] == 0.7769
+
+
+def test_opp_5920_narrative_none_on_llm_failure(monkeypatch):
+    """deliver_aiify_opportunity_report(5920) degrades to narrative=None when LLM raises."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5920(),
+        score_row=_make_score_row_5920(),
+        scan_row=_make_scan_row_5920(),
+    )
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = report_service.deliver_aiify_opportunity_report(
+        5920, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"
+
+
+def test_opp_5920_narrative_prompt_grounded_in_facts(monkeypatch):
+    """LLM prompt for opp-5920 must include pattern_type, paradigm, and scores."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5920(),
+        score_row=_make_score_row_5920(),
+        scan_row=_make_scan_row_5920(),
+    )
+    captured = _fake_router(monkeypatch, content="Narrative for opp-5920.")
+
+    report_service.deliver_aiify_opportunity_report(
+        5920, [], [], ai_narrative=True
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "db_render_notify_chain" in user_msg
+    assert "llm_generation" in user_msg
+    assert "0.7769" in user_msg
+    assert "AI-ify opportunity readiness report" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# deliver_aiify_opportunity_report — opp-5922 (aiify-rm-2b005-phase-5922)
+#
+# Opportunity 5922: db_render_notify_chain -> llm_generation in report_service.py
+# scan_id=40, roadmap_id="rm-2b005631fb", scores: composite=0.7769, value=0.922,
+# feasibility=0.82, risk=0.625.  Duplicate from the same scan as opp-5918 and
+# opp-5920; the AI narrative is already implemented (aiify-opp-5539).  Tests pin
+# the exact scanner data so any future rename or score drift is caught immediately.
+# ---------------------------------------------------------------------------
+
+def _make_opp_row_5922():
+    return {
+        "opportunity_id": 5922,
+        "scan_id": 40,
+        "roadmap_id": "rm-2b005631fb",
+        "function_name": "<unknown>",
+        "module_path": "tools/notification_service/report_service.py",
+        "pattern_type": "db_render_notify_chain",
+        "ai_paradigm": "llm_generation",
+        "phase": "Phase 1 — Quick Wins",
+        "status": "open",
+        "created_at": "2026-06-02T00:00:00",
+    }
+
+
+def _make_score_row_5922():
+    return {
+        "composite_score": 0.7769,
+        "value_score": 0.922,
+        "feasibility_score": 0.82,
+        "risk_score": 0.625,
+    }
+
+
+def _make_scan_row_5922():
+    return {"overall_ai_readiness": 82.0, "status": "complete"}
+
+
+def test_opp_5922_no_narrative_by_default(monkeypatch):
+    """deliver_aiify_opportunity_report(5922) returns narrative=None when ai_narrative=False."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5922(),
+        score_row=_make_score_row_5922(),
+        scan_row=_make_scan_row_5922(),
+    )
+
+    result = report_service.deliver_aiify_opportunity_report(5922, ["ops@example.com"], [])
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"
+    assert result["opportunity_id"] == 5922
+    assert result["pattern_type"] == "db_render_notify_chain"
+
+
+def test_opp_5922_scores_surfaced_in_result(monkeypatch):
+    """composite_score and rendered text must reflect opp-5922 scanner values."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5922(),
+        score_row=_make_score_row_5922(),
+        scan_row=_make_scan_row_5922(),
+    )
+
+    result = report_service.deliver_aiify_opportunity_report(5922, [], [])
+    assert result["composite_score"] == 0.7769
+    rendered = result["rendered"]
+    assert "db_render_notify_chain" in rendered
+    assert "llm_generation" in rendered
+    assert "0.7769" in rendered
+    assert "rm-2b005631fb" in rendered
+
+
+def test_opp_5922_narrative_attached_when_llm_available(monkeypatch):
+    """narrative contains LLM text for opp-5922 when ai_narrative=True and LLM succeeds."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5922(),
+        score_row=_make_score_row_5922(),
+        scan_row=_make_scan_row_5922(),
+    )
+    _fake_router(monkeypatch, content="High-value db_render_notify_chain opportunity in report_service; AI narrative already active.")
+
+    result = report_service.deliver_aiify_opportunity_report(
+        5922, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] == "High-value db_render_notify_chain opportunity in report_service; AI narrative already active."
+    assert result["status"] == "delivered"
+    assert result["composite_score"] == 0.7769
+
+
+def test_opp_5922_narrative_none_on_llm_failure(monkeypatch):
+    """deliver_aiify_opportunity_report(5922) degrades to narrative=None when LLM raises."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5922(),
+        score_row=_make_score_row_5922(),
+        scan_row=_make_scan_row_5922(),
+    )
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = report_service.deliver_aiify_opportunity_report(
+        5922, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"
+
+
+def test_opp_5922_narrative_prompt_grounded_in_facts(monkeypatch):
+    """LLM prompt for opp-5922 must include pattern_type, paradigm, and scores."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5922(),
+        score_row=_make_score_row_5922(),
+        scan_row=_make_scan_row_5922(),
+    )
+    captured = _fake_router(monkeypatch, content="Narrative for opp-5922.")
+
+    report_service.deliver_aiify_opportunity_report(
+        5922, [], [], ai_narrative=True
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "db_render_notify_chain" in user_msg
+    assert "llm_generation" in user_msg
+    assert "0.7769" in user_msg
+    assert "AI-ify opportunity readiness report" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# deliver_aiify_opportunity_report — opp-5957 (aiify-rm-55fc0a0e6a)
+#
+# Opportunity 5957: db_render_notify_chain -> llm_generation in report_service.py
+# scan_id=41, roadmap_id="rm-55fc0a0e6a", scores: composite=0.7769, value=0.922,
+# feasibility=0.82, risk=0.625.  The AI narrative is already implemented
+# (aiify-opp-5539); these tests pin the exact scanner data so any future rename
+# or score drift is caught immediately.
+# ---------------------------------------------------------------------------
+
+def _make_opp_row_5957():
+    return {
+        "opportunity_id": 5957,
+        "scan_id": 41,
+        "roadmap_id": "rm-55fc0a0e6a",
+        "function_name": "<unknown>",
+        "module_path": "tools/notification_service/report_service.py",
+        "pattern_type": "db_render_notify_chain",
+        "ai_paradigm": "llm_generation",
+        "phase": "P1 — Quick Wins",
+        "status": "open",
+        "created_at": "2026-06-02T00:00:00",
+    }
+
+
+def _make_score_row_5957():
+    return {
+        "composite_score": 0.7769,
+        "value_score": 0.922,
+        "feasibility_score": 0.82,
+        "risk_score": 0.625,
+    }
+
+
+def _make_scan_row_5957():
+    return {"overall_ai_readiness": 82.0, "status": "complete"}
+
+
+def test_opp_5957_no_narrative_by_default(monkeypatch):
+    """deliver_aiify_opportunity_report(5957) returns narrative=None when ai_narrative=False."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5957(),
+        score_row=_make_score_row_5957(),
+        scan_row=_make_scan_row_5957(),
+    )
+
+    result = report_service.deliver_aiify_opportunity_report(5957, ["ops@example.com"], [])
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"
+    assert result["opportunity_id"] == 5957
+    assert result["pattern_type"] == "db_render_notify_chain"
+
+
+def test_opp_5957_scores_surfaced_in_result(monkeypatch):
+    """composite_score and rendered text must reflect opp-5957 scanner values."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5957(),
+        score_row=_make_score_row_5957(),
+        scan_row=_make_scan_row_5957(),
+    )
+
+    result = report_service.deliver_aiify_opportunity_report(5957, [], [])
+    assert result["composite_score"] == 0.7769
+    rendered = result["rendered"]
+    assert "db_render_notify_chain" in rendered
+    assert "llm_generation" in rendered
+    assert "0.7769" in rendered
+    assert "rm-55fc0a0e6a" in rendered
+
+
+def test_opp_5957_narrative_attached_when_llm_available(monkeypatch):
+    """narrative contains LLM text for opp-5957 when ai_narrative=True and LLM succeeds."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5957(),
+        score_row=_make_score_row_5957(),
+        scan_row=_make_scan_row_5957(),
+    )
+    _fake_router(monkeypatch, content="High-value db_render_notify_chain opportunity in report_service; AI narrative already active.")
+
+    result = report_service.deliver_aiify_opportunity_report(
+        5957, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] == "High-value db_render_notify_chain opportunity in report_service; AI narrative already active."
+    assert result["status"] == "delivered"
+    assert result["composite_score"] == 0.7769
+
+
+def test_opp_5957_narrative_none_on_llm_failure(monkeypatch):
+    """deliver_aiify_opportunity_report(5957) degrades to narrative=None when LLM raises."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5957(),
+        score_row=_make_score_row_5957(),
+        scan_row=_make_scan_row_5957(),
+    )
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = report_service.deliver_aiify_opportunity_report(
+        5957, ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] is None
+    assert result["status"] == "delivered"
+
+
+def test_opp_5957_narrative_prompt_grounded_in_facts(monkeypatch):
+    """LLM prompt for opp-5957 must include pattern_type, paradigm, and scores."""
+    _fake_opp_conn(
+        monkeypatch,
+        opp_row=_make_opp_row_5957(),
+        score_row=_make_score_row_5957(),
+        scan_row=_make_scan_row_5957(),
+    )
+    captured = _fake_router(monkeypatch, content="Narrative for opp-5957.")
+
+    report_service.deliver_aiify_opportunity_report(
+        5957, [], [], ai_narrative=True
     )
 
     user_msg = captured["request"].messages[0]["content"]
