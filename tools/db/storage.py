@@ -860,21 +860,25 @@ class StorageConnection:
         if self._backend == "sqlite":
             return self._conn.executescript(sql)
 
-        # PostgreSQL: split statements and execute each
+        # PostgreSQL: split statements and execute each using savepoints so
+        # a single failing statement (e.g. table already exists) only rolls
+        # back that one statement, not the entire transaction.
         statements = [s.strip() for s in sql.split(";") if s.strip()]
         cursor = self._conn.cursor()
-        for stmt in statements:
+        for i, stmt in enumerate(statements):
             if not stmt:
                 continue
             translated = translate_sql(stmt, self._backend)
             if translated.strip() and translated.strip() != "SELECT 1":
+                sp = f"_sp_{i}"
                 try:
+                    cursor.execute(f"SAVEPOINT {sp}")
                     cursor.execute(translated)
+                    cursor.execute(f"RELEASE SAVEPOINT {sp}")
                 except Exception:
-                    # Skip DDL errors (table already exists, etc.)
-                    self._conn.rollback()
-                    # Re-establish transaction
-                    pass
+                    # Roll back only this statement; prior work is preserved.
+                    cursor.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+                    cursor.execute(f"RELEASE SAVEPOINT {sp}")
         self._conn.commit()
         return cursor
 
