@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5636, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742, aiify-opp-5776, aiify-opp-5780).
+"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5636, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742, aiify-opp-5776, aiify-opp-5780, aiify-opp-5814).
 
 The db -> render -> notify chains in ``tools.notification_service.alert_service``
 gained an opt-in LLM triage narrative. These tests pin the two load-bearing
