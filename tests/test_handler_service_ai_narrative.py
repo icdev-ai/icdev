@@ -160,3 +160,119 @@ def test_max_tokens_and_temperature(monkeypatch):
 
     assert captured["request"].max_tokens == 512
     assert captured["request"].temperature == 0.3
+
+
+# ---------------------------------------------------------------------------
+# Integration tests for handler functions (aiify-opp-5800)
+# ---------------------------------------------------------------------------
+
+def _fake_handler_conn(monkeypatch, rows_by_call=()):
+    """Patch get_connection() and all event_service helpers in handler_service."""
+    call_counter = {"n": 0}
+
+    class _FakeCursor:
+        def __init__(self, result):
+            self._result = result
+
+        def fetchone(self):
+            return self._result if not isinstance(self._result, (list, tuple)) else None
+
+        def fetchall(self):
+            return list(self._result) if isinstance(self._result, (list, tuple)) else []
+
+    class _FakeConn:
+        def execute(self, sql, params=()):
+            idx = call_counter["n"]
+            result = rows_by_call[idx] if idx < len(rows_by_call) else None
+            call_counter["n"] += 1
+            return _FakeCursor(result)
+
+        def close(self):
+            pass
+
+    import tools.notification_service.handler_service as hs
+    monkeypatch.setattr(hs, "get_connection", lambda: _FakeConn())
+    monkeypatch.setattr(hs, "render_template", lambda *a, **kw: "<p>rendered</p>")
+    monkeypatch.setattr(hs, "render_to_string", lambda *a, **kw: "<p>rendered</p>")
+    monkeypatch.setattr(hs, "send", lambda *a, **kw: None)
+    monkeypatch.setattr(hs, "sendmail", lambda *a, **kw: None)
+    monkeypatch.setattr(hs, "notify", lambda *a, **kw: None)
+    monkeypatch.setattr(hs, "emit", lambda *a, **kw: None)
+    monkeypatch.setattr(hs, "publish", lambda *a, **kw: None)
+    monkeypatch.setattr(hs, "dispatch", lambda *a, **kw: None)
+
+
+def test_task_handler_no_narrative_by_default(monkeypatch):
+    """handle_task_status_change_notify returns narrative=None when ai_narrative=False."""
+    task_row = {"id": "TASK-42", "title": "Add ZIG report", "actor": "sovanna", "updated_at": "2026-06-01"}
+    history_rows = [{"event": "status_change", "created_at": "2026-06-01"}]
+    _fake_handler_conn(monkeypatch, rows_by_call=[task_row, history_rows])
+
+    result = handler_service.handle_task_status_change_notify("TASK-42", "done", "ops@example.com")
+
+    assert result["status"] == "sent"
+    assert result["narrative"] is None
+
+
+def test_task_handler_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    task_row = {"id": "TASK-42", "title": "Add ZIG report", "actor": "sovanna", "updated_at": "2026-06-01"}
+    history_rows = [{"event": "status_change", "created_at": "2026-06-01"}]
+    _fake_handler_conn(monkeypatch, rows_by_call=[task_row, history_rows])
+    _fake_router(monkeypatch, content="Task completed; verify CI gates before sprint close.")
+
+    result = handler_service.handle_task_status_change_notify(
+        "TASK-42", "done", "ops@example.com", ai_narrative=True
+    )
+
+    assert result["narrative"] == "Task completed; verify CI gates before sprint close."
+    assert result["task_id"] == "TASK-42"
+    assert result["status"] == "sent"
+
+
+def test_task_handler_narrative_none_on_llm_failure(monkeypatch):
+    """Notification ships even when the LLM raises; narrative degrades to None."""
+    task_row = {"id": "TASK-99", "title": "Bug fix", "actor": "alice", "updated_at": "2026-06-01"}
+    history_rows = []
+    _fake_handler_conn(monkeypatch, rows_by_call=[task_row, history_rows])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = handler_service.handle_task_status_change_notify(
+        "TASK-99", "in_progress", "alice@example.com", ai_narrative=True
+    )
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"  # deterministic notification still delivered
+
+
+def test_stig_handler_narrative_attached(monkeypatch):
+    """handle_stig_finding_handler attaches narrative when LLM is available."""
+    finding_row = {
+        "check_id": "V-12345", "check_name": "Audit log enabled",
+        "severity": "I", "status": "open", "remediation": "Enable audit logging.",
+    }
+    workload_row = {"name": "api-gateway", "classification": "CUI"}
+    _fake_handler_conn(monkeypatch, rows_by_call=[finding_row, workload_row])
+    _fake_router(monkeypatch, content="CAT I STIG finding on api-gateway requires immediate remediation.")
+
+    result = handler_service.handle_stig_finding_handler(
+        "V-12345", "wl-1", "sec@example.com", ai_narrative=True
+    )
+
+    assert result["narrative"] == "CAT I STIG finding on api-gateway requires immediate remediation."
+    assert result["check_id"] == "V-12345"
+    assert result["status"] == "sent"
+
+
+def test_agent_incident_handler_no_narrative_by_default(monkeypatch):
+    """handle_agent_incident_handler returns narrative=None when ai_narrative=False."""
+    agent_row = {"id": "agent-7", "name": "Architect", "status": "crashed", "last_heartbeat": "2026-06-01"}
+    error_rows = [{"error_msg": "Connection timeout", "created_at": "2026-06-01"}]
+    metric_rows = []
+    _fake_handler_conn(monkeypatch, rows_by_call=[agent_row, error_rows, metric_rows])
+
+    result = handler_service.handle_agent_incident_handler("agent-7", "crash", "ops@example.com")
+
+    assert result["status"] == "sent"
+    assert result["narrative"] is None
+    assert result["agent_id"] == "agent-7"
