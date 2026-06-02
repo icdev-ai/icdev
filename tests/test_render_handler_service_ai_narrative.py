@@ -1536,3 +1536,132 @@ def test_intake_session_summary_no_session_still_returns(monkeypatch):
     assert result["session_id"] == "sess-99"
     assert result["requirement_count"] == 0
     assert result["narrative"] is None
+
+
+# ---------------------------------------------------------------------------
+# aiify-opp-179: AI data mapping run render chain
+# ---------------------------------------------------------------------------
+
+def test_data_mapping_run_no_narrative_by_default(monkeypatch):
+    """render_and_notify_data_mapping_run returns narrative=None when ai_narrative=False."""
+    run_row = {
+        "id": "dmr-1", "source_schema": "legacy_erp", "target_schema": "icdev_platform",
+        "status": "complete", "match_count": 48, "created_at": "2026-06-02",
+    }
+    match_rows = [
+        {"source_field": "customer_id", "target_field": "tenant_id", "confidence": 0.97, "match_type": "exact"},
+        {"source_field": "acct_num", "target_field": "account_ref", "confidence": 0.82, "match_type": "semantic"},
+    ]
+    schema_rows = [
+        {"schema_name": "legacy_erp", "schema_type": "source", "field_count": 52},
+        {"schema_name": "icdev_platform", "schema_type": "target", "field_count": 61},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[run_row, match_rows, schema_rows])
+
+    result = rhs.render_and_notify_data_mapping_run("dmr-1", "dataops@example.com")
+
+    assert result["status"] == "sent"
+    assert result["run_id"] == "dmr-1"
+    assert result["match_count"] == 48
+    assert result["narrative"] is None
+
+
+def test_data_mapping_run_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    run_row = {
+        "id": "dmr-2", "source_schema": "legacy_hr", "target_schema": "unified_iam",
+        "status": "complete", "match_count": 35, "created_at": "2026-06-02",
+    }
+    match_rows = [
+        {"source_field": "emp_id", "target_field": "user_id", "confidence": 0.99, "match_type": "exact"},
+        {"source_field": "dept_code", "target_field": "org_unit", "confidence": 0.88, "match_type": "semantic"},
+        {"source_field": "mgr_email", "target_field": "manager_ref", "confidence": 0.91, "match_type": "fuzzy"},
+    ]
+    schema_rows = [
+        {"schema_name": "legacy_hr", "schema_type": "source", "field_count": 38},
+        {"schema_name": "unified_iam", "schema_type": "target", "field_count": 42},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[run_row, match_rows, schema_rows])
+    _fake_router(monkeypatch, content="AI mapping of legacy_hr to unified_iam yielded 35 matches with 3 high-confidence; validate emp_id→user_id mapping before production cutover.")
+
+    result = rhs.render_and_notify_data_mapping_run("dmr-2", "dataops@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["run_id"] == "dmr-2"
+    assert result["match_count"] == 35
+    assert result["narrative"] == "AI mapping of legacy_hr to unified_iam yielded 35 matches with 3 high-confidence; validate emp_id→user_id mapping before production cutover."
+
+
+def test_data_mapping_run_narrative_none_on_llm_failure(monkeypatch):
+    """Data mapping notification ships even when the LLM raises; narrative degrades to None."""
+    run_row = {
+        "id": "dmr-3", "source_schema": "legacy_finance", "target_schema": "icdev_budget",
+        "status": "partial", "match_count": 12, "created_at": "2026-06-02",
+    }
+    _fake_conn(monkeypatch, rows_by_call=[run_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_notify_data_mapping_run("dmr-3", "dataops@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_data_mapping_run_narrative_facts_grounded(monkeypatch):
+    """Narrative prompt must include run_id, source_schema, target_schema, and high_confidence_match_count."""
+    run_row = {
+        "id": "dmr-4", "source_schema": "legacy_contracts", "target_schema": "govcon_platform",
+        "status": "complete", "match_count": 27, "created_at": "2026-06-02",
+    }
+    match_rows = [
+        {"source_field": "contract_no", "target_field": "contract_id", "confidence": 0.96, "match_type": "exact"},
+        {"source_field": "vendor_id", "target_field": "supplier_ref", "confidence": 0.89, "match_type": "semantic"},
+        {"source_field": "total_value", "target_field": "award_amount", "confidence": 0.72, "match_type": "fuzzy"},
+    ]
+    schema_rows = [{"schema_name": "legacy_contracts", "schema_type": "source", "field_count": 30}]
+    _fake_conn(monkeypatch, rows_by_call=[run_row, match_rows, schema_rows])
+    captured = _fake_router(monkeypatch, content="27 field mappings completed.")
+
+    rhs.render_and_notify_data_mapping_run("dmr-4", "dataops@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "run_id" in user_msg
+    assert "source_schema" in user_msg
+    assert "target_schema" in user_msg
+    assert "high_confidence_match_count" in user_msg
+    assert "AI data mapping run" in user_msg
+
+
+def test_data_mapping_run_high_confidence_threshold(monkeypatch):
+    """high_confidence_match_count must count only matches with confidence >= 0.85."""
+    run_row = {
+        "id": "dmr-5", "source_schema": "erp_v1", "target_schema": "erp_v2",
+        "status": "complete", "match_count": 5, "created_at": "2026-06-02",
+    }
+    match_rows = [
+        {"source_field": "f1", "target_field": "g1", "confidence": 0.95, "match_type": "exact"},
+        {"source_field": "f2", "target_field": "g2", "confidence": 0.90, "match_type": "semantic"},
+        {"source_field": "f3", "target_field": "g3", "confidence": 0.80, "match_type": "fuzzy"},
+        {"source_field": "f4", "target_field": "g4", "confidence": 0.70, "match_type": "fuzzy"},
+        {"source_field": "f5", "target_field": "g5", "confidence": 0.85, "match_type": "semantic"},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[run_row, match_rows, []])
+    captured = _fake_router(monkeypatch, content="5 matches evaluated.")
+
+    rhs.render_and_notify_data_mapping_run("dmr-5", "dataops@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "high_confidence_match_count" in user_msg
+    assert "3" in user_msg  # f1(0.95), f2(0.90), f5(0.85) — exactly 3
+
+
+def test_data_mapping_run_no_run_row_still_returns(monkeypatch):
+    """When no run row exists, function still returns without error."""
+    _fake_conn(monkeypatch, rows_by_call=[None, [], []])
+
+    result = rhs.render_and_notify_data_mapping_run("dmr-99", "dataops@example.com")
+
+    assert result["status"] == "sent"
+    assert result["run_id"] == "dmr-99"
+    assert result["match_count"] == 0
+    assert result["narrative"] is None
