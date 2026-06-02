@@ -17,6 +17,11 @@ aiify-opp-5878 extends the module with three additional render chains:
 ``render_and_send_dic_document_summary``,
 ``render_and_deliver_modernization_status``, and
 ``render_and_notify_security_scan``.
+
+aiify-opp-5954 adds ``render_and_notify_intake_session_summary`` covering
+the ICDEV™ requirements intake workflow so intake session leads receive a
+grounded LLM narrative alongside the deterministic session summary rendered
+from intake_sessions and intake_requirements.
 """
 
 from __future__ import annotations
@@ -1016,6 +1021,114 @@ def render_and_send_aiify_weekly_digest(week_label: str, recipient: str, ai_narr
             "status": "sent",
             "week_label": week_label,
             "scan_count": len(scans),
+            "narrative": narrative,
+        }
+    finally:
+        conn.close()
+
+
+def render_and_notify_zta_posture_report(assessment_id: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch ZTA posture assessment data, render report, and notify the ZTA lead.
+
+    aiify-opp-5956: extends the render-notify chain to cover Zero Trust
+    Architecture posture assessments so ZTA leads receive a grounded LLM
+    narrative alongside the deterministic posture report rendered from
+    zta_assessments, zta_control_results, and zta_gaps.
+    """
+    conn = get_connection()
+    try:
+        assessment = conn.execute(
+            "SELECT id, pillar, maturity_level, score, assessed_at "
+            "FROM zta_assessments WHERE id = ?", (assessment_id,)
+        ).fetchone()
+        controls = conn.execute(
+            "SELECT control_id, title, status, implementation_level "
+            "FROM zta_control_results WHERE assessment_id = ? ORDER BY status LIMIT 20",
+            (assessment_id,),
+        ).fetchall()
+        gaps = conn.execute(
+            "SELECT title, severity, pillar, recommended_action "
+            "FROM zta_gaps WHERE assessment_id = ? ORDER BY severity LIMIT 10",
+            (assessment_id,),
+        ).fetchall()
+        critical_gap_count = sum(1 for g in gaps if (g or {}).get("severity") in ("critical", "high"))
+        body = render(
+            "zta_posture_report.html",
+            assessment=assessment,
+            controls=controls,
+            gaps=gaps,
+        )
+        narrative = _ai_render_narrative("ZTA posture assessment render notification", {
+            "assessment_id": assessment_id,
+            "pillar": (assessment or {}).get("pillar", "unknown"),
+            "maturity_level": (assessment or {}).get("maturity_level", "unknown"),
+            "score": round(float((assessment or {}).get("score", 0) or 0), 1),
+            "control_count": len(controls),
+            "gap_count": len(gaps),
+            "critical_high_gap_count": critical_gap_count,
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="ZTA Posture Assessment Report", html=body)
+        payload = {"assessment_id": assessment_id, "gap_count": len(gaps)}
+        if narrative:
+            payload["narrative"] = narrative
+        dispatch("zta.posture_report_notified", payload)
+        return {
+            "status": "sent",
+            "assessment_id": assessment_id,
+            "gap_count": len(gaps),
+            "narrative": narrative,
+        }
+    finally:
+        conn.close()
+
+
+def render_and_notify_intake_session_summary(session_id: str, recipient: str, ai_narrative: bool = False) -> dict:
+    """Fetch requirements intake session data, render summary, and notify the session lead.
+
+    aiify-opp-5954: extends the render-notify chain to cover ICDEV™ requirements
+    intake sessions so leads receive a grounded LLM narrative alongside the
+    deterministic session summary rendered from intake_sessions,
+    intake_requirements, and intake_gaps.
+    """
+    conn = get_connection()
+    try:
+        session = conn.execute(
+            "SELECT id, title, status, readiness_score, created_at "
+            "FROM intake_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        requirements = conn.execute(
+            "SELECT id, title, priority, category, status FROM intake_requirements "
+            "WHERE session_id = ? ORDER BY priority LIMIT 20", (session_id,)
+        ).fetchall()
+        gaps = conn.execute(
+            "SELECT title, gap_type, severity FROM intake_gaps "
+            "WHERE session_id = ? ORDER BY severity LIMIT 10", (session_id,)
+        ).fetchall()
+        high_priority_count = sum(1 for r in requirements if (r or {}).get("priority") in (1, "high", "critical"))
+        body = render(
+            "intake_session_summary.html",
+            session=session,
+            requirements=requirements,
+            gaps=gaps,
+        )
+        narrative = _ai_render_narrative("requirements intake session summary render notification", {
+            "session_id": session_id,
+            "session_title": (session or {}).get("title", session_id),
+            "session_status": (session or {}).get("status", "unknown"),
+            "readiness_score": round(float((session or {}).get("readiness_score", 0) or 0), 1),
+            "requirement_count": len(requirements),
+            "high_priority_count": high_priority_count,
+            "gap_count": len(gaps),
+        }) if ai_narrative else None
+        sendmail(to=recipient, subject="Intake Session Summary", html=body)
+        payload = {"session_id": session_id, "requirement_count": len(requirements)}
+        if narrative:
+            payload["narrative"] = narrative
+        emit("intake.session_summary_sent", payload)
+        return {
+            "status": "sent",
+            "session_id": session_id,
+            "requirement_count": len(requirements),
             "narrative": narrative,
         }
     finally:
