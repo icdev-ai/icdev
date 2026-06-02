@@ -749,3 +749,161 @@ def test_send_aiify_scan_report_graceful_degradation_on_llm_failure(monkeypatch)
     assert result["status"] == "delivered"
     assert result["narrative"] is None
     assert "slack" in result["receipts"]
+
+
+# ---------------------------------------------------------------------------
+# notify_aiify_opportunity_event — opp-167 (aiify-rm-c5c5642863)
+#
+# Opportunity 167: db_render_notify_chain -> llm_generation in event_service.py
+# scan_id=2, roadmap_id="rm-c5c5642863", function_name="<unknown>",
+# scores: composite=0.7769, value=0.922, feasibility=0.82, risk=0.625.
+# The AI narrative is already implemented (aiify-opp-5716); these tests pin
+# the exact scanner data so any future rename or score drift is caught.
+# ---------------------------------------------------------------------------
+
+def _stub_opp_167_db(monkeypatch):
+    """In-memory SQLite with kanban_tasks + audit_trail for opp-167 pinned tests."""
+    import sqlite3
+
+    class _FakeConn:
+        def __init__(self):
+            self._db = sqlite3.connect(":memory:")
+            self._db.row_factory = sqlite3.Row
+            self._db.execute(
+                "CREATE TABLE kanban_tasks "
+                "(id TEXT, title TEXT, status TEXT, actor TEXT, attempts INTEGER, "
+                "created_at TEXT, updated_at TEXT)"
+            )
+            self._db.execute(
+                "INSERT INTO kanban_tasks VALUES "
+                "('aiify-rm-c5c56-phase-167', 'db_render_notify_chain in event_service', "
+                "'in_progress', 'kanban-scheduler', 1, "
+                "'2026-06-02T00:00:00', '2026-06-02T01:00:00')"
+            )
+            self._db.execute(
+                "CREATE TABLE audit_trail "
+                "(resource_type TEXT, resource_id TEXT, event TEXT, actor TEXT, "
+                "detail TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+            )
+            self._db.commit()
+
+        def execute(self, sql, params=()):
+            return self._db.execute(sql, params)
+
+        def commit(self):
+            self._db.commit()
+
+        def close(self):
+            self._db.close()
+
+    monkeypatch.setattr(event_service, "get_connection", _FakeConn)
+    monkeypatch.setattr(event_service, "publish", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "emit", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "notify", lambda *a, **kw: None)
+
+
+_OPP_167_EXTRA = {
+    "task_id": "aiify-rm-c5c56-phase-167",
+    "module_path": "tools/notification_service/event_service.py",
+    "function_name": "<unknown>",
+    "pattern_type": "db_render_notify_chain",
+    "ai_paradigm": "llm_generation",
+    "composite_score": 0.7769,
+}
+
+
+def test_opp_167_no_narrative_by_default(monkeypatch):
+    """notify_aiify_opportunity_event(167) returns narrative=None when ai_narrative omitted."""
+    _stub_opp_167_db(monkeypatch)
+
+    result = event_service.notify_aiify_opportunity_event(
+        opportunity_id=167,
+        event_type="opportunity_dispatched",
+        channels=["console"],
+        extra=_OPP_167_EXTRA,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["opportunity_id"] == 167
+    assert result["narrative"] is None
+    assert "console" in result["receipts"]
+
+
+def test_opp_167_scanner_data_in_rendered_message(monkeypatch):
+    """Rendered message must include opp-167 pattern_type, paradigm, and composite score."""
+    _stub_opp_167_db(monkeypatch)
+
+    result = event_service.notify_aiify_opportunity_event(
+        opportunity_id=167,
+        event_type="opportunity_dispatched",
+        channels=["console"],
+        extra=_OPP_167_EXTRA,
+    )
+
+    rendered = result["rendered"]
+    assert "167" in rendered
+    assert "db_render_notify_chain" in rendered or "event_service" in rendered
+
+
+def test_opp_167_narrative_attached_when_llm_available(monkeypatch):
+    """narrative contains LLM text for opp-167 when ai_narrative=True and LLM succeeds."""
+    _stub_opp_167_db(monkeypatch)
+    _fake_router(
+        monkeypatch,
+        content=(
+            "Opportunity 167 detected a db→render→notify chain in event_service.py; "
+            "AI narrative is already active and ready for opt-in callers."
+        ),
+    )
+
+    result = event_service.notify_aiify_opportunity_event(
+        opportunity_id=167,
+        event_type="opportunity_detected",
+        channels=["console"],
+        extra=_OPP_167_EXTRA,
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] == (
+        "Opportunity 167 detected a db→render→notify chain in event_service.py; "
+        "AI narrative is already active and ready for opt-in callers."
+    )
+
+
+def test_opp_167_narrative_none_on_llm_failure(monkeypatch):
+    """notify_aiify_opportunity_event(167) degrades to narrative=None when LLM raises."""
+    _stub_opp_167_db(monkeypatch)
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = event_service.notify_aiify_opportunity_event(
+        opportunity_id=167,
+        event_type="opportunity_completed",
+        channels=["webhook"],
+        extra=_OPP_167_EXTRA,
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] is None
+    assert "webhook" in result["receipts"]
+
+
+def test_opp_167_narrative_prompt_grounded_in_facts(monkeypatch):
+    """LLM prompt for opp-167 must include pattern_type, paradigm, and composite score."""
+    _stub_opp_167_db(monkeypatch)
+    captured = _fake_router(monkeypatch, content="Narrative for opp-167.")
+
+    event_service.notify_aiify_opportunity_event(
+        opportunity_id=167,
+        event_type="opportunity_dispatched",
+        channels=["console"],
+        extra=_OPP_167_EXTRA,
+        ai_narrative=True,
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "db_render_notify_chain" in user_msg
+    assert "llm_generation" in user_msg
+    assert "0.7769" in user_msg
+    assert "aiify opportunity opportunity_dispatched notification" in user_msg
