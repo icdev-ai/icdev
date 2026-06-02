@@ -203,3 +203,67 @@ _category_list = ", ".join(f"'{c}'" for c in CATEGORIES)
 CHECK_AI_READINESS = f"ai_readiness IN ({_readiness_list})"
 CHECK_CATEGORY = f"category IN ({_category_list})"
 CHECK_OVERALL_AI_READINESS = f"overall_ai_readiness IN ({_readiness_list})"
+
+# ── Compliance Posture ────────────────────────────────────────────────────────
+# Deterministic AI-governance posture dimensions for the AI-ify canvas. Weights
+# sum to 1.0; the posture engine renormalises over the dimensions that apply.
+# See tools/aiify/posture.py for the per-dimension computation.
+POSTURE_WEIGHTS: dict[str, float] = {
+    "human_oversight": 0.20,
+    "data_sovereignty": 0.20,
+    "auditability": 0.15,
+    "risk_triage": 0.15,
+    "lifecycle_management": 0.15,
+    "classification_marking": 0.15,
+}
+
+POSTURE_DIMENSION_LABELS: dict[str, str] = {
+    "human_oversight": "Human Oversight (HITL)",
+    "data_sovereignty": "Data Sovereignty (IL Model Routing)",
+    "auditability": "Auditability",
+    "risk_triage": "Risk Triage",
+    "lifecycle_management": "Lifecycle Management",
+    "classification_marking": "Classification Marking (CUI)",
+}
+
+# Each dimension maps to the AI-governance controls it provides evidence for.
+POSTURE_FRAMEWORK_CROSSWALK: dict[str, list[dict]] = {
+    "human_oversight": [
+        {"framework": "NIST AI RMF", "control": "GOVERN-1.1"},
+        {"framework": "OMB M-25-21", "control": "Human Oversight"},
+        {"framework": "DoD AI Ethics", "control": "Governable"},
+        {"framework": "NIST 800-53", "control": "AC-3"},
+    ],
+    "data_sovereignty": [
+        {"framework": "DoD Cloud", "control": "IL4 / IL5 / IL6"},
+        {"framework": "NIST AI RMF", "control": "MAP-3.4"},
+        {"framework": "NIST 800-53", "control": "SC-7"},
+    ],
+    "auditability": [
+        {"framework": "NIST 800-53", "control": "AU-2 / AU-12"},
+        {"framework": "NIST AI RMF", "control": "GOVERN-1.2"},
+    ],
+    "risk_triage": [
+        {"framework": "NIST AI RMF", "control": "MEASURE-2"},
+        {"framework": "NIST AI 600-1", "control": "GAI Risk"},
+        {"framework": "NIST 800-53", "control": "RA-3"},
+    ],
+    "lifecycle_management": [
+        {"framework": "NIST AI RMF", "control": "MANAGE-1"},
+        {"framework": "NIST 800-53", "control": "SA-3 / SA-8"},
+    ],
+    "classification_marking": [
+        {"framework": "32 CFR 2002", "control": "CUI"},
+        {"framework": "NIST 800-53", "control": "AC-16 / MP-3"},
+        {"framework": "DoDI 5200.48", "control": "CUI Marking"},
+    ],
+}
+
+POSTURE_DIMENSION_RATIONALE: dict[str, str] = {
+    "human_oversight": "Triage each scan's AI opportunities into a governed workflow — promote worthwhile ones onto the tracked kanban board and record HITL accept/reject decisions.",
+    "data_sovereignty": "Assign an IL-appropriate recommended model to every opportunity so AI workloads stay within their authorised impact level.",
+    "auditability": "Ensure each scan emits audit-trail events; the AI-ify audit log is append-only evidence for AU-2/AU-12.",
+    "risk_triage": "Run the deterministic opportunity scorer on every opportunity to triage value, feasibility and risk before AI adoption.",
+    "lifecycle_management": "Generate a managed remediation roadmap for each scan so AI adoption follows a governed lifecycle.",
+    "classification_marking": "Maintain CUI // SP-CTI markings on all generated artifacts (PRDs, roadmaps, scan records).",
+}

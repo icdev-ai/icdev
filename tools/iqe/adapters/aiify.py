@@ -79,9 +79,27 @@ def roadmaps_adapter(conn: Any) -> list[dict]:
         canvas.close()
 
 
+def posture_adapter(conn: Any) -> list[dict]:
+    """Return AI-ify compliance posture snapshots from the canvas DB."""
+    canvas = _canvas_conn()
+    try:
+        cur = canvas.execute(
+            "SELECT id, overall_score, grade, posture, scan_count, "
+            "opportunity_count, created_at "
+            "FROM aiify_posture_snapshots ORDER BY created_at DESC"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        canvas.close()
+
+
 register_collection("aiify.opportunities", opportunities_adapter)
 register_collection("aiify.scans", scans_adapter)
 register_collection("aiify.roadmaps", roadmaps_adapter)
+register_collection("aiify.posture", posture_adapter)
 
 
 def opportunities_with_innovation_adapter(conn: Any) -> list[dict]:

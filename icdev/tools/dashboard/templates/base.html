@@ -224,6 +224,7 @@
                     <li><a href="/data/canvas/new">New Design</a></li>
                     <li><a href="/data/templates">Templates</a></li>
                     <li><a href="/data/mesh">Data Mesh</a></li>
+                    <li><a href="/data/mapping/" style="color:#ce93d8;">&#9889; AI Mapping</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     {% if boundary_canvas_enabled %}
@@ -329,9 +330,24 @@
                     <li><a href="/dsoc/bgp-security">BGP Security</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
-                    {% if aac_enabled %}
-                    <li class="nav-section-label">AI Augmentation</li>
-                    <li><a href="/ai-augmentation/" style="color:#6ee7b7;">AI Augmentation</a></li>
+                    {% if aiify_enabled %}
+                    <li class="nav-section-label">AI-ify</li>
+                    <li><a href="/ai-ify/" style="color:#6ee7b7;">AI-ify</a></li>
+                    <li><a href="/ai-ify/posture">Compliance Posture</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if dic_enabled %}
+                    <li class="nav-section-label">Document Intelligence</li>
+                    <li><a href="/document-intelligence/" style="color:#7ab3f0;">DIC Overview</a></li>
+                    <li><a href="/document-intelligence/collections">Collections</a></li>
+                    <li><a href="/document-intelligence/search">Search &amp; Chat</a></li>
+                    <li><a href="/document-intelligence/analytics">Analytics</a></li>
+                    <li><a href="/document-intelligence/review">HITL Review</a></li>
+                    <li><a href="/document-intelligence/generate">AI-Assist</a></li>
+                    <li><a href="/document-intelligence/acoic">ACOIC</a></li>
+                    <li><a href="/document-intelligence/freshness">Freshness</a></li>
+                    <li><a href="/document-intelligence/explorer">Explorer</a></li>
+                    <li><a href="/document-intelligence/handoff">Handoff</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     {% if govlift_enabled %}
@@ -388,7 +404,7 @@
 
             <!-- ── Compliance ────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/oscal','/prod-audit','/ai-transparency','/ai-accountability','/sbd','/cato','/compliance-debt','/ato-package','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost','/provenance','/traces','/xai'] or request.path.startswith('/security') %}active{% endif %}">Compliance ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/oscal','/prod-audit','/ai-transparency','/ai-accountability','/sbd','/cato','/compliance-debt','/ato-package','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost','/provenance','/traces','/xai'] or request.path.startswith('/security') or request.path.startswith('/security/zig') %}active{% endif %}">Compliance ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li class="nav-section-label">Risk &amp; ATO</li>
                     <li><a href="/poam">POA&amp;M Findings</a></li>
@@ -397,6 +413,12 @@
                     <li><a href="/cato">Continuous ATO</a></li>
                     <li><a href="/ato-package">ATO Package Builder</a></li>
                     <li><a href="/mosa">MOSA</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Zero Trust (NSA ZIG)</li>
+                    <li><a href="/security/zig/" style="color:#e94560;font-weight:600;">&#x1f6e1; ZIG Dashboard</a></li>
+                    <li><a href="/security/zig/phase" style="color:#aaa;">&#x1f4c5; Phase Tracker</a></li>
+                    <li><a href="/security/zig/assessment" style="color:#aaa;">&#x1f4ca; Assessment</a></li>
+                    <li><a href="/security/zig/roadmap" style="color:#aaa;">&#x1f5fa; FY2027 Roadmap</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">Security</li>
                     <li><a href="/security/" style="color:#e94560;">Security Canvas</a></li>
@@ -882,9 +904,13 @@
             [/^\/pmc/, 'pmc'],
             [/^\/ccc/, 'ccc'],
             [/^\/dsoc/, 'dsoc'],
-            [/^\/ai-augmentation/, 'aac'],
+            [/^\/ai-ify/, 'aiify'],
+            [/^\/document-intelligence/, 'dic'],
             [/^\/demo-runner/, 'demo_runner'],
             [/^\/innovation/, 'innovation'],
+            [/^\/mission-canvas/, 'mission_canvas'],
+            [/^\/proposals/, 'govcon'],
+            [/^\/govcon/, 'govcon'],
         ];
 
         function detectCanvas() {

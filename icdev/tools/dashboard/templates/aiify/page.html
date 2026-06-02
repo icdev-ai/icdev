@@ -116,7 +116,8 @@
 </style>
 
 <div class="aiify-wrap">
-  <h1>AI-ify <span style="font-size:13px;color:#64748b;">— Codebase AI Opportunity Assessment</span></h1>
+  <h1>AI-ify <span style="font-size:13px;color:#64748b;">— Codebase AI Opportunity Assessment</span>
+    <a href="/ai-ify/posture" style="float:right;font-size:12px;color:#a5b4fc;text-decoration:none;border:1px solid #334155;border-radius:8px;padding:5px 12px;">Compliance Posture &#8594;</a></h1>
   <div class="aiify-sub">Assess any application (any language) and get a defensible verdict on what to make AI-native — and what to leave alone.</div>
 
   <div class="stepper" id="stepper">
@@ -213,6 +214,20 @@
     </div>
     <h3>Product Requirements Document</h3>
     <div class="prd-box" id="prdBox"><span class="spin"></span></div>
+
+    <!-- PRD HITL decision controls -->
+    <div class="prd-hitl-bar" id="prdHitlBar" style="display:none;margin:12px 0;padding:10px 14px;background:#0b1120;border:1px solid #1e293b;border-radius:8px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span id="prdHitlBadge" class="sig-state" style="font-size:12px;">HITL Pending</span>
+        <span style="color:#64748b;font-size:12px;">PRD approval blocks Kanban dispatch.</span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn on" onclick="prdHitlDecision('accept',this)">✓ Accept PRD</button>
+          <button class="btn off" onclick="prdHitlDecision('reject',this)">✗ Reject PRD</button>
+          <button class="btn clear" onclick="prdHitlDecision('clear',this)">Clear</button>
+        </div>
+      </div>
+    </div>
+
     <div class="row"><button class="btn" onclick="go(5)">← Back</button>
       <button class="btn" onclick="dryRunKanban()">Dry-run</button>
       <button class="btn primary" onclick="sendKanban()">Send phase to Kanban</button></div>
@@ -400,6 +415,29 @@
     }).catch(function(e){alert('HITL update failed: '+e);});
   };
 
+  window.prdHitlDecision=function(decision,btn){
+    var phaseId=state.phaseId||'all';
+    fetch(BASE+'/api/hitl-decision',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({source_type:'prd',source_id:phaseId,decision:decision})})
+    .then(r=>r.json()).then(function(d){
+      if(d.status==='ok'){
+        state.prdHitlDecision = (decision==='clear'?null:decision);
+        _updatePrdHitlBadge(decision==='clear'?null:decision);
+      }
+    }).catch(function(e){alert('PRD HITL update failed: '+e);});
+  };
+
+  function _updatePrdHitlBadge(decision){
+    var bar=document.getElementById('prdHitlBar');
+    var badge=document.getElementById('prdHitlBadge');
+    if(!bar || !badge) return;
+    bar.style.display='block';
+    badge.className='sig-state';
+    if(decision==='accept'){badge.textContent='✓ HITL Approved';badge.className='sig-state accepted';}
+    else if(decision==='reject'){badge.textContent='✗ HITL Rejected';badge.className='sig-state rejected';}
+    else {badge.textContent='⏳ HITL Pending';}
+  }
+
   window.genPrd=function(){
     var rid=state.roadmapId;
     var box=document.getElementById('prdBox'), diaContent=document.getElementById('diaContent');
@@ -422,6 +460,8 @@
       } else { diaContent.textContent = m? m[1] : 'No diagram available.'; }
       if(html && !d.error){ box.innerHTML=html; }
       else { box.textContent=md; }
+      state.prdHitlDecision = d.hitl_decision || null;
+      _updatePrdHitlBadge(state.prdHitlDecision);
     }).catch(e=>{box.innerHTML='<div class="err">PRD failed: '+e+'</div>';});
   };
 
@@ -453,6 +493,8 @@
       var prdNote = d.prd_hitl_decision==='reject'
         ? '<div class="boost-banner" style="background:#450a0a;border-color:#7f1d1d;color:#fca5a5;margin-bottom:12px;">PRD is rejected — sending to Kanban would be blocked. Change your HITL decision first.</div>'
         : '';
+      state.prdHitlDecision = d.prd_hitl_decision || null;
+      _updatePrdHitlBadge(state.prdHitlDecision);
       box.innerHTML='<div class="dryrun-box">'+prdNote+boostHtml+
         '<div class="dryrun-meta">'+
         '<div class="kv"><b>PRD Quality Score</b>'+score.toFixed(2)+'<div class="score-bar '+scoreCls+'"><i style="width:'+Math.round(score*100)+'%"></i></div></div>'+
@@ -467,6 +509,10 @@
   window.sendKanban=function(){
     var rid=state.roadmapId;
     if(!rid){document.getElementById('kanbanMsg').textContent='No roadmap available.';return;}
+    if(state.prdHitlDecision==='reject'){
+      document.getElementById('kanbanMsg').textContent='Blocked: PRD is rejected — accept or clear the HITL decision first.';
+      return;
+    }
     var msg=document.getElementById('kanbanMsg'); msg.textContent='sending…';
     fetch(BASE+'/api/send-to-kanban',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({roadmap_id:rid,phase_id:'all'})})
