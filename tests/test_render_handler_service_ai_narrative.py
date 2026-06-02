@@ -1665,3 +1665,291 @@ def test_data_mapping_run_no_run_row_still_returns(monkeypatch):
     assert result["run_id"] == "dmr-99"
     assert result["match_count"] == 0
     assert result["narrative"] is None
+
+
+# ---------------------------------------------------------------------------
+# aiify-rm-c5c56-phase-180: opp-180 pinning tests
+#
+# Opportunity 180: db_render_notify_chain -> llm_generation in
+# render_handler_service.py; scan_id=2, roadmap_id="rm-c5c5642863",
+# function_name="<unknown>", scores: composite=0.7598, value=0.884,
+# feasibility=0.82, risk=0.625.
+#
+# The _ai_render_narrative helper is fully implemented; these tests pin the
+# core degradation and grounding guarantees so any future refactor is caught.
+# ---------------------------------------------------------------------------
+
+def _make_opp_180_facts():
+    return {
+        "opportunity_id": 180,
+        "scan_id": "2",
+        "roadmap_id": "rm-c5c5642863",
+        "pattern_type": "db_render_notify_chain",
+        "module_path": "tools/notification_service/render_handler_service.py",
+        "composite_score": 0.7598,
+        "value_score": 0.884,
+        "feasibility_score": 0.82,
+        "risk_score": 0.625,
+    }
+
+
+def test_opp_180_helper_returns_content_when_llm_available(monkeypatch):
+    """_ai_render_narrative returns LLM content for opp-180 representative facts."""
+    captured = _fake_router(
+        monkeypatch,
+        content=(
+            "Opportunity 180 in render_handler_service.py is a high-value "
+            "db_render_notify_chain pattern; LLM narrative is active via ai_narrative=True."
+        ),
+    )
+
+    out = rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_180_facts())
+
+    assert out == (
+        "Opportunity 180 in render_handler_service.py is a high-value "
+        "db_render_notify_chain pattern; LLM narrative is active via ai_narrative=True."
+    )
+    assert captured["function"] == "narrative_generation"
+
+
+def test_opp_180_helper_degrades_to_none_on_llm_failure(monkeypatch):
+    """_ai_render_narrative degrades to None when LLM raises for opp-180 facts."""
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    out = rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_180_facts())
+
+    assert out is None
+
+
+def test_opp_180_helper_degrades_to_none_on_empty_response(monkeypatch):
+    """_ai_render_narrative returns None when LLM returns empty string for opp-180."""
+    _fake_router(monkeypatch, content="")
+
+    out = rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_180_facts())
+
+    assert out is None
+
+
+def test_opp_180_prompt_grounded_in_facts(monkeypatch):
+    """LLM prompt for opp-180 must include the render_kind and all supplied facts."""
+    captured = _fake_router(monkeypatch, content="Narrative for opp-180.")
+
+    rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_180_facts())
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "AI-ify opportunity render notification" in user_msg
+    assert "composite_score" in user_msg
+    assert "value_score" in user_msg
+    assert "feasibility_score" in user_msg
+    assert "risk_score" in user_msg
+    assert "pattern_type" in user_msg
+    assert "roadmap_id" in user_msg
+    assert "rm-c5c5642863" in user_msg
+
+
+def test_opp_180_facts_sorted_in_prompt(monkeypatch):
+    """Facts for opp-180 must appear sorted alphabetically in the LLM prompt."""
+    captured = _fake_router(monkeypatch, content="Sorted narrative.")
+
+    rhs._ai_render_narrative(
+        "AI-ify opportunity render notification",
+        {"z_risk": 0.625, "a_composite": 0.7598, "m_value": 0.884},
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    pos_a = user_msg.index("a_composite")
+    pos_m = user_msg.index("m_value")
+    pos_z = user_msg.index("z_risk")
+    assert pos_a < pos_m < pos_z
+
+
+def test_opp_180_classification_and_params(monkeypatch):
+    """LLM request for opp-180 must carry CUI classification, max_tokens=512, temperature=0.3."""
+    captured = _fake_router(monkeypatch, content="Narrative.")
+
+    rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_180_facts())
+
+    assert captured["request"].classification == "CUI"
+    assert captured["request"].max_tokens == 512
+    assert captured["request"].temperature == 0.3
+    assert captured["request"].skip_injection_scan is True
+
+
+def test_opp_180_render_chain_ships_deterministic_on_no_llm(monkeypatch):
+    """A render_and_* function delivers its notification when LLM is unavailable (air-gap)."""
+    run_row = {
+        "id": "dmr-180", "source_schema": "legacy_opp180", "target_schema": "icdev_target",
+        "status": "complete", "match_count": 42, "created_at": "2026-06-02",
+    }
+    _fake_conn(monkeypatch, rows_by_call=[run_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("air-gap mode — no LLM available"))
+
+    result = rhs.render_and_notify_data_mapping_run("dmr-180", "dataops@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["run_id"] == "dmr-180"
+    assert result["narrative"] is None
+
+
+def test_opp_180_simulation_coa_ships_on_no_llm(monkeypatch):
+    """render_and_notify_simulation_coa_result delivers its notification without LLM (opp-180 module)."""
+    run_row = {
+        "id": "run-opp180", "scenario_name": "Opp-180 regression pin",
+        "status": "complete", "started_at": "2026-06-02", "completed_at": "2026-06-02",
+    }
+    coa_rows = [
+        {"coa_id": "coa-opp180", "title": "Incremental delivery", "feasibility_score": 0.82, "risk_score": 0.30, "recommended": True},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[run_row, coa_rows, []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_notify_simulation_coa_result("run-opp180", "lead@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["run_id"] == "run-opp180"
+    assert result["coa_count"] == 1
+    assert result["narrative"] is None
+
+
+# ---------------------------------------------------------------------------
+# aiify-rm-c5c56-phase-181: opp-181 pinning tests
+#
+# Opportunity 181: db_render_notify_chain -> llm_generation in
+# render_handler_service.py; scan_id=2, roadmap_id="rm-c5c5642863",
+# function_name="<unknown>", scores: composite=0.7593, value=0.883,
+# feasibility=0.82, risk=0.625.
+#
+# The _ai_render_narrative helper is fully implemented; these tests pin the
+# core degradation and grounding guarantees so any future refactor is caught.
+# ---------------------------------------------------------------------------
+
+def _make_opp_181_facts():
+    return {
+        "opportunity_id": 181,
+        "scan_id": "2",
+        "roadmap_id": "rm-c5c5642863",
+        "pattern_type": "db_render_notify_chain",
+        "module_path": "tools/notification_service/render_handler_service.py",
+        "composite_score": 0.7593,
+        "value_score": 0.883,
+        "feasibility_score": 0.82,
+        "risk_score": 0.625,
+    }
+
+
+def test_opp_181_helper_returns_content_when_llm_available(monkeypatch):
+    """_ai_render_narrative returns LLM content for opp-181 representative facts."""
+    captured = _fake_router(
+        monkeypatch,
+        content=(
+            "Opportunity 181 in render_handler_service.py is a high-value "
+            "db_render_notify_chain pattern; LLM narrative is active via ai_narrative=True."
+        ),
+    )
+
+    out = rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_181_facts())
+
+    assert out == (
+        "Opportunity 181 in render_handler_service.py is a high-value "
+        "db_render_notify_chain pattern; LLM narrative is active via ai_narrative=True."
+    )
+    assert captured["function"] == "narrative_generation"
+
+
+def test_opp_181_helper_degrades_to_none_on_llm_failure(monkeypatch):
+    """_ai_render_narrative degrades to None when LLM raises for opp-181 facts."""
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    out = rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_181_facts())
+
+    assert out is None
+
+
+def test_opp_181_helper_degrades_to_none_on_empty_response(monkeypatch):
+    """_ai_render_narrative returns None when LLM returns empty string for opp-181."""
+    _fake_router(monkeypatch, content="")
+
+    out = rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_181_facts())
+
+    assert out is None
+
+
+def test_opp_181_prompt_grounded_in_facts(monkeypatch):
+    """LLM prompt for opp-181 must include the render_kind and all supplied facts."""
+    captured = _fake_router(monkeypatch, content="Narrative for opp-181.")
+
+    rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_181_facts())
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "AI-ify opportunity render notification" in user_msg
+    assert "composite_score" in user_msg
+    assert "value_score" in user_msg
+    assert "feasibility_score" in user_msg
+    assert "risk_score" in user_msg
+    assert "pattern_type" in user_msg
+    assert "roadmap_id" in user_msg
+    assert "rm-c5c5642863" in user_msg
+
+
+def test_opp_181_facts_sorted_in_prompt(monkeypatch):
+    """Facts for opp-181 must appear sorted alphabetically in the LLM prompt."""
+    captured = _fake_router(monkeypatch, content="Sorted narrative.")
+
+    rhs._ai_render_narrative(
+        "AI-ify opportunity render notification",
+        {"z_risk": 0.625, "a_composite": 0.7593, "m_value": 0.883},
+    )
+
+    user_msg = captured["request"].messages[0]["content"]
+    pos_a = user_msg.index("a_composite")
+    pos_m = user_msg.index("m_value")
+    pos_z = user_msg.index("z_risk")
+    assert pos_a < pos_m < pos_z
+
+
+def test_opp_181_classification_and_params(monkeypatch):
+    """LLM request for opp-181 must carry CUI classification, max_tokens=512, temperature=0.3."""
+    captured = _fake_router(monkeypatch, content="Narrative.")
+
+    rhs._ai_render_narrative("AI-ify opportunity render notification", _make_opp_181_facts())
+
+    assert captured["request"].classification == "CUI"
+    assert captured["request"].max_tokens == 512
+    assert captured["request"].temperature == 0.3
+    assert captured["request"].skip_injection_scan is True
+
+
+def test_opp_181_render_chain_ships_deterministic_on_no_llm(monkeypatch):
+    """A render_and_* function delivers its notification when LLM is unavailable (air-gap)."""
+    run_row = {
+        "id": "run-opp181", "source_schema": "legacy_opp181", "target_schema": "icdev_target",
+        "status": "complete", "match_count": 43, "created_at": "2026-06-02",
+    }
+    _fake_conn(monkeypatch, rows_by_call=[run_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("air-gap mode — no LLM available"))
+
+    result = rhs.render_and_notify_data_mapping_run("dmr-opp181", "dataops@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["run_id"] == "dmr-opp181"
+    assert result["narrative"] is None
+
+
+def test_opp_181_rag_query_ships_on_no_llm(monkeypatch):
+    """render_and_notify_rag_query_result delivers its notification without LLM (opp-181 module)."""
+    query_row = {
+        "id": "q-opp181", "query_text": "Opp-181 regression pin query",
+        "lens": "default", "status": "complete", "created_at": "2026-06-02",
+    }
+    chunk_rows = [
+        {"id": "ck-opp181", "source_doc": "test_doc.pdf", "relevance_score": 0.88, "excerpt": "relevant excerpt"},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[query_row, chunk_rows, []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_notify_rag_query_result("q-opp181", "user@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["query_ref"] == "q-opp181"
+    assert result["chunk_count"] == 1
+    assert result["narrative"] is None
