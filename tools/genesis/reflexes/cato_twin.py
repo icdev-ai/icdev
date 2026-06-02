@@ -7,28 +7,31 @@ Runs as a Genesis reflex every 6 hours. For each active project:
   2. Write a new compliance twin snapshot via snapshot_writer
   3. Run the 20 seed IQE queries to detect violations
   4. Auto-generate POA&M items for any new violations
-  5. Log a summary to audit_trail
+  5. Run AI-driven anomaly detection on each snapshot's controls
+  6. Log a summary to audit_trail
 
 This is the continuous monitoring loop that keeps the compliance twin fresh
 and generates the evidence stream required for cATO (NIST SP 800-137).
 
 Reflex contract:
   - run(ctx, conn) → dict with keys: snapshots_written, violations_found,
-                                      poam_items_created, projects_processed
+                                      poam_items_created, projects_processed,
+                                      ai_anomalies_found
   - CADENCE_HOURS = 6 (read by Genesis scheduler)
   - Must be idempotent — running twice in a 6h window is safe (snapshot IDs differ)
   - Must not raise — catches all exceptions per project, logs, continues
 """
+from __future__ import annotations
+
 IMPLEMENTATION_STATUS = "full"
 
-from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -40,6 +43,10 @@ logger = get_logger(__name__)
 
 CADENCE_HOURS = 6
 
+# Fallback score threshold used when LLM is unavailable or returns an invalid value.
+# Controls scoring at or below this value are flagged as anomalous.
+_AI_SCORE_THRESHOLD_DEFAULT: float = 0.5
+
 # Frameworks sampled per reflex cycle (ordered by risk level)
 _FRAMEWORKS = [
     "FedRAMP High",
@@ -48,21 +55,182 @@ _FRAMEWORKS = [
     "CMMC",
 ]
 
-# Seed queries run on every cycle (controls domain only for Phase 1)
-_SEED_QUERIES = [
-    # FedRAMP Moderate
-    "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score",
-    "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.evidence_ref is null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id",
-    "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.score < 0.5 select ctrl.control_id, ctrl.score, ctrl.implementation_status, ctrl.project_id",
-    "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.control_id starts_with 'AC' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
-    "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.control_id starts_with 'IA' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
-    # FedRAMP High
-    "foreach ctrl in framework('FedRAMP High').controls where ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score",
-    "foreach ctrl in framework('FedRAMP High').controls where ctrl.evidence_ref is null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id",
-    "foreach ctrl in framework('FedRAMP High').controls where ctrl.score < 0.5 and ctrl.status == 'not_satisfied' select ctrl.control_id, ctrl.score, ctrl.project_id, ctrl.assessor",
-    "foreach ctrl in framework('FedRAMP High').controls where ctrl.control_id starts_with 'SC' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
-    "foreach ctrl in framework('FedRAMP High').controls where ctrl.control_id starts_with 'SI' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
-]
+# LLM prompt templates
+_THRESHOLD_PROMPT = """You are a compliance risk analyst reviewing {framework} controls.
+Given the following control compliance scores:
+
+{controls_summary}
+
+Determine the appropriate anomaly threshold score below which a control should be flagged
+as requiring immediate attention. Consider the framework's risk posture and the distribution
+of scores shown. Return ONLY a JSON object with this exact format:
+{{"threshold": 0.XX, "rationale": "one sentence"}}
+
+The threshold must be a float between 0.0 and 1.0."""
+
+_ANOMALY_PROMPT = """You are a compliance anomaly detector for {framework} controls (Project: {project_id}).
+Analyze the following controls for anomalous patterns that may indicate systemic compliance risk:
+
+{controls_json}
+
+Identify controls that are anomalous due to: low scores, missing evidence, specific control
+families at risk, or unexpected patterns. Return ONLY a JSON object:
+{{"anomalies": [{{"control_id": "X", "reason": "...", "severity": "low|medium|high"}}]}}
+
+Flag only genuinely anomalous controls. If none are found, return {{"anomalies": []}}."""
+
+
+def _build_seed_queries(threshold: float = _AI_SCORE_THRESHOLD_DEFAULT) -> List[str]:
+    """Return the standard IQE seed queries with the given anomaly threshold applied."""
+    t = f"{threshold:.2f}"
+    return [
+        # FedRAMP Moderate
+        f"foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score",
+        f"foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.evidence_ref is null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id",
+        f"foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.score < {t} select ctrl.control_id, ctrl.score, ctrl.implementation_status, ctrl.project_id",
+        f"foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.control_id starts_with 'AC' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
+        f"foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.control_id starts_with 'IA' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
+        # FedRAMP High
+        f"foreach ctrl in framework('FedRAMP High').controls where ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score",
+        f"foreach ctrl in framework('FedRAMP High').controls where ctrl.evidence_ref is null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id",
+        f"foreach ctrl in framework('FedRAMP High').controls where ctrl.score < {t} and ctrl.status == 'not_satisfied' select ctrl.control_id, ctrl.score, ctrl.project_id, ctrl.assessor",
+        f"foreach ctrl in framework('FedRAMP High').controls where ctrl.control_id starts_with 'SC' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
+        f"foreach ctrl in framework('FedRAMP High').controls where ctrl.control_id starts_with 'SI' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
+    ]
+
+
+# Keep _SEED_QUERIES for backward compat — computed with the default threshold
+_SEED_QUERIES = _build_seed_queries()
+
+
+def _determine_anomaly_threshold(controls: List[Dict], framework: str) -> float:
+    """Ask the LLM to determine an appropriate anomaly threshold for these controls.
+
+    Falls back to _AI_SCORE_THRESHOLD_DEFAULT on any LLM error or unavailability.
+    """
+    if not controls:
+        return _AI_SCORE_THRESHOLD_DEFAULT
+
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        router = LLMRouter()
+        if router.is_no_llm_mode() or not router.has_any_llm():
+            return _AI_SCORE_THRESHOLD_DEFAULT
+
+        scores = [c.get("score", 0.0) for c in controls]
+        controls_summary = "\n".join(
+            f"  {c.get('control_id', '?')}: score={c.get('score', 0.0):.2f}, status={c.get('implementation_status', 'unknown')}"
+            for c in controls[:30]  # cap to avoid token overflow
+        )
+        prompt = _THRESHOLD_PROMPT.format(
+            framework=framework,
+            controls_summary=controls_summary,
+        )
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are a federal compliance risk analyst. Reply only with valid JSON.",
+            max_tokens=256,
+            classification="CUI",
+        )
+        response = router.invoke("anomaly_detection", request)
+        raw = (response.content or "").strip()
+        # Strip markdown fences if present
+        if raw.startswith("```"):
+            lines = raw.splitlines()
+            raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        parsed = json.loads(raw)
+        t = float(parsed.get("threshold", _AI_SCORE_THRESHOLD_DEFAULT))
+        if 0.0 <= t <= 1.0:
+            return t
+        return _AI_SCORE_THRESHOLD_DEFAULT
+
+    except Exception as exc:
+        logger.info(
+            "LLM threshold determination unavailable for %s (%s) — using default %.2f",
+            framework,
+            exc,
+            _AI_SCORE_THRESHOLD_DEFAULT,
+        )
+        return _AI_SCORE_THRESHOLD_DEFAULT
+
+
+def _detect_anomalies_llm(
+    controls: List[Dict], framework: str, project_id: str
+) -> List[Dict]:
+    """Use LLM to identify anomalous compliance patterns beyond threshold detection.
+
+    Falls back to a rule-based list (controls below _AI_SCORE_THRESHOLD_DEFAULT) if
+    the LLM is unavailable or returns unparseable output.
+    """
+    if not controls:
+        return []
+
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        router = LLMRouter()
+        if router.is_no_llm_mode() or not router.has_any_llm():
+            return _rule_based_anomalies(controls)
+
+        controls_json = json.dumps(
+            [
+                {
+                    "control_id": c.get("control_id", "?"),
+                    "score": round(c.get("score", 0.0), 4),
+                    "status": c.get("implementation_status", "unknown"),
+                    "evidence_ref": c.get("evidence_ref"),
+                }
+                for c in controls[:50]  # cap to avoid token overflow
+            ],
+            indent=2,
+        )
+        prompt = _ANOMALY_PROMPT.format(
+            framework=framework,
+            project_id=project_id,
+            controls_json=controls_json,
+        )
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are a federal compliance anomaly detector. Reply only with valid JSON.",
+            max_tokens=1024,
+            classification="CUI",
+        )
+        response = router.invoke("anomaly_detection", request)
+        raw = (response.content or "").strip()
+        if raw.startswith("```"):
+            lines = raw.splitlines()
+            raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        parsed = json.loads(raw)
+        anomalies = parsed.get("anomalies", [])
+        if isinstance(anomalies, list):
+            return [a for a in anomalies if isinstance(a, dict) and "control_id" in a]
+
+    except Exception as exc:
+        logger.info(
+            "LLM anomaly detection unavailable for %s/%s (%s) — using rule-based fallback",
+            project_id,
+            framework,
+            exc,
+        )
+
+    return _rule_based_anomalies(controls)
+
+
+def _rule_based_anomalies(controls: List[Dict]) -> List[Dict]:
+    """Deterministic fallback: flag controls at or below the default threshold."""
+    return [
+        {
+            "control_id": c.get("control_id", "?"),
+            "reason": f"score {c.get('score', 0.0):.2f} <= {_AI_SCORE_THRESHOLD_DEFAULT}",
+            "severity": "high" if c.get("score", 0.0) == 0.0 else "medium",
+        }
+        for c in controls
+        if c.get("score", 0.0) <= _AI_SCORE_THRESHOLD_DEFAULT
+        and c.get("implementation_status", "") != "satisfied"
+    ]
 
 
 def _get_active_projects(conn) -> List[Dict]:
@@ -74,16 +242,7 @@ def _get_active_projects(conn) -> List[Dict]:
 
 
 def _pull_framework_controls(conn, project_id: str, framework: str) -> List[Dict]:
-    """Pull current compliance state for a project+framework from assessment tables.
-
-    Phase 1 strategy:
-      - Query the most recent framework-specific assessment rows (fedramp_assessments,
-        cmmc_assessments, etc.) for the project.
-      - Falls back to an empty list if no assessment data exists (safe — snapshot
-        writer accepts empty control lists).
-
-    Phase 2 will wire this directly into the multi-regime assessor pipeline.
-    """
+    """Pull current compliance state for a project+framework from assessment tables."""
     table_map = {
         "FedRAMP Moderate": "fedramp_assessments",
         "FedRAMP High": "fedramp_assessments",
@@ -94,7 +253,6 @@ def _pull_framework_controls(conn, project_id: str, framework: str) -> List[Dict
     if not table:
         return []
 
-    # Check table exists
     exists = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
         (table,),
@@ -102,8 +260,6 @@ def _pull_framework_controls(conn, project_id: str, framework: str) -> List[Dict
     if not exists:
         return []
 
-    # Try to pull rows. Different assessment tables have slightly different schemas
-    # so we use a safe column set common to all regime assessors.
     try:
         rows = conn.execute(
             f"""SELECT control_id,
@@ -148,7 +304,8 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
 
     Returns:
         Summary dict: snapshots_written, violations_found,
-                      poam_items_created, projects_processed, errors.
+                      poam_items_created, projects_processed,
+                      ai_anomalies_found, errors.
     """
     from tools.boundary_canvas.cato_twin.snapshot_writer import write_snapshot
     from tools.boundary_canvas.cato_twin.query_engine import run_query
@@ -166,6 +323,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         "violations_found": 0,
         "poam_items_created": 0,
         "projects_processed": 0,
+        "ai_anomalies_found": 0,
         "errors": [],
         "status": "ok",
         "cadence_hours": CADENCE_HOURS,
@@ -182,12 +340,17 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
             project_id = project["id"]
             project_violations = 0
             project_poam = 0
+            project_ai_anomalies = 0
 
             for framework in _FRAMEWORKS:
                 try:
                     controls = _pull_framework_controls(conn, project_id, framework)
                     if not controls:
                         continue
+
+                    # Determine AI-driven anomaly threshold for seed query construction
+                    threshold = _determine_anomaly_threshold(controls, framework)
+                    seed_queries = _build_seed_queries(threshold)
 
                     if dry_run:
                         totals["snapshots_written"] += 1
@@ -220,22 +383,28 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                         project_poam += poam_result.get("new_items", 0)
                         totals["poam_items_created"] += poam_result.get("new_items", 0)
 
+                    # AI-driven anomaly detection on this framework's controls
+                    anomalies = _detect_anomalies_llm(controls, framework, project_id)
+                    project_ai_anomalies += len(anomalies)
+                    totals["ai_anomalies_found"] += len(anomalies)
+
+                    # Run seed queries (logging only — non-fatal)
+                    for query in seed_queries:
+                        try:
+                            _results = run_query(query, conn=conn)
+                        except Exception:
+                            pass
+
                 except Exception as fw_err:
                     msg = f"{project_id}/{framework}: {fw_err}"
                     logger.warning("cato_twin reflex error — %s", msg)
                     totals["errors"].append(msg)
 
-            # Run seed queries against the latest snapshot data (logging only in Phase 1)
-            for query in _SEED_QUERIES:
-                try:
-                    _results = run_query(query, conn=conn)
-                except Exception:
-                    pass  # Query errors are non-fatal
-
             totals["projects_processed"] += 1
             _log_audit(conn, project_id, {
                 "violations": project_violations,
                 "poam_items": project_poam,
+                "ai_anomalies": project_ai_anomalies,
                 "frameworks_sampled": len(_FRAMEWORKS),
             })
 

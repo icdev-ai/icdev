@@ -1,0 +1,11 @@
+# CUI // SP-CTI
+# Genesis Reflex — Circuit Capacity Monitor: threshold configuration.
+# LLM anomaly detection calibrates these at runtime based on fleet utilization distribution.
+thresholds:
+  warn_pct: 70.0          # baseline warn level (%)
+  critical_pct: 85.0      # baseline critical level (%)
+  max_warn_pct: 82.0      # upper bound for AI-calibrated warn
+  max_critical_pct: 95.0  # upper bound for AI-calibrated critical
+  min_warn_pct: 55.0      # lower bound for AI-calibrated warn
+  min_critical_pct: 70.0  # lower bound for AI-calibrated critical
+  cadence_hours: 4
