@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599).
+"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5636, aiify-opp-5698, aiify-opp-5700).
 
 The db -> render -> notify chains in ``tools.notification_service.alert_service``
 gained an opt-in LLM triage narrative. These tests pin the two load-bearing
@@ -155,3 +155,79 @@ def test_narrative_not_called_when_ai_narrative_false(monkeypatch):
     # is that the sentinel invoke was never triggered.
     assert alert_service._ai_alert_narrative.__doc__ is not None
     assert not called
+
+
+# ---------------------------------------------------------------------------
+# Tests for send_security_alert_digest (aiify-opp-5702)
+# ---------------------------------------------------------------------------
+
+def _fake_alert_conn(monkeypatch, *, cat1=None, stig=None, poam=None):
+    """Install a fake DB connection returning minimal rows for digest queries."""
+    call_order = [cat1 or [], stig or [], poam or []]
+    idx = [0]
+
+    class _Cursor:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class _Conn:
+        def execute(self, sql, params=()):
+            rows = call_order[idx[0]] if idx[0] < len(call_order) else []
+            idx[0] += 1
+            return _Cursor(rows)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(alert_service, "get_connection", lambda: _Conn())
+    monkeypatch.setattr(alert_service, "render_template", lambda *a, **kw: "<html/>")
+    monkeypatch.setattr(alert_service, "sendmail", lambda **kw: None)
+    monkeypatch.setattr(alert_service, "emit", lambda *a, **kw: None)
+
+
+def test_send_security_alert_digest_narrative_none_by_default(monkeypatch):
+    """send_security_alert_digest must not invoke LLM when ai_narrative=False."""
+    _fake_alert_conn(monkeypatch)
+    called = []
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: called.append(True) or "x")
+
+    result = alert_service.send_security_alert_digest("sec@icdev.local")
+
+    assert result["narrative"] is None
+    assert not called
+
+
+def test_send_security_alert_digest_attaches_narrative(monkeypatch):
+    """send_security_alert_digest includes LLM narrative in result when ai_narrative=True."""
+    _fake_alert_conn(
+        monkeypatch,
+        cat1=[{"id": "F-1", "title": "Expired cert", "severity": "I",
+               "vid": "V-1", "component": "web", "detected_at": "2026-06-01"}],
+    )
+    monkeypatch.setattr(
+        alert_service, "_ai_alert_narrative",
+        lambda kind, facts: "Urgent: remediate the open CAT-I finding immediately.",
+    )
+
+    result = alert_service.send_security_alert_digest("sec@icdev.local", ai_narrative=True)
+
+    assert result["narrative"] == "Urgent: remediate the open CAT-I finding immediately."
+    assert result["cat1_count"] == 1
+    assert result["status"] == "sent"
+
+
+def test_send_security_alert_digest_degrades_on_llm_failure(monkeypatch):
+    """send_security_alert_digest returns complete result even when narrative is None."""
+    _fake_alert_conn(monkeypatch)
+    monkeypatch.setattr(alert_service, "_ai_alert_narrative", lambda *a: None)
+
+    result = alert_service.send_security_alert_digest("sec@icdev.local", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["narrative"] is None
+    assert "cat1_count" in result
+    assert "stig_critical_count" in result
+    assert "poam_due_count" in result
