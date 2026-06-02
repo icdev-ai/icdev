@@ -440,6 +440,103 @@ def notify_oracle_alert(
         conn.close()
 
 
+def send_platform_event_digest(
+    recipient: str,
+    hours: int = 24,
+    ai_narrative: bool = False,
+) -> dict:
+    """Fetch recent platform events, render a digest, and deliver.
+
+    Aggregates kanban task events, Genesis milestone events, and Oracle
+    alert events from the past ``hours`` into a single digest and delivers
+    to ``recipient``. When ``ai_narrative`` is True, attaches a best-effort
+    LLM narrative (``None`` if unavailable); the deterministic summary
+    remains authoritative.
+
+    Args:
+        recipient: Email address to receive the digest.
+        hours:     Look-back window in hours (default 24).
+        ai_narrative: If True, attach an optional LLM narrative under
+            ``narrative``; ``None`` if generation is unavailable.
+
+    Returns:
+        Delivery receipt with event counts and optional narrative.
+    """
+    conn = get_connection()
+    try:
+        # --- DB: recent kanban task events ---
+        kanban_rows = conn.execute(
+            "SELECT id, title, status, updated_at FROM kanban_tasks "
+            "WHERE updated_at >= datetime('now', ? || ' hours') "
+            "ORDER BY updated_at DESC LIMIT 20",
+            (f"-{hours}",),
+        ).fetchall()
+        # --- DB: recent Genesis milestone events ---
+        genesis_rows = conn.execute(
+            "SELECT design_id, phase, status, completed_at FROM genesis_phase_log "
+            "WHERE completed_at >= datetime('now', ? || ' hours') "
+            "ORDER BY completed_at DESC LIMIT 10",
+            (f"-{hours}",),
+        ).fetchall()
+        # --- DB: recent Oracle alert predictions ---
+        oracle_rows = conn.execute(
+            "SELECT id, title, severity, confidence, created_at FROM oracle_predictions "
+            "WHERE created_at >= datetime('now', ? || ' hours') "
+            "AND outcome = 'pending' ORDER BY severity DESC, created_at DESC LIMIT 10",
+            (f"-{hours}",),
+        ).fetchall()
+
+        kanban_count = len(kanban_rows)
+        genesis_count = len(genesis_rows)
+        oracle_count = len(oracle_rows)
+        vars_ = {
+            "hours_window": hours,
+            "kanban_event_count": kanban_count,
+            "genesis_milestone_count": genesis_count,
+            "oracle_alert_count": oracle_count,
+        }
+
+        # --- Render ---
+        rendered = render_template(
+            "notifications/platform_event_digest.html",
+            kanban_events=kanban_rows,
+            genesis_milestones=genesis_rows,
+            oracle_alerts=oracle_rows,
+            hours=hours,
+        )
+
+        # --- AI (optional): synthesize narrative; None if unavailable ---
+        narrative = _ai_event_narrative(
+            "platform event digest summary", vars_
+        ) if ai_narrative else None
+
+        # --- Deliver ---
+        sendmail(
+            to=recipient,
+            subject=(
+                f"[EVENT DIGEST] {kanban_count} kanban, "
+                f"{genesis_count} genesis, {oracle_count} oracle events "
+                f"(last {hours}h)"
+            ),
+            html=rendered,
+        )
+        payload = {**vars_, "recipient": recipient}
+        if narrative:
+            payload["narrative"] = narrative
+        emit("platform.event_digest_sent", payload)
+
+        return {
+            "status": "sent",
+            "recipient": recipient,
+            "kanban_event_count": kanban_count,
+            "genesis_milestone_count": genesis_count,
+            "oracle_alert_count": oracle_count,
+            "narrative": narrative,
+        }
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
