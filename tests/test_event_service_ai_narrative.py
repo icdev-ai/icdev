@@ -347,3 +347,405 @@ def test_notify_aiify_opportunity_event_graceful_degradation_on_llm_failure(monk
     assert result["status"] == "delivered"
     assert result["narrative"] is None
     assert "webhook" in result["receipts"]
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: notify_kanban_event (aiify-opp-5828)
+# ---------------------------------------------------------------------------
+
+def _stub_kanban_notify_db(monkeypatch):
+    """In-memory SQLite with kanban_tasks + audit_trail for notify_kanban_event."""
+    import sqlite3
+
+    class _FakeConn:
+        def __init__(self):
+            self._db = sqlite3.connect(":memory:")
+            self._db.row_factory = sqlite3.Row
+            self._db.execute(
+                "CREATE TABLE kanban_tasks "
+                "(id TEXT, title TEXT, status TEXT, actor TEXT, attempts INTEGER, "
+                "created_at TEXT, updated_at TEXT)"
+            )
+            self._db.execute(
+                "INSERT INTO kanban_tasks VALUES "
+                "('dt-test-01', 'Add ZIG maturity report', 'done', 'system', 1, "
+                "'2026-06-02T00:00:00', '2026-06-02T02:00:00')"
+            )
+            self._db.execute(
+                "CREATE TABLE audit_trail "
+                "(resource_type TEXT, resource_id TEXT, event TEXT, actor TEXT, "
+                "detail TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+            )
+            self._db.commit()
+
+        def execute(self, sql, params=()):
+            return self._db.execute(sql, params)
+
+        def commit(self):
+            self._db.commit()
+
+        def close(self):
+            self._db.close()
+
+    monkeypatch.setattr(event_service, "get_connection", _FakeConn)
+    monkeypatch.setattr(event_service, "render_to_string", lambda *a, **kw: "<html/>")
+    monkeypatch.setattr(event_service, "send", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "publish", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "emit", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "notify", lambda *a, **kw: None)
+
+
+def test_notify_kanban_event_no_narrative_by_default(monkeypatch):
+    """When ai_narrative is omitted, narrative must be None and delivery succeeds."""
+    _stub_kanban_notify_db(monkeypatch)
+
+    result = event_service.notify_kanban_event(
+        task_id="dt-test-01",
+        event_type="task_completed",
+        channels=["console"],
+    )
+
+    assert result["status"] == "delivered"
+    assert result["task_id"] == "dt-test-01"
+    assert result["narrative"] is None
+    assert "console" in result["receipts"]
+
+
+def test_notify_kanban_event_attaches_narrative_when_enabled(monkeypatch):
+    """With ai_narrative=True and a functioning LLM, narrative is attached."""
+    _stub_kanban_notify_db(monkeypatch)
+    _fake_router(monkeypatch, content="Task dt-test-01 completed successfully; sprint cadence remains on track.")
+
+    result = event_service.notify_kanban_event(
+        task_id="dt-test-01",
+        event_type="task_completed",
+        channels=["console"],
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] == "Task dt-test-01 completed successfully; sprint cadence remains on track."
+
+
+def test_notify_kanban_event_graceful_degradation_on_llm_failure(monkeypatch):
+    """If the LLM raises, narrative is None but the notification is still delivered."""
+    _stub_kanban_notify_db(monkeypatch)
+    _fake_router(monkeypatch, raises=ConnectionError("LLM unreachable"))
+
+    result = event_service.notify_kanban_event(
+        task_id="dt-test-01",
+        event_type="task_blocked",
+        channels=["console"],
+        extra={"reason": "dependency unavailable"},
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] is None
+    assert "console" in result["receipts"]
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: notify_genesis_milestone (aiify-opp-5828)
+# ---------------------------------------------------------------------------
+
+def _stub_genesis_notify_db(monkeypatch):
+    """In-memory SQLite with empty Genesis tables for notify_genesis_milestone."""
+    import sqlite3
+
+    class _FakeConn:
+        def __init__(self):
+            self._db = sqlite3.connect(":memory:")
+            self._db.row_factory = sqlite3.Row
+            self._db.execute(
+                "CREATE TABLE genesis_designs "
+                "(id TEXT, name TEXT, status TEXT, current_phase TEXT, created_at TEXT)"
+            )
+            self._db.execute(
+                "CREATE TABLE genesis_phase_log "
+                "(design_id TEXT, phase TEXT, status TEXT, started_at TEXT, completed_at TEXT)"
+            )
+            self._db.execute(
+                "CREATE TABLE genesis_reflexes "
+                "(design_id TEXT, name TEXT, confidence REAL, fired_at TEXT)"
+            )
+            self._db.execute(
+                "CREATE TABLE audit_trail "
+                "(resource_type TEXT, resource_id TEXT, event TEXT, actor TEXT, "
+                "detail TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+            )
+            self._db.commit()
+
+        def execute(self, sql, params=()):
+            return self._db.execute(sql, params)
+
+        def commit(self):
+            self._db.commit()
+
+        def close(self):
+            self._db.close()
+
+    monkeypatch.setattr(event_service, "get_connection", _FakeConn)
+    monkeypatch.setattr(event_service, "sendmail", lambda **kw: None)
+    monkeypatch.setattr(event_service, "dispatch", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "emit", lambda *a, **kw: None)
+
+
+def test_notify_genesis_milestone_no_narrative_by_default(monkeypatch):
+    """When ai_narrative is omitted, narrative must be None and delivery succeeds."""
+    _stub_genesis_notify_db(monkeypatch)
+
+    result = event_service.notify_genesis_milestone(
+        design_id="D-42",
+        milestone_type="phase_complete",
+        channels=["console"],
+        phase_data={"phase": "validate", "next_phase": "deploy"},
+    )
+
+    assert result["status"] == "delivered"
+    assert result["design_id"] == "D-42"
+    assert result["narrative"] is None
+    assert "console" in result["receipts"]
+
+
+def test_notify_genesis_milestone_attaches_narrative_when_enabled(monkeypatch):
+    """With ai_narrative=True and a functioning LLM, narrative is attached."""
+    _stub_genesis_notify_db(monkeypatch)
+    _fake_router(monkeypatch, content="Genesis design D-42 has completed the validate phase; deploy phase is next.")
+
+    result = event_service.notify_genesis_milestone(
+        design_id="D-42",
+        milestone_type="phase_complete",
+        channels=["console"],
+        phase_data={"phase": "validate", "next_phase": "deploy"},
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] == "Genesis design D-42 has completed the validate phase; deploy phase is next."
+
+
+def test_notify_genesis_milestone_graceful_degradation_on_llm_failure(monkeypatch):
+    """If the LLM raises, narrative is None but the milestone notification still ships."""
+    _stub_genesis_notify_db(monkeypatch)
+    _fake_router(monkeypatch, raises=RuntimeError("LLM unavailable"))
+
+    result = event_service.notify_genesis_milestone(
+        design_id="D-42",
+        milestone_type="drift_detected",
+        channels=["console"],
+        phase_data={"component": "rag", "delta": 0.15, "action": "rollback"},
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] is None
+    assert "console" in result["receipts"]
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: notify_oracle_alert (aiify-opp-5828)
+# ---------------------------------------------------------------------------
+
+def _stub_oracle_notify_db(monkeypatch):
+    """In-memory SQLite with empty Oracle tables for notify_oracle_alert."""
+    import sqlite3
+
+    class _FakeConn:
+        def __init__(self):
+            self._db = sqlite3.connect(":memory:")
+            self._db.row_factory = sqlite3.Row
+            self._db.execute(
+                "CREATE TABLE oracle_predictions "
+                "(id TEXT, title TEXT, severity TEXT, confidence REAL, "
+                "lens_id TEXT, outcome TEXT, created_at TEXT)"
+            )
+            self._db.execute(
+                "CREATE TABLE oracle_lenses "
+                "(lens_id TEXT, name TEXT, horizon_days INTEGER)"
+            )
+            self._db.execute(
+                "CREATE TABLE audit_trail "
+                "(resource_type TEXT, resource_id TEXT, event TEXT, actor TEXT, "
+                "detail TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+            )
+            self._db.commit()
+
+        def execute(self, sql, params=()):
+            return self._db.execute(sql, params)
+
+        def commit(self):
+            self._db.commit()
+
+        def close(self):
+            self._db.close()
+
+    monkeypatch.setattr(event_service, "get_connection", _FakeConn)
+    monkeypatch.setattr(event_service, "render_template", lambda *a, **kw: "<html/>")
+    monkeypatch.setattr(event_service, "send", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "publish", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "notify", lambda *a, **kw: None)
+
+
+def test_notify_oracle_alert_no_narrative_by_default(monkeypatch):
+    """When ai_narrative is omitted, narrative must be None and delivery succeeds."""
+    _stub_oracle_notify_db(monkeypatch)
+
+    result = event_service.notify_oracle_alert(
+        lens_id="L-security",
+        alert_type="cat2_digest",
+        prediction_ids=[],
+        channels=["console"],
+    )
+
+    assert result["status"] == "delivered"
+    assert result["lens_id"] == "L-security"
+    assert result["narrative"] is None
+    assert "console" in result["receipts"]
+
+
+def test_notify_oracle_alert_attaches_narrative_when_enabled(monkeypatch):
+    """With ai_narrative=True and a functioning LLM, narrative is attached."""
+    _stub_oracle_notify_db(monkeypatch)
+    _fake_router(monkeypatch, content="Zero predictions are pending review for lens L-security; no immediate action required.")
+
+    result = event_service.notify_oracle_alert(
+        lens_id="L-security",
+        alert_type="cat2_digest",
+        prediction_ids=[],
+        channels=["console"],
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] == "Zero predictions are pending review for lens L-security; no immediate action required."
+
+
+def test_notify_oracle_alert_graceful_degradation_on_llm_failure(monkeypatch):
+    """If the LLM raises, narrative is None but the alert is still delivered."""
+    _stub_oracle_notify_db(monkeypatch)
+    _fake_router(monkeypatch, raises=ConnectionError("LLM unreachable"))
+
+    result = event_service.notify_oracle_alert(
+        lens_id="L-security",
+        alert_type="cat1_escalate",
+        prediction_ids=[],
+        channels=["console"],
+        urgency="normal",
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] is None
+    assert "console" in result["receipts"]
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: send_aiify_scan_report (aiify-opp-5940)
+# ---------------------------------------------------------------------------
+
+def _stub_scan_report_db(monkeypatch):
+    """In-memory SQLite with aiify_scans + aiify_opportunities + audit_trail."""
+    import sqlite3
+
+    class _FakeConn:
+        def __init__(self):
+            self._db = sqlite3.connect(":memory:")
+            self._db.row_factory = sqlite3.Row
+            self._db.execute(
+                "CREATE TABLE aiify_scans "
+                "(id INTEGER, roadmap_id TEXT, scan_status TEXT, "
+                "opportunity_count INTEGER, started_at TEXT, completed_at TEXT)"
+            )
+            self._db.execute(
+                "INSERT INTO aiify_scans VALUES "
+                "(41, 'rm-55fc0a0e6a', 'complete', 12, "
+                "'2026-06-02T00:00:00', '2026-06-02T00:15:00')"
+            )
+            self._db.execute(
+                "CREATE TABLE aiify_opportunities "
+                "(id INTEGER, scan_id INTEGER, module_path TEXT, function_name TEXT, "
+                "pattern_type TEXT, ai_paradigm TEXT, composite_score REAL)"
+            )
+            self._db.execute(
+                "INSERT INTO aiify_opportunities VALUES "
+                "(5940, 41, 'tools/notification_service/event_service.py', '<unknown>', "
+                "'db_render_notify_chain', 'llm_generation', 0.7769)"
+            )
+            self._db.execute(
+                "CREATE TABLE audit_trail "
+                "(resource_type TEXT, resource_id TEXT, event TEXT, actor TEXT, "
+                "detail TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+            )
+            self._db.commit()
+
+        def execute(self, sql, params=()):
+            return self._db.execute(sql, params)
+
+        def commit(self):
+            self._db.commit()
+
+        def close(self):
+            self._db.close()
+
+    monkeypatch.setattr(event_service, "get_connection", _FakeConn)
+    monkeypatch.setattr(event_service, "sendmail", lambda **kw: None)
+    monkeypatch.setattr(event_service, "publish", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "emit", lambda *a, **kw: None)
+    monkeypatch.setattr(event_service, "notify", lambda *a, **kw: None)
+
+
+def test_send_aiify_scan_report_no_narrative_by_default(monkeypatch):
+    """When ai_narrative is omitted, narrative must be None and delivery succeeds."""
+    _stub_scan_report_db(monkeypatch)
+
+    result = event_service.send_aiify_scan_report(
+        scan_id=41,
+        channels=["console"],
+    )
+
+    assert result["status"] == "delivered"
+    assert result["scan_id"] == 41
+    assert result["opportunity_count"] == 12
+    assert result["narrative"] is None
+    assert "console" in result["receipts"]
+
+
+def test_send_aiify_scan_report_attaches_narrative_when_enabled(monkeypatch):
+    """With ai_narrative=True and a functioning LLM, narrative is attached."""
+    _stub_scan_report_db(monkeypatch)
+    _fake_router(
+        monkeypatch,
+        content=(
+            "Scan 41 detected 12 AI-ify opportunities; the highest-scoring candidate "
+            "is in event_service.py and should be prioritised for immediate implementation."
+        ),
+    )
+
+    result = event_service.send_aiify_scan_report(
+        scan_id=41,
+        channels=["console"],
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] == (
+        "Scan 41 detected 12 AI-ify opportunities; the highest-scoring candidate "
+        "is in event_service.py and should be prioritised for immediate implementation."
+    )
+
+
+def test_send_aiify_scan_report_graceful_degradation_on_llm_failure(monkeypatch):
+    """If the LLM raises, narrative is None but the report is still delivered."""
+    _stub_scan_report_db(monkeypatch)
+    _fake_router(monkeypatch, raises=RuntimeError("LLM unavailable"))
+
+    result = event_service.send_aiify_scan_report(
+        scan_id=41,
+        channels=["slack"],
+        ai_narrative=True,
+    )
+
+    assert result["status"] == "delivered"
+    assert result["narrative"] is None
+    assert "slack" in result["receipts"]

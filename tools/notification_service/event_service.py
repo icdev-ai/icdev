@@ -395,8 +395,8 @@ def notify_genesis_milestone(
 
         vars_ = {
             "design_id": design_id,
-            "design_name": (design_row or {}).get("name", "(unknown)"),
-            "phase": (phase_row or {}).get("phase", (phase_data or {}).get("phase", "unknown")),
+            "design_name": design_row["name"] if design_row else "(unknown)",
+            "phase": phase_row["phase"] if phase_row else (phase_data or {}).get("phase", "unknown"),
             "next_phase": (phase_data or {}).get("next_phase", ""),
             "reflex_name": (reflex_rows[0]["name"] if reflex_rows else ""),
             "confidence": (reflex_rows[0]["confidence"] if reflex_rows else 0.0),
@@ -497,10 +497,10 @@ def notify_oracle_alert(
 
         vars_ = {
             "lens_id": lens_id,
-            "lens_name": (lens_row or {}).get("name", lens_id),
-            "horizon": (lens_row or {}).get("horizon_days", 24),
+            "lens_name": lens_row["name"] if lens_row else lens_id,
+            "horizon": lens_row["horizon_days"] if lens_row else 24,
             "count": len(pred_rows),
-            "cat1_count": (cat1_count or {}).get("cnt", 0),
+            "cat1_count": cat1_count["cnt"] if cat1_count else 0,
             "title": (pred_rows[0]["title"] if pred_rows else "(no predictions)"),
             "confidence": (pred_rows[0]["confidence"] if pred_rows else 0.0),
             "finding": (pred_rows[0]["title"] if pred_rows else ""),
@@ -554,6 +554,122 @@ def notify_oracle_alert(
             "rendered": rendered,
             "narrative": narrative,
             "prediction_count": len(pred_rows),
+            "receipts": receipts,
+        }
+    finally:
+        conn.close()
+
+
+def send_aiify_scan_report(
+    scan_id: int,
+    channels: Iterable[str],
+    recipient: str | None = None,
+    ai_narrative: bool = False,
+) -> dict:
+    """Fetch AI-ify scan results, render a scan completion report, and deliver.
+
+    Aggregates scan metadata and top opportunities from a completed AI-ify scan
+    and delivers a structured report to the specified channels. When
+    ``ai_narrative`` is True, attaches a best-effort LLM narrative
+    (``None`` if unavailable); the deterministic report remains authoritative.
+
+    Args:
+        scan_id:      Numeric ID of the completed AI-ify scan.
+        channels:     Delivery targets from ``CHANNEL_REGISTRY``.
+        recipient:    Email address for email/smtp delivery (optional).
+        ai_narrative: If True, attach an optional LLM narrative under
+            ``narrative``; ``None`` if generation is unavailable.
+
+    Returns:
+        Delivery receipt with scan metadata, opportunity count, and optional narrative.
+    """
+    conn = get_connection()
+    try:
+        # --- DB: scan metadata ---
+        scan_row = conn.execute(
+            "SELECT id, roadmap_id, scan_status, opportunity_count, started_at, completed_at "
+            "FROM aiify_scans WHERE id = ?",
+            (scan_id,),
+        ).fetchone()
+        # --- DB: top opportunities by composite score ---
+        top_opps = conn.execute(
+            "SELECT id, module_path, function_name, pattern_type, ai_paradigm, composite_score "
+            "FROM aiify_opportunities WHERE scan_id = ? "
+            "ORDER BY composite_score DESC LIMIT 5",
+            (scan_id,),
+        ).fetchall()
+        # --- DB: pattern breakdown ---
+        pattern_rows = conn.execute(
+            "SELECT pattern_type, COUNT(*) as cnt FROM aiify_opportunities "
+            "WHERE scan_id = ? GROUP BY pattern_type ORDER BY cnt DESC",
+            (scan_id,),
+        ).fetchall()
+
+        opportunity_count = scan_row["opportunity_count"] if scan_row else len(top_opps)
+        top_score = float(top_opps[0]["composite_score"]) if top_opps else 0.0
+        top_module = top_opps[0]["module_path"] if top_opps else "(none)"
+        vars_ = {
+            "scan_id": scan_id,
+            "roadmap_id": scan_row["roadmap_id"] if scan_row else "(unknown)",
+            "scan_status": scan_row["scan_status"] if scan_row else "complete",
+            "opportunity_count": opportunity_count,
+            "top_score": round(top_score, 4),
+            "top_module": top_module,
+            "pattern_count": len(pattern_rows),
+        }
+
+        # --- Render ---
+        rendered = (
+            f"AI-ify scan #{scan_id} complete. "
+            f"{opportunity_count} opportunities detected "
+            f"(roadmap {vars_['roadmap_id']}). "
+            f"Top score: {vars_['top_score']} in {top_module}."
+        )
+
+        narrative = _ai_event_narrative(
+            "aiify scan completion report",
+            {k: str(v) for k, v in vars_.items()},
+        ) if ai_narrative else None
+
+        # --- Notify ---
+        receipts = {}
+        for ch in channels:
+            if ch == "audit":
+                conn.execute(
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('aiify_scan_notification', ?, 'scan_complete', 'system', ?)",
+                    (str(scan_id), rendered),
+                )
+                conn.commit()
+                receipts[ch] = "inserted"
+            elif ch in ("email", "smtp"):
+                sendmail(
+                    to=recipient or "engineering@icdev.local",
+                    subject=f"[AI-ify] Scan #{scan_id} complete — {opportunity_count} opportunities",
+                    html=rendered,
+                )
+                receipts[ch] = "sent"
+            elif ch in ("slack", "teams", "webhook"):
+                payload = {
+                    "text": rendered,
+                    "scan_id": scan_id,
+                    "opportunity_count": opportunity_count,
+                }
+                publish(ch, payload)
+                receipts[ch] = "published"
+            elif ch == "console":
+                emit("aiify.scan_complete", {"message": rendered, "scan_id": scan_id})
+                receipts[ch] = "emitted"
+            else:
+                notify(ch, rendered)
+                receipts[ch] = "dispatched"
+
+        return {
+            "status": "delivered",
+            "scan_id": scan_id,
+            "opportunity_count": opportunity_count,
+            "rendered": rendered,
+            "narrative": narrative,
             "receipts": receipts,
         }
     finally:
