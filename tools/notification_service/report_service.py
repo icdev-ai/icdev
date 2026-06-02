@@ -753,6 +753,144 @@ def deliver_aiify_scan_report(
         conn.close()
 
 
+def deliver_aiify_opportunity_report(
+    opportunity_id: int,
+    recipients: Iterable[str],
+    channels: Iterable[str],
+    ai_narrative: bool = False,
+) -> dict:
+    """Query a single AI-ify opportunity, render a report, and deliver to stakeholders.
+
+    Fetches the opportunity record, its score breakdown, and the parent scan's
+    readiness baseline; renders a structured single-opportunity report; and
+    delivers via all requested channels.
+
+    When ``ai_narrative`` is True, additionally synthesizes a short LLM
+    executive summary of the opportunity's value and recommended next step
+    (returned under ``narrative``). The deterministic templated report remains
+    the authoritative payload; the summary is best-effort and is ``None`` when
+    the LLM is unavailable (air-gap, no credentials, network failure).
+    """
+    conn = get_connection()
+    try:
+        # --- DB: fetch opportunity + score ---
+        opp_row = conn.execute(
+            "SELECT o.opportunity_id, o.scan_id, o.roadmap_id, o.function_name, "
+            "o.module_path, o.pattern_type, o.ai_paradigm, o.phase, o.status, o.created_at "
+            "FROM aiify_opportunities o WHERE o.opportunity_id = ?",
+            (opportunity_id,),
+        ).fetchone()
+
+        if not opp_row:
+            rendered = f"AI-ify opportunity {opportunity_id} not found. Run icdev-secure to generate."
+            return {"status": "no_data", "rendered": rendered}
+
+        score_row = conn.execute(
+            "SELECT composite_score, value_score, feasibility_score, risk_score "
+            "FROM aiify_scores WHERE opportunity_id = ?",
+            (opportunity_id,),
+        ).fetchone()
+
+        scan_row = conn.execute(
+            "SELECT overall_ai_readiness, status FROM aiify_scans WHERE scan_id = ?",
+            (opp_row["scan_id"],),
+        ).fetchone()
+
+        composite = round(float((score_row or {}).get("composite_score", 0) or 0), 4)
+        value = round(float((score_row or {}).get("value_score", 0) or 0), 4)
+        feasibility = round(float((score_row or {}).get("feasibility_score", 0) or 0), 4)
+        risk = round(float((score_row or {}).get("risk_score", 0) or 0), 4)
+        readiness = round(float((scan_row or {}).get("overall_ai_readiness", 0) or 0), 1)
+
+        vars_ = {
+            "opportunity_id": opportunity_id,
+            "scan_id": opp_row["scan_id"],
+            "roadmap_id": opp_row["roadmap_id"] or "",
+            "function_name": opp_row["function_name"] or "<unknown>",
+            "module_path": opp_row["module_path"] or "",
+            "pattern_type": opp_row["pattern_type"] or "",
+            "ai_paradigm": opp_row["ai_paradigm"] or "",
+            "phase": opp_row["phase"] or "",
+            "status": opp_row["status"] or "open",
+            "composite_score": composite,
+            "value_score": value,
+            "feasibility_score": feasibility,
+            "risk_score": risk,
+            "overall_readiness": readiness,
+            "created_at": opp_row["created_at"] or _now_iso(),
+        }
+
+        rendered = (
+            f"AI-ify Opportunity Report: opp-{opportunity_id}\n"
+            f"Function: {vars_['function_name']} | Module: {vars_['module_path']}\n"
+            f"Pattern: {vars_['pattern_type']} | Paradigm: {vars_['ai_paradigm']}\n"
+            f"Phase: {vars_['phase']} | Status: {vars_['status']}\n"
+            f"Composite: {composite} | Value: {value} | Feasibility: {feasibility} | Risk: {risk}\n"
+            f"Scan readiness: {readiness}/100 | Roadmap: {vars_['roadmap_id']}"
+        )
+        rendered_html = render_template(
+            "reports/aiify_opportunity.html",
+            opportunity=opp_row,
+            scores=score_row,
+            scan=scan_row,
+            **vars_,
+        )
+
+        # --- AI (optional): synthesize executive summary; None if unavailable ---
+        narrative = _ai_report_narrative(
+            "AI-ify opportunity readiness report", vars_
+        ) if ai_narrative else None
+
+        # --- Deliver ---
+        receipts = {}
+        for recipient in recipients:
+            sendmail(
+                to=recipient,
+                subject=(
+                    f"[ICDEV] AI-ify Opportunity Report — opp-{opportunity_id} "
+                    f"({vars_['pattern_type']}, score: {composite})"
+                ),
+                html=rendered_html,
+            )
+            receipts[f"email:{recipient}"] = "sent"
+
+        for ch in channels:
+            if ch == "audit":
+                conn.execute(
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('aiify_opportunity_report', ?, 'report_delivered', 'system', ?)",
+                    (str(opportunity_id), rendered),
+                )
+                conn.commit()
+                receipts["audit"] = "inserted"
+            elif ch in ("slack", "teams", "webhook"):
+                payload = {
+                    "opportunity_id": opportunity_id,
+                    "pattern_type": vars_["pattern_type"],
+                    "composite_score": composite,
+                    "status": vars_["status"],
+                }
+                if narrative:
+                    payload["narrative"] = narrative
+                publish(ch, payload)
+                receipts[ch] = "published"
+            else:
+                notify(ch, rendered)
+                receipts[ch] = "notified"
+
+        return {
+            "status": "delivered",
+            "opportunity_id": opportunity_id,
+            "pattern_type": vars_["pattern_type"],
+            "composite_score": composite,
+            "rendered": rendered,
+            "narrative": narrative,
+            "receipts": receipts,
+        }
+    finally:
+        conn.close()
+
+
 def _summarise_findings(findings_json: str | None) -> str:
     if not findings_json:
         return "none"
