@@ -638,3 +638,679 @@ def test_security_scan_narrative_none_on_llm_failure(monkeypatch):
 
     assert result["narrative"] is None
     assert result["status"] == "sent"
+
+
+# ---------------------------------------------------------------------------
+# aiify-opp-5915: D-AWARE drift detection render chain
+# ---------------------------------------------------------------------------
+
+def test_awareness_drift_report_narrative_attached(monkeypatch):
+    """render_and_notify_awareness_drift_report attaches narrative when LLM is available."""
+    run_row = {"id": "run-1", "probe_run_id": "pr-1", "status": "complete", "created_at": "2026-06-02"}
+    regression_rows = [
+        {"title": "route_regression: /agents", "severity": "high", "confidence": 0.85,
+         "outcome": "http_head fail", "created_at": "2026-06-02"},
+    ]
+    health_rows = [
+        {"node_id": "agents-blueprint", "probe_type": "http_head", "status": "fail"},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[run_row, regression_rows, health_rows])
+    _fake_router(monkeypatch, content="1 high-severity route regression detected on /agents; investigate blueprint startup and restart the agent.")
+
+    result = rhs.render_and_notify_awareness_drift_report("run-1", "ops@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["run_id"] == "run-1"
+    assert result["regression_count"] == 1
+    assert result["narrative"] == "1 high-severity route regression detected on /agents; investigate blueprint startup and restart the agent."
+
+
+def test_awareness_drift_report_no_narrative_by_default(monkeypatch):
+    """render_and_notify_awareness_drift_report returns narrative=None when ai_narrative=False."""
+    _fake_conn(monkeypatch, rows_by_call=[None, [], []])
+
+    result = rhs.render_and_notify_awareness_drift_report("run-99", "ops@example.com")
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+    assert result["regression_count"] == 0
+
+
+def test_awareness_drift_report_narrative_none_on_llm_failure(monkeypatch):
+    """Drift report ships even when the LLM raises; narrative degrades to None."""
+    run_row = {"id": "run-2", "probe_run_id": "pr-2", "status": "error", "created_at": "2026-06-02"}
+    _fake_conn(monkeypatch, rows_by_call=[run_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("llm unavailable"))
+
+    result = rhs.render_and_notify_awareness_drift_report("run-2", "ops@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_awareness_drift_report_narrative_facts_grounded(monkeypatch):
+    """Narrative prompt must include run_id, regression_count, and critical_high_count in facts."""
+    run_row = {"id": "run-3", "probe_run_id": "pr-3", "status": "complete", "created_at": "2026-06-02"}
+    regression_rows = [
+        {"title": "module_import_broken: tools.aiify.scanner", "severity": "critical",
+         "confidence": 0.95, "outcome": "ImportError", "created_at": "2026-06-02"},
+        {"title": "coherence_new_fail: tools.manifest check", "severity": "high",
+         "confidence": 0.80, "outcome": "coherence fail", "created_at": "2026-06-02"},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[run_row, regression_rows, []])
+    captured = _fake_router(monkeypatch, content="2 regressions detected.")
+
+    rhs.render_and_notify_awareness_drift_report("run-3", "ops@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "run_id" in user_msg
+    assert "regression_count" in user_msg
+    assert "critical_high_count" in user_msg
+    assert "D-AWARE drift detection" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# aiify-opp-5913: weekly AI-ify digest render chain
+# ---------------------------------------------------------------------------
+
+def test_aiify_weekly_digest_narrative_attached(monkeypatch):
+    """render_and_send_aiify_weekly_digest attaches narrative when LLM is available."""
+    scan_rows = [
+        {"scan_id": "sc-1", "status": "complete", "overall_ai_readiness": 72.5, "created_at": "2026-06-01"},
+        {"scan_id": "sc-2", "status": "complete", "overall_ai_readiness": 75.0, "created_at": "2026-05-31"},
+    ]
+    opp_rows = [
+        {"function_name": "handle_foo", "pattern_type": "db_render_notify_chain", "composite_score": 0.76},
+    ]
+    roadmap_rows = [{"roadmap_id": "rm-abc", "scan_id": "sc-1"}]
+    _fake_conn(monkeypatch, rows_by_call=[scan_rows, opp_rows, roadmap_rows])
+    _fake_router(monkeypatch, content="AI readiness averaged 73.75% this week with 1 top opportunity; prioritize db_render_notify_chain implementation.")
+
+    result = rhs.render_and_send_aiify_weekly_digest("2026-W22", "aiops@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["week_label"] == "2026-W22"
+    assert result["scan_count"] == 2
+    assert result["narrative"] == "AI readiness averaged 73.75% this week with 1 top opportunity; prioritize db_render_notify_chain implementation."
+
+
+def test_aiify_weekly_digest_no_narrative_by_default(monkeypatch):
+    """render_and_send_aiify_weekly_digest returns narrative=None when ai_narrative=False."""
+    _fake_conn(monkeypatch, rows_by_call=[[], [], []])
+
+    result = rhs.render_and_send_aiify_weekly_digest("2026-W21", "aiops@example.com")
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+    assert result["scan_count"] == 0
+
+
+def test_aiify_weekly_digest_narrative_none_on_llm_failure(monkeypatch):
+    """Weekly digest ships even when the LLM raises; narrative degrades to None."""
+    scan_rows = [
+        {"scan_id": "sc-3", "status": "complete", "overall_ai_readiness": 68.0, "created_at": "2026-06-02"},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[scan_rows, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_send_aiify_weekly_digest("2026-W23", "aiops@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+    assert result["scan_count"] == 1
+
+
+def test_aiify_weekly_digest_narrative_facts_grounded(monkeypatch):
+    """Narrative prompt must include week_label, scan_count, and top_pattern_type in facts."""
+    scan_rows = [
+        {"scan_id": "sc-4", "status": "complete", "overall_ai_readiness": 80.0, "created_at": "2026-06-01"},
+    ]
+    opp_rows = [
+        {"function_name": "process_report", "pattern_type": "llm_generation", "composite_score": 0.91},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[scan_rows, opp_rows, []])
+    captured = _fake_router(monkeypatch, content="Strong AI week.")
+
+    rhs.render_and_send_aiify_weekly_digest("2026-W24", "aiops@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "week_label" in user_msg
+    assert "scan_count" in user_msg
+    assert "top_pattern_type" in user_msg
+    assert "llm_generation" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# aiify-opp-5916: supply chain alert, FedRAMP ATO status, innovation cycle
+# ---------------------------------------------------------------------------
+
+def test_supply_chain_alert_no_narrative_by_default(monkeypatch):
+    """render_and_send_supply_chain_alert returns narrative=None when ai_narrative=False."""
+    assessment_row = {
+        "id": "ASS-1", "vendor_name": "Acme Corp", "risk_level": "high",
+        "assessed_at": "2026-06-01", "overall_score": 42.5,
+    }
+    finding_rows = [
+        {"title": "Open source dependency risk", "severity": "critical", "category": "software", "status": "open"},
+    ]
+    vendor_rows = [{"vendor_name": "Acme Corp", "risk_tier": 1}]
+    _fake_conn(monkeypatch, rows_by_call=[assessment_row, finding_rows, vendor_rows])
+
+    result = rhs.render_and_send_supply_chain_alert("ASS-1", "sc@example.com")
+
+    assert result["status"] == "sent"
+    assert result["assessment_id"] == "ASS-1"
+    assert result["narrative"] is None
+
+
+def test_supply_chain_alert_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    assessment_row = {
+        "id": "ASS-2", "vendor_name": "Beta Inc", "risk_level": "critical",
+        "assessed_at": "2026-06-01", "overall_score": 28.0,
+    }
+    finding_rows = [
+        {"title": "Backdoor in firmware", "severity": "critical", "category": "hardware", "status": "open"},
+        {"title": "No SLA for patches", "severity": "high", "category": "process", "status": "open"},
+    ]
+    vendor_rows = []
+    _fake_conn(monkeypatch, rows_by_call=[assessment_row, finding_rows, vendor_rows])
+    _fake_router(monkeypatch, content="Critical supply chain risk detected at Beta Inc; suspend procurement pending review.")
+
+    result = rhs.render_and_send_supply_chain_alert("ASS-2", "sc@example.com", ai_narrative=True)
+
+    assert result["narrative"] == "Critical supply chain risk detected at Beta Inc; suspend procurement pending review."
+    assert result["assessment_id"] == "ASS-2"
+    assert result["status"] == "sent"
+
+
+def test_supply_chain_alert_narrative_none_on_llm_failure(monkeypatch):
+    """Notification ships even when the LLM raises; narrative degrades to None."""
+    assessment_row = {"id": "ASS-3", "vendor_name": "Gamma LLC", "risk_level": "medium", "overall_score": 60.0}
+    _fake_conn(monkeypatch, rows_by_call=[assessment_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_send_supply_chain_alert("ASS-3", "sc@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_fedramp_ato_no_narrative_by_default(monkeypatch):
+    """render_and_deliver_fedramp_ato_status returns narrative=None when ai_narrative=False."""
+    pkg_row = {
+        "id": "PKG-10", "system_name": "ICDEV Platform", "ato_status": "authorized",
+        "authorization_date": "2026-01-15", "expiry_date": "2029-01-15",
+    }
+    controls_rows = [{"implementation_status": "implemented", "cnt": 120}]
+    poam_rows = [{"id": "P-1", "title": "Patch TLS", "severity": "medium", "due_date": "2026-09-01"}]
+    _fake_conn(monkeypatch, rows_by_call=[pkg_row, controls_rows, poam_rows])
+
+    result = rhs.render_and_deliver_fedramp_ato_status("PKG-10", "isso@example.com")
+
+    assert result["status"] == "sent"
+    assert result["package_id"] == "PKG-10"
+    assert result["narrative"] is None
+
+
+def test_fedramp_ato_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    pkg_row = {
+        "id": "PKG-11", "system_name": "Classified Portal", "ato_status": "in_process",
+        "authorization_date": None, "expiry_date": None,
+    }
+    controls_rows = [
+        {"implementation_status": "implemented", "cnt": 80},
+        {"implementation_status": "planned", "cnt": 40},
+    ]
+    poam_rows = []
+    _fake_conn(monkeypatch, rows_by_call=[pkg_row, controls_rows, poam_rows])
+    _fake_router(monkeypatch, content="FedRAMP authorization in progress; 80 controls implemented, 40 remaining before ATO issuance.")
+
+    result = rhs.render_and_deliver_fedramp_ato_status("PKG-11", "isso@example.com", ai_narrative=True)
+
+    assert result["narrative"] == "FedRAMP authorization in progress; 80 controls implemented, 40 remaining before ATO issuance."
+    assert result["package_id"] == "PKG-11"
+    assert result["status"] == "sent"
+
+
+def test_fedramp_ato_narrative_none_on_llm_failure(monkeypatch):
+    """FedRAMP notification ships even when the LLM raises; narrative degrades to None."""
+    pkg_row = {"id": "PKG-12", "system_name": "Test System", "ato_status": "expired"}
+    _fake_conn(monkeypatch, rows_by_call=[pkg_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("llm unavailable"))
+
+    result = rhs.render_and_deliver_fedramp_ato_status("PKG-12", "isso@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_innovation_cycle_no_narrative_by_default(monkeypatch):
+    """render_and_notify_innovation_cycle returns narrative=None when ai_narrative=False."""
+    cycle_row = {
+        "id": "CYC-5", "cycle_type": "weekly", "status": "completed",
+        "started_at": "2026-06-01", "completed_at": "2026-06-02",
+    }
+    finding_rows = [
+        {"title": "New RAG pattern detected", "category": "ai_rag", "priority": 1, "status": "new"},
+    ]
+    action_rows = [{"action_type": "suggest", "target": "rag_server.py", "outcome": "card_created"}]
+    _fake_conn(monkeypatch, rows_by_call=[cycle_row, finding_rows, action_rows])
+
+    result = rhs.render_and_notify_innovation_cycle("CYC-5", "ops@example.com")
+
+    assert result["status"] == "sent"
+    assert result["cycle_id"] == "CYC-5"
+    assert result["narrative"] is None
+
+
+def test_innovation_cycle_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    cycle_row = {
+        "id": "CYC-6", "cycle_type": "monthly", "status": "completed",
+        "started_at": "2026-06-01", "completed_at": "2026-06-02",
+    }
+    finding_rows = [
+        {"title": "LLM routing optimization", "category": "performance", "priority": 1, "status": "new"},
+        {"title": "Vector index fragmentation", "category": "database", "priority": 2, "status": "new"},
+    ]
+    action_rows = [{"action_type": "optimize", "target": "llm_router.py", "outcome": "card_created"}]
+    _fake_conn(monkeypatch, rows_by_call=[cycle_row, finding_rows, action_rows])
+    _fake_router(monkeypatch, content="Monthly innovation cycle surfaced 2 findings; LLM routing optimization is the top priority.")
+
+    result = rhs.render_and_notify_innovation_cycle("CYC-6", "ops@example.com", ai_narrative=True)
+
+    assert result["narrative"] == "Monthly innovation cycle surfaced 2 findings; LLM routing optimization is the top priority."
+    assert result["cycle_id"] == "CYC-6"
+    assert result["status"] == "sent"
+
+
+def test_innovation_cycle_narrative_none_on_llm_failure(monkeypatch):
+    """Notification ships even when the LLM raises for innovation cycle; narrative degrades to None."""
+    cycle_row = {"id": "CYC-7", "cycle_type": "daily", "status": "completed"}
+    _fake_conn(monkeypatch, rows_by_call=[cycle_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_notify_innovation_cycle("CYC-7", "ops@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_innovation_cycle_no_findings_still_returns(monkeypatch):
+    """When no findings exist, top_category defaults to 'none' and function still returns."""
+    cycle_row = {"id": "CYC-8", "cycle_type": "weekly", "status": "no_findings"}
+    _fake_conn(monkeypatch, rows_by_call=[cycle_row, [], []])
+
+    result = rhs.render_and_notify_innovation_cycle("CYC-8", "ops@example.com")
+
+    assert result["status"] == "sent"
+    assert result["cycle_id"] == "CYC-8"
+    assert result["narrative"] is None
+
+
+# ---------------------------------------------------------------------------
+# aiify-opp-5917: fine-tuning job result render chain
+# ---------------------------------------------------------------------------
+
+def test_finetune_job_result_no_narrative_by_default(monkeypatch):
+    """render_and_notify_finetune_job_result returns narrative=None when ai_narrative=False."""
+    job_row = {
+        "id": "JOB-1", "model_base": "claude-haiku-4-5", "status": "completed",
+        "epochs": 3, "started_at": "2026-06-01", "completed_at": "2026-06-02",
+    }
+    metric_rows = [{"metric_name": "train_loss", "value": 0.21, "epoch": 3}]
+    eval_rows = [{"benchmark_name": "hellaswag", "score": 0.87, "delta": 0.04}]
+    _fake_conn(monkeypatch, rows_by_call=[job_row, metric_rows, eval_rows])
+
+    result = rhs.render_and_notify_finetune_job_result("JOB-1", "aiops@example.com")
+
+    assert result["status"] == "sent"
+    assert result["job_id"] == "JOB-1"
+    assert result["narrative"] is None
+
+
+def test_finetune_job_result_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    job_row = {
+        "id": "JOB-2", "model_base": "claude-sonnet-4-6", "status": "completed",
+        "epochs": 5, "started_at": "2026-06-01", "completed_at": "2026-06-02",
+    }
+    metric_rows = [
+        {"metric_name": "train_loss", "value": 0.18, "epoch": 5},
+        {"metric_name": "val_loss", "value": 0.22, "epoch": 5},
+    ]
+    eval_rows = [
+        {"benchmark_name": "mmlu", "score": 0.91, "delta": 0.07},
+        {"benchmark_name": "hellaswag", "score": 0.88, "delta": 0.03},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[job_row, metric_rows, eval_rows])
+    _fake_router(monkeypatch, content="Fine-tuning JOB-2 completed on claude-sonnet-4-6 over 5 epochs with top MMLU score 0.91; deploy to staging for evaluation.")
+
+    result = rhs.render_and_notify_finetune_job_result("JOB-2", "aiops@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["job_id"] == "JOB-2"
+    assert result["narrative"] == "Fine-tuning JOB-2 completed on claude-sonnet-4-6 over 5 epochs with top MMLU score 0.91; deploy to staging for evaluation."
+
+
+def test_finetune_job_result_narrative_none_on_llm_failure(monkeypatch):
+    """Fine-tuning notification ships even when the LLM raises; narrative degrades to None."""
+    job_row = {
+        "id": "JOB-3", "model_base": "claude-haiku-4-5", "status": "failed",
+        "epochs": 0, "started_at": "2026-06-02", "completed_at": "2026-06-02",
+    }
+    _fake_conn(monkeypatch, rows_by_call=[job_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_notify_finetune_job_result("JOB-3", "aiops@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_finetune_job_result_narrative_facts_grounded(monkeypatch):
+    """Narrative prompt must include job_id, model_base, job_status, and best_eval_score."""
+    job_row = {
+        "id": "JOB-4", "model_base": "claude-opus-4-8", "status": "completed",
+        "epochs": 10, "started_at": "2026-06-01", "completed_at": "2026-06-02",
+    }
+    eval_rows = [{"benchmark_name": "mmlu", "score": 0.93, "delta": 0.09}]
+    _fake_conn(monkeypatch, rows_by_call=[job_row, [], eval_rows])
+    captured = _fake_router(monkeypatch, content="Strong fine-tune result.")
+
+    rhs.render_and_notify_finetune_job_result("JOB-4", "aiops@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "job_id" in user_msg
+    assert "model_base" in user_msg
+    assert "job_status" in user_msg
+    assert "best_eval_score" in user_msg
+    assert "fine-tuning job result" in user_msg
+
+
+def test_finetune_job_result_no_eval_results_returns(monkeypatch):
+    """When no eval results exist, best_eval_score defaults to 0.0 and function still returns."""
+    job_row = {"id": "JOB-5", "model_base": "claude-haiku-4-5", "status": "completed", "epochs": 2}
+    _fake_conn(monkeypatch, rows_by_call=[job_row, [], []])
+
+    result = rhs.render_and_notify_finetune_job_result("JOB-5", "aiops@example.com")
+
+    assert result["status"] == "sent"
+    assert result["job_id"] == "JOB-5"
+    assert result["narrative"] is None
+
+
+# ---------------------------------------------------------------------------
+# aiify-opp-5955: research engine findings render chain
+# ---------------------------------------------------------------------------
+
+def test_research_findings_no_narrative_by_default(monkeypatch):
+    """render_and_notify_research_findings returns narrative=None when ai_narrative=False."""
+    report_row = {
+        "id": "rpt-1", "topic": "Zero Trust Architecture Gaps", "status": "complete",
+        "confidence": 0.88, "created_at": "2026-06-02",
+    }
+    finding_rows = [
+        {"title": "Micro-segmentation gaps", "category": "network", "confidence": 0.91, "summary": "..."},
+        {"title": "Identity governance gaps", "category": "identity", "confidence": 0.85, "summary": "..."},
+    ]
+    source_rows = [{"source_url": "https://example.mil/zt.pdf", "source_type": "pdf", "relevance_score": 0.93}]
+    _fake_conn(monkeypatch, rows_by_call=[report_row, finding_rows, source_rows])
+
+    result = rhs.render_and_notify_research_findings("rpt-1", "research@example.com")
+
+    assert result["status"] == "sent"
+    assert result["report_id"] == "rpt-1"
+    assert result["finding_count"] == 2
+    assert result["narrative"] is None
+
+
+def test_research_findings_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    report_row = {
+        "id": "rpt-2", "topic": "FedRAMP High Control Gaps", "status": "complete",
+        "confidence": 0.92, "created_at": "2026-06-02",
+    }
+    finding_rows = [
+        {"title": "AC-2 gap", "category": "access_control", "confidence": 0.93, "summary": "Account management not enforced."},
+    ]
+    source_rows = [
+        {"source_url": "https://example.com/nist.pdf", "source_type": "pdf", "relevance_score": 0.97},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[report_row, finding_rows, source_rows])
+    _fake_router(monkeypatch, content="Research engine found 1 FedRAMP control gap (AC-2); prioritize account management remediation before the next ATO review cycle.")
+
+    result = rhs.render_and_notify_research_findings("rpt-2", "research@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["report_id"] == "rpt-2"
+    assert result["finding_count"] == 1
+    assert result["narrative"] == "Research engine found 1 FedRAMP control gap (AC-2); prioritize account management remediation before the next ATO review cycle."
+
+
+def test_research_findings_narrative_none_on_llm_failure(monkeypatch):
+    """Research notification ships even when the LLM raises; narrative degrades to None."""
+    report_row = {"id": "rpt-3", "topic": "Supply Chain Risk", "status": "complete", "confidence": 0.75}
+    _fake_conn(monkeypatch, rows_by_call=[report_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_notify_research_findings("rpt-3", "research@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_research_findings_narrative_facts_grounded(monkeypatch):
+    """Narrative prompt must include report_id, topic, finding_count, and source_count."""
+    report_row = {
+        "id": "rpt-4", "topic": "CMMC Level 3 Readiness", "status": "complete",
+        "confidence": 0.80, "created_at": "2026-06-02",
+    }
+    finding_rows = [
+        {"title": "IR-1 gap", "category": "incident_response", "confidence": 0.82, "summary": "..."},
+        {"title": "MA-2 gap", "category": "maintenance", "confidence": 0.78, "summary": "..."},
+        {"title": "CA-3 gap", "category": "assessment", "confidence": 0.76, "summary": "..."},
+    ]
+    source_rows = [
+        {"source_url": "https://example.com/cmmc.pdf", "source_type": "pdf", "relevance_score": 0.90},
+        {"source_url": "https://example.com/nist.pdf", "source_type": "pdf", "relevance_score": 0.85},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[report_row, finding_rows, source_rows])
+    captured = _fake_router(monkeypatch, content="3 CMMC Level 3 gaps found.")
+
+    rhs.render_and_notify_research_findings("rpt-4", "research@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "report_id" in user_msg
+    assert "topic" in user_msg
+    assert "finding_count" in user_msg
+    assert "source_count" in user_msg
+    assert "research engine findings" in user_msg
+
+
+def test_research_findings_no_findings_still_returns(monkeypatch):
+    """When no findings exist, avg_finding_confidence is 0.0 and function still returns."""
+    report_row = {"id": "rpt-5", "topic": "Empty Scan", "status": "no_findings", "confidence": 0.0}
+    _fake_conn(monkeypatch, rows_by_call=[report_row, [], []])
+
+    result = rhs.render_and_notify_research_findings("rpt-5", "research@example.com")
+
+    assert result["status"] == "sent"
+    assert result["report_id"] == "rpt-5"
+    assert result["finding_count"] == 0
+    assert result["narrative"] is None
+
+
+# ---------------------------------------------------------------------------
+# aiify-opp-5952: RAG knowledge search result render chain
+# ---------------------------------------------------------------------------
+
+def test_rag_query_result_no_narrative_by_default(monkeypatch):
+    """render_and_notify_rag_query_result returns narrative=None when ai_narrative=False."""
+    query_row = {
+        "id": "q-1", "query_text": "What are the ZIG identity pillar gaps?",
+        "lens": "zig", "status": "complete", "created_at": "2026-06-02",
+    }
+    chunk_rows = [
+        {"id": "ck-1", "source_doc": "zig_guide.pdf", "relevance_score": 0.91, "excerpt": "Identity gaps..."},
+    ]
+    citation_rows = [{"source_doc": "zig_guide.pdf", "citation_text": "p.14", "confidence": 0.88}]
+    _fake_conn(monkeypatch, rows_by_call=[query_row, chunk_rows, citation_rows])
+
+    result = rhs.render_and_notify_rag_query_result("q-1", "user@example.com")
+
+    assert result["status"] == "sent"
+    assert result["query_ref"] == "q-1"
+    assert result["chunk_count"] == 1
+    assert result["narrative"] is None
+
+
+def test_rag_query_result_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    query_row = {
+        "id": "q-2", "query_text": "Summarize the FedRAMP Moderate control gaps.",
+        "lens": "compliance", "status": "complete", "created_at": "2026-06-02",
+    }
+    chunk_rows = [
+        {"id": "ck-2", "source_doc": "fedramp_ssp.docx", "relevance_score": 0.95, "excerpt": "AC-2 gap..."},
+        {"id": "ck-3", "source_doc": "fedramp_ssp.docx", "relevance_score": 0.87, "excerpt": "SC-8 gap..."},
+    ]
+    citation_rows = [
+        {"source_doc": "fedramp_ssp.docx", "citation_text": "Section 3.2", "confidence": 0.92},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[query_row, chunk_rows, citation_rows])
+    _fake_router(monkeypatch, content="2 FedRAMP Moderate control gaps identified (AC-2, SC-8); prioritize AC-2 account management remediation before next ATO review.")
+
+    result = rhs.render_and_notify_rag_query_result("q-2", "user@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["query_ref"] == "q-2"
+    assert result["chunk_count"] == 2
+    assert result["narrative"] == "2 FedRAMP Moderate control gaps identified (AC-2, SC-8); prioritize AC-2 account management remediation before next ATO review."
+
+
+def test_rag_query_result_narrative_none_on_llm_failure(monkeypatch):
+    """RAG result notification ships even when the LLM raises; narrative degrades to None."""
+    query_row = {"id": "q-3", "query_text": "STIG CAT I open items", "lens": "stig", "status": "complete"}
+    _fake_conn(monkeypatch, rows_by_call=[query_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_notify_rag_query_result("q-3", "user@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_rag_query_result_narrative_facts_grounded(monkeypatch):
+    """Narrative prompt must include query_ref, lens, chunk_count, and citation_count in facts."""
+    query_row = {
+        "id": "q-4", "query_text": "Innovation engine recent findings",
+        "lens": "innovation", "status": "complete", "created_at": "2026-06-02",
+    }
+    chunk_rows = [
+        {"id": "ck-4", "source_doc": "innovation_log.md", "relevance_score": 0.80, "excerpt": "RAG pattern..."},
+        {"id": "ck-5", "source_doc": "innovation_log.md", "relevance_score": 0.75, "excerpt": "LLM routing..."},
+        {"id": "ck-6", "source_doc": "innovation_log.md", "relevance_score": 0.70, "excerpt": "Vector index..."},
+    ]
+    citation_rows = [
+        {"source_doc": "innovation_log.md", "citation_text": "2026-06-01 entry", "confidence": 0.82},
+        {"source_doc": "innovation_log.md", "citation_text": "2026-05-31 entry", "confidence": 0.79},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[query_row, chunk_rows, citation_rows])
+    captured = _fake_router(monkeypatch, content="3 innovation findings retrieved.")
+
+    rhs.render_and_notify_rag_query_result("q-4", "user@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "query_ref" in user_msg
+    assert "lens" in user_msg
+    assert "chunk_count" in user_msg
+    assert "citation_count" in user_msg
+    assert "RAG knowledge search" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# aiify-opp-5953: simulation COA result render chain
+# ---------------------------------------------------------------------------
+
+def test_simulation_coa_result_no_narrative_by_default(monkeypatch):
+    """render_and_notify_simulation_coa_result returns narrative=None when ai_narrative=False."""
+    run_row = {
+        "id": "run-1", "scenario_name": "Budget Crunch Scenario",
+        "status": "complete", "started_at": "2026-06-01", "completed_at": "2026-06-02",
+    }
+    coa_rows = [
+        {"coa_id": "coa-1", "title": "Reduce scope", "feasibility_score": 0.82, "risk_score": 0.35, "recommended": True},
+        {"coa_id": "coa-2", "title": "Delay phase 2", "feasibility_score": 0.74, "risk_score": 0.50, "recommended": False},
+    ]
+    metric_rows = [{"metric_name": "cost_variance", "value": -120000, "unit": "USD"}]
+    _fake_conn(monkeypatch, rows_by_call=[run_row, coa_rows, metric_rows])
+
+    result = rhs.render_and_notify_simulation_coa_result("run-1", "lead@example.com")
+
+    assert result["status"] == "sent"
+    assert result["run_id"] == "run-1"
+    assert result["coa_count"] == 2
+    assert result["narrative"] is None
+
+
+def test_simulation_coa_result_narrative_attached_when_llm_available(monkeypatch):
+    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
+    run_row = {
+        "id": "run-2", "scenario_name": "Staffing Constraint COA",
+        "status": "complete", "started_at": "2026-06-01", "completed_at": "2026-06-02",
+    }
+    coa_rows = [
+        {"coa_id": "coa-3", "title": "Hire contractors", "feasibility_score": 0.91, "risk_score": 0.28, "recommended": True},
+    ]
+    metric_rows = [
+        {"metric_name": "schedule_variance_days", "value": -14, "unit": "days"},
+        {"metric_name": "cost_overrun_pct", "value": 8.5, "unit": "percent"},
+    ]
+    _fake_conn(monkeypatch, rows_by_call=[run_row, coa_rows, metric_rows])
+    _fake_router(monkeypatch, content="Staffing Constraint COA simulation complete; COA 'Hire contractors' is recommended with 0.91 feasibility — approve contract action immediately.")
+
+    result = rhs.render_and_notify_simulation_coa_result("run-2", "lead@example.com", ai_narrative=True)
+
+    assert result["status"] == "sent"
+    assert result["run_id"] == "run-2"
+    assert result["coa_count"] == 1
+    assert result["narrative"] == "Staffing Constraint COA simulation complete; COA 'Hire contractors' is recommended with 0.91 feasibility — approve contract action immediately."
+
+
+def test_simulation_coa_result_narrative_none_on_llm_failure(monkeypatch):
+    """COA notification ships even when the LLM raises; narrative degrades to None."""
+    run_row = {"id": "run-3", "scenario_name": "Risk Scenario A", "status": "complete"}
+    _fake_conn(monkeypatch, rows_by_call=[run_row, [], []])
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
+
+    result = rhs.render_and_notify_simulation_coa_result("run-3", "lead@example.com", ai_narrative=True)
+
+    assert result["narrative"] is None
+    assert result["status"] == "sent"
+
+
+def test_simulation_coa_result_narrative_facts_grounded(monkeypatch):
+    """Narrative prompt must include run_id, scenario_name, coa_count, and recommended_count."""
+    run_row = {
+        "id": "run-4", "scenario_name": "IL5 Migration COA",
+        "status": "complete", "started_at": "2026-06-01", "completed_at": "2026-06-02",
+    }
+    coa_rows = [
+        {"coa_id": "coa-5", "title": "Phased migration", "feasibility_score": 0.88, "risk_score": 0.30, "recommended": True},
+        {"coa_id": "coa-6", "title": "Big bang cutover", "feasibility_score": 0.65, "risk_score": 0.70, "recommended": False},
+    ]
+    metric_rows = [{"metric_name": "estimated_downtime_hrs", "value": 2.5, "unit": "hours"}]
+    _fake_conn(monkeypatch, rows_by_call=[run_row, coa_rows, metric_rows])
+    captured = _fake_router(monkeypatch, content="2 COAs evaluated for IL5 Migration.")
+
+    rhs.render_and_notify_simulation_coa_result("run-4", "lead@example.com", ai_narrative=True)
+
+    user_msg = captured["request"].messages[0]["content"]
+    assert "run_id" in user_msg
+    assert "scenario_name" in user_msg
+    assert "coa_count" in user_msg
+    assert "recommended_count" in user_msg
+    assert "simulation COA result" in user_msg
