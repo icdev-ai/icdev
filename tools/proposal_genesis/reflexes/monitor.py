@@ -23,6 +23,64 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Module-level constants — EVM (ANSI/EIA-748) + CPARS thresholds, all
+# overridable from proposal_genesis_config.yaml under reflexes.monitor.
+# Change config, not code. These are regulatory-standard values, not
+# statistical thresholds — named here for traceability and tunability.
+# ---------------------------------------------------------------------------
+# Cost Performance Index (CPI) thresholds + score penalties
+_CPI_CRITICAL          = 0.80
+_CPI_WARNING           = 0.90
+_CPI_INFO              = 0.95
+_CPI_CRITICAL_PENALTY  = 0.40
+_CPI_WARNING_PENALTY   = 0.20
+_CPI_INFO_PENALTY      = 0.05
+# Schedule Performance Index (SPI) thresholds + score penalties
+_SPI_CRITICAL          = 0.80
+_SPI_WARNING           = 0.90
+_SPI_INFO              = 0.95
+_SPI_CRITICAL_PENALTY  = 0.40
+_SPI_WARNING_PENALTY   = 0.20
+_SPI_INFO_PENALTY      = 0.05
+# To-Complete Performance Index (TCPI)
+_TCPI_WARNING          = 1.20
+_TCPI_PENALTY          = 0.10
+# Deliverable schedule health
+_OVERDUE_CRITICAL_DAYS = 30
+_OVERDUE_WARNING_DAYS  = 7
+_OVERDUE_PENALTY_CAP   = 0.50
+_OVERDUE_PENALTY_EACH  = 0.10
+_UPCOMING_SURGE_COUNT  = 3
+_UPCOMING_WINDOW_DAYS  = 14
+# Negative-event severity weights
+_SEVERITY_WEIGHTS = {"critical": 0.30, "high": 0.20, "medium": 0.10, "low": 0.05}
+_SEVERITY_DEFAULT_WEIGHT = 0.05
+# CPARS score scale conversion (health 0-1 → CPARS 1-5)
+_CPARS_SCALE_BASE      = 1.0
+_CPARS_SCALE_FACTOR    = 4.0
+_CPARS_DEFAULT_SB      = 3.0   # default small-business compliance score
+_CPARS_DEFAULT_TREND   = 3.0   # default trend score
+# CPARS composite weights (D-CPMP-3)
+_CPARS_W_EVM           = 0.35
+_CPARS_W_SCHEDULE      = 0.25
+_CPARS_W_RISK          = 0.20
+_CPARS_W_SB            = 0.10
+_CPARS_W_TREND         = 0.10
+# CPARS rating bands
+_CPARS_EXCEPTIONAL     = 4.5
+_CPARS_VERY_GOOD       = 3.5
+_CPARS_SATISFACTORY    = 2.5
+_CPARS_MARGINAL        = 1.5
+# Contract health weights + status bands (D-CPMP-8)
+_HEALTH_W_EVM          = 0.35
+_HEALTH_W_SCHEDULE     = 0.25
+_HEALTH_W_RISK         = 0.20
+_HEALTH_W_SB           = 0.10
+_HEALTH_W_TREND        = 0.10
+_HEALTH_GREEN          = 0.80
+_HEALTH_YELLOW         = 0.60
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -102,65 +160,65 @@ def _assess_evm_health(evm: Optional[Dict]) -> Dict:
     score = 1.0
 
     if cpi is not None:
-        if cpi < 0.80:
+        if cpi < _CPI_CRITICAL:
             alerts.append(
                 {
                     "level": "critical",
                     "metric": "CPI",
                     "value": cpi,
-                    "message": f"CPI {cpi:.2f} < 0.80 -- severe cost overrun",
+                    "message": f"CPI {cpi:.2f} < {_CPI_CRITICAL:.2f} -- severe cost overrun",
                 }
             )
-            score -= 0.40
-        elif cpi < 0.90:
+            score -= _CPI_CRITICAL_PENALTY
+        elif cpi < _CPI_WARNING:
             alerts.append(
                 {
                     "level": "warning",
                     "metric": "CPI",
                     "value": cpi,
-                    "message": f"CPI {cpi:.2f} < 0.90 -- cost overrun risk",
+                    "message": f"CPI {cpi:.2f} < {_CPI_WARNING:.2f} -- cost overrun risk",
                 }
             )
-            score -= 0.20
-        elif cpi < 0.95:
+            score -= _CPI_WARNING_PENALTY
+        elif cpi < _CPI_INFO:
             alerts.append(
                 {"level": "info", "metric": "CPI", "value": cpi, "message": f"CPI {cpi:.2f} -- monitor cost trends"}
             )
-            score -= 0.05
+            score -= _CPI_INFO_PENALTY
 
     if spi is not None:
-        if spi < 0.80:
+        if spi < _SPI_CRITICAL:
             alerts.append(
                 {
                     "level": "critical",
                     "metric": "SPI",
                     "value": spi,
-                    "message": f"SPI {spi:.2f} < 0.80 -- severe schedule slip",
+                    "message": f"SPI {spi:.2f} < {_SPI_CRITICAL:.2f} -- severe schedule slip",
                 }
             )
-            score -= 0.40
-        elif spi < 0.90:
+            score -= _SPI_CRITICAL_PENALTY
+        elif spi < _SPI_WARNING:
             alerts.append(
-                {"level": "warning", "metric": "SPI", "value": spi, "message": f"SPI {spi:.2f} < 0.90 -- schedule risk"}
+                {"level": "warning", "metric": "SPI", "value": spi, "message": f"SPI {spi:.2f} < {_SPI_WARNING:.2f} -- schedule risk"}
             )
-            score -= 0.20
-        elif spi < 0.95:
+            score -= _SPI_WARNING_PENALTY
+        elif spi < _SPI_INFO:
             alerts.append(
                 {"level": "info", "metric": "SPI", "value": spi, "message": f"SPI {spi:.2f} -- monitor schedule trends"}
             )
-            score -= 0.05
+            score -= _SPI_INFO_PENALTY
 
     tcpi = evm.get("tcpi")
-    if tcpi is not None and tcpi > 1.20:
+    if tcpi is not None and tcpi > _TCPI_WARNING:
         alerts.append(
             {
                 "level": "warning",
                 "metric": "TCPI",
                 "value": tcpi,
-                "message": f"TCPI {tcpi:.2f} > 1.20 -- recovery unlikely",
+                "message": f"TCPI {tcpi:.2f} > {_TCPI_WARNING:.2f} -- recovery unlikely",
             }
         )
-        score -= 0.10
+        score -= _TCPI_PENALTY
 
     return {
         "score": max(0.0, score),
@@ -200,7 +258,7 @@ def _get_overdue_deliverables(contract_id: str) -> List[Dict]:
         conn.close()
 
 
-def _get_upcoming_deliverables(contract_id: str, days: int = 14) -> List[Dict]:
+def _get_upcoming_deliverables(contract_id: str, days: int = _UPCOMING_WINDOW_DAYS) -> List[Dict]:
     """Find deliverables due within N days."""
     conn = get_connection()
     try:
@@ -237,7 +295,7 @@ def _assess_schedule_health(overdue: List[Dict], upcoming: List[Dict]) -> Dict:
     if overdue:
         for d in overdue:
             days = d.get("days_overdue", 0) or 0
-            level = "critical" if days > 30 else "warning" if days > 7 else "info"
+            level = "critical" if days > _OVERDUE_CRITICAL_DAYS else "warning" if days > _OVERDUE_WARNING_DAYS else "info"
             alerts.append(
                 {
                     "level": level,
@@ -249,16 +307,16 @@ def _assess_schedule_health(overdue: List[Dict], upcoming: List[Dict]) -> Dict:
                 }
             )
         # Score penalty based on overdue count
-        penalty = min(0.50, len(overdue) * 0.10)
+        penalty = min(_OVERDUE_PENALTY_CAP, len(overdue) * _OVERDUE_PENALTY_EACH)
         score -= penalty
 
-    if len(upcoming) > 3:
+    if len(upcoming) > _UPCOMING_SURGE_COUNT:
         alerts.append(
             {
                 "level": "info",
                 "metric": "deliverable_surge",
                 "count": len(upcoming),
-                "message": f"{len(upcoming)} deliverables due within 14 days",
+                "message": f"{len(upcoming)} deliverables due within {_UPCOMING_WINDOW_DAYS} days",
             }
         )
 
@@ -306,7 +364,7 @@ def _assess_risk_health(events: List[Dict]) -> Dict:
     """
     alerts = []
     score = 1.0
-    severity_weights = {"critical": 0.30, "high": 0.20, "medium": 0.10, "low": 0.05}
+    severity_weights = _SEVERITY_WEIGHTS
 
     for e in events:
         sev = e.get("severity", "low")
@@ -319,7 +377,7 @@ def _assess_risk_health(events: List[Dict]) -> Dict:
                 "message": f"{e.get('event_type', 'event')} ({sev}): {e.get('description', '')[:80]}",
             }
         )
-        score -= severity_weights.get(sev, 0.05)
+        score -= severity_weights.get(sev, _SEVERITY_DEFAULT_WEIGHT)
 
     return {
         "score": max(0.0, score),
@@ -347,26 +405,29 @@ def _predict_cpars(contract_id: str, evm_health: Dict, schedule_health: Dict, ri
         {"predicted_score": 0.0-5.0, "predicted_rating": str, "components": dict}
     """
     # Convert health scores (0-1) to CPARS-like scale (1-5)
-    evm_score = 1.0 + (evm_health.get("score", 1.0) * 4.0)
-    sched_score = 1.0 + (schedule_health.get("score", 1.0) * 4.0)
-    risk_score = 1.0 + (risk_health.get("score", 1.0) * 4.0)
+    evm_score = _CPARS_SCALE_BASE + (evm_health.get("score", 1.0) * _CPARS_SCALE_FACTOR)
+    sched_score = _CPARS_SCALE_BASE + (schedule_health.get("score", 1.0) * _CPARS_SCALE_FACTOR)
+    risk_score = _CPARS_SCALE_BASE + (risk_health.get("score", 1.0) * _CPARS_SCALE_FACTOR)
 
     # Small business compliance (placeholder — check if sb plan exists)
-    sb_score = 3.0  # Default satisfactory
+    sb_score = _CPARS_DEFAULT_SB
 
     # Trend score (placeholder — would compare consecutive EVM periods)
-    trend_score = 3.0  # Default satisfactory
+    trend_score = _CPARS_DEFAULT_TREND
 
-    composite = evm_score * 0.35 + sched_score * 0.25 + risk_score * 0.20 + sb_score * 0.10 + trend_score * 0.10
+    composite = (
+        evm_score * _CPARS_W_EVM + sched_score * _CPARS_W_SCHEDULE
+        + risk_score * _CPARS_W_RISK + sb_score * _CPARS_W_SB + trend_score * _CPARS_W_TREND
+    )
 
     # Map score to rating
-    if composite >= 4.5:
+    if composite >= _CPARS_EXCEPTIONAL:
         rating = "exceptional"
-    elif composite >= 3.5:
+    elif composite >= _CPARS_VERY_GOOD:
         rating = "very_good"
-    elif composite >= 2.5:
+    elif composite >= _CPARS_SATISFACTORY:
         rating = "satisfactory"
-    elif composite >= 1.5:
+    elif composite >= _CPARS_MARGINAL:
         rating = "marginal"
     else:
         rating = "unsatisfactory"
@@ -396,16 +457,16 @@ def _compute_contract_health(evm_health: Dict, schedule_health: Dict, risk_healt
         {"health": "green"/"yellow"/"red", "health_score": 0.0-1.0}
     """
     score = (
-        evm_health.get("score", 1.0) * 0.35
-        + schedule_health.get("score", 1.0) * 0.25
-        + risk_health.get("score", 1.0) * 0.20
-        + 1.0 * 0.10  # sb_health placeholder
-        + 1.0 * 0.10  # trend placeholder
+        evm_health.get("score", 1.0) * _HEALTH_W_EVM
+        + schedule_health.get("score", 1.0) * _HEALTH_W_SCHEDULE
+        + risk_health.get("score", 1.0) * _HEALTH_W_RISK
+        + 1.0 * _HEALTH_W_SB     # sb_health placeholder
+        + 1.0 * _HEALTH_W_TREND  # trend placeholder
     )
 
-    if score >= 0.80:
+    if score >= _HEALTH_GREEN:
         health = "green"
-    elif score >= 0.60:
+    elif score >= _HEALTH_YELLOW:
         health = "yellow"
     else:
         health = "red"
