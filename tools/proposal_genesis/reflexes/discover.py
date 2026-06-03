@@ -17,6 +17,20 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Module-level constants — Discover Reflex (R1) thresholds & limits.
+# Extracted from inline magic numbers (AI-ify opp 5398, hardcoded_threshold).
+# Overridable from proposal_genesis_config.yaml under reflexes.discover.
+# Change config, not code.
+# ---------------------------------------------------------------------------
+_AMENDMENT_CHECK_LIMIT     = 20   # active opps scanned for amendments per run
+_NEW_OPP_FETCH_LIMIT       = 20   # floor on new opps fetched for loop creation
+_TRACKED_VERIFY_LIMIT      = 20   # tracked opps whose workflow criteria are verified
+_NEXT_ACTION_PROJECT_LIMIT = 10   # pg-* loops evaluated for next-action recommend
+_PHASE_NAME_MAX_CHARS      = 80   # truncation cap for workflow loop phase name
+_MIN_SHALL_STATEMENTS      = 5    # CAPTURE→PROPOSE: shall statements gate
+_MIN_CAPABILITY_COVERAGE   = 60   # CAPTURE→PROPOSE: capability coverage % gate
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -52,7 +66,7 @@ def _check_amendments(config: Dict[str, Any]) -> Dict[str, Any]:
             rows = conn.execute(
                 "SELECT id, title, sam_gov_opportunity_id FROM proposal_opportunities "
                 "WHERE status IN ('tracking', 'drafting', 'reviewing') "
-                "ORDER BY created_at DESC LIMIT 20"
+                f"ORDER BY created_at DESC LIMIT {_AMENDMENT_CHECK_LIMIT}"
             ).fetchall()
         finally:
             conn.close()
@@ -139,7 +153,7 @@ def _create_workflow_loop(opp_id: str, opp_title: str) -> Optional[str]:
 
     try:
         project_id = f"pg-{opp_id}"
-        phase_name = opp_title[:80] if opp_title else f"Opportunity {opp_id}"
+        phase_name = opp_title[:_PHASE_NAME_MAX_CHARS] if opp_title else f"Opportunity {opp_id}"
 
         result = create_loop(
             project_id=project_id,
@@ -158,7 +172,10 @@ def _create_workflow_loop(opp_id: str, opp_title: str) -> Optional[str]:
         add_acceptance_criterion(
             loop_id=loop_id,
             given_text="opportunity registered in SAM.gov",
-            when_text="shall statements >= 5 AND capability coverage >= 60%",
+            when_text=(
+                f"shall statements >= {_MIN_SHALL_STATEMENTS} "
+                f"AND capability coverage >= {_MIN_CAPABILITY_COVERAGE}%"
+            ),
             then_text="proceed to proposal drafting",
         )
 
@@ -255,7 +272,7 @@ def _get_next_action_recommendation() -> Optional[Dict[str, Any]]:
                 "SELECT DISTINCT project_id FROM workflow_loops "
                 "WHERE project_id LIKE 'pg-%' "
                 "AND status NOT IN ('closed', 'abandoned') "
-                "ORDER BY created_at DESC LIMIT 10"
+                f"ORDER BY created_at DESC LIMIT {_NEXT_ACTION_PROJECT_LIMIT}"
             ).fetchall()
         finally:
             conn.close()
@@ -312,7 +329,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     "SELECT id, title FROM proposal_opportunities "
                     "WHERE (workflow_loop_id IS NULL OR workflow_loop_id = '') "
                     "ORDER BY created_at DESC LIMIT ?",
-                    (max(new_opportunities, 20),),
+                    (max(new_opportunities, _NEW_OPP_FETCH_LIMIT),),
                 ).fetchall()
             finally:
                 conn.close()
@@ -340,7 +357,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             tracked = conn.execute(
                 "SELECT id FROM proposal_opportunities "
                 "WHERE status IN ('tracking', 'drafting', 'reviewing') "
-                "ORDER BY created_at DESC LIMIT 20"
+                f"ORDER BY created_at DESC LIMIT {_TRACKED_VERIFY_LIMIT}"
             ).fetchall()
         finally:
             conn.close()
