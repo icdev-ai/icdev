@@ -65,6 +65,10 @@ class PipelineResult:
     embed_model: str = ""
     top_chunks: List[RankedChunk] = field(default_factory=list)
     error: str = ""
+    # Governance layer fields (populated by the audit-logger node)
+    confidence_gate_passed: bool = False
+    output_valid: bool = False
+    audit_entry_id: int = -1
 
 
 # ---------------------------------------------------------------------------
@@ -254,17 +258,21 @@ class SynthesisLLM:
 class AgenticResearchPipeline:
     """Agentic Research Pipeline model layer.
 
-    Implements the three model nodes from AADC Template #5:
-      Embedder → ReRanker → SynthesisLLM
+    Implements all pipeline nodes from AADC Template #5:
+      Embedder → ReRanker → SynthesisLLM → GovernanceLayer
 
-    The embedder encodes the query for downstream vector search.
-    The re-ranker refines candidate chunks from web/RAG retrieval.
-    The synthesis LLM generates a grounded answer from the top chunks.
+    The governance layer (ConfidenceGate → OutputValidator →
+    PipelineAuditLogger) runs after synthesis to validate output quality
+    and write an immutable NIST AU-2 audit entry.
 
     Args:
         top_k: Maximum chunks to pass to SynthesisLLM.
         rerank_weight: Blend weight for cross-encoder vs vector score.
         max_context_chars: Context window budget for synthesis.
+        design_id: AADC design ID forwarded to the audit-logger node.
+        actor: Audit actor label (default "pipeline").
+        session_id: Correlation ID forwarded to the audit trail.
+        confidence_threshold: Minimum confidence to pass the governance gate.
     """
 
     def __init__(
@@ -272,17 +280,29 @@ class AgenticResearchPipeline:
         top_k: int = 5,
         rerank_weight: float = 0.6,
         max_context_chars: int = 8000,
+        design_id: str = "",
+        actor: str = "pipeline",
+        session_id: Optional[str] = None,
+        confidence_threshold: float = 0.5,
     ) -> None:
         self.embedder = Embedder()
         self.reranker = ReRanker(top_k=top_k, rerank_weight=rerank_weight)
         self.synthesis_llm = SynthesisLLM(max_context_chars=max_context_chars)
+
+        from tools.agentic_ai_canvas.governance_layer import GovernanceLayer
+        self.governance = GovernanceLayer(
+            confidence_threshold=confidence_threshold,
+            design_id=design_id,
+            actor=actor,
+            session_id=session_id,
+        )
 
     def run(
         self,
         query: str,
         chunks: Optional[List[str]] = None,
     ) -> PipelineResult:
-        """Run the full model layer pipeline.
+        """Run the full pipeline including the governance layer.
 
         Args:
             query: Research question.
@@ -291,26 +311,47 @@ class AgenticResearchPipeline:
                     pipeline degrades gracefully.
 
         Returns:
-            PipelineResult with grounded answer and pipeline metadata.
+            PipelineResult with grounded answer, pipeline metadata, and
+            governance layer outcomes (confidence_gate_passed, output_valid,
+            audit_entry_id).
         """
         chunks = chunks or []
 
-        # Stage 1: Embed the query
-        embed_result = self.embedder.embed(query)
+        self.governance.log_started(query)
 
-        # Stage 2: Re-rank candidate chunks
-        ranked = self.reranker.rerank(query, chunks)
+        try:
+            # Stage 1: Embed the query
+            embed_result = self.embedder.embed(query)
 
-        # Stage 3: Synthesize grounded answer
-        synth = self.synthesis_llm.synthesize(query, ranked)
+            # Stage 2: Re-rank candidate chunks
+            ranked = self.reranker.rerank(query, chunks)
 
-        return PipelineResult(
-            query=query,
-            answer=synth.answer,
-            chunks_used=synth.chunks_used,
-            model=synth.model,
-            confidence=synth.confidence,
-            embed_model=embed_result.model,
-            top_chunks=ranked,
-            error=synth.error,
-        )
+            # Stage 3: Synthesize grounded answer
+            synth = self.synthesis_llm.synthesize(query, ranked)
+
+            # Stage 4: Governance layer (confidence gate → output validator → audit logger)
+            gov = self.governance.evaluate(
+                query=query,
+                answer=synth.answer,
+                confidence=synth.confidence,
+                chunks_used=synth.chunks_used,
+                model=synth.model,
+                error=synth.error,
+            )
+
+            return PipelineResult(
+                query=query,
+                answer=synth.answer,
+                chunks_used=synth.chunks_used,
+                model=synth.model,
+                confidence=synth.confidence,
+                embed_model=embed_result.model,
+                top_chunks=ranked,
+                error=synth.error,
+                confidence_gate_passed=gov.confidence_gate.passed,
+                output_valid=gov.output_validation.valid,
+                audit_entry_id=gov.audit_entry_id,
+            )
+        except Exception as exc:
+            self.governance.log_failed(query=query, error=str(exc))
+            raise
