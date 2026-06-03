@@ -16,6 +16,79 @@ from .event_service import (
     render_template, render_to_string, send, sendmail, notify, emit, publish, dispatch, _now_iso,
 )
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/notification_config.yaml
+# under report_service.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_NARRATIVE_CONTEXT_CHARS      = 1500   # context chars forwarded to LLM for narrative
+_NARRATIVE_MAX_TOKENS         = 512    # max LLM tokens for narrative generation
+_NARRATIVE_TEMPERATURE        = 0.3    # LLM temperature for narrative generation
+_GATE_ROWS_LIMIT              = 5      # max gate result rows fetched per assessment
+_TOP_OPPS_ROADMAP_LIMIT       = 10     # max top opportunities in roadmap reports
+_TOP_OPPS_SCAN_LIMIT          = 5      # max top opportunities in scan reports
+_MODULE_ROWS_LIMIT            = 10     # max module rows in scan reports
+_SUMMARISE_FINDINGS_COUNT     = 3      # max findings included in summary text
+_REGRESSION_SIGNIFICANCE_PTS  = 2.0   # delta (pts) below which change is noise, not regression
+
+
+def _load_anomaly_cfg() -> dict:
+    """Load anomaly detection config from args/notification_config.yaml (best-effort)."""
+    try:
+        import yaml
+        from pathlib import Path as _P
+        cfg_path = _P(__file__).resolve().parents[2] / "args" / "notification_config.yaml"
+        with open(cfg_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data.get("report_service", {}).get("anomaly_detection", {})
+    except Exception:
+        return {}
+
+
+def _compute_regression_threshold(anomaly_cfg: "dict | None" = None) -> float:
+    """Compute the minimum score delta that constitutes a meaningful regression.
+
+    Uses std_dev of historical canvas_assessment score changes: changes smaller
+    than 0.5 * std_dev are considered noise. Falls back to _REGRESSION_SIGNIFICANCE_PTS
+    when fewer than min_samples rows are available or anomaly detection is disabled.
+    """
+    cfg = anomaly_cfg or {}
+    if not cfg.get("enabled", True):
+        return float(cfg.get("fallback_regression_pts", _REGRESSION_SIGNIFICANCE_PTS))
+
+    min_samples   = cfg.get("min_samples", 20)
+    sigma_fraction = cfg.get("sigma_fraction", 0.5)  # threshold = sigma_fraction * std_dev
+    fallback       = float(cfg.get("fallback_regression_pts", _REGRESSION_SIGNIFICANCE_PTS))
+    bounds         = cfg.get("adaptive_bounds", {})
+    pts_floor      = float(bounds.get("regression_floor", 0.5))
+    pts_ceil       = float(bounds.get("regression_ceil", 10.0))
+
+    import math
+    conn = None
+    try:
+        conn = get_connection()
+        # Compute std_dev of canvas assessment scores to determine noise level
+        row = conn.execute(
+            "SELECT AVG(score) AS mean_s, "
+            "AVG(score * score) - AVG(score) * AVG(score) AS var_s, "
+            "COUNT(*) AS n FROM canvas_assessments WHERE score IS NOT NULL"
+        ).fetchone()
+        if row:
+            n = row["n"] if isinstance(row, dict) else row[2]
+            if n and n >= min_samples:
+                var_s = max(0.0, float(row["var_s"] if isinstance(row, dict) else row[1]))
+                std_s = math.sqrt(var_s)
+                threshold = max(pts_floor, min(pts_ceil, sigma_fraction * std_s))
+                return round(threshold, 2)
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return fallback
+
 CANVAS_REPORT_TEMPLATES = {
     "assessment_complete": (
         "Canvas **$canvas_name** assessment complete.\n"
@@ -110,8 +183,8 @@ def _ai_report_narrative(report_kind: str, facts: dict) -> str | None:
                 }
             ],
             system_prompt=_NARRATIVE_SYSTEM_PROMPT,
-            max_tokens=512,
-            temperature=0.3,
+            max_tokens=_NARRATIVE_MAX_TOKENS,
+            temperature=_NARRATIVE_TEMPERATURE,
             skip_injection_scan=True,  # trusted first-party fact dict, not user input
             classification="CUI",
         )
@@ -159,7 +232,7 @@ def deliver_canvas_report(
         ).fetchone()
         gate_rows = conn.execute(
             "SELECT gate_id, status, finding_count FROM canvas_gate_results "
-            "WHERE assessment_id = ? ORDER BY finding_count DESC LIMIT 5",
+            f"WHERE assessment_id = ? ORDER BY finding_count DESC LIMIT {_GATE_ROWS_LIMIT}",
             (assessment_id,),
         ).fetchall()
 
@@ -189,7 +262,14 @@ def deliver_canvas_report(
             "gate_id": (gate_rows[0]["gate_id"] if gate_rows else ""),
         }
 
-        delta_sign = "neg" if str(delta).startswith("-") else ("pos" if delta else "zero")
+        # Use significance threshold — statistical from history when ≥min_samples, else config fallback.
+        sig = _compute_regression_threshold(_load_anomaly_cfg())
+        if delta < -sig:
+            delta_sign = "neg"
+        elif delta > sig:
+            delta_sign = "pos"
+        else:
+            delta_sign = "zero"
         tmpl_key = {"neg": "score_regression", "pos": "score_improvement"}.get(delta_sign, "assessment_complete")
 
         # --- Render ---
@@ -517,7 +597,7 @@ def deliver_aiify_roadmap_report(
             "s.composite_score, s.value_score, s.feasibility_score "
             "FROM aiify_opportunities o "
             "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            "WHERE o.roadmap_id = ? ORDER BY s.composite_score DESC LIMIT 10",
+            f"WHERE o.roadmap_id = ? ORDER BY s.composite_score DESC LIMIT {_TOP_OPPS_ROADMAP_LIMIT}",
             (roadmap_id,),
         ).fetchall()
         scan_row = conn.execute(
@@ -655,7 +735,7 @@ def deliver_aiify_scan_report(
             "SELECT o.module_path, COUNT(*) as opp_count "
             "FROM aiify_opportunities o "
             "WHERE o.scan_id = ? GROUP BY o.module_path "
-            "ORDER BY opp_count DESC LIMIT 10",
+            f"ORDER BY opp_count DESC LIMIT {_MODULE_ROWS_LIMIT}",
             (scan_id,),
         ).fetchall()
 
@@ -664,7 +744,7 @@ def deliver_aiify_scan_report(
             "SELECT o.function_name, o.pattern_type, o.module_path, s.composite_score "
             "FROM aiify_opportunities o "
             "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            "WHERE o.scan_id = ? ORDER BY s.composite_score DESC LIMIT 5",
+            f"WHERE o.scan_id = ? ORDER BY s.composite_score DESC LIMIT {_TOP_OPPS_SCAN_LIMIT}",
             (scan_id,),
         ).fetchall()
 
@@ -895,7 +975,7 @@ def _summarise_findings(findings_json: str | None) -> str:
         return "none"
     try:
         findings = json.loads(findings_json)
-        top = [f.get("title", "finding") for f in (findings[:3] if isinstance(findings, list) else [])]
+        top = [f.get("title", "finding") for f in (findings[:_SUMMARISE_FINDINGS_COUNT] if isinstance(findings, list) else [])]
         return "; ".join(top) or "none"
     except Exception:
         return "parse error"
