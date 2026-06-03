@@ -49,6 +49,19 @@ REVIEW_TYPES = {
     "white": {"label": "White Team", "focus": "compliance_check", "threshold": 0.90},
 }
 
+# ---------------------------------------------------------------------------
+# Module-level constants — review scoring thresholds, overridable from
+# proposal_genesis_config.yaml under reflexes.review.  Change config, not code.
+# ---------------------------------------------------------------------------
+_SHALL_RESPONSE_MIN_WORDS  = 50    # word count above which shall-response is expected
+_SPECIFICITY_MIN_WORDS     = 100   # word count above which quantitative evidence is expected
+_ISSUE_PENALTY             = 0.20  # score deduction per compliance issue
+_PAST_PERF_BONUS           = 0.10  # score boost for past-performance references
+_MIN_SECTION_CHARS         = 20    # minimum section length (chars) to score
+_CRITICAL_SCORE_THRESHOLD  = 0.30  # score below which a finding is "critical" (else "major")
+_DRAFTS_FETCH_LIMIT        = 30    # max drafts fetched per review run
+_FINDING_DETAILS_LIMIT     = 20    # max findings stored in finding_details array
+
 
 def _determine_review_type(opp_status: str, has_quality_scores: bool) -> str:
     """Determine appropriate color review based on opportunity status."""
@@ -73,20 +86,20 @@ def _score_section_compliance(text: str) -> Dict[str, Any]:
 
     # Check for shall/must response patterns
     shall_responses = len(re.findall(r"\b(?:we will|we shall|our approach)\b", text, re.I))
-    if word_count > 50 and shall_responses == 0:
+    if word_count > _SHALL_RESPONSE_MIN_WORDS and shall_responses == 0:
         issues.append("No shall/must response language detected")
 
     # Check for specificity (numbers, dates, metrics)
     specifics = len(re.findall(r"\b\d+[\.\d]*\s*(?:%|percent|days|hours|years)\b", text, re.I))
-    if word_count > 100 and specifics == 0:
+    if word_count > _SPECIFICITY_MIN_WORDS and specifics == 0:
         issues.append("No quantitative evidence (numbers, dates, metrics)")
 
     # Check for past performance references
     perf_refs = len(re.findall(r"\b(?:previously|delivered|completed|demonstrated|proven|awarded)\b", text, re.I))
 
-    score = max(0.0, 1.0 - len(issues) * 0.20)
+    score = max(0.0, 1.0 - len(issues) * _ISSUE_PENALTY)
     if perf_refs > 0:
-        score = min(1.0, score + 0.10)
+        score = min(1.0, score + _PAST_PERF_BONUS)
 
     return {"score": round(score, 2), "issues": issues, "specifics_count": specifics}
 
@@ -98,7 +111,7 @@ def _simulate_review(opp_id: str, review_type: str) -> Dict[str, Any]:
         drafts = conn.execute(
             "SELECT id, section_text, section_id FROM proposal_section_drafts "
             "WHERE opportunity_id = ? AND status IN ('draft', 'approved') "
-            "ORDER BY created_at DESC LIMIT 30",
+            f"ORDER BY created_at DESC LIMIT {_DRAFTS_FETCH_LIMIT}",
             (opp_id,),
         ).fetchall()
     except Exception:
@@ -115,12 +128,12 @@ def _simulate_review(opp_id: str, review_type: str) -> Dict[str, Any]:
 
     for draft in drafts:
         text = draft["section_text"] or ""
-        if len(text.strip()) < 20:
+        if len(text.strip()) < _MIN_SECTION_CHARS:
             findings.append(
                 {
                     "draft_id": draft["id"],
                     "severity": "critical",
-                    "finding": "Section has insufficient content (< 20 chars)",
+                    "finding": f"Section has insufficient content (< {_MIN_SECTION_CHARS} chars)",
                 }
             )
             continue
@@ -129,7 +142,7 @@ def _simulate_review(opp_id: str, review_type: str) -> Dict[str, Any]:
         total_score += result["score"]
 
         if result["score"] < config["threshold"]:
-            severity = "critical" if result["score"] < 0.30 else "major"
+            severity = "critical" if result["score"] < _CRITICAL_SCORE_THRESHOLD else "major"
             for issue in result["issues"]:
                 findings.append(
                     {
@@ -180,7 +193,7 @@ def _simulate_review(opp_id: str, review_type: str) -> Dict[str, Any]:
         "sections_reviewed": len(drafts),
         "findings": len(findings),
         "avg_score": round(avg_score, 3),
-        "finding_details": findings[:20],
+        "finding_details": findings[:_FINDING_DETAILS_LIMIT],
     }
 
 
