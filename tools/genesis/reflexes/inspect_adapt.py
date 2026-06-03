@@ -23,6 +23,27 @@ logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# ---------------------------------------------------------------------------
+# Module-level constants — retrospective thresholds & NLP limits. The first
+# three are config-overridable from lesson_learned config under
+# `retrospective`; these named values are the in-code fallbacks. Change
+# config, not code.
+# ---------------------------------------------------------------------------
+_DEFAULT_CADENCE_DAYS        = 7      # look-back window if config absent
+_DEFAULT_MIN_LESSONS         = 3      # min lessons before a report is built
+_DEFAULT_TRENDING_THRESHOLD  = 2      # pattern count >= this is "trending"
+
+_NLP_LESSON_CAP        = 50    # max lessons sent to NLP (token-spend cap)
+_NLP_REASON_CHARS      = 200   # per-lesson failure-reason truncation
+_NLP_MAX_TOKENS        = 512   # NLP response token budget
+
+_REPORT_TOP_PATTERNS   = 10    # top-N patterns/categories/prefixes in report
+_REPORT_TOP_OUTCOMES   = 5     # top-N outcome rows in report
+
+_RECURRENCE_NORMALIZER = 10.0  # divisor mapping occurrence count -> [0,1]
+_RECURRENCE_MAX        = 1.0   # recurrence score ceiling
+_PREFIX_FALLBACK_CHARS = 10    # task_id slice when no prefix delimiter found
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -51,9 +72,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         }
 
     retrospective_cfg = cfg.get("retrospective", {})
-    window_days = retrospective_cfg.get("cadence_days", 7)
-    min_lessons = retrospective_cfg.get("min_lessons_for_report", 3)
-    trending_threshold = retrospective_cfg.get("trending_threshold", 2)
+    window_days = retrospective_cfg.get("cadence_days", _DEFAULT_CADENCE_DAYS)
+    min_lessons = retrospective_cfg.get("min_lessons_for_report", _DEFAULT_MIN_LESSONS)
+    trending_threshold = retrospective_cfg.get("trending_threshold", _DEFAULT_TRENDING_THRESHOLD)
 
     lessons = _fetch_lessons(window_days)
     if len(lessons) < min_lessons:
@@ -130,14 +151,14 @@ def _nlp_extract_patterns(lessons: List[Dict[str, Any]]) -> Dict[str, Any]:
     client = anthropic.Anthropic()
 
     lesson_texts: List[str] = []
-    for i, lesson in enumerate(lessons[:50]):  # cap to control token spend
+    for i, lesson in enumerate(lessons[:_NLP_LESSON_CAP]):  # cap to control token spend
         parts: List[str] = []
         if lesson.get("task_title"):
             parts.append(f"Task: {lesson['task_title']}")
         if lesson.get("pattern"):
             parts.append(f"Pattern: {lesson['pattern']}")
         if lesson.get("last_failure_reason"):
-            parts.append(f"Reason: {lesson['last_failure_reason'][:200]}")
+            parts.append(f"Reason: {lesson['last_failure_reason'][:_NLP_REASON_CHARS]}")
         if parts:
             lesson_texts.append(f"{i + 1}. " + " | ".join(parts))
 
@@ -156,7 +177,7 @@ def _nlp_extract_patterns(lessons: List[Dict[str, Any]]) -> Dict[str, Any]:
     try:
         response = client.messages.create(
             model=model,
-            max_tokens=512,
+            max_tokens=_NLP_MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
         )
         text = response.content[0].text.strip()
@@ -189,10 +210,10 @@ def _build_report(lessons: List[Dict[str, Any]], window_days: int) -> Dict[str, 
         "total_lessons": len(lessons),
         "systemic_lessons": systemic_count,
         "avg_recurrence_score": round(avg_recurrence, 3),
-        "pattern_breakdown": dict(patterns.most_common(10)),
-        "category_breakdown": dict(categories.most_common(10)),
-        "outcome_breakdown": dict(outcomes.most_common(5)),
-        "top_prefixes": dict(prefix_counter.most_common(10)),
+        "pattern_breakdown": dict(patterns.most_common(_REPORT_TOP_PATTERNS)),
+        "category_breakdown": dict(categories.most_common(_REPORT_TOP_PATTERNS)),
+        "outcome_breakdown": dict(outcomes.most_common(_REPORT_TOP_OUTCOMES)),
+        "top_prefixes": dict(prefix_counter.most_common(_REPORT_TOP_PATTERNS)),
     }
 
     nlp_insights = _nlp_extract_patterns(lessons)
@@ -243,7 +264,7 @@ def _create_remediation_for_trending(trending: Dict[str, int]) -> List[str]:
                 failure_count=count,
                 last_failure_reason=f"{count} tasks exhibited {pattern} in the last retrospective window",
                 transitions_count=0,
-                recurrence_score=min(1.0, count / 10.0),
+                recurrence_score=min(_RECURRENCE_MAX, count / _RECURRENCE_NORMALIZER),
                 is_systemic=True,
                 recommendation=f"Review and fix systemic issue: {pattern}",
             )
@@ -330,4 +351,4 @@ def _task_prefix(task_id: str) -> str:
     if not task_id:
         return ""
     m = re.match(r"^([a-z0-9]+)-", task_id)
-    return m.group(1) if m else task_id.split("-")[0] if "-" in task_id else task_id[:10]
+    return m.group(1) if m else task_id.split("-")[0] if "-" in task_id else task_id[:_PREFIX_FALLBACK_CHARS]
