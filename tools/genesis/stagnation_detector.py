@@ -73,6 +73,19 @@ _STOPWORDS = frozenset(
     ]
 )
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — overridable from genesis_config.yaml
+# under stagnation_detector.  Change config, not code.
+# ---------------------------------------------------------------------------
+_OSCILLATION_TOLERANCE       = 0.01    # period-2 cycle match tolerance
+_LLM_KEYWORD_CONTEXT_CHARS   = 2000    # max chars sent for keyword extraction
+_LLM_ALT_CONTEXT_CHARS       = 4000    # max chars sent for alternative generation
+_LLM_ALT_MAX_TOKENS          = 2048    # max tokens for alternative generation
+_LLM_ALT_TEMPERATURE         = 0.7    # LLM temperature for lateral thinking
+_SCORE_DENOMINATOR           = 3       # denominator for feasibility/novelty score (min 3 hits = 1.0)
+_RECENT_METRICS_LIMIT        = 10      # default max metric history rows to fetch
+
+
 _FEASIBILITY_KEYWORDS = frozenset(
     [
         "existing",
@@ -160,7 +173,7 @@ class _NLPExtractor:
             resp = router.invoke(
                 cls._FUNCTION,
                 LLMRequest(
-                    messages=[{"role": "user", "content": text[:2000]}],
+                    messages=[{"role": "user", "content": text[:_LLM_KEYWORD_CONTEXT_CHARS]}],
                     system_prompt=cls._SYSTEM,
                 ),
             )
@@ -277,7 +290,7 @@ class StagnationDetector:
         if len(metrics) < window:
             return None
         recent = metrics[-window:]
-        tol = 0.01
+        tol = _OSCILLATION_TOLERANCE
         # Check A≈C and B≈D (period-2)
         if abs(recent[0] - recent[2]) < tol and abs(recent[1] - recent[3]) < tol and abs(recent[0] - recent[1]) > tol:
             return {
@@ -409,10 +422,10 @@ class StagnationDetector:
             request = LLMRequest(
                 messages=[
                     {"role": "system", "content": system},
-                    {"role": "user", "content": context[:4000]},
+                    {"role": "user", "content": context[:_LLM_ALT_CONTEXT_CHARS]},
                 ],
-                max_tokens=2048,
-                temperature=0.7,
+                max_tokens=_LLM_ALT_MAX_TOKENS,
+                temperature=_LLM_ALT_TEMPERATURE,
             )
             result = router.invoke("code_analysis", request)
             text = result.content if result and result.content else ""
@@ -441,8 +454,8 @@ class StagnationDetector:
         f_hits = len(tokens & _FEASIBILITY_KEYWORDS)
         n_hits = len(tokens & _NOVELTY_KEYWORDS)
 
-        f_score = min(f_hits / 3, 1.0)
-        n_score = min(n_hits / 3, 1.0)
+        f_score = min(f_hits / _SCORE_DENOMINATOR, 1.0)
+        n_score = min(n_hits / _SCORE_DENOMINATOR, 1.0)
 
         w_f = self.scoring.get("feasibility_weight", 0.6)
         w_n = self.scoring.get("novelty_weight", 0.4)
@@ -451,7 +464,7 @@ class StagnationDetector:
 
     # ── Helpers ───────────────────────────────────────────────────────
 
-    def _get_recent_metrics(self, reflex_name: str, limit: int = 10) -> List[float]:
+    def _get_recent_metrics(self, reflex_name: str, limit: int = _RECENT_METRICS_LIMIT) -> List[float]:
         """Fetch last N metric_values from genesis_audit."""
         from tools.db.storage import get_connection
 
