@@ -4,6 +4,237 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: portal
+  name: Portal Project
+  description: Auto-registered project for tasks with prefix 'portal-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: portal-
+  default_open: true
+  briefs: []
+  epics:
+  - key: nav
+    title: NAV
+    priority: medium
+- key: aiify_rm_ff651
+  name: Aiify Rm Ff651 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-ff651-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-ff651-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_e4a58
+  name: Aiify Rm E4A58 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-e4a58-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-e4a58-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_d0aca
+  name: Aiify Rm D0Aca Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-d0aca-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-d0aca-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_c6c94
+  name: Aiify Rm C6C94 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-c6c94-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-c6c94-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_c5c56
+  name: Aiify Rm C5C56 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-c5c56-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-c5c56-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_843f2
+  name: Aiify Rm 843F2 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-843f2-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-843f2-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_6efad
+  name: Aiify Rm 6Efad Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-6efad-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-6efad-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_62600
+  name: Aiify Rm 62600 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-62600-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-62600-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_5636b
+  name: Aiify Rm 5636B Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-5636b-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-5636b-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_55fc0
+  name: Aiify Rm 55Fc0 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-55fc0-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-55fc0-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_55b58
+  name: Aiify Rm 55B58 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-55b58-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-55b58-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_4f188
+  name: Aiify Rm 4F188 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-4f188-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-4f188-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_4e5ea
+  name: Aiify Rm 4E5Ea Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-4e5ea-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-4e5ea-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_39869
+  name: Aiify Rm 39869 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-39869-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-39869-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_2d1a1
+  name: Aiify Rm 2D1A1 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-2d1a1-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-2d1a1-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_2b005
+  name: Aiify Rm 2B005 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-2b005-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-2b005-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_1d233
+  name: Aiify Rm 1D233 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-1d233-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-1d233-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_1b2eb
+  name: Aiify Rm 1B2Eb Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-1b2eb-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-1b2eb-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_rm_15851
+  name: Aiify Rm 15851 Project
+  description: Auto-registered project for tasks with prefix 'aiify-rm-15851-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: aiify-rm-15851-
+  default_open: true
+  briefs: []
+  epics:
+  - key: phase
+    title: PHASE
+    priority: medium
+- key: aiify_2
+  name: Aiify Project
+  description: Auto-registered project for tasks with prefix 'aiify-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: aiify-
+  default_open: true
+  briefs: []
+  epics:
+  - key: opp
+    title: OPP
+    priority: medium
 - key: cie
   name: Cie Project
   description: Auto-registered project for tasks with prefix 'cie-'. Update name and
@@ -4926,84 +5157,164 @@ projects:
     title: Phase 5 — Intelligence Layer (Creative/Research/Innovation wiring)
     priority: medium
 - key: qa_audit
-  name: "QA Audit — Full Ecosystem UI/UX Remediation"
-  description: >
-    Systematic fix of 6 categories of issues found in the ICDEV™ dashboard QA audit:
-    canvas dark backgrounds (theme-aware fix to white in light mode), WCAG font-contrast
-    failures, missing right-pane collapse-to-icon on 5 design canvases, export-dropdown
-    z-index too low (30→200), pre-existing bugs (projects.yaml warnings, WriteGuard, proposals),
-    and navigation link regression verification with Playwright IV&V.
+  name: QA Audit — Full Ecosystem UI/UX Remediation
+  description: 'Systematic fix of 6 categories of issues found in the ICDEV™ dashboard
+    QA audit: canvas dark backgrounds (theme-aware fix to white in light mode), WCAG
+    font-contrast failures, missing right-pane collapse-to-icon on 5 design canvases,
+    export-dropdown z-index too low (30→200), pre-existing bugs (projects.yaml warnings,
+    WriteGuard, proposals), and navigation link regression verification with Playwright
+    IV&V.
+
+    '
   task_prefix: qa-
   default_open: true
   briefs:
-    - "vis: fix hardcoded dark backgrounds in data_canvas + qdc_canvas templates (theme-aware CSS vars) + global style.css light mode — qa-vis-01..04"
-    - "pane: create reusable right-panel collapse CSS/JS pattern then apply to 5 design canvases — qa-pane-00..05"
-    - "zidx: raise export dropdown z-index 30→200 + explicit dc-toolbar z-index across all canvases — qa-zidx-01..03"
-    - "bug: fix projects.yaml startup warnings + language.html modal validation + writeguard GFM + WG metadata propagation + phantom_ratio UI — qa-bug-01..05"
-    - "nav: Playwright audit all 9 nav dropdowns + canvas submenu links + fix any broken — qa-nav-01..03"
-    - "verify: E2E regression suite — canvas backgrounds, right-pane collapse, z-index, full health check + pytest — qa-verify-01..04"
+  - 'vis: fix hardcoded dark backgrounds in data_canvas + qdc_canvas templates (theme-aware
+    CSS vars) + global style.css light mode — qa-vis-01..04'
+  - 'pane: create reusable right-panel collapse CSS/JS pattern then apply to 5 design
+    canvases — qa-pane-00..05'
+  - 'zidx: raise export dropdown z-index 30→200 + explicit dc-toolbar z-index across
+    all canvases — qa-zidx-01..03'
+  - 'bug: fix projects.yaml startup warnings + language.html modal validation + writeguard
+    GFM + WG metadata propagation + phantom_ratio UI — qa-bug-01..05'
+  - 'nav: Playwright audit all 9 nav dropdowns + canvas submenu links + fix any broken
+    — qa-nav-01..03'
+  - 'verify: E2E regression suite — canvas backgrounds, right-pane collapse, z-index,
+    full health check + pytest — qa-verify-01..04'
   epics:
-    - key: vis
-      title: Canvas Visual Standardization — backgrounds + WCAG contrast
-      priority: critical
-    - key: pane
-      title: Right Pane Collapsibility — collapse-to-icon pattern
-      priority: high
-    - key: zidx
-      title: Z-Index & Dropdown Blocking — raise export menus
-      priority: high
-    - key: bug
-      title: Pre-existing Bug Fixes — yaml warnings, WriteGuard, proposals
-      priority: medium
-    - key: nav
-      title: Navigation Link Integrity — Playwright audit + fix
-      priority: high
-    - key: verify
-      title: IV&V Regression Suite — E2E + health + pytest
-      priority: critical
+  - key: vis
+    title: Canvas Visual Standardization — backgrounds + WCAG contrast
+    priority: critical
+  - key: pane
+    title: Right Pane Collapsibility — collapse-to-icon pattern
+    priority: high
+  - key: zidx
+    title: Z-Index & Dropdown Blocking — raise export menus
+    priority: high
+  - key: bug
+    title: Pre-existing Bug Fixes — yaml warnings, WriteGuard, proposals
+    priority: medium
+  - key: nav
+    title: Navigation Link Integrity — Playwright audit + fix
+    priority: high
+  - key: verify
+    title: IV&V Regression Suite — E2E + health + pytest
+    priority: critical
 - key: zig
   name: NSA ZIG Full Implementation — Zero Trust Implementation Guide
-  description: 'Incorporate all 7 NSA ZIG pillars (published January 2026), 42 target-level
+  description: Incorporate all 7 NSA ZIG pillars (published January 2026), 42 target-level
     capabilities, and 91 activities into /security/. New /security/zig/ dashboard
-    with 7-pillar radar chart, per-pillar capability checklists, phase tracker
-    (Discovery/Phase1/Phase2), ZIG gap assessment engine, and FY2027/FY2032 roadmap.
-    Wires existing ZTA backend tools (zta_maturity_scorer, nist_800_207_assessor)
-    to a new ZIG dashboard layer within the security canvas.'
+    with 7-pillar radar chart, per-pillar capability checklists, phase tracker (Discovery/Phase1/Phase2),
+    ZIG gap assessment engine, and FY2027/FY2032 roadmap. Wires existing ZTA backend
+    tools (zta_maturity_scorer, nist_800_207_assessor) to a new ZIG dashboard layer
+    within the security canvas.
   task_prefix: zig-
   default_open: true
   briefs:
-    - 'db: ZIG tables (zig_pillars, zig_capabilities, zig_activities, zig_activity_completions,
-      zig_maturity_scores) + seed data (7 pillars, 42 caps, 91 acts) — zig-db-01..07'
-    - 'engine: zig_assessor.py + zig_pillar_scorer.py + zig_activity_tracker.py +
-      zig_phase_tracker.py + zig_roadmap_generator.py — zig-engine-01..05'
-    - 'api: 10 ZIG routes in blueprint.py (pillars, capabilities, activities, maturity,
-      assess, phases, roadmap) — zig-api-01..10'
-    - 'ui: 5 ZIG templates (index radar, pillar detail, phase tracker, assessment,
-      roadmap) + base.html nav + index.html card — zig-ui-01..07'
-    - 'iqe: ZIG collections in security adapter + 3 seed queries + IQE widget — zig-iqe-01..03'
-    - 'sc: ZIG panel in posture.html + gap badges in assessment.html + artifact generator
-      + artifacts.html entry — zig-sc-01..04'
-    - 'infra: companion sync + coherence gate + icdev/ mirror + start.md + manifest
-      shard — zig-infra-01..06'
+  - 'db: ZIG tables (zig_pillars, zig_capabilities, zig_activities, zig_activity_completions,
+    zig_maturity_scores) + seed data (7 pillars, 42 caps, 91 acts) — zig-db-01..07'
+  - 'engine: zig_assessor.py + zig_pillar_scorer.py + zig_activity_tracker.py + zig_phase_tracker.py
+    + zig_roadmap_generator.py — zig-engine-01..05'
+  - 'api: 10 ZIG routes in blueprint.py (pillars, capabilities, activities, maturity,
+    assess, phases, roadmap) — zig-api-01..10'
+  - 'ui: 5 ZIG templates (index radar, pillar detail, phase tracker, assessment, roadmap)
+    + base.html nav + index.html card — zig-ui-01..07'
+  - 'iqe: ZIG collections in security adapter + 3 seed queries + IQE widget — zig-iqe-01..03'
+  - 'sc: ZIG panel in posture.html + gap badges in assessment.html + artifact generator
+    + artifacts.html entry — zig-sc-01..04'
+  - 'infra: companion sync + coherence gate + icdev/ mirror + start.md + manifest
+    shard — zig-infra-01..06'
   epics:
-    - key: db
-      title: ZIG Data Foundation — DB schema + seed (7 pillars, 42 caps, 91 acts)
-      priority: critical
-    - key: engine
-      title: ZIG Assessment Engine — 5 Python modules
-      priority: critical
-    - key: api
-      title: ZIG API Routes — 10 endpoints in blueprint.py
-      priority: critical
-    - key: ui
-      title: ZIG Dashboard Templates — 5 pages + nav + card
-      priority: critical
-    - key: iqe
-      title: ZIG IQE Integration — collections + seed queries + widget
-      priority: high
-    - key: sc
-      title: ZIG Security Canvas Integration — posture + assessment + artifacts
-      priority: high
+  - key: db
+    title: ZIG Data Foundation — DB schema + seed (7 pillars, 42 caps, 91 acts)
+    priority: critical
+  - key: engine
+    title: ZIG Assessment Engine — 5 Python modules
+    priority: critical
+  - key: api
+    title: ZIG API Routes — 10 endpoints in blueprint.py
+    priority: critical
+  - key: ui
+    title: ZIG Dashboard Templates — 5 pages + nav + card
+    priority: critical
+  - key: iqe
+    title: ZIG IQE Integration — collections + seed queries + widget
+    priority: high
+  - key: sc
+    title: ZIG Security Canvas Integration — posture + assessment + artifacts
+    priority: high
+  - key: infra
+    title: ZIG Infrastructure — mirror + manifest + sync + coherence
+    priority: medium
+- key: pmodemo
+  name: PMO Demo Wow Factors
+  description: 'Five wow-factor improvements to /proposals, /govcon, /cpmp, and
+    /cpmp/deliverables for the executive PMO demo to PMs, Portfolio Managers, Capture
+    Managers, and Executives. Audience priority: automated PMO - AI-assisted decision
+    making. Demo date TBD. All tasks reuse existing engines (pmo_ai_advisor, bayesian_bid_scorer,
+    cpars_predictor, IQE dispatch); no new ML, no new schemas, no new reflexes. Reference
+    plan: C:/Users/schuo/.claude/plans/i-m-giving-a-demo-vivid-pinwheel.md'
+  task_prefix: pmodemo-
+  default_open: true
+  briefs:
+  - 'brief: AI Executive Brief banner on all 4 pages (LLM + deterministic fallback)
+    - pmodemo-brief-01..04'
+  - 'chart: pWin x Weighted $ bubble chart on /proposals - pmodemo-chart-01..03'
+  - 'bid: Bid/No-Bid recommendation card on /proposals list - pmodemo-bid-01..03'
+  - 'iqe: IQE query widget on all 4 pages (cpmp adapter + 3 seed queries + canvas
+    map) - pmodemo-iqe-01..05'
+  - 'viewer: Weekly PMO Brief archive viewer at /cpmp/reports - pmodemo-viewer-01..05'
+  - 'vv: Full demo rehearsal + coherence gate - pmodemo-vv-01'
+  epics:
+  - key: brief
+    title: Brief - AI Executive Brief banner on all 4 pages
+    priority: high
+  - key: chart
+    title: Chart - pWin x Weighted $ bubble chart on /proposals
+    priority: high
+  - key: bid
+    title: Bid - Bid/No-Bid recommendation card on /proposals list
+    priority: high
+  - key: iqe
+    title: IQE - query widget on all 4 pages (cpmp adapter + seed queries)
+    priority: high
+  - key: viewer
+    title: Viewer - Weekly PMO Brief archive viewer at /cpmp/reports
+    priority: high
+  - key: vv
+    title: V&V - full demo rehearsal + coherence gate
+    priority: critical
+- key: irad
+  name: IRAD — IL5 AI Capabilities (AIDP + CLS-RAG + LAC Simulator)
+  description: 'Three IRAD charters mapped to ICDEV™ integration points: (1) AI Data
+    Provenance (AIDP) — chunk-level SHA-256 lineage, WORM audit ledger, attribution
+    scoring, dynamic footnoting in DIC canvas; (2) Cell-Level Security + Entitlement-Driven
+    RAG — stateless 5-step pipeline with TTL index and UUID citation grounding; (3)
+    Logical Access Control Simulator — OPA/Rego ABAC policy simulation tab in ZTA
+    canvas with 4 canonical COI/ECI scenarios and Digital Twin 4-phase tracker. All
+    target DoD IL5. Branch: irad/feature.'
+  task_prefix: irad-
+  default_open: true
+  briefs:
+    - 'infra: Register project + update manifest shards + feature docs — irad-infra-01..04'
+    - 'aidp: Chunk lineage (ingestion_manager) + provenance_engine.py (WORM/AIA) + spillage
+      detection (DLT-003) + retrieval metadata + tests + aidp_monitor reflex + DIC
+      provenance_adapter + footnote popover UI + E2E — irad-aidp-01..10'
+    - 'cls: entitlement_rag.py (5-step pipeline + TTLIndex + UUID grounding) + tests
+      + ZTA CLS posture assessment (constants + routes + card) + E2E — irad-cls-01..08'
+    - 'lac: ZTA constants (COI/ECI/states) + lac_simulator.py + lac_scenarios.py (4
+      canonical) + OPA/Python evaluator + twin_phase_tracker.py + LAC routes + simulator
+      HTML tab + IQE seed queries + tests + E2E — irad-lac-01..10'
+  epics:
     - key: infra
-      title: ZIG Infrastructure — mirror + manifest + sync + coherence
-      priority: medium
+      title: Project Infrastructure — manifest shards + feature docs
+      priority: high
+    - key: aidp
+      title: AI Data Provenance — chunk lineage + WORM audit + attribution UI (DIC)
+      priority: critical
+    - key: cls
+      title: Entitlement-Driven RAG — CLS pipeline + ZTA posture assessment
+      priority: critical
+    - key: lac
+      title: LAC Simulator — OPA ABAC + 4-scenario what-if + Digital Twin (ZTA)
+      priority: critical
