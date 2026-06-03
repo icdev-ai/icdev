@@ -174,6 +174,35 @@ reflexes:
         - tone
         - plagiarism
         - ai_detection
+    anomaly_detection:
+      enabled: true
+      # Minimum pg_proposal_quality_scores rows required for statistical computation.
+      # Below this falls back to fallback_* values.
+      min_samples: 15
+      # Thresholds are set at mean ± sigma * std_dev from historical distributions.
+      sigma_quality: 1.0      # quality_threshold = mean_composite - sigma * std
+      sigma_stub: 1.0         # stub_gate = mean_stub_score - sigma * std
+      # Static fallbacks — used when fewer than min_samples rows exist
+      fallback_quality_threshold: 0.65
+      fallback_stub_gate_threshold: 0.50
+      # Hard floors — statistical thresholds never drop below these
+      adaptive_bounds:
+        quality_threshold_floor: 0.40
+        stub_gate_floor: 0.25
+      # Formula coefficients — tunable without code changes
+      grammar_deduction_per_issue: 0.15
+      tone_deduction_per_signal: 0.10
+      tone_strength_bonus: 0.03
+      stub_min_words: 50
+      stub_template_ratio: 0.05
+      stub_signal_deduction: 0.12
+      stub_thin_deduction: 0.20
+      stub_no_ref_deduction: 0.08
+      ai_burstiness_low: 0.30
+      ai_burstiness_mid: 0.50
+      context_warning_tokens: 6000
+      context_critical_tokens: 10000
+      context_window_size: 200000
 
   decide:
     enabled: true  # Phase F — implemented
