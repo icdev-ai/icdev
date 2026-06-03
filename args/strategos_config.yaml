@@ -184,6 +184,48 @@ red_cell:
     min_floor: 5.0
     max_cap: 9.5
 
+signal_scout:
+  # Number of top-scored signals inserted into sg_prioritized_signals per run.
+  top_n: 20
+  # Look-back window for computing prior PMESII-PT distribution (days).
+  prior_window_days: 7
+  # Minimum composite score required for insertion; signals below are discarded.
+  min_composite_score: 0.0
+  # Composite score dimension weights (must sum to 1.0).
+  weights:
+    posterior_shift: 0.35         # KL-proxy for PMESII-PT rarity
+    source_discriminability: 0.25 # STANAG A-F source reliability
+    temporal_recency: 0.20        # exp(-hours_old / temporal_decay_hours)
+    domain_coverage: 0.20         # PIR/CCIR/EEI topic match
+  # _posterior_shift_score(): raw KL-divergence cap before normalising to [0, 1].
+  # Max theoretical ≈ log(8) ≈ 2.08; 2.5 provides headroom.
+  posterior_shift_norm_cap: 2.5
+  # _temporal_recency_score(): exp half-life in hours (exp(-hours / decay_hours)).
+  temporal_decay_hours: 24.0
+  # _domain_coverage_score(): minimum word length for PIR topic keyword matching.
+  pir_min_word_len: 4
+  # Characters to include per PIR topic match label in rationale.
+  pir_topic_truncate: 40
+  # LLM-driven anomaly detection — identifies signals with unusual composite scores
+  # relative to recent history and optionally narrates the anomaly.
+  anomaly_detection:
+    enabled: true
+    model: "claude-haiku-4-5-20251001"
+    # Number of recent sg_prioritized_signals rows used to build baseline statistics.
+    baseline_window: 50
+    # Minimum history rows before adaptive detection activates.
+    min_history: 10
+    # Signal is flagged if Z-score exceeds this value (std deviations above mean).
+    zscore_k: 2.0
+    # Additive boost applied to composite score for LLM-confirmed anomalous signals.
+    anomaly_weight: 0.10
+    # LLM anomaly_score must meet this floor before the boost applies.
+    anomaly_min_score: 0.60
+    # Max signals sent to LLM per run (subset of statistical candidates).
+    batch_size: 10
+    max_tokens: 300
+    temperature: 0.1
+
 executor:
   # Ordered list of execution backends tried in sequence.
   # Supported values: 'claude_cli', 'gitlab', 'github_actions', 'ollama_local'
