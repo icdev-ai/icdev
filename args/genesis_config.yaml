@@ -259,6 +259,20 @@ reflexes:
       - knowledge_growth_metrics
       - circuit_breaker_status
       - recommendations
+    # Recommendation thresholds — moved from hardcoded Python constants so the
+    # anomaly_detection layer can adapt them from historical report data at runtime.
+    high_failure_rate_threshold: 0.30    # failure_rate > this fraction → high failure recommendation
+    nominal_success_rate_threshold: 90.0 # success_rate > this (with no other issues) → all nominal
+    anomaly_detection:
+      enabled: true
+      min_samples: 5               # minimum historical genesis.report.generated events before adaptive mode
+      sigma_multiplier: 1.0        # adaptive threshold = mean ± (sigma_multiplier * std)
+      fallback_to_static: true     # use static thresholds when history is insufficient
+      adaptive_bounds:
+        failure_rate_floor: 0.10   # adaptive failure threshold never drops below this
+        failure_rate_ceiling: 0.50 # adaptive failure threshold never exceeds this
+        success_rate_floor: 70.0   # nominal success threshold never drops below this
+        success_rate_ceiling: 99.0 # nominal success threshold never exceeds this
 
   govcon_scan:
     enabled: true
@@ -634,6 +648,17 @@ reflexes:
     top_k: 20
     session_ids_cap: 10
     max_goals_per_run: 3
+    # Confabulation risk threshold — moved from hardcoded 0.6 constant so the
+    # anomaly_detection layer can adapt it from historical flag rates at runtime.
+    confabulation_risk_threshold: 0.6   # static fallback: flag goal when risk_score >= this
+    confabulation_anomaly_detection:
+      enabled: true                     # use adaptive threshold based on historical flag history
+      min_samples: 5                    # minimum canvas_ai_decisions rows before adaptive mode
+      sigma_multiplier: 0.5             # threshold = mean + (sigma_multiplier * std) of past scores
+      fallback_to_static: true          # use confabulation_risk_threshold when data is sparse
+      adaptive_bounds:
+        threshold_floor: 0.3            # adaptive threshold never drops below this
+        threshold_ceiling: 0.9          # adaptive threshold never exceeds this
     # Adaptive IQR-based frequency threshold (anomaly_detection paradigm).
     # When enabled, min_pattern_frequency becomes a fallback used only when
     # there are fewer than min_samples distinct n-grams in the dataset.

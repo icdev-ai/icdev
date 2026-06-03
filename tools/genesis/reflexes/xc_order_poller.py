@@ -3,13 +3,92 @@
 IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 
-from typing import Any, Dict
+import os
+import statistics
+from datetime import date
+from typing import Any, Dict, List
 
 CADENCE_HOURS = 1
 
+# Configurable fallback thresholds — override via .env to avoid hardcoded values
+_MINOR_DELAY_DAYS = int(os.environ.get("XC_DELAY_MINOR_DAYS", "3"))
+_MAJOR_DELAY_DAYS = int(os.environ.get("XC_DELAY_MAJOR_DAYS", "7"))
+_CRITICAL_DELAY_DAYS = int(os.environ.get("XC_DELAY_CRITICAL_DAYS", "30"))
+_ANOMALY_ZSCORE_THRESHOLD = float(os.environ.get("XC_ANOMALY_ZSCORE", "1.5"))
+_MIN_HISTORY_SAMPLES = int(os.environ.get("XC_ANOMALY_MIN_SAMPLES", "5"))
+
+
+def _get_historical_delays(ccc_conn) -> List[int]:
+    """Return list of historical (actual - estimated) delivery days from resolved orders."""
+    sql_sqlite = (
+        "SELECT estimated_delivery, actual_delivery FROM ccc_cross_connects "
+        "WHERE order_status IN ('active','cancelled') "
+        "AND estimated_delivery IS NOT NULL AND actual_delivery IS NOT NULL "
+        "LIMIT 200"
+    )
+    sql_pg = sql_sqlite.replace("?", "%s")
+    rows = []
+    try:
+        rows = ccc_conn.execute(sql_sqlite).fetchall()
+    except Exception:
+        try:
+            cur = ccc_conn.cursor()
+            cur.execute(sql_pg)
+            rows = cur.fetchall()
+        except Exception:
+            return []
+
+    delays: List[int] = []
+    for row in rows:
+        try:
+            est = date.fromisoformat(str(row[0])[:10])
+            act = date.fromisoformat(str(row[1])[:10])
+            delays.append((act - est).days)
+        except Exception:
+            continue
+    return delays
+
+
+def _detect_delivery_anomaly(days_overdue: int, historical_delays: List[int]) -> Dict[str, Any]:
+    """
+    Determine whether a delivery delay is anomalous.
+
+    Uses z-score over historical delay distribution when enough samples exist;
+    falls back to env-configurable day-bucket thresholds otherwise.
+    Returns: {is_anomaly, severity, score (0..1), method}
+    """
+    if len(historical_delays) >= _MIN_HISTORY_SAMPLES:
+        mean = statistics.mean(historical_delays)
+        stdev = statistics.pstdev(historical_delays) or 1.0
+        z = (days_overdue - mean) / stdev
+
+        if z < _ANOMALY_ZSCORE_THRESHOLD:
+            return {"is_anomaly": False, "severity": None,
+                    "score": max(0.0, round(z / 3.0, 3)), "method": "zscore"}
+        elif z < 2.0:
+            return {"is_anomaly": True, "severity": "minor",
+                    "score": round(z / 3.0, 3), "method": "zscore"}
+        elif z < 3.0:
+            return {"is_anomaly": True, "severity": "major",
+                    "score": round(z / 3.0, 3), "method": "zscore"}
+        else:
+            return {"is_anomaly": True, "severity": "critical",
+                    "score": min(round(z / 3.0, 3), 1.0), "method": "zscore"}
+
+    # Sparse history — fall back to configurable day-bucket thresholds
+    if days_overdue < _MINOR_DELAY_DAYS:
+        return {"is_anomaly": False, "severity": None,
+                "score": round(days_overdue / max(_MAJOR_DELAY_DAYS, 1), 3), "method": "threshold"}
+    elif days_overdue < _MAJOR_DELAY_DAYS:
+        return {"is_anomaly": True, "severity": "minor", "score": 0.4, "method": "threshold"}
+    elif days_overdue < _CRITICAL_DELAY_DAYS:
+        return {"is_anomaly": True, "severity": "major", "score": 0.7, "method": "threshold"}
+    else:
+        return {"is_anomaly": True, "severity": "critical", "score": 1.0, "method": "threshold"}
+
 
 def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
-    """Poll in-flight cross-connect orders; alarm on delayed deliveries.
+    """Poll in-flight cross-connect orders; alarm on anomalously delayed deliveries.
 
     Returns:
         orders_polled: int
@@ -39,6 +118,9 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         from tools.ccc_canvas.constants import XC_IN_FLIGHT_STATUSES
         from tools.ccc_canvas.xc_order_manager import poll_order_status
 
+        # Pre-load historical delays once for the entire run
+        historical_delays = _get_historical_delays(ccc_conn)
+
         # Fetch all in-flight orders
         placeholders = ",".join(["?" for _ in XC_IN_FLIGHT_STATUSES])
         try:
@@ -61,8 +143,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
 
         orders_polled = len(rows)
 
-        from datetime import date
-        today = date.today().isoformat()
+        today = date.today()
 
         for row in rows:
             xc_id = row[0]
@@ -78,9 +159,22 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                 except Exception as e:
                     errors.append(f"poll_order_status xc_id={xc_id}: {e}")
 
-            # Check for overdue delivery
-            if (estimated_delivery and estimated_delivery < today
-                    and current_status not in ("active", "cancelled")):
+            # Anomaly detection: replace binary date threshold with statistical assessment
+            if (estimated_delivery and current_status not in ("active", "cancelled")):
+                try:
+                    est_date = date.fromisoformat(str(estimated_delivery)[:10])
+                    days_overdue = (today - est_date).days
+                except Exception:
+                    days_overdue = 0
+
+                if days_overdue <= 0:
+                    continue
+
+                anomaly = _detect_delivery_anomaly(days_overdue, historical_delays)
+
+                if not anomaly["is_anomaly"]:
+                    continue
+
                 delayed_orders += 1
 
                 if not dry_run:
@@ -91,8 +185,10 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                             from datetime import datetime, timezone
                             now = datetime.now(timezone.utc).isoformat()
                             desc = (
-                                f"Cross-connect {xc_number} delivery overdue — "
-                                f"estimated {estimated_delivery}, still in status '{current_status}'"
+                                f"Cross-connect {xc_number} delivery anomaly — "
+                                f"{days_overdue}d overdue (estimated {estimated_delivery}), "
+                                f"status '{current_status}', "
+                                f"anomaly_score={anomaly['score']:.2f} [{anomaly['method']}]"
                             )
                             # Dedup check
                             try:
@@ -112,16 +208,17 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                                     existing = None
 
                             if not existing:
+                                severity = anomaly["severity"]
                                 try:
                                     nocc.execute(
                                         "INSERT INTO noc_alarms (alarm_source, severity, alarm_type, device_name, description, cleared, acknowledged, suppressed, first_seen, last_seen, classification) VALUES (?,?,?,?,?,0,0,0,?,?,'CUI')",
-                                        ("xc_order_poller", "major", "circuit",
+                                        ("xc_order_poller", severity, "circuit",
                                          str(xc_id), desc, now, now),
                                     )
                                 except Exception:
                                     nocc.execute(
                                         "INSERT INTO noc_alarms (alarm_source, severity, alarm_type, device_name, description, cleared, acknowledged, suppressed, first_seen, last_seen, classification) VALUES (%s,%s,%s,%s,%s,0,0,0,%s,%s,'CUI')",
-                                        ("xc_order_poller", "major", "circuit",
+                                        ("xc_order_poller", severity, "circuit",
                                          str(xc_id), desc, now, now),
                                     )
                                 alarms_created += 1

@@ -102,6 +102,26 @@ reflexes:
       name: plans_updated
       threshold: 0
       operator: gte
+    anomaly_detection:
+      enabled: true
+      min_samples: 15
+      adaptive_bounds:
+        strong_floor: 0.50
+        good_floor: 0.30
+        marginal_floor: 0.10
+      # Static fallbacks when fewer than min_samples assessments exist
+      fallback_strong_threshold: 0.70
+      fallback_good_threshold: 0.50
+      fallback_marginal_threshold: 0.30
+      # Scoring formula weights — tunable without code changes
+      cap_weight: 0.40
+      cert_weight: 0.20
+      vehicle_weight: 0.20
+      setaside_weight: 0.20
+      cap_overlap_divisor: 0.30
+      cert_score_per_match: 0.25
+      vehicle_score_per_match: 0.30
+      setaside_score_per_match: 0.30
 
   engage:
     enabled: true  # Phase C — implemented
@@ -139,6 +159,22 @@ reflexes:
       name: coverage_score
       threshold: 0
       operator: gte
+    anomaly_detection:
+      enabled: true
+      min_samples: 20
+      fallback_top_k: 5
+      # Hit rate thresholds for adaptive top_k adjustment
+      low_recall_threshold: 0.30
+      high_recall_threshold: 0.70
+      adaptive_bounds:
+        top_k_floor: 2
+        top_k_ceil: 10
+      # Operational parameter overrides
+      req_fetch_limit: 50
+      opp_process_limit: 10
+      parallel_patterns_cap: 20
+      parallel_max_workers: 3
+      parallel_future_timeout: 30
 
   draft:
     enabled: true
@@ -254,6 +290,20 @@ reflexes:
       name: articles_staged
       threshold: 0
       operator: gte
+    anomaly_detection:
+      enabled: true
+      min_samples: 15
+      sigma_multiplier: 1.0
+      fallback_min_quality_score: 70.0
+      adaptive_bounds:
+        quality_floor: 50.0
+      # Content generation limits — tunable without code changes
+      max_drafts_per_run: 5
+      max_kb_blocks: 5
+      max_capabilities_shown: 8
+      max_kb_blocks_used: 3
+      kb_block_summary_chars: 200
+      default_relevance_score: 0.80
 
   # ── PHASE 4: LEARN (Feedback Loop) ─────────────────────────────────────
 
