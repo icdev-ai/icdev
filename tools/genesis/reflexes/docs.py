@@ -27,9 +27,66 @@ from typing import Any, Dict, List, Optional, Set
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+# ---------------------------------------------------------------------------
+# Anomaly-detection thresholds (env-configurable fallbacks; dynamically
+# computed via IQR when enough data is available — see helpers below)
+# ---------------------------------------------------------------------------
+_DOCS_NLP_TOOL_TRUNCATE = int(os.getenv("ICDEV_DOCS_NLP_TOOL_TRUNCATE", "4000"))
+_DOCS_NLP_ROUTE_TRUNCATE = int(os.getenv("ICDEV_DOCS_NLP_ROUTE_TRUNCATE", "6000"))
+_DOCS_SIGNIFICANCE_MIN_PY = int(os.getenv("ICDEV_DOCS_SIGNIFICANCE_MIN_PY", "3"))
+_DOCS_MIN_TOOL_LINES = int(os.getenv("ICDEV_DOCS_MIN_TOOL_LINES", "30"))
+_DOCS_GKP_CONFIDENCE = float(os.getenv("ICDEV_DOCS_GKP_CONFIDENCE", "0.8"))
+_DOCS_GKP_ISSUE_CAP = int(os.getenv("ICDEV_DOCS_GKP_ISSUE_CAP", "50"))
+_DOCS_RESPONSE_ISSUE_CAP = int(os.getenv("ICDEV_DOCS_RESPONSE_ISSUE_CAP", "20"))
+
+# Anomaly-detection tuning: minimum samples before IQR is reliable; floor
+# values that prevent the dynamic threshold from collapsing to zero.
+_DOCS_MIN_SAMPLE_SIZE = int(os.getenv("ICDEV_DOCS_MIN_SAMPLE_SIZE", "4"))
+_DOCS_SIGNIFICANCE_FLOOR = int(os.getenv("ICDEV_DOCS_SIGNIFICANCE_FLOOR", "2"))
+_DOCS_MIN_LINES_FLOOR = int(os.getenv("ICDEV_DOCS_MIN_LINES_FLOOR", "10"))
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---------------------------------------------------------------------------
+# Anomaly-detection helpers
+# ---------------------------------------------------------------------------
+
+
+def _compute_significance_threshold(candidate_dirs: List[Path]) -> int:
+    """Compute py_count significance threshold via first-quartile anomaly detection.
+
+    Derives the lower boundary from the IQR of observed file counts so that
+    only directories with meaningfully more Python files than stub dirs are
+    treated as significant. Falls back to _DOCS_SIGNIFICANCE_MIN_PY when
+    fewer than _DOCS_MIN_SAMPLE_SIZE non-empty directories are observed.
+    """
+    counts = sorted(
+        sum(1 for _ in d.rglob("*.py") if _.name != "__init__.py")
+        for d in candidate_dirs
+    )
+    nonzero = [c for c in counts if c > 0]
+    if len(nonzero) < _DOCS_MIN_SAMPLE_SIZE:
+        return _DOCS_SIGNIFICANCE_MIN_PY
+    q1 = nonzero[len(nonzero) // 4]
+    return max(_DOCS_SIGNIFICANCE_FLOOR, q1)
+
+
+def _compute_min_lines_threshold(file_line_counts: List[int]) -> int:
+    """Compute minimum-lines threshold via first-quartile anomaly detection.
+
+    Files in the bottom quartile of the observed line-count distribution are
+    treated as stubs and excluded from manifest-drift checks. Falls back to
+    _DOCS_MIN_TOOL_LINES when fewer than _DOCS_MIN_SAMPLE_SIZE samples are
+    available.
+    """
+    if len(file_line_counts) < _DOCS_MIN_SAMPLE_SIZE:
+        return _DOCS_MIN_TOOL_LINES
+    sorted_counts = sorted(file_line_counts)
+    q1 = sorted_counts[len(sorted_counts) // 4]
+    return max(_DOCS_MIN_LINES_FLOOR, q1)
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +118,7 @@ def _nlp_extract_tool_refs(content: str, doc_name: str) -> Optional[List[str]]:
         from tools.llm.provider import LLMRequest
 
         model_id = os.getenv("ICDEV_DOCS_NLP_MODEL", "claude-haiku-4-5-20251001")
-        truncated = content[:4000] if len(content) > 4000 else content
+        truncated = content[:_DOCS_NLP_TOOL_TRUNCATE] if len(content) > _DOCS_NLP_TOOL_TRUNCATE else content
         request = LLMRequest(
             messages=[
                 {
@@ -96,7 +153,7 @@ def _nlp_extract_documented_routes(content: str) -> Optional[Set[str]]:
         from tools.llm.provider import LLMRequest
 
         model_id = os.getenv("ICDEV_DOCS_NLP_MODEL", "claude-haiku-4-5-20251001")
-        truncated = content[:6000] if len(content) > 6000 else content
+        truncated = content[:_DOCS_NLP_ROUTE_TRUNCATE] if len(content) > _DOCS_NLP_ROUTE_TRUNCATE else content
         request = LLMRequest(
             messages=[
                 {
@@ -189,28 +246,28 @@ def _check_missing_feature_docs() -> List[Dict[str, Any]]:
         for f in docs_dir.glob("*.md"):
             existing_docs.add(f.stem.lower())
 
-    # Core tool directories that should have docs
     tools_dir = BASE_DIR / "tools"
     if not tools_dir.exists():
         return issues
 
-    significant_dirs = []
-    for d in tools_dir.iterdir():
-        if not d.is_dir() or d.name.startswith("_") or d.name == "__pycache__":
-            continue
-        # Count Python files to determine significance
-        py_count = sum(1 for _ in d.rglob("*.py") if _.name != "__init__.py")
-        if py_count >= 3:
-            significant_dirs.append(d.name)
+    candidate_dirs = [
+        d for d in tools_dir.iterdir()
+        if d.is_dir() and not d.name.startswith("_") and d.name != "__pycache__"
+    ]
+    # Dynamic significance threshold from observed py_count distribution
+    threshold = _compute_significance_threshold(candidate_dirs)
 
-    for dir_name in significant_dirs:
-        # Check if any feature doc mentions this directory
-        has_doc = any(dir_name in doc_name for doc_name in existing_docs)
-        if not has_doc:
+    for d in candidate_dirs:
+        py_count = sum(1 for _ in d.rglob("*.py") if _.name != "__init__.py")
+        if py_count < threshold:
+            continue
+        if not any(d.name in doc_name for doc_name in existing_docs):
             issues.append(
                 {
                     "type": "missing_feature_doc",
-                    "tool_dir": f"tools/{dir_name}/",
+                    "tool_dir": f"tools/{d.name}/",
+                    "py_files": py_count,
+                    "significance_threshold": threshold,
                     "severity": "low",
                 }
             )
@@ -245,6 +302,10 @@ def _check_manifest_drift() -> List[Dict[str, Any]]:
                 pass
 
     tools_dir = BASE_DIR / "tools"
+
+    # First pass: collect candidates and line counts for dynamic threshold computation
+    candidates: List[tuple] = []
+    line_counts: List[int] = []
     for py_file in tools_dir.rglob("*.py"):
         if py_file.name.startswith("_") or py_file.name in (
             "__init__.py",
@@ -252,16 +313,21 @@ def _check_manifest_drift() -> List[Dict[str, Any]]:
             "setup.py",
         ):
             continue
-        # Skip very small files
         try:
-            if len(py_file.read_text(encoding="utf-8", errors="replace").splitlines()) < 30:
-                continue
+            n_lines = len(py_file.read_text(encoding="utf-8", errors="replace").splitlines())
         except OSError:
             continue
+        line_counts.append(n_lines)
+        candidates.append((py_file, n_lines))
 
+    # Dynamic minimum-lines threshold from observed distribution
+    min_lines = _compute_min_lines_threshold(line_counts)
+
+    for py_file, n_lines in candidates:
+        if n_lines < min_lines:
+            continue
         rel = py_file.relative_to(tools_dir)
         tool_name = rel.stem
-        # Check if tool name appears anywhere in manifest
         if tool_name not in manifest_content:
             issues.append(
                 {
@@ -392,20 +458,38 @@ def _check_readme_staleness() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+def _compute_adaptive_confidence(issues: List[Dict]) -> float:
+    """Compute GKP confidence via anomaly detection on issue severity profile.
+
+    Weights each issue by severity; the mean weight reflects how strongly the
+    evidence supports a real documentation-drift finding. High-severity issues
+    raise confidence; all-low results lower it toward the fallback.
+    Returns a value in [0.5, 0.95], falling back to _DOCS_GKP_CONFIDENCE when
+    no issues are present.
+    """
+    if not issues:
+        return _DOCS_GKP_CONFIDENCE
+    severity_weights = {"critical": 1.0, "high": 0.9, "medium": 0.75, "low": 0.6}
+    weights = [severity_weights.get(i.get("severity", "low"), 0.6) for i in issues]
+    mean_weight = sum(weights) / len(weights)
+    return round(max(0.5, min(0.95, mean_weight)), 2)
+
+
 def _export_docs_report(issues: List[Dict], stats: Dict) -> Optional[str]:
     """Export documentation drift report as a GKP."""
     try:
         from tools.genesis.promoter import export_gkp
 
+        confidence = _compute_adaptive_confidence(issues)
         result = export_gkp(
             reflex="docs",
             artifact_type="docs_drift_report",
             payload={
                 "title": f"Docs Drift Report — {stats['total_issues']} issues found",
                 "stats": stats,
-                "issues": issues[:50],  # Cap at 50 issues
+                "issues": issues[:_DOCS_GKP_ISSUE_CAP],
             },
-            confidence=0.8,  # High confidence — deterministic analysis
+            confidence=confidence,
             evidence={
                 "checks_run": stats.get("checks_run", 0),
                 "total_issues": stats.get("total_issues", 0),
@@ -490,7 +574,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         "metric_value": float(len(all_issues)),
         "details": {
             "stats": stats,
-            "issues": all_issues[:20],  # Return top 20 in response
+            "issues": all_issues[:_DOCS_RESPONSE_ISSUE_CAP],
             "gkp_id": gkp_id,
         },
     }

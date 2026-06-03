@@ -5,20 +5,84 @@
 Runs existing compliance tools to ensure evidence freshness stays above
 threshold.  Non-destructive read + regenerate (GREEN tier).
 
-Scanner-tier only (zero Claude tokens).  Air-gap safe.
+Scanner-tier only (zero Claude tokens by default).  Air-gap safe.
+LLM anomaly assessment is opt-in via aiify_config.yaml
+(comply_reflex.llm_anomaly_detection.enabled) — aiify-rm-ff651-phase-5264.
 """
 IMPLEMENTATION_STATUS = "full"
 
 import json
+import logging
 import os
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+_CONFIG_PATH = BASE_DIR / "args" / "aiify_config.yaml"
+
+# ---------------------------------------------------------------------------
+# Config — comply_reflex section from args/aiify_config.yaml
+# ---------------------------------------------------------------------------
+_FALLBACK_COMPLY_CFG: Dict[str, Any] = {
+    "min_completed_checks": 1,
+    "llm_anomaly_detection": {
+        "enabled": False,
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 512,
+    },
+}
+
+
+def _load_comply_config() -> Dict[str, Any]:
+    try:
+        import yaml
+        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh)
+        if isinstance(cfg, dict) and "comply_reflex" in cfg:
+            return cfg["comply_reflex"]
+    except Exception:
+        pass
+    return dict(_FALLBACK_COMPLY_CFG)
+
+
+_comply_cfg: Dict[str, Any] = _load_comply_config()
+_MIN_COMPLETED_CHECKS: int = int(_comply_cfg.get("min_completed_checks", 1))
+_llm_cfg: Dict[str, Any] = _comply_cfg.get("llm_anomaly_detection", {})
+_LLM_ENABLED: bool = bool(_llm_cfg.get("enabled", False))
+_LLM_MODEL: str = str(_llm_cfg.get("model", "claude-haiku-4-5-20251001"))
+_LLM_MAX_TOKENS: int = int(_llm_cfg.get("max_tokens", 512))
+
+_ANOMALY_PROMPT = """\
+You are a compliance posture anomaly detector for a FedRAMP/CMMC system.
+
+Compliance check results (JSON):
+{checks_json}
+
+Summary:
+- Evidence freshness: {freshness_pct}%
+- Checks completed: {completed}/{total}
+- Crosswalk coverage: {coverage_pct}%
+- SbD score: {sbd_score}
+
+Identify metrics that are unusually low, trending wrong, or pose an immediate compliance risk.
+
+Respond ONLY with valid JSON:
+{{
+  "overall_health": "healthy|degraded|critical",
+  "anomalies": [
+    {{"metric": "name", "value": 0, "reason": "why anomalous"}}
+  ],
+  "summary": "one-line assessment",
+  "recommend_escalate": false
+}}
+"""
 
 
 def _utcnow_iso() -> str:
@@ -139,8 +203,68 @@ def _check_sbd_posture() -> Dict[str, Any]:
     return {"check": "sbd_assessment", "status": "failed", "error": result.get("error", "unknown")}
 
 
+def _llm_assess_compliance(
+    checks: List[Dict[str, Any]],
+    evidence_freshness: float,
+) -> Optional[Dict[str, Any]]:
+    """Assess compliance metrics for anomalies via LLM anomaly detection.
+
+    Returns a dict with keys: overall_health, anomalies, summary, recommend_escalate.
+    Returns None on any error so callers fall back to deterministic logic.
+    Only called when _LLM_ENABLED is True (opt-in via aiify_config.yaml).
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+    except ImportError:
+        logger.debug("comply: LLMRouter unavailable, skipping anomaly detection")
+        return None
+
+    completed = [c for c in checks if c.get("status") == "completed"]
+    crosswalk = next((c for c in completed if c.get("check") == "crosswalk"), None)
+    sbd = next((c for c in completed if c.get("check") == "sbd_assessment"), None)
+
+    coverage_pct = crosswalk.get("findings", {}).get("coverage_pct", 0) if crosswalk else 0
+    sbd_score = sbd.get("findings", {}).get("overall_score", 0) if sbd else 0
+
+    prompt = _ANOMALY_PROMPT.format(
+        checks_json=json.dumps(checks, indent=2)[:3000],
+        freshness_pct=round(evidence_freshness, 1),
+        completed=len(completed),
+        total=len(checks),
+        coverage_pct=round(coverage_pct, 1),
+        sbd_score=round(sbd_score, 1),
+    )
+
+    try:
+        router = LLMRouter()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are a compliance anomaly detection system. Return only valid JSON.",
+            agent_id="comply-anomaly-detector",
+            classification="CUI",
+            model=_LLM_MODEL,
+            max_tokens=_LLM_MAX_TOKENS,
+            temperature=0.0,
+            skip_injection_scan=True,
+        )
+        response = router.invoke("anomaly_detection", request)
+        raw = (response.content or "").strip()
+        json_start = raw.find("{")
+        if json_start >= 0:
+            return json.loads(raw[json_start:])
+    except Exception as exc:
+        logger.debug("comply: anomaly detection skipped (%s), using deterministic fallback", exc)
+    return None
+
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
-    """Execute the Comply Reflex."""
+    """Execute the Comply Reflex.
+
+    config keys:
+      min_completed_checks — override the yaml-configured minimum for this run
+    """
+    min_completed = int(config.get("min_completed_checks", _MIN_COMPLETED_CHECKS))
     checks = []
 
     # Run each compliance check
@@ -154,18 +278,36 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     completed = [c for c in checks if c.get("status") == "completed"]
 
     # Calculate overall evidence freshness
-    evidence_freshness = 0
+    evidence_freshness = 0.0
     cato = next((c for c in completed if c.get("check") == "cato_evidence"), None)
     if cato:
-        evidence_freshness = cato.get("findings", {}).get("freshness_pct", 0)
+        evidence_freshness = float(cato.get("findings", {}).get("freshness_pct", 0))
+
+    # Optional LLM anomaly assessment (zero Claude tokens when disabled).
+    # Falls back to config-driven threshold check when LLM is unavailable.
+    anomaly_assessment: Optional[Dict[str, Any]] = None
+    if _LLM_ENABLED and checks:
+        anomaly_assessment = _llm_assess_compliance(checks, evidence_freshness)
+
+    if anomaly_assessment:
+        overall_health = anomaly_assessment.get("overall_health", "healthy")
+        success = overall_health != "critical"
+    else:
+        success = len(completed) >= min_completed
+
+    detail_block: Dict[str, Any] = {
+        "min_completed_checks": min_completed,
+        "checks_completed": len(completed),
+        "checks_failed": len(checks) - len(completed),
+        "evidence_freshness_pct": evidence_freshness,
+        "checks": checks,
+        "timestamp": _utcnow_iso(),
+    }
+    if anomaly_assessment is not None:
+        detail_block["anomaly_assessment"] = anomaly_assessment
 
     return {
-        "success": len(completed) > 0,
+        "success": success,
         "metric_value": float(evidence_freshness),
-        "details": {
-            "checks_completed": len(completed),
-            "checks_failed": len(checks) - len(completed),
-            "evidence_freshness_pct": evidence_freshness,
-            "checks": checks,
-        },
+        "details": detail_block,
     }

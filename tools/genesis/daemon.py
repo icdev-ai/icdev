@@ -91,6 +91,10 @@ REFLEX_NAMES = [
     "e2e_runner",
     "log_triage",
     "inspect_adapt",
+    "cpmp_monitor",
+    "pmo_option_tracker",
+    "pmo_weekly_report",
+    "slides",
 ]
 
 # Backward-compat aliases for module-level access used by other code

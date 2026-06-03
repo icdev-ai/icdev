@@ -13,8 +13,7 @@ from typing import Iterable
 
 from tools.db.storage import get_connection
 from .event_service import (
-    render_template, render_to_string, render_string,
-    send, sendmail, notify, emit, publish, dispatch, _now_iso,
+    render_template, render_to_string, send, sendmail, notify, emit, publish, dispatch, _now_iso,
 )
 
 CANVAS_REPORT_TEMPLATES = {

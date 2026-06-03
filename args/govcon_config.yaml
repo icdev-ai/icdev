@@ -197,6 +197,17 @@ business_model:
     - marketplace_admin  # Marketplace administration (customers consume, not run)
 
 # =========================================================================
+# Pulse Bridge — anomaly-detected article generation (govcon_scan reflex)
+# =========================================================================
+pulse_bridge:
+  max_articles_per_cycle: 5
+  anomaly_detection:
+    enabled: true
+    min_signals_for_stats: 3     # need at least this many to compute z-score
+    z_score_threshold: 1.0       # signals >= 1 std-dev above mean demand score
+    fallback_max: 3              # used when stats are insufficient
+
+# =========================================================================
 # Innovation / Creative Engine Cross-Registration (D361)
 # =========================================================================
 cross_registration:

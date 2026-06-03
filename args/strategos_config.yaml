@@ -25,6 +25,34 @@ osint:
   # Maximum files processed per FILE_INBOX run (prevents inbox flood).
   file_inbox_max: 500
 
+  # Maximum signals inserted per harvester run (all tiers combined).
+  max_signals_per_run: 200
+
+  # Per-source fetch limits.
+  acled_fetch_limit: 100        # rows returned by ACLED REST API per call
+  telegram_message_limit: 50    # messages fetched per Telegram channel
+  fetch_timeout_sec: 30         # HTTP request timeout (seconds)
+
+  # LLM-driven anomaly detection — flags unusual signal spikes or suspicious content.
+  anomaly_detection:
+    enabled: true
+    model: "claude-haiku-4-5-20251001"
+    # Primary: Z-score gate for LLM-unavailable fallback (standard deviations above mean).
+    # Adapts to actual historical variance — replace fixed ratio with statistical threshold.
+    zscore_threshold: 2.5
+    # Fallback ratio multiplier when historical std_dev == 0 (all past runs identical).
+    spike_threshold: 3.0
+    # Minimum signal count before anomaly scoring is attempted.
+    min_signals_for_detection: 10
+    # Number of recent audit rows used to compute rolling mean and std_dev.
+    baseline_window: 10
+    # Max signal titles fetched from DB for the LLM prompt (DB query limit).
+    sample_size: 30
+    # Max titles included in the LLM prompt text (subset of sample_size).
+    prompt_titles: 20
+    # Max characters per title in the LLM prompt.
+    title_truncate_len: 120
+
   # Internet-tier OSINT sources.
   # internet_required: true  → only fetched in TIER_INTERNET mode
   # internet_required: false → also attempted in TIER_GITLAB / TIER_FILE_INBOX (rare)
@@ -107,6 +135,54 @@ opencti:
   sync_interval_h: 6
   min_confidence: 70
   indicator_limit: 200
+
+red_cell:
+  # Vulnerability score [0–10] at or above which a COA finding is surfaced
+  # to Oracle (sg_sio_assessments).  STANAG 2511 "HIGH" boundary sits near 7.
+  vuln_threshold: 7.0
+
+  # Severity band boundaries [0–10] used in counter-COA narrative labels.
+  severity:
+    critical: 8.5
+    high: 7.0
+    moderate: 4.0
+
+  # Allocation weight below which a domain is flagged as a critical gap
+  # inside _vulnerability_score() — contributes up to +3.0 pts via bonus.
+  thin_domain_threshold: 0.10
+
+  # Allocation weight below which a domain is listed in the counter-COA
+  # gap narrative (purely presentational).
+  gap_display_threshold: 0.15
+
+  # Weights applied inside _vulnerability_score() raw-score formula.
+  entropy_gap_weight: 5.0
+  max_gap_weight: 4.0
+  critical_bonus_per_gap: 1.5
+  critical_bonus_max: 3.0
+
+  # Adaptive anomaly detection — recalibrates vuln_threshold each run from
+  # historical assessment data using z-score statistics + optional LLM narration.
+  anomaly_detection:
+    enabled: true
+    model: "claude-haiku-4-5-20251001"
+    # Dynamic threshold = mean + (zscore_threshold × std_dev) of recent scores.
+    # Adapts automatically as the historical score distribution shifts.
+    zscore_threshold: 1.5
+    # Number of recent sg_red_cell_assessments rows used for baseline statistics.
+    baseline_window: 20
+    # Minimum history rows before adaptive calibration activates.
+    min_history: 5
+    # When true, the calibrated threshold replaces vuln_threshold for this run.
+    adapt_vuln_threshold: true
+    # ── _compute_anomaly_threshold() parameters (cleaner API) ──
+    # Alias for min_history — minimum records before dynamic threshold activates.
+    min_records: 5
+    # k multiplier: threshold = mean + zscore_k × std_dev.
+    zscore_k: 1.5
+    # Dynamic threshold is clamped to [min_floor, max_cap].
+    min_floor: 5.0
+    max_cap: 9.5
 
 executor:
   # Ordered list of execution backends tried in sequence.

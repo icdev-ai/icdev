@@ -136,3 +136,49 @@ cato_monitor:
     enabled: false
     model: claude-haiku-4-5-20251001
     max_tokens: 256
+
+comply_reflex:
+  # Configurable thresholds for tools/genesis/reflexes/comply.py.
+  # Replaces the hardcoded `len(completed) > 0` success check with a tunable
+  # minimum so sensitivity can be adjusted without modifying source code
+  # (aiify-rm-ff651-phase-5264).
+  min_completed_checks: 1    # require at least this many checks to succeed (default: 1)
+
+  # Optional LLM-based anomaly assessment of evidence freshness metrics.
+  # Opt-in: set enabled: true here. When disabled (default), the reflex runs
+  # scanner-tier with zero Claude token consumption. Air-gap safe.
+  llm_anomaly_detection:
+    enabled: false
+    model: claude-haiku-4-5-20251001
+    max_tokens: 256
+
+ndc_topology_drift:
+  # Configurable staleness threshold for tools/genesis/reflexes/ndc_topology_drift.py.
+  # Replaces the hardcoded 7-day window with a tunable value so drift sensitivity
+  # can be adjusted without modifying source code (aiify-rm-ff651-phase-5317).
+  staleness_threshold_days: 7    # flag topologies with days_since_update <= this value
+
+  # Optional LLM-based anomaly detection for dynamic staleness assessment.
+  # When enabled, Claude Haiku evaluates topology update patterns to identify
+  # anomalous drift beyond what a fixed threshold would catch. Opt-in; disabled
+  # by default so the reflex remains air-gap safe with zero token consumption.
+  llm_anomaly_detection:
+    enabled: false
+    model: claude-haiku-4-5-20251001
+    max_tokens: 300
+
+govchain_anchor:
+  # Configurable thresholds for tools/genesis/reflexes/govchain_anchor.py.
+  # Replaces hardcoded subprocess timeout and pending-queue warning limit with
+  # tunable values so sensitivity can be adjusted without modifying source code
+  # (aiify-rm-ff651-phase-5283).
+  anchor_timeout_seconds: 120  # subprocess timeout for chain_anchor --periodic
+  pending_queue_warning: 500   # warn when pending ops queue depth exceeds this
+
+  # Optional LLM-based anomaly assessment of anchor result and queue depth.
+  # Opt-in: set enabled: true here. When disabled (default), the reflex runs
+  # scanner-tier with zero Claude token consumption. Air-gap safe.
+  llm_anomaly_detection:
+    enabled: false
+    model: claude-haiku-4-5-20251001
+    max_tokens: 256

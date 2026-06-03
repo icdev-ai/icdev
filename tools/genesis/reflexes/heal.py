@@ -280,6 +280,60 @@ def _check_constitution(pattern: Dict, false_heal_rate: float = 0.0) -> Tuple[bo
 
     return True, ""
 
+
+# ---------------------------------------------------------------------------
+# Anomaly-detection-based adaptive threshold
+# ---------------------------------------------------------------------------
+
+
+def _compute_adaptive_confidence_threshold(fallback: Optional[float] = None) -> float:
+    """Compute adaptive confidence threshold via Z-score anomaly detection.
+
+    All tuning parameters (min_samples, z_score_factor, threshold bounds,
+    fallback_threshold) are sourced from the ``anomaly_detection`` section of
+    heal_constitution.yaml so they are config-driven rather than hardcoded.
+
+    An explicit ``fallback`` argument overrides the constitution's
+    fallback_threshold — used in tests and direct calls that need a fixed
+    reference point.  Result clamped to [threshold_floor, threshold_ceiling].
+    """
+    constitution = _load_constitution()
+    ad_cfg = constitution.get("anomaly_detection", {})
+    # Explicit arg wins; absent → constitution section → hard default
+    if fallback is None:
+        fallback = float(ad_cfg.get("fallback_threshold", 0.7))
+    min_samples = int(ad_cfg.get("min_samples", 10))
+    z_score_factor = float(ad_cfg.get("z_score_factor", 0.5))
+    floor = float(ad_cfg.get("threshold_floor", 0.5))
+    ceiling = float(ad_cfg.get("threshold_ceiling", 0.95))
+
+    conn = None
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT confidence FROM self_healing_patterns WHERE confidence IS NOT NULL"
+        ).fetchall()
+        scores = [
+            (r["confidence"] if hasattr(r, "keys") else r[0])
+            for r in rows
+        ]
+        scores = [s for s in scores if s is not None]
+        if len(scores) < min_samples:
+            return fallback
+        mean = sum(scores) / len(scores)
+        variance = sum((x - mean) ** 2 for x in scores) / len(scores)
+        std_dev = variance ** 0.5
+        if std_dev < 0.001:
+            return fallback
+        threshold = mean - z_score_factor * std_dev
+        return max(floor, min(ceiling, round(threshold, 4)))
+    except Exception:
+        return fallback
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Failure detection and pattern matching
 # ---------------------------------------------------------------------------
@@ -287,8 +341,9 @@ def _check_constitution(pattern: Dict, false_heal_rate: float = 0.0) -> Tuple[bo
 
 def _get_recent_failures(lookback_hours: int = 6) -> List[Dict[str, Any]]:
     """Query recent error events from audit trail."""
-    conn = get_connection()
+    conn = None
     try:
+        conn = get_connection()
         cutoff = (_utcnow() - timedelta(hours=lookback_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
         rows = conn.execute(
             """
@@ -309,20 +364,25 @@ def _get_recent_failures(lookback_hours: int = 6) -> List[Dict[str, Any]]:
         print(f"  WARN: Could not query failures: {e}")
         return []
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
-def _get_healing_patterns() -> List[Dict[str, Any]]:
+def _get_healing_patterns(min_confidence: float = 0.7) -> List[Dict[str, Any]]:
     """Load known healing patterns from self_healing_patterns table."""
-    conn = get_connection()
+    conn = None
     try:
-        rows = conn.execute("""
+        conn = get_connection()
+        rows = conn.execute(
+            """
             SELECT id, pattern_name, error_pattern, resolution_type,
                    resolution_action, confidence, success_count, failure_count
             FROM self_healing_patterns
-            WHERE confidence >= 0.7
+            WHERE confidence >= ?
             ORDER BY confidence DESC
-        """).fetchall()
+            """,
+            (min_confidence,),
+        ).fetchall()
         return [
             dict(r)
             if hasattr(r, "keys")
@@ -341,7 +401,8 @@ def _get_healing_patterns() -> List[Dict[str, Any]]:
     except Exception:
         return []
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def _get_builtin_patterns() -> List[Dict[str, Any]]:
@@ -554,8 +615,12 @@ def _apply_remediation(pattern: Dict, failure: Dict) -> Tuple[bool, str]:
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Heal Reflex."""
-    confidence_threshold = config.get("confidence_threshold", 0.7)
+    # Adaptive threshold via Z-score anomaly detection; all params from constitution.
+    adaptive_threshold = _compute_adaptive_confidence_threshold()
+    confidence_threshold = config.get("confidence_threshold", adaptive_threshold)
     max_heals = config.get("max_auto_heals_per_hour", 5)
+    lookback_hours = config.get("lookback_hours", 6)
+    max_failures_per_cycle = config.get("max_failures_per_cycle", 20)
 
     # Read current false-heal rate for constitution enforcement
     false_heal_rate = 0.0
@@ -566,7 +631,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         pass
 
     # Get recent failures
-    failures = _get_recent_failures(lookback_hours=6)
+    failures = _get_recent_failures(lookback_hours=lookback_hours)
     if not failures:
         return {
             "success": True,
@@ -575,7 +640,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         }
 
     # Load healing patterns: DB patterns + built-in patterns
-    patterns = _get_healing_patterns() + _get_builtin_patterns()
+    patterns = _get_healing_patterns(min_confidence=confidence_threshold) + _get_builtin_patterns()
     if not patterns:
         return {
             "success": True,
@@ -589,7 +654,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     matches = []
     healed = 0
 
-    for failure in failures[:20]:  # Process max 20 per cycle
+    for failure in failures[:max_failures_per_cycle]:
         match = _match_pattern(failure, patterns)
         if not match:
             continue

@@ -96,20 +96,58 @@ def _count_pending_prompts() -> int:
         conn.close()
 
 
+def _int_env(key: str, default: int) -> int:
+    """Load an integer threshold from an env var, falling back to default."""
+    import os as _os
+    try:
+        val = _os.getenv(key)
+        return int(val) if val else default
+    except (ValueError, TypeError):
+        return default
+
+
+def _float_env(key: str, default: float) -> float:
+    """Load a float threshold from an env var, falling back to default."""
+    import os as _os
+    try:
+        val = _os.getenv(key)
+        return float(val) if val else default
+    except (ValueError, TypeError):
+        return default
+
+
 # Max tasks to auto-promote per cycle — matches MAX_IN_PROGRESS so a full
 # batch fills all available slots in one cycle rather than two.
-MAX_AUTO_PROMOTE = 3
-# Max in-progress tasks at any time (prevents pile-up)
-MAX_IN_PROGRESS = 3
-# Max seconds a Claude CLI subprocess can run before being killed
-MAX_EXECUTION_SECONDS = 900           # 15 min — default for normal tasks
-MAX_EXECUTION_SECONDS_SCAN = 1200     # 20 min — codelens, coherence, E2E (tool ~10s but Claude overhead + fix cycles ~15 min)
-MAX_EXECUTION_SECONDS_PYTEST = 2400   # 40 min — full test suite (7,519 tests @ ~0.3s each + Claude overhead)
-# Minimum remaining budget required to start post-process operations (guard-budget)
-VERIFICATION_MIN_BUDGET_SECONDS = 30   # verification pipeline can take ~10-25s
-REMEDIATION_MIN_BUDGET_SECONDS = 60    # remediation + re-verify can take ~30-50s
-SELF_DEBUG_MIN_BUDGET_SECONDS = 15     # self-debug dispatch is lightweight but still costs time
-MAX_TIMEOUT_RETRIES = 3               # hard-quarantine a task after this many identical timeouts
+# Override via KANBAN_MAX_AUTO_PROMOTE env var.
+MAX_AUTO_PROMOTE = _int_env("KANBAN_MAX_AUTO_PROMOTE", 3)
+# Max in-progress tasks at any time (prevents pile-up).
+# Override via KANBAN_MAX_IN_PROGRESS env var.
+MAX_IN_PROGRESS = _int_env("KANBAN_MAX_IN_PROGRESS", 3)
+# Max seconds a Claude CLI subprocess can run before being killed.
+# Override via KANBAN_MAX_EXECUTION_SECONDS / _SCAN / _PYTEST env vars.
+MAX_EXECUTION_SECONDS = _int_env("KANBAN_MAX_EXECUTION_SECONDS", 900)
+MAX_EXECUTION_SECONDS_SCAN = _int_env("KANBAN_MAX_EXECUTION_SECONDS_SCAN", 1200)
+MAX_EXECUTION_SECONDS_PYTEST = _int_env("KANBAN_MAX_EXECUTION_SECONDS_PYTEST", 2400)
+# Minimum remaining budget required to start post-process operations (guard-budget).
+# Override via KANBAN_VERIFICATION_MIN_BUDGET_SECONDS / _REMEDIATION / _SELF_DEBUG env vars.
+VERIFICATION_MIN_BUDGET_SECONDS = _int_env("KANBAN_VERIFICATION_MIN_BUDGET_SECONDS", 30)
+REMEDIATION_MIN_BUDGET_SECONDS = _int_env("KANBAN_REMEDIATION_MIN_BUDGET_SECONDS", 60)
+SELF_DEBUG_MIN_BUDGET_SECONDS = _int_env("KANBAN_SELF_DEBUG_MIN_BUDGET_SECONDS", 15)
+# Hard-quarantine a task after this many identical timeouts.
+# Override via KANBAN_MAX_TIMEOUT_RETRIES env var.
+MAX_TIMEOUT_RETRIES = _int_env("KANBAN_MAX_TIMEOUT_RETRIES", 3)
+# Failures before a task is flagged for decomposition.
+# Override via KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION env var.
+_MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT = _int_env("KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION", 1)
+# Minimum claude output length (chars) to be considered non-trivial.
+# Override via KANBAN_MIN_OUTPUT_LENGTH env var.
+MIN_OUTPUT_LENGTH = _int_env("KANBAN_MIN_OUTPUT_LENGTH", 200)
+# Phantom-completion ratio — fraction of claimed paths that may be missing.
+# Override via KANBAN_PHANTOM_RATIO_THRESHOLD env var.
+PHANTOM_RATIO_THRESHOLD = _float_env("KANBAN_PHANTOM_RATIO_THRESHOLD", 0.5)
+# Scan-only task minimum run duration before accepting as successful.
+# Override via KANBAN_SCAN_MIN_RUN_SECONDS env var.
+SCAN_MIN_RUN_SECONDS = _int_env("KANBAN_SCAN_MIN_RUN_SECONDS", 60)
 
 # Task ID patterns that get extended timeouts (regex, case-insensitive).
 # Order matters: first match wins.
@@ -119,6 +157,87 @@ _EXTENDED_TIMEOUT_PATTERNS = [
     (r"pytest|regression|test-suite|full-test|e2e", MAX_EXECUTION_SECONDS_PYTEST),
     (r"codelens|coherence|companion", MAX_EXECUTION_SECONDS_SCAN),
 ]
+
+
+def _detect_execution_anomalies(task_type: Optional[str] = None, window: int = 200) -> dict:
+    """Anomaly detection for kanban execution metrics using IQR outlier analysis.
+
+    Reads recent completed tasks from kanban_tasks and computes adaptive
+    threshold recommendations for execution_seconds and failure_count.
+    Uses interquartile range (IQR) to identify statistical outliers without
+    requiring external ML dependencies.
+
+    Args:
+        task_type: Optional filter to restrict analysis to a specific task type.
+        window: Number of recent completed tasks to sample (default 200).
+
+    Returns a dict with:
+        - exec_seconds_p50: median execution time (seconds)
+        - exec_seconds_upper_fence: IQR upper fence — tasks above this are anomalous
+        - failure_rate_mean: mean failure_count across completed tasks
+        - failure_rate_upper_fence: IQR upper fence for failure counts
+        - sample_size: number of tasks analysed
+        - recommended_max_execution_seconds: adaptive cap (clamped 300–7200)
+        - recommended_max_failures: adaptive decomposition threshold (clamped 1–10)
+
+    Non-fatal: any DB or arithmetic error returns an empty dict so callers can
+    fall back to the static configured constants.
+    """
+    try:
+        conn = get_connection()
+        try:
+            query = (
+                "SELECT execution_seconds, failure_count "
+                "FROM kanban_tasks "
+                "WHERE status IN ('done', 'verified') "
+                "  AND execution_seconds IS NOT NULL "
+                "  AND execution_seconds > 0 "
+            )
+            params: list = []
+            if task_type:
+                query += "  AND task_type = ? "
+                params.append(task_type)
+            query += "ORDER BY updated_at DESC LIMIT ?"
+            params.append(window)
+            rows = conn.execute(query, params).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return {}
+
+    if not rows:
+        return {}
+
+    exec_times = sorted(float(dict(r).get("execution_seconds") or 0) for r in rows)
+    fail_counts = sorted(float(dict(r).get("failure_count") or 0) for r in rows)
+    n = len(exec_times)
+
+    def _iqr_fence(values: list) -> tuple:
+        if len(values) < 4:
+            return values[-1], values[-1]
+        q1 = values[len(values) // 4]
+        q3 = values[(3 * len(values)) // 4]
+        iqr = q3 - q1
+        return q1 - 1.5 * iqr, q3 + 1.5 * iqr
+
+    exec_p50 = exec_times[n // 2]
+    _, exec_upper = _iqr_fence(exec_times)
+    fail_mean = sum(fail_counts) / n if n else 0.0
+    _, fail_upper = _iqr_fence(fail_counts)
+
+    # Clamp to sensible operational ranges.
+    adaptive_exec = int(min(7200, max(300, exec_upper)))
+    adaptive_fails = int(min(10, max(1, round(fail_upper))))
+
+    return {
+        "exec_seconds_p50": exec_p50,
+        "exec_seconds_upper_fence": exec_upper,
+        "failure_rate_mean": fail_mean,
+        "failure_rate_upper_fence": fail_upper,
+        "sample_size": n,
+        "recommended_max_execution_seconds": adaptive_exec,
+        "recommended_max_failures": adaptive_fails,
+    }
 
 
 def _nlp_extract_timeout_hint(desc: str) -> Optional[int]:
@@ -243,16 +362,26 @@ def _nlp_extract_gap_subject(title: str, description: str, gap_type: str) -> Opt
 def _get_task_timeout(task_id: str) -> int:
     """Return per-task timeout budget in seconds.
 
-    pytest / E2E suite / regression tasks get MAX_EXECUTION_SECONDS_PYTEST (40 min);
-    codelens / coherence / single-E2E tasks get MAX_EXECUTION_SECONDS_SCAN (20 min);
-    everything else gets MAX_EXECUTION_SECONDS (15 min).
-    Also checks the task description for a TIMEOUT_HINT:NNNs directive or
-    natural language timeout hints via NLP extraction.
+    Uses adaptive anomaly detection (_detect_execution_anomalies) when sufficient
+    historical data exists to compute a data-driven ceiling; falls back to the
+    configured static constants when data is sparse or the DB is unreachable.
+
+    Priority order (highest first):
+      1. Pattern match on task_id (pytest / scan) — but ceiling is still adaptive
+      2. timeout_hint:NNNs directive in description — hard override, no adaptation
+      3. NLP-extracted timeout from description — hard override, no adaptation
+      4. Description / task_type keyword match — adaptive ceiling
+      5. Default — adaptive ceiling or MAX_EXECUTION_SECONDS
     """
     task_id_lower = task_id.lower()
-    for pattern, timeout in _EXTENDED_TIMEOUT_PATTERNS:
+    for pattern, static_timeout in _EXTENDED_TIMEOUT_PATTERNS:
         if re.search(pattern, task_id_lower):
-            return timeout
+            category = "pytest" if static_timeout == MAX_EXECUTION_SECONDS_PYTEST else "scan"
+            anomalies = _detect_execution_anomalies(window=100)
+            adaptive = anomalies.get("recommended_max_execution_seconds")
+            if adaptive and adaptive > static_timeout:
+                return adaptive
+            return static_timeout
 
     # Check task description + task_type for TIMEOUT_HINT or heavy-tool heuristics
     try:
@@ -264,7 +393,7 @@ def _get_task_timeout(task_id: str) -> int:
         d = dict(row) if row else {}
         desc = (d.get("description") or "").lower()
         task_type = (d.get("task_type") or "").lower()
-        # Explicit structured override always wins
+        # Explicit structured override always wins — no anomaly adaptation
         m = re.search(r"timeout_hint:\s*(\d+)", desc, re.IGNORECASE)
         if m:
             return min(3600, int(m.group(1)))  # cap at 1 hour
@@ -272,21 +401,30 @@ def _get_task_timeout(task_id: str) -> int:
         nlp_secs = _nlp_extract_timeout_hint(desc)
         if nlp_secs is not None:
             return nlp_secs
-        # PYTEST-level (40 min): full test suites, E2E suites, regression runs
+        # PYTEST-level: try adaptive ceiling first, then fall back to static
         _pytest_kw = ("pytest", "regression", "full test", "test suite",
                       "e2e suite", "e2e test", "test_orchestrator")
         if any(kw in desc for kw in _pytest_kw):
-            return MAX_EXECUTION_SECONDS_PYTEST
+            anomalies = _detect_execution_anomalies(task_type="test", window=100)
+            adaptive = anomalies.get("recommended_max_execution_seconds")
+            return adaptive if adaptive and adaptive > MAX_EXECUTION_SECONDS_PYTEST else MAX_EXECUTION_SECONDS_PYTEST
         if task_type == "test" and any(kw in desc for kw in ("e2e", "playwright", "selenium")):
-            return MAX_EXECUTION_SECONDS_PYTEST
-        # SCAN-level (20 min): single tool runs, coherence checks, single E2E steps
+            anomalies = _detect_execution_anomalies(task_type="test", window=100)
+            adaptive = anomalies.get("recommended_max_execution_seconds")
+            return adaptive if adaptive and adaptive > MAX_EXECUTION_SECONDS_PYTEST else MAX_EXECUTION_SECONDS_PYTEST
+        # SCAN-level: single tool runs, coherence checks, single E2E steps
         _scan_kw = ("codelens", "coherence_checker", "e2e_full", "companion", "e2e")
         if any(kw in desc for kw in _scan_kw):
-            return MAX_EXECUTION_SECONDS_SCAN
+            anomalies = _detect_execution_anomalies(window=100)
+            adaptive = anomalies.get("recommended_max_execution_seconds")
+            return adaptive if adaptive and adaptive > MAX_EXECUTION_SECONDS_SCAN else MAX_EXECUTION_SECONDS_SCAN
     except Exception:
         pass
 
-    return MAX_EXECUTION_SECONDS
+    # Default: use anomaly-detected ceiling or static fallback
+    anomalies = _detect_execution_anomalies(window=100)
+    adaptive = anomalies.get("recommended_max_execution_seconds")
+    return adaptive if adaptive and adaptive > MAX_EXECUTION_SECONDS else MAX_EXECUTION_SECONDS
 
 
 # ── Token exhaustion detection ────────────────────────────────────────────────
@@ -972,7 +1110,8 @@ def _push_main(cwd: str) -> None:
 # currently in_progress and whose marker/dir mtime is older than this are
 # force-cleaned. Disk hygiene for the failure-train class (many failed tasks
 # leaving 500 MB worktrees each).
-_WORKTREE_STALE_AGE_DAYS = 7
+# Override via KANBAN_WORKTREE_STALE_AGE_DAYS env var.
+_WORKTREE_STALE_AGE_DAYS = _int_env("KANBAN_WORKTREE_STALE_AGE_DAYS", 7)
 
 
 def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[str]:
@@ -1791,7 +1930,7 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
     return result
 
 
-MAX_FAILURES_BEFORE_DECOMPOSITION = 1
+MAX_FAILURES_BEFORE_DECOMPOSITION = _MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT
 
 
 def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
@@ -4057,7 +4196,7 @@ def _run_verify_checks(task_id, claude_output):
         _desc0b = ""
         _type0b = ""
     _is_scan_task = _type0b == "test" and any(kw in _desc0b for kw in _SCAN_ONLY_KEYWORDS)
-    if _is_scan_task and (not claude_output or len(claude_output) < 200):
+    if _is_scan_task and (not claude_output or len(claude_output) < MIN_OUTPUT_LENGTH):
         # Scan task with empty/short output — check process exit code
         _proc = _running.get(task_id)
         _exit_ok = (_proc is not None and hasattr(_proc, 'returncode')
@@ -4065,7 +4204,7 @@ def _run_verify_checks(task_id, claude_output):
         _dispatch_t = _dispatch_times.get(task_id)
         _ran_long = (
             _dispatch_t is not None
-            and (datetime.now(timezone.utc) - _dispatch_t).total_seconds() > 60
+            and (datetime.now(timezone.utc) - _dispatch_t).total_seconds() > SCAN_MIN_RUN_SECONDS
         )
         if _exit_ok:
             return True, (
@@ -4120,7 +4259,7 @@ def _run_verify_checks(task_id, claude_output):
         pass
 
     # Check 1: Claude output must be substantial
-    if not claude_output or len(claude_output) < 200:
+    if not claude_output or len(claude_output) < MIN_OUTPUT_LENGTH:
         return False, "Output too short — likely no work done"
 
     # Check 2: Look for failure indicators (scan first 1000 chars — the
@@ -4273,14 +4412,14 @@ def _run_verify_checks(task_id, claude_output):
                 f"but NONE exist on disk (missing: {missing_preview}). "
                 f"Output was likely hallucinated — see agent log."
             )
-        # If 50%+ of claimed paths are missing, treat as phantom completion.
+        # If PHANTOM_RATIO_THRESHOLD+ of claimed paths are missing, treat as phantom.
         phantom_ratio = (claimed - existing) / claimed
-        if phantom_ratio >= 0.5:
+        if phantom_ratio >= PHANTOM_RATIO_THRESHOLD:
             missing_preview = ", ".join(missing[:3])
             return False, (
                 f"PHANTOM COMPLETION: {claimed - existing}/{claimed} claimed paths "
                 f"missing ({missing_preview}). "
-                f"Ratio {phantom_ratio:.0%} >= 50% threshold — failing."
+                f"Ratio {phantom_ratio:.0%} >= {PHANTOM_RATIO_THRESHOLD:.0%} threshold — failing."
             )
 
     # Check 5: Git commit check on the WORKTREE branch (not main).
@@ -5155,8 +5294,16 @@ _dispatch_times: Dict[str, datetime] = {}
 # Current executor tier — updated once per scheduler cycle
 _current_exec_tier: Optional[str] = None
 
-_SILENT_DISPATCH_THRESHOLD = 1 * 60  # 1 min — no log file content yet = never dispatched
-_ABSOLUTE_MAX_IN_PROGRESS_SECONDS = 24 * 60 * 60  # 24 h hard ceiling — force-reap even if in _running
+# Override via KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS / KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS env vars.
+_SILENT_DISPATCH_THRESHOLD = _int_env("KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS", 1 * 60)
+_ABSOLUTE_MAX_IN_PROGRESS_SECONDS = _int_env("KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS", 24 * 60 * 60)
+
+# Anomaly detection parameters for _detect_execution_anomaly.
+# Override via env vars to tune sensitivity without code changes.
+_ANOMALY_HISTORY_LIMIT = _int_env("KANBAN_ANOMALY_HISTORY_LIMIT", 50)
+_ANOMALY_MIN_SAMPLES = _int_env("KANBAN_ANOMALY_MIN_SAMPLES", 10)
+_ANOMALY_MIN_STD_SECONDS = _float_env("KANBAN_ANOMALY_MIN_STD_SECONDS", 1.0)
+_ANOMALY_Z_THRESHOLD = _float_env("KANBAN_ANOMALY_Z_THRESHOLD", 2.0)
 
 
 def _task_log_is_empty(tid: str) -> bool:
@@ -5168,7 +5315,55 @@ def _task_log_is_empty(tid: str) -> bool:
         return False
 
 
-_SUGGESTED_DECAY_HOURS = 48  # tasks soft-stuck in 'suggested' are re-queued after this
+def _detect_execution_anomaly(age_seconds: float) -> Tuple[bool, str]:
+    """Detect if age_seconds is anomalously long vs historical task durations.
+
+    Queries the last _ANOMALY_HISTORY_LIMIT completed tasks and applies the
+    z-score method (mean + _ANOMALY_Z_THRESHOLD × σ). Returns
+    (is_anomaly, description). Falls back to (False, "") on insufficient data
+    or any error. All parameters are configurable via env vars:
+      KANBAN_ANOMALY_HISTORY_LIMIT, KANBAN_ANOMALY_MIN_SAMPLES,
+      KANBAN_ANOMALY_MIN_STD_SECONDS, KANBAN_ANOMALY_Z_THRESHOLD.
+    """
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT (julianday(completed_at) - julianday(created_at)) * 86400.0 AS dur
+                FROM kanban_tasks
+                WHERE status = 'done'
+                  AND completed_at IS NOT NULL
+                  AND created_at IS NOT NULL
+                ORDER BY completed_at DESC
+                LIMIT {_ANOMALY_HISTORY_LIMIT}
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+
+        durations = [dict(r)["dur"] for r in rows if (dict(r).get("dur") or 0) > 0]
+        if len(durations) < _ANOMALY_MIN_SAMPLES:
+            return False, ""
+
+        mean = sum(durations) / len(durations)
+        variance = sum((d - mean) ** 2 for d in durations) / len(durations)
+        std = variance ** 0.5
+        if std < _ANOMALY_MIN_STD_SECONDS:
+            return False, ""
+
+        z = (age_seconds - mean) / std
+        if z > _ANOMALY_Z_THRESHOLD:
+            return True, (
+                f"anomaly_detection: {age_seconds / 60:.0f} min is {z:.1f}σ above "
+                f"historical mean {mean / 60:.0f} min (σ={std / 60:.0f} min, n={len(durations)})"
+            )
+    except Exception:
+        pass
+    return False, ""
+
+
+_SUGGESTED_DECAY_HOURS = _int_env("KANBAN_SUGGESTED_DECAY_HOURS", 48)
 
 
 def _promote_stale_suggested() -> None:
@@ -5312,9 +5507,11 @@ def _reap_stale_in_progress() -> None:
             ).fetchone()
             new_fc = (fc_row[0] if fc_row else 0) + 1
             next_status = "suggested" if new_fc >= 5 else "backlog"
+            _is_anomaly, _anomaly_detail = _detect_execution_anomaly(age_seconds)
+            _anomaly_suffix = f" [{_anomaly_detail}]" if _is_anomaly else ""
             reason = (
                 f"stale-reaper: task was in_progress for {age_seconds / 60:.0f} min "
-                f"with {reap_label} (threshold={threshold / 60:.0f} min). "
+                f"with {reap_label} (threshold={threshold / 60:.0f} min){_anomaly_suffix}. "
                 + (
                     f"fc={new_fc}>=5 - escalated to suggested for HITL review."
                     if next_status == "suggested"

@@ -35,7 +35,54 @@
 .cpars-dimension .dim-bar { flex:1; height:8px; background:var(--bg-secondary, #1a1a2e); border-radius:4px; overflow:hidden; }
 .cpars-dimension .dim-fill { height:100%; border-radius:4px; }
 .cpars-dimension .dim-score { width:40px; text-align:right; font-size:12px; font-weight:600; }
+/* Tab help button */
+.tab-help-btn { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:rgba(74,144,217,0.25); color:#8ab4ff; font-size:10px; font-weight:700; cursor:pointer; margin-left:5px; vertical-align:middle; transition:background 0.15s; user-select:none; }
+.tab-help-btn:hover { background:rgba(74,144,217,0.55); }
+/* Help slide panel */
+#cpmp-help-panel { position:fixed; top:0; right:-420px; width:400px; height:100vh; background:var(--bg-secondary, #12122a); border-left:1px solid var(--border-color, #2a2a4a); z-index:1400; transition:right 0.28s ease; display:flex; flex-direction:column; box-shadow:-4px 0 24px rgba(0,0,0,0.5); }
+#cpmp-help-panel.open { right:0; }
+#cpmp-help-panel-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border-color, #2a2a4a); }
+#cpmp-help-panel-header h3 { margin:0; font-size:15px; color:var(--text-primary, #e0e0e0); }
+#cpmp-help-panel-close { background:none; border:none; color:var(--text-secondary, #a0a0b8); font-size:20px; cursor:pointer; padding:0 4px; }
+#cpmp-help-panel-body { overflow-y:auto; padding:20px; flex:1; font-size:13px; line-height:1.6; color:var(--text-primary, #e0e0e0); }
+#cpmp-help-panel-body h4 { font-size:14px; color:#8ab4ff; margin:14px 0 6px; }
+#cpmp-help-panel-body .formula { background:rgba(74,144,217,0.1); border-left:3px solid #4a90d9; padding:8px 12px; border-radius:4px; font-family:monospace; font-size:12px; margin:6px 0; }
+#cpmp-help-panel-body table { width:100%; border-collapse:collapse; font-size:12px; margin:8px 0; }
+#cpmp-help-panel-body th { text-align:left; color:#8ab4ff; border-bottom:1px solid var(--border-color, #2a2a4a); padding:4px 6px; }
+#cpmp-help-panel-body td { padding:4px 6px; border-bottom:1px solid rgba(255,255,255,0.04); }
+/* AI Advisor panel */
+#ai-advisor-bar { background:rgba(74,144,217,0.06); border:1px solid rgba(74,144,217,0.2); border-radius:8px; padding:12px 16px; margin:12px 0; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+#ai-advisor-bar .ai-label { font-size:12px; color:#8ab4ff; font-weight:600; margin-right:4px; }
+.ai-result-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1500; align-items:center; justify-content:center; }
+.ai-result-modal.open { display:flex; }
+.ai-result-box { background:var(--bg-secondary, #12122a); border:1px solid var(--border-color, #2a2a4a); border-radius:10px; width:560px; max-height:80vh; overflow-y:auto; padding:24px; position:relative; }
+.ai-result-box h3 { font-size:16px; color:#8ab4ff; margin:0 0 14px; }
+.ai-result-close { position:absolute; top:16px; right:16px; background:none; border:none; color:var(--text-secondary); font-size:20px; cursor:pointer; }
+.ai-rec-item { background:rgba(255,255,255,0.04); border-radius:6px; padding:10px 14px; margin-bottom:8px; border-left:3px solid #4a90d9; }
+.ai-rec-item.urgent { border-left-color:#dc3545; }
+.ai-rec-item.high { border-left-color:#fd7e14; }
+.ai-rec-item .rec-area { font-size:11px; color:#8ab4ff; text-transform:uppercase; font-weight:600; }
+.ai-rec-item .rec-action { font-size:13px; color:var(--text-primary); margin-top:4px; }
+.ai-rec-item .rec-impact { font-size:11px; color:var(--text-secondary); margin-top:3px; }
 </style>
+
+<!-- Tab Help Slide Panel -->
+<div id="cpmp-help-panel" role="complementary" aria-label="Tab help">
+    <div id="cpmp-help-panel-header">
+        <h3 id="cpmp-help-panel-title">ⓘ Help</h3>
+        <button id="cpmp-help-panel-close" onclick="hideTabHelp()" aria-label="Close">×</button>
+    </div>
+    <div id="cpmp-help-panel-body"></div>
+</div>
+
+<!-- AI Result Modal -->
+<div id="ai-result-modal" class="ai-result-modal" onclick="if(event.target===this)closeAiModal()">
+    <div class="ai-result-box">
+        <button class="ai-result-close" onclick="closeAiModal()">×</button>
+        <h3 id="ai-modal-title">AI PMO Advisor</h3>
+        <div id="ai-modal-body" style="font-size:13px; line-height:1.6;"></div>
+    </div>
+</div>
 
 <div class="breadcrumbs">
     <a href="/">Home</a><span class="separator">/</span>
@@ -116,16 +163,25 @@
 
 <!-- Tab Navigation -->
 <div class="tab-nav">
-    <button class="tab-btn active" onclick="switchTab('overview')">Overview</button>
-    <button class="tab-btn" onclick="switchTab('clins')">CLINs</button>
-    <button class="tab-btn" onclick="switchTab('wbs')">WBS</button>
-    <button class="tab-btn" onclick="switchTab('deliverables')">Deliverables</button>
-    <button class="tab-btn" onclick="switchTab('evm')">EVM</button>
-    <button class="tab-btn" onclick="switchTab('schedule')">Schedule</button>
-    <button class="tab-btn" onclick="switchTab('subcontractors')">Subcontractors</button>
-    <button class="tab-btn" onclick="switchTab('cpars')">CPARS</button>
-    <button class="tab-btn" onclick="switchTab('mods'); loadMods('{{ contract.id }}')">Modifications</button>
-    <button class="tab-btn" onclick="switchTab('risks')">Risks</button>
+    <button class="tab-btn active" onclick="switchTab('overview')">Overview <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('overview')" title="Help">?</span></button>
+    <button class="tab-btn" onclick="switchTab('clins')">CLINs <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('clins')" title="Help">?</span></button>
+    <button class="tab-btn" onclick="switchTab('wbs')">WBS <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('wbs')" title="Help">?</span></button>
+    <button class="tab-btn" onclick="switchTab('deliverables')">Deliverables <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('deliverables')" title="Help">?</span></button>
+    <button class="tab-btn" onclick="switchTab('evm')">EVM <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('evm')" title="Help">?</span></button>
+    <button class="tab-btn" onclick="switchTab('schedule')">Schedule <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('schedule')" title="Help">?</span></button>
+    <button class="tab-btn" onclick="switchTab('subcontractors')">Subcontractors <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('subcontractors')" title="Help">?</span></button>
+    <button class="tab-btn" onclick="switchTab('cpars')">CPARS <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('cpars')" title="Help">?</span></button>
+    <button class="tab-btn" onclick="switchTab('mods'); loadMods('{{ contract.id }}')">Modifications <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('mods')" title="Help">?</span></button>
+    <button class="tab-btn" onclick="switchTab('risks')">Risks <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('risks')" title="Help">?</span></button>
+</div>
+
+<!-- AI PMO Advisor Bar -->
+<div id="ai-advisor-bar">
+    <span class="ai-label">✦ AI PMO Advisor</span>
+    <button class="btn btn-sm btn-explain" onclick="loadAiRecommendations('{{ contract.id }}')">Recommendations</button>
+    <button class="btn btn-sm btn-explain" onclick="loadAwardFee('{{ contract.id }}')">Predictive Award Fee</button>
+    <button class="btn btn-sm btn-explain" onclick="runAutoDetect('{{ contract.id }}')">⚡ Auto-Detect Issues</button>
+    <span id="ai-advisor-status" style="font-size:11px; color:var(--text-secondary); margin-left:8px;"></span>
 </div>
 
 <!-- ===================== Overview Tab ===================== -->
@@ -386,12 +442,18 @@
         </div>
     </div>
 
-    <!-- S-Curve Chart Placeholder -->
+    <!-- S-Curve Chart -->
     <div class="card" style="padding:16px; margin-top:16px;">
-        <div class="card-label">Earned Value S-Curve</div>
-        <div id="evm-scurve-chart" data-contract-id="{{ contract.id }}" style="min-height:300px; display:flex; align-items:center; justify-content:center; color:var(--text-secondary);">
-            S-curve chart will render here
+        <div class="card-label" style="display:flex; align-items:center; justify-content:space-between;">
+            Earned Value S-Curve
+            <span style="font-size:11px; color:var(--text-secondary);">
+                <span style="color:#4a90d9; font-weight:700;">&#9644;</span> PV &nbsp;
+                <span style="color:#28a745; font-weight:700;">&#9644;</span> EV &nbsp;
+                <span style="color:#fd7e14; font-weight:700;">&#9644;</span> AC
+            </span>
         </div>
+        <div id="evm-scurve-loading" style="min-height:260px; display:flex; align-items:center; justify-content:center; color:var(--text-secondary); font-size:13px;">Loading S-curve…</div>
+        <svg id="evm-scurve-svg" style="display:none; width:100%; overflow:visible;" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
 
     <!-- Monte Carlo Button -->
@@ -837,8 +899,11 @@ function switchTab(tabName) {
     document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
     var panel = document.getElementById('tab-' + tabName);
     if (panel) { panel.style.display = 'block'; panel.classList.add('active'); }
-    event.target.classList.add('active');
+    // Mark the closest tab-btn as active (works even when a child span is the event target)
+    try { var btn = (event && event.target) ? event.target.closest('.tab-btn') : null; if (btn) btn.classList.add('active'); } catch(e) {}
     if (tabName === 'schedule') { renderImsGantt(); }
+    if (tabName === 'evm') { window.setTimeout(function(){ loadEvmScurve('{{ contract.id }}'); }, 150); }
+    hideTabHelp();
 }
 
 function renderImsGantt() {
@@ -971,6 +1036,206 @@ function runMonteCarlo(contractId) {
 }
 
 // ---------------------------------------------------------------------------
+// EVM S-Curve Renderer (SVG, no external deps)
+// ---------------------------------------------------------------------------
+var _scurveLoaded = false;
+function loadEvmScurve(contractId) {
+    if (_scurveLoaded) return;
+    // Ensure the EVM panel is visible before attempting to render
+    var evmPanel = document.getElementById('tab-evm');
+    if (evmPanel && evmPanel.style.display === 'none') { return; }
+    fetch('/api/cpmp/contracts/' + contractId + '/evm/scurve')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        var pts = data.s_curve || data.data || [];
+        var loading = document.getElementById('evm-scurve-loading');
+        var svg = document.getElementById('evm-scurve-svg');
+        if (!pts.length || !svg) { if(loading) loading.textContent = 'No EVM data available.'; return; }
+        _scurveLoaded = true;
+        if (loading) loading.style.display = 'none';
+        svg.style.display = 'block';
+        renderScurveSvg(svg, pts);
+    })
+    .catch(function() {
+        var l = document.getElementById('evm-scurve-loading');
+        if (l) l.textContent = 'Could not load S-curve data.';
+    });
+}
+
+function renderScurveSvg(svg, pts) {
+    var W = 700, H = 260, PAD_L = 72, PAD_R = 16, PAD_T = 16, PAD_B = 36;
+    var cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B;
+    var pvs = pts.map(function(p){ return p.pv_cumulative || 0; });
+    var evs = pts.map(function(p){ return p.ev_cumulative || 0; });
+    var acs = pts.map(function(p){ return p.ac_cumulative || 0; });
+    var maxV = Math.max.apply(null, pvs.concat(evs).concat(acs)) * 1.05 || 1;
+    var labels = pts.map(function(p){ return (p.period_date || '').slice(0,7); });
+    var n = pts.length;
+    function xOf(i) { return PAD_L + (i / (n-1)) * cW; }
+    function yOf(v) { return PAD_T + cH - (v / maxV) * cH; }
+    function polyline(vals, color, dash) {
+        var d = vals.map(function(v,i){ return xOf(i) + ',' + yOf(v); }).join(' ');
+        return '<polyline points="' + d + '" fill="none" stroke="' + color + '" stroke-width="2"' + (dash ? ' stroke-dasharray="6,3"' : '') + ' stroke-linejoin="round" stroke-linecap="round"/>';
+    }
+    function fmtDollar(v) {
+        if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+        if (v >= 1e3) return '$' + (v/1e3).toFixed(0) + 'K';
+        return '$' + v;
+    }
+    // Set dimensions on the outer SVG element directly
+    svg.setAttribute('width', W);
+    svg.setAttribute('height', H);
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    var p = [];
+    // Grid
+    for (var gi = 0; gi <= 4; gi++) {
+        var gy = PAD_T + (gi / 4) * cH;
+        var gv = maxV * (1 - gi/4);
+        p.push('<line x1="' + PAD_L + '" y1="' + gy + '" x2="' + (W-PAD_R) + '" y2="' + gy + '" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>');
+        p.push('<text x="' + (PAD_L-6) + '" y="' + (gy+4) + '" fill="#606080" font-size="10" text-anchor="end">' + fmtDollar(gv) + '</text>');
+    }
+    // Axes
+    p.push('<line x1="' + PAD_L + '" y1="' + PAD_T + '" x2="' + PAD_L + '" y2="' + (PAD_T+cH) + '" stroke="#3a3a5a" stroke-width="1"/>');
+    p.push('<line x1="' + PAD_L + '" y1="' + (PAD_T+cH) + '" x2="' + (W-PAD_R) + '" y2="' + (PAD_T+cH) + '" stroke="#3a3a5a" stroke-width="1"/>');
+    // X-axis labels
+    var step = Math.ceil(n / 6);
+    for (var xi = 0; xi < n; xi += step) {
+        var xl = xOf(xi);
+        p.push('<text x="' + xl + '" y="' + (H-6) + '" fill="#606080" font-size="9" text-anchor="middle">' + labels[xi] + '</text>');
+    }
+    // Series
+    p.push(polyline(pvs, '#4a90d9', true));
+    p.push(polyline(evs, '#28a745', false));
+    p.push(polyline(acs, '#fd7e14', false));
+    // Dots for last point
+    var lastIdx = n - 1;
+    [[pvs,'#4a90d9'],[evs,'#28a745'],[acs,'#fd7e14']].forEach(function(pair){
+        p.push('<circle cx="' + xOf(lastIdx) + '" cy="' + yOf(pair[0][lastIdx]) + '" r="4" fill="' + pair[1] + '"/>');
+    });
+    svg.innerHTML = p.join('');
+}
+
+// ---------------------------------------------------------------------------
+// Tab Help Panel
+// ---------------------------------------------------------------------------
+var _TAB_HELP = {
+    overview: {title:'Overview', html:'<h4>Contract Header</h4>Shows the master contract record: agency, type (CPFF/FFP/T&M), COR contact, POP dates, and total vs. funded value.<h4>Funding Status</h4>Bar shows <b>funded ÷ total value</b>. Green ≥75%, Yellow ≥50%, Red &lt;50%.<h4>Contract Status Timeline</h4>Lifecycle: Awarded → Active → Option Pending → Closeout → Closed. Current stage is highlighted.<h4>Summary Counts</h4>CLINs, WBS elements, deliverables, and subcontractors seeded for this contract.'},
+    clins: {title:'CLINs — Contract Line Item Numbers', html:'<h4>What is a CLIN?</h4>CLINs are the line items that define what the government is buying. Each has a type and funding status.<h4>Types</h4><table><tr><th>Type</th><th>Meaning</th></tr><tr><td>labor</td><td>Labor hours/rates</td></tr><tr><td>odc</td><td>Other Direct Costs (travel, materials)</td></tr><tr><td>subcontract</td><td>Pass-through to subs</td></tr><tr><td>fixed_price</td><td>Firm Fixed Price deliverable</td></tr></table><h4>Funded vs. Total Value</h4>Total = ceiling authorized. Funded = obligated (government has committed money). Difference = unobligated ceiling.'},
+    wbs: {title:'WBS — Work Breakdown Structure', html:'<h4>What is the WBS?</h4>The hierarchical decomposition of the contract scope into measurable work packages. Level 1 = contract total; Level 2 = major areas.<h4>EVM Fields</h4><div class="formula">BAC = Budget at Completion (planned total cost)</div><div class="formula">PV Cumulative = Planned Value to date</div><div class="formula">EV Cumulative = Earned Value (% complete × BAC)</div><div class="formula">AC Cumulative = Actual Cost incurred</div><h4>Percent Complete</h4>EV ÷ BAC × 100. Drives the S-curve and IPMDAR reporting.'},
+    deliverables: {title:'Deliverables — CDRLs', html:'<h4>What is a CDRL?</h4>Contract Data Requirements List item — a formal deliverable with a Data Item Description (DID) number.<h4>Status Pipeline</h4><table><tr><th>Status</th><th>Meaning</th></tr><tr><td>not_started</td><td>Not yet begun</td></tr><tr><td>in_progress</td><td>Being prepared</td></tr><tr><td>submitted</td><td>Sent to government</td></tr><tr><td>government_review</td><td>Under government review</td></tr><tr><td>accepted</td><td>Formally accepted ✓</td></tr><tr><td>rejected</td><td>Returned for revision</td></tr></table><h4>Days Overdue</h4>Auto-computed from due_date. &gt;0 days triggers a negative event flag and CPARS penalty risk.<h4>DID Numbers</h4>Data Item Description numbers reference MIL-STD-963 format specifications.'},
+    evm: {title:'EVM — Earned Value Management (ANSI/EIA-748)', html:'<h4>Core Formulas</h4><div class="formula">CPI = EV ÷ AC (Cost Performance Index)</div><div class="formula">SPI = EV ÷ PV (Schedule Performance Index)</div><div class="formula">EAC = BAC ÷ CPI (Estimate at Completion)</div><div class="formula">ETC = EAC − AC (Estimate to Complete)</div><div class="formula">VAC = BAC − EAC (Variance at Completion)</div><div class="formula">TCPI = (BAC−EV) ÷ (BAC−AC) (To-Complete Performance Index)</div><h4>Color Thresholds</h4><table><tr><th>Color</th><th>CPI / SPI</th></tr><tr><td>🟢 Green</td><td>≥ 0.95</td></tr><tr><td>🟡 Yellow</td><td>≥ 0.85</td></tr><tr><td>🔴 Red</td><td>&lt; 0.85</td></tr></table><h4>TCPI Interpretation</h4>TCPI &gt; 1.10 = very unlikely to recover. TCPI 1.00–1.10 = challenging but achievable. TCPI &lt; 1.00 = on track to beat EAC.<h4>S-Curve</h4>Time-series of cumulative PV (planned), EV (earned), AC (actual). EV below PV = schedule slip; AC above EV = cost overrun.'},
+    schedule: {title:'Schedule — Integrated Master Schedule (IMS)', html:'<h4>Milestone Types</h4>Key program events: reviews (PDR, CDR, TRR), deliveries (software builds), decisions (option exercise).<h4>Date Columns</h4><table><tr><th>Column</th><th>Meaning</th></tr><tr><td>Baseline</td><td>Original planned date</td></tr><tr><td>Forecast</td><td>Current expected date (may slip)</td></tr><tr><td>Actual</td><td>Date it happened (complete only)</td></tr></table><h4>Dependencies</h4>Finish-to-Start (FS): predecessor must complete before successor can start. Gantt shows connecting arrows.<h4>Status Colors</h4>🟢 Complete · 🔵 Pending · 🟡 In Progress · 🔴 Missed · ⚫ On Hold'},
+    subcontractors: {title:'Subcontractors — FAR 52.219-9', html:'<h4>Small Business Program</h4>Prime contractors with contracts &gt;$750K must meet small business subcontracting goals (FAR 52.219-9).<h4>Business Size Categories</h4><table><tr><th>Code</th><th>Meaning</th></tr><tr><td>small</td><td>Small Business</td></tr><tr><td>sdb</td><td>Small Disadvantaged Business</td></tr><tr><td>wosb</td><td>Woman-Owned Small Business</td></tr><tr><td>hubzone</td><td>HUBZone Small Business</td></tr><tr><td>sdvosb</td><td>Service-Disabled Veteran-Owned SB</td></tr><tr><td>8a</td><td>SBA 8(a) Program</td></tr></table><h4>Flow-Down</h4>Prime must flow DoD contract requirements (DFARS clauses, cybersecurity, export control) to subs. Incomplete = NDAA violation risk.<h4>CMMC Levels</h4>Cybersecurity Maturity Model Certification: Level 1 (basic) → Level 3 (expert). Subs handling CUI need ≥ Level 2.'},
+    cpars: {title:'CPARS — Contractor Performance Assessment', html:'<h4>What is CPARS?</h4>Contractor Performance Assessment Reporting System — the DoD\'s official past performance rating system, entered into FAPIIS.<h4>5-Factor Rating (each 1–5)</h4><table><tr><th>Factor</th><th>Weight</th></tr><tr><td>Quality</td><td>30%</td></tr><tr><td>Schedule</td><td>25%</td></tr><tr><td>Cost Control</td><td>20%</td></tr><tr><td>Management</td><td>15%</td></tr><tr><td>Small Business</td><td>10%</td></tr></table><h4>Rating Thresholds</h4><table><tr><th>Rating</th><th>Score Range</th></tr><tr><td>Exceptional</td><td>≥ 4.5</td></tr><tr><td>Very Good</td><td>≥ 3.5</td></tr><tr><td>Satisfactory</td><td>≥ 2.5</td></tr><tr><td>Marginal</td><td>≥ 1.5</td></tr><tr><td>Unsatisfactory</td><td>&lt; 1.5</td></tr></table><h4>NDAA Penalties</h4>Negative events (overdue deliverables, cost overruns, cyber breaches) automatically reduce the predicted CPARS score per penalty table.'},
+    mods: {title:'Contract Modifications (MODs)', html:'<h4>MOD Types</h4><table><tr><th>Type</th><th>Purpose</th></tr><tr><td>Admin</td><td>Administrative changes (COR change, address update)</td></tr><tr><td>Funding</td><td>Obligation of additional funds (option exercise, increment)</td></tr><tr><td>Scope</td><td>Change in work requirements (adds/removes tasks)</td></tr><tr><td>POP</td><td>Period of Performance extension</td></tr></table><h4>Workflow States</h4>Requested → In Review → Approved → Executed. Rejected is terminal.<h4>Value Delta</h4>Positive = government increases contract value. Negative = deobligation. Zero = admin change with no cost impact.'},
+    risks: {title:'Risk Register — 5×5 Probability × Impact Matrix', html:'<h4>Risk Scoring</h4><div class="formula">Exposure = Probability (1–5) × Impact (1–5)</div><h4>Severity Bands</h4><table><tr><th>Exposure</th><th>Level</th><th>Color</th></tr><tr><td>1–5</td><td>Low</td><td>🟢 Green</td></tr><tr><td>6–10</td><td>Medium</td><td>🟡 Yellow</td></tr><tr><td>11–15</td><td>High</td><td>🟠 Orange</td></tr><tr><td>16–25</td><td>Critical</td><td>🔴 Red</td></tr></table><h4>Categories</h4>Cost · Schedule · Technical · Cyber · Supply Chain · Compliance · Staffing<h4>Status Flow</h4>Open → Mitigating → Accepted/Closed/Transferred<h4>Mitigation</h4>Planned response actions. When status = Mitigating, corrective action discount applies to NDAA penalty scoring.'}
+};
+
+function showTabHelp(tabName) {
+    var panel = document.getElementById('cpmp-help-panel');
+    var title = document.getElementById('cpmp-help-panel-title');
+    var body = document.getElementById('cpmp-help-panel-body');
+    var info = _TAB_HELP[tabName];
+    if (!info || !panel) return;
+    title.textContent = 'ⓘ ' + info.title;
+    body.innerHTML = info.html;
+    panel.classList.add('open');
+}
+function hideTabHelp() {
+    var panel = document.getElementById('cpmp-help-panel');
+    if (panel) panel.classList.remove('open');
+}
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') { hideTabHelp(); closeAiModal(); } });
+
+// ---------------------------------------------------------------------------
+// AI PMO Advisor
+// ---------------------------------------------------------------------------
+function _setAiStatus(msg, color) {
+    var el = document.getElementById('ai-advisor-status');
+    if (el) { el.textContent = msg; el.style.color = color || 'var(--text-secondary)'; }
+}
+function showAiModal(title, bodyHtml) {
+    document.getElementById('ai-modal-title').textContent = title;
+    document.getElementById('ai-modal-body').innerHTML = bodyHtml;
+    document.getElementById('ai-result-modal').classList.add('open');
+}
+function closeAiModal() {
+    document.getElementById('ai-result-modal').classList.remove('open');
+}
+
+function loadAiRecommendations(contractId) {
+    _setAiStatus('Generating recommendations…', '#4a90d9');
+    fetch('/api/cpmp/contracts/' + contractId + '/ai-advisor/recommendations')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        _setAiStatus('', '');
+        var recs = data.recommendations || [];
+        if (!recs.length) { showAiModal('AI Recommendations', '<p style="color:var(--text-secondary)">No recommendations generated.</p>'); return; }
+        var html = '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">' + (data.overall_health || '') + '</p>';
+        recs.forEach(function(r, i) {
+            var urgency = (r.urgency || '').toLowerCase();
+            html += '<div class="ai-rec-item ' + (urgency === 'urgent' ? 'urgent' : urgency === 'high' ? 'high' : '') + '">';
+            html += '<div class="rec-area">' + (i+1) + '. ' + (r.area || r.category || '') + '</div>';
+            html += '<div class="rec-action">' + (r.action || r.finding || '') + '</div>';
+            if (r.expected_outcome || r.impact) html += '<div class="rec-impact">Expected: ' + (r.expected_outcome || r.impact) + '</div>';
+            html += '</div>';
+        });
+        showAiModal('✦ AI PMO Recommendations', html);
+    })
+    .catch(function(e) { _setAiStatus('Error: ' + e, '#dc3545'); });
+}
+
+function loadAwardFee(contractId) {
+    _setAiStatus('Predicting award fee…', '#4a90d9');
+    fetch('/api/cpmp/contracts/' + contractId + '/ai-advisor/award-fee')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        _setAiStatus('', '');
+        var color = data.predicted_rating === 'Exceptional' ? '#28a745' : data.predicted_rating === 'Very Good' ? '#4a90d9' : '#ffc107';
+        var html = '<div style="margin-bottom:16px;">';
+        html += '<div style="font-size:24px;font-weight:700;color:' + color + ';">' + (data.predicted_rating || '---') + '</div>';
+        html += '<div style="font-size:13px;color:var(--text-secondary);">Predicted Overall Rating</div>';
+        if (data.predicted_fee_pct !== undefined) html += '<div style="margin-top:8px;font-size:18px;font-weight:600;color:' + color + ';">' + data.predicted_fee_pct + '% Award Fee</div>';
+        html += '</div>';
+        if (data.narrative) html += '<p style="font-size:13px;line-height:1.6;border-left:3px solid ' + color + ';padding-left:12px;">' + data.narrative + '</p>';
+        if (data.strengths && data.strengths.length) {
+            html += '<h4 style="color:#28a745;font-size:13px;margin-top:12px;">Strengths</h4><ul style="font-size:12px;padding-left:18px;">';
+            data.strengths.forEach(function(s){ html += '<li>' + s + '</li>'; });
+            html += '</ul>';
+        }
+        if (data.risk_factors && data.risk_factors.length) {
+            html += '<h4 style="color:#fd7e14;font-size:13px;margin-top:8px;">Risk Factors</h4><ul style="font-size:12px;padding-left:18px;">';
+            data.risk_factors.forEach(function(r){ html += '<li>' + r + '</li>'; });
+            html += '</ul>';
+        }
+        showAiModal('🏆 Predictive Award Fee', html);
+    })
+    .catch(function(e) { _setAiStatus('Error: ' + e, '#dc3545'); });
+}
+
+function runAutoDetect(contractId) {
+    _setAiStatus('Scanning for issues…', '#ffc107');
+    fetch('/api/cpmp/contracts/' + contractId + '/ai-advisor/auto-detect', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        _setAiStatus('', '');
+        var issues = data.issues || [];
+        if (!issues.length) { showAiModal('⚡ Issue Scan', '<p style="color:#28a745;">✓ No new issues detected.</p>'); return; }
+        var html = '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">' + issues.length + ' issue(s) detected:</p>';
+        issues.forEach(function(iss) {
+            var sColor = iss.severity === 'critical' ? '#dc3545' : iss.severity === 'high' ? '#fd7e14' : '#ffc107';
+            html += '<div style="padding:8px 12px;margin-bottom:6px;border-left:3px solid ' + sColor + ';background:rgba(255,255,255,0.03);border-radius:4px;">';
+            html += '<div style="font-size:11px;color:' + sColor + ';font-weight:600;text-transform:uppercase;">' + (iss.severity || '') + ' · ' + (iss.type || '') + '</div>';
+            html += '<div style="font-size:13px;margin-top:3px;">' + (iss.description || '') + '</div>';
+            if (iss.suggested_action) html += '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;">→ ' + iss.suggested_action + '</div>';
+            html += '</div>';
+        });
+        showAiModal('⚡ Auto-Detect Results', html);
+    })
+    .catch(function(e) { _setAiStatus('Scan error: ' + e, '#dc3545'); });
+}
+
+// ---------------------------------------------------------------------------
 // Contract Modifications
 // ---------------------------------------------------------------------------
 var _modsLoaded = false;
@@ -1024,6 +1289,58 @@ function loadMods(contractId) {
         .catch(function(err) {
             document.getElementById('mods-loading').textContent = 'Error loading modifications: ' + err;
         });
+}
+
+// ── Tab Help Panel ──────────────────────────────────────────────────
+var _HELP_CONTENT = {
+    overview: { title: 'Overview', sub: 'Contract Snapshot', html: '<h4>Funding Status Bar</h4><p>Shows <strong>Funded Value ÷ Total Contract Value</strong>. A fully funded contract reaches 100%. Watch for gaps — unfunded options reduce available burn rate.</p><h4>Status Timeline</h4><p>Lifecycle: <strong>Awarded → Active → Closeout → Closed</strong>. Options Pending sits between Active and Closeout until exercised or declined.</p><h4>Key Fields</h4><ul><li><strong>POP</strong> — Period of Performance</li><li><strong>COR</strong> — Contracting Officer\'s Representative (day-to-day oversight)</li><li><strong>CPFF</strong> — Cost Plus Fixed Fee (reimburse costs + fixed profit)</li></ul>' },
+    clins: { title: 'CLINs', sub: 'Contract Line Item Numbers', html: '<h4>What is a CLIN?</h4><p>CLINs are the billable units of a contract. Each defines a deliverable category with its own funding, period, and type.</p><h4>CLIN Types</h4><ul><li><strong>Labor</strong> — Personnel hours at negotiated rates</li><li><strong>ODC</strong> — Other Direct Costs (travel, equipment, materials)</li><li><strong>Subcontract</strong> — Pass-through to subcontractors</li><li><strong>Fixed Price</strong> — Firm deliverable price regardless of cost</li></ul><h4>Funded vs Total</h4><p>Total Value = ceiling authorization. Funded = actually obligated dollars. You can only bill against funded amounts.</p>' },
+    wbs: { title: 'WBS', sub: 'Work Breakdown Structure', html: '<h4>Purpose</h4><p>Hierarchical decomposition of all contract work. Every dollar of budget and every EVM measurement rolls up through the WBS tree.</p><h4>Key Metrics</h4><ul><li><strong>BAC</strong> — Budget at Completion (total authorized budget)</li><li><strong>PV Cumulative</strong> — Planned Value to date (budgeted work scheduled)</li><li><strong>EV Cumulative</strong> — Earned Value to date (budgeted value of work performed)</li><li><strong>AC Cumulative</strong> — Actual Cost to date (what was actually spent)</li></ul><div class="formula">% Complete = EV ÷ BAC × 100</div>' },
+    deliverables: { title: 'Deliverables (CDRLs)', sub: 'Contract Data Requirements List', html: '<h4>CDRL Lifecycle</h4><ul><li>Not Started → In Progress → Draft Complete</li><li>→ Internal Review → Submitted</li><li>→ Government Review → <strong>Accepted ✓</strong></li><li>Rejected → Resubmitted loop</li></ul><h4>DID Number</h4><p>Data Item Description — DoD standard format spec (e.g., DI-MGMT-81650 = Software Development Plan).</p><h4>Overdue Detection</h4><p>Overdue when due_date has passed and status ≠ Accepted. Triggers CPARS quality penalties automatically.</p>' },
+    evm: { title: 'EVM', sub: 'Earned Value Management — ANSI/EIA-748', html: '<h4>Core Formulas</h4><div class="formula">CPI = EV ÷ AC</div><p>Cost Performance Index. &lt;1.0 = over budget.</p><div class="formula">SPI = EV ÷ PV</div><p>Schedule Performance Index. &lt;1.0 = behind schedule.</p><div class="formula">EAC = BAC ÷ CPI</div><p>Estimate at Completion — projected final cost.</p><div class="formula">TCPI = (BAC − EV) ÷ (BAC − AC)</div><p>To-Complete Performance Index. &gt;1.0 = future work must be more efficient.</p><h4>Health Thresholds</h4><table><tr><th>Color</th><th>CPI / SPI</th></tr><tr><td style="color:#28a745">● Green</td><td>≥ 0.95</td></tr><tr><td style="color:#ffc107">● Yellow</td><td>0.85 – 0.94</td></tr><tr><td style="color:#dc3545">● Red</td><td>&lt; 0.85</td></tr></table>' },
+    schedule: { title: 'Schedule', sub: 'Integrated Master Schedule (IMS)', html: '<h4>Milestone Dates</h4><ul><li><strong>Baseline</strong> — Original committed date</li><li><strong>Forecast</strong> — Current expected date</li><li><strong>Actual</strong> — Date milestone was completed</li></ul><h4>Slip Detection</h4><p>Slip = Forecast − Baseline (positive = late). Status turns "in_progress" when forecast exceeds baseline and actual is not set.</p><h4>Dependencies</h4><p>Finish-to-Start (FS): predecessor must complete before successor starts. Lag days add buffer between linked milestones.</p>' },
+    subcontractors: { title: 'Subcontractors', sub: 'FAR 52.219-9 Small Business', html: '<h4>Business Size Categories</h4><ul><li><strong>Small</strong> — Below SBA size standard for NAICS code</li><li><strong>SDVOSB</strong> — Service-Disabled Veteran-Owned</li><li><strong>WOSB</strong> — Women-Owned Small Business</li><li><strong>HUBZone</strong> — Historically Underutilized Business Zone</li><li><strong>8(a)</strong> — SBA 8(a) Business Development participant</li></ul><h4>Flow-Down</h4><p>Prime must pass applicable FAR/DFARS clauses to subs. Incomplete flow-down is a compliance finding and CPARS penalty trigger.</p><h4>CMMC Level</h4><p>Cybersecurity Maturity Model Certification. Level 2 = 110 NIST 800-171 controls. Required for CUI handling.</p>' },
+    cpars: { title: 'CPARS', sub: 'Contractor Performance Assessment', html: '<h4>5-Factor Scoring (1–5 scale)</h4><ul><li><strong>Quality</strong> — Technical output, defect rate, acceptance ratio</li><li><strong>Schedule</strong> — On-time delivery vs. baseline dates</li><li><strong>Cost</strong> — CPI performance, budget discipline</li><li><strong>Management</strong> — Problem resolution, proactive risk management</li><li><strong>Small Business</strong> — ISR/SSR goals met, SB subcontracting</li></ul><h4>Rating Thresholds</h4><table><tr><th>Rating</th><th>Score</th></tr><tr><td style="color:#28a745">Exceptional</td><td>≥ 4.5</td></tr><tr><td style="color:#4a90d9">Very Good</td><td>3.5–4.4</td></tr><tr><td style="color:#ffc107">Satisfactory</td><td>2.5–3.4</td></tr><tr><td style="color:#fd7e14">Marginal</td><td>1.5–2.4</td></tr><tr><td style="color:#dc3545">Unsatisfactory</td><td>&lt;1.5</td></tr></table><h4>NDAA Penalties</h4><p>Late deliveries, cost overruns, quality rejections automatically apply score penalties per NDAA 2019 § 820.</p>' },
+    mods: { title: 'Modifications', sub: 'Contract MOD Lifecycle', html: '<h4>MOD Types</h4><ul><li><strong>Admin</strong> — Administrative changes (COR swap, address) — no $ impact</li><li><strong>Funding</strong> — Obligate additional dollars to CLINs</li><li><strong>Scope</strong> — Add, remove, or change work requirements</li><li><strong>POP</strong> — Extend or shorten Period of Performance</li></ul><h4>Workflow</h4><p>Requested → In Review → Approved → Executed. MODs become binding only when Executed. Rejected MODs are preserved for audit trail.</p><h4>Value Delta</h4><p>Positive = contract value increased. Negative = deobligation (funding returned to government).</p>' },
+    risks: { title: 'Risks', sub: 'Program Risk Register', html: '<h4>5×5 Risk Matrix</h4><div class="formula">Exposure = Probability × Impact</div><p>Both axes 1–5. Exposure drives color banding:</p><table><tr><th>Band</th><th>Exposure</th></tr><tr><td style="color:#28a745">● Low</td><td>1–5</td></tr><tr><td style="color:#ffc107">● Medium</td><td>6–10</td></tr><tr><td style="color:#fd7e14">● High</td><td>11–15</td></tr><tr><td style="color:#dc3545">● Critical</td><td>16–25</td></tr></table><h4>Risk Status Flow</h4><ul><li><strong>Open</strong> — Identified, no active mitigation</li><li><strong>Mitigating</strong> — Action plan in progress</li><li><strong>Accepted</strong> — Residual risk acknowledged</li><li><strong>Transferred</strong> — Risk shifted to sub/insurer</li><li><strong>Closed</strong> — No longer active</li></ul>' }
+};
+
+function showTabHelp(tabName) {
+    var panel = document.getElementById('cpmp-help-panel');
+    var body = document.getElementById('cpmp-help-panel-body');
+    var title = document.getElementById('cpmp-help-panel-title');
+    var content = _HELP_CONTENT[tabName];
+    if (!panel || !content) return;
+    title.textContent = 'ⓘ ' + content.title;
+    body.innerHTML = '<p style="font-size:11px;color:#8ab4ff;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 12px;">' + content.sub + '</p>' + content.html;
+    panel.classList.add('open');
+}
+
+function hideTabHelp() {
+    var panel = document.getElementById('cpmp-help-panel');
+    if (panel) panel.classList.remove('open');
+}
+
+function generateCorrectiveAction(contractId, issueType, context) {
+    _setAiStatus('Generating corrective action…', '#4a90d9');
+    fetch('/api/cpmp/contracts/' + contractId + '/ai-advisor/corrective-action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ issue_type: issueType, context: context || {} })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        _setAiStatus('', '');
+        var urgColor = data.priority === 'critical' ? '#dc3545' : data.priority === 'high' ? '#fd7e14' : '#ffc107';
+        var html = '<div style="margin-bottom:12px;display:flex;gap:16px;">' +
+            '<div style="text-align:center;padding:8px 16px;border:1px solid var(--border-color);border-radius:6px;"><div style="font-size:11px;color:var(--text-secondary)">PRIORITY</div><div style="font-size:14px;font-weight:700;color:' + urgColor + ';">' + (data.priority || 'N/A').toUpperCase() + '</div></div>' +
+            '<div style="text-align:center;padding:8px 16px;border:1px solid var(--border-color);border-radius:6px;"><div style="font-size:11px;color:var(--text-secondary)">TIMELINE</div><div style="font-size:14px;font-weight:700;color:var(--text-primary);">' + (data.timeline_days ? data.timeline_days + 'd' : 'TBD') + '</div></div>' +
+            '<div style="text-align:center;padding:8px 16px;border:1px solid var(--border-color);border-radius:6px;"><div style="font-size:11px;color:var(--text-secondary)">OWNER</div><div style="font-size:14px;font-weight:700;color:var(--text-primary);">' + (data.owner_role || 'PM') + '</div></div>' +
+            '</div>';
+        if (data.action_plan) html += '<div style="font-size:13px;line-height:1.7;white-space:pre-wrap;">' + data.action_plan + '</div>';
+        showAiModal('Corrective Action Plan', html);
+    })
+    .catch(function() { _setAiStatus('Error generating corrective action.', '#dc3545'); });
 }
 
 function openModModal() {
