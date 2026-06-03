@@ -24,6 +24,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Approximate chars per token (conservative for English)
 CHARS_PER_TOKEN = 4
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/rag_config.yaml
+# under rag.chunking.  Change config, not code.
+# ---------------------------------------------------------------------------
+_DEFAULT_SHORT_THRESHOLD  = 500    # tokens — content below this stored as single chunk
+_DEFAULT_CHUNK_SIZE       = 2000   # tokens — target chunk size for sliding window
+_DEFAULT_OVERLAP_PCT      = 0.10   # fraction of chunk_size used as overlap
+_BOUNDARY_SEARCH_RADIUS   = 200    # chars to search around target position for sentence boundary
+_BOUNDARY_WHITESPACE_SCAN = 100    # chars to scan forward when no sentence boundary found
+
 
 def _load_chunk_config() -> dict:
     """Load chunking config from args/rag_config.yaml."""
@@ -51,8 +61,8 @@ def _find_sentence_boundary(text: str, target_pos: int) -> int:
     Looks for sentence-ending punctuation (.!?) followed by whitespace.
     Searches within +/- 200 chars of target position.
     """
-    search_start = max(0, target_pos - 200)
-    search_end = min(len(text), target_pos + 200)
+    search_start = max(0, target_pos - _BOUNDARY_SEARCH_RADIUS)
+    search_end = min(len(text), target_pos + _BOUNDARY_SEARCH_RADIUS)
     window = text[search_start:search_end]
 
     # Find all sentence boundaries in window
@@ -63,7 +73,7 @@ def _find_sentence_boundary(text: str, target_pos: int) -> int:
 
     if not boundaries:
         # Fall back to nearest whitespace
-        for i in range(target_pos, min(target_pos + 100, len(text))):
+        for i in range(target_pos, min(target_pos + _BOUNDARY_WHITESPACE_SCAN, len(text))):
             if text[i : i + 1].isspace():
                 return i + 1
         return target_pos
@@ -103,9 +113,8 @@ def chunk_content(
         return []
 
     cfg = chunk_config or _load_chunk_config()
-    cfg.get("short_threshold_tokens", 500)
-    chunk_size = cfg.get("chunk_size_tokens", 2000)
-    overlap_pct = cfg.get("overlap_pct", 0.10)
+    chunk_size  = cfg.get("chunk_size_tokens", _DEFAULT_CHUNK_SIZE)
+    overlap_pct = cfg.get("overlap_pct", _DEFAULT_OVERLAP_PCT)
 
     content = content.strip()
     est_tokens = _estimate_tokens(content)

@@ -35,6 +35,95 @@ logger = get_logger("icdev.rag.crag_evaluator")
 # Constants (CRAG benchmark — arxiv 2406.04744)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/rag_config.yaml
+# under crag_evaluator.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_ENTITY_HEAD_THRESHOLD      = 100    # corpus mention count → "head" popularity tier
+_ENTITY_TORSO_THRESHOLD     = 10     # corpus mention count → "torso" tier (else "tail")
+_ACCEPTABLE_WORD_OVERLAP    = 0.80   # minimum Jaccard overlap for "acceptable" match
+_ACCEPTABLE_SHORT_GT_WORDS  = 10     # max ground-truth words for reverse containment check
+_LLM_CONTEXT_CHARS          = 500    # context chars forwarded to LLM question classifier
+_LLM_MAX_TOKENS             = 64     # max tokens for question-type classification
+_LLM_TEMPERATURE            = 0.0    # temperature for question-type classification
+_DEFAULT_FALLBACK_CONFIDENCE = 0.3   # confidence assigned when no heuristic matches
+_GATE_THRESHOLD             = 0.3    # --gate CLI pass/fail threshold for aggregate CRAG score
+
+# Heuristic confidence levels
+_HEURISTIC_CONFIDENCE_HIGH   = 0.85  # comparison / aggregation / set
+_HEURISTIC_CONFIDENCE_MID    = 0.75  # multi_hop / post_processing / simple_condition
+_HEURISTIC_CONFIDENCE_LOW    = 0.70  # false_premise
+
+
+def _compute_crag_anomaly_thresholds(anomaly_cfg: "dict | None" = None) -> dict:
+    """Compute adaptive CRAG scoring thresholds from historical evaluation data.
+
+    Reads rag_evaluation_results to calibrate:
+    - entity_head_threshold: based on actual corpus mention distribution
+    - acceptable_overlap: tighten if many acceptable answers later revised to incorrect
+
+    Falls back to module-level defaults when fewer than min_samples rows exist.
+    """
+    cfg = anomaly_cfg or {}
+    defaults = {
+        "entity_head_threshold":    _ENTITY_HEAD_THRESHOLD,
+        "entity_torso_threshold":   _ENTITY_TORSO_THRESHOLD,
+        "acceptable_word_overlap":  _ACCEPTABLE_WORD_OVERLAP,
+        "computed": False,
+    }
+
+    if not cfg.get("enabled", True):
+        return {**defaults,
+                "entity_head_threshold":   cfg.get("fallback_entity_head", _ENTITY_HEAD_THRESHOLD),
+                "entity_torso_threshold":  cfg.get("fallback_entity_torso", _ENTITY_TORSO_THRESHOLD),
+                "acceptable_word_overlap": cfg.get("fallback_acceptable_overlap", _ACCEPTABLE_WORD_OVERLAP)}
+
+    min_samples = cfg.get("min_samples", 50)
+    bounds      = cfg.get("adaptive_bounds", {})
+    overlap_floor = float(bounds.get("overlap_floor", 0.60))
+    overlap_ceil  = float(bounds.get("overlap_ceil",  0.95))
+
+    conn = None
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        # How often do "acceptable" labels appear vs "incorrect"?
+        # If acceptable_rate is very low, tighten the overlap threshold.
+        row = conn.execute(
+            "SELECT "
+            "SUM(CASE WHEN crag_score = 0.5 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS acceptable_rate, "
+            "SUM(CASE WHEN crag_score < 0.0 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS incorrect_rate, "
+            "COUNT(*) AS n "
+            "FROM rag_evaluation_results WHERE crag_score IS NOT NULL"
+        ).fetchone()
+        if row:
+            n = row["n"] if isinstance(row, dict) else row[2]
+            if n and n >= min_samples:
+                acceptable_rate = float(row["acceptable_rate"] if isinstance(row, dict) else row[0]) or 0.0
+                incorrect_rate  = float(row["incorrect_rate"]  if isinstance(row, dict) else row[1]) or 0.0
+                # High incorrect rate → overlap threshold was too loose; tighten it
+                adjustment = (incorrect_rate - acceptable_rate) * 0.05
+                new_overlap = max(overlap_floor, min(overlap_ceil, _ACCEPTABLE_WORD_OVERLAP + adjustment))
+                return {
+                    "entity_head_threshold":   _ENTITY_HEAD_THRESHOLD,
+                    "entity_torso_threshold":  _ENTITY_TORSO_THRESHOLD,
+                    "acceptable_word_overlap": round(new_overlap, 3),
+                    "computed": True,
+                    "n_samples": n,
+                    "acceptable_rate": round(acceptable_rate, 3),
+                    "incorrect_rate":  round(incorrect_rate, 3),
+                }
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return defaults
+
+
 QUESTION_TYPES: List[str] = [
     "simple",
     "simple_condition",
@@ -305,7 +394,7 @@ class CRAGScorer:
         # --- Default fallback ---
         return {
             "question_type": "simple",
-            "confidence": 0.3,
+            "confidence": _DEFAULT_FALLBACK_CONFIDENCE,
             "method": "default",
         }
 
@@ -329,9 +418,9 @@ class CRAGScorer:
         """
         frequency = self._get_entity_frequency(entity, db_path)
 
-        if frequency >= 100:
+        if frequency >= _ENTITY_HEAD_THRESHOLD:
             tier = "head"
-        elif frequency >= 10:
+        elif frequency >= _ENTITY_TORSO_THRESHOLD:
             tier = "torso"
         else:
             tier = "tail"
@@ -381,9 +470,9 @@ class CRAGScorer:
         # Containment check (works well for short, factual answers)
         if norm_gt in norm_ans:
             return True
-        # Reverse containment only for short ground truths (< 10 words)
+        # Reverse containment only for short ground truths
         gt_words = norm_gt.split()
-        if len(gt_words) <= 10 and norm_ans in norm_gt:
+        if len(gt_words) <= _ACCEPTABLE_SHORT_GT_WORDS and norm_ans in norm_gt:
             return True
 
         # Word overlap (Jaccard-like, ≥ 80%)
@@ -394,7 +483,7 @@ class CRAGScorer:
         intersection = ans_words & gt_words_set
         union = ans_words | gt_words_set
         overlap = len(intersection) / len(union) if union else 0.0
-        return overlap >= 0.80
+        return overlap >= _ACCEPTABLE_WORD_OVERLAP
 
     # ------------------------------------------------------------------
     # Private helpers — question-type classification
@@ -404,21 +493,20 @@ class CRAGScorer:
         """Apply regex heuristics. Returns (question_type, confidence) or None."""
         # Order matters — check more specific types first
         if _COMPARISON_PATTERNS.search(query):
-            return ("comparison", 0.85)
+            return ("comparison", _HEURISTIC_CONFIDENCE_HIGH)
         if _AGGREGATION_PATTERNS.search(query):
-            return ("aggregation", 0.85)
+            return ("aggregation", _HEURISTIC_CONFIDENCE_HIGH)
         if _SET_PATTERNS.search(query):
-            return ("set", 0.85)
-        # Multi-hop: multiple question marks OR sequential connectors
+            return ("set", _HEURISTIC_CONFIDENCE_HIGH)
         multi_q = query.count("?") > 1
         if multi_q or _MULTI_HOP_PATTERNS.search(query):
-            return ("multi_hop", 0.75)
+            return ("multi_hop", _HEURISTIC_CONFIDENCE_MID)
         if _POST_PROCESSING_PATTERNS.search(query):
-            return ("post_processing", 0.75)
+            return ("post_processing", _HEURISTIC_CONFIDENCE_MID)
         if _CONDITION_PATTERNS.search(query):
-            return ("simple_condition", 0.75)
+            return ("simple_condition", _HEURISTIC_CONFIDENCE_MID)
         if _FALSE_PREMISE_PATTERNS.search(query):
-            return ("false_premise", 0.70)
+            return ("false_premise", _HEURISTIC_CONFIDENCE_LOW)
         # "simple" has no positive heuristic — fall through to LLM
         return None
 
@@ -429,7 +517,7 @@ class CRAGScorer:
             from tools.llm.provider import LLMRequest
 
             types_list = ", ".join(QUESTION_TYPES)
-            context_block = f"\nContext: {context[:500]}" if context else ""
+            context_block = f"\nContext: {context[:_LLM_CONTEXT_CHARS]}" if context else ""
             prompt = (
                 f"Classify the following question into exactly ONE of these types: {types_list}.\n"
                 f"Question: {query}{context_block}\n\n"
@@ -442,8 +530,8 @@ class CRAGScorer:
                     "You are a question-type classifier for the CRAG benchmark. "
                     "Output only valid JSON with 'question_type' and 'confidence' keys."
                 ),
-                max_tokens=64,
-                temperature=0.0,
+                max_tokens=_LLM_MAX_TOKENS,
+                temperature=_LLM_TEMPERATURE,
                 classification="CUI",
             )
             response = router.invoke("rag_evaluate", request)
@@ -1015,7 +1103,7 @@ def main() -> None:
                 )
 
         if args.gate:
-            threshold = 0.3
+            threshold = _GATE_THRESHOLD
             agg = summary.get("aggregate_crag_score", 0.0)
             if agg < threshold:
                 sys.stderr.write(f"GATE FAIL: aggregate CRAG score {agg:.4f} < {threshold}\n")
