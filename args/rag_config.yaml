@@ -223,3 +223,41 @@ query_classifier:
     llm_max_tokens: 200
     llm_confidence: 0.90
     batch_max_workers: 4
+
+# ── CRAG Evaluator Anomaly Detection ─────────────────────────────────────────
+crag_evaluator:
+  anomaly_detection:
+    enabled: true
+    min_samples: 50
+    fallback_entity_head: 100
+    fallback_entity_torso: 10
+    fallback_acceptable_overlap: 0.80
+    adaptive_bounds:
+      overlap_floor: 0.60
+      overlap_ceil: 0.95
+    # Classification constants
+    llm_context_chars: 500
+    llm_max_tokens: 64
+    llm_temperature: 0.0
+    heuristic_confidence_high: 0.85
+    heuristic_confidence_mid: 0.75
+    heuristic_confidence_low: 0.70
+    gate_threshold: 0.30
+
+# ── PDF Provider Constants ────────────────────────────────────────────────────
+pdf_provider:
+  max_pages: 200
+  max_file_size_mb: 25
+  anthropic_max_tokens: 4096
+  scanned_text_min_chars: 50
+  render_dpi: 150
+  vision_timeout: 60
+  availability_timeout: 3
+
+# ── Chunker Constants ─────────────────────────────────────────────────────────
+chunker:
+  default_short_threshold: 500
+  default_chunk_size: 2000
+  default_overlap_pct: 0.10
+  boundary_search_radius: 200
+  boundary_whitespace_scan: 100
