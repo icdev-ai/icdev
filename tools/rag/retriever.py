@@ -36,6 +36,17 @@ logger = get_logger("icdev.rag.retriever")
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/rag_config.yaml
+# under rag.retrieval.  Change config, not code.
+# ---------------------------------------------------------------------------
+_RRF_K_DEFAULT            = 60     # RRF paper default k (score denominator)
+_VECTOR_TOP_K_DEFAULT     = 50     # initial candidate pool from vector search
+_FINAL_TOP_K_DEFAULT      = 5      # final results returned to caller
+_BM25_WEIGHT_DEFAULT      = 0.30   # BM25 boost weight for weighted-sum fusion
+_MIN_SCORE_THRESHOLD      = 0.10   # minimum score to include in results
+_RESULT_PREVIEW_CHARS     = 120    # max chars in result preview/logging
+
 
 def _load_rag_config() -> dict:
     """Load RAG config."""
@@ -91,7 +102,7 @@ def _compute_bm25_scores(query: str, results: List[SearchResult]) -> List[float]
 def _rrf_fusion(
     query: str,
     results: List[SearchResult],
-    k: int = 60,
+    k: int = _RRF_K_DEFAULT,
 ) -> List[SearchResult]:
     """Reciprocal Rank Fusion of vector + BM25 rankings (D-RAG-19).
 
@@ -132,7 +143,7 @@ def _rrf_fusion(
 def _weighted_sum_fusion(
     query: str,
     results: List[SearchResult],
-    weight: float = 0.3,
+    weight: float = _BM25_WEIGHT_DEFAULT,
 ) -> List[SearchResult]:
     """Legacy weighted-sum BM25 boost (backward compat, pre-D-RAG-19).
 
@@ -268,20 +279,20 @@ class RAGRetriever:
             List of SearchResult sorted by final_score descending.
         """
         start_ms = int(time.time() * 1000)
-        vector_top_k = self._retrieval_cfg.get("vector_top_k", 50)
-        final_top_k = top_k or self._retrieval_cfg.get("final_top_k", 5)
+        vector_top_k = self._retrieval_cfg.get("vector_top_k", _VECTOR_TOP_K_DEFAULT)
+        final_top_k = top_k or self._retrieval_cfg.get("final_top_k", _FINAL_TOP_K_DEFAULT)
         fusion_method = self._retrieval_cfg.get("fusion_method", "rrf")
         # D-RAG-24: Per-label adaptive weights (Know Your RAG)
         label_weights = self._retrieval_cfg.get("label_weights", {})
         if query_label and query_label in label_weights:
-            bm25_weight = label_weights[query_label].get("bm25_weight", 0.3)
-            rrf_k = label_weights[query_label].get("rrf_k", 60)
+            bm25_weight = label_weights[query_label].get("bm25_weight", _BM25_WEIGHT_DEFAULT)
+            rrf_k = label_weights[query_label].get("rrf_k", _RRF_K_DEFAULT)
         else:
-            bm25_weight = self._retrieval_cfg.get("bm25_boost_weight", 0.3)
-            rrf_k = self._retrieval_cfg.get("rrf_k", 60)
+            bm25_weight = self._retrieval_cfg.get("bm25_boost_weight", _BM25_WEIGHT_DEFAULT)
+            rrf_k = self._retrieval_cfg.get("rrf_k", _RRF_K_DEFAULT)
         time_decay_enabled = self._retrieval_cfg.get("time_decay_enabled", True)
         do_rerank = rerank if rerank is not None else self._rerank_cfg.get("enabled", True)
-        min_score = self._retrieval_cfg.get("min_score_threshold", 0.1)
+        min_score = self._retrieval_cfg.get("min_score_threshold", _MIN_SCORE_THRESHOLD)
 
         # Step 1: Embed query
         provider = _get_embedding_provider()
@@ -502,7 +513,7 @@ def main():
             print("No results found.")
             return
         for r in results:
-            print(f"[{r.source_type}:{r.source_id}] (score:{r.final_score:.3f}) {r.content[:120]}...")
+            print(f"[{r.source_type}:{r.source_id}] (score:{r.final_score:.3f}) {r.content[:_RESULT_PREVIEW_CHARS]}...")
 
 
 if __name__ == "__main__":
