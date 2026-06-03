@@ -339,3 +339,16 @@ reranker:
     bge_avail_timeout: 5         # seconds for an Ollama /api/tags probe
     llm_max_tokens: 512          # max tokens for the LLM-as-reranker call
     llm_temperature: 0.1         # temperature for (near-)deterministic ranking
+
+# ── SQLite Vector Store Anomaly Detection ─────────────────────────────────────
+sqlite_vector_store:
+  anomaly_detection:
+    enabled: true
+    min_samples: 30
+    stddev_k: 2.0                 # flag searches below mean − k·stddev of history
+    fallback_score_floor: 0.30    # top similarity below this is flagged when history is sparse
+    adaptive_bounds:
+      floor_min: 0.05            # adaptive floor never drops below this
+      floor_max: 0.80            # adaptive floor never rises above this
+    # Store tunable (overrides module default)
+    busy_timeout_ms: 5000        # SQLite busy_timeout (ms) for WAL contention
