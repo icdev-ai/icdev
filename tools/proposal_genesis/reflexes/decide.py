@@ -56,6 +56,54 @@ BID_THRESHOLD = 0.60  # >= 0.60 → bid
 NO_BID_THRESHOLD = 0.35  # < 0.35 → no_bid
 # 0.35 - 0.59 → deferred (needs further evaluation)
 
+# ---------------------------------------------------------------------------
+# Module-level constants — Bayesian estimation + dimension scoring parameters.
+# All overridable from proposal_genesis_config.yaml under reflexes.decide.
+# Change config, not code.
+# ---------------------------------------------------------------------------
+# Bayesian info-gain weight estimation (§3.1)
+_BAYESIAN_MIN_SAMPLES   = 8       # min won/lost examples for Bayesian estimation
+_WEIGHT_CLAMP_MIN       = 0.05    # min per-dimension weight after normalization
+_WEIGHT_CLAMP_MAX       = 0.40    # max per-dimension weight after normalization
+_INFO_GAIN_PS_WEIGHT    = 0.7     # posterior_shift weight in info-gain combination
+_INFO_GAIN_DISC_WEIGHT  = 0.3     # discriminability weight in info-gain combination
+_DISCRIMINABILITY_MULT  = 2.0     # gap → discriminability scaling factor
+_SPREAD_MIN             = 0.01    # min spread to avoid divide-by-zero in likelihood
+_LIKELIHOOD_EPSILON     = 0.01    # denominator offset in Gaussian likelihood
+_WEIGHT_ROUND_PRECISION = 4       # rounding precision for normalized weights
+# Gap-based calibration feedback loop (D-PG-9)
+_CALIBRATION_MIN_OUTCOMES = 5     # min won/lost outcomes for gap calibration
+_GAP_POSITIVE_SHIFT     = 0.5     # offset to shift won-lost gap into positive range
+# Competitive-position blend
+_COMP_TEAMING_WEIGHT    = 0.6     # teaming fit weight in competitive position
+_COMP_ENGAGEMENT_WEIGHT = 0.4     # engagement weight in competitive position
+# Compliance-readiness scoring
+_COMPLIANCE_BASELINE    = 0.5     # baseline compliance readiness score
+_SETASIDE_BONUS         = 0.2     # bonus for matching set-aside category
+_NAICS_BONUS            = 0.15    # bonus for matching NAICS code
+# Resource-availability scoring
+_RESOURCE_BASELINE      = 0.3     # baseline resource availability score
+_RESOURCE_WITH_PLAN     = 0.6     # score when capture plan exists
+_RESOURCE_WIN_BONUS     = 0.2     # bonus for win_strategy present
+_RESOURCE_TEAMING_BONUS = 0.1     # bonus for teaming_strategy present
+# Strategic-alignment scoring
+_STRATEGIC_BASELINE     = 0.5     # baseline strategic alignment score
+_STRATEGIC_VALUE_HIGH   = 1_000_000  # est_value threshold for high bonus
+_STRATEGIC_VALUE_MED    = 500_000    # est_value threshold for medium bonus
+_STRATEGIC_VALUE_HIGH_BONUS = 0.2    # bonus for est_value above high threshold
+_STRATEGIC_VALUE_MED_BONUS  = 0.1    # bonus for est_value above medium threshold
+_STRATEGIC_ENGAGEMENT_THRESH = 0.5   # engagement threshold for strategic bonus
+_STRATEGIC_ENGAGEMENT_BONUS  = 0.15  # bonus for high engagement
+# Quality-score normalization
+_QUALITY_DENOMINATOR    = 100.0   # divisor to normalize 0-100 quality to 0-1
+# Early termination + rationale thresholds
+_EARLY_TERM_DIMS        = 3       # dimensions assessed before early-termination check
+_EARLY_TERM_MULTIPLIER  = 0.7     # NO_BID_THRESHOLD multiplier for early termination
+_STRENGTH_THRESHOLD     = 0.5     # dimension score for inclusion in strengths list
+_WEAKNESS_THRESHOLD     = 0.4     # dimension score below which it's a weakness
+_COMPOSITE_ROUND        = 4       # rounding precision for composite score
+_MAX_DECISIONS_PER_RUN  = 20      # default max opportunities scored per run
+
 
 # ---------------------------------------------------------------------------
 # Bayesian Teaching Intelligence (Enhancement §3.1, D-BT-1/D-BT-2)
@@ -94,7 +142,7 @@ def _get_bayesian_weights() -> Optional[Dict[str, float]]:
         conn.close()
 
     # Need meaningful sample size for Bayesian estimation
-    if len(rows) < 8:
+    if len(rows) < _BAYESIAN_MIN_SAMPLES:
         return None
 
     # Parse score breakdowns into labelled examples
@@ -114,7 +162,7 @@ def _get_bayesian_weights() -> Optional[Dict[str, float]]:
             }
         )
 
-    if len(examples) < 8:
+    if len(examples) < _BAYESIAN_MIN_SAMPLES:
         return None
 
     won = [e for e in examples if e["outcome"] == "won"]
@@ -141,11 +189,11 @@ def _get_bayesian_weights() -> Optional[Dict[str, float]]:
         # We construct a synthetic observation at the midpoint and
         # measure how much it shifts the prior.
         midpoint = (won_mean + lost_mean) / 2.0
-        spread = max(abs(won_mean - lost_mean), 0.01)
+        spread = max(abs(won_mean - lost_mean), _SPREAD_MIN)
 
         # Likelihood for each hypothesis (won/lost) given the midpoint
-        lk_won = math.exp(-((midpoint - won_mean) ** 2) / (2 * spread**2 + 0.01))
-        lk_lost = math.exp(-((midpoint - lost_mean) ** 2) / (2 * spread**2 + 0.01))
+        lk_won = math.exp(-((midpoint - won_mean) ** 2) / (2 * spread**2 + _LIKELIHOOD_EPSILON))
+        lk_lost = math.exp(-((midpoint - lost_mean) ** 2) / (2 * spread**2 + _LIKELIHOOD_EPSILON))
         z = lk_won + lk_lost
         if z > 0:
             likelihood = [lk_won / z, lk_lost / z]
@@ -157,10 +205,10 @@ def _get_bayesian_weights() -> Optional[Dict[str, float]]:
         # Also compute variance-based discriminability
         # Higher variance within won-vs-lost gap → more discriminative
         gap = abs(won_mean - lost_mean)
-        discriminability = min(1.0, gap * 2.0)
+        discriminability = min(1.0, gap * _DISCRIMINABILITY_MULT)
 
-        # Combined: 70% posterior_shift + 30% discriminability
-        dim_info_gain[dim] = 0.7 * ps + 0.3 * discriminability
+        # Combined: posterior_shift + discriminability (info-gain blend)
+        dim_info_gain[dim] = _INFO_GAIN_PS_WEIGHT * ps + _INFO_GAIN_DISC_WEIGHT * discriminability
 
     # Normalize to sum to 1.0 and clamp to [0.05, 0.40]
     total_ig = sum(dim_info_gain.values())
@@ -168,11 +216,11 @@ def _get_bayesian_weights() -> Optional[Dict[str, float]]:
         return None
 
     raw_weights = {k: dim_info_gain[k] / total_ig for k in dim_info_gain}
-    clamped = {k: max(0.05, min(0.40, v)) for k, v in raw_weights.items()}
+    clamped = {k: max(_WEIGHT_CLAMP_MIN, min(_WEIGHT_CLAMP_MAX, v)) for k, v in raw_weights.items()}
     clamp_total = sum(clamped.values())
     if clamp_total <= 0:
         return None
-    bayesian_weights = {k: round(v / clamp_total, 4) for k, v in clamped.items()}
+    bayesian_weights = {k: round(v / clamp_total, _WEIGHT_ROUND_PRECISION) for k, v in clamped.items()}
 
     # Persist for observability (non-blocking)
     conn = get_connection()
@@ -197,7 +245,7 @@ def _compute_teaching_dimension(weights: Dict[str, float]) -> List[str]:
     These form the minimum distinguishing set for bid/no-bid classification.
     """
     sorted_dims = sorted(weights.items(), key=lambda x: x[1], reverse=True)
-    return [dim for dim, _w in sorted_dims[:3]]
+    return [dim for dim, _w in sorted_dims[:_EARLY_TERM_DIMS]]
 
 
 def _optimal_assessment_order(weights: Dict[str, float]) -> List[str]:
@@ -280,12 +328,12 @@ def calibrate_weights() -> Dict[str, Any]:
     finally:
         conn.close()
 
-    if len(rows) < 5:
+    if len(rows) < _CALIBRATION_MIN_OUTCOMES:
         return {
             "calibrated": False,
             "reason": "insufficient_outcomes",
             "outcomes": len(rows),
-            "minimum_required": 5,
+            "minimum_required": _CALIBRATION_MIN_OUTCOMES,
         }
 
     # Aggregate dimension scores by outcome
@@ -314,17 +362,17 @@ def calibrate_weights() -> Dict[str, Any]:
     for dim in SCORE_WEIGHTS:
         won_avg = sum(won_scores[dim]) / len(won_scores[dim]) if won_scores[dim] else 0.5
         lost_avg = sum(lost_scores[dim]) / len(lost_scores[dim]) if lost_scores[dim] else 0.5
-        gap = max(0.01, won_avg - lost_avg + 0.5)  # shift to positive range
+        gap = max(_SPREAD_MIN, won_avg - lost_avg + _GAP_POSITIVE_SHIFT)  # shift to positive range
         gaps[dim] = gap
 
     # Normalize gaps to produce new weights (sum to 1.0)
     total_gap = sum(gaps.values())
     raw_weights = {k: gaps[k] / total_gap for k in gaps}
 
-    # Clamp to [0.05, 0.40] and re-normalize
-    clamped = {k: max(0.05, min(0.40, v)) for k, v in raw_weights.items()}
+    # Clamp and re-normalize
+    clamped = {k: max(_WEIGHT_CLAMP_MIN, min(_WEIGHT_CLAMP_MAX, v)) for k, v in raw_weights.items()}
     clamp_total = sum(clamped.values())
-    new_weights = {k: round(v / clamp_total, 4) for k, v in clamped.items()}
+    new_weights = {k: round(v / clamp_total, _WEIGHT_ROUND_PRECISION) for k, v in clamped.items()}
 
     # Store calibrated weights
     conn = get_connection()
@@ -419,7 +467,7 @@ def _get_quality_score_avg(opportunity_id: str) -> float:
         ).fetchone()
         if not row or row["avg_score"] is None:
             return 0.0
-        return min(1.0, row["avg_score"] / 100.0)
+        return min(1.0, row["avg_score"] / _QUALITY_DENOMINATOR)
     except Exception:
         return 0.0
     finally:
@@ -462,7 +510,7 @@ def _get_engagement_score(opportunity_id: str) -> float:
         """,
             (opportunity_id,),
         ).fetchone()
-        return row["composite_score"] / 100.0 if row else 0.0
+        return row["composite_score"] / _QUALITY_DENOMINATOR if row else 0.0
     except Exception:
         return 0.0
     finally:
@@ -538,46 +586,46 @@ def score_opportunity(opp: Dict) -> Dict:
             _teaming = _get_teaming_fit(opp_id)
         if _engagement is None:
             _engagement = _get_engagement_score(opp_id)
-        return min(1.0, (_teaming * 0.6 + _engagement * 0.4))
+        return min(1.0, (_teaming * _COMP_TEAMING_WEIGHT + _engagement * _COMP_ENGAGEMENT_WEIGHT))
 
     def _eval_compliance_readiness() -> float:
-        score = 0.5  # baseline
+        score = _COMPLIANCE_BASELINE
         set_aside = (opp.get("set_aside") or "").lower()
         if set_aside in ("total small business", "8(a)", "hubzone", "sdvosb", "wosb", "edwosb"):
-            score += 0.2
+            score += _SETASIDE_BONUS
         naics = opp.get("naics_code") or ""
         if naics.startswith("5415") or naics.startswith("5112"):
-            score += 0.15
+            score += _NAICS_BONUS
         return min(1.0, score)
 
     def _eval_resource_availability() -> float:
         plan = _get_capture_plan_status(opp_id)
-        score = 0.3  # baseline
+        score = _RESOURCE_BASELINE
         if plan:
-            score = 0.6
+            score = _RESOURCE_WITH_PLAN
             if plan.get("win_strategy"):
-                score += 0.2
+                score += _RESOURCE_WIN_BONUS
             if plan.get("teaming_strategy"):
-                score += 0.1
+                score += _RESOURCE_TEAMING_BONUS
         return min(1.0, score)
 
     def _eval_strategic_alignment() -> float:
         nonlocal _engagement
         if _engagement is None:
             _engagement = _get_engagement_score(opp_id)
-        score = 0.5  # baseline
+        score = _STRATEGIC_BASELINE
         est_value = opp.get("estimated_value") or 0
         if isinstance(est_value, str):
             try:
                 est_value = float(est_value.replace(",", "").replace("$", ""))
             except (ValueError, TypeError):
                 est_value = 0
-        if est_value > 1_000_000:
-            score += 0.2
-        elif est_value > 500_000:
-            score += 0.1
-        if _engagement > 0.5:
-            score += 0.15
+        if est_value > _STRATEGIC_VALUE_HIGH:
+            score += _STRATEGIC_VALUE_HIGH_BONUS
+        elif est_value > _STRATEGIC_VALUE_MED:
+            score += _STRATEGIC_VALUE_MED_BONUS
+        if _engagement > _STRATEGIC_ENGAGEMENT_THRESH:
+            score += _STRATEGIC_ENGAGEMENT_BONUS
         return min(1.0, score)
 
     evaluators = {
@@ -593,23 +641,22 @@ def score_opportunity(opp: Dict) -> Dict:
     order = _optimal_assessment_order(weights)
     dimensions: Dict[str, float] = {}
     early_terminated = False
-    EARLY_TERM_DIMS = 3  # Check after this many dimensions
 
     for idx, dim in enumerate(order):
         dimensions[dim] = evaluators[dim]()
 
-        # Early termination: after top 3 dims, if partial composite
+        # Early termination: after top N dims, if partial composite
         # predicts NO_BID with high confidence, skip the rest.
-        if idx == EARLY_TERM_DIMS - 1 and len(order) > EARLY_TERM_DIMS:
+        if idx == _EARLY_TERM_DIMS - 1 and len(order) > _EARLY_TERM_DIMS:
             evaluated_weight = sum(weights[d] for d in dimensions)
             if evaluated_weight > 0:
                 partial_composite = sum(dimensions[d] * weights[d] for d in dimensions) / evaluated_weight
             else:
                 partial_composite = 0.0
 
-            if partial_composite < NO_BID_THRESHOLD * 0.7:
+            if partial_composite < NO_BID_THRESHOLD * _EARLY_TERM_MULTIPLIER:
                 # Fill remaining dimensions with 0.0 (worst-case assumption)
-                for remaining_dim in order[EARLY_TERM_DIMS:]:
+                for remaining_dim in order[_EARLY_TERM_DIMS:]:
                     dimensions[remaining_dim] = 0.0
                 early_terminated = True
                 break
@@ -629,8 +676,8 @@ def score_opportunity(opp: Dict) -> Dict:
 
     # Rationale (deterministic template)
     top_dims = sorted(dimensions.items(), key=lambda x: x[1], reverse=True)
-    strengths = [f"{k}={v:.0%}" for k, v in top_dims[:2] if v >= 0.5]
-    weaknesses = [f"{k}={v:.0%}" for k, v in top_dims if v < 0.4]
+    strengths = [f"{k}={v:.0%}" for k, v in top_dims[:2] if v >= _STRENGTH_THRESHOLD]
+    weaknesses = [f"{k}={v:.0%}" for k, v in top_dims if v < _WEAKNESS_THRESHOLD]
 
     parts = [f"Composite score: {composite:.0%}."]
     if strengths:
@@ -638,8 +685,8 @@ def score_opportunity(opp: Dict) -> Dict:
     if weaknesses:
         parts.append(f"Gaps: {', '.join(weaknesses)}.")
     if early_terminated:
-        evaluated_names = [d for d in order[:EARLY_TERM_DIMS]]
-        parts.append(f"Early termination after {EARLY_TERM_DIMS} dimensions ({', '.join(evaluated_names)}).")
+        evaluated_names = [d for d in order[:_EARLY_TERM_DIMS]]
+        parts.append(f"Early termination after {_EARLY_TERM_DIMS} dimensions ({', '.join(evaluated_names)}).")
         parts.append("Recommend: NO BID — early termination, insufficient coverage.")
     elif decision == "bid":
         parts.append("Recommend: BID.")
@@ -650,8 +697,8 @@ def score_opportunity(opp: Dict) -> Dict:
 
     result: Dict[str, Any] = {
         "dimensions": dimensions,
-        "composite": round(composite, 4),
-        "win_probability": round(composite, 4),  # proxy
+        "composite": round(composite, _COMPOSITE_ROUND),
+        "win_probability": round(composite, _COMPOSITE_ROUND),  # proxy
         "decision": decision,
         "rationale": " ".join(parts),
         "scoring_method": scoring_method,
@@ -752,7 +799,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     Returns standard reflex result dict.
     """
-    max_decisions = config.get("max_decisions_per_run", 20)
+    max_decisions = config.get("max_decisions_per_run", _MAX_DECISIONS_PER_RUN)
 
     # D-PG-9: Recalibrate scoring weights from win/loss outcomes
     calibration = calibrate_weights()
