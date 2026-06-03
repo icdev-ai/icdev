@@ -254,6 +254,35 @@ pdf_provider:
   vision_timeout: 60
   availability_timeout: 3
 
+# ── Ingestion Manager Anomaly Detection ──────────────────────────────────────
+ingestion_manager:
+  anomaly_detection:
+    enabled: true
+    min_samples: 30
+    fallback_embed_batch: 20          # chunks embedded per provider batch
+    fallback_skip_rate_anomaly: 0.95  # dedup skip-rate above this flags a run
+    adaptive_bounds:
+      batch_floor: 5
+      batch_ceil: 100
+      skip_floor: 0.50
+      skip_ceil: 0.99
+    # Non-adaptive constants — tunable without code changes
+    db_busy_timeout_ms: 5000
+
+# ── RAG→KG Ingester Anomaly Detection ────────────────────────────────────────
+rag_to_kg_ingester:
+  anomaly_detection:
+    enabled: true
+    min_samples: 50
+    target_pages: 20                  # size backfill pages so ~N pages cover corpus
+    fallback_page_size: 500           # rag_chunks per backfill page
+    fallback_empty_rate_anomaly: 0.85 # zero-entity extraction rate above this flags a run
+    adaptive_bounds:
+      page_floor: 50
+      page_ceil: 2000
+      empty_floor: 0.30
+      empty_ceil: 0.99
+
 # ── Chunker Constants ─────────────────────────────────────────────────────────
 chunker:
   default_short_threshold: 500
@@ -261,3 +290,23 @@ chunker:
   default_overlap_pct: 0.10
   boundary_search_radius: 200
   boundary_whitespace_scan: 100
+
+# ── RAG Evaluator Anomaly Detection ───────────────────────────────────────────
+evaluator:
+  anomaly_detection:
+    enabled: true
+    min_samples: 30
+    stddev_k: 2.0                  # flag runs below mean − k·stddev of history
+    fallback_ndcg_floor: 0.30     # NDCG@k below this is flagged when history is sparse
+    fallback_mrr_floor: 0.30      # MRR below this is flagged when history is sparse
+    adaptive_bounds:
+      floor_min: 0.05             # adaptive floor never drops below this
+      floor_max: 0.80             # adaptive floor never rises above this
+    # LLM-as-judge constants
+    default_k: 5
+    llm_max_tokens: 256
+    llm_temperature: 0.0
+    llm_chunk_chars: 300
+    llm_context_chars: 2000
+    llm_answer_chars: 1000
+    score_precision: 4
