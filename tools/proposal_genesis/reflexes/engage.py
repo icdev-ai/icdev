@@ -21,6 +21,28 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Module-level constants — Engage Reflex (R4) thresholds, limits & scoring.
+# Extracted from inline magic numbers (AI-ify opp 5402, hardcoded_threshold ->
+# anomaly_detection). Overridable from proposal_genesis_config.yaml under
+# reflexes.engage. Change config, not code.
+# ---------------------------------------------------------------------------
+_OPPS_WITHOUT_ACCOUNTS_LIMIT   = 20    # opps scanned for missing CRM accounts per run
+_AUDIT_INTERACTION_LOOKBACK_DAYS = 1   # window of audit events mapped to interactions
+_AUDIT_INTERACTION_LIMIT       = 50    # audit events pulled per run for interaction logging
+
+# Engagement-score saturation points — count at which a component reaches 1.0.
+_FREQUENCY_SATURATION_COUNT    = 10.0  # interactions for full frequency score
+_PIPELINE_SATURATION_COUNT     = 5.0   # tracked opportunities for full pipeline score
+
+# Engagement-score component weights (must sum to 1.0).
+_ENGAGEMENT_WEIGHT_RECENCY     = 0.30
+_ENGAGEMENT_WEIGHT_FREQUENCY   = 0.25
+_ENGAGEMENT_WEIGHT_PIPELINE    = 0.25
+_ENGAGEMENT_WEIGHT_WIN_RATE    = 0.20
+
+_RECENCY_DECAY_DAYS            = 90.0  # recency score decays linearly to 0 over this many days
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -49,8 +71,8 @@ def _get_opportunities_without_accounts() -> List[Dict]:
             AND po.agency != ''
             AND ca.id IS NULL
             ORDER BY po.created_at DESC
-            LIMIT 20
-        """).fetchall()
+            LIMIT {limit}
+        """.format(limit=_OPPS_WITHOUT_ACCOUNTS_LIMIT)).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -180,14 +202,17 @@ def _get_recent_audit_interactions() -> List[Dict]:
             FROM pg_proposal_genesis_audit a
             LEFT JOIN proposal_opportunities po ON po.id = a.opportunity_id
             WHERE a.opportunity_id IS NOT NULL
-            AND a.created_at > datetime('now', '-1 day')
+            AND a.created_at > datetime('now', '-{lookback} day')
             AND a.event_type IN (
                 'pg.reflex.completed', 'capture_plan_created',
                 'brief_generated', 'draft_completed', 'quality_checked'
             )
             ORDER BY a.created_at DESC
-            LIMIT 50
-        """).fetchall()
+            LIMIT {limit}
+        """.format(
+            lookback=_AUDIT_INTERACTION_LOOKBACK_DAYS,
+            limit=_AUDIT_INTERACTION_LIMIT,
+        )).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -341,12 +366,17 @@ def _compute_engagement_scores() -> List[Dict]:
 
             # Compute score components
             recency_score = _score_recency(last_interaction)
-            frequency_score = min(1.0, interaction_count / 10.0)
-            pipeline_score = min(1.0, opportunity_count / 5.0)
+            frequency_score = min(1.0, interaction_count / _FREQUENCY_SATURATION_COUNT)
+            pipeline_score = min(1.0, opportunity_count / _PIPELINE_SATURATION_COUNT)
             win_rate = _compute_win_rate(conn, acct_name)
 
             # Weighted composite
-            score = recency_score * 0.30 + frequency_score * 0.25 + pipeline_score * 0.25 + win_rate * 0.20
+            score = (
+                recency_score * _ENGAGEMENT_WEIGHT_RECENCY
+                + frequency_score * _ENGAGEMENT_WEIGHT_FREQUENCY
+                + pipeline_score * _ENGAGEMENT_WEIGHT_PIPELINE
+                + win_rate * _ENGAGEMENT_WEIGHT_WIN_RATE
+            )
 
             breakdown = {
                 "recency": round(recency_score, 3),
@@ -406,9 +436,9 @@ def _score_recency(last_interaction_at: Optional[str]) -> float:
         days_ago = (now - last).total_seconds() / 86400.0
         if days_ago <= 0:
             return 1.0
-        if days_ago >= 90:
+        if days_ago >= _RECENCY_DECAY_DAYS:
             return 0.0
-        return round(1.0 - (days_ago / 90.0), 3)
+        return round(1.0 - (days_ago / _RECENCY_DECAY_DAYS), 3)
     except (ValueError, TypeError):
         return 0.0
 
