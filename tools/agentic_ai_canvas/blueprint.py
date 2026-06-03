@@ -2640,7 +2640,28 @@ def quickstart_recommend():
 
 # ── Enhancement routes ── cost estimation, IaC, design links, impact graph ──
 
-@aadc_bp.route("/api/agentic-ai/designs/<did>/cost-estimate", methods=["POST"])
+@aadc_bp.route("/api/designs/<design_id>/assessments", methods=["GET"])
+def aadc_api_list_assessments(design_id):
+    """GET /agentic-ai/api/designs/<id>/assessments — list assessments for a design."""
+    limit = min(int(request.args.get("limit", 10)), 50)
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, design_id, score, nist_rmf_score, owasp_score, omb_compliant, "
+            "autonomy_max, safety_impacting, rights_impacting, findings_json, atlas_threats, "
+            "hitl_paths, created_at FROM aadc_assessments "
+            "WHERE design_id=? ORDER BY created_at DESC LIMIT ?",
+            (design_id, limit),
+        ).fetchall()
+        assessments = [dict(r) for r in rows]
+        return jsonify({"assessments": assessments, "total": len(assessments)})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "assessments": []}), 500
+    finally:
+        conn.close()
+
+
+@aadc_bp.route("/api/designs/<did>/cost-estimate", methods=["POST"])
 def aadc_api_cost_estimate(did):
     if not _estimate_cost:
         return jsonify({"error": "cost estimator not available"}), 503
@@ -2674,7 +2695,7 @@ def aadc_api_cost_estimate(did):
         conn.close()
 
 
-@aadc_bp.route("/api/agentic-ai/designs/<did>/iac", methods=["GET"])
+@aadc_bp.route("/api/designs/<did>/iac", methods=["GET"])
 def aadc_api_iac(did):
     if not _gen_iac:
         return jsonify({"error": "IaC generator not available"}), 503
@@ -2975,6 +2996,72 @@ def generate_ops_config_api(design_id: str):
     except Exception as e:
         get_logger(__name__).error("Ops config generation error: %s", e)
         return jsonify({"error": str(e)}), 500
+
+
+@aadc_bp.route("/api/designs/<design_id>/run-pipeline", methods=["POST"])
+def run_research_pipeline(design_id: str):
+    """Execute the Agentic Research Pipeline model layer for a design.
+
+    Accepts a JSON body with:
+      - query  (str, required)  — research question
+      - chunks (list[str], opt) — pre-retrieved candidate text chunks
+      - top_k  (int, opt, default 5)
+
+    Returns a PipelineResult JSON: answer, chunks_used, model,
+    confidence, embed_model, top_chunks, error.
+
+    Route: POST /agentic-ai/api/designs/<id>/run-pipeline
+    """
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT id, name FROM aadc_designs WHERE id=?", (design_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "design not found"}), 404
+    finally:
+        conn.close()
+
+    data = request.get_json(force=True, silent=True) or {}
+    query = (data.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "query is required"}), 400
+
+    chunks: list = data.get("chunks") or []
+    top_k = max(1, min(int(data.get("top_k", 5)), 20))
+
+    try:
+        from tools.agentic_ai_canvas.model_layer import AgenticResearchPipeline
+        pipeline = AgenticResearchPipeline(top_k=top_k)
+        result = pipeline.run(query=query, chunks=chunks)
+    except Exception as exc:
+        logger.warning("run-pipeline failed for %s: %s", design_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+    payload = {
+        "design_id": design_id,
+        "query": result.query,
+        "answer": result.answer,
+        "chunks_used": result.chunks_used,
+        "model": result.model,
+        "confidence": result.confidence,
+        "embed_model": result.embed_model,
+        "top_chunks": [
+            {"content": c.content[:500], "score": c.score, "rerank_score": c.rerank_score}
+            for c in result.top_chunks
+        ],
+        "error": result.error,
+    }
+    _record_decision(
+        canvas_type="aadc",
+        record_id=design_id,
+        decision_type="pipeline_run",
+        decision=f"query='{query[:120]}' → {result.chunks_used} chunks, model={result.model}",
+        rationale=f"confidence={result.confidence:.2f}, embed_model={result.embed_model}",
+        model_used=result.model or None,
+        confidence=result.confidence or None,
+    )
+    return jsonify(payload)
 
 
 @aadc_bp.route("/api/ai-trace")

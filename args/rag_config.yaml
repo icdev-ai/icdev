@@ -202,3 +202,24 @@ rag:
       index_type: IVF256_HNSW32
     sqlite:
       db_path: data/rag/rag_vectors.db
+
+# ── Query Classifier Anomaly Detection (aiify refactor) ──────────────────────
+query_classifier:
+  anomaly_detection:
+    enabled: true
+    min_samples: 20
+    fallback_overlap_threshold: 0.10
+    fallback_promote_threshold: 0.75
+    adaptive_bounds:
+      overlap_floor: 0.05
+      overlap_ceil: 0.30
+    # Classification constants — tunable without code changes
+    min_query_words: 3
+    heuristic_confidence_unanswerable: 0.65
+    heuristic_confidence_high: 0.80
+    heuristic_confidence_default: 0.50
+    llm_context_chars: 1500
+    llm_temperature: 0.10
+    llm_max_tokens: 200
+    llm_confidence: 0.90
+    batch_max_workers: 4

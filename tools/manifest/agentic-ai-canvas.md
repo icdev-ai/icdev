@@ -24,6 +24,15 @@ Rule-based compliance assessment engine (no LLM).
 - `check_owasp_llm(nodes, edges)` → (findings, score)
 - `map_atlas_threats(nodes)` → threat list
 
+### `tools/agentic_ai_canvas/model_layer.py`
+Model layer for Agentic Research Pipeline (AADC Template #5). Three composable components:
+- `Embedder` — wraps `tools.llm.get_embedding_provider()` → `EmbedResult(query, vector, model)`
+- `ReRanker(top_k, rerank_weight)` — wraps `tools.rag.reranker.rerank_results()` → `List[RankedChunk]`
+- `SynthesisLLM(max_context_chars)` — `router.invoke("rag_synthesis")` → `SynthesisResult`
+- `AgenticResearchPipeline(top_k, rerank_weight, max_context_chars)` — composes all three
+  - `run(query, chunks)` → `PipelineResult`
+- Blueprint route: `POST /agentic-ai/api/designs/<id>/run-pipeline` — body: `{query, chunks, top_k}`
+
 ### `tools/agentic_ai_canvas/workflow.py`
 HITL workflow + loop_engine bridge.
 - `seed_hitl_templates()` — inserts AADC HITL templates into `wf_templates`
