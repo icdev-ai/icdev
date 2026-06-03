@@ -1,5 +1,5 @@
-# CUI // SP-CTI
-"""Handler-layer notification service for ICDEV™ — pure db→render→notify chains.
+﻿# CUI // SP-CTI
+"""Handler-layer notification service for ICDEVâ„¢ â€” pure dbâ†’renderâ†’notify chains.
 
 Each function follows the single-concern pattern: query the DB for context,
 render the message, and send/notify. Connection lifecycle is managed with
@@ -21,16 +21,35 @@ from .event_service import (
 )
 
 # ---------------------------------------------------------------------------
+# Module-level fallback constants â€” all overridable from args/notification_config.yaml
+# under handler_service.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_NARRATIVE_MAX_TOKENS      = 512
+_NARRATIVE_TEMPERATURE     = 0.3
+_TASK_AUDIT_HISTORY_LIMIT  = 3     # recent audit events for task status notifications
+_CANVAS_ASSESSMENT_LIMIT   = 1     # most recent assessment per canvas
+_GENESIS_PHASE_LIMIT       = 3     # recent genesis phase events per notification
+_ROADMAP_HANDLER_LIMIT     = 1     # roadmap lookup limit
+_SCAN_TOP_OPPS_LIMIT       = 5     # top opportunities in scan complete notification
+_ROADMAP_TOP_OPPS_LIMIT    = 5     # top quick-win opportunities in roadmap notification
+_SUPPLY_CHAIN_VULNS_LIMIT  = 5     # top vulnerabilities by CVSS score
+_SUPPLY_CHAIN_RISK_LIMIT   = 1     # most recent risk score
+_AGENT_ERRORS_LIMIT        = 5     # recent agent errors in incident notification
+_AGENT_METRICS_LIMIT       = 10    # agent metrics in incident notification
+_CMMC_GAPS_LIMIT           = 10    # CMMC practice gaps in assessment notification
+_HANDLER_ERRORS_SLICE      = 3     # narrative slice for error messages
+
+# ---------------------------------------------------------------------------
 # AI-ification (aiify-opp-5592): optional LLM-synthesized handler narrative.
 #
-# Each handle_* function below is a deterministic db → render → notify chain.
-# The rendered notification it produces remains the AUTHORITATIVE payload —
+# Each handle_* function below is a deterministic db â†’ render â†’ notify chain.
+# The rendered notification it produces remains the AUTHORITATIVE payload â€”
 # recipients must never depend on LLM availability to receive their alert.
 # When a caller opts in via ``ai_narrative=True`` we ADDITIONALLY synthesize a
 # short, grounded narrative (what the event means, why it matters, and the
 # single most important next action) and attach it under the ``narrative``
-# return key. Any failure — no-LLM mode, air-gap, network, missing credentials
-# — degrades silently to ``None`` so the deterministic notification always ships.
+# return key. Any failure â€” no-LLM mode, air-gap, network, missing credentials
+# â€” degrades silently to ``None`` so the deterministic notification always ships.
 #
 # Mirrors the established pattern in ``digest_service._ai_digest_narrative``
 # and ``alert_service._ai_alert_narrative``.
@@ -41,7 +60,7 @@ _HANDLER_NARRATIVE_SYSTEM_PROMPT = (
     "Write a concise narrative (2-4 sentences) that: (1) states what the event "
     "means in plain language, (2) explains why it matters given the context and "
     "severity, and (3) recommends the single most important next action for the "
-    "recipient. Use only the facts provided — never invent IDs, dates, counts, "
+    "recipient. Use only the facts provided â€” never invent IDs, dates, counts, "
     "scores, names, or identifiers. Output only the narrative prose; no headers, "
     "no markdown, no preamble."
 )
@@ -81,8 +100,8 @@ def _ai_handler_narrative(handler_kind: str, facts: dict) -> str | None:
                 }
             ],
             system_prompt=_HANDLER_NARRATIVE_SYSTEM_PROMPT,
-            max_tokens=512,
-            temperature=0.3,
+            max_tokens=_NARRATIVE_MAX_TOKENS,
+            temperature=_NARRATIVE_TEMPERATURE,
             skip_injection_scan=True,  # trusted first-party fact dict, not user input
             classification="CUI",
         )
@@ -90,14 +109,14 @@ def _ai_handler_narrative(handler_kind: str, facts: dict) -> str | None:
         if resp and resp.content:
             return resp.content.strip()
     except Exception:
-        pass  # Graceful degradation — deterministic notification is authoritative.
+        pass  # Graceful degradation â€” deterministic notification is authoritative.
     return None
 
 
 def handle_task_status_change_notify(
     task_id: str, to_status: str, recipient: str, ai_narrative: bool = False
 ) -> dict:
-    """Notify stakeholder of a kanban task status change via db→render→send."""
+    """Notify stakeholder of a kanban task status change via dbâ†’renderâ†’send."""
     conn = get_connection()
     try:
         task = conn.execute(
@@ -105,7 +124,7 @@ def handle_task_status_change_notify(
         ).fetchone()
         history = conn.execute(
             "SELECT event, created_at FROM audit_trail WHERE resource_id = ? "
-            "ORDER BY created_at DESC LIMIT 3", (task_id,)
+            f"ORDER BY created_at DESC LIMIT {_TASK_AUDIT_HISTORY_LIMIT}", (task_id,)
         ).fetchall()
         rendered = render_template(
             "handlers/task_status.html", task=task, to_status=to_status, history=history
@@ -133,7 +152,7 @@ def handle_canvas_assessment_handler(canvas_id: str, recipient: str, ai_narrativ
     try:
         assessment = conn.execute(
             "SELECT id, score, cat1_findings, created_at FROM canvas_assessments "
-            "WHERE design_id = ? ORDER BY created_at DESC LIMIT 1", (canvas_id,)
+            f"WHERE design_id = ? ORDER BY created_at DESC LIMIT {_CANVAS_ASSESSMENT_LIMIT}", (canvas_id,)
         ).fetchone()
         design = conn.execute(
             "SELECT name, classification FROM canvas_designs WHERE id = ?", (canvas_id,)
@@ -208,7 +227,7 @@ def handle_genesis_reflex_handler(
         ).fetchone()
         events = conn.execute(
             "SELECT phase, status FROM genesis_phase_log WHERE design_id = ? "
-            "ORDER BY started_at DESC LIMIT 3", (design_id,)
+            f"ORDER BY started_at DESC LIMIT {_GENESIS_PHASE_LIMIT}", (design_id,)
         ).fetchall()
         rendered = render_to_string(
             "handlers/genesis_reflex.html",
@@ -359,7 +378,7 @@ def handle_aiify_opportunity_handler(
 ) -> dict:
     """Fetch AI-ify opportunity details and deliver triage notification.
 
-    Per aiify-opp-5907: adds a db→render→notify chain for individual AI-ify
+    Per aiify-opp-5907: adds a dbâ†’renderâ†’notify chain for individual AI-ify
     opportunities so developers receive a grounded narrative describing which
     pattern was found, its composite score, and the recommended next action.
     """
@@ -377,7 +396,7 @@ def handle_aiify_opportunity_handler(
         roadmap = conn.execute(
             "SELECT roadmap_id, phase FROM aiify_roadmaps r "
             "JOIN aiify_roadmap_items ri ON ri.roadmap_id = r.roadmap_id "
-            "WHERE ri.opportunity_id = ? LIMIT 1", (opportunity_id,)
+            f"WHERE ri.opportunity_id = ? LIMIT {_ROADMAP_HANDLER_LIMIT}", (opportunity_id,)
         ).fetchone()
         rendered = render_template(
             "handlers/aiify_opportunity.html",
@@ -410,10 +429,10 @@ def handle_aiify_scan_complete_handler(
 ) -> dict:
     """Fetch AI-ify scan results and deliver completion summary notification.
 
-    Per aiify-opp-5946: adds a db→render→notify chain for completed AI-ify
+    Per aiify-opp-5946: adds a dbâ†’renderâ†’notify chain for completed AI-ify
     scans so module owners and tech leads receive a grounded narrative
     describing scan scope, opportunity count, score distribution, and
-    roadmap alignment — enabling rapid triage of Phase 1 Quick Win items.
+    roadmap alignment â€” enabling rapid triage of Phase 1 Quick Win items.
     """
     conn = get_connection()
     try:
@@ -426,7 +445,7 @@ def handle_aiify_scan_complete_handler(
             "SELECT o.opportunity_id, o.function_name, o.pattern_type, s.composite_score "
             "FROM aiify_opportunities o "
             "LEFT JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            "WHERE o.scan_id = ? ORDER BY s.composite_score DESC LIMIT 5", (scan_id,)
+            "WHERE o.scan_id = ? ORDER BY s.composite_score DESC LIMIT {_SCAN_TOP_OPPS_LIMIT}", (scan_id,)
         ).fetchall()
         roadmap = conn.execute(
             "SELECT roadmap_id, title, total_effort_days "
@@ -474,9 +493,9 @@ def handle_aiify_roadmap_handler(
 ) -> dict:
     """Fetch AI-ify roadmap details and deliver phase progress notification.
 
-    Per aiify-opp-5942: adds a db→render→notify chain for AI-ify roadmaps so
+    Per aiify-opp-5942: adds a dbâ†’renderâ†’notify chain for AI-ify roadmaps so
     tech leads receive a grounded narrative describing roadmap scope, phase
-    breakdown, effort estimate, and top-priority opportunities — enabling rapid
+    breakdown, effort estimate, and top-priority opportunities â€” enabling rapid
     sprint planning against Phase 1 Quick Win items.
     """
     conn = get_connection()
@@ -498,7 +517,7 @@ def handle_aiify_roadmap_handler(
             "JOIN aiify_opportunities o ON o.opportunity_id = ri.opportunity_id "
             "LEFT JOIN aiify_scores s ON s.opportunity_id = ri.opportunity_id "
             "WHERE ri.roadmap_id = ? AND ri.phase LIKE '%Quick Win%' "
-            "ORDER BY s.composite_score DESC LIMIT 5", (roadmap_id,)
+            f"ORDER BY s.composite_score DESC LIMIT {_ROADMAP_TOP_OPPS_LIMIT}", (roadmap_id,)
         ).fetchall()
         scan = conn.execute(
             "SELECT total_files, overall_verdict, overall_ai_readiness "
@@ -537,7 +556,7 @@ def handle_cmmc_assessment_handler(
 ) -> dict:
     """Fetch CMMC assessment results and deliver compliance notification.
 
-    Per aiify-opp-5905: adds a db→render→notify chain for CMMC Level 2/3
+    Per aiify-opp-5905: adds a dbâ†’renderâ†’notify chain for CMMC Level 2/3
     assessments so authorizing officials and system owners receive a grounded
     narrative describing the assessment outcome, practice gaps, and recommended
     next action.
@@ -555,7 +574,7 @@ def handle_cmmc_assessment_handler(
         ).fetchone()
         gaps = conn.execute(
             "SELECT practice_id, domain, status, gap_description "
-            "FROM cmmc_practice_gaps WHERE assessment_id = ? ORDER BY domain LIMIT 10",
+            "FROM cmmc_practice_gaps WHERE assessment_id = ? ORDER BY domain LIMIT {_CMMC_GAPS_LIMIT}",
             (assessment_id,),
         ).fetchall()
         rendered = render_template(
@@ -594,7 +613,7 @@ def handle_supply_chain_risk_handler(
 ) -> dict:
     """Fetch SBOM/supply chain risk data and deliver vulnerability notification.
 
-    Per aiify-opp-5948: adds a db→render→notify chain for supply chain risk
+    Per aiify-opp-5948: adds a dbâ†’renderâ†’notify chain for supply chain risk
     findings so security operations and supply chain officers receive a grounded
     narrative describing the vulnerable component, CVSS severity, and the
     recommended isolation or patch action.
@@ -662,11 +681,11 @@ def handle_agent_incident_handler(
         ).fetchone()
         errors = conn.execute(
             "SELECT error_msg, created_at FROM agent_errors WHERE agent_id = ? "
-            "ORDER BY created_at DESC LIMIT 5", (agent_id,)
+            f"ORDER BY created_at DESC LIMIT {_AGENT_ERRORS_LIMIT}", (agent_id,)
         ).fetchall()
         metrics = conn.execute(
             "SELECT metric_name, value FROM agent_metrics WHERE agent_id = ? "
-            "ORDER BY recorded_at DESC LIMIT 10", (agent_id,)
+            f"ORDER BY recorded_at DESC LIMIT {_AGENT_METRICS_LIMIT}", (agent_id,)
         ).fetchall()
         rendered = render_to_string(
             "handlers/agent_incident.html",
@@ -678,7 +697,7 @@ def handle_agent_incident_handler(
             "agent_status": (agent or {}).get("status", "unknown"),
             "incident_type": incident_type,
             "recent_error_count": len(errors),
-            "recent_errors": "; ".join(e["error_msg"] for e in errors[:3]) or "none",
+            "recent_errors": "; ".join(e["error_msg"] for e in errors[:_HANDLER_ERRORS_SLICE]) or "none",
             "metric_count": len(metrics),
         }) if ai_narrative else None
         sendmail(to=recipient, subject="Agent Incident Alert", html=rendered)
@@ -689,3 +708,6 @@ def handle_agent_incident_handler(
         return {"status": "sent", "agent_id": agent_id, "narrative": narrative}
     finally:
         conn.close()
+
+
+

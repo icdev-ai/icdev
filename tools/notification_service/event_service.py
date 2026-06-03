@@ -1,8 +1,8 @@
-# CUI // SP-CTI
-"""Event-driven notification service for ICDEV™ platform events.
+﻿# CUI // SP-CTI
+"""Event-driven notification service for ICDEVâ„¢ platform events.
 
 Centralises Kanban task events, Genesis daemon milestones, and Oracle
-prediction alerts into a single db → render → notify pipeline so that
+prediction alerts into a single db â†’ render â†’ notify pipeline so that
 multiple canvas consumers don't each re-implement delivery logic.
 
 Per aiify-opp-5716 the deterministic chain is now AI-augmented: callers may
@@ -22,16 +22,31 @@ from typing import Iterable
 from tools.db.storage import get_connection
 
 # ---------------------------------------------------------------------------
+# Module-level fallback constants â€” all overridable from args/notification_config.yaml
+# under event_service.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_NARRATIVE_MAX_TOKENS      = 512
+_NARRATIVE_TEMPERATURE     = 0.3
+_TASK_AUDIT_LIMIT          = 5     # recent audit rows for kanban/aiify event notifications
+_GENESIS_PHASE_LATEST      = 1     # most recent genesis phase log entry
+_GENESIS_REFLEX_LIMIT      = 3     # recent genesis reflexes per design notification
+_AIIFY_TOP_OPPS_LIMIT      = 5     # top opportunities in scan event notification
+_KANBAN_DIGEST_LIMIT       = 20    # kanban tasks in platform event digest
+_GENESIS_DIGEST_LIMIT      = 10    # genesis milestones in platform event digest
+_ORACLE_DIGEST_LIMIT       = 10    # oracle predictions in platform event digest
+_ORACLE_HORIZON_FALLBACK   = 24    # fallback horizon_days when lens row is missing
+
+# ---------------------------------------------------------------------------
 # AI-ification (aiify-opp-5716): optional LLM-synthesized event narrative.
 #
-# Each notify_* function below is a deterministic db → render → notify chain.
-# The rendered notification it produces remains the AUTHORITATIVE payload —
+# Each notify_* function below is a deterministic db â†’ render â†’ notify chain.
+# The rendered notification it produces remains the AUTHORITATIVE payload â€”
 # recipients must never depend on LLM availability to receive their alert.
 # When a caller opts in via ``ai_narrative=True`` we ADDITIONALLY synthesize a
 # short, grounded narrative (what the event means, why it matters, and the
 # single most important next action) and attach it under the ``narrative``
-# return key. Any failure — no-LLM mode, air-gap, network, missing credentials
-# — degrades silently to ``None`` so the deterministic notification always ships.
+# return key. Any failure â€” no-LLM mode, air-gap, network, missing credentials
+# â€” degrades silently to ``None`` so the deterministic notification always ships.
 #
 # Mirrors the established pattern in ``handler_service._ai_handler_narrative``
 # and ``alert_service._ai_alert_narrative``.
@@ -42,7 +57,7 @@ _EVENT_NARRATIVE_SYSTEM_PROMPT = (
     "Write a concise narrative (2-4 sentences) that: (1) states what the event "
     "means in plain language, (2) explains why it matters given the context and "
     "severity, and (3) recommends the single most important next action for the "
-    "recipient. Use only the facts provided — never invent IDs, dates, counts, "
+    "recipient. Use only the facts provided â€” never invent IDs, dates, counts, "
     "scores, names, or identifiers. Output only the narrative prose; no headers, "
     "no markdown, no preamble."
 )
@@ -82,8 +97,8 @@ def _ai_event_narrative(event_kind: str, facts: dict) -> str | None:
                 }
             ],
             system_prompt=_EVENT_NARRATIVE_SYSTEM_PROMPT,
-            max_tokens=512,
-            temperature=0.3,
+            max_tokens=_NARRATIVE_MAX_TOKENS,
+            temperature=_NARRATIVE_TEMPERATURE,
             skip_injection_scan=True,  # trusted first-party fact dict, not user input
             classification="CUI",
         )
@@ -91,7 +106,7 @@ def _ai_event_narrative(event_kind: str, facts: dict) -> str | None:
         if resp and resp.content:
             return resp.content.strip()
     except Exception:
-        pass  # Graceful degradation — deterministic notification is authoritative.
+        pass  # Graceful degradation â€” deterministic notification is authoritative.
     return None
 
 # ---------------------------------------------------------------------------
@@ -113,7 +128,7 @@ CHANNEL_REGISTRY = {
 KANBAN_EVENT_TEMPLATES = {
     "task_started":   "Task **$task_id** ($title) moved to IN PROGRESS by $actor.",
     "task_completed": "Task **$task_id** ($title) marked DONE. Duration: $duration.",
-    "task_blocked":   "Task **$task_id** ($title) BLOCKED — $reason. Assigned: $actor.",
+    "task_blocked":   "Task **$task_id** ($title) BLOCKED â€” $reason. Assigned: $actor.",
     "task_failed":    "Task **$task_id** ($title) FAILED after $attempts attempts: $error.",
     "sprint_closed":  "Sprint $sprint closed. $done_count done / $total_count total.",
     "epic_complete":  "Epic **$epic_key** completed. All $task_count tasks resolved.",
@@ -139,7 +154,7 @@ ORACLE_ALERT_TEMPLATES = {
 
 AIIFY_OPPORTUNITY_TEMPLATES = {
     "opportunity_detected":   "New AI-ify opportunity #$opportunity_id detected: $pattern_type in $module_path ($function_name). Composite score: $composite_score.",
-    "opportunity_dispatched": "AI-ify opportunity #$opportunity_id dispatched as task $task_id. Module: $module_path — paradigm: $ai_paradigm.",
+    "opportunity_dispatched": "AI-ify opportunity #$opportunity_id dispatched as task $task_id. Module: $module_path â€” paradigm: $ai_paradigm.",
     "opportunity_completed":  "AI-ify opportunity #$opportunity_id completed in $module_path ($function_name). Paradigm: $ai_paradigm.",
     "opportunity_skipped":    "AI-ify opportunity #$opportunity_id skipped (duplicate or low-priority). Module: $module_path.",
     "opportunity_failed":     "AI-ify opportunity #$opportunity_id FAILED after $attempts attempts: $error. Module: $module_path.",
@@ -155,7 +170,7 @@ def notify_aiify_opportunity_event(
 ) -> dict:
     """Query the AI-ify kanban task, render an opportunity event notification, and deliver.
 
-    Covers the db → render → notify chain for AI-ify opportunity lifecycle events
+    Covers the db â†’ render â†’ notify chain for AI-ify opportunity lifecycle events
     (detected, dispatched, completed, skipped, failed). Callers supply the
     ``opportunity_id`` and event-specific context via ``extra``; the function
     fetches the associated kanban task from the main ICDEV DB to ground the
@@ -183,7 +198,7 @@ def notify_aiify_opportunity_event(
         ).fetchone()
         audit_rows = conn.execute(
             "SELECT event, created_at FROM audit_trail "
-            "WHERE resource_id = ? ORDER BY created_at DESC LIMIT 5",
+            f"WHERE resource_id = ? ORDER BY created_at DESC LIMIT {_TASK_AUDIT_LIMIT}",
             (task_id,),
         ).fetchall()
 
@@ -234,7 +249,7 @@ def notify_aiify_opportunity_event(
             elif ch in ("email", "smtp"):
                 send(
                     to=(extra or {}).get("email", "engineering@icdev.local"),
-                    subject=f"AI-ify: {event_type} — opp #{opportunity_id}",
+                    subject=f"AI-ify: {event_type} â€” opp #{opportunity_id}",
                     body=rendered,
                 )
                 receipts[ch] = "sent"
@@ -286,7 +301,7 @@ def notify_kanban_event(
         ).fetchone()
         audit_rows = conn.execute(
             "SELECT event, created_at FROM audit_trail "
-            "WHERE resource_id = ? ORDER BY created_at DESC LIMIT 5",
+            f"WHERE resource_id = ? ORDER BY created_at DESC LIMIT {_TASK_AUDIT_LIMIT}",
             (task_id,),
         ).fetchall()
 
@@ -384,12 +399,12 @@ def notify_genesis_milestone(
         ).fetchone()
         phase_row = conn.execute(
             "SELECT phase, status, started_at, completed_at FROM genesis_phase_log "
-            "WHERE design_id = ? ORDER BY started_at DESC LIMIT 1",
+            f"WHERE design_id = ? ORDER BY started_at DESC LIMIT {_GENESIS_PHASE_LATEST}",
             (design_id,),
         ).fetchone()
         reflex_rows = conn.execute(
             "SELECT name, confidence, fired_at FROM genesis_reflexes "
-            "WHERE design_id = ? ORDER BY fired_at DESC LIMIT 3",
+            f"WHERE design_id = ? ORDER BY fired_at DESC LIMIT {_GENESIS_REFLEX_LIMIT}",
             (design_id,),
         ).fetchall()
 
@@ -439,7 +454,7 @@ def notify_genesis_milestone(
             elif ch in ("email", "smtp"):
                 sendmail(
                     to="engineering@icdev.local",
-                    subject=f"Genesis: {milestone_type} — {vars_['design_name']}",
+                    subject=f"Genesis: {milestone_type} â€” {vars_['design_name']}",
                     html=rendered_full,
                 )
                 receipts[ch] = "sent"
@@ -498,7 +513,7 @@ def notify_oracle_alert(
         vars_ = {
             "lens_id": lens_id,
             "lens_name": lens_row["name"] if lens_row else lens_id,
-            "horizon": lens_row["horizon_days"] if lens_row else 24,
+            "horizon": lens_row["horizon_days"] if lens_row else _ORACLE_HORIZON_FALLBACK,
             "count": len(pred_rows),
             "cat1_count": cat1_count["cnt"] if cat1_count else 0,
             "title": (pred_rows[0]["title"] if pred_rows else "(no predictions)"),
@@ -645,7 +660,7 @@ def send_aiify_scan_report(
             elif ch in ("email", "smtp"):
                 sendmail(
                     to=recipient or "engineering@icdev.local",
-                    subject=f"[AI-ify] Scan #{scan_id} complete — {opportunity_count} opportunities",
+                    subject=f"[AI-ify] Scan #{scan_id} complete â€” {opportunity_count} opportunities",
                     html=rendered,
                 )
                 receipts[ch] = "sent"
@@ -704,21 +719,21 @@ def send_platform_event_digest(
         kanban_rows = conn.execute(
             "SELECT id, title, status, updated_at FROM kanban_tasks "
             "WHERE updated_at >= datetime('now', ? || ' hours') "
-            "ORDER BY updated_at DESC LIMIT 20",
+            f"ORDER BY updated_at DESC LIMIT {_KANBAN_DIGEST_LIMIT}",
             (f"-{hours}",),
         ).fetchall()
         # --- DB: recent Genesis milestone events ---
         genesis_rows = conn.execute(
             "SELECT design_id, phase, status, completed_at FROM genesis_phase_log "
             "WHERE completed_at >= datetime('now', ? || ' hours') "
-            "ORDER BY completed_at DESC LIMIT 10",
+            f"ORDER BY completed_at DESC LIMIT {_GENESIS_DIGEST_LIMIT}",
             (f"-{hours}",),
         ).fetchall()
         # --- DB: recent Oracle alert predictions ---
         oracle_rows = conn.execute(
             "SELECT id, title, severity, confidence, created_at FROM oracle_predictions "
             "WHERE created_at >= datetime('now', ? || ' hours') "
-            "AND outcome = 'pending' ORDER BY severity DESC, created_at DESC LIMIT 10",
+            f"AND outcome = 'pending' ORDER BY severity DESC, created_at DESC LIMIT {_ORACLE_DIGEST_LIMIT}",
             (f"-{hours}",),
         ).fetchall()
 
@@ -808,7 +823,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# Stubs — replaced at runtime by injected service implementations
+# Stubs â€” replaced at runtime by injected service implementations
 def render_template(template_name: str, **ctx) -> str:
     return f"[render_template:{template_name}] {ctx}"
 
@@ -843,3 +858,4 @@ def publish(channel: str, payload: dict) -> None:
 
 def dispatch(channel: str, payload: dict) -> None:
     pass
+
