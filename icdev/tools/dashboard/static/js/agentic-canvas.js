@@ -33,7 +33,7 @@
   let _costData = null;
   let _riskData = null;
   const _designId = window.CANVAS_CONFIG && window.CANVAS_CONFIG.designId;
-  const _apiBase = (window.CANVAS_CONFIG && window.CANVAS_CONFIG.apiBase) || "/api/agentic-ai";
+  const _apiBase = (window.CANVAS_CONFIG && window.CANVAS_CONFIG.apiBase) || "/agentic-ai/api";
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
