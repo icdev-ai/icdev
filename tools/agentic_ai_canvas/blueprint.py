@@ -3032,7 +3032,7 @@ def run_research_pipeline(design_id: str):
 
     try:
         from tools.agentic_ai_canvas.model_layer import AgenticResearchPipeline
-        pipeline = AgenticResearchPipeline(top_k=top_k)
+        pipeline = AgenticResearchPipeline(top_k=top_k, design_id=design_id)
         result = pipeline.run(query=query, chunks=chunks)
     except Exception as exc:
         logger.warning("run-pipeline failed for %s: %s", design_id, exc)
@@ -3051,6 +3051,11 @@ def run_research_pipeline(design_id: str):
             for c in result.top_chunks
         ],
         "error": result.error,
+        "governance": {
+            "confidence_gate_passed": result.confidence_gate_passed,
+            "output_valid": result.output_valid,
+            "audit_entry_id": result.audit_entry_id,
+        },
     }
     _record_decision(
         canvas_type="aadc",
@@ -3058,6 +3063,93 @@ def run_research_pipeline(design_id: str):
         decision_type="pipeline_run",
         decision=f"query='{query[:120]}' → {result.chunks_used} chunks, model={result.model}",
         rationale=f"confidence={result.confidence:.2f}, embed_model={result.embed_model}",
+        model_used=result.model or None,
+        confidence=result.confidence or None,
+    )
+    return jsonify(payload)
+
+
+@aadc_bp.route("/api/designs/<design_id>/run-agent", methods=["POST"])
+def run_research_agent(design_id: str):
+    """Execute the full Agentic Research Pipeline (agent + model layers).
+
+    The Research Agent (researcher-agent node) performs web search and
+    chunking; the Model Layer (embedder → reranker → synthesis LLM) then
+    produces a grounded answer.
+
+    Accepts a JSON body with:
+      - query       (str, required)     — research question
+      - max_results (int, opt, def 10)  — web search result cap
+      - top_k       (int, opt, def 5)   — chunks passed to synthesis LLM
+
+    Returns a JSON payload with agent metadata (sources, duration_ms) plus
+    the full PipelineResult fields (answer, chunks_used, model, confidence).
+
+    Route: POST /agentic-ai/api/designs/<id>/run-agent
+    """
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT id, name FROM aadc_designs WHERE id=?", (design_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "design not found"}), 404
+    finally:
+        conn.close()
+
+    data = request.get_json(force=True, silent=True) or {}
+    query = (data.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "query is required"}), 400
+
+    max_results = max(1, min(int(data.get("max_results", 10)), 50))
+    top_k = max(1, min(int(data.get("top_k", 5)), 20))
+
+    try:
+        from tools.agentic_ai_canvas.agent_layer import ResearchAgent
+        from tools.agentic_ai_canvas.model_layer import AgenticResearchPipeline
+
+        agent = ResearchAgent(max_results=max_results)
+        research = agent.search(query)
+
+        pipeline = AgenticResearchPipeline(top_k=top_k)
+        result = pipeline.run(query=query, chunks=research.chunks)
+    except Exception as exc:
+        logger.warning("run-agent failed for %s: %s", design_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+    payload = {
+        "design_id": design_id,
+        "query": result.query,
+        "answer": result.answer,
+        "chunks_used": result.chunks_used,
+        "model": result.model,
+        "confidence": result.confidence,
+        "embed_model": result.embed_model,
+        "top_chunks": [
+            {"content": c.content[:500], "score": c.score, "rerank_score": c.rerank_score}
+            for c in result.top_chunks
+        ],
+        "sources": [
+            {"title": s.title, "url": s.url, "snippet": s.snippet[:300]}
+            for s in research.sources
+        ],
+        "agent_duration_ms": research.duration_ms,
+        "agent_error": research.error,
+        "error": result.error,
+    }
+    _record_decision(
+        canvas_type="aadc",
+        record_id=design_id,
+        decision_type="agent_run",
+        decision=(
+            f"query='{query[:120]}' → {len(research.sources)} hits, "
+            f"{result.chunks_used} chunks, model={result.model}"
+        ),
+        rationale=(
+            f"confidence={result.confidence:.2f}, "
+            f"agent_duration={research.duration_ms:.0f}ms"
+        ),
         model_used=result.model or None,
         confidence=result.confidence or None,
     )
