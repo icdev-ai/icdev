@@ -22,6 +22,107 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from proposal_genesis_config.yaml
+# under reflexes.shape.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_FIT_STRONG_THRESHOLD   = 0.70  # score >= this → "strong_fit"
+_FIT_GOOD_THRESHOLD     = 0.50  # score >= this → "good_fit"
+_FIT_MARGINAL_THRESHOLD = 0.30  # score >= this → "marginal" (else "not_recommended")
+_CAP_WEIGHT             = 0.40  # Capability overlap scoring weight
+_CERT_WEIGHT            = 0.20  # Certification relevance scoring weight
+_VEHICLE_WEIGHT         = 0.20  # Contract vehicle scoring weight
+_SETASIDE_WEIGHT        = 0.20  # Set-aside alignment scoring weight
+_CAP_OVERLAP_DIVISOR    = 0.30  # Capability score divisor (overlap / (total * divisor))
+_CERT_SCORE_PER_MATCH   = 0.25  # Certification score increment per match
+_VEHICLE_SCORE_PER_MATCH = 0.30 # Vehicle score increment per match
+_SETASIDE_SCORE_PER_MATCH = 0.30 # Set-aside score increment per match
+_OPP_ASSESS_LIMIT       = 10    # Max unassessed opportunities per run
+
+
+def _compute_fit_thresholds(anomaly_cfg: "dict | None" = None) -> dict:
+    """Compute adaptive partner fit thresholds from historical assessment distribution.
+
+    Uses pg_teaming_assessments fit_score distribution to set tiers at:
+      strong  = P75 (top quartile of observed scores)
+      good    = P50 (median)
+      marginal = P25 (bottom quartile still worth storing)
+
+    Falls back to static defaults when fewer than min_samples rows exist or
+    anomaly detection is disabled.
+    """
+    cfg = anomaly_cfg or {}
+    if not cfg.get("enabled", True):
+        return {
+            "strong":   cfg.get("fallback_strong_threshold",   _FIT_STRONG_THRESHOLD),
+            "good":     cfg.get("fallback_good_threshold",     _FIT_GOOD_THRESHOLD),
+            "marginal": cfg.get("fallback_marginal_threshold", _FIT_MARGINAL_THRESHOLD),
+            "computed": False,
+        }
+
+    min_samples = cfg.get("min_samples", 15)
+    bounds      = cfg.get("adaptive_bounds", {})
+    strong_floor   = float(bounds.get("strong_floor",   0.50))
+    good_floor     = float(bounds.get("good_floor",     0.30))
+    marginal_floor = float(bounds.get("marginal_floor", 0.10))
+
+    conn = None
+    try:
+        conn = get_connection()
+        # Use percentile_cont if available (PostgreSQL), else mean-based proxy
+        try:
+            row = conn.execute(
+                "SELECT PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY fit_score) AS p75, "
+                "PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY fit_score) AS p50, "
+                "PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY fit_score) AS p25, "
+                "COUNT(*) AS n FROM pg_teaming_assessments WHERE fit_score IS NOT NULL"
+            ).fetchone()
+        except Exception:
+            # SQLite fallback: use mean ± fractions
+            row = conn.execute(
+                "SELECT AVG(fit_score) AS mean_f, COUNT(*) AS n "
+                "FROM pg_teaming_assessments WHERE fit_score IS NOT NULL"
+            ).fetchone()
+            if row:
+                n = row["n"] if isinstance(row, dict) else row[1]
+                if n and n >= min_samples:
+                    mean_f = float(row["mean_f"] if isinstance(row, dict) else row[0])
+                    return {
+                        "strong":   max(strong_floor,   round(mean_f + 0.15, 3)),
+                        "good":     max(good_floor,     round(mean_f, 3)),
+                        "marginal": max(marginal_floor, round(mean_f - 0.15, 3)),
+                        "computed": True,
+                    }
+            row = None
+
+        if row:
+            n = row["n"] if isinstance(row, dict) else (row[3] if len(row) > 3 else 0)
+            if n and n >= min_samples:
+                p75 = float(row["p75"] if isinstance(row, dict) else row[0])
+                p50 = float(row["p50"] if isinstance(row, dict) else row[1])
+                p25 = float(row["p25"] if isinstance(row, dict) else row[2])
+                return {
+                    "strong":   max(strong_floor,   round(p75, 3)),
+                    "good":     max(good_floor,     round(p50, 3)),
+                    "marginal": max(marginal_floor, round(p25, 3)),
+                    "computed": True,
+                }
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    return {
+        "strong":   _FIT_STRONG_THRESHOLD,
+        "good":     _FIT_GOOD_THRESHOLD,
+        "marginal": _FIT_MARGINAL_THRESHOLD,
+        "computed": False,
+    }
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -232,7 +333,7 @@ def _get_unassessed_opportunities() -> List[Dict]:
             WHERE cp.status IN ('draft', 'active')
             AND ta.id IS NULL
             ORDER BY po.response_deadline ASC
-            LIMIT 10
+            LIMIT {_OPP_ASSESS_LIMIT}
         """).fetchall()
         return [dict(r) for r in rows]
     except Exception:
@@ -258,39 +359,39 @@ def _assess_partner_fit(opp: Dict, partner: Dict) -> Dict[str, Any]:
     gaps_filled = []
     risks = []
 
-    # Capability keyword overlap (40% weight)
+    # Capability keyword overlap (_CAP_WEIGHT)
     cap_keywords = set(re.findall(r"\b[a-z]{4,}\b", opp_title))
     partner_keywords = set(re.findall(r"\b[a-z]{4,}\b", partner_caps))
     if cap_keywords and partner_keywords:
         overlap = len(cap_keywords & partner_keywords)
-        cap_score = min(1.0, overlap / max(1, len(cap_keywords) * 0.3))
-        score += cap_score * 0.40
+        cap_score = min(1.0, overlap / max(1, len(cap_keywords) * _CAP_OVERLAP_DIVISOR))
+        score += cap_score * _CAP_WEIGHT
         if overlap > 0:
             gaps_filled.append(f"Keyword overlap: {overlap} matching capabilities")
 
-    # Certification relevance (20% weight)
+    # Certification relevance (_CERT_WEIGHT)
     cert_keywords = ["fedramp", "cmmc", "iso", "soc", "cleared", "secret", "top secret", "certified"]
     cert_matches = sum(1 for kw in cert_keywords if kw in partner_certs)
-    cert_score = min(1.0, cert_matches * 0.25)
-    score += cert_score * 0.20
+    cert_score = min(1.0, cert_matches * _CERT_SCORE_PER_MATCH)
+    score += cert_score * _CERT_WEIGHT
     if cert_matches > 0:
         gaps_filled.append(f"{cert_matches} relevant certifications")
 
-    # Contract vehicle match (20% weight)
+    # Contract vehicle match (_VEHICLE_WEIGHT)
     if partner_vehicles:
         vehicle_keywords = ["gwac", "bpa", "idiq", "gsa", "sewp", "ites", "alliant", "8a", "stars"]
         vehicle_matches = sum(1 for kw in vehicle_keywords if kw in partner_vehicles)
-        vehicle_score = min(1.0, vehicle_matches * 0.3)
-        score += vehicle_score * 0.20
+        vehicle_score = min(1.0, vehicle_matches * _VEHICLE_SCORE_PER_MATCH)
+        score += vehicle_score * _VEHICLE_WEIGHT
         if vehicle_matches > 0:
             gaps_filled.append(f"{vehicle_matches} contract vehicle matches")
 
-    # Set-aside alignment (20% weight)
+    # Set-aside alignment (_SETASIDE_WEIGHT)
     if partner_set_asides:
         sa_keywords = ["8a", "hubzone", "sdvosb", "wosb", "small business", "mentor-protege", "sdb"]
         sa_matches = sum(1 for kw in sa_keywords if kw in partner_set_asides)
-        sa_score = min(1.0, sa_matches * 0.3)
-        score += sa_score * 0.20
+        sa_score = min(1.0, sa_matches * _SETASIDE_SCORE_PER_MATCH)
+        score += sa_score * _SETASIDE_WEIGHT
         if sa_matches > 0:
             gaps_filled.append(f"Set-aside: {', '.join(kw for kw in sa_keywords if kw in partner_set_asides)}")
 
@@ -300,12 +401,12 @@ def _assess_partner_fit(opp: Dict, partner: Dict) -> Dict[str, Any]:
     if partner.get("status") == "prospect":
         risks.append("Partner not yet confirmed (prospect status)")
 
-    # Recommendation
-    if score >= 0.70:
+    # Recommendation — thresholds are instance-level (patched per run from anomaly detection)
+    if score >= _FIT_STRONG_THRESHOLD:
         recommendation = "strong_fit"
-    elif score >= 0.50:
+    elif score >= _FIT_GOOD_THRESHOLD:
         recommendation = "good_fit"
-    elif score >= 0.30:
+    elif score >= _FIT_MARGINAL_THRESHOLD:
         recommendation = "marginal"
     else:
         recommendation = "not_recommended"
@@ -412,6 +513,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     Returns standard reflex result dict.
     """
+    # Compute adaptive fit thresholds from historical assessment distribution.
+    anomaly_cfg = config.get("anomaly_detection", {})
+    thresholds = _compute_fit_thresholds(anomaly_cfg)
+    # Patch module-level globals so _assess_partner_fit() uses computed values.
+    global _FIT_STRONG_THRESHOLD, _FIT_GOOD_THRESHOLD, _FIT_MARGINAL_THRESHOLD  # noqa: PLW0603
+    _FIT_STRONG_THRESHOLD   = thresholds["strong"]
+    _FIT_GOOD_THRESHOLD     = thresholds["good"]
+    _FIT_MARGINAL_THRESHOLD = thresholds["marginal"]
+
     plans_created = 0
     assessments_made = 0
     errors = 0

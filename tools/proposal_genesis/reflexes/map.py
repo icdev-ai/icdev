@@ -23,6 +23,68 @@ from tools.db.storage import get_connection  # noqa: E402
 
 logger = get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from proposal_genesis_config.yaml
+# under reflexes.map.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_GRAPHRAG_TOP_K         = 5     # Default graph retrieval depth per requirement
+_RAG_TOP_K              = 3     # Default RAG retrieval depth per pattern
+_PARALLEL_PATTERNS_CAP  = 20    # Max patterns per parallel enrichment run
+_PARALLEL_MAX_WORKERS   = 3     # Thread pool size for parallel enrichment
+_PARALLEL_FUTURE_TIMEOUT = 30   # Seconds to wait per RAG/GraphRAG future
+_REQ_FETCH_LIMIT        = 50    # Max shall-statements to fetch per opportunity
+_OPP_PROCESS_LIMIT      = 10    # Max opportunities per run cycle
+
+
+def _compute_rag_top_k(anomaly_cfg: "dict | None" = None) -> int:
+    """Compute adaptive top_k for RAG/GraphRAG from historical enrichment hit rates.
+
+    If historical data shows low hit rates (< 30%), increasing top_k improves recall.
+    Clamps to [2, 10] to avoid over-fetching. Falls back to _GRAPHRAG_TOP_K when
+    fewer than min_samples rows or anomaly detection is disabled.
+    """
+    cfg = anomaly_cfg or {}
+    if not cfg.get("enabled", True):
+        return cfg.get("fallback_top_k", _GRAPHRAG_TOP_K)
+
+    min_samples = cfg.get("min_samples", 20)
+    fallback    = cfg.get("fallback_top_k", _GRAPHRAG_TOP_K)
+    low_recall_threshold  = cfg.get("low_recall_threshold", 0.30)
+    high_recall_threshold = cfg.get("high_recall_threshold", 0.70)
+    top_k_floor = cfg.get("adaptive_bounds", {}).get("top_k_floor", 2)
+    top_k_ceil  = cfg.get("adaptive_bounds", {}).get("top_k_ceil", 10)
+
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT AVG(CASE WHEN graph_discovered_capabilities > 0 THEN 1.0 ELSE 0.0 END) AS hit_rate, "
+            "COUNT(*) AS n "
+            "FROM (SELECT graph_discovered_capabilities FROM icdev_capability_map "
+            "WHERE graph_discovered_capabilities IS NOT NULL LIMIT 200) sub"
+        ).fetchone()
+        if row:
+            n = row["n"] if isinstance(row, dict) else row[1]
+            if n and n >= min_samples:
+                hit_rate = float(row["hit_rate"] if isinstance(row, dict) else row[0]) or 0.0
+                if hit_rate < low_recall_threshold:
+                    top_k = min(top_k_ceil, fallback + 2)   # boost recall
+                elif hit_rate > high_recall_threshold:
+                    top_k = max(top_k_floor, fallback - 1)  # reduce over-fetch
+                else:
+                    top_k = fallback
+                return int(top_k)
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return fallback
+
+
 # Keywords that indicate compliance-related requirements (GraphRAG compliance profile)
 _COMPLIANCE_KEYWORDS = frozenset(
     {
@@ -59,7 +121,7 @@ def _get_requirement_texts(opp_id: str) -> List[str]:
         rows = conn.execute(
             "SELECT statement_text FROM rfp_shall_statements "
             "WHERE proposal_opportunity_id = ? OR sam_opportunity_id = ? "
-            "ORDER BY domain_category LIMIT 50",
+            f"ORDER BY domain_category LIMIT {_REQ_FETCH_LIMIT}",
             (opp_id, opp_id),
         ).fetchall()
         return [r["statement_text"] for r in rows if r.get("statement_text")]
@@ -107,7 +169,7 @@ def _enrich_with_graphrag(opp_id: str, requirements: List[str]) -> Dict[str, Any
             result = graph_retrieve(
                 query=req_text,
                 profile=profile,
-                top_k=5,
+                top_k=_GRAPHRAG_TOP_K,
                 compress=False,
             )
             nodes_returned = result.get("nodes_returned", 0)
@@ -181,7 +243,7 @@ def _enrich_with_parallel_rag(opp_id: str, patterns: List[str]) -> Dict[str, Any
         if rag_retriever is None:
             return {"source": "rag", "count": 0}
         try:
-            results = rag_retriever.retrieve(query=text, top_k=3)
+            results = rag_retriever.retrieve(query=text, top_k=_RAG_TOP_K)
             return {"source": "rag", "count": len(results)}
         except Exception:
             return {"source": "rag", "count": 0}
@@ -194,7 +256,7 @@ def _enrich_with_parallel_rag(opp_id: str, patterns: List[str]) -> Dict[str, Any
             result = graph_retrieve(
                 query=text,
                 profile="compliance",
-                top_k=3,
+                top_k=_RAG_TOP_K,
                 compress=False,
             )
             return {"source": "graphrag", "count": result.get("nodes_returned", 0)}
@@ -202,15 +264,15 @@ def _enrich_with_parallel_rag(opp_id: str, patterns: List[str]) -> Dict[str, Any
             return {"source": "graphrag", "count": 0}
 
     # Parallel retrieval: RAG + GraphRAG for each pattern
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=_PARALLEL_MAX_WORKERS) as pool:
         futures = []
-        for ptext in patterns[:20]:  # cap to avoid overload
+        for ptext in patterns[:_PARALLEL_PATTERNS_CAP]:
             futures.append(pool.submit(_rag_query, ptext))
             futures.append(pool.submit(_graph_query, ptext))
 
         for future in as_completed(futures):
             try:
-                res = future.result(timeout=30)
+                res = future.result(timeout=_PARALLEL_FUTURE_TIMEOUT)
                 if res.get("source") == "rag" and res.get("count", 0) > 0:
                     rag_hits += 1
                 elif res.get("source") == "graphrag" and res.get("count", 0) > 0:
@@ -323,12 +385,20 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             WHERE po.status IN ('tracking', 'drafting')
             AND cm.id IS NULL
             ORDER BY po.created_at DESC
-            LIMIT 10
+            LIMIT {_OPP_PROCESS_LIMIT}
         """).fetchall()
     except Exception:
         rows = []
     finally:
         conn.close()
+
+    # Compute adaptive top_k from historical enrichment hit rates.
+    anomaly_cfg = config.get("anomaly_detection", {})
+    adaptive_top_k = _compute_rag_top_k(anomaly_cfg)
+    # Patch module-level globals for this run so all helpers use the computed value.
+    global _GRAPHRAG_TOP_K, _RAG_TOP_K  # noqa: PLW0603
+    _GRAPHRAG_TOP_K = adaptive_top_k
+    _RAG_TOP_K = max(2, adaptive_top_k - 1)
 
     total_coverage = 0.0
     total_graph_discovered = 0

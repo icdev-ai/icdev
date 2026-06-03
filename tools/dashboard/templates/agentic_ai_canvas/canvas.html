@@ -841,7 +841,7 @@ document.addEventListener('DOMContentLoaded', () => {
   applyVP();
   if (graph.nodes.length > 0) {
     document.getElementById('drop-hint').style.display = 'none';
-    requestAnimationFrame(() => setTimeout(fitView, 100));
+    requestAnimationFrame(() => setTimeout(zoomFit, 100));
   }
 });
 
@@ -1304,10 +1304,24 @@ function saveDesign() {
 }
 
 function assessDesign() {
+  if (!DESIGN_ID) {
+    setStatus('Save the design first before running an assessment.');
+    return;
+  }
   setStatus('Running assessment…');
   fetch('/agentic-ai/api/designs/'+DESIGN_ID+'/assess', {method:'POST'})
-    .then(r => r.json())
-    .then(d => { setStatus('Assessment done · Score: '+d.score+'%'); setTimeout(() => location.reload(), 1200); });
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || ('HTTP '+r.status)); });
+      return r.json();
+    })
+    .then(function(d) {
+      if (d.error) throw new Error(d.error);
+      setStatus('Assessment done · Score: '+d.score+'%');
+      setTimeout(function() { location.reload(); }, 1200);
+    })
+    .catch(function(err) {
+      setStatus('Assessment failed: ' + err.message);
+    });
 }
 
 function launchDesign() {
@@ -2881,5 +2895,11 @@ function doOscalExport() {
 .sim-halted   { box-shadow: 0 0 0 3px #f97316, 0 0 12px #f9731688 !important; }
 .sim-filtered { box-shadow: 0 0 0 3px #fbbf24, 0 0 12px #fbbf2488 !important; }
 </style>
+<script>
+window.CANVAS_CONFIG = {
+  designId: "{{ design.id | default('', true) }}",
+  apiBase: "/api/agentic-ai"
+};
+</script>
 <script src="/static/js/agentic-canvas.js" defer></script>
 {% endblock %}
