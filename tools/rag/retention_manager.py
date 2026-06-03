@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -26,6 +27,23 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/rag_config.yaml
+# under rag.retention (and rag.retention.anomaly_detection).  Change config,
+# not code.
+# ---------------------------------------------------------------------------
+_HOT_DAYS = 30                       # default age before hot → warm migration
+_WARM_DAYS = 365                     # default age before warm → cold migration
+_REHYDRATE_EMBED_MODEL = "nomic-embed-text"   # model used to re-embed cold chunks
+
+# Anomaly-detection knobs — a chunk that lingers in a tier far longer than its
+# peers (age beyond mean + k·stddev of that tier's age distribution) is flagged
+# as an overdue-migration outlier.  When enough history exists the overdue
+# threshold is recomputed adaptively; otherwise the configured tier age is used.
+_ANOMALY_STDDEV_K = 2.0              # flag chunks older than mean + k·stddev
+_ANOMALY_MIN_SAMPLES = 20           # min chunks in a tier before adapting
+
+
 def _load_retention_config() -> dict:
     """Load retention config from args/rag_config.yaml."""
     config_path = BASE_DIR / "args" / "rag_config.yaml"
@@ -34,11 +52,185 @@ def _load_retention_config() -> dict:
     try:
         import yaml
 
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         return cfg.get("rag", {}).get("retention", {})
     except Exception:
         return {}
+
+
+def _load_retention_anomaly_config(config: "dict | None" = None) -> dict:
+    """Load rag.retention.anomaly_detection settings from rag_config.yaml.
+
+    A caller-supplied ``config`` may carry the block directly under an
+    ``anomaly_detection`` key; otherwise fall back to the
+    ``rag.retention.anomaly_detection`` block in args/rag_config.yaml.
+    Returns an empty dict when nothing is configured.
+    """
+    cfg = config or {}
+    if "anomaly_detection" in cfg:
+        return cfg["anomaly_detection"] or {}
+    return _load_retention_config().get("anomaly_detection", {}) or {}
+
+
+def _chunk_age_days(created_at: Any, now: "datetime | None" = None) -> "float | None":
+    """Return the age in days of a chunk given its ``created_at`` value.
+
+    Accepts ISO-8601 strings (with or without timezone / trailing ``Z``) and
+    SQLite ``CURRENT_TIMESTAMP`` strings (``YYYY-MM-DD HH:MM:SS``).  Returns
+    ``None`` when the timestamp cannot be parsed.
+    """
+    if created_at is None:
+        return None
+    now = now or datetime.now(timezone.utc)
+    ts = str(created_at).strip()
+    if not ts:
+        return None
+    # Normalise common forms into something datetime.fromisoformat can read.
+    normalised = ts.replace("Z", "+00:00").replace(" ", "T", 1)
+    try:
+        dt = datetime.fromisoformat(normalised)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return max(0.0, (now - dt).total_seconds() / 86400.0)
+
+
+def _compute_retention_anomaly_thresholds(
+    tenant_id: str = "",
+    anomaly_cfg: "dict | None" = None,
+) -> Dict[str, Any]:
+    """Compute adaptive per-tier overdue-age thresholds from chunk history.
+
+    For each managed tier (``hot``, ``warm``) the age distribution of resident
+    chunks is summarised (mean / population stddev) and an overdue threshold is
+    derived as ``mean + k·stddev`` — so "this chunk has been here too long"
+    tracks the actual corpus instead of a frozen magic number.
+
+    Falls back to the configured tier age (``hot_days`` / ``warm_days``) when a
+    tier has fewer than ``min_samples`` chunks or anomaly detection is disabled.
+    Pure statistics computed in Python (backend-agnostic, no SQLite-only SQL).
+    """
+    cfg = anomaly_cfg if anomaly_cfg is not None else _load_retention_anomaly_config()
+    ret_cfg = _load_retention_config()
+    hot_days = ret_cfg.get("hot_days", _HOT_DAYS)
+    warm_days = ret_cfg.get("warm_days", _WARM_DAYS)
+
+    fallback = {
+        "classification": "CUI // SP-CTI",
+        "computed": False,
+        "thresholds": {"hot": float(hot_days), "warm": float(warm_days)},
+    }
+    if not cfg.get("enabled", True):
+        return fallback
+
+    min_samples = int(cfg.get("min_samples", _ANOMALY_MIN_SAMPLES))
+    stddev_k = float(cfg.get("stddev_k", _ANOMALY_STDDEV_K))
+    bounds = cfg.get("adaptive_bounds", {})
+
+    now = datetime.now(timezone.utc)
+    thresholds = {"hot": float(hot_days), "warm": float(warm_days)}
+    stats: Dict[str, Any] = {}
+    computed = False
+
+    conn = None
+    try:
+        conn = get_connection()
+        for tier, base_days in (("hot", hot_days), ("warm", warm_days)):
+            rows = conn.execute(
+                "SELECT created_at FROM rag_chunks WHERE tier = ?",
+                (tier,),
+            ).fetchall()
+            ages = [
+                age
+                for age in (_chunk_age_days(r[0], now) for r in rows)
+                if age is not None
+            ]
+            if len(ages) < min_samples:
+                continue
+            mean = sum(ages) / len(ages)
+            var = sum(a * a for a in ages) / len(ages) - mean * mean
+            std = math.sqrt(max(0.0, var))
+            overdue = mean + stddev_k * std
+            # Never flag earlier than the configured tier age; clamp to bounds.
+            floor_min = float(bounds.get(f"{tier}_min", base_days))
+            floor_max = float(bounds.get(f"{tier}_max", base_days * 4))
+            overdue = max(floor_min, min(floor_max, overdue))
+            thresholds[tier] = round(overdue, 2)
+            stats[tier] = {
+                "n_samples": len(ages),
+                "mean_age_days": round(mean, 2),
+                "stddev_days": round(std, 2),
+            }
+            computed = True
+    except Exception:
+        return fallback
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    return {
+        "classification": "CUI // SP-CTI",
+        "computed": computed,
+        "thresholds": thresholds,
+        "stats": stats,
+        "stddev_k": stddev_k,
+    }
+
+
+def detect_retention_anomalies(tenant_id: str = "") -> Dict[str, Any]:
+    """Flag chunks that have lingered in a tier far beyond their peers.
+
+    Uses the adaptive overdue-age thresholds from
+    :func:`_compute_retention_anomaly_thresholds` to surface chunks whose age
+    exceeds ``mean + k·stddev`` for their tier — overdue-migration outliers that
+    a frozen 30/365-day rule would let sit silently.  Migration behaviour is
+    unchanged; this is a separate, read-only diagnostic surface.
+
+    Returns per-tier overdue chunk IDs, counts, and the thresholds used.
+    """
+    thr = _compute_retention_anomaly_thresholds(tenant_id=tenant_id)
+    thresholds = thr["thresholds"]
+
+    now = datetime.now(timezone.utc)
+    overdue: Dict[str, List[str]] = {"hot": [], "warm": []}
+
+    conn = None
+    try:
+        conn = get_connection()
+        for tier in ("hot", "warm"):
+            limit_days = thresholds.get(tier, _HOT_DAYS if tier == "hot" else _WARM_DAYS)
+            for cid, created_at in conn.execute(
+                "SELECT id, created_at FROM rag_chunks WHERE tier = ?",
+                (tier,),
+            ).fetchall():
+                age = _chunk_age_days(created_at, now)
+                if age is not None and age > limit_days:
+                    overdue[tier].append(cid)
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    return {
+        "classification": "CUI // SP-CTI",
+        "overdue_hot": overdue["hot"],
+        "overdue_warm": overdue["warm"],
+        "overdue_hot_count": len(overdue["hot"]),
+        "overdue_warm_count": len(overdue["warm"]),
+        "total_anomalies": len(overdue["hot"]) + len(overdue["warm"]),
+        "thresholds": thresholds,
+        "adaptive": thr.get("computed", False),
+        "stats": thr.get("stats", {}),
+    }
 
 
 def get_migration_candidates(
@@ -57,8 +249,8 @@ def get_migration_candidates(
         Dict with hot_to_warm and warm_to_cold chunk ID lists.
     """
     ret_cfg = _load_retention_config()
-    hot_days = hot_days or ret_cfg.get("hot_days", 30)
-    warm_days = warm_days or ret_cfg.get("warm_days", 365)
+    hot_days = hot_days or ret_cfg.get("hot_days", _HOT_DAYS)
+    warm_days = warm_days or ret_cfg.get("warm_days", _WARM_DAYS)
 
     store = VectorStoreFactory.create(tenant_id=tenant_id)
     if store.provider_name != "sqlite":
@@ -233,7 +425,7 @@ def rehydrate_chunks(
             if hasattr(provider, "embed"):
                 embedding = provider.embed(content)
             else:
-                resp = provider.embeddings.create(input=content, model="nomic-embed-text")
+                resp = provider.embeddings.create(input=content, model=_REHYDRATE_EMBED_MODEL)
                 embedding = resp.data[0].embedding
 
             blob = struct.pack(f"{len(embedding)}f", *embedding)
@@ -274,8 +466,8 @@ def get_retention_status(tenant_id: str = "") -> Dict[str, Any]:
         "total_chunks": store.count(),
         "by_tier": tier_counts,
         "config": {
-            "hot_days": ret_cfg.get("hot_days", 30),
-            "warm_days": ret_cfg.get("warm_days", 365),
+            "hot_days": ret_cfg.get("hot_days", _HOT_DAYS),
+            "warm_days": ret_cfg.get("warm_days", _WARM_DAYS),
             "warm_compression": ret_cfg.get("warm_compression", "float16"),
         },
         "backend": store.provider_name,
@@ -287,6 +479,11 @@ def main():
     parser.add_argument("--migrate", action="store_true", help="Run tier migration")
     parser.add_argument("--status", action="store_true", help="Show retention status")
     parser.add_argument("--rehydrate", action="store_true", help="Re-embed cold chunks")
+    parser.add_argument(
+        "--detect-anomalies",
+        action="store_true",
+        help="Flag chunks overdue for migration (adaptive anomaly detection)",
+    )
     parser.add_argument("--chunk-ids", help="Comma-separated chunk IDs for rehydration")
     parser.add_argument("--dry-run", action="store_true", help="Report without migrating")
     parser.add_argument("--hot-days", type=int, default=0, help="Override hot→warm threshold")
@@ -297,6 +494,8 @@ def main():
 
     if args.status:
         result = get_retention_status(tenant_id=args.tenant_id)
+    elif args.detect_anomalies:
+        result = detect_retention_anomalies(tenant_id=args.tenant_id)
     elif args.migrate:
         result = migrate_chunks(
             tenant_id=args.tenant_id,
