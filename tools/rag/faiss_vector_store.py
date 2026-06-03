@@ -20,6 +20,14 @@ from tools.rag.vector_store_provider import (
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — overridable from args/rag_config.yaml
+# under rag.vector_store.faiss.  Change config, not code.
+# ---------------------------------------------------------------------------
+_DEFAULT_EMBEDDING_DIM  = 768   # default embedding dimension (nomic-embed-text)
+_OVER_FETCH_MULTIPLIER  = 3     # over-fetch k*N candidates before post-filtering
+_SEARCH_DEFAULT_TOP_K   = 50    # default top_k for vector similarity search
+
 
 class FAISSVectorStore(VectorStoreProvider):
     """FAISS vector store implementation.
@@ -29,7 +37,7 @@ class FAISSVectorStore(VectorStoreProvider):
     Multi-tenant isolation via separate index directories (D-RAG-7).
     """
 
-    def __init__(self, index_dir: str = "", tenant_id: str = "", dim: int = 768):
+    def __init__(self, index_dir: str = "", tenant_id: str = "", dim: int = _DEFAULT_EMBEDDING_DIM):
         import faiss
 
         self._tenant_id = tenant_id
@@ -121,7 +129,7 @@ class FAISSVectorStore(VectorStoreProvider):
     def search(
         self,
         query_embedding: List[float],
-        top_k: int = 50,
+        top_k: int = _SEARCH_DEFAULT_TOP_K,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[SearchResult]:
 
@@ -129,7 +137,7 @@ class FAISSVectorStore(VectorStoreProvider):
             return []
 
         vec = self._normalize(query_embedding)
-        k = min(top_k * 3, self._index.ntotal)  # Over-fetch for post-filtering
+        k = min(top_k * _OVER_FETCH_MULTIPLIER, self._index.ntotal)
         distances, indices = self._index.search(vec, k)
 
         results = []
