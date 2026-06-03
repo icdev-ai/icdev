@@ -185,6 +185,18 @@ rag:
     hot_days: 30
     warm_compression: float16
     warm_days: 365
+    # Adaptive anomaly detection over chunk age — flag chunks lingering in a
+    # tier far beyond their peers (age > mean + k·stddev) as overdue-migration
+    # outliers instead of relying solely on the frozen hot_days/warm_days rule.
+    anomaly_detection:
+      enabled: true
+      min_samples: 20            # min chunks in a tier before adapting
+      stddev_k: 2.0              # flag chunks older than mean + k·stddev
+      adaptive_bounds:
+        hot_min: 30              # hot overdue threshold never drops below (days)
+        hot_max: 120             # ...nor rises above (days)
+        warm_min: 365            # warm overdue threshold never drops below (days)
+        warm_max: 1460           # ...nor rises above (days)
   retrieval:
     bm25_boost_weight: 0.3
     final_top_k: 5
