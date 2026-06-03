@@ -310,3 +310,20 @@ evaluator:
     llm_context_chars: 2000
     llm_answer_chars: 1000
     score_precision: 4
+
+# ── Reranker Anomaly Detection ────────────────────────────────────────────────
+reranker:
+  anomaly_detection:
+    enabled: true
+    min_samples: 30
+    stddev_k: 2.0                 # flag reranks below mean − k·stddev of history
+    fallback_score_floor: 0.30    # top rerank score below this is flagged when history is sparse
+    adaptive_bounds:
+      floor_min: 0.05            # adaptive floor never drops below this
+      floor_max: 0.80            # adaptive floor never rises above this
+    # Provider tunables (rag.rerank section may also carry these)
+    bge_doc_chars: 800           # per-document chars sent to BGE cross-encoder
+    bge_embed_timeout: 30        # seconds for an Ollama /api/embed call
+    bge_avail_timeout: 5         # seconds for an Ollama /api/tags probe
+    llm_max_tokens: 512          # max tokens for the LLM-as-reranker call
+    llm_temperature: 0.1         # temperature for (near-)deterministic ranking
