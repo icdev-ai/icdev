@@ -40,11 +40,29 @@ def _content_hash(system: str, user: str, expected: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Module-level constants — training-pair generation limits, overridable from
+# proposal_genesis_config.yaml under reflexes.train.  Change config, not code.
+# ---------------------------------------------------------------------------
+_DRAFTS_FETCH_LIMIT      = 50    # max approved drafts fetched per run
+_LESSONS_FETCH_LIMIT     = 100   # max win/loss lessons fetched per run
+_KB_FETCH_LIMIT          = 50    # max knowledge-base entries fetched per run
+_DRAFT_MIN_CONTENT       = 100   # min draft content length to generate pairs
+_DRAFT_PAIR2_MIN_CONTENT = 300   # min content length to generate quality-improvement pair
+_DRAFT_PAIR_MAX_CONTENT  = 2000  # max content length for section-drafting pair
+_DRAFT_PAIR2_USER_MAX    = 500   # max content length for quality-pair user input
+_DRAFT_PAIR2_OUTPUT_MAX  = 1500  # max content length for quality-pair expected output
+_LESSON_MIN_LENGTH       = 20    # min lesson text length to generate pairs
+_KB_MIN_CONTENT          = 100   # min KB entry content length to generate pairs
+_KB_PAIR_OUTPUT_MAX      = 2000  # max content length for KB pair expected output
+_MAX_PAIRS_PER_RUN       = 100   # default max training pairs generated per run
+
+
+# ---------------------------------------------------------------------------
 # Source: Approved proposal drafts
 # ---------------------------------------------------------------------------
 
 
-def _get_approved_drafts(limit: int = 50) -> List[Dict]:
+def _get_approved_drafts(limit: int = _DRAFTS_FETCH_LIMIT) -> List[Dict]:
     """Get approved proposal drafts not yet used for training."""
     conn = get_connection()
     try:
@@ -79,7 +97,7 @@ def _generate_draft_pairs(draft: Dict) -> List[Dict]:
     """
     pairs = []
     content = draft.get("final_content") or draft.get("draft_content") or ""
-    if not content or len(content) < 100:
+    if not content or len(content) < _DRAFT_MIN_CONTENT:
         return pairs
 
     section = draft.get("section_type", "general")
@@ -94,14 +112,14 @@ def _generate_draft_pairs(draft: Dict) -> List[Dict]:
                 "compliant proposal sections that address RFP requirements."
             ),
             "user_input": (f"Write a {section} section for a proposal responding to {agency}'s requirement: {title}"),
-            "expected_output": content[:2000],
+            "expected_output": content[:_DRAFT_PAIR_MAX_CONTENT],
             "source_type": "approved_draft",
             "source_id": draft.get("id", ""),
         }
     )
 
     # Pair 2: Quality improvement
-    if len(content) > 300:
+    if len(content) > _DRAFT_PAIR2_MIN_CONTENT:
         pairs.append(
             {
                 "system_prompt": (
@@ -109,9 +127,9 @@ def _generate_draft_pairs(draft: Dict) -> List[Dict]:
                     "professional content that meets government writing standards."
                 ),
                 "user_input": (
-                    f"Improve the following {section} section for clarity and compliance:\n\n{content[:500]}"
+                    f"Improve the following {section} section for clarity and compliance:\n\n{content[:_DRAFT_PAIR2_USER_MAX]}"
                 ),
-                "expected_output": content[:1500],
+                "expected_output": content[:_DRAFT_PAIR2_OUTPUT_MAX],
                 "source_type": "approved_draft",
                 "source_id": draft.get("id", ""),
             }
@@ -125,7 +143,7 @@ def _generate_draft_pairs(draft: Dict) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 
-def _get_recent_lessons(limit: int = 100) -> List[Dict]:
+def _get_recent_lessons(limit: int = _LESSONS_FETCH_LIMIT) -> List[Dict]:
     """Get actionable lessons not yet used for training."""
     conn = get_connection()
     try:
@@ -158,7 +176,7 @@ def _generate_lesson_pairs(lesson: Dict) -> List[Dict]:
     """Generate training pairs from win/loss lessons."""
     pairs = []
     lesson_text = lesson.get("lesson", "")
-    if not lesson_text or len(lesson_text) < 20:
+    if not lesson_text or len(lesson_text) < _LESSON_MIN_LENGTH:
         return pairs
 
     category = lesson.get("category", "general")
@@ -193,7 +211,7 @@ def _generate_lesson_pairs(lesson: Dict) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 
-def _get_kb_entries(limit: int = 50) -> List[Dict]:
+def _get_kb_entries(limit: int = _KB_FETCH_LIMIT) -> List[Dict]:
     """Get knowledge base entries not yet used for training."""
     conn = get_connection()
     try:
@@ -225,7 +243,7 @@ def _generate_kb_pairs(entry: Dict) -> List[Dict]:
     """Generate training pairs from knowledge base entries."""
     pairs = []
     content = entry.get("content", "")
-    if not content or len(content) < 100:
+    if not content or len(content) < _KB_MIN_CONTENT:
         return pairs
 
     title = entry.get("title", "")
@@ -238,7 +256,7 @@ def _generate_kb_pairs(entry: Dict) -> List[Dict]:
                 "accurate content based on the organization's capability library."
             ),
             "user_input": (f"What capabilities and experience do we have in {domain}: {title}?"),
-            "expected_output": content[:2000],
+            "expected_output": content[:_KB_PAIR_OUTPUT_MAX],
             "source_type": "knowledge_base",
             "source_id": entry.get("id", ""),
         }
@@ -454,7 +472,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     Returns standard reflex result dict.
     """
-    max_pairs = config.get("max_pairs_per_run", 100)
+    max_pairs = config.get("max_pairs_per_run", _MAX_PAIRS_PER_RUN)
     dataset_id = config.get("dataset_id") or _get_or_create_dataset()
 
     _ensure_tracking_table()
