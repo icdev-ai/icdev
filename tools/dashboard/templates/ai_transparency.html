@@ -4,58 +4,81 @@
 
 {% block content %}
 <div class="container">
-    <h1>AI Transparency &amp; Accountability</h1>
-    <p class="text-muted">Cross-framework AI compliance: OMB M-25-21, M-26-04, NIST AI 600-1, GAO-21-519SP (Phase 48)</p>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;">
+        <div>
+            <h1 style="margin-bottom:4px;">AI Transparency &amp; Accountability</h1>
+            <p class="text-muted" style="margin:0;">Cross-framework AI governance: OMB M-25-21 · M-26-04 · NIST AI 600-1 · GAO-21-519SP &nbsp;|&nbsp; Phase 48</p>
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="runAudit()" id="btn-audit">&#9654; Run Audit</button>
+            <button class="btn btn-sm" onclick="runGenModelCard()" id="btn-model-card">&#43; Model Card</button>
+            <button class="btn btn-sm" onclick="runGenSystemCard()" id="btn-system-card">&#43; System Card</button>
+        </div>
+    </div>
 
     <!-- Stat Grid -->
-    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
-        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
-            <div class="stat-value" id="stat-overall" style="font-size:2rem;font-weight:bold;">--</div>
-            <div class="stat-label" style="color:#666;">Transparency Score</div>
+    <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));margin-bottom:2rem;">
+        <div class="stat-card">
+            <div class="stat-value" id="stat-overall" style="color:var(--accent-blue-light,#4fc3f7);">--</div>
+            <div class="stat-label">Transparency Score</div>
         </div>
-        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
-            <div class="stat-value" id="stat-inventory" style="font-size:2rem;font-weight:bold;">--</div>
-            <div class="stat-label" style="color:#666;">AI Inventory</div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-telemetry">--</div>
+            <div class="stat-label">AI Telemetry Calls</div>
         </div>
-        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
-            <div class="stat-value" id="stat-model-cards" style="font-size:2rem;font-weight:bold;">--</div>
-            <div class="stat-label" style="color:#666;">Model Cards</div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-designs">--</div>
+            <div class="stat-label">Agentic Designs</div>
         </div>
-        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
-            <div class="stat-value" id="stat-system-cards" style="font-size:2rem;font-weight:bold;">--</div>
-            <div class="stat-label" style="color:#666;">System Cards</div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-inventory">--</div>
+            <div class="stat-label">AI Inventory Items</div>
         </div>
-        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
-            <div class="stat-value" id="stat-confab" style="font-size:2rem;font-weight:bold;">--</div>
-            <div class="stat-label" style="color:#666;">Confabulation Checks</div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-model-cards">--</div>
+            <div class="stat-label">Model Cards</div>
         </div>
-        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
-            <div class="stat-value" id="stat-fairness" style="font-size:2rem;font-weight:bold;">--</div>
-            <div class="stat-label" style="color:#666;">Fairness Score</div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-system-cards">--</div>
+            <div class="stat-label">System Cards</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-confab">--</div>
+            <div class="stat-label">Confabulation Checks</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-fairness">--</div>
+            <div class="stat-label">Fairness Score</div>
         </div>
     </div>
 
     <!-- Framework Assessments -->
-    <h2>Framework Assessments</h2>
-    <div class="table-container">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+        <h2 style="margin:0;">Framework Assessments</h2>
+        <button class="btn btn-sm" onclick="runAudit()">Run Assessors</button>
+    </div>
+    <div class="table-container" style="margin-bottom:2rem;">
         <table id="frameworks-table" aria-label="AI compliance framework assessments">
             <thead>
                 <tr>
                     <th>Framework</th>
-                    <th>Coverage</th>
+                    <th style="width:220px;">Coverage</th>
                     <th>Requirements</th>
                     <th>Status</th>
                 </tr>
             </thead>
             <tbody id="frameworks-body">
-                <tr><td colspan="4" style="text-align:center;color:#999;">Loading...</td></tr>
+                <tr><td colspan="4" style="text-align:center;color:#999;padding:1.5rem;">Loading…</td></tr>
             </tbody>
         </table>
     </div>
 
-    <!-- AI Inventory -->
-    <h2>AI Use Case Inventory</h2>
-    <div class="table-container">
+    <!-- AI Use Case Inventory -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+        <h2 style="margin:0;">AI Use Case Inventory</h2>
+        <span id="inventory-count" class="badge badge-info"></span>
+    </div>
+    <div class="table-container" style="margin-bottom:2rem;">
         <table id="inventory-table" aria-label="AI use case inventory">
             <thead>
                 <tr>
@@ -67,14 +90,59 @@
                 </tr>
             </thead>
             <tbody id="inventory-body">
-                <tr><td colspan="5" style="text-align:center;color:#999;">Loading...</td></tr>
+                <tr><td colspan="5" style="text-align:center;color:#999;padding:1.5rem;">Loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- AI Telemetry -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+        <h2 style="margin:0;">AI Telemetry Overview</h2>
+        <span id="telemetry-tokens-badge" class="badge badge-info"></span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:2rem;">
+        <div class="table-container" style="margin:0;">
+            <table aria-label="Telemetry by model">
+                <thead><tr><th>Provider / Model</th><th>Calls</th><th>Tokens</th></tr></thead>
+                <tbody id="telemetry-body">
+                    <tr><td colspan="3" style="text-align:center;color:#999;padding:1.5rem;">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="table-container" style="margin:0;">
+            <table aria-label="Top AI functions">
+                <thead><tr><th>Function</th><th>Calls</th></tr></thead>
+                <tbody id="telemetry-funcs-body">
+                    <tr><td colspan="2" style="text-align:center;color:#999;padding:1.5rem;">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Agentic AI Designs -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+        <h2 style="margin:0;">Agentic AI Designs</h2>
+        <a href="/agentic-ai/" class="btn btn-sm">Open Canvas</a>
+    </div>
+    <div class="table-container" style="margin-bottom:2rem;">
+        <table id="designs-table" aria-label="Agentic AI designs">
+            <thead>
+                <tr>
+                    <th>Design Name</th>
+                    <th>Domain</th>
+                    <th>Classification</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody id="designs-body">
+                <tr><td colspan="4" style="text-align:center;color:#999;padding:1.5rem;">Loading…</td></tr>
             </tbody>
         </table>
     </div>
 
     <!-- Model Cards -->
     <h2>Model Cards</h2>
-    <div class="table-container">
+    <div class="table-container" style="margin-bottom:2rem;">
         <table id="model-cards-table" aria-label="AI model cards">
             <thead>
                 <tr>
@@ -84,14 +152,14 @@
                 </tr>
             </thead>
             <tbody id="model-cards-body">
-                <tr><td colspan="3" style="text-align:center;color:#999;">Loading...</td></tr>
+                <tr><td colspan="3" style="text-align:center;color:#999;padding:1.5rem;">Loading…</td></tr>
             </tbody>
         </table>
     </div>
 
-    <!-- Gaps -->
+    <!-- Transparency Gaps -->
     <h2>Transparency Gaps</h2>
-    <div class="table-container">
+    <div class="table-container" style="margin-bottom:2rem;">
         <table id="gaps-table" aria-label="AI transparency gaps">
             <thead>
                 <tr>
@@ -99,164 +167,237 @@
                     <th>Area</th>
                     <th>Gap</th>
                     <th>Framework</th>
-                    <th>Action</th>
+                    <th>Remediation</th>
                 </tr>
             </thead>
             <tbody id="gaps-body">
-                <tr><td colspan="5" style="text-align:center;color:#999;">Loading...</td></tr>
+                <tr><td colspan="5" style="text-align:center;color:#999;padding:1.5rem;">Loading…</td></tr>
             </tbody>
         </table>
     </div>
 
-    <!-- Actions -->
-    <div style="margin:2rem 0;display:flex;gap:0.5rem;flex-wrap:wrap;">
-        <button class="btn" onclick="runAudit()" id="btn-audit">Run Transparency Audit</button>
-        <button class="btn" onclick="runGenModelCard()" id="btn-model-card">Generate Model Card</button>
-        <button class="btn" onclick="runGenSystemCard()" id="btn-system-card">Generate System Card</button>
-    </div>
-    <pre id="action-output" style="display:none;background:#1e1e1e;color:#d4d4d4;padding:1rem;border-radius:4px;max-height:400px;overflow:auto;white-space:pre-wrap;"></pre>
+    <pre id="action-output" style="display:none;background:#0d1117;color:#d4d4d4;padding:1rem;border-radius:6px;border:1px solid #30363d;max-height:400px;overflow:auto;white-space:pre-wrap;font-size:0.85em;margin-bottom:2rem;"></pre>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 (function() {
+    function fmt(n) {
+        if (n == null) return '--';
+        if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+        if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+        return String(n);
+    }
+
     async function loadStats() {
         try {
-            const resp = await fetch('/api/ai-transparency/stats');
-            if (!resp.ok) return;
-            const d = await resp.json();
-            document.getElementById('stat-overall').textContent = d.transparency_score != null ? d.transparency_score + '%' : '--';
+            const d = await fetch('/api/ai-transparency/stats').then(r => r.json());
+            const score = d.transparency_score;
+            const scoreEl = document.getElementById('stat-overall');
+            scoreEl.textContent = score != null ? score + '%' : '--';
+            if (score != null) {
+                scoreEl.style.color = score >= 70 ? 'var(--status-green,#4caf50)' : score >= 40 ? 'var(--status-yellow,#ffc107)' : 'var(--status-red,#f44336)';
+            }
             document.getElementById('stat-inventory').textContent = d.inventory_count ?? '--';
             document.getElementById('stat-model-cards').textContent = d.model_card_count ?? '--';
             document.getElementById('stat-system-cards').textContent = d.system_card_count ?? '--';
             document.getElementById('stat-confab').textContent = d.confabulation_count ?? '--';
             document.getElementById('stat-fairness').textContent = d.fairness_score != null ? d.fairness_score + '%' : '--';
+            document.getElementById('stat-telemetry').textContent = fmt(d.telemetry_calls);
+            document.getElementById('stat-designs').textContent = d.agentic_design_count ?? '--';
         } catch(e) { console.warn('Stats load failed:', e); }
     }
 
     async function loadFrameworks() {
         try {
-            const resp = await fetch('/api/ai-transparency/frameworks');
-            if (!resp.ok) return;
-            const d = await resp.json();
+            const d = await fetch('/api/ai-transparency/frameworks').then(r => r.json());
             const tbody = document.getElementById('frameworks-body');
-            if (!d.frameworks || d.frameworks.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;">No assessments yet. Run a transparency audit.</td></tr>';
+            if (!d.frameworks || !d.frameworks.length) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;padding:1.5rem;">No assessments yet — click <strong>Run Assessors</strong> above.</td></tr>';
                 return;
             }
-            tbody.innerHTML = d.frameworks.map(f => `<tr>
-                <td>${f.name}</td>
-                <td>${f.coverage}%</td>
-                <td>${f.total}</td>
-                <td><span class="badge ${f.coverage >= 70 ? 'badge-success' : f.coverage >= 40 ? 'badge-warning' : 'badge-danger'}">${f.coverage >= 70 ? 'Good' : f.coverage >= 40 ? 'Partial' : 'Low'}</span></td>
-            </tr>`).join('');
+            tbody.innerHTML = d.frameworks.map(f => {
+                const pct = f.coverage || 0;
+                const barColor = pct >= 70 ? 'var(--status-green,#4caf50)' : pct >= 40 ? 'var(--status-yellow,#ffc107)' : 'var(--status-red,#f44336)';
+                const badge = pct >= 70 ? 'badge-success' : pct >= 40 ? 'badge-warning' : 'badge-error';
+                const label = pct >= 70 ? 'Good' : pct >= 40 ? 'Partial' : 'Low';
+                return `<tr>
+                    <td style="font-weight:500;">${f.name}</td>
+                    <td>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <div style="flex:1;background:var(--bg-hover,#1e293b);border-radius:4px;height:8px;overflow:hidden;">
+                                <div style="width:${pct}%;background:${barColor};height:100%;border-radius:4px;transition:width 0.6s;"></div>
+                            </div>
+                            <span style="min-width:36px;font-size:0.8rem;color:var(--text-muted);">${pct}%</span>
+                        </div>
+                    </td>
+                    <td>${f.total}</td>
+                    <td><span class="badge ${badge}">${label}</span></td>
+                </tr>`;
+            }).join('');
         } catch(e) { console.warn('Frameworks load failed:', e); }
     }
 
     async function loadInventory() {
         try {
-            const resp = await fetch('/api/ai-transparency/inventory');
-            if (!resp.ok) return;
-            const d = await resp.json();
+            const d = await fetch('/api/ai-transparency/inventory').then(r => r.json());
             const tbody = document.getElementById('inventory-body');
-            if (!d.items || d.items.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;">No AI components registered.</td></tr>';
+            const badge = document.getElementById('inventory-count');
+            if (!d.items || !d.items.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:1.5rem;">No AI components registered.</td></tr>';
                 return;
             }
-            tbody.innerHTML = d.items.map(i => `<tr>
-                <td>${i.name}</td>
-                <td><span class="badge ${i.risk_level === 'safety_impacting' ? 'badge-danger' : i.risk_level === 'high_impact' ? 'badge-warning' : 'badge-success'}">${i.risk_level}</span></td>
-                <td>${i.deployment_status || '--'}</td>
-                <td>${i.responsible_official || '--'}</td>
-                <td>${i.last_assessed || '--'}</td>
+            // Deduplicate by name+risk_level
+            const seen = new Set();
+            const items = d.items.filter(i => {
+                const key = `${i.name}|${i.risk_level}`;
+                if (seen.has(key)) return false;
+                seen.add(key); return true;
+            });
+            badge.textContent = items.length + ' items';
+            const riskClass = {safety_impacting:'badge-error', high_impact:'badge-warning', limited_risk:'badge-info', minimal_risk:'badge-success'};
+            tbody.innerHTML = items.map(i => `<tr>
+                <td style="font-weight:500;">${i.name}</td>
+                <td><span class="badge ${riskClass[i.risk_level] || 'badge-info'}">${(i.risk_level||'').replace(/_/g,' ')}</span></td>
+                <td><span class="badge ${i.deployment_status==='production'?'badge-active':'badge-info'}">${i.deployment_status || '--'}</span></td>
+                <td>${i.responsible_official || '<span style="color:#666;">--</span>'}</td>
+                <td style="font-size:0.8em;color:var(--text-muted);">${i.last_assessed || '--'}</td>
             </tr>`).join('');
         } catch(e) { console.warn('Inventory load failed:', e); }
     }
 
-    async function loadModelCards() {
+    async function loadTelemetry() {
         try {
-            const resp = await fetch('/api/ai-transparency/model-cards');
-            if (!resp.ok) return;
-            const d = await resp.json();
-            const tbody = document.getElementById('model-cards-body');
-            if (!d.cards || d.cards.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999;">No model cards generated.</td></tr>';
+            const d = await fetch('/api/ai-transparency/telemetry').then(r => r.json());
+            const tokBadge = document.getElementById('telemetry-tokens-badge');
+            if (d.total_tokens) tokBadge.textContent = fmt(d.total_tokens) + ' tokens processed';
+
+            const tbody = document.getElementById('telemetry-body');
+            if (d.breakdown && d.breakdown.length) {
+                tbody.innerHTML = d.breakdown.slice(0,10).map(r => `<tr>
+                    <td style="font-size:0.85em;">${r.provider}/<span style="color:var(--accent-blue-light,#4fc3f7);">${r.model_id}</span></td>
+                    <td>${fmt(r.calls)}</td>
+                    <td style="color:var(--text-muted);font-size:0.8em;">${fmt(r.tokens)}</td>
+                </tr>`).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="3" style="color:#666;text-align:center;padding:1rem;">No telemetry data.</td></tr>';
+            }
+
+            const fbody = document.getElementById('telemetry-funcs-body');
+            if (d.top_functions && d.top_functions.length) {
+                fbody.innerHTML = d.top_functions.map(r => `<tr>
+                    <td style="font-size:0.85em;">${r.function || '<em style="color:#666;">unnamed</em>'}</td>
+                    <td>${fmt(r.c)}</td>
+                </tr>`).join('');
+            }
+        } catch(e) { console.warn('Telemetry load failed:', e); }
+    }
+
+    async function loadDesigns() {
+        try {
+            const d = await fetch('/api/ai-transparency/designs').then(r => r.json());
+            const tbody = document.getElementById('designs-body');
+            if (!d.designs || !d.designs.length) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;padding:1.5rem;">No agentic designs found. <a href="/agentic-ai/">Create one →</a></td></tr>';
                 return;
             }
-            tbody.innerHTML = d.cards.map(c => `<tr>
-                <td>${c.model_name}</td>
+            const clsClass = {'CUI':'badge-CUI','CUI // SP-CTI':'badge-SECRET','UNCLASSIFIED':'badge-UNCLASSIFIED'};
+            tbody.innerHTML = d.designs.map(r => `<tr>
+                <td style="font-weight:500;">${r.name}</td>
+                <td style="font-size:0.85em;color:var(--text-muted);">${r.domain || '--'}</td>
+                <td><span class="badge ${clsClass[r.classification] || 'badge-CUI'}">${r.classification || 'CUI'}</span></td>
+                <td style="font-size:0.8em;color:var(--text-muted);">${(r.created_at||'').slice(0,10)}</td>
+            </tr>`).join('');
+        } catch(e) { console.warn('Designs load failed:', e); }
+    }
+
+    async function loadModelCards() {
+        try {
+            const d = await fetch('/api/ai-transparency/model-cards').then(r => r.json());
+            const tbody = document.getElementById('model-cards-body');
+            if (!d.cards || !d.cards.length) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999;padding:1.5rem;">No model cards generated.</td></tr>';
+                return;
+            }
+            // Deduplicate by model_name
+            const seen = new Set();
+            const cards = d.cards.filter(c => { if (seen.has(c.model_name)) return false; seen.add(c.model_name); return true; });
+            tbody.innerHTML = cards.map(c => `<tr>
+                <td style="font-weight:500;">${c.model_name}</td>
                 <td>v${c.version}</td>
-                <td>${c.created_at}</td>
+                <td style="font-size:0.8em;color:var(--text-muted);">${(c.created_at||'').slice(0,10)}</td>
             </tr>`).join('');
         } catch(e) { console.warn('Model cards load failed:', e); }
     }
 
     async function loadGaps() {
         try {
-            const resp = await fetch('/api/ai-transparency/gaps');
-            if (!resp.ok) return;
-            const d = await resp.json();
+            const d = await fetch('/api/ai-transparency/gaps').then(r => r.json());
             const tbody = document.getElementById('gaps-body');
-            if (!d.gaps || d.gaps.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;">No gaps detected.</td></tr>';
+            if (!d.gaps || !d.gaps.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:1.5rem;">No gaps detected — run a transparency audit to compute gaps.</td></tr>';
                 return;
             }
+            const priBadge = {high:'badge-error', medium:'badge-warning', low:'badge-info'};
             tbody.innerHTML = d.gaps.map(g => `<tr>
-                <td><span class="badge ${g.priority === 'high' ? 'badge-danger' : 'badge-warning'}">${g.priority.toUpperCase()}</span></td>
-                <td>${g.area}</td>
-                <td>${g.gap}</td>
-                <td>${g.framework}</td>
-                <td><code style="font-size:0.8em">${g.action || '--'}</code></td>
+                <td><span class="badge ${priBadge[g.priority] || 'badge-info'}">${(g.priority||'').toUpperCase()}</span></td>
+                <td style="font-weight:500;">${g.area}</td>
+                <td style="font-size:0.85em;">${g.gap}</td>
+                <td style="font-size:0.8em;color:var(--text-muted);">${g.framework}</td>
+                <td><code style="font-size:0.75em;word-break:break-all;">${g.action || '--'}</code></td>
             </tr>`).join('');
         } catch(e) { console.warn('Gaps load failed:', e); }
     }
 
-    loadStats();
-    loadFrameworks();
-    loadInventory();
-    loadModelCards();
-    loadGaps();
+    // Load all sections in parallel
+    Promise.all([loadStats(), loadFrameworks(), loadInventory(), loadTelemetry(), loadDesigns(), loadModelCards(), loadGaps()]);
 
     window.runAudit = async function() {
+        const btn = document.getElementById('btn-audit');
         const out = document.getElementById('action-output');
         out.style.display = 'block';
-        out.textContent = 'Running AI transparency audit...\n';
+        out.textContent = 'Running AI transparency audit…\n';
+        btn.disabled = true; btn.textContent = '…';
         try {
-            const resp = await fetch('/api/ai-transparency/audit', {method: 'POST'});
-            const d = await resp.json();
+            const d = await fetch('/api/ai-transparency/audit', {method:'POST'}).then(r => r.json());
             out.textContent = JSON.stringify(d, null, 2);
             loadStats(); loadFrameworks(); loadGaps();
         } catch(e) { out.textContent = 'Error: ' + e.message; }
+        finally { btn.disabled = false; btn.textContent = '▶ Run Audit'; }
     };
 
     window.runGenModelCard = async function() {
-        const name = prompt('Enter model name:');
+        const name = prompt('Model name (e.g. claude-sonnet-4-6):');
         if (!name) return;
+        const btn = document.getElementById('btn-model-card');
         const out = document.getElementById('action-output');
         out.style.display = 'block';
-        out.textContent = 'Generating model card for ' + name + '...\n';
+        out.textContent = 'Generating model card for ' + name + '…\n';
+        btn.disabled = true;
         try {
-            const resp = await fetch('/api/ai-transparency/model-card', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
+            const d = await fetch('/api/ai-transparency/model-card', {
+                method:'POST', headers:{'Content-Type':'application/json'},
                 body: JSON.stringify({model_name: name})
-            });
-            const d = await resp.json();
+            }).then(r => r.json());
             out.textContent = JSON.stringify(d, null, 2);
             loadStats(); loadModelCards();
         } catch(e) { out.textContent = 'Error: ' + e.message; }
+        finally { btn.disabled = false; btn.textContent = '+ Model Card'; }
     };
 
     window.runGenSystemCard = async function() {
+        const btn = document.getElementById('btn-system-card');
         const out = document.getElementById('action-output');
         out.style.display = 'block';
-        out.textContent = 'Generating system card...\n';
+        out.textContent = 'Generating system card…\n';
+        btn.disabled = true;
         try {
-            const resp = await fetch('/api/ai-transparency/system-card', {method: 'POST'});
-            const d = await resp.json();
+            const d = await fetch('/api/ai-transparency/system-card', {method:'POST'}).then(r => r.json());
             out.textContent = JSON.stringify(d, null, 2);
             loadStats();
         } catch(e) { out.textContent = 'Error: ' + e.message; }
+        finally { btn.disabled = false; btn.textContent = '+ System Card'; }
     };
 })();
 </script>

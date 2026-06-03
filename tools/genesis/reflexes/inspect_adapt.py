@@ -44,6 +44,54 @@ _RECURRENCE_NORMALIZER = 10.0  # divisor mapping occurrence count -> [0,1]
 _RECURRENCE_MAX        = 1.0   # recurrence score ceiling
 _PREFIX_FALLBACK_CHARS = 10    # task_id slice when no prefix delimiter found
 
+# ---------------------------------------------------------------------------
+# Anomaly-detection fallbacks — adaptive "trending" cutoff. Rather than a fixed
+# count (>= _DEFAULT_TRENDING_THRESHOLD), the cutoff is derived from the spread
+# of pattern occurrence counts so a pattern trends only when it is a statistical
+# outlier (mean + sigma * std_dev). Overridable from lesson_learned config under
+# `retrospective.anomaly_detection`. Change config, not code.
+# ---------------------------------------------------------------------------
+_ANOMALY_SIGMA_MULTIPLIER = 1.0   # outlier cutoff = mean + this * std_dev
+_ANOMALY_MIN_DISTINCT     = 3     # need >= this many distinct patterns to model spread
+_ANOMALY_MAX_THRESHOLD    = 50    # ceiling so a noisy window can't suppress all trends
+
+
+def _compute_trending_threshold(
+    pattern_counts: List[int],
+    static_threshold: int,
+    anomaly_cfg: "Dict[str, Any] | None" = None,
+) -> int:
+    """Adaptively derive the "trending" count cutoff via anomaly detection.
+
+    A pattern is trending when its occurrence count is a statistical outlier in
+    the current window: ``cutoff = ceil(mean + sigma_multiplier * std_dev)``.
+    The result is floored at ``static_threshold`` (so the adaptive cutoff is
+    never *more permissive* than the configured minimum) and capped at
+    ``max_threshold``. Falls back to ``static_threshold`` when anomaly detection
+    is disabled or there are fewer than ``min_distinct_patterns`` patterns to
+    model — too small a sample to estimate spread reliably.
+    """
+    cfg = anomaly_cfg or {}
+    if not cfg.get("enabled", True):
+        return static_threshold
+
+    counts = [int(c) for c in pattern_counts if c is not None]
+    min_distinct = int(cfg.get("min_distinct_patterns", _ANOMALY_MIN_DISTINCT))
+    if len(counts) < min_distinct:
+        return static_threshold
+
+    sigma_multiplier = float(cfg.get("sigma_multiplier", _ANOMALY_SIGMA_MULTIPLIER))
+    ceil_cap = int(cfg.get("max_threshold", _ANOMALY_MAX_THRESHOLD))
+
+    import math  # noqa: PLC0415
+
+    n = len(counts)
+    mean = sum(counts) / n
+    var = sum((c - mean) ** 2 for c in counts) / n
+    std = math.sqrt(max(0.0, var))
+    adaptive = int(math.ceil(mean + sigma_multiplier * std))
+    return max(static_threshold, min(ceil_cap, adaptive))
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -74,7 +122,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     retrospective_cfg = cfg.get("retrospective", {})
     window_days = retrospective_cfg.get("cadence_days", _DEFAULT_CADENCE_DAYS)
     min_lessons = retrospective_cfg.get("min_lessons_for_report", _DEFAULT_MIN_LESSONS)
-    trending_threshold = retrospective_cfg.get("trending_threshold", _DEFAULT_TRENDING_THRESHOLD)
+    static_threshold = retrospective_cfg.get("trending_threshold", _DEFAULT_TRENDING_THRESHOLD)
 
     lessons = _fetch_lessons(window_days)
     if len(lessons) < min_lessons:
@@ -86,6 +134,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "window_days": window_days,
             },
         }
+
+    # Anomaly-detection: derive the trending cutoff from the spread of pattern
+    # counts so only statistical outliers trend, rather than a fixed count.
+    pattern_counts = Counter(l.get("pattern", "unknown") for l in lessons)
+    trending_threshold = _compute_trending_threshold(
+        list(pattern_counts.values()),
+        static_threshold,
+        retrospective_cfg.get("anomaly_detection", {}),
+    )
 
     report = _build_report(lessons, window_days)
     trending = _detect_trending(lessons, trending_threshold)
@@ -100,6 +157,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "status": "retrospective_generated",
             "lessons_count": len(lessons),
             "trending_categories": len(trending),
+            "trending_threshold_used": trending_threshold,
             "remediation_cards_created": len(created),
             "report_path": str(report.get("path", "")),
         },

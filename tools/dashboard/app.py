@@ -4589,6 +4589,51 @@ def create_app() -> Flask:
         """AI Transparency — OMB M-25-21, M-26-04, NIST AI 600-1, GAO-21-519SP (Phase 48, D307-D315)."""
         return render_template("ai_transparency.html")
 
+    @app.route("/api/ai-transparency/telemetry", methods=["GET"])
+    def ai_transparency_telemetry():
+        """AI telemetry breakdown by provider/model."""
+        from flask import jsonify
+        try:
+            from tools.db.storage import get_connection
+            conn = get_connection()
+            rows = conn.execute(
+                "SELECT provider, model_id, COUNT(*) as calls, "
+                "SUM(input_tokens + output_tokens) as tokens "
+                "FROM ai_telemetry GROUP BY provider, model_id ORDER BY calls DESC LIMIT 20"
+            ).fetchall()
+            total = conn.execute(
+                "SELECT COUNT(*) as c, SUM(input_tokens + output_tokens) as t FROM ai_telemetry"
+            ).fetchone()
+            funcs = conn.execute(
+                "SELECT function, COUNT(*) as c FROM ai_telemetry GROUP BY function ORDER BY c DESC LIMIT 8"
+            ).fetchall()
+            conn.close()
+            return jsonify({
+                "breakdown": [dict(r) for r in rows],
+                "total_calls": total["c"] if total else 0,
+                "total_tokens": total["t"] if total else 0,
+                "top_functions": [dict(r) for r in funcs],
+            })
+        except Exception as e:
+            return jsonify({"breakdown": [], "total_calls": 0, "total_tokens": 0, "error": str(e)})
+
+    @app.route("/api/ai-transparency/designs", methods=["GET"])
+    def ai_transparency_designs():
+        """Agentic AI canvas designs for transparency dashboard."""
+        from flask import jsonify
+        import sys
+        try:
+            sys.path.insert(0, str(BASE_DIR))
+            from tools.agentic_ai_canvas.db.init_db import get_connection as aac_conn
+            ac = aac_conn()
+            rows = ac.execute(
+                "SELECT id, name, domain, classification, created_at FROM aadc_designs ORDER BY created_at DESC"
+            ).fetchall()
+            ac.close()
+            return jsonify({"designs": [dict(r) for r in rows], "total": len(rows)})
+        except Exception as e:
+            return jsonify({"designs": [], "total": 0, "error": str(e)})
+
     @app.route("/ai-accountability")
     def ai_accountability_page():
         """AI Accountability — oversight, appeals, CAIO, incidents, ethics (Phase 49, D316-D321)."""
