@@ -24,6 +24,92 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from proposal_genesis_config.yaml
+# under reflexes.polish.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_GRAMMAR_DEDUCTION_PER_ISSUE = 0.15
+_TONE_DEDUCTION_PER_SIGNAL   = 0.10
+_TONE_STRENGTH_BONUS         = 0.03
+_STUB_MIN_WORDS              = 50
+_STUB_TEMPLATE_RATIO         = 0.05
+_STUB_SIGNAL_DEDUCTION       = 0.12
+_STUB_THIN_DEDUCTION         = 0.20
+_STUB_NO_REF_DEDUCTION       = 0.08
+_STUB_GATE_THRESHOLD         = 0.50   # Stub score below this → blocked regardless of composite
+_AI_BURSTINESS_LOW           = 0.30   # Below → "possibly AI-generated"
+_AI_BURSTINESS_MID           = 0.50   # Below → "unclear origin"
+_CONTEXT_WARNING_TOKENS      = 6000
+_CONTEXT_CRITICAL_TOKENS     = 10000
+_CONTEXT_WINDOW_SIZE         = 200000
+
+
+def _compute_quality_anomaly_thresholds(anomaly_cfg: "dict | None" = None) -> dict:
+    """Compute gate thresholds from historical pg_proposal_quality_scores distribution.
+
+    Uses mean ± sigma·std to surface outliers rather than static cutoffs.
+    Falls back to config-driven defaults when fewer than min_samples rows exist.
+
+    All tuning constants are drawn from anomaly_cfg (reflexes.polish.anomaly_detection
+    in proposal_genesis_config.yaml) so they can be adjusted without code changes.
+    """
+    cfg = anomaly_cfg or {}
+    if not cfg.get("enabled", True):
+        return {
+            "quality_threshold":  cfg.get("fallback_quality_threshold", 0.65),
+            "stub_gate_threshold": cfg.get("fallback_stub_gate_threshold", _STUB_GATE_THRESHOLD),
+            "computed": False,
+        }
+
+    min_samples     = cfg.get("min_samples", 15)
+    sigma_q         = cfg.get("sigma_quality", 1.0)
+    sigma_stub      = cfg.get("sigma_stub", 1.0)
+    fallback_q      = cfg.get("fallback_quality_threshold", 0.65)
+    fallback_stub   = cfg.get("fallback_stub_gate_threshold", _STUB_GATE_THRESHOLD)
+    bounds          = cfg.get("adaptive_bounds", {})
+    q_floor: float  = bounds.get("quality_threshold_floor", 0.40)
+    stub_floor: float = bounds.get("stub_gate_floor", 0.25)
+
+    conn = None
+    try:
+        import math
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT AVG(composite_score) AS mean_q, "
+            "AVG(composite_score * composite_score) - AVG(composite_score) * AVG(composite_score) AS var_q, "
+            "AVG(COALESCE((check_details::jsonb->'stub_detection'->>'score')::float, 0.5)) AS mean_stub, "
+            "COUNT(*) AS n "
+            "FROM pg_proposal_quality_scores"
+        ).fetchone()
+        if row:
+            n = row["n"] if isinstance(row, dict) else row[3]
+            if n and n >= min_samples:
+                mean_q   = float(row["mean_q"]   if isinstance(row, dict) else row[0])
+                var_q    = max(0.0, float(row["var_q"] if isinstance(row, dict) else row[1]))
+                mean_stub = float(row["mean_stub"] if isinstance(row, dict) else row[2])
+                std_q    = math.sqrt(var_q)
+                q_thresh  = max(q_floor, mean_q - sigma_q * std_q)
+                stub_thresh = max(stub_floor, mean_stub - sigma_stub * std_q)
+                return {
+                    "quality_threshold":  round(q_thresh, 3),
+                    "stub_gate_threshold": round(stub_thresh, 3),
+                    "computed": True,
+                    "n_samples": n,
+                }
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return {
+        "quality_threshold":  fallback_q,
+        "stub_gate_threshold": fallback_stub,
+        "computed": False,
+    }
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -58,7 +144,7 @@ def _check_grammar(text: str) -> Dict[str, Any]:
     if stripped and stripped[-1] not in ".!?:;\"')}]":
         issues.append("text does not end with punctuation")
 
-    score = max(0, 1.0 - (len(issues) * 0.15))
+    score = max(0, 1.0 - (len(issues) * _GRAMMAR_DEDUCTION_PER_ISSUE))
     return {"score": round(score, 2), "issues": issues}
 
 
@@ -173,8 +259,8 @@ def _check_tone(text: str) -> Dict[str, Any]:
     ]
     found_strong = sum(1 for w in strong if w in text_lower)
 
-    score = max(0, 1.0 - (len(found_informal) + len(found_weak)) * 0.1)
-    score = min(1.0, score + found_strong * 0.03)
+    score = max(0, 1.0 - (len(found_informal) + len(found_weak)) * _TONE_DEDUCTION_PER_SIGNAL)
+    score = min(1.0, score + found_strong * _TONE_STRENGTH_BONUS)
 
     return {"score": round(score, 2), "issues": issues}
 
@@ -246,9 +332,9 @@ def _check_ai_detection(text: str) -> Dict[str, Any]:
     burstiness = (variance**0.5) / mean_len if mean_len > 0 else 0
 
     # Low burstiness suggests AI generation
-    if burstiness < 0.3:
+    if burstiness < _AI_BURSTINESS_LOW:
         score = 0.5  # Possibly AI
-    elif burstiness < 0.5:
+    elif burstiness < _AI_BURSTINESS_MID:
         score = 0.7  # Unclear
     else:
         score = 0.9  # Likely human
@@ -305,18 +391,18 @@ def _check_stub_content(text: str, opportunity_id: str) -> Dict[str, Any]:
 
     # ── Content substantiveness checks ───────────────────────────────────
     # Very short text relative to a proposal section is suspicious
-    thin_content = word_count < 50
+    thin_content = word_count < _STUB_MIN_WORDS
     if thin_content:
         stub_patterns_found.append(
             {
-                "pattern": "thin content (< 50 words)",
+                "pattern": f"thin content (< {_STUB_MIN_WORDS} words)",
                 "count": 1,
             }
         )
 
     # High ratio of template markers to content
     template_marker_count = len(re.findall(r"\[.*?\]", text))
-    if word_count > 0 and template_marker_count / max(1, word_count) > 0.05:
+    if word_count > 0 and template_marker_count / max(1, word_count) > _STUB_TEMPLATE_RATIO:
         stub_patterns_found.append(
             {
                 "pattern": "high template marker ratio",
@@ -365,12 +451,11 @@ def _check_stub_content(text: str, opportunity_id: str) -> Dict[str, Any]:
     total_stub_signals = sum(p["count"] for p in stub_patterns_found)
 
     # Score calculation: start at 1.0, deduct per stub signal
-    # Each stub signal costs 0.12, thin content costs extra
-    deduction = total_stub_signals * 0.12
+    deduction = total_stub_signals * _STUB_SIGNAL_DEDUCTION
     if thin_content:
-        deduction += 0.20
-    if not references_opportunity and word_count >= 50:
-        deduction += 0.08
+        deduction += _STUB_THIN_DEDUCTION
+    if not references_opportunity and word_count >= _STUB_MIN_WORDS:
+        deduction += _STUB_NO_REF_DEDUCTION
 
     score = max(0.0, min(1.0, 1.0 - deduction))
 
@@ -401,23 +486,14 @@ def _check_context_pressure(text: str) -> Dict[str, Any]:
     Deterministic, scanner-tier, zero LLM tokens.
     """
     # Approximate tokens: ~4 chars per token
-    CHARS_PER_TOKEN = 4
-    estimated_tokens = len(text) / CHARS_PER_TOKEN
+    estimated_tokens = len(text) / 4
 
-    # Context window thresholds (for proposal sections being reviewed)
-    # A single proposal section should not consume more than ~8K tokens
-    SECTION_WARNING_TOKENS = 6000
-    SECTION_CRITICAL_TOKENS = 10000
+    window_pct_used = (estimated_tokens / _CONTEXT_WINDOW_SIZE) * 100
 
-    # Full context window pressure (if text is being injected into LLM)
-    # Based on common context windows (128K, 200K)
-    WINDOW_SIZE = 200000
-    window_pct_used = (estimated_tokens / WINDOW_SIZE) * 100
-
-    if estimated_tokens > SECTION_CRITICAL_TOKENS:
+    if estimated_tokens > _CONTEXT_CRITICAL_TOKENS:
         pressure_level = "critical"
         advisory = "Section text is very long; consider splitting into sub-sections"
-    elif estimated_tokens > SECTION_WARNING_TOKENS:
+    elif estimated_tokens > _CONTEXT_WARNING_TOKENS:
         pressure_level = "warning"
         advisory = "Section text is approaching length limits"
     else:
@@ -567,10 +643,16 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     finally:
         conn.close()
 
+    # Compute gate thresholds — statistical from history when ≥min_samples exist,
+    # otherwise falls back to config-driven defaults.
+    anomaly_cfg = config.get("anomaly_detection", {})
+    thresholds = _compute_quality_anomaly_thresholds(anomaly_cfg)
+    quality_threshold  = thresholds["quality_threshold"]
+    stub_gate_threshold = thresholds["stub_gate_threshold"]
+
     total_score = 0.0
     polish_results = []
     passing = 0
-    quality_threshold = config.get("quality_threshold", 0.65)
 
     for row in rows:
         text = row["section_text"] or ""
@@ -579,7 +661,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         # §3.6 Pre-gate: stub detection (runs BEFORE other quality checks)
         stub_result = _check_stub_content(text, row["opportunity_id"])
-        stub_blocked = stub_result["score"] < 0.5  # Below SUBSTANTIVE
+        stub_blocked = stub_result["score"] < stub_gate_threshold
 
         # Context pressure monitoring (advisory)
         ctx_pressure = _check_context_pressure(text)
