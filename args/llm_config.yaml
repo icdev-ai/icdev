@@ -255,6 +255,18 @@ models:
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
+  # MiniMax M3 — 1M context, native multimodality, vision reasoning (Ollama cloud)
+  minimax-m3:
+    provider: ollama_cloud
+    model_id: "minimax-m3:latest"
+    max_output_tokens: 32768
+    context_window: 1000000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
   # Dual-model optimized: text-only Qwen3 1.7B for simultaneous VRAM residency
   # alongside Gemma3 (multimodal). Total VRAM: ~6.5GB / 8GB RTX 4060 Ti.
   # Use this as tier1_model when OLLAMA_MAX_LOADED_MODELS=2.
@@ -620,6 +632,19 @@ routing:
 
   # GovCon Proposal Functions — LOCAL ONLY (Phase 70: Redaction & Data Protection)
   # Proposal content contains CUI program names, past performance, pricing.
+  # PMO AI Advisor — CUI data stays local-first
+  pmo_corrective_action:
+    chain: [qwen3-local, claude-sonnet, gpt-4o]
+    effort: high
+
+  pmo_award_fee_narrative:
+    chain: [qwen3-local, claude-sonnet]
+    effort: medium
+
+  pmo_recommendations:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet]
+    effort: medium
+
   # Route to Ollama only — never send raw proposal content to cloud LLMs.
   # WriteGuard rewrite (wg_rewrite) stays on Claude (rewrites style, not content).
   proposal_drafting:
@@ -690,6 +715,27 @@ routing:
   default:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
+
+  # ── Slides Deck Generator (tools/slides/) ───────────────────────────────
+  slides_outline_planning:
+    chain: [minimax-m3, claude-sonnet, gpt-4o, qwen3-local]
+    effort: medium
+    description: "Plan slide deck outline from gathered ICDEV content. minimax-m3 first: 1M context ingests full source data."
+
+  slides_content_generation:
+    chain: [qwen3-local, minimax-m3, claude-sonnet, gpt-4o]
+    effort: low
+    description: "Generate bullets, speaker notes, and visual context per slide."
+
+  slides_content_revision:
+    chain: [qwen3-local, claude-sonnet, gpt-4o]
+    effort: low
+    description: "Revise a single slide based on HITL feedback."
+
+  slides_visual_prompt:
+    chain: [minimax-m3, gemma4-local, claude-sonnet]
+    effort: low
+    description: "Generate descriptive image prompt from slide content. minimax-m3 first: vision + multimodal reasoning."
 
 # -----------------------------------------------------------------------
 # Per-Agent Effort Defaults (Enhancement #4 — used by agent_executor)

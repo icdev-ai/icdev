@@ -162,6 +162,7 @@ _CANVAS_DEFS = [
     ("aiify_compat", "ICDEV_AIIFY_ENABLED", "tools.aiify.blueprint", "aiify_compat_bp"),
     ("dic", "ICDEV_DIC_ENABLED", "tools.document_intelligence.blueprint", "dic_bp"),
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
+    ("slides", "ICDEV_SLIDES_ENABLED", "tools.slides.blueprint", "slides_bp"),
 ]
 
 _CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc"}
@@ -253,12 +254,72 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 risk_summary = get_portfolio_risk_summary().get("summary", {})
             except Exception:
                 risk_summary = {}
+
+            # Health matrix: per-contract dimension breakdown (fast DB-only calls)
+            health_matrix = []
+            try:
+                from tools.govcon.portfolio_manager import compute_contract_health
+                from tools.govcon.option_period_tracker import get_portfolio_countdown
+
+                def _dim_tier(score):
+                    if score is None:
+                        return "unknown"
+                    try:
+                        s = float(score)
+                    except (TypeError, ValueError):
+                        return "unknown"
+                    return "green" if s >= 0.75 else "yellow" if s >= 0.50 else "red"
+
+                for c in contracts:
+                    cid = c.get("id") or c.get("contract_id")
+                    if not cid:
+                        continue
+                    try:
+                        h = compute_contract_health(cid)
+                        dims = h.get("dimension_scores") or h.get("dimensions") or {}
+                        raw_score = h.get("health_score")
+                        # Normalize: score may be 0-1 or 0-100
+                        if raw_score is not None and raw_score <= 1.0:
+                            display_score = round(raw_score * 100)
+                        else:
+                            display_score = round(raw_score) if raw_score is not None else None
+                        health_matrix.append({
+                            "contract_id": cid,
+                            "contract_number": c.get("contract_number", "—"),
+                            "title": c.get("title", ""),
+                            "agency": c.get("agency", ""),
+                            "overall": h.get("health", "unknown"),
+                            "health_score": display_score,
+                            "evm": _dim_tier(dims.get("evm")),
+                            "deliverables": _dim_tier(dims.get("deliverables")),
+                            "cpars": _dim_tier(dims.get("cpars")),
+                            "funding": _dim_tier(dims.get("funding")),
+                            "negative_events": _dim_tier(dims.get("negative_events")),
+                        })
+                    except Exception:
+                        health_matrix.append({
+                            "contract_id": cid,
+                            "contract_number": c.get("contract_number", "—"),
+                            "title": c.get("title", ""),
+                            "agency": c.get("agency", ""),
+                            "overall": "unknown",
+                            "health_score": None,
+                            "evm": "unknown", "deliverables": "unknown",
+                            "cpars": "unknown", "funding": "unknown", "negative_events": "unknown",
+                        })
+
+                option_countdown = get_portfolio_countdown().get("options", [])
+            except Exception:
+                option_countdown = []
+
             return render_template(
                 "cpmp/portfolio.html",
                 portfolio=portfolio,
                 contracts=contracts,
                 upcoming_deliverables=upcoming,
                 risk_summary=risk_summary,
+                health_matrix=health_matrix,
+                option_countdown=option_countdown,
             )
         except Exception as e:
             import traceback
@@ -277,6 +338,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 contracts=[],
                 upcoming_deliverables=[],
                 risk_summary={},
+                health_matrix=[],
+                option_countdown=[],
                 error=str(e),
             )
 
@@ -493,6 +556,11 @@ def _register_govcon_pages(app: "Flask", _get_db):
             return render_template("404.html", message=f"Error: {e}"), 500
         finally:
             conn.close()
+
+    @app.route("/cpmp/deliverables")
+    def cpmp_deliverable_center_page():
+        """Deliverable Command Center — all deliverables across all active contracts."""
+        return render_template("cpmp/deliverable_center.html")
 
     @app.route("/proposals")
     def proposals_list_page():
@@ -3255,6 +3323,7 @@ def create_app() -> Flask:
             "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),
             "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
             "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
+            "slides":         ("tools.iqe.adapters.slides",            ["slides.decks", "slides.slides"]),
         }
 
         data = flask_request.get_json(silent=True) or {}

@@ -488,7 +488,11 @@ reflexes:
       name: experiments_accepted_pct
       threshold: 0
       operator: gte
-    signal_score_threshold: 0.70
+    signal_score_threshold: 0.70  # static fallback when adaptive is disabled or has insufficient data
+    adaptive_threshold:
+      enabled: true
+      z_factor: 0.5     # mean + 0.5*std selects top ~31% of a normal distribution
+      min_samples: 10   # minimum scored signals required before using adaptive mode
     max_experiments_per_run: 3
     export_gkp: true
     domains:

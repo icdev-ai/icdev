@@ -1,0 +1,3 @@
+foreach s in slides.slides
+  where s.slide_type == "content"
+  select s.deck_title, s.position, s.title, s.slide_type

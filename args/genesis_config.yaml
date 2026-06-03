@@ -450,6 +450,18 @@ reflexes:
       threshold: 0
       operator: gte
 
+  slides:
+    enabled: true
+    risk_tier: green
+    schedule: "0 17 * * 5"
+    interval_seconds: 604800
+    timeout_seconds: 300
+    description: "Weekly auto-generated ICDEV™ status deck: pulls canvases, kanban, genesis, capabilities → produces .pptx via Midnight Executive theme"
+    success_metric:
+      name: slide_count
+      threshold: 1
+      operator: gte
+
   kanban:
     enabled: true
     risk_tier: green
@@ -718,9 +730,49 @@ reflexes:
       threshold: 0
       operator: gte  # 0 firing = healthy; >0 surfaces real failures (always succeeds)
     refresh_probes: [http_head]   # cheap probes re-run live each cycle; others reused from awareness
-    min_fail_to_alert: 1          # per-category failing count before an alert fires
+    min_fail_to_alert: 1          # static fallback: per-category failing count before an alert fires
     max_failure_rows: 200         # cap failure_log inserts per cycle
     max_snapshot_age_hours: 168   # ignore failures whose latest probe is >7d old (stale/abandoned)
+    # Adaptive min_fail_to_alert — threshold moved from hardcoded Python constant so the
+    # anomaly_detection layer can raise the bar when a category has many historical
+    # failures (normal noise) and keep it low when failures are rare (high signal).
+    # Uses daily failure_log insert counts: adaptive = mean + sigma_multiplier * std,
+    # bounded to [min_fail_floor, min_fail_ceiling]. Falls back to min_fail_to_alert
+    # until min_samples days of history accumulate.
+    anomaly_detection:
+      enabled: true                # use adaptive threshold based on historical failure_log data
+      min_samples: 10              # minimum days of history before adaptive mode activates
+      sigma_multiplier: 1.0        # adaptive = mean + (sigma_multiplier * std)
+      fallback_to_static: true     # use min_fail_to_alert when history is insufficient
+      history_days: 30             # rolling look-back window for daily failure counts
+      adaptive_bounds:
+        min_fail_floor: 1          # adaptive threshold never drops below this
+        min_fail_ceiling: 20       # adaptive threshold never exceeds this
+      # Per-category guidance thresholds for the LLM anomaly classifier.
+      # Moved from hardcoded strings in _ANOMALY_SYSTEM_PROMPT so operators can
+      # adjust anomaly sensitivity per category without code changes.
+      # Each entry: {guidance: <text>, noise_max: <int>, anomalous_min: <int>}
+      category_thresholds:
+        module_import:
+          guidance: "any failure (>=1) is critical and anomalous"
+          noise_max: 0
+          anomalous_min: 1
+        http_head:
+          guidance: "1-3 route errors may be noise; 5+ is anomalous"
+          noise_max: 3
+          anomalous_min: 5
+        coherence_status:
+          guidance: "1-2 may be transient; 3+ is anomalous"
+          noise_max: 2
+          anomalous_min: 3
+        twin_probe:
+          guidance: "treat like coherence_status (1-2 transient; 3+ anomalous)"
+          noise_max: 2
+          anomalous_min: 3
+        "gap::tool_not_in_manifest":
+          guidance: "informational; <=4 is not anomalous"
+          noise_max: 4
+          anomalous_min: 5
 
   # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
 
@@ -918,6 +970,9 @@ reflexes:
       enabled: true                   # use adaptive thresholds based on quality_snapshots history
       min_samples: 5                  # minimum historical snapshots before adaptive mode activates
       sigma_multiplier: 1.0           # adaptive_threshold = mean + sigma_multiplier * std
+      critical_sigma_multiplier: 2.0  # critical threshold = mean - (critical_sigma_multiplier * sigma * std)
+      critical_floor_multiplier: 2.0  # critical floor = uqs_regression_floor * critical_floor_multiplier
+      fetch_buffer: 10                # extra rows fetched beyond min_samples for delta computation
       fallback_to_static: true        # use static thresholds when history is insufficient
       adaptive_bounds:
         uqs_regression_floor: -20.0   # adaptive UQS regression threshold never goes below this

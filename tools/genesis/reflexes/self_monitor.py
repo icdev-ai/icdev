@@ -103,6 +103,201 @@ SEVERITY_MAP: Dict[str, Dict[str, str]] = {
 # subsystems (vuln_scanner, watchcon, alert_correlator).
 SOURCE_PREFIX = "self_monitor"
 
+# LLM anomaly detection — disabled by default; enable via genesis_config.yaml:
+#   anomaly_detection: {enabled: true, llm_enabled: true, baseline_hours: 72}
+DEFAULT_ANOMALY_BASELINE_HOURS = 72
+
+# Per-category guidance thresholds for the LLM anomaly classifier.
+# Configurable via genesis_config.yaml: self_monitor.anomaly_detection.category_thresholds
+# Each entry: {guidance: <human-readable hint>, noise_max: <int>, anomalous_min: <int>}
+# 'noise_max' and 'anomalous_min' are included in the prompt to aid the LLM;
+# 'guidance' is a plain-English description used as a fallback/override hint.
+DEFAULT_CATEGORY_THRESHOLDS: Dict[str, Dict[str, Any]] = {
+    "module_import": {
+        "guidance": "any failure (>=1) is critical and anomalous",
+        "noise_max": 0,
+        "anomalous_min": 1,
+    },
+    "http_head": {
+        "guidance": "1-3 route errors may be noise; 5+ is anomalous",
+        "noise_max": 3,
+        "anomalous_min": 5,
+    },
+    "coherence_status": {
+        "guidance": "1-2 may be transient; 3+ is anomalous",
+        "noise_max": 2,
+        "anomalous_min": 3,
+    },
+    "twin_probe": {
+        "guidance": "treat like coherence_status (1-2 transient; 3+ anomalous)",
+        "noise_max": 2,
+        "anomalous_min": 3,
+    },
+    "gap::tool_not_in_manifest": {
+        "guidance": "informational; <=4 is not anomalous",
+        "noise_max": 4,
+        "anomalous_min": 5,
+    },
+}
+
+_ANOMALY_PROMPT_HEADER = (
+    "You are a system health anomaly detector for an AI development platform.\n"
+    "Given per-category health probe failure counts (current vs recent baseline avg), "
+    "determine which categories represent genuine anomalies worth alerting on "
+    "versus normal operational noise.\n\n"
+    "General guidance (override with baseline data when available):\n"
+)
+
+_ANOMALY_PROMPT_FOOTER = (
+    "If baseline_avg is provided and current_count is within 1 std dev of it, "
+    "it is NOT anomalous.\n\n"
+    '{"categories": [{"name": <str>, "is_anomaly": <bool>, "confidence": <float 0-1>}]}\n'
+    "Return ONLY that JSON. No markdown, no extra text."
+)
+
+
+def _build_anomaly_system_prompt(
+    category_thresholds: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> str:
+    """Build the LLM system prompt from configurable per-category thresholds.
+
+    Falls back to DEFAULT_CATEGORY_THRESHOLDS for any missing category.
+    """
+    thresholds = dict(DEFAULT_CATEGORY_THRESHOLDS)
+    if category_thresholds:
+        for cat, cfg in category_thresholds.items():
+            if cat in thresholds:
+                thresholds[cat] = {**thresholds[cat], **cfg}
+            else:
+                thresholds[cat] = cfg
+    lines = []
+    for cat, cfg in thresholds.items():
+        lines.append(f"- {cat}: {cfg.get('guidance', 'evaluate with baseline data')}")
+    guidance_block = "\n".join(lines) + "\n\n"
+    return _ANOMALY_PROMPT_HEADER + guidance_block + _ANOMALY_PROMPT_FOOTER
+
+
+_ANOMALY_SYSTEM_PROMPT = _build_anomaly_system_prompt()
+
+
+class _AnomalyDetector:
+    """LLM-based per-category anomaly classifier with static-threshold fallback.
+
+    Instantiate once per cycle. Gracefully degrades when the LLM router is
+    unavailable or the call fails — falls back to ``len(items) >= min_fail``.
+
+    ``category_thresholds`` — optional per-category config from genesis_config.yaml
+    (self_monitor.anomaly_detection.category_thresholds). Merged over
+    DEFAULT_CATEGORY_THRESHOLDS so operator overrides only need to specify the
+    keys they want to change.
+    """
+
+    def __init__(
+        self,
+        category_thresholds: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> None:
+        self._system_prompt = _build_anomaly_system_prompt(category_thresholds)
+        self._router: Any = None
+        self._LLMRequest: Any = None
+        try:
+            from tools.llm.router import LLMRouter  # type: ignore[import]
+            from tools.llm.provider import LLMRequest  # type: ignore[import]
+            self._router = LLMRouter()
+            self._LLMRequest = LLMRequest
+        except Exception as exc:
+            LOG.debug("LLMRouter unavailable for anomaly detection; using static threshold: %s", exc)
+
+    def breaching_categories(
+        self,
+        failures_by_cat: Dict[str, List[Dict[str, Any]]],
+        min_fail: int,
+        baseline: Optional[Dict[str, float]] = None,
+    ) -> Dict[str, int]:
+        """Return {category: count} for categories deemed anomalous.
+
+        Falls back to ``len(items) >= min_fail`` when LLM is unavailable.
+        """
+        current = {cat: len(items) for cat, items in failures_by_cat.items()}
+        static = {cat: cnt for cat, cnt in current.items() if cnt >= min_fail}
+        if not current:
+            return {}
+        if self._router is None:
+            return static
+        try:
+            return self._llm_classify(current, static, baseline)
+        except Exception as exc:
+            LOG.warning("LLM anomaly detection failed; using static threshold: %s", exc)
+            return static
+
+    def _llm_classify(
+        self,
+        current: Dict[str, int],
+        static_fallback: Dict[str, int],
+        baseline: Optional[Dict[str, float]],
+    ) -> Dict[str, int]:
+        payload = [
+            {
+                "name": cat,
+                "current_count": cnt,
+                **({"baseline_avg": round(baseline[cat], 2)} if baseline and cat in baseline else {}),
+            }
+            for cat, cnt in current.items()
+        ]
+        request = self._LLMRequest(
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Evaluate {len(payload)} health probe categor(ies) for anomalies:\n"
+                    + json.dumps(payload, ensure_ascii=False)
+                ),
+            }],
+            system_prompt=self._system_prompt,
+            agent_id="self_monitor_anomaly",
+            classification="CUI",
+            max_tokens=256,
+            temperature=0.0,
+            skip_injection_scan=True,
+        )
+        response = self._router.invoke("anomaly_detection", request)
+        parsed = json.loads(response.content.strip())
+        result: Dict[str, int] = {}
+        for entry in parsed.get("categories", []):
+            name = entry.get("name", "")
+            if entry.get("is_anomaly") and name in current:
+                result[name] = current[name]
+        LOG.debug(
+            "self_monitor LLM anomaly: %d/%d categor(ies) flagged",
+            len(result), len(current),
+        )
+        return result
+
+
+def _get_failure_baseline(conn: Any, baseline_hours: float) -> Dict[str, float]:
+    """Rolling average failure count per probe_type over the past N hours.
+
+    Returns empty dict on error — callers degrade to static threshold.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=baseline_hours)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    sql = (
+        "SELECT probe_type, COUNT(*) AS cnt "
+        "FROM awareness_component_health "
+        "WHERE status = 'fail' AND probed_at >= ? "
+        "GROUP BY probe_type"
+    )
+    try:
+        rows = conn.execute(sql, (cutoff,)).fetchall()
+        cycles = max(1.0, baseline_hours / 3.0)
+        out: Dict[str, float] = {}
+        for r in rows:
+            d = dict(r) if hasattr(r, "keys") else {"probe_type": r[0], "cnt": r[1]}
+            out[d["probe_type"]] = float(d["cnt"]) / cycles
+        return out
+    except Exception as exc:
+        LOG.debug("failure baseline query failed (non-fatal): %s", exc)
+        return {}
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -241,6 +436,65 @@ def _record_failures(conn: Any, failures_by_cat: Dict[str, List[Dict[str, Any]]]
 
 
 # ---------------------------------------------------------------------------
+# Anomaly detection: adaptive min_fail_to_alert
+# ---------------------------------------------------------------------------
+
+
+def _adaptive_min_fail(conn: Any, ad_cfg: Dict[str, Any], static_fallback: int) -> int:
+    """Compute adaptive min_fail_to_alert from historical failure_log data.
+
+    Groups daily failure_log insert counts for the configured history window,
+    then returns mean + sigma*std bounded by adaptive_bounds. Falls back to
+    static_fallback when history is insufficient or anomaly detection is off.
+    Cross-DB: date grouping is done in Python so no DATE() dialect divergence.
+    """
+    from collections import Counter  # stdlib; import here to keep top-level clean
+
+    min_samples = int(ad_cfg.get("min_samples", 10))
+    sigma = float(ad_cfg.get("sigma_multiplier", 1.0))
+    history_days = int(ad_cfg.get("history_days", 30))
+    bounds = ad_cfg.get("adaptive_bounds", {})
+    floor_val = int(bounds.get("min_fail_floor", 1))
+    ceiling_val = int(bounds.get("min_fail_ceiling", 20))
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=history_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        rows = conn.execute(
+            "SELECT created_at FROM failure_log WHERE source LIKE ? AND created_at > ?",
+            (f"{SOURCE_PREFIX}:%", cutoff),
+        ).fetchall()
+    except Exception as exc:
+        LOG.debug("adaptive_min_fail: query failed (%s); using static fallback", exc)
+        return static_fallback
+
+    day_counts: Counter = Counter()
+    for r in rows:
+        raw = r[0] if not hasattr(r, "keys") else dict(r).get("created_at")
+        ts = _parse_ts(raw)
+        if ts:
+            day_counts[ts.date()] += 1
+
+    n = len(day_counts)
+    if n < min_samples:
+        LOG.debug(
+            "adaptive_min_fail: %d day(s) of data (need %d); using static fallback",
+            n, min_samples,
+        )
+        return static_fallback
+
+    vals = list(day_counts.values())
+    mean = sum(vals) / n
+    std = (sum((v - mean) ** 2 for v in vals) / n) ** 0.5
+    adaptive = int(mean + sigma * std)
+    bounded = max(floor_val, min(ceiling_val, adaptive))
+    LOG.debug(
+        "adaptive_min_fail: n=%d mean=%.1f std=%.1f raw_adaptive=%d bounded=%d",
+        n, mean, std, adaptive, bounded,
+    )
+    return bounded
+
+
+# ---------------------------------------------------------------------------
 # Project: alerts (aggregated, deduped, auto-resolved)
 # ---------------------------------------------------------------------------
 
@@ -262,8 +516,17 @@ def _firing_self_alerts(conn: Any) -> Dict[str, Dict[str, Any]]:
     return out
 
 
-def _sync_alerts(conn: Any, failures_by_cat: Dict[str, List[Dict[str, Any]]], min_fail: int) -> Dict[str, int]:
+def _sync_alerts(
+    conn: Any,
+    failures_by_cat: Dict[str, List[Dict[str, Any]]],
+    min_fail: int,
+    breaching_override: Optional[Dict[str, int]] = None,
+) -> Dict[str, int]:
     """One aggregated alert per failing category; auto-resolve recovered ones.
+
+    ``breaching_override`` — when provided (from LLM anomaly detector) it
+    replaces the static ``len(items) >= min_fail`` threshold check so the
+    LLM's per-category anomaly decision drives which alerts fire.
 
     Returns counts: {"opened": n, "resolved": n, "firing": n}.
     """
@@ -273,10 +536,13 @@ def _sync_alerts(conn: Any, failures_by_cat: Dict[str, List[Dict[str, Any]]], mi
     resolved = 0
     updated = 0
 
-    # Categories that currently breach the threshold.
-    breaching: Dict[str, int] = {
-        cat: len(items) for cat, items in failures_by_cat.items() if len(items) >= min_fail
-    }
+    # Categories that currently breach: prefer LLM-classified set when provided.
+    if breaching_override is not None:
+        breaching: Dict[str, int] = breaching_override
+    else:
+        breaching = {
+            cat: len(items) for cat, items in failures_by_cat.items() if len(items) >= min_fail
+        }
 
     # 1) Open (or refresh) one aggregated alert per breaching category.
     for cat, count in breaching.items():
@@ -390,11 +656,31 @@ def run(config: Optional[Dict[str, Any]] = None, trust: Any = None) -> Dict[str,
     except Exception:
         pass
 
+    # 2) Anomaly detection: adaptive statistical threshold + optional LLM classifier
+    ad_cfg = config.get("anomaly_detection", {})
+    llm_breaching: Optional[Dict[str, int]] = None
+    if ad_cfg.get("enabled", False):
+        # Statistical: shift min_fail based on historical daily failure counts
+        min_fail = _adaptive_min_fail(conn, ad_cfg, min_fail)
+        # LLM: per-category contextual anomaly classification (overrides static check)
+        if ad_cfg.get("llm_enabled", False):
+            baseline_hours = float(ad_cfg.get("baseline_hours", DEFAULT_ANOMALY_BASELINE_HOURS))
+            baseline = _get_failure_baseline(conn, baseline_hours)
+            category_thresholds = ad_cfg.get("category_thresholds") or {}
+            detector = _AnomalyDetector(category_thresholds=category_thresholds or None)
+            # Detector needs failures_by_cat — fetch it early for the baseline call
+            _early_failures = _latest_failures(conn, max_age_hours)
+            llm_breaching = detector.breaching_categories(_early_failures, min_fail, baseline)
+
     try:
-        failures_by_cat = _latest_failures(conn, max_age_hours)
+        failures_by_cat = (
+            _early_failures  # type: ignore[possibly-undefined]
+            if llm_breaching is not None
+            else _latest_failures(conn, max_age_hours)
+        )
         total_failing = sum(len(v) for v in failures_by_cat.values())
         failures_logged = _record_failures(conn, failures_by_cat, cap)
-        alert_counts = _sync_alerts(conn, failures_by_cat, min_fail)
+        alert_counts = _sync_alerts(conn, failures_by_cat, min_fail, breaching_override=llm_breaching)
     finally:
         try:
             conn.close()
@@ -423,6 +709,9 @@ def run(config: Optional[Dict[str, Any]] = None, trust: Any = None) -> Dict[str,
             "alerts_resolved": alert_counts["resolved"],
             "alerts_firing": alert_counts["firing"],
             "failures_logged": failures_logged,
+            "min_fail_to_alert": min_fail,
+            "adaptive_threshold": ad_cfg.get("enabled", False),
+            "llm_anomaly_detection": ad_cfg.get("llm_enabled", False),
             "refresh": refresh_summary,
             "elapsed_ms": elapsed_ms,
         },

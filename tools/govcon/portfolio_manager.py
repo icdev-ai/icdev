@@ -299,15 +299,26 @@ def get_portfolio_summary():
     ).fetchall():
         health_dist[h_row["health"]] = h_row["cnt"]
 
-    # Upcoming deliverables (next 30 days) — compute days_until_due
-    upcoming = conn.execute(
-        "SELECT d.*, c.contract_number, c.title as contract_title, "
-        "CAST(julianday(d.due_date) - julianday('now') AS INTEGER) as days_until_due "
+    # Upcoming deliverables (next 30 days) — use Python dates to avoid DB-specific functions
+    from datetime import date as _date, timedelta as _timedelta
+    _today = _date.today().isoformat()
+    _in_30 = (_date.today() + _timedelta(days=30)).isoformat()
+    upcoming_raw = conn.execute(
+        "SELECT d.*, c.contract_number, c.title as contract_title "
         "FROM cpmp_deliverables d JOIN cpmp_contracts c ON d.contract_id = c.id "
-        "WHERE d.due_date BETWEEN date('now') AND date('now', '+30 days') "
+        "WHERE d.due_date >= ? AND d.due_date <= ? "
         "AND d.status NOT IN ('accepted', 'rejected') "
-        "ORDER BY d.due_date ASC LIMIT 20"
+        "ORDER BY d.due_date ASC LIMIT 20",
+        (_today, _in_30)
     ).fetchall()
+    upcoming = []
+    for _row in upcoming_raw:
+        _d = dict(_row)
+        try:
+            _d["days_until_due"] = (_date.fromisoformat(str(_d["due_date"])) - _date.today()).days
+        except Exception:
+            _d["days_until_due"] = None
+        upcoming.append(_d)
 
     # Contract list for table — include latest CPI/SPI via LEFT JOIN
     contracts_raw = conn.execute(

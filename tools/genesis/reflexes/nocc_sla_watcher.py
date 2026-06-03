@@ -7,15 +7,21 @@ and publishes a warning canvas event when projected compliance falls
 below the dynamically computed warn margin.
 
 Detection hierarchy:
-  1. Statistical (z-score on historical deviations) — if ≥10 historical
-     records exist for the circuit+sla_type pair
+  1. Statistical (z-score on historical deviations) — if ≥min_samples historical
+     records exist for the circuit+sla_type pair (configurable via genesis_config.yaml)
   2. LLM contextual — borderline cases near the dynamic threshold
-  3. Static fallback — _WARN_MARGIN_PCT when insufficient history
+  3. Static fallback — warn_margin_pct when insufficient history
+
+All anomaly detection parameters are sourced from genesis_config.yaml
+reflexes.nocc_sla_watcher.anomaly_detection so they can be tuned without
+code changes. Module-level values below are default fallbacks only.
 
 Air-gap safe: LLM calls are optional and degrade gracefully to
 statistical/static fallback.
 """
 from __future__ import annotations
+
+import os
 
 IMPLEMENTATION_STATUS = "full"
 from tools.logging.icdev_logger import get_logger
@@ -28,16 +34,15 @@ logger = get_logger(__name__)
 
 CADENCE_HOURS = 4
 
-# Static fallback warn margin (percentage points below target that triggers a warning)
+# Static fallback warn margin — overridable via genesis_config.yaml warn_margin_pct
 _WARN_MARGIN_PCT = 0.5
 
-# Anomaly detection configuration
-_ANOMALY_MIN_HISTORY = 10          # Minimum historical readings for statistical method
-_ANOMALY_HISTORY_DAYS = 30         # Days of SLA history to analyze for baseline
-_ANOMALY_SIGMA = 1.5               # Z-score multiplier for dynamic margin
-_ANOMALY_MODEL = "claude-haiku-4-5-20251001"
-_ANOMALY_STABLE_STD = 0.01         # Std threshold below which circuit is "stable"
-_BORDERLINE_RATIO = 0.8            # LLM only invoked when gap >= this fraction of margin
+# Default anomaly detection parameters — all overridable from ctx (genesis_config.yaml)
+_ANOMALY_MIN_HISTORY = 10          # min_samples: minimum historical readings for statistical method
+_ANOMALY_HISTORY_DAYS = 30         # history_days: days of SLA history to analyze
+_ANOMALY_SIGMA = 1.5               # sigma_multiplier: z-score multiplier for dynamic margin
+_ANOMALY_STABLE_STD = 0.01         # stable_std: std threshold below which circuit is "stable"
+_BORDERLINE_RATIO = 0.8            # borderline_ratio: LLM only invoked when gap >= this fraction of margin
 
 
 def _now() -> str:
@@ -103,29 +108,45 @@ def _fetch_sla_history(
 def _compute_dynamic_warn_margin(
     history_deviations: List[float],
     fallback: float = _WARN_MARGIN_PCT,
+    anomaly_cfg: Optional[Dict[str, Any]] = None,
 ) -> Tuple[float, str]:
     """Derive an adaptive SLA warn margin via z-score on historical deviations.
+
+    Parameters sourced from *anomaly_cfg* (genesis_config.yaml
+    nocc_sla_watcher.anomaly_detection); module-level defaults used when absent.
 
     Returns ``(margin_pct, method)`` where *method* is one of:
     - ``'statistical'``        — mean + sigma*std with adequate history
     - ``'statistical_stable'`` — stable circuit (low std); add fixed buffer
     - ``'static'``             — insufficient history; use *fallback*
     """
-    if len(history_deviations) < _ANOMALY_MIN_HISTORY:
+    if anomaly_cfg is None:
+        anomaly_cfg = {}
+
+    if not anomaly_cfg.get("enabled", True):
+        return fallback, "static"
+
+    min_samples = int(anomaly_cfg.get("min_samples", _ANOMALY_MIN_HISTORY))
+    sigma_multiplier = float(anomaly_cfg.get("sigma_multiplier", _ANOMALY_SIGMA))
+    stable_std = float(anomaly_cfg.get("stable_std", _ANOMALY_STABLE_STD))
+    bounds = anomaly_cfg.get("adaptive_bounds", {})
+    margin_floor = float(bounds.get("margin_floor", 0.1))
+    margin_ceiling = float(bounds.get("margin_ceiling", 10.0))
+
+    if len(history_deviations) < min_samples:
         return fallback, "static"
 
     mean = sum(history_deviations) / len(history_deviations)
     variance = sum((x - mean) ** 2 for x in history_deviations) / len(history_deviations)
     std = variance ** 0.5
 
-    if std < _ANOMALY_STABLE_STD:
+    if std < stable_std:
         # Stable circuit: use mean deviation + fallback buffer so margin > 0
         margin = max(mean + fallback, fallback)
-        return margin, "statistical_stable"
+        return min(margin, margin_ceiling), "statistical_stable"
 
-    margin = max(mean + _ANOMALY_SIGMA * std, fallback * 0.1)
-    # Cap at 10 percentage points to avoid absurd margins on noisy data
-    margin = min(margin, 10.0)
+    margin = max(mean + sigma_multiplier * std, margin_floor)
+    margin = min(margin, margin_ceiling)
     return margin, "statistical"
 
 
@@ -137,6 +158,7 @@ def _llm_assess_sla_risk(
     carrier: str,
     margin_pct: float,
     history_len: int,
+    model: Optional[str] = None,
 ) -> Optional[bool]:
     """Ask the LLM whether a borderline SLA trend warrants a warning.
 
@@ -162,13 +184,20 @@ def _llm_assess_sla_risk(
             'Respond ONLY with JSON: {"is_warn": true|false, "rationale": "<one sentence>"}'
         )
 
+        # Model: prefer explicit arg → env override → haiku default (never hardcoded)
+        resolved_model = (
+            model
+            or os.environ.get("ICDEV_NOCC_SLA_ANOMALY_MODEL")
+            or os.environ.get("ICDEV_HAIKU_MODEL", "claude-haiku-4-5-20251001")
+        )
+
         request = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
             system_prompt=(
                 "You are an SLA anomaly detection assistant. Assess SLA measurements for "
                 "genuine breach risk. Be conservative — only warn on real trends."
             ),
-            model=_ANOMALY_MODEL,
+            model=resolved_model,
             max_tokens=128,
             temperature=0.0,
             agent_id="nocc-sla-anomaly-detector",
@@ -216,7 +245,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         from tools.noc_canvas.db.init_db import get_connection as nocc_conn
         db = nocc_conn()
         try:
-            _watch_sla(db, dry_run, result)
+            _watch_sla(db, dry_run, ctx, result)
         finally:
             db.close()
     except Exception as exc:
@@ -227,7 +256,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
     return result
 
 
-def _watch_sla(conn, dry_run: bool, result: Dict[str, Any]) -> None:
+def _watch_sla(conn, dry_run: bool, cfg: Dict[str, Any], result: Dict[str, Any]) -> None:
     try:
         rows = _try_exec(
             conn,
@@ -243,6 +272,13 @@ def _watch_sla(conn, dry_run: bool, result: Dict[str, Any]) -> None:
         return
 
     result["records_checked"] = len(rows)
+
+    # Source all anomaly detection params from cfg (genesis_config.yaml) with module defaults
+    anomaly_cfg = cfg.get("anomaly_detection", {})
+    static_fallback = float(cfg.get("warn_margin_pct", _WARN_MARGIN_PCT))
+    history_days = int(anomaly_cfg.get("history_days", _ANOMALY_HISTORY_DAYS))
+    borderline_ratio = float(anomaly_cfg.get("borderline_ratio", _BORDERLINE_RATIO))
+    llm_model = cfg.get("llm_model") or None  # None → resolved in _llm_assess_sla_risk via env
 
     for row in rows:
         if hasattr(row, "keys"):
@@ -260,8 +296,10 @@ def _watch_sla(conn, dry_run: bool, result: Dict[str, Any]) -> None:
             measured = float(measured_raw or 0)
 
         # Compute dynamic warn margin from historical data for this circuit+sla_type
-        history = _fetch_sla_history(conn, circuit, sla_type)
-        dynamic_margin, margin_method = _compute_dynamic_warn_margin(history)
+        history = _fetch_sla_history(conn, circuit, sla_type, history_days)
+        dynamic_margin, margin_method = _compute_dynamic_warn_margin(
+            history, fallback=static_fallback, anomaly_cfg=anomaly_cfg
+        )
 
         logger.debug(
             "SLA check: circuit=%s sla_type=%s margin=%.3f method=%s history=%d",
@@ -275,10 +313,10 @@ def _watch_sla(conn, dry_run: bool, result: Dict[str, Any]) -> None:
         # LLM borderline assessment for non-breach warnings near the margin
         if is_warn and not is_breach and margin_method != "static":
             gap = abs(target - measured)
-            if gap >= dynamic_margin * _BORDERLINE_RATIO:
+            if gap >= dynamic_margin * borderline_ratio:
                 llm_result = _llm_assess_sla_risk(
                     sla_type, target, measured, circuit, carrier,
-                    dynamic_margin, len(history),
+                    dynamic_margin, len(history), model=llm_model,
                 )
                 if llm_result is not None:
                     is_warn = llm_result

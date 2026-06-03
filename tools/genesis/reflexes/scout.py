@@ -28,6 +28,82 @@ from tools.security.injection_scanner import scan_text  # noqa: E402
 
 logger = get_logger(__name__)
 
+_REFLEX_DEFAULTS: Dict[str, Any] = {
+    "api_timeout_seconds": 15,
+    "description_max_chars": 300,
+    "release_body_max_chars": 500,
+    "notes_preview_max_chars": 200,
+    "top_repos_n": 5,
+    "anomaly_detection": {
+        "enabled": True,
+        "z_score_threshold": 2.0,
+        "min_samples": 3,
+        "metrics": ["stars", "forks", "open_issues"],
+    },
+}
+
+
+def _load_reflex_config() -> Dict[str, Any]:
+    """Load genesis_reflex section from args/scout_config.yaml, merging with defaults."""
+    try:
+        import yaml
+
+        path = BASE_DIR / "args" / "scout_config.yaml"
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            file_cfg = data.get("genesis_reflex", {})
+            merged = {**_REFLEX_DEFAULTS, **file_cfg}
+            ad_file = file_cfg.get("anomaly_detection", {})
+            merged["anomaly_detection"] = {**_REFLEX_DEFAULTS["anomaly_detection"], **ad_file}
+            return merged
+    except (ImportError, Exception):
+        pass
+    return dict(_REFLEX_DEFAULTS)
+
+
+def _detect_anomalies(targets_data: List[Dict], reflex_cfg: Dict[str, Any]) -> Dict[str, List[str]]:
+    """Flag repos whose metrics are statistical outliers (z-score method).
+
+    Returns a mapping of repo name -> list of anomaly descriptions.
+    Only runs when ≥ min_samples valid repos are present.
+    """
+    ad_cfg = reflex_cfg.get("anomaly_detection", {})
+    if not ad_cfg.get("enabled", True):
+        return {}
+
+    z_threshold = float(ad_cfg.get("z_score_threshold", 2.0))
+    min_samples = int(ad_cfg.get("min_samples", 3))
+    metrics: List[str] = ad_cfg.get("metrics", ["stars", "forks", "open_issues"])
+
+    valid = [t for t in targets_data if t.get("info") and not t.get("error")]
+    if len(valid) < min_samples:
+        return {}
+
+    anomalies: Dict[str, List[str]] = {}
+    metric_labels = {"stars": "star count", "forks": "fork count", "open_issues": "open issue count"}
+
+    for metric in metrics:
+        values = [float(t["info"].get(metric, 0)) for t in valid]
+        n = len(values)
+        if n < min_samples:
+            continue
+        mean = sum(values) / n
+        variance = sum((v - mean) ** 2 for v in values) / n
+        std = variance ** 0.5
+        if std == 0:
+            continue
+        for t, val in zip(valid, values):
+            z = (val - mean) / std
+            if abs(z) >= z_threshold:
+                direction = "unusually high" if z > 0 else "unusually low"
+                label = metric_labels.get(metric, metric)
+                anomalies.setdefault(t["repo"], []).append(
+                    f"{direction} {label}: {int(val):,} (z={z:.1f})"
+                )
+
+    return anomalies
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -56,7 +132,7 @@ def _load_targets() -> List[Dict[str, Any]]:
     return []
 
 
-def _github_api(endpoint: str, timeout: int = 15) -> Optional[Dict]:
+def _github_api(endpoint: str, timeout: int = _REFLEX_DEFAULTS["api_timeout_seconds"]) -> Optional[Dict]:
     """Call GitHub public API.  Returns None on failure."""
     url = f"https://api.github.com{endpoint}"
     headers = {
@@ -77,14 +153,18 @@ def _github_api(endpoint: str, timeout: int = 15) -> Optional[Dict]:
         return None
 
 
-def _get_repo_info(owner_repo: str) -> Optional[Dict]:
+def _get_repo_info(
+    owner_repo: str,
+    description_max_chars: int = _REFLEX_DEFAULTS["description_max_chars"],
+    timeout: int = _REFLEX_DEFAULTS["api_timeout_seconds"],
+) -> Optional[Dict]:
     """Fetch repo metadata: stars, description, language, updated_at."""
-    data = _github_api(f"/repos/{owner_repo}")
+    data = _github_api(f"/repos/{owner_repo}", timeout=timeout)
     if not data:
         return None
     return {
         "full_name": data.get("full_name", owner_repo),
-        "description": (data.get("description") or "")[:300],
+        "description": (data.get("description") or "")[:description_max_chars],
         "stars": data.get("stargazers_count", 0),
         "forks": data.get("forks_count", 0),
         "language": data.get("language", ""),
@@ -95,27 +175,38 @@ def _get_repo_info(owner_repo: str) -> Optional[Dict]:
     }
 
 
-def _get_latest_release(owner_repo: str) -> Optional[Dict]:
+def _get_latest_release(
+    owner_repo: str,
+    body_max_chars: int = _REFLEX_DEFAULTS["release_body_max_chars"],
+    timeout: int = _REFLEX_DEFAULTS["api_timeout_seconds"],
+) -> Optional[Dict]:
     """Fetch latest release info."""
-    data = _github_api(f"/repos/{owner_repo}/releases/latest")
+    data = _github_api(f"/repos/{owner_repo}/releases/latest", timeout=timeout)
     if not data:
         return None
     return {
         "tag": data.get("tag_name", ""),
         "name": data.get("name", ""),
         "published_at": data.get("published_at", ""),
-        "body": (data.get("body") or "")[:500],
+        "body": (data.get("body") or "")[:body_max_chars],
     }
 
 
-def _generate_brief(targets_data: List[Dict]) -> str:
+def _generate_brief(
+    targets_data: List[Dict],
+    anomalies: Optional[Dict[str, List[str]]] = None,
+    notes_preview_max_chars: int = _REFLEX_DEFAULTS["notes_preview_max_chars"],
+) -> str:
     """Generate a markdown intel brief from collected data."""
     now = _utcnow()
+    anomalies = anomalies or {}
+    anomaly_count = sum(len(v) for v in anomalies.values())
     lines = [
         "# Genesis Scout Brief",
         "",
         f"**Date:** {now.strftime('%Y-%m-%d')}",
         f"**Repos Monitored:** {len(targets_data)}",
+        f"**Anomalies Detected:** {anomaly_count}",
         "**Classification:** CUI // SP-CTI",
         "",
         "---",
@@ -140,6 +231,7 @@ def _generate_brief(targets_data: List[Dict]) -> str:
             stars = info.get("stars", "?")
             desc = info.get("description", "")
             lang = info.get("language", "")
+            repo_anomalies = anomalies.get(repo, [])
 
             lines.append(f"### {repo}")
             lines.append(f"- **Stars:** {stars:,}" if isinstance(stars, int) else f"- **Stars:** {stars}")
@@ -152,8 +244,9 @@ def _generate_brief(targets_data: List[Dict]) -> str:
                     f"- **Latest Release:** {release.get('tag', '?')} ({release.get('published_at', '?')[:10]})"
                 )
                 if release.get("body"):
-                    # First 200 chars of release notes
-                    lines.append(f"- **Notes:** {release['body'][:200]}...")
+                    lines.append(f"- **Notes:** {release['body'][:notes_preview_max_chars]}...")
+            if repo_anomalies:
+                lines.append(f"- **Anomalies:** {'; '.join(repo_anomalies)}")
             if info.get("archived"):
                 lines.append("- **STATUS: ARCHIVED**")
             lines.append("")
@@ -170,6 +263,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "metric_value": 0,
             "details": {"status": "air_gapped"},
         }
+
+    reflex_cfg = _load_reflex_config()
+    api_timeout = int(reflex_cfg["api_timeout_seconds"])
+    desc_max = int(reflex_cfg["description_max_chars"])
+    body_max = int(reflex_cfg["release_body_max_chars"])
+    notes_max = int(reflex_cfg["notes_preview_max_chars"])
+    top_n = int(reflex_cfg["top_repos_n"])
 
     targets = _load_targets()
     if not targets:
@@ -188,7 +288,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             continue
 
         print(f"  Scouting: {repo}")
-        info = _get_repo_info(repo)
+        info = _get_repo_info(repo, description_max_chars=desc_max, timeout=api_timeout)
         if not info:
             errors += 1
             targets_data.append({"repo": repo, "category": target.get("category", ""), "info": {}, "error": True})
@@ -220,7 +320,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         release = None
         watch = target.get("watch", [])
         if "releases" in watch:
-            release = _get_latest_release(repo)
+            release = _get_latest_release(repo, body_max_chars=body_max, timeout=api_timeout)
             # Scan release notes for injection
             if release and release.get("body"):
                 rel_findings = scan_text(release["body"], source=f"github:{repo}/releases")
@@ -242,8 +342,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             }
         )
 
+    valid_targets = [t for t in targets_data if not t.get("error")]
+
+    # Anomaly detection — flag repos with statistically unusual metrics
+    anomalies = _detect_anomalies(targets_data, reflex_cfg)
+
     # Generate brief
-    brief_md = _generate_brief([t for t in targets_data if not t.get("error")])
+    brief_md = _generate_brief(valid_targets, anomalies=anomalies, notes_preview_max_chars=notes_max)
 
     # Write brief
     reports_dir = BASE_DIR / "data" / "genesis" / "reports"
@@ -252,7 +357,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     brief_file = reports_dir / f"scout-{date_str}.md"
     brief_file.write_text(brief_md, encoding="utf-8")
 
-    successful = len([t for t in targets_data if not t.get("error")])
+    successful = len(valid_targets)
+    anomaly_repos = list(anomalies.keys())
 
     return {
         "success": successful > 0,
@@ -261,10 +367,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "repos_scouted": successful,
             "repos_failed": errors,
             "brief_file": str(brief_file),
+            "anomalies_detected": len(anomaly_repos),
+            "anomaly_repos": anomaly_repos,
             "top_by_stars": sorted(
                 [{"repo": t["repo"], "stars": t["info"].get("stars", 0)} for t in targets_data if t.get("info")],
                 key=lambda x: x["stars"],
                 reverse=True,
-            )[:5],
+            )[:top_n],
         },
     }

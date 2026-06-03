@@ -809,6 +809,39 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     assessment_run_at TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS slides_decks (
+    deck_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    title         TEXT NOT NULL,
+    deck_type     TEXT NOT NULL DEFAULT 'executive_overview',
+    theme         TEXT NOT NULL DEFAULT 'midnight_executive',
+    status        TEXT NOT NULL DEFAULT 'pending',
+    source_types  TEXT DEFAULT '[]',
+    pptx_path     TEXT,
+    slide_count   INTEGER DEFAULT 0,
+    error_message TEXT,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at  DATETIME
+);
+CREATE TABLE IF NOT EXISTS slides_slides (
+    slide_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    deck_id       INTEGER NOT NULL REFERENCES slides_decks(deck_id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL,
+    slide_type    TEXT NOT NULL DEFAULT 'content',
+    title         TEXT NOT NULL,
+    bullets       TEXT DEFAULT '[]',
+    speaker_notes TEXT,
+    image_path    TEXT,
+    image_prompt  TEXT,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS slides_audit (
+    audit_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+    deck_id   INTEGER REFERENCES slides_decks(deck_id),
+    action    TEXT NOT NULL,
+    actor     TEXT DEFAULT 'system',
+    details   TEXT,
+    ts        DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 

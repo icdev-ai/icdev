@@ -21,6 +21,63 @@ sys.path.insert(0, str(BASE_DIR))
 from tools.db.storage import get_connection  # noqa: E402
 
 
+def _compute_quality_threshold(config: Dict[str, Any]) -> float:
+    """Return the WriteGuard minimum score, adapted via anomaly detection.
+
+    Queries recent pulse_posts readability scores and sets the threshold at
+    mean + z_score_floor * std so it tracks the current quality distribution
+    rather than staying fixed at a hardcoded value.  Falls back to the
+    config floor when history is insufficient or anomaly detection is off.
+
+    Config keys (all under config["anomaly_detection"]):
+      enabled         — bool, default False (use static floor when off)
+      lookback_days   — int, default 30
+      min_history     — int, default 5 (minimum posts needed to adapt)
+      z_score_floor   — float, default -1.5 (σ offset; negative → below mean)
+      absolute_floor  — float, default 60 (hard lower bound)
+    """
+    floor: float = float(config.get("writeguard_min_score", 80))
+    ad = config.get("anomaly_detection", {})
+    if not ad.get("enabled", False):
+        return floor
+
+    lookback_days: int = int(ad.get("lookback_days", 30))
+    min_history: int = int(ad.get("min_history", 5))
+    z_floor: float = float(ad.get("z_score_floor", -1.5))
+    absolute_floor: float = float(ad.get("absolute_floor", 60))
+
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            """
+            SELECT readability_score
+            FROM pulse_posts
+            WHERE readability_score IS NOT NULL
+              AND readability_score > 0
+              AND created_at >= datetime('now', ?)
+            ORDER BY created_at DESC
+            LIMIT 200
+            """,
+            (f"-{lookback_days} days",),
+        ).fetchall()
+        conn.close()
+
+        scores = [float(r[0]) for r in rows if r[0] is not None]
+        if len(scores) < min_history:
+            return floor
+
+        mean = sum(scores) / len(scores)
+        variance = sum((s - mean) ** 2 for s in scores) / len(scores)
+        std = variance ** 0.5
+        if std < 1e-6:
+            return floor
+
+        dynamic = mean + z_floor * std
+        return max(absolute_floor, dynamic)
+    except Exception:
+        return floor
+
+
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -233,10 +290,19 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     Strategy: SAM.gov opportunities first, then demand topics as fallback.
     """
     max_articles = config.get("max_articles_per_day", 2)
-    _min_score = config.get("require_writeguard_pass", True) and 80 or 0  # noqa: F841
+    require_pass = config.get("require_writeguard_pass", True)
+    min_score = _compute_quality_threshold(config) if require_pass else 0.0
 
     # Phase 1: Try SAM.gov → Pulse bridge first
     sam_results = _run_sam_bridge(max_articles=max_articles)
+
+    # Anomaly detection: drop SAM articles below quality threshold
+    if require_pass:
+        low_quality = [r for r in sam_results if r.get("quality_score", 0) < min_score]
+        if low_quality:
+            print(f"  Publish: {len(low_quality)} SAM article(s) below quality threshold ({min_score}) — skipped")
+        sam_results = [r for r in sam_results if r.get("quality_score", 0) >= min_score]
+
     remaining = max_articles - len(sam_results)
 
     # Phase 2: Fill remaining slots with demand topics
@@ -249,7 +315,6 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         }
 
     results = []
-    best_score = 0.0
 
     for topic_data in topics:
         topic = topic_data.get("topic", "")
@@ -264,12 +329,33 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             results.append({"topic": topic[:60], "status": "draft_failed", "source": source})
             continue
 
+        # Anomaly detection: apply same quality threshold as SAM articles
+        quality_score = 0.0
+        if require_pass:
+            wg = _run_writeguard(draft.get("body", ""))
+            quality_score = float(wg.get("score", 0))
+            if quality_score < min_score:
+                print(
+                    f"  Publish: '{topic[:50]}' quality {quality_score} < threshold {min_score} — skipped"
+                )
+                results.append(
+                    {
+                        "topic": topic[:60],
+                        "status": "quality_rejected",
+                        "quality_score": quality_score,
+                        "threshold": min_score,
+                        "source": source,
+                    }
+                )
+                continue
+
         post_id = draft.get("post_id")
         results.append(
             {
                 "topic": topic[:60],
                 "status": "staged" if post_id else "stage_failed",
                 "post_id": post_id,
+                "quality_score": quality_score,
                 "source": source,
             }
         )
@@ -292,11 +378,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     return {
         "success": len(staged) > 0,
-        "metric_value": best_score,
+        "metric_value": float(len(staged)),
         "details": {
             "sam_articles": len(sam_results),
             "demand_topics_attempted": len(topics),
             "articles_staged": len(staged),
+            "quality_threshold": min_score,
             "results": all_results,
         },
     }

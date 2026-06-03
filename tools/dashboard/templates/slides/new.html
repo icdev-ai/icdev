@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Generate Slide Deck - ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+<div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><a href="/slides">Slide Decks</a><span class="separator">/</span><span>New Deck</span></div>
+
+<div class="page-header">
+    <h1>Generate New Slide Deck</h1>
+    <p class="subtitle">Choose your content sources, theme, and deck type — ICDEV™ will generate a professional PPTX presentation.</p>
+</div>
+
+<form id="generate-form" style="max-width:800px;">
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3 style="margin:0;">Deck Settings</h3></div>
+        <div class="card-body">
+            <div class="form-group">
+                <label class="form-label">Presentation Title</label>
+                <input type="text" id="title" class="form-control" value="ICDEV™ Platform Overview"
+                       placeholder="e.g. ICDEV™ Platform Overview" required>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
+                <div class="form-group">
+                    <label class="form-label">Deck Type</label>
+                    <select id="deck_type" class="form-control">
+                        {% for dt in deck_types %}
+                        <option value="{{ dt }}" {% if dt == default_deck_type %}selected{% endif %}>
+                            {{ dt | replace('_', ' ') | title }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Theme</label>
+                    <select id="theme" class="form-control">
+                        {% for t in themes %}
+                        <option value="{{ t }}" {% if t == default_theme %}selected{% endif %}>
+                            {{ t | replace('_', ' ') | title }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-group" style="margin-top:16px;">
+                <label class="form-label">Max Slides</label>
+                <input type="range" id="max_slides" min="5" max="16" value="10"
+                       oninput="document.getElementById('slides-val').textContent=this.value">
+                <span id="slides-val" style="font-weight:600; margin-left:8px;">10</span> slides
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3 style="margin:0;">Content Sources</h3></div>
+        <div class="card-body">
+            <p style="color:var(--text-secondary); font-size:13px; margin-bottom:16px;">
+                Select which ICDEV™ live data sources to pull content from.
+                All sources produce contextually relevant slide content automatically.
+            </p>
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:10px;">
+                {% for src in source_types %}
+                {% if src != 'upload' %}
+                <label class="source-card" style="display:flex; align-items:flex-start; gap:10px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:12px; cursor:pointer;">
+                    <input type="checkbox" name="sources" value="{{ src }}"
+                           {% if src in ['icdev_capabilities', 'canvases', 'kanban'] %}checked{% endif %}
+                           style="margin-top:2px;">
+                    <div>
+                        <div style="font-weight:600; font-size:13px;">{{ src | replace('_', ' ') | title }}</div>
+                        <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">
+                            {% if src == 'icdev_capabilities' %}Core platform capabilities + feature domains{% endif %}
+                            {% if src == 'canvases' %}Active design canvases + descriptions{% endif %}
+                            {% if src == 'child_apps' %}Showcase + child application catalog{% endif %}
+                            {% if src == 'kanban' %}Project epics + task burndown{% endif %}
+                            {% if src == 'genesis' %}Genesis reflex run summaries{% endif %}
+                        </div>
+                    </div>
+                </label>
+                {% endif %}
+                {% endfor %}
+            </div>
+
+            <!-- Optional: text upload -->
+            <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border-color);">
+                <label class="form-label">Additional Context (optional)</label>
+                <textarea id="upload_text" class="form-control" rows="4"
+                          placeholder="Paste any additional context, requirements, or document text to include in slide generation…"></textarea>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3 style="margin:0;">Graphics</h3></div>
+        <div class="card-body">
+            <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                <input type="checkbox" id="enable_graphics" checked>
+                <div>
+                    <div style="font-weight:600;">Generate contextual images per slide</div>
+                    <div style="font-size:12px; color:var(--text-secondary);">
+                        Uses {{ 'Ollama cloud' if env.SLIDES_IMAGE_PROVIDER == 'ollama_cloud' else (env.SLIDES_IMAGE_PROVIDER|default('matplotlib'))|title }} image generation.
+                        Fallback: programmatic navy/gold diagram.
+                    </div>
+                </div>
+            </label>
+        </div>
+    </div>
+
+    <div id="progress" style="display:none; margin-bottom:16px;">
+        <div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:20px; text-align:center;">
+            <div class="spinner" style="margin:0 auto 12px;"></div>
+            <div id="progress-msg" style="color:var(--text-secondary);">Generating your deck — pulling sources, planning outline, generating slides…</div>
+        </div>
+    </div>
+
+    <div id="error-msg" style="display:none;" class="alert alert-danger"></div>
+
+    <div style="display:flex; gap:12px;">
+        <button type="submit" class="btn btn-primary" id="submit-btn">Generate Deck ✨</button>
+        <a href="/slides" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+
+<script>
+document.getElementById('generate-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    var btn = document.getElementById('submit-btn');
+    var progress = document.getElementById('progress');
+    var errorMsg = document.getElementById('error-msg');
+
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    progress.style.display = '';
+    errorMsg.style.display = 'none';
+
+    var sources = Array.from(document.querySelectorAll('input[name=sources]:checked')).map(i => i.value);
+
+    var payload = {
+        title: document.getElementById('title').value,
+        deck_type: document.getElementById('deck_type').value,
+        theme: document.getElementById('theme').value,
+        max_slides: parseInt(document.getElementById('max_slides').value),
+        sources: sources,
+        upload_text: document.getElementById('upload_text').value,
+    };
+
+    try {
+        var resp = await fetch('/slides/api/generate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        });
+        var data = await resp.json();
+        if (data.deck_id) {
+            window.location.href = '/slides/' + data.deck_id;
+        } else {
+            errorMsg.textContent = data.error || 'Generation failed.';
+            errorMsg.style.display = '';
+            btn.disabled = false;
+            btn.textContent = 'Generate Deck ✨';
+            progress.style.display = 'none';
+        }
+    } catch(err) {
+        errorMsg.textContent = 'Network error: ' + err.message;
+        errorMsg.style.display = '';
+        btn.disabled = false;
+        btn.textContent = 'Generate Deck ✨';
+        progress.style.display = 'none';
+    }
+});
+</script>
+{% endblock %}
