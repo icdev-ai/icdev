@@ -29,6 +29,18 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Module-level constants — Fulfill Reflex (R11) thresholds & limits.
+# Extracted from inline magic numbers (AI-ify opp 5404, hardcoded_threshold
+# → anomaly_detection).  Overridable from proposal_genesis_config.yaml under
+# reflexes.fulfill.  Change config, not code.
+# ---------------------------------------------------------------------------
+_DEFAULT_DAYS_AHEAD           = 14   # deliverables-due lookahead window (config: days_ahead)
+_DEFAULT_MAX_GENERATIONS      = 10   # CDRL generations dispatched per run (config: max_generations_per_run)
+_DEFAULT_STALE_THRESHOLD_DAYS = 90   # age (days) after which compliance docs are flagged stale (config: stale_threshold_days)
+_GOVEVAL_GATE_THRESHOLD       = 0.5  # GovEval composite below which a CDRL is flagged needs_review (anomaly)
+_CDRL_GEN_TIMEOUT_SECS        = 300  # per-CDRL subprocess generation timeout
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -72,7 +84,7 @@ COMPLIANCE_CDRL_TYPES = {"ssp", "sbom", "poam", "stig_checklist"}
 # ---------------------------------------------------------------------------
 
 
-def _get_due_deliverables(days_ahead: int = 14) -> List[Dict]:
+def _get_due_deliverables(days_ahead: int = _DEFAULT_DAYS_AHEAD) -> List[Dict]:
     """Find deliverables due within N days that haven't been generated yet."""
     conn = get_connection()
     try:
@@ -101,7 +113,7 @@ def _get_due_deliverables(days_ahead: int = 14) -> List[Dict]:
         conn.close()
 
 
-def _get_stale_documentation(max_age_days: int = 90) -> List[Dict]:
+def _get_stale_documentation(max_age_days: int = _DEFAULT_STALE_THRESHOLD_DAYS) -> List[Dict]:
     """Find compliance documentation deliverables older than threshold.
 
     These need a compliance refresh — regenerate with latest data.
@@ -267,8 +279,17 @@ def _compute_dochub_health(contract_id: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _generate_cdrl(deliverable: Dict, cdrl_type: str) -> Tuple[bool, Dict]:
+def _generate_cdrl(
+    deliverable: Dict,
+    cdrl_type: str,
+    goveval_gate_threshold: float = _GOVEVAL_GATE_THRESHOLD,
+) -> Tuple[bool, Dict]:
     """Generate a CDRL by dispatching to the mapped ICDEV™ tool.
+
+    ``goveval_gate_threshold`` is the GovEval composite below which a generated
+    compliance CDRL is flagged ``needs_review`` (anomaly).  It defaults to the
+    module constant but ``run()`` injects the config value so the anomaly gate
+    is tunable without code changes (config: reflexes.fulfill.goveval_gate_threshold).
 
     Returns (success, result_dict).
     """
@@ -299,7 +320,7 @@ def _generate_cdrl(deliverable: Dict, cdrl_type: str) -> Tuple[bool, Dict]:
             args,
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=_CDRL_GEN_TIMEOUT_SECS,
             cwd=str(BASE_DIR),
             env=env,
             stdin=subprocess.DEVNULL,
@@ -318,8 +339,8 @@ def _generate_cdrl(deliverable: Dict, cdrl_type: str) -> Tuple[bool, Dict]:
             gen_result["goveval_passed"] = goveval.get("passed", True)
             gen_result["goveval_skipped"] = goveval.get("skipped", False)
 
-            # If GovEval fails (score < 0.5), flag for review
-            if not goveval.get("skipped", False) and goveval.get("score", 0) < 0.5:
+            # If GovEval fails (score < threshold), flag for review (anomaly)
+            if not goveval.get("skipped", False) and goveval.get("score", 0) < goveval_gate_threshold:
                 gen_result["needs_review"] = True
                 gen_result["goveval_reason"] = "score_below_threshold"
 
@@ -331,7 +352,7 @@ def _generate_cdrl(deliverable: Dict, cdrl_type: str) -> Tuple[bool, Dict]:
                 "error": (result.stderr or "non-zero exit")[:200],
             }
     except subprocess.TimeoutExpired:
-        return False, {"tool": tool_path, "error": "timeout (300s)"}
+        return False, {"tool": tool_path, "error": f"timeout ({_CDRL_GEN_TIMEOUT_SECS}s)"}
     except Exception as exc:
         return False, {"tool": tool_path, "error": str(exc)[:200]}
 
@@ -493,9 +514,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     Returns standard reflex result dict.
     """
-    days_ahead = config.get("days_ahead", 14)
-    max_generations_per_run = config.get("max_generations_per_run", 10)
-    stale_threshold_days = config.get("stale_threshold_days", 90)
+    days_ahead = config.get("days_ahead", _DEFAULT_DAYS_AHEAD)
+    max_generations_per_run = config.get("max_generations_per_run", _DEFAULT_MAX_GENERATIONS)
+    stale_threshold_days = config.get("stale_threshold_days", _DEFAULT_STALE_THRESHOLD_DAYS)
+    goveval_gate_threshold = config.get("goveval_gate_threshold", _GOVEVAL_GATE_THRESHOLD)
 
     # Step 1: Find due deliverables
     due_deliverables = _get_due_deliverables(days_ahead)
@@ -522,7 +544,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             continue
 
         tool_path = TOOL_MAPPING.get(cdrl_type, "")
-        success, result = _generate_cdrl(deliv, cdrl_type)
+        success, result = _generate_cdrl(deliv, cdrl_type, goveval_gate_threshold)
 
         # Extract GovEval results from generation output (§3.7)
         goveval_score: Optional[float] = None
