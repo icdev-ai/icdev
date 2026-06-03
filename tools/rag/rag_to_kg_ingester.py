@@ -42,9 +42,102 @@ from tools.knowledge_graph.text_network import (
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-PAGE_SIZE = 500
+# Module-level fallback constants — all overridable from args/rag_config.yaml
+# under rag_to_kg_ingester.anomaly_detection.  Change config, not code.
+PAGE_SIZE = 500            # rag_chunks fetched per backfill page (fallback)
+_EMPTY_RATE_ANOMALY = 0.85  # zero-entity extraction rate above this flags a run
+
 RAGKG_INCLUDE_COLD = os.environ.get("RAGKG_INCLUDE_COLD", "").lower() in ("true", "1")
 RAGKG_PASSTHROUGH = os.environ.get("RAGKG_PASSTHROUGH", "").lower() in ("true", "1")
+
+
+def _load_anomaly_cfg() -> dict:
+    """Load rag_to_kg_ingester.anomaly_detection config from args/rag_config.yaml."""
+    config_path = BASE_DIR / "args" / "rag_config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return cfg.get("rag_to_kg_ingester", {}).get("anomaly_detection", {})
+    except Exception:
+        return {}
+
+
+def _compute_kg_thresholds(anomaly_cfg: "dict | None" = None) -> dict:
+    """Compute adaptive KG-ingestion thresholds from the rag_chunks corpus.
+
+    Anomaly-detection calibration (replaces hardcoded constants):
+    - page_size: backfill page sized so ~target_pages cover the corpus, so small
+      corpora use small pages and large corpora use larger ones (bounded).
+    - empty_rate_anomaly: the zero-entity extraction rate (chunks yielding no KG
+      nodes / processed chunks) above which a backfill run is considered anomalous,
+      derived from the historical norm.
+
+    Falls back to module-level defaults when fewer than min_samples chunks have
+    been processed or anomaly detection is disabled.
+    """
+    cfg = anomaly_cfg or {}
+    fallback_page  = int(cfg.get("fallback_page_size", PAGE_SIZE))
+    fallback_empty = float(cfg.get("fallback_empty_rate_anomaly", _EMPTY_RATE_ANOMALY))
+
+    if not cfg.get("enabled", True):
+        return {"page_size": fallback_page,
+                "empty_rate_anomaly": fallback_empty,
+                "computed": False}
+
+    min_samples  = cfg.get("min_samples", 50)
+    target_pages = int(cfg.get("target_pages", 20))
+    bounds       = cfg.get("adaptive_bounds", {})
+    page_floor   = int(bounds.get("page_floor", 50))
+    page_ceil    = int(bounds.get("page_ceil", 2000))
+    empty_floor  = float(bounds.get("empty_floor", 0.30))
+    empty_ceil   = float(bounds.get("empty_ceil", 0.99))
+
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT COUNT(*) AS n_total, "
+            "SUM(CASE WHEN kg_node_ids IS NOT NULL AND kg_node_ids NOT IN ('', '[]') "
+            "    THEN 1 ELSE 0 END) AS n_with_nodes, "
+            "SUM(CASE WHEN kg_node_ids = '[]' THEN 1 ELSE 0 END) AS n_empty "
+            "FROM rag_chunks"
+        ).fetchone()
+        if row:
+            n_total      = int((row["n_total"] if isinstance(row, dict) else row[0]) or 0)
+            n_with_nodes = int((row["n_with_nodes"] if isinstance(row, dict) else row[1]) or 0)
+            n_empty      = int((row["n_empty"] if isinstance(row, dict) else row[2]) or 0)
+            processed    = n_with_nodes + n_empty
+            if processed >= min_samples:
+                empty_rate = n_empty / processed if processed else 0.0
+                # Size pages so ~target_pages cover the corpus; keep within bounds.
+                raw_page = round(n_total / target_pages) if target_pages else fallback_page
+                new_page = int(max(page_floor, min(page_ceil, raw_page or fallback_page)))
+                # Flag runs whose empty-extraction rate exceeds the norm by a small margin.
+                new_empty = max(empty_floor, min(empty_ceil, round(empty_rate + 0.10, 3)))
+                return {
+                    "page_size": new_page,
+                    "empty_rate_anomaly": new_empty,
+                    "computed": True,
+                    "n_samples": processed,
+                    "corpus_size": n_total,
+                    "historical_empty_rate": round(empty_rate, 3),
+                }
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    return {"page_size": fallback_page,
+            "empty_rate_anomaly": fallback_empty,
+            "computed": False}
 
 # Supplemental title-case noun pattern used in the no-LLM fallback
 _RE_TITLE_NOUN = re.compile(r"\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){0,2})\b")
@@ -355,16 +448,20 @@ def run_backfill(tier: Optional[str] = None, as_json: bool = False) -> dict:
     """Cursor-based backfill: process all rag_chunks in pages of PAGE_SIZE."""
     use_llm = _has_llm()
 
+    # Adaptive thresholds (anomaly_detection) — replaces hardcoded PAGE_SIZE.
+    thresholds = _compute_kg_thresholds(_load_anomaly_cfg())
+    page_size = thresholds["page_size"]
+
     conn = get_connection()
     try:
         _ensure_tables(conn)  # ensure kg_graphs/kg_nodes/kg_edges exist
 
         cursor = _get_cursor(conn)
-        total_nodes = total_edges = total_chunks = pages = 0
+        total_nodes = total_edges = total_chunks = total_empty = pages = 0
 
         while True:
             page_start = time.monotonic()
-            rows = _fetch_page(conn, cursor, tier, PAGE_SIZE)
+            rows = _fetch_page(conn, cursor, tier, page_size)
             if not rows:
                 break
 
@@ -375,6 +472,8 @@ def run_backfill(tier: Optional[str] = None, as_json: bool = False) -> dict:
                 stats = _ingest_chunk(conn, dict(row), use_llm)
                 page_nodes += stats["nodes_written"]
                 page_edges += stats["edges_written"]
+                if stats["nodes_written"] == 0:
+                    total_empty += 1
                 total_chunks += 1
 
             # Advance cursor
@@ -396,6 +495,9 @@ def run_backfill(tier: Optional[str] = None, as_json: bool = False) -> dict:
                     f"edges={page_edges} elapsed={elapsed:.2f}s cursor={cursor!r}"
                 )
 
+        empty_rate = (total_empty / total_chunks) if total_chunks else 0.0
+        empty_anomaly = empty_rate > thresholds["empty_rate_anomaly"]
+
         return {
             "status": "ok",
             "pages": pages,
@@ -403,6 +505,11 @@ def run_backfill(tier: Optional[str] = None, as_json: bool = False) -> dict:
             "nodes_written": total_nodes,
             "edges_written": total_edges,
             "use_llm": use_llm,
+            "page_size": page_size,
+            "empty_extraction_rate": round(empty_rate, 3),
+            "empty_rate_anomaly_threshold": thresholds["empty_rate_anomaly"],
+            "empty_extraction_anomaly": empty_anomaly,
+            "thresholds_computed": thresholds["computed"],
         }
     finally:
         conn.close()
