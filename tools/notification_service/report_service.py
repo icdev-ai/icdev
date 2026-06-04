@@ -406,12 +406,6 @@ def deliver_assessment_summary(
         # --- Render ---
         tmpl_str = ASSESSMENT_SUMMARY_TEMPLATES.get(framework, "Assessment: $framework ($project_id)")
         rendered = Template(tmpl_str).safe_substitute(vars_)
-        rendered_html = render_template(
-            f"reports/{framework}_summary.html",
-            framework=framework,
-            project_id=project_id,
-            **vars_,
-        )
 
         # --- AI (optional): synthesize executive summary; None if unavailable ---
         narrative = _ai_report_narrative(

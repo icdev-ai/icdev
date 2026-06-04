@@ -593,7 +593,6 @@ def handle_cmmc_assessment_handler(
             "gap_count": gap_count,
         }) if ai_narrative else None
         sendmail(to=recipient, subject="CMMC Assessment Result", html=rendered)
-        payload = {"assessment_id": assessment_id, "system_id": system_id}
         if narrative:
             notify("compliance", f"{rendered}\n\nNarrative: {narrative}")
         else:

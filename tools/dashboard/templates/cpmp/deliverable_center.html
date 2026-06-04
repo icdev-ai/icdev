@@ -200,8 +200,9 @@ function renderTable(items) {
         }
 
         var statusBadge = _statusBadge(d.status);
-        var genBadge = d.generated_by_tool
-            ? '<span class="badge badge-success" style="font-size:10px;">✓ ' + d.generated_by_tool + '</span>'
+        var autoGenField = d.auto_generated || d.generated_by_tool;
+        var genBadge = autoGenField
+            ? '<span class="badge badge-success" style="font-size:10px;">✓ ' + autoGenField + '</span>'
             : '<span class="badge" style="font-size:10px; opacity:0.5;">—</span>';
 
         var contractLink = '<a href="/cpmp/' + d.contract_id + '" style="font-size:12px;">' +
@@ -210,13 +211,11 @@ function renderTable(items) {
 
         var actions = '<a href="/cpmp/' + d.contract_id + '/deliverables/' + d.id + '" class="btn btn-secondary" style="padding:3px 8px;font-size:11px;">View</a>';
 
-        var wgCell = d.generated_by_tool
-            ? '<a href="/writeguard" target="_blank"' +
-              ' style="font-size:0.72rem;padding:2px 6px;border-radius:4px;' +
-              'background:rgba(74,144,217,0.15);color:#6db3f8;' +
-              'text-decoration:none;border:1px solid rgba(74,144,217,0.3);"' +
-              ' title="Validate this AI-generated CDRL with WriteGuard">🛡️ Check</a>'
-            : '<span style="color:var(--text-muted);font-size:0.75rem;">—</span>';
+        var wgCell = '<a href="/writeguard" target="_blank"' +
+            ' style="font-size:0.72rem;padding:2px 6px;border-radius:4px;' +
+            'background:rgba(74,144,217,0.15);color:#6db3f8;' +
+            'text-decoration:none;border:1px solid rgba(74,144,217,0.3);"' +
+            ' title="Validate this CDRL with WriteGuard">🛡️ Check</a>';
 
         return '<tr class="urgency-' + urgency + '">' +
             '<td>' + contractLink + '</td>' +
@@ -294,4 +293,15 @@ function bulkGenerate() {
 // Auto-load on page open
 document.addEventListener('DOMContentLoaded', loadDeliverables);
 </script>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "cpmp" %}
+{% set iqe_api_route = "/api/cpmp/iqe-query" %}
+{% set iqe_title = "Ask the AI — Deliverable Command Center" %}
+{% set iqe_examples = [
+    {"label": "Overdue deliverables", "query": "Which deliverables are overdue?"},
+    {"label": "Due in 14 days", "query": "Show me deliverables due in the next 14 days"},
+    {"label": "By contract", "query": "Which contracts have the most pending deliverables?"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
 {% endblock %}

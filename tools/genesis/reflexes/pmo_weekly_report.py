@@ -10,7 +10,7 @@ IMPLEMENTATION_STATUS = "full"
 
 import json
 import sys
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -23,7 +23,6 @@ REPORTS_DIR = BASE_DIR / "data" / "reports"
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute weekly PMO report reflex."""
-    today = date.today().isoformat()
     report_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -338,7 +337,7 @@ def _push_kanban_task(snapshot: Dict[str, Any], narrative: str, report_date: str
             "critical_options": snapshot.get("critical_options", 0),
             "report_path": str(REPORTS_DIR / f"pmo_weekly_{report_date}.html"),
         })
-        cur = conn.execute(
+        conn.execute(
             """INSERT INTO kanban_tasks
                (id, task_type, title, description, status, priority,
                 tags, dispatch_source, created_at, updated_at)

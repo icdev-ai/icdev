@@ -13,7 +13,7 @@ the public entry-point consumed by AgenticResearchPipeline.run().
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger("icdev.aadc.governance_layer")

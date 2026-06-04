@@ -366,12 +366,6 @@ def dispatch_stig_alert(
 
         # --- Render ---
         rendered = Template(STIG_ALERT_TEMPLATE).safe_substitute(vars_)
-        rendered_html = render_template(
-            "alerts/stig_finding.html",
-            check=check_row,
-            workload=workload_row,
-            stig_severity=stig_sev,
-        )
 
         # --- AI (optional): synthesize triage narrative; None if unavailable ---
         narrative = _ai_alert_narrative(

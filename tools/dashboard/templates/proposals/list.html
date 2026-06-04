@@ -390,6 +390,17 @@ function filterOpps(q) {
   </div>
 </div>
 
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "govcon" %}
+{% set iqe_api_route = "/api/govcon/iqe-query" %}
+{% set iqe_title = "Ask the AI — Proposals & Pipeline" %}
+{% set iqe_examples = [
+    {"label": "Active pursuits", "query": "show all active proposal opportunities"},
+    {"label": "High pWin opps", "query": "list opportunities with win probability above 60 percent"},
+    {"label": "Proposals due soon", "query": "show proposals with submission deadline in the next 30 days"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 <style>
 .modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:flex; align-items:center; justify-content:center; }
 .modal-content { background:var(--bg-card, #16213e); border:1px solid var(--border-color, #2a2a4a); border-radius:8px; padding:24px; max-width:700px; width:90%; max-height:85vh; overflow-y:auto; }

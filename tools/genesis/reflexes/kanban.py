@@ -376,7 +376,6 @@ def _get_task_timeout(task_id: str) -> int:
     task_id_lower = task_id.lower()
     for pattern, static_timeout in _EXTENDED_TIMEOUT_PATTERNS:
         if re.search(pattern, task_id_lower):
-            category = "pytest" if static_timeout == MAX_EXECUTION_SECONDS_PYTEST else "scan"
             anomalies = _detect_execution_anomalies(window=100)
             adaptive = anomalies.get("recommended_max_execution_seconds")
             if adaptive and adaptive > static_timeout:

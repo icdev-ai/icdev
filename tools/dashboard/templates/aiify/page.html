@@ -142,6 +142,22 @@
       <input id="inputRef" placeholder="C:\AI\ICDev\tools" autocomplete="off"/>
       <div class="hint" id="srcHint">Absolute path to the application directory or single file.</div>
     </div>
+    {% if recent_sources %}
+    <div class="fld" style="margin-top:-4px;">
+      <label style="font-size:11px;color:var(--text-dim,#94a3b8);margin-bottom:6px;">Recent sources</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        {% for src in recent_sources %}
+        <button type="button"
+          onclick='pickRecent({{ src|tojson }})'
+          title="{{ src.input_ref }}"
+          style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border,#334155);background:var(--bg3,#1e293b);color:var(--text-dim,#94a3b8);cursor:pointer;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          {% if src.input_type == 'git_url' %}&#x2b07;{% else %}&#x1f4c1;{% endif %}
+          {{ src.input_ref | replace('https://github.com/', '') | truncate(48, True, '…') }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
     <div class="row"><span></span><button class="btn primary" onclick="go(2)">Next →</button></div>
   </div>
 
@@ -245,6 +261,22 @@
   var state={type:'local_path', scanId:null, roadmapId:null, phaseId:'P1'};
   window.state=state;
   var BASE='/ai-ify';
+
+  window.pickRecent=function(src){
+    document.getElementById('inputRef').value=src.input_ref;
+    // Also switch the source-type card to match
+    var typeMap={'git_url':'git_url','local_path':'local_path','unc':'unc','uri':'uri'};
+    var t=typeMap[src.input_type]||'local_path';
+    document.querySelectorAll('.src-card').forEach(function(c){
+      c.classList.toggle('sel',c.dataset.type===t);
+    });
+    state.type=t;
+    var hints={local_path:'Absolute path to the application directory or single file.',
+      unc:'UNC share path e.g. \\\\server\\share\\project.',
+      git_url:'Public or SSH git repository URL.',
+      uri:'URI e.g. file:// or s3://'};
+    document.getElementById('srcHint').textContent=hints[t]||'';
+  };
 
   document.querySelectorAll('.src-card').forEach(function(c){
     c.addEventListener('click', function(){

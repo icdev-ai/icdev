@@ -539,6 +539,29 @@ def dashboard():
     # Active alerts (placeholder: count high/critical findings)
     alerts = 0
 
+    # AI Posture grade and ZIG score from tenant DB
+    ai_posture_grade = ""
+    zig_score = ""
+    tconn = _get_tenant_conn(tenant_id)
+    if tconn:
+        try:
+            try:
+                row = tconn.execute(
+                    "SELECT grade FROM aiify_posture_snapshots ORDER BY created_at DESC LIMIT 1"
+                ).fetchone()
+                ai_posture_grade = row["grade"] if row else ""
+            except Exception:
+                pass
+            try:
+                row = tconn.execute(
+                    "SELECT overall_score FROM zig_assessments ORDER BY created_at DESC LIMIT 1"
+                ).fetchone()
+                zig_score = row["overall_score"] if row else ""
+            except Exception:
+                pass
+        finally:
+            tconn.close()
+
     return render_template(
         "dashboard.html",
         tenant_name=tenant_name,
@@ -547,6 +570,8 @@ def dashboard():
         compliance_score=compliance_score,
         recent_activity=recent_activity,
         alerts=alerts,
+        ai_posture_grade=ai_posture_grade,
+        zig_score=zig_score,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
         active_page="dashboard",
