@@ -9,15 +9,12 @@ Covers:
 """
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from tools.db.storage import get_connection
 from tools.document_intelligence.freshness_engine import (
     FreshnessResult,
-    ScanResult,
     _days_since,
     _score_doc,
     corpus_heatmap,

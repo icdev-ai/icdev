@@ -1108,7 +1108,7 @@ def main():
         print("=== Demo Showcase Seed Summary ===")
         for k, v in s.items():
             if k == "readback":
-                print(f"\nRead-back row counts:")
+                print("\nRead-back row counts:")
                 for t, c in v.items():
                     print(f"  {t:30} {c}")
             else:

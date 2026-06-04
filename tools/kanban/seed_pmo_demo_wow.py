@@ -703,7 +703,7 @@ def seed(dry_run: bool = False) -> None:
     inserted = 0
     skipped = 0
 
-    print(f"\n  PMO Demo Wow-Factor Seeder")
+    print("\n  PMO Demo Wow-Factor Seeder")
     print(f"  Project: {PROJECT_KEY} ({PROJECT_PREFIX})")
     print(f"  Tasks:   {len(TASKS)}\n")
 
@@ -760,7 +760,7 @@ def seed(dry_run: bool = False) -> None:
         print(f"\n  Done: {inserted} added, {skipped} skipped.")
 
         # Print dep graph summary
-        print(f"\n  Dep chain visualization:")
+        print("\n  Dep chain visualization:")
         for t in TASKS:
             if t.get("depends_on_task_id"):
                 arrow = f"  {t['depends_on_task_id']} -> {t['id']}"

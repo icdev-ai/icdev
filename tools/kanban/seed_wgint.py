@@ -796,7 +796,7 @@ def seed(dry_run: bool = False) -> None:
     inserted = 0
     skipped = 0
 
-    print(f"\n  WriteGuard Integration Seeder")
+    print("\n  WriteGuard Integration Seeder")
     print(f"  Project: {PROJECT_KEY} ({PROJECT_PREFIX})")
     print(f"  Tasks:   {len(TASKS)}\n")
 
@@ -858,7 +858,7 @@ def seed(dry_run: bool = False) -> None:
         conn.commit()
         print(f"\n  Done: {inserted} added, {skipped} skipped.")
 
-        print(f"\n  Dep chain visualization:")
+        print("\n  Dep chain visualization:")
         for t in TASKS:
             if t.get("depends_on_task_id"):
                 print(f"    {t['depends_on_task_id']} -> {t['id']}")
