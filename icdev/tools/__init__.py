@@ -18,6 +18,10 @@ _tools_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_tools_dir)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+# Pre-register under "tools" key so router.py's `from tools.logging.icdev_logger import …`
+# finds this partially-initialized module rather than re-running __init__ (circular-import fix).
+if "tools" not in sys.modules:
+    sys.modules["tools"] = sys.modules["icdev.tools"]
 from icdev.tools.llm.router import LLMRouter  # noqa: E402
 _ICDEV_TOOLS_BASE = "icdev.tools"  # namespace root for dynamic importlib calls
 

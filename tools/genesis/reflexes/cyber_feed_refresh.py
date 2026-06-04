@@ -1,4 +1,6 @@
 # CUI // SP-CTI
+from __future__ import annotations
+
 """Cyber Feed Refresh Reflex — daily NVD delta + CISA KEV refresh.
 
 Fires on Genesis 24-hour cadence. Runs CISA KEV sync (which also upserts
@@ -10,8 +12,6 @@ Cooldown is adaptive: anomaly detection on historical run activity (z-score)
 dynamically adjusts between MIN_COOLDOWN_HOURS and MAX_COOLDOWN_HOURS.
 """
 IMPLEMENTATION_STATUS = "full"
-
-from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json

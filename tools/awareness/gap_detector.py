@@ -705,6 +705,15 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "sqlite_sequence",
         "sys",
         "dual",  # Oracle
+        # DuckDB table-valued functions: appear in FROM clauses but are never
+        # CREATE TABLE'd — the from_re negative lookahead (?!\s*\() should
+        # already exclude them, but f-string AST splitting can produce a
+        # Constant that ends before the '(' and slip through in some
+        # Python versions.
+        "read_json_auto",
+        "read_csv_auto",
+        "read_parquet",
+        "glob",
     }
 
     create_re = re.compile(

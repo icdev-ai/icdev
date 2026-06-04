@@ -1568,3 +1568,15 @@ gates:
     threshold_confidence_pct: 90
     table: dsoc_threats
     nist_controls: [IR-4, SI-3, SC-5]
+
+  # ACE (Autonomous Coding Engine) HITL gates
+  - id: ACE-HITL-001
+    name: ace_stale_hitl
+    description: ACE team awaiting HITL approval for > 24h -- resolve before deploy
+    severity: WARN
+    warn_on: [ace_stale_hitl_pending]
+    action: block deploy
+    condition: "any ace_instances row with state=hitl_pending and started_at < NOW() - INTERVAL '24 hours'"
+    table: ace_instances
+    query: "SELECT COUNT(*) FROM ace_instances WHERE state='hitl_pending' AND started_at < NOW() - INTERVAL '24 hours'"
+    nist_controls: [CA-7, IR-4, SI-4]

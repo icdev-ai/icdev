@@ -27,6 +27,7 @@ Programmatic API (import):
         create_context, send_message, get_messages,
         poll_until_response, close_context,
         get_or_create_context, link_intake_session, dashboard_url,
+        get_coworker_instances, dashboard_url_coworker,
     )
 """
 from __future__ import annotations
@@ -211,6 +212,41 @@ def get_or_create_context(
 def dashboard_url(context_id: str) -> str:
     """Return the browser URL for a chat context."""
     return f"{BASE_URL}/chat/{context_id}"
+
+
+def get_coworker_instances(context_id: str) -> list[dict]:
+    """Return ACE coworker instances triggered by a chat context.
+
+    Queries ace_instances where trigger_ref = context_id.
+    Returns list of {instance_id, state, created_at, team_manifest}.
+    Returns empty list if the table does not exist yet or on any DB error.
+    """
+    try:
+        from tools.db.storage import get_connection, sql_placeholder  # noqa: PLC0415
+        conn = get_connection()
+        ph = sql_placeholder(conn)
+        rows = conn.execute(
+            f"SELECT instance_id, state, created_at, team_manifest "
+            f"FROM ace_instances WHERE trigger_ref = {ph}",
+            (context_id,),
+        ).fetchall()
+        conn.close()
+        return [
+            {
+                "instance_id": row[0],
+                "state": row[1],
+                "created_at": row[2],
+                "team_manifest": row[3],
+            }
+            for row in rows
+        ]
+    except Exception:
+        return []
+
+
+def dashboard_url_coworker(instance_id: str) -> str:
+    """Return the browser URL for an ACE coworker instance."""
+    return f"{BASE_URL}/coworker/{instance_id}"
 
 
 # ---------------------------------------------------------------------------

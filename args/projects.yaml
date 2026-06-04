@@ -4,6 +4,46 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: ace
+  name: "ANVIL Co-Worker Engine (ACE)"
+  description: >
+    Dynamic agentic co-worker teams assembled from declarative YAML role templates.
+    Co-workers communicate via delegation, creator-verifier, negotiation, and broadcast,
+    built entirely on existing ICDEV infrastructure (A2A, TeamOrchestrator, RICOAS,
+    HITL, CodeLens, Genesis, mailbox, LLMRouter). Entry point: chat canvas.
+    Adding a new co-worker role requires only one YAML file.
+  task_prefix: ace-
+  default_open: true
+  briefs:
+    - "infra: Register project + args/ace/ structure + manifest shard + security gate + goal doc -- ace-infra-01..05"
+    - "foundation: constants + DB (5 tables) + role YAMLs + role_loader + problem_classifier + team_assembler + tests -- ace-foundation-01..08"
+    - "runtime: message_bus (broadcast/negotiate/delegate over mailbox) + step_executor + coworker_thread + controller + tests -- ace-runtime-01..05"
+    - "chat: 020_coworker_trigger extension hook + chat_manager link + cli_bridge helper + tests -- ace-chat-01..04"
+    - "qa: prompt_chains + HITL template + finalize role YAMLs + genesis_reflex + reflex registration + negotiation tests -- ace-qa-01..07"
+    - "canvas: 3 templates + blueprint (9 routes) + app.py registration + nav + IQE adapter + seed queries + mirror -- ace-canvas-01..09"
+    - "register: APPEND_ONLY_TABLES + conftest schema + MCP registration + commands.md -- ace-register-01..04"
+  epics:
+    - key: infra
+      title: "Project Infrastructure -- manifest + config + security gate + goal doc"
+      priority: critical
+    - key: foundation
+      title: "Foundation -- constants + DB + role loader + classifier + assembler"
+      priority: critical
+    - key: runtime
+      title: "Runtime -- message bus + co-worker threads + controller"
+      priority: critical
+    - key: chat
+      title: "Chat Integration -- extension hook + chat_manager + cli_bridge"
+      priority: high
+    - key: qa
+      title: "QA Reference Implementation -- AI Developer + QA Manager + negotiation loop"
+      priority: high
+    - key: canvas
+      title: "Dashboard Canvas -- all 8 required components"
+      priority: high
+    - key: register
+      title: "Registration Checklist -- APPEND_ONLY + conftest + MCP + docs"
+      priority: medium
 - key: portal
   name: Portal Project
   description: Auto-registered project for tasks with prefix 'portal-'. Update name
