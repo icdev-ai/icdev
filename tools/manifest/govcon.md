@@ -6,6 +6,8 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | AI Clause Compliance | tools/govcon/ai_clause_compliance.py | AI-specific FAR/DFARS clause compliance checker | --json, --gate | Compliance results |
+| FAR/DFARS Verifier | tools/govcon/far_dfars_verifier.py | Per-initiative FAR/DFARS procurement compliance verifier: detects applicable parts, lists required documentation, applies pass/warn/fail gate | --opportunity-id, --solicitation-text, --provided-doc, --save, --gate, --list-clauses, --export, --format, --json | Verification report (JSON or Markdown) |
+| Procurement Quote vs IGCE | tools/govcon/procurement_quote_compare.py | Captures IGCE line items + vendor quotes, runs side-by-side comparison, rollup, and pass/warn/fail gate | --create-procurement, --add-igce-line, --add-quote, --add-bom-line, --compare, --summary, --gate, --list-*, --json | Variance report with line-by-line and per-vendor summaries; 9-field BOM capture (Vendor, Item, Qty, Estimate, Quotation, Expiration, POC, Description, Notes) |
 | Bayesian Bid Scorer | tools/govcon/bayesian_bid_scorer.py | Bayesian bid/no-bid scoring engine | --json | Bid scores |
 | Capability Enricher | tools/govcon/capability_enricher.py | Enrich capability mappings with evidence | --json | Enriched mappings |
 | Capture AI Blueprint | tools/govcon/capture_ai_blueprint.py | AI-assisted capture management blueprint | --json | Blueprint data |
