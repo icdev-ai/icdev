@@ -456,18 +456,27 @@ def create_pipeline_blueprint():
             return jsonify({"error": "Payload too large"}), 413
         logger.info("Updating pipeline: %s", pipe_id)
         conn = get_connection()
+
+        # PUT-as-PATCH semantics: only update fields the client explicitly sent.
+        # The auto-save timer in pipeline-canvas.js sends {name, graph_json} only;
+        # a partial PUT must NOT clobber description/classification/target_csp
+        # back to defaults. (Fixes bug where opening a canvas auto-reset
+        # classification="public", target_csp="generic", description="".)
+        _UNSET = object()
+        sets = []
+        params = []
+        for col in ("name", "description", "graph_json", "classification", "target_csp"):
+            if col in data:
+                sets.append(f"{col}=?")
+                params.append(data[col])
+        if not sets:
+            return jsonify({"error": "No updatable fields provided"}), 400
+        sets.append("updated_at=?")
+        params.append(now_isoformat())
+        params.append(pipe_id)
         conn.execute(
-            "UPDATE pipelines SET name=?, description=?, graph_json=?, "
-            "classification=?, target_csp=?, updated_at=? WHERE id=?",
-            (
-                data.get("name", ""),
-                data.get("description", ""),
-                data.get("graph_json", "{}"),
-                data.get("classification", "public"),
-                data.get("target_csp", "generic"),
-                now_isoformat(),
-                pipe_id,
-            ),
+            f"UPDATE pipelines SET {', '.join(sets)} WHERE id=?",
+            params,
         )
         conn.commit()
         conn.close()

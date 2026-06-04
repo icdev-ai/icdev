@@ -269,6 +269,7 @@ const NODE_STYLES = {
 let graph, paper, selectedCell = null;
 let undoStack = [], redoStack = [];
 let isDirty = false, saveTimer = null;
+let suppressDirty = false; // true while initial graph is loading; see setupCanvasListeners
 let pipelineId = 'new';
 
 // ── JointJS Initialization ──────────────────────────────────────────────────
@@ -360,7 +361,13 @@ function initCanvas() {
     else if (evt.key === 'f' || evt.key === 'F') { zoomFit(); evt.preventDefault(); }
   });
 
-  graph.on('change add remove', () => markDirty());
+  // Suppress auto-save during initial graph load. JointJS fires
+  // `change add remove` for every cell as it materializes; we don't want
+  // those to count as "user edits" and trigger savePipeline() 3s later.
+  // (Fixes bug where opening a canvas wrote an UPDATE to the server that
+  // blanked description/classification/target_csp — see PUT handler and
+  // loadGraph() which sets/clears this flag.)
+  graph.on('change add remove', () => { if (!suppressDirty) markDirty(); });
 }
 
 // ── Node Creation ───────────────────────────────────────────────────────────
@@ -632,29 +639,40 @@ function _resolveNodeOverlaps(g, padding) {
 
 function loadGraph(graphJson) {
   const data = typeof graphJson === 'string' ? JSON.parse(graphJson) : graphJson;
-  graph.clear();
-  // Remap IDs to UUIDs to avoid collisions if the same template is loaded again
-  const prefix = 'ld' + Date.now().toString(36) + '-';
-  const idMap = {};
-  (data.nodes || []).forEach(n => {
-    const newId = prefix + (n.id || joint.util.uuid());
-    idMap[n.id] = newId;
-    createNode(n.type, n.x, n.y, n.label, newId);
-  });
+  // Suppress dirty-flag during programmatic cell creation. Without this,
+  // JointJS fires `change add remove` for every loaded cell, which the
+  // auto-save handler would interpret as user edits and trigger savePipeline
+  // 3s later — blanking description/classification/target_csp on the server
+  // (the PUT handler reset them to defaults). See PUT handler for the
+  // server-side belt-and-suspenders fix.
+  suppressDirty = true;
+  try {
+    graph.clear();
+    // Remap IDs to UUIDs to avoid collisions if the same template is loaded again
+    const prefix = 'ld' + Date.now().toString(36) + '-';
+    const idMap = {};
+    (data.nodes || []).forEach(n => {
+      const newId = prefix + (n.id || joint.util.uuid());
+      idMap[n.id] = newId;
+      createNode(n.type, n.x, n.y, n.label, newId);
+    });
 
-  let dropped = 0;
-  (data.edges || []).forEach(e => {
-    if (!e.source || !e.target || !idMap[e.source] || !idMap[e.target]) {
-      dropped++;
-      console.warn('loadGraph: dropping edge with missing endpoint', e);
-      return;
+    let dropped = 0;
+    (data.edges || []).forEach(e => {
+      if (!e.source || !e.target || !idMap[e.source] || !idMap[e.target]) {
+        dropped++;
+        console.warn('loadGraph: dropping edge with missing endpoint', e);
+        return;
+      }
+      createLink(idMap[e.source], idMap[e.target], e.label);
+    });
+    if (dropped > 0) {
+      console.warn('loadGraph: dropped ' + dropped + ' edge(s) referencing missing nodes');
     }
-    createLink(idMap[e.source], idMap[e.target], e.label);
-  });
-  if (dropped > 0) {
-    console.warn('loadGraph: dropped ' + dropped + ' edge(s) referencing missing nodes');
+    _resolveNodeOverlaps(graph, 20);
+  } finally {
+    suppressDirty = false;
   }
-  _resolveNodeOverlaps(graph, 20);
 }
 
 // ── Zoom ────────────────────────────────────────────────────────────────────

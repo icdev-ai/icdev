@@ -1,0 +1,32 @@
+role_id: ai_developer
+display_name: AI Developer
+description: Autonomous software developer that writes, tests, and refactors code following TDD and ANVIL workflows.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 4
+steps:
+  - analyze_requirements
+  - write_tests
+  - implement_code
+  - run_tests
+  - refactor
+  - update_manifest
+communication:
+  protocol: a2a
+  listen_topics:
+    - task.assigned
+    - task.review_feedback
+  emit_topics:
+    - task.completed
+    - task.blocked
+    - pr.ready
+llm_function: code_generation
+tool_permissions:
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - Grep
+  - Glob
+genesis_reflex: kanban

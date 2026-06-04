@@ -1,0 +1,654 @@
+<!-- CUI // SP-CTI — ACE Instance Detail Page -->
+{% extends "base.html" %}
+{% block title %}ACE Instance {{ instance.id }} — Co-Worker Engine — ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Page layout ────────────────────────────────────────────────── */
+  .ace-page { padding: 20px 28px; }
+
+  /* ── Instance header ────────────────────────────────────────────── */
+  .ace-header { margin-bottom: 20px; }
+  .ace-header h1 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+  .ace-header .problem-text {
+    font-size: 13px; color: var(--text-secondary, #7a8cb0);
+    margin: 6px 0 10px; max-width: 800px; line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .ace-header .meta-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--text-secondary, #7a8cb0); }
+  .ace-header .meta-row strong { color: var(--text-primary, #e0e0e0); }
+
+  /* ── State badges ───────────────────────────────────────────────── */
+  .badge-state-assembling  { background: rgba(74,144,217,.18); color: #4a90d9; border: 1px solid #4a90d9; }
+  .badge-state-pending     { background: rgba(160,160,184,.18); color: #a0a0b8; border: 1px solid #a0a0b8; }
+  .badge-state-active      { background: rgba(39,174,96,.18);  color: #27ae60; border: 1px solid #27ae60; }
+  .badge-state-paused      { background: rgba(243,156,18,.18); color: #f39c12; border: 1px solid #f39c12; }
+  .badge-state-complete    { background: rgba(39,174,96,.18);  color: #27ae60; border: 1px solid #27ae60; }
+  .badge-state-failed      { background: rgba(231,76,60,.18);  color: #e74c3c; border: 1px solid #e74c3c; }
+  .badge-state-cancelled   { background: rgba(160,160,184,.18); color: #a0a0b8; border: 1px solid #a0a0b8; }
+  .badge-state-idle        { background: rgba(160,160,184,.12); color: #a0a0b8; border: 1px solid #a0a0b8; }
+  .badge-state-busy        { background: rgba(243,156,18,.18); color: #f39c12; border: 1px solid #f39c12; }
+  .badge-state-working     { background: rgba(39,174,96,.18);  color: #27ae60; border: 1px solid #27ae60; }
+  .badge-state-hitl_pending{ background: rgba(243,156,18,.25); color: #f39c12; border: 1px solid #f39c12; }
+  .badge-state-suspended   { background: rgba(155,89,182,.18); color: #9b59b6; border: 1px solid #9b59b6; }
+  .badge-state-done        { background: rgba(39,174,96,.18);  color: #27ae60; border: 1px solid #27ae60; }
+  .badge-state-offline     { background: rgba(160,160,184,.10); color: #888; border: 1px solid #888; }
+
+  /* ── Message-type badges ────────────────────────────────────────── */
+  .badge-msg-cw_broadcast       { background: rgba(74,144,217,.18); color: #4a90d9; border: 1px solid #4a90d9; }
+  .badge-msg-cw_verify_request  { background: rgba(243,156,18,.18); color: #f39c12; border: 1px solid #f39c12; }
+  .badge-msg-cw_negotiate_proposal { background: rgba(155,89,182,.18); color: #9b59b6; border: 1px solid #9b59b6; }
+  .badge-msg-cw_negotiate_accept{ background: rgba(39,174,96,.18);  color: #27ae60; border: 1px solid #27ae60; }
+  .badge-msg-cw_negotiate_counter{ background: rgba(243,156,18,.18); color: #f39c12; border: 1px solid #f39c12; }
+  .badge-msg-notification       { background: rgba(160,160,184,.12); color: #a0a0b8; border: 1px solid #a0a0b8; }
+  .badge-msg-info               { background: rgba(74,144,217,.12); color: #7ab0e0; border: 1px solid #7ab0e0; }
+  .badge-msg-error              { background: rgba(231,76,60,.18);  color: #e74c3c; border: 1px solid #e74c3c; }
+  .badge-msg-hitl_pending       { background: rgba(243,156,18,.25); color: #f39c12; border: 1px solid #f39c12; }
+  .badge-msg-hitl_resolved      { background: rgba(39,174,96,.18);  color: #27ae60; border: 1px solid #27ae60; }
+
+  /* ── Trust tier ─────────────────────────────────────────────────── */
+  .trust-red    { color: #e74c3c; }
+  .trust-orange { color: #e67e22; }
+  .trust-yellow { color: #f1c40f; }
+  .trust-green  { color: #27ae60; }
+
+  /* ── Co-worker cards ────────────────────────────────────────────── */
+  .cw-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .cw-card {
+    background: var(--bg-card, #16213e);
+    border: 1px solid var(--border-color, #2a2a4a);
+    border-radius: 8px;
+    padding: 14px 16px;
+    min-width: 200px;
+    max-width: 280px;
+    flex: 1 1 200px;
+    position: relative;
+    transition: border-color .2s;
+  }
+  .cw-card:hover { border-color: var(--accent-color, #4a90d9); }
+  .cw-card .cw-role   { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .cw-card .cw-state-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .cw-card .cw-step   { font-size: 11px; color: var(--text-secondary, #7a8cb0); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cw-card .cw-active-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    background: var(--text-secondary, #555);
+  }
+  .cw-card.state-working .cw-active-dot { background: #27ae60; box-shadow: 0 0 6px #27ae60aa; animation: pulse 1.2s infinite; }
+  .cw-card.state-hitl_pending .cw-active-dot { background: #f39c12; box-shadow: 0 0 6px #f39c12aa; }
+  .cw-card.state-failed .cw-active-dot { background: #e74c3c; }
+  .cw-card.state-done .cw-active-dot  { background: #27ae60; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* Progress bar */
+  .cw-progress { height: 4px; border-radius: 2px; background: var(--bg-secondary, #1a1a2e); overflow: hidden; margin-top: 4px; }
+  .cw-progress-fill { height: 100%; border-radius: 2px; transition: width .4s ease; background: var(--accent-color, #4a90d9); }
+  .cw-progress-fill.done  { background: #27ae60; }
+  .cw-progress-fill.failed{ background: #e74c3c; }
+  .cw-progress-fill.hitl  { background: #f39c12; animation: progress-pulse 1.2s infinite; }
+  .cw-progress-fill.working { background: linear-gradient(90deg, #4a90d9 0%, #9b59b6 100%); background-size: 200%; animation: shimmer 1.4s infinite linear; }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  @keyframes progress-pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+  /* ── Message timeline ───────────────────────────────────────────── */
+  .msg-timeline { list-style: none; padding: 0; margin: 0; }
+  .msg-item {
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-color, #2a2a4a);
+  }
+  .msg-item:last-child { border-bottom: none; }
+  .msg-item .msg-time { font-size: 11px; color: var(--text-secondary, #7a8cb0); min-width: 80px; padding-top: 2px; flex-shrink: 0; }
+  .msg-item .msg-body { flex: 1; min-width: 0; }
+  .msg-item .msg-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+  .msg-item .msg-text { font-size: 12px; color: var(--text-secondary, #a0a0b8); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  .msg-from-to { font-size: 11px; color: var(--text-secondary, #7a8cb0); }
+
+  /* ── Artifacts panel ────────────────────────────────────────────── */
+  .artifact-list { display: flex; flex-direction: column; gap: 8px; }
+  .artifact-card {
+    background: var(--bg-card, #16213e);
+    border: 1px solid var(--border-color, #2a2a4a);
+    border-radius: 6px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+  .artifact-card:hover { border-color: var(--accent-color, #4a90d9); }
+  .artifact-card .art-header { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .artifact-card .art-title { font-size: 13px; font-weight: 600; flex: 1; }
+  .artifact-card .art-preview { font-size: 11px; color: var(--text-secondary, #7a8cb0); line-height: 1.5; max-height: 3.6em; overflow: hidden; }
+  .artifact-card .art-meta { font-size: 11px; color: var(--text-secondary, #7a8cb0); margin-top: 4px; }
+
+  /* ── Abort section ──────────────────────────────────────────────── */
+  .abort-zone { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-color, #2a2a4a); }
+
+  /* ── SSE indicator ──────────────────────────────────────────────── */
+  .sse-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--text-secondary, #7a8cb0);
+    background: var(--bg-secondary, #1a1a2e);
+    border: 1px solid var(--border-color, #2a2a4a);
+    border-radius: 12px; padding: 2px 8px;
+  }
+  .sse-dot { width: 7px; height: 7px; border-radius: 50%; background: #888; }
+  .sse-dot.connected { background: #27ae60; box-shadow: 0 0 5px #27ae60aa; }
+  .sse-dot.error     { background: #e74c3c; }
+
+  /* ── Artifact expand modal ──────────────────────────────────────── */
+  .art-modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,.72); z-index:1000; display:none; align-items:center; justify-content:center; }
+  .art-modal-overlay.open { display:flex; }
+  .art-modal-box { background:var(--bg-card,#16213e); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; max-width:780px; width:92%; max-height:82vh; overflow-y:auto; padding:24px; }
+  .art-modal-box h3 { margin:0 0 12px; font-size:15px; }
+  .art-modal-pre { background:var(--bg-primary,#0a0a1a); border:1px solid var(--border-color,#2a2a4a); border-radius:4px; padding:14px; font-size:12px; color:var(--text-secondary,#a0a0b8); white-space:pre-wrap; word-break:break-word; max-height:50vh; overflow-y:auto; }
+
+  /* ── Abort confirm modal ────────────────────────────────────────── */
+  .abort-modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,.72); z-index:1000; display:none; align-items:center; justify-content:center; }
+  .abort-modal-overlay.open { display:flex; }
+  .abort-modal-box { background:var(--bg-card,#16213e); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; max-width:460px; width:92%; padding:24px; }
+</style>
+
+<div class="ace-page">
+  <!-- ── Breadcrumbs ─────────────────────────────────────────────── -->
+  <div class="breadcrumbs">
+    <a href="/">Home</a>
+    <span class="separator">/</span>
+    <a href="/ace/">Co-Worker Engine</a>
+    <span class="separator">/</span>
+    <span>{{ instance.id }}</span>
+  </div>
+
+  <!-- ── Instance header ────────────────────────────────────────── -->
+  <div class="ace-header" id="instance-header">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h1>
+          {{ instance.name or instance.id }}
+          <span id="state-badge"
+                class="badge badge-state-{{ instance.state }}"
+                style="font-size:12px; vertical-align:middle; margin-left:8px;">
+            {{ instance.state | replace('_', ' ') | title }}
+          </span>
+          <span class="badge trust-{{ instance.trust_tier }}" style="font-size:11px; vertical-align:middle; margin-left:4px;">
+            {{ instance.trust_tier | upper }} trust
+          </span>
+        </h1>
+        {% if instance.problem_text %}
+        <div class="problem-text" id="problem-text">{{ instance.problem_text }}</div>
+        {% endif %}
+        <div class="meta-row">
+          {% if instance.trigger_source %}<span><strong>Source:</strong> {{ instance.trigger_source }}</span>{% endif %}
+          {% if instance.trigger_ref %}<span><strong>Ref:</strong> {{ instance.trigger_ref }}</span>{% endif %}
+          <span><strong>Started:</strong> {{ instance.created_at | replace('T', ' ') | truncate(19, True, '') }}</span>
+          {% if instance.completed_at %}<span><strong>Completed:</strong> {{ instance.completed_at | replace('T', ' ') | truncate(19, True, '') }}</span>{% endif %}
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+        <span class="sse-badge">
+          <span class="sse-dot" id="sse-dot"></span>
+          <span id="sse-label">Live</span>
+        </span>
+        {% if instance.state in ('pending', 'assembling', 'active', 'paused') %}
+        <button class="btn btn-sm" style="background:rgba(231,76,60,.15);border:1px solid #e74c3c;color:#e74c3c;"
+                onclick="openAbortModal()">Abort Instance</button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Stat row ───────────────────────────────────────────────── -->
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr); margin-bottom:20px;">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-coworkers">{{ coworkers | length }}</div>
+      <div class="stat-label">Co-Workers</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-messages">{{ messages | length }}</div>
+      <div class="stat-label">Messages</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-artifacts">{{ artifacts | length }}</div>
+      <div class="stat-label">Artifacts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-done-cw">{{ coworkers | selectattr('state', 'in', ['done', 'complete']) | list | length }}</div>
+      <div class="stat-label">Done</div>
+    </div>
+  </div>
+
+  <!-- ── Co-worker status cards ─────────────────────────────────── -->
+  <section>
+    <h2 style="font-size:14px; font-weight:600; margin:0 0 12px; color:var(--text-secondary,#7a8cb0); text-transform:uppercase; letter-spacing:.04em;">
+      Co-Workers
+      <span style="font-size:11px; color:var(--text-secondary,#555); font-weight:400; text-transform:none; margin-left:4px;">({{ coworkers | length }})</span>
+    </h2>
+    <div class="cw-row" id="cw-row">
+      {% for cw in coworkers %}
+      {% set cw_step_count = cw.step_count | default(0) %}
+      {% set cw_total_steps = cw.total_steps | default(0) %}
+      {% set pct = ((cw_step_count / cw_total_steps * 100) | int) if cw_total_steps > 0 else (100 if cw.state in ('done', 'complete') else 0) %}
+      <div class="cw-card state-{{ cw.state }}" id="cw-{{ cw.id }}" data-coworker-id="{{ cw.id }}">
+        <div class="cw-role">{{ cw.display_name or cw.role_id }}</div>
+        <div class="cw-state-row">
+          <div class="cw-active-dot"></div>
+          <span class="badge badge-state-{{ cw.state }}" style="font-size:10px;">
+            {{ cw.state | replace('_', ' ') | title }}
+          </span>
+          {% if cw.trust_tier %}
+          <span class="trust-{{ cw.trust_tier }}" style="font-size:10px;" title="Trust tier">
+            {{ cw.trust_tier | upper }}
+          </span>
+          {% endif %}
+        </div>
+        {% if cw.assigned_step %}
+        <div class="cw-step" title="{{ cw.assigned_step }}">Step: {{ cw.assigned_step }}</div>
+        {% else %}
+        <div class="cw-step">&nbsp;</div>
+        {% endif %}
+        <div class="cw-progress">
+          <div class="cw-progress-fill {% if cw.state == 'done' or cw.state == 'complete' %}done{% elif cw.state == 'failed' %}failed{% elif cw.state == 'hitl_pending' %}hitl{% elif cw.state == 'working' %}working{% endif %}"
+               style="width:{{ pct }}%;" id="cw-prog-{{ cw.id }}"></div>
+        </div>
+        {% if cw_total_steps > 0 %}
+        <div style="font-size:10px; color:var(--text-secondary,#7a8cb0); margin-top:3px; text-align:right;">
+          <span id="cw-steps-{{ cw.id }}">{{ cw_step_count }}</span>/{{ cw_total_steps }} steps
+        </div>
+        {% elif cw.last_active_at %}
+        <div style="font-size:10px; color:var(--text-secondary,#555); margin-top:3px;">
+          Active: {{ cw.last_active_at | replace('T', ' ') | truncate(16, True, '') }}
+        </div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div style="color:var(--text-secondary,#555); font-size:13px; padding:12px 0;">No co-workers assembled yet.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- ── Tabs ───────────────────────────────────────────────────── -->
+  <div class="tabs" style="margin-top:8px;">
+    <button class="tab-btn active" data-tab="tab-messages">Messages <span class="badge badge-info" style="font-size:10px; vertical-align:middle;" id="badge-msg-count">{{ messages | length }}</span></button>
+    <button class="tab-btn" data-tab="tab-artifacts">Artifacts <span class="badge badge-info" style="font-size:10px; vertical-align:middle;" id="badge-art-count">{{ artifacts | length }}</span></button>
+  </div>
+
+  <!-- ── Messages Tab ───────────────────────────────────────────── -->
+  <div id="tab-messages" class="tab-content active" style="margin-top:16px;">
+    {% if messages %}
+    <ul class="msg-timeline" id="msg-timeline">
+      {% for msg in messages %}
+      <li class="msg-item">
+        <div class="msg-time">{{ msg.created_at | replace('T', ' ') | truncate(19, True, '') }}</div>
+        <div class="msg-body">
+          <div class="msg-meta">
+            {% set mt = msg.message_type | default('info') %}
+            <span class="badge badge-msg-{{ mt }}" style="font-size:10px;">{{ mt | replace('_', ' ') | replace('cw ', '') | title }}</span>
+            {% if msg.role %}<span class="badge badge-info" style="font-size:10px;">{{ msg.role }}</span>{% endif %}
+            {% if msg.coworker_id %}
+            <span class="msg-from-to">from: <strong>{{ coworker_display.get(msg.coworker_id, msg.coworker_id[:12]) if coworker_display is defined else msg.coworker_id[:12] }}</strong></span>
+            {% endif %}
+            {% if msg.to_role %}<span class="msg-from-to">→ {{ msg.to_role }}</span>{% endif %}
+          </div>
+          <div class="msg-text">{{ (msg.content or '') | truncate(300, True, '…') }}</div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div id="msg-empty" style="padding:20px 0; color:var(--text-secondary,#555); font-size:13px; text-align:center;">
+      No messages yet. Co-workers will log messages here as the instance runs.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Artifacts Tab ──────────────────────────────────────────── -->
+  <div id="tab-artifacts" class="tab-content" style="display:none; margin-top:16px;">
+    {% if artifacts %}
+    <div class="artifact-list" id="artifact-list">
+      {% for art in artifacts %}
+      <div class="artifact-card" onclick="openArtifactModal({{ art | tojson }})">
+        <div class="art-header">
+          <span class="badge badge-info" style="font-size:10px;">{{ art.artifact_type | replace('_', ' ') | title }}</span>
+          <span class="art-title">{{ art.title or '(untitled)' }}</span>
+          {% if art.classification %}<span class="badge badge-warning" style="font-size:10px;">{{ art.classification }}</span>{% endif %}
+        </div>
+        {% set preview = art.content_md or (art.content_json | string) %}
+        <div class="art-preview">{{ preview | truncate(240, True, '…') }}</div>
+        <div class="art-meta">{{ art.created_at | replace('T', ' ') | truncate(16, True, '') }}{% if art.coworker_id %} · {{ art.coworker_id[:16] }}{% endif %}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div id="art-empty" style="padding:20px 0; color:var(--text-secondary,#555); font-size:13px; text-align:center;">
+      No artifacts produced yet.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Abort zone ─────────────────────────────────────────────── -->
+  {% if instance.state in ('pending', 'assembling', 'active', 'paused') %}
+  <div class="abort-zone">
+    <button class="btn" style="background:rgba(231,76,60,.12); border:1px solid #e74c3c; color:#e74c3c;"
+            onclick="openAbortModal()">
+      Abort Instance
+    </button>
+    <span style="font-size:12px; color:var(--text-secondary,#555); margin-left:10px;">
+      Sends stop signal to all running co-workers and marks instance as cancelled.
+    </span>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Artifact expand modal ──────────────────────────────────────── -->
+<div class="art-modal-overlay" id="art-modal">
+  <div class="art-modal-box">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <h3 id="art-modal-title"></h3>
+      <button onclick="closeArtModal()" style="background:none; border:none; color:var(--text-primary,#e0e0e0); font-size:22px; cursor:pointer; padding:0 6px; line-height:1;">&times;</button>
+    </div>
+    <div id="art-modal-meta" style="margin-bottom:10px; font-size:12px; color:var(--text-secondary,#7a8cb0);"></div>
+    <pre class="art-modal-pre" id="art-modal-content"></pre>
+  </div>
+</div>
+
+<!-- ── Abort confirm modal ────────────────────────────────────────── -->
+<div class="abort-modal-overlay" id="abort-modal">
+  <div class="abort-modal-box">
+    <h2 style="margin:0 0 12px; font-size:16px; color:#e74c3c;">Abort Instance?</h2>
+    <p style="font-size:13px; color:var(--text-secondary,#a0a0b8); margin:0 0 20px; line-height:1.6;">
+      This will send a stop signal to all running co-workers and mark the instance as <strong>cancelled</strong>.
+      This action cannot be undone.
+    </p>
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeAbortModal()">Cancel</button>
+      <button class="btn" style="background:rgba(231,76,60,.18); border:1px solid #e74c3c; color:#e74c3c;"
+              onclick="confirmAbort()" id="abort-confirm-btn">Abort</button>
+    </div>
+    <div id="abort-status" style="margin-top:10px; font-size:12px; color:var(--text-secondary,#7a8cb0);"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const INSTANCE_ID = {{ instance.id | tojson }};
+
+  // ── Tab switching ────────────────────────────────────────────────
+  document.querySelectorAll(".tab-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".tab-btn").forEach(function (b) { b.classList.remove("active"); });
+      document.querySelectorAll(".tab-content").forEach(function (c) { c.style.display = "none"; c.classList.remove("active"); });
+      btn.classList.add("active");
+      var tab = document.getElementById(btn.getAttribute("data-tab"));
+      if (tab) { tab.style.display = "block"; tab.classList.add("active"); }
+    });
+  });
+
+  // ── Coworker display name map ─────────────────────────────────────
+  var CW_DISPLAY = {};
+  document.querySelectorAll(".cw-card").forEach(function (card) {
+    var cwId = card.getAttribute("data-coworker-id");
+    var nameEl = card.querySelector(".cw-role");
+    if (cwId && nameEl) CW_DISPLAY[cwId] = nameEl.textContent.trim();
+  });
+
+  // ── SSE — listen for ace_progress events ─────────────────────────
+  var sseDot   = document.getElementById("sse-dot");
+  var sseLabel = document.getElementById("sse-label");
+  var es       = null;
+
+  function connectSSE() {
+    try {
+      es = new EventSource("/api/events/stream");
+
+      es.addEventListener("ace_progress", function (e) {
+        try {
+          var data = JSON.parse(e.data);
+          if (data.instance_id !== INSTANCE_ID) return;
+          handleAceProgress(data);
+        } catch (ex) { /* ignore malformed */ }
+      });
+
+      es.onopen = function () {
+        sseDot.classList.add("connected");
+        sseDot.classList.remove("error");
+        sseLabel.textContent = "Live";
+      };
+
+      es.onerror = function () {
+        sseDot.classList.remove("connected");
+        sseDot.classList.add("error");
+        sseLabel.textContent = "Reconnecting…";
+        es.close();
+        setTimeout(connectSSE, 5000);
+      };
+    } catch (ex) {
+      sseLabel.textContent = "SSE unavailable";
+    }
+  }
+
+  connectSSE();
+
+  // ── Handle incoming ACE progress event ───────────────────────────
+  function handleAceProgress(data) {
+    // Update top-level instance state badge
+    if (data.phase) {
+      var badge = document.getElementById("state-badge");
+      if (badge) {
+        badge.className = "badge badge-state-" + data.phase;
+        badge.textContent = data.phase.replace(/_/g, " ").replace(/\b\w/g, function(c){return c.toUpperCase();});
+      }
+    }
+
+    // Refresh co-worker data from server
+    fetchCoworkers();
+    fetchMessages();
+  }
+
+  // ── Fetch co-worker state refresh ────────────────────────────────
+  function fetchCoworkers() {
+    fetch("/api/ace/" + INSTANCE_ID + "/status")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !data.coworkers) return;
+        data.coworkers.forEach(updateCoworkerCard);
+        updateStatCard("stat-done-cw", data.coworkers.filter(function(c){return c.state==="done"||c.state==="complete";}).length);
+      })
+      .catch(function () { /* silently ignore */ });
+  }
+
+  function updateCoworkerCard(cw) {
+    var card = document.getElementById("cw-" + cw.id);
+    if (!card) return;
+
+    // Update CSS class for state
+    card.className = card.className.replace(/\bstate-\S+\b/, "").trim() + " state-" + cw.state;
+
+    // Update badge
+    var badge = card.querySelector(".badge");
+    if (badge) {
+      badge.className = "badge badge-state-" + cw.state;
+      badge.textContent = cw.state.replace(/_/g, " ").replace(/\b\w/g, function(c){return c.toUpperCase();});
+    }
+
+    // Update step label
+    var stepEl = card.querySelector(".cw-step");
+    if (stepEl && cw.assigned_step) stepEl.textContent = "Step: " + cw.assigned_step;
+
+    // Update progress bar
+    var prog = document.getElementById("cw-prog-" + cw.id);
+    if (prog) {
+      var stateClass = cw.state === "done" || cw.state === "complete" ? "done"
+                     : cw.state === "failed" ? "failed"
+                     : cw.state === "hitl_pending" ? "hitl"
+                     : cw.state === "working" ? "working" : "";
+      prog.className = "cw-progress-fill" + (stateClass ? " " + stateClass : "");
+      if (cw.state === "done" || cw.state === "complete") prog.style.width = "100%";
+      else if (cw.state === "failed") prog.style.width = "100%";
+    }
+  }
+
+  // ── Fetch new messages ────────────────────────────────────────────
+  var _lastMsgId = null;
+  {% if messages %}
+  _lastMsgId = {{ messages[-1].id | tojson }};
+  {% endif %}
+
+  function fetchMessages() {
+    var url = "/api/ace/" + INSTANCE_ID + "/messages";
+    if (_lastMsgId) url += "?after=" + encodeURIComponent(_lastMsgId);
+    fetch(url)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !data.messages || data.messages.length === 0) return;
+        var timeline = document.getElementById("msg-timeline");
+        if (!timeline) {
+          // First messages arriving — remove empty placeholder and create list
+          var empty = document.getElementById("msg-empty");
+          var tab = document.getElementById("tab-messages");
+          if (empty) empty.remove();
+          timeline = document.createElement("ul");
+          timeline.id = "msg-timeline";
+          timeline.className = "msg-timeline";
+          tab.prepend(timeline);
+        }
+        data.messages.forEach(function (msg) {
+          if (!msg.id) return;
+          _lastMsgId = msg.id;
+          var li = buildMessageItem(msg);
+          timeline.appendChild(li);
+          // auto-scroll if near bottom
+          var panel = timeline.parentElement;
+          if (panel && panel.scrollHeight - panel.scrollTop < panel.clientHeight + 200) {
+            panel.scrollTop = panel.scrollHeight;
+          }
+        });
+        updateStatCard("stat-messages", timeline.querySelectorAll(".msg-item").length);
+        updateBadge("badge-msg-count", timeline.querySelectorAll(".msg-item").length);
+      })
+      .catch(function () { /* ignore */ });
+  }
+
+  function buildMessageItem(msg) {
+    var mt = msg.message_type || "info";
+    var prettyMt = mt.replace(/_/g, " ").replace("cw ", "").replace(/\b\w/g, function(c){return c.toUpperCase();});
+    var cwName = msg.coworker_id ? (CW_DISPLAY[msg.coworker_id] || msg.coworker_id.slice(0, 12)) : "";
+    var ts = (msg.created_at || "").replace("T", " ").slice(0, 19);
+
+    var li = document.createElement("li");
+    li.className = "msg-item";
+    li.innerHTML =
+      '<div class="msg-time">' + escHtml(ts) + '</div>' +
+      '<div class="msg-body">' +
+        '<div class="msg-meta">' +
+          '<span class="badge badge-msg-' + escHtml(mt) + '" style="font-size:10px;">' + escHtml(prettyMt) + '</span>' +
+          (msg.role ? '<span class="badge badge-info" style="font-size:10px;">' + escHtml(msg.role) + '</span>' : '') +
+          (cwName ? '<span class="msg-from-to">from: <strong>' + escHtml(cwName) + '</strong></span>' : '') +
+          (msg.to_role ? '<span class="msg-from-to">→ ' + escHtml(msg.to_role) + '</span>' : '') +
+        '</div>' +
+        '<div class="msg-text">' + escHtml((msg.content || "").slice(0, 300)) + (msg.content && msg.content.length > 300 ? "…" : "") + '</div>' +
+      '</div>';
+    return li;
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────
+  function updateStatCard(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function updateBadge(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // ── Artifact modal ────────────────────────────────────────────────
+  window.openArtifactModal = function (art) {
+    var modal = document.getElementById("art-modal");
+    document.getElementById("art-modal-title").textContent = art.title || "(untitled)";
+    document.getElementById("art-modal-meta").textContent =
+      [art.artifact_type, art.classification, art.created_at ? art.created_at.slice(0, 19).replace("T", " ") : ""].filter(Boolean).join(" · ");
+
+    var content = "";
+    if (art.content_md) {
+      content = art.content_md;
+    } else if (art.content_json && art.content_json !== "{}") {
+      try { content = JSON.stringify(JSON.parse(art.content_json), null, 2); } catch (e) { content = art.content_json; }
+    } else {
+      content = "(no content)";
+    }
+    document.getElementById("art-modal-content").textContent = content;
+    modal.classList.add("open");
+  };
+
+  window.closeArtModal = function () {
+    document.getElementById("art-modal").classList.remove("open");
+  };
+
+  document.getElementById("art-modal").addEventListener("click", function (e) {
+    if (e.target === this) closeArtModal();
+  });
+
+  // ── Abort modal ───────────────────────────────────────────────────
+  window.openAbortModal = function () {
+    document.getElementById("abort-modal").classList.add("open");
+    document.getElementById("abort-status").textContent = "";
+    document.getElementById("abort-confirm-btn").disabled = false;
+  };
+
+  window.closeAbortModal = function () {
+    document.getElementById("abort-modal").classList.remove("open");
+  };
+
+  document.getElementById("abort-modal").addEventListener("click", function (e) {
+    if (e.target === this) closeAbortModal();
+  });
+
+  window.confirmAbort = function () {
+    var btn = document.getElementById("abort-confirm-btn");
+    var status = document.getElementById("abort-status");
+    btn.disabled = true;
+    status.textContent = "Sending abort signal…";
+
+    fetch("/api/ace/" + INSTANCE_ID + "/abort", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instance_id: INSTANCE_ID }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) {
+          status.textContent = "Error: " + data.error;
+          btn.disabled = false;
+        } else {
+          status.textContent = "Instance aborted.";
+          closeAbortModal();
+          // Reflect cancelled state
+          var badge = document.getElementById("state-badge");
+          if (badge) { badge.className = "badge badge-state-cancelled"; badge.textContent = "Cancelled"; }
+          // Hide abort buttons
+          document.querySelectorAll(".abort-zone, [onclick='openAbortModal()']").forEach(function(el){el.style.display="none";});
+        }
+      })
+      .catch(function (err) {
+        status.textContent = "Request failed: " + err;
+        btn.disabled = false;
+      });
+  };
+
+  // ── Keyboard: Escape closes modals ───────────────────────────────
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { closeArtModal(); closeAbortModal(); }
+  });
+
+})();
+</script>
+{% endblock %}

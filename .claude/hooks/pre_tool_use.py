@@ -475,6 +475,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "dd_mapping_transforms",
         # Slide Deck Generator — generation audit trail (NIST AU, append-only)
         "slides_audit",
+        # ACE (Autonomous Collaborative Engine) — step execution audit trail (NIST AU, append-only)
+        "ace_audit_log",
     ]
 
     if tool_name == "Bash":

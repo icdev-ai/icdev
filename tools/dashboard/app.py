@@ -163,6 +163,7 @@ _CANVAS_DEFS = [
     ("dic", "ICDEV_DIC_ENABLED", "tools.document_intelligence.blueprint", "dic_bp"),
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
     ("slides", "ICDEV_SLIDES_ENABLED", "tools.slides.blueprint", "slides_bp"),
+    ("ace", "ICDEV_ACE_ENABLED", "icdev.tools.ace.blueprint", "ace_bp"),
 ]
 
 _CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc"}
@@ -3387,6 +3388,7 @@ def create_app() -> Flask:
             "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
             "slides":         ("tools.iqe.adapters.slides",            ["slides.decks", "slides.slides"]),
             "cpmp":           ("tools.iqe.adapters.cpmp",              ["cpmp.contracts", "cpmp.deliverables", "cpmp.clins", "cpmp.cpars", "cpmp.evm"]),
+            "ace":            ("icdev.tools.iqe.adapters.ace",          ["ace.coworkers", "ace.sessions", "ace.suggestions"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
