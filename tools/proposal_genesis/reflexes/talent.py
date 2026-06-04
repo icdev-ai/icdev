@@ -11,11 +11,12 @@ Scanner-tier only (zero Claude tokens — fully deterministic).
 """
 
 import json
+import statistics
 import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -99,12 +100,46 @@ def _compute_velocity(signals: List[Dict]) -> Dict[str, Any]:
     }
 
 
-def _detect_surges(signals: List[Dict], threshold: int = 5) -> List[Dict]:
-    """Detect hiring surges — competitors with unusually high posting volume."""
+def _compute_surge_threshold(
+    counts: List[int], multiplier: float = 1.5, floor: int = 2
+) -> float:
+    """Dynamically derive an anomaly threshold from the posting-volume
+    distribution.
+
+    A hiring "surge" is volume that is statistically unusual relative to the
+    cohort, computed as ``mean + multiplier * population_stdev``. This adapts
+    to the size and spread of the current signal set instead of relying on a
+    fixed magic number. ``floor`` guards against flagging trivially small
+    samples when the spread is near zero.
+    """
+    if not counts:
+        return float(floor)
+    mean = statistics.mean(counts)
+    spread = statistics.pstdev(counts) if len(counts) > 1 else 0.0
+    dynamic = mean + multiplier * spread
+    return max(float(floor), dynamic)
+
+
+def _detect_surges(
+    signals: List[Dict],
+    threshold: Optional[float] = None,
+    multiplier: float = 1.5,
+) -> List[Dict]:
+    """Detect hiring surges — competitors with unusually high posting volume.
+
+    When ``threshold`` is ``None`` the cutoff is derived dynamically from the
+    distribution of competitor posting volumes (see
+    :func:`_compute_surge_threshold`).
+    """
     competitor_counts: Dict[str, int] = {}
     for sig in signals:
         name = sig.get("competitor_name", "unknown")
         competitor_counts[name] = competitor_counts.get(name, 0) + 1
+
+    if threshold is None:
+        threshold = _compute_surge_threshold(
+            list(competitor_counts.values()), multiplier=multiplier
+        )
 
     surges = []
     for name, count in competitor_counts.items():
@@ -137,11 +172,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     Returns standard reflex result dict.
     """
     lookback_days = config.get("talent_lookback_days", 30)
-    surge_threshold = config.get("talent_surge_threshold", 5)
+    # Threshold defaults to a dynamic, distribution-derived cutoff. An explicit
+    # override may be supplied via config; the multiplier tunes sensitivity of
+    # the dynamic calculation.
+    surge_threshold = config.get("talent_surge_threshold")
+    surge_multiplier = config.get("talent_surge_multiplier", 1.5)
 
     signals = _get_recent_signals(days=lookback_days)
     velocity = _compute_velocity(signals)
-    surges = _detect_surges(signals, threshold=surge_threshold)
+    surges = _detect_surges(
+        signals, threshold=surge_threshold, multiplier=surge_multiplier
+    )
 
     # Audit
     conn = get_connection()

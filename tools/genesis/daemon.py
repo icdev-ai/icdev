@@ -95,6 +95,7 @@ REFLEX_NAMES = [
     "pmo_option_tracker",
     "pmo_weekly_report",
     "slides",
+    "aidp_monitor",
 ]
 
 # Backward-compat aliases for module-level access used by other code

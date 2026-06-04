@@ -190,9 +190,12 @@
         return String(n);
     }
 
+    let _statsData = null;
+
     async function loadStats() {
         try {
             const d = await fetch('/api/ai-transparency/stats').then(r => r.json());
+            _statsData = d;
             const score = d.transparency_score;
             const scoreEl = document.getElementById('stat-overall');
             scoreEl.textContent = score != null ? score + '%' : '--';
@@ -206,6 +209,9 @@
             document.getElementById('stat-fairness').textContent = d.fairness_score != null ? d.fairness_score + '%' : '--';
             document.getElementById('stat-telemetry').textContent = fmt(d.telemetry_calls);
             document.getElementById('stat-designs').textContent = d.agentic_design_count ?? '--';
+            // Render inline-loaded sections
+            if (d.telemetry_breakdown) _renderTelemetry(d);
+            if (d.designs) _renderDesigns(d.designs);
         } catch(e) { console.warn('Stats load failed:', e); }
     }
 
@@ -267,50 +273,49 @@
         } catch(e) { console.warn('Inventory load failed:', e); }
     }
 
-    async function loadTelemetry() {
-        try {
-            const d = await fetch('/api/ai-transparency/telemetry').then(r => r.json());
-            const tokBadge = document.getElementById('telemetry-tokens-badge');
-            if (d.total_tokens) tokBadge.textContent = fmt(d.total_tokens) + ' tokens processed';
+    function _renderTelemetry(d) {
+        const tokBadge = document.getElementById('telemetry-tokens-badge');
+        if (d.telemetry_tokens) tokBadge.textContent = fmt(d.telemetry_tokens) + ' tokens processed';
 
-            const tbody = document.getElementById('telemetry-body');
-            if (d.breakdown && d.breakdown.length) {
-                tbody.innerHTML = d.breakdown.slice(0,10).map(r => `<tr>
-                    <td style="font-size:0.85em;">${r.provider}/<span style="color:var(--accent-blue-light,#4fc3f7);">${r.model_id}</span></td>
-                    <td>${fmt(r.calls)}</td>
-                    <td style="color:var(--text-muted);font-size:0.8em;">${fmt(r.tokens)}</td>
-                </tr>`).join('');
-            } else {
-                tbody.innerHTML = '<tr><td colspan="3" style="color:#666;text-align:center;padding:1rem;">No telemetry data.</td></tr>';
-            }
-
-            const fbody = document.getElementById('telemetry-funcs-body');
-            if (d.top_functions && d.top_functions.length) {
-                fbody.innerHTML = d.top_functions.map(r => `<tr>
-                    <td style="font-size:0.85em;">${r.function || '<em style="color:#666;">unnamed</em>'}</td>
-                    <td>${fmt(r.c)}</td>
-                </tr>`).join('');
-            }
-        } catch(e) { console.warn('Telemetry load failed:', e); }
-    }
-
-    async function loadDesigns() {
-        try {
-            const d = await fetch('/api/ai-transparency/designs').then(r => r.json());
-            const tbody = document.getElementById('designs-body');
-            if (!d.designs || !d.designs.length) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;padding:1.5rem;">No agentic designs found. <a href="/agentic-ai/">Create one →</a></td></tr>';
-                return;
-            }
-            const clsClass = {'CUI':'badge-CUI','CUI // SP-CTI':'badge-SECRET','UNCLASSIFIED':'badge-UNCLASSIFIED'};
-            tbody.innerHTML = d.designs.map(r => `<tr>
-                <td style="font-weight:500;">${r.name}</td>
-                <td style="font-size:0.85em;color:var(--text-muted);">${r.domain || '--'}</td>
-                <td><span class="badge ${clsClass[r.classification] || 'badge-CUI'}">${r.classification || 'CUI'}</span></td>
-                <td style="font-size:0.8em;color:var(--text-muted);">${(r.created_at||'').slice(0,10)}</td>
+        const tbody = document.getElementById('telemetry-body');
+        const breakdown = d.telemetry_breakdown || [];
+        if (breakdown.length) {
+            tbody.innerHTML = breakdown.slice(0,10).map(r => `<tr>
+                <td style="font-size:0.85em;">${r.provider}/<span style="color:var(--accent-blue-light,#4fc3f7);">${r.model_id}</span></td>
+                <td>${fmt(r.calls)}</td>
+                <td style="color:var(--text-muted);font-size:0.8em;">${fmt(r.tokens)}</td>
             </tr>`).join('');
-        } catch(e) { console.warn('Designs load failed:', e); }
+        } else {
+            tbody.innerHTML = '<tr><td colspan="3" style="color:#666;text-align:center;padding:1rem;">No telemetry data.</td></tr>';
+        }
+
+        const fbody = document.getElementById('telemetry-funcs-body');
+        const funcs = d.telemetry_functions || [];
+        if (funcs.length) {
+            fbody.innerHTML = funcs.map(r => `<tr>
+                <td style="font-size:0.85em;">${r.function || '<em style="color:#666;">unnamed</em>'}</td>
+                <td>${fmt(r.c)}</td>
+            </tr>`).join('');
+        }
     }
+
+    function _renderDesigns(designs) {
+        const tbody = document.getElementById('designs-body');
+        if (!designs || !designs.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;padding:1.5rem;">No agentic designs found. <a href="/agentic-ai/">Create one →</a></td></tr>';
+            return;
+        }
+        const clsClass = {'CUI':'badge-CUI','CUI // SP-CTI':'badge-SECRET','UNCLASSIFIED':'badge-UNCLASSIFIED'};
+        tbody.innerHTML = designs.map(r => `<tr>
+            <td style="font-weight:500;">${r.name}</td>
+            <td style="font-size:0.85em;color:var(--text-muted);">${r.domain || '--'}</td>
+            <td><span class="badge ${clsClass[r.classification] || 'badge-CUI'}">${r.classification || 'CUI'}</span></td>
+            <td style="font-size:0.8em;color:var(--text-muted);">${(r.created_at||'').slice(0,10)}</td>
+        </tr>`).join('');
+    }
+
+    async function loadTelemetry() { /* data loaded inline from stats */ }
+    async function loadDesigns() { /* data loaded inline from stats */ }
 
     async function loadModelCards() {
         try {

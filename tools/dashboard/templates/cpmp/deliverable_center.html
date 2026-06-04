@@ -11,7 +11,15 @@
         <h1>Deliverable Command Center</h1>
         <p class="subtitle">All CDRLs and deliverables across every active contract &mdash; sorted by due date</p>
     </div>
-    <button class="btn btn-primary" onclick="bulkGenerate()" id="bulk-gen-btn">Generate All Due in 14 Days</button>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="bulkGenerate()" id="bulk-gen-btn">Generate All Due in 14 Days</button>
+        <button class='btn btn-secondary btn-sm'
+                onclick="window.open('/writeguard','_blank')"
+                title='Open WriteGuard to validate auto-generated CDRL language'
+                style='font-size:0.8rem;'>
+            🛡️ Validate All Generated
+        </button>
+    </div>
 </div>
 
 <div id="bulk-gen-status" style="display:none; padding:10px 16px; border-radius:6px; margin-bottom:16px; font-size:13px;"></div>
@@ -86,6 +94,7 @@
                 <th>Days</th>
                 <th>Status</th>
                 <th>Generated?</th>
+                <th title='WriteGuard quality score (AI-generated CDRLs only)'>WG</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -201,6 +210,14 @@ function renderTable(items) {
 
         var actions = '<a href="/cpmp/' + d.contract_id + '/deliverables/' + d.id + '" class="btn btn-secondary" style="padding:3px 8px;font-size:11px;">View</a>';
 
+        var wgCell = d.generated_by_tool
+            ? '<a href="/writeguard" target="_blank"' +
+              ' style="font-size:0.72rem;padding:2px 6px;border-radius:4px;' +
+              'background:rgba(74,144,217,0.15);color:#6db3f8;' +
+              'text-decoration:none;border:1px solid rgba(74,144,217,0.3);"' +
+              ' title="Validate this AI-generated CDRL with WriteGuard">🛡️ Check</a>'
+            : '<span style="color:var(--text-muted);font-size:0.75rem;">—</span>';
+
         return '<tr class="urgency-' + urgency + '">' +
             '<td>' + contractLink + '</td>' +
             '<td><code style="font-size:11px;">' + (d.cdrl_number || '—') + '</code></td>' +
@@ -210,6 +227,7 @@ function renderTable(items) {
             '<td style="text-align:center;">' + daysBadge + '</td>' +
             '<td>' + statusBadge + '</td>' +
             '<td>' + genBadge + '</td>' +
+            '<td style="text-align:center;">' + wgCell + '</td>' +
             '<td>' + actions + '</td>' +
             '</tr>';
     });

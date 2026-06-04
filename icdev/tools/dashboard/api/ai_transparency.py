@@ -190,6 +190,35 @@ def get_stats():
         except Exception:
             pass
 
+        # Telemetry breakdown (inline — avoids routing conflicts with legacy alias)
+        try:
+            rows = conn.execute(
+                "SELECT provider, model_id, COUNT(*) as calls, "
+                "SUM(input_tokens + output_tokens) as tokens "
+                "FROM ai_telemetry GROUP BY provider, model_id ORDER BY calls DESC LIMIT 20"
+            ).fetchall()
+            funcs = conn.execute(
+                "SELECT function, COUNT(*) as c FROM ai_telemetry GROUP BY function ORDER BY c DESC LIMIT 8"
+            ).fetchall()
+            stats["telemetry_breakdown"] = [dict(r) for r in rows]
+            stats["telemetry_functions"] = [dict(r) for r in funcs]
+        except Exception:
+            stats["telemetry_breakdown"] = []
+            stats["telemetry_functions"] = []
+
+        # Agentic AI designs list (inline)
+        try:
+            sys.path.insert(0, str(BASE_DIR))
+            from tools.agentic_ai_canvas.db.init_db import get_connection as aac_conn2
+            ac2 = aac_conn2()
+            drows = ac2.execute(
+                "SELECT id, name, domain, classification, created_at FROM aadc_designs ORDER BY created_at DESC"
+            ).fetchall()
+            ac2.close()
+            stats["designs"] = [dict(r) for r in drows]
+        except Exception:
+            stats["designs"] = []
+
         conn.close()
         return jsonify(stats)
     except Exception as e:

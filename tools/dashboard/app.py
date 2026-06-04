@@ -562,6 +562,59 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """Deliverable Command Center — all deliverables across all active contracts."""
         return render_template("cpmp/deliverable_center.html")
 
+    @app.route("/cpmp/reports")
+    @require_role("admin", "pm", "capture_mgr", "bd")
+    def cpmp_reports_page():
+        """CPMP Reports — exportable contract performance reports and analytics."""
+        try:
+            from tools.govcon.portfolio_manager import get_portfolio_summary
+
+            portfolio_data = get_portfolio_summary()
+            pf = portfolio_data.get("portfolio", {})
+            contracts = pf.get("contracts", [])
+            upcoming = pf.get("upcoming_deliverables", [])
+            portfolio = {
+                "total_contracts": pf.get("total_contracts", 0),
+                "active_contracts": pf.get("active_contracts", 0),
+                "total_value": pf.get("total_value", 0),
+                "burn_rate": pf.get("burn_rate_pct", 0),
+                "overdue_deliverables": pf.get("overdue_deliverables", 0),
+                "at_risk": pf.get("at_risk_contracts", 0),
+                "health_distribution": pf.get("health_distribution", {"green": 0, "yellow": 0, "red": 0}),
+            }
+            try:
+                from tools.govcon.risk_manager import get_portfolio_risk_summary
+
+                risk_summary = get_portfolio_risk_summary().get("summary", {})
+            except Exception:
+                risk_summary = {}
+            return render_template(
+                "cpmp/reports.html",
+                portfolio=portfolio,
+                contracts=contracts,
+                upcoming_deliverables=upcoming,
+                risk_summary=risk_summary,
+            )
+        except Exception as e:
+            import traceback
+
+            traceback.print_exc()
+            return render_template(
+                "cpmp/reports.html",
+                portfolio={
+                    "total_contracts": 0,
+                    "active_contracts": 0,
+                    "total_value": 0,
+                    "burn_rate": 0,
+                    "overdue_deliverables": 0,
+                    "health_distribution": {"green": 0, "yellow": 0, "red": 0},
+                },
+                contracts=[],
+                upcoming_deliverables=[],
+                risk_summary={},
+                error=str(e),
+            )
+
     @app.route("/proposals")
     def proposals_list_page():
         """Proposal Opportunities — GovCon proposal writing lifecycle tracker."""
@@ -2272,6 +2325,15 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("System Graph blueprint failed to register: %s", _exc)
 
+    # ---- ZTA LAC Simulator Blueprint (irad-lac-06 / irad-lac-07) ----
+    try:
+        from tools.zta.blueprint import create_zta_blueprint
+        _zta_bp = create_zta_blueprint()
+        app.register_blueprint(_zta_bp, url_prefix="/zta")
+        app.logger.info("ZTA LAC Simulator blueprint registered at /zta")
+    except Exception as _exc:
+        app.logger.warning("ZTA LAC Simulator blueprint failed to register: %s", _exc)
+
     # ---- GovLift Cloud Migration Tool ----
     try:
         from tools.govlift.blueprint import create_govlift_blueprint as _gv_factory
@@ -3324,6 +3386,7 @@ def create_app() -> Flask:
             "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
             "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
             "slides":         ("tools.iqe.adapters.slides",            ["slides.decks", "slides.slides"]),
+            "cpmp":           ("tools.iqe.adapters.cpmp",              ["cpmp.contracts", "cpmp.deliverables", "cpmp.clins", "cpmp.cpars", "cpmp.evm"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
@@ -4589,50 +4652,6 @@ def create_app() -> Flask:
         """AI Transparency — OMB M-25-21, M-26-04, NIST AI 600-1, GAO-21-519SP (Phase 48, D307-D315)."""
         return render_template("ai_transparency.html")
 
-    @app.route("/api/ai-transparency/telemetry", methods=["GET"])
-    def ai_transparency_telemetry():
-        """AI telemetry breakdown by provider/model."""
-        from flask import jsonify
-        try:
-            from tools.db.storage import get_connection
-            conn = get_connection()
-            rows = conn.execute(
-                "SELECT provider, model_id, COUNT(*) as calls, "
-                "SUM(input_tokens + output_tokens) as tokens "
-                "FROM ai_telemetry GROUP BY provider, model_id ORDER BY calls DESC LIMIT 20"
-            ).fetchall()
-            total = conn.execute(
-                "SELECT COUNT(*) as c, SUM(input_tokens + output_tokens) as t FROM ai_telemetry"
-            ).fetchone()
-            funcs = conn.execute(
-                "SELECT function, COUNT(*) as c FROM ai_telemetry GROUP BY function ORDER BY c DESC LIMIT 8"
-            ).fetchall()
-            conn.close()
-            return jsonify({
-                "breakdown": [dict(r) for r in rows],
-                "total_calls": total["c"] if total else 0,
-                "total_tokens": total["t"] if total else 0,
-                "top_functions": [dict(r) for r in funcs],
-            })
-        except Exception as e:
-            return jsonify({"breakdown": [], "total_calls": 0, "total_tokens": 0, "error": str(e)})
-
-    @app.route("/api/ai-transparency/designs", methods=["GET"])
-    def ai_transparency_designs():
-        """Agentic AI canvas designs for transparency dashboard."""
-        from flask import jsonify
-        import sys
-        try:
-            sys.path.insert(0, str(BASE_DIR))
-            from tools.agentic_ai_canvas.db.init_db import get_connection as aac_conn
-            ac = aac_conn()
-            rows = ac.execute(
-                "SELECT id, name, domain, classification, created_at FROM aadc_designs ORDER BY created_at DESC"
-            ).fetchall()
-            ac.close()
-            return jsonify({"designs": [dict(r) for r in rows], "total": len(rows)})
-        except Exception as e:
-            return jsonify({"designs": [], "total": 0, "error": str(e)})
 
     @app.route("/ai-accountability")
     def ai_accountability_page():
