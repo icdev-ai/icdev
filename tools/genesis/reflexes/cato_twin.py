@@ -119,7 +119,6 @@ def _determine_anomaly_threshold(controls: List[Dict], framework: str) -> float:
         if router.is_no_llm_mode() or not router.has_any_llm():
             return _AI_SCORE_THRESHOLD_DEFAULT
 
-        scores = [c.get("score", 0.0) for c in controls]
         controls_summary = "\n".join(
             f"  {c.get('control_id', '?')}: score={c.get('score', 0.0):.2f}, status={c.get('implementation_status', 'unknown')}"
             for c in controls[:30]  # cap to avoid token overflow

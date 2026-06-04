@@ -1489,3 +1489,71 @@ def get_proposals_bubble_data():
         })
 
     return jsonify({"opportunities": opportunities, "count": len(opportunities)})
+
+
+@govcon_api.route("/iqe-query", methods=["POST"])
+def govcon_iqe_query():
+    """IQE NL-to-SQL for GovCon / Proposals canvas."""
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import IQESyntaxError, parse
+    from tools.iqe.executor import execute_query
+    import tools.iqe.adapters.govcon  # noqa: F401
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    collections = ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]
+    translation = nl_to_iqe(question, collections)
+    iqe_str = translation.get("iqe", "")
+    explanation = translation.get("explanation", "")
+
+    if not data.get("execute", True):
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+    try:
+        ast = parse(iqe_str)
+        rows = execute_query(ast, None)
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                        "results": rows, "row_count": len(rows)}), 200
+    except IQESyntaxError as exc:
+        return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+
+@govcon_api.route("/opportunities/wg-scores", methods=["GET"])
+@require_role("admin", "bd", "capture_mgr", "pm")
+def get_wg_scores():
+    """GET /api/govcon/opportunities/wg-scores?ids=1,2,3
+
+    Returns the latest WriteGuard overall_quality_score for each requested
+    opportunity ID.  IDs with no analysis record return null.
+    """
+    raw = request.args.get("ids", "")
+    ids_list = [int(x) for x in raw.split(",") if x.strip().lstrip("-").isdigit()]
+    if not ids_list:
+        return jsonify({"scores": {}})
+
+    placeholders = ",".join("?" * len(ids_list))
+    sql = (
+        "SELECT w.opp_id, w.overall_quality_score "
+        "FROM wg_analysis_results w "
+        "INNER JOIN ("
+        "  SELECT opp_id, MAX(created_at) AS latest "
+        "  FROM wg_analysis_results "
+        f" WHERE opp_id IN ({placeholders}) "
+        "  GROUP BY opp_id"
+        ") m ON w.opp_id = m.opp_id AND w.created_at = m.latest"
+    )
+    conn = _get_db()
+    try:
+        rows = conn.execute(sql, ids_list).fetchall()
+    finally:
+        conn.close()
+
+    scores = {str(opp_id): score for opp_id, score in rows}
+    for opp_id in ids_list:
+        scores.setdefault(str(opp_id), None)
+    return jsonify({"scores": scores})

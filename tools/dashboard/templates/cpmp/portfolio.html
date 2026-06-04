@@ -298,6 +298,17 @@
     {% endif %}
 </div>
 
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "cpmp" %}
+{% set iqe_api_route = "/api/cpmp/iqe-query" %}
+{% set iqe_title = "Ask the AI — Contract Portfolio" %}
+{% set iqe_examples = [
+    {"label": "Active contracts", "query": "show all active contracts with health status"},
+    {"label": "Low CPI alert", "query": "list contracts where CPI is below 0.9"},
+    {"label": "CPARS scores", "query": "show latest CPARS assessment for each contract"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 <style>
 .text-danger { color: var(--status-red, #dc3545) !important; font-weight: bold; }
 .text-warning { color: var(--status-yellow, #ffc107) !important; }

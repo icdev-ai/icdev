@@ -2,8 +2,31 @@
 {% block title %}LAC Simulator — ZTA Digital Twin{% endblock %}
 {% block content %}
 <div class="page-header">
-  <h1>LAC Simulator <span class="badge badge-cui">CUI // SP-CTI</span></h1>
-  <p class="text-muted">Location-based Access Control — OPA/Python ABAC Policy Evaluator</p>
+  <h1>ZTA Canvas <span class="badge badge-cui">CUI // SP-CTI</span></h1>
+  <p class="text-muted">Zero Trust Architecture — Location-based Access Control &amp; AI Data Warehouse Posture</p>
+</div>
+
+<!-- AI Data Warehouse Posture Card -->
+<div class="card mb-4" id="cls-posture-card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>AI Data Warehouse Posture</strong>
+    <span id="cls-tier-badge" class="badge" style="font-size:0.9rem;padding:4px 10px">Loading…</span>
+  </div>
+  <div class="card-body">
+    <div class="d-flex align-items-center mb-3">
+      <div id="cls-score-tile" style="font-size:2.2rem;font-weight:bold;margin-right:16px">—</div>
+      <div class="text-muted small">CLS Compliance Score</div>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary mb-2" type="button"
+            data-bs-toggle="collapse" data-bs-target="#cls-checklist"
+            aria-expanded="false" aria-controls="cls-checklist"
+            onclick="toggleClsChecklist(this)">
+      Expand Checklist
+    </button>
+    <div id="cls-checklist" style="display:none">
+      <ul id="cls-check-list" class="list-unstyled mt-2 mb-0"></ul>
+    </div>
+  </div>
 </div>
 
 <div class="row">
@@ -263,6 +286,45 @@ function refreshAuditTable() {
 
 // Initial load
 refreshAuditTable();
+loadClsPosture();
+
+function loadClsPosture() {
+  fetch('/zta/cls-posture')
+    .then(r => r.json())
+    .then(data => {
+      const pct = Math.round((data.score || 0) * 100);
+      document.getElementById('cls-score-tile').textContent = pct + '%';
+
+      const badge = document.getElementById('cls-tier-badge');
+      const colors = {green: '#1b5e20', yellow: '#e65100', red: '#b71c1c'};
+      const tier = data.tier || 'red';
+      badge.textContent = tier.charAt(0).toUpperCase() + tier.slice(1);
+      badge.style.cssText = 'background:' + (colors[tier] || '#555') + ';color:#fff;font-size:0.9rem;padding:4px 10px;border-radius:4px';
+
+      const list = document.getElementById('cls-check-list');
+      list.innerHTML = (data.checks || []).map(c => {
+        const icon = c.passed ? '&#10003;' : '&#10007;';
+        const color = c.passed ? '#66bb6a' : '#ef5350';
+        const label = c.name.replace(/_/g, ' ');
+        return `<li class="mb-1" style="color:${color}">
+          <span style="margin-right:6px">${icon}</span>
+          <strong>${label}</strong>
+          <span class="text-muted small ms-2">${c.detail || ''}</span>
+        </li>`;
+      }).join('');
+    })
+    .catch(() => {
+      document.getElementById('cls-score-tile').textContent = 'ERR';
+      document.getElementById('cls-tier-badge').textContent = 'Error';
+    });
+}
+
+function toggleClsChecklist(btn) {
+  const panel = document.getElementById('cls-checklist');
+  const visible = panel.style.display !== 'none';
+  panel.style.display = visible ? 'none' : '';
+  btn.textContent = visible ? 'Expand Checklist' : 'Collapse Checklist';
+}
 </script>
 
 <style>

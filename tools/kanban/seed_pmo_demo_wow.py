@@ -761,7 +761,6 @@ def seed(dry_run: bool = False) -> None:
 
         # Print dep graph summary
         print(f"\n  Dep chain visualization:")
-        by_id = {t["id"]: t for t in TASKS}
         for t in TASKS:
             if t.get("depends_on_task_id"):
                 arrow = f"  {t['depends_on_task_id']} -> {t['id']}"

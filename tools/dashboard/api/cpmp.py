@@ -1592,11 +1592,8 @@ def portfolio_deliverables():
         sort         due_date | contract | status  (default: due_date)
     """
     try:
-        from datetime import date as _date
 
         conn = _get_db()
-        today = _date.today().isoformat()
-
         contract_id = request.args.get("contract_id")
         status_filter = request.args.get("status")
         window = request.args.get("window", "all")
@@ -1792,3 +1789,35 @@ def cpmp_pmo_report_content(filename):
     resp.headers["Content-Type"] = "text/html; charset=utf-8"
     resp.headers["X-Frame-Options"] = "SAMEORIGIN"
     return resp
+
+
+@cpmp_api.route("/iqe-query", methods=["POST"])
+def cpmp_iqe_query():
+    """IQE NL-to-SQL for CPMP (Contract Portfolio Management) canvas."""
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import IQESyntaxError, parse
+    from tools.iqe.executor import execute_query
+    import tools.iqe.adapters.cpmp  # noqa: F401
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    collections = ["cpmp.contracts", "cpmp.deliverables", "cpmp.clins", "cpmp.cpars", "cpmp.evm"]
+    translation = nl_to_iqe(question, collections)
+    iqe_str = translation.get("iqe", "")
+    explanation = translation.get("explanation", "")
+
+    if not data.get("execute", True):
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+    try:
+        ast = parse(iqe_str)
+        rows = execute_query(ast, None)
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                        "results": rows, "row_count": len(rows)}), 200
+    except IQESyntaxError as exc:
+        return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc), "iqe": iqe_str}), 500

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from datetime import datetime, timezone
 
-from tools.zta.constants import CLEARANCE_ORDER, COI_TYPES, ECI_RESTRICTIONS, LAC_DECISION
+from tools.zta.constants import CLEARANCE_ORDER, ECI_RESTRICTIONS, LAC_DECISION
 
 
 @dataclass
