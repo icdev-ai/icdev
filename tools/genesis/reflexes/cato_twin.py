@@ -85,17 +85,17 @@ def _build_seed_queries(threshold: float = _AI_SCORE_THRESHOLD_DEFAULT) -> List[
     t = f"{threshold:.2f}"
     return [
         # FedRAMP Moderate
-        f"foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score",
-        f"foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.evidence_ref is null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id",
+        "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score",
+        "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.evidence_ref is null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id",
         f"foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.score < {t} select ctrl.control_id, ctrl.score, ctrl.implementation_status, ctrl.project_id",
-        f"foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.control_id starts_with 'AC' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
-        f"foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.control_id starts_with 'IA' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
+        "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.control_id starts_with 'AC' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
+        "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.control_id starts_with 'IA' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
         # FedRAMP High
-        f"foreach ctrl in framework('FedRAMP High').controls where ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score",
-        f"foreach ctrl in framework('FedRAMP High').controls where ctrl.evidence_ref is null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id",
+        "foreach ctrl in framework('FedRAMP High').controls where ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score",
+        "foreach ctrl in framework('FedRAMP High').controls where ctrl.evidence_ref is null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id",
         f"foreach ctrl in framework('FedRAMP High').controls where ctrl.score < {t} and ctrl.status == 'not_satisfied' select ctrl.control_id, ctrl.score, ctrl.project_id, ctrl.assessor",
-        f"foreach ctrl in framework('FedRAMP High').controls where ctrl.control_id starts_with 'SC' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
-        f"foreach ctrl in framework('FedRAMP High').controls where ctrl.control_id starts_with 'SI' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
+        "foreach ctrl in framework('FedRAMP High').controls where ctrl.control_id starts_with 'SC' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
+        "foreach ctrl in framework('FedRAMP High').controls where ctrl.control_id starts_with 'SI' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
     ]
 
 

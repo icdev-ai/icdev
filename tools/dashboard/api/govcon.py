@@ -18,6 +18,7 @@ Integration points:
     competitor_profiler   → govcon_awards            (vendor intelligence)
 """
 
+import logging
 import os
 import sys
 import uuid
@@ -25,6 +26,8 @@ from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
+
+logger = logging.getLogger(__name__)
 
 from tools.common.helpers import now_isoformat
 from tools.dashboard.auth import require_role

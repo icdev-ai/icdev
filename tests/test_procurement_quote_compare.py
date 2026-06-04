@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import os
 import sys
-import uuid
 from pathlib import Path
 
 # Ensure repo root is on sys.path and SQLite is forced (mirrors conftest)
@@ -42,7 +41,6 @@ from tools.govcon.procurement_quote_compare import (  # noqa: E402
     list_procurements,
     list_quotes,
     _classify_variance,
-    _ensure_tables,
     _variance_pct,
     vendor_summary,
 )
@@ -294,7 +292,7 @@ class TestQuoteCapture:
     def test_add_quote_rejects_invalid_status(self, db):
         self._seed()
         result = add_quote("PROC-Q1", "Acme", "0001", 100.0,
-                           quote_status="not_a_real_status")
+                           status="not_a_real_status")
         assert result["status"] == "error"
 
     def test_add_quote_rejects_duplicate(self, db):

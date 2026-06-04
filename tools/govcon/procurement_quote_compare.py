@@ -153,38 +153,60 @@ def _audit(
         pass
 
 
+# Equipment category values used for BOM rollup. Operators may add
+# free-form values via set_equipment_category(); the rollup groups by
+# whatever string is stored, so the taxonomy is open-ended but this
+# list documents the standard categories used in the year-end budget
+# sprint use case.
+EQUIPMENT_CATEGORIES = (
+    "network",
+    "compute",
+    "storage",
+    "peripheral",
+    "cabling",
+    "power",
+    "software",
+    "services",
+    "other",
+    "unspecified",
+)
+
+
 def _ensure_tables(conn) -> None:
     """Create procurement IGCE / quote tables if they don't exist."""
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS proc_igce_line_items (
-            id              TEXT PRIMARY KEY,
-            procurement_id  TEXT NOT NULL,
-            clin            TEXT NOT NULL DEFAULT '',
-            description     TEXT NOT NULL DEFAULT '',
-            unit            TEXT NOT NULL DEFAULT 'each',
-            quantity        REAL NOT NULL DEFAULT 1.0,
-            unit_cost       REAL NOT NULL DEFAULT 0.0,
-            extended_cost   REAL NOT NULL DEFAULT 0.0,
-            basis           TEXT NOT NULL DEFAULT '',
-            poc             TEXT NOT NULL DEFAULT '',
-            notes           TEXT,
-            metadata        TEXT DEFAULT '{}',
-            created_at      TEXT NOT NULL,
-            updated_at      TEXT NOT NULL,
-            classification  TEXT DEFAULT 'CUI',
+            id                  TEXT PRIMARY KEY,
+            procurement_id      TEXT NOT NULL,
+            clin                TEXT NOT NULL DEFAULT '',
+            description         TEXT NOT NULL DEFAULT '',
+            unit                TEXT NOT NULL DEFAULT 'each',
+            quantity            REAL NOT NULL DEFAULT 1.0,
+            unit_cost           REAL NOT NULL DEFAULT 0.0,
+            extended_cost       REAL NOT NULL DEFAULT 0.0,
+            basis               TEXT NOT NULL DEFAULT '',
+            poc                 TEXT NOT NULL DEFAULT '',
+            notes               TEXT,
+            equipment_category  TEXT NOT NULL DEFAULT 'unspecified',
+            metadata            TEXT DEFAULT '{}',
+            created_at          TEXT NOT NULL,
+            updated_at          TEXT NOT NULL,
+            classification      TEXT DEFAULT 'CUI',
             UNIQUE (procurement_id, clin)
         )
         """
     )
-    # Backfill: if the table existed before the poc column was added, add it now.
-    # Safe no-op when the column already exists.
-    try:
-        conn.execute(
-            "ALTER TABLE proc_igce_line_items ADD COLUMN poc TEXT NOT NULL DEFAULT ''"
-        )
-    except Exception:
-        pass
+    # Backfill columns: if the table existed before these were added,
+    # add them now. Safe no-op when the column already exists.
+    for _ddl in (
+        "ALTER TABLE proc_igce_line_items ADD COLUMN poc TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE proc_igce_line_items ADD COLUMN equipment_category TEXT NOT NULL DEFAULT 'unspecified'",
+    ):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS proc_vendor_quotes (
@@ -218,12 +240,28 @@ def _ensure_tables(conn) -> None:
             contract_type   TEXT NOT NULL DEFAULT 'ffp',
             description     TEXT,
             status          TEXT NOT NULL DEFAULT 'open',
+            allocation_id   TEXT,
             metadata        TEXT DEFAULT '{}',
             created_at      TEXT NOT NULL,
             updated_at      TEXT NOT NULL,
             classification  TEXT DEFAULT 'CUI'
         )
         """
+    )
+    # Backfill: allocation_id FK added later. Nullable — existing rows
+    # remain unlinked.
+    try:
+        conn.execute(
+            "ALTER TABLE proc_procurements ADD COLUMN allocation_id TEXT"
+        )
+    except Exception:
+        pass
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_proc_alloc ON proc_procurements(allocation_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_igce_category "
+        "ON proc_igce_line_items(equipment_category)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_igce_proc ON proc_igce_line_items(procurement_id)"
@@ -280,8 +318,16 @@ def create_procurement(
     title: str = "",
     contract_type: str = "ffp",
     description: str = "",
+    allocation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Register a new procurement (the parent container for IGCE + quotes)."""
+    """Register a new procurement (the parent container for IGCE + quotes).
+
+    The optional ``allocation_id`` argument links the procurement to a
+    budget initiative allocation (cpmp_budget_allocations.id) so that
+    bom_by_tier_and_category() can roll up the BOM by tier × category.
+    Pass it at creation time, or call link_procurement_to_initiative()
+    later to set or change it.
+    """
     if not procurement_id:
         return {"status": "error", "message": "procurement_id is required"}
 
@@ -302,17 +348,18 @@ def create_procurement(
         """
         INSERT INTO proc_procurements
             (id, solicitation, title, agency, contract_type, description, status,
-             metadata, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'open', '{}', ?, ?)
+             allocation_id, metadata, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'open', ?, '{}', ?, ?)
         """,
         (procurement_id, solicitation, title, agency, contract_type,
-         description, now, now),
+         description, allocation_id, now, now),
     )
     _audit(conn, "procurement.created", "create_procurement", {
         "procurement_id": procurement_id,
         "solicitation": solicitation,
         "agency": agency,
         "contract_type": contract_type,
+        "allocation_id": allocation_id,
     }, procurement_id)
     conn.commit()
 
@@ -322,6 +369,7 @@ def create_procurement(
         "solicitation": solicitation,
         "agency": agency,
         "contract_type": contract_type,
+        "allocation_id": allocation_id,
         "created_at": now,
     }
 
@@ -351,12 +399,18 @@ def add_igce_line(
     basis: str = "",
     notes: str = "",
     poc: str = "",
+    equipment_category: str = "unspecified",
 ) -> Dict[str, Any]:
     """Add (or upsert) an IGCE line item for the procurement.
 
     The optional ``poc`` argument captures the Government Point of Contact
     (name, email, phone) for this line item — one of the 9 required BOM
     fields. Defaults to empty string.
+
+    The optional ``equipment_category`` argument is used to roll up the
+    BOM by category (e.g. "network", "compute", "cabling") when grouped
+    with the initiative tier. Defaults to "unspecified" so legacy
+    callers continue to work without modification.
     """
     if not procurement_id or not clin:
         return {
@@ -393,17 +447,19 @@ def add_igce_line(
             """
             UPDATE proc_igce_line_items
             SET description = ?, unit = ?, quantity = ?, unit_cost = ?,
-                extended_cost = ?, basis = ?, poc = ?, notes = ?, updated_at = ?
+                extended_cost = ?, basis = ?, poc = ?, equipment_category = ?,
+                notes = ?, updated_at = ?
             WHERE id = ?
             """,
             (description, unit, quantity, unit_cost, extended_cost,
-             basis, poc, notes, now, existing["id"]),
+             basis, poc, equipment_category, notes, now, existing["id"]),
         )
         _audit(conn, "igce.updated", "add_igce_line", {
             "procurement_id": procurement_id,
             "clin": clin,
             "unit_cost": unit_cost,
             "extended_cost": extended_cost,
+            "equipment_category": equipment_category,
         }, procurement_id)
         action = "updated"
     else:
@@ -411,17 +467,20 @@ def add_igce_line(
             """
             INSERT INTO proc_igce_line_items
                 (id, procurement_id, clin, description, unit, quantity, unit_cost,
-                 extended_cost, basis, poc, notes, metadata, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)
+                 extended_cost, basis, poc, equipment_category, notes, metadata,
+                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)
             """,
             (_gen_id("igce"), procurement_id, clin, description, unit,
-             quantity, unit_cost, extended_cost, basis, poc, notes, now, now),
+             quantity, unit_cost, extended_cost, basis, poc,
+             equipment_category, notes, now, now),
         )
         _audit(conn, "igce.created", "add_igce_line", {
             "procurement_id": procurement_id,
             "clin": clin,
             "unit_cost": unit_cost,
             "extended_cost": extended_cost,
+            "equipment_category": equipment_category,
         }, procurement_id)
         action = "created"
 
@@ -434,6 +493,7 @@ def add_igce_line(
         "unit_cost": unit_cost,
         "quantity": quantity,
         "extended_cost": extended_cost,
+        "equipment_category": equipment_category,
     }
 
 
@@ -585,6 +645,7 @@ def add_bom_line(
     basis: str = "",
     quantity_override: Optional[float] = None,
     total_price_override: Optional[float] = None,
+    equipment_category: str = "unspecified",
 ) -> Dict[str, Any]:
     """Unified capture for one BOM line item — all 9 required fields in one call.
 
@@ -601,6 +662,11 @@ def add_bom_line(
         8. Description      -> description (proc_igce_line_items.description)
         9. Notes            -> notes (proc_igce_line_items.notes + quote.notes)
 
+    Plus an optional ``equipment_category`` (10th, defaults to
+    "unspecified") used by bom_by_tier_and_category() to roll up the
+    BOM by category. The 9-field contract is preserved; callers that
+    do not pass equipment_category continue to work.
+
     If a quote already exists for (procurement, vendor, quote_ref, clin) it is
     REPLACED (last-write-wins), matching the upsert semantics of add_igce_line.
     """
@@ -614,7 +680,7 @@ def add_bom_line(
     if unit_cost < 0 or unit_price < 0:
         return {"status": "error", "message": "unit_cost and unit_price must be >= 0"}
 
-    # 1) Upsert the IGCE row with the IGCE-side BOM fields (2, 3, 4, 7, 8, 9)
+    # 1) Upsert the IGCE row with the IGCE-side BOM fields (2, 3, 4, 7, 8, 9, +category)
     igce_result = add_igce_line(
         procurement_id=procurement_id,
         clin=clin,
@@ -625,6 +691,7 @@ def add_bom_line(
         basis=basis,
         notes=notes,
         poc=poc,
+        equipment_category=equipment_category,
     )
     if igce_result.get("status") != "ok":
         return igce_result
@@ -967,6 +1034,315 @@ def gate_procurement(
             "max_fail_pct": MAX_FAIL_PCT,
             "unreasonable_low_pct": UNREASONABLE_LOW_PCT,
         },
+    }
+
+
+# ── BOM by initiative tier + equipment category ───────────────────────
+
+
+def set_equipment_category(igce_id: str, category: str) -> Dict[str, Any]:
+    """Patch the equipment_category on an existing IGCE line item.
+
+    Use this to (re)classify a line item after creation. The category
+    is a free-form string; standard values are listed in
+    ``EQUIPMENT_CATEGORIES`` but the BOM rollup groups by whatever
+    string is stored, so any consistent taxonomy is supported.
+
+    Returns the updated line item row, or an error if the IGCE id is
+    not found.
+    """
+    if not igce_id:
+        return {"status": "error", "message": "igce_id is required"}
+    if category is None:
+        category = "unspecified"
+    category = (category or "unspecified").strip().lower() or "unspecified"
+
+    conn = _get_db()
+    _ensure_tables(conn)
+
+    existing = conn.execute(
+        "SELECT id, procurement_id, clin FROM proc_igce_line_items WHERE id = ?",
+        (igce_id,),
+    ).fetchone()
+    if not existing:
+        return {
+            "status": "error",
+            "message": f"igce_id {igce_id} not found",
+        }
+
+    now = _now()
+    conn.execute(
+        """
+        UPDATE proc_igce_line_items
+        SET equipment_category = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (category, now, igce_id),
+    )
+    _audit(conn, "igce.category_updated", "set_equipment_category", {
+        "igce_id": igce_id,
+        "procurement_id": existing["procurement_id"],
+        "clin": existing["clin"],
+        "equipment_category": category,
+    }, existing["procurement_id"])
+    conn.commit()
+
+    return {
+        "status": "ok",
+        "igce_id": igce_id,
+        "procurement_id": existing["procurement_id"],
+        "clin": existing["clin"],
+        "equipment_category": category,
+    }
+
+
+def link_procurement_to_initiative(
+    procurement_id: str,
+    allocation_id: str,
+) -> Dict[str, Any]:
+    """Link a procurement to a budget-initiative allocation.
+
+    The allocation_id must reference a row in cpmp_budget_allocations
+    (the initiative budget table owned by tools/budget/initiative_allocator).
+    This function does NOT validate the FK against the budget table —
+    it just stores the link. bom_by_tier_and_category() will skip
+    procurements whose allocation_id does not resolve to a real
+    allocation, so dangling links silently disappear from the rollup
+    (which is the right behavior for a forward-linkable work-in-progress).
+
+    The link change is recorded in audit_trail.
+    """
+    if not procurement_id or not allocation_id:
+        return {
+            "status": "error",
+            "message": "procurement_id and allocation_id are required",
+        }
+
+    conn = _get_db()
+    _ensure_tables(conn)
+
+    proc = conn.execute(
+        "SELECT id, allocation_id FROM proc_procurements WHERE id = ?",
+        (procurement_id,),
+    ).fetchone()
+    if not proc:
+        return {
+            "status": "error",
+            "message": f"procurement_id {procurement_id} not found",
+        }
+
+    previous_allocation_id = proc["allocation_id"]
+    now = _now()
+    conn.execute(
+        """
+        UPDATE proc_procurements
+        SET allocation_id = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (allocation_id, now, procurement_id),
+    )
+    _audit(conn, "procurement.linked_to_initiative",
+           "link_procurement_to_initiative", {
+               "procurement_id": procurement_id,
+               "previous_allocation_id": previous_allocation_id,
+               "allocation_id": allocation_id,
+           }, procurement_id)
+    conn.commit()
+
+    return {
+        "status": "ok",
+        "procurement_id": procurement_id,
+        "previous_allocation_id": previous_allocation_id,
+        "allocation_id": allocation_id,
+    }
+
+
+def bom_by_tier_and_category(
+    fiscal_year: Optional[int] = None,
+    allocation_ids: Optional[List[str]] = None,
+    initiative_codes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Return the BOM rolled up by initiative tier × equipment category.
+
+    This is the headline query for the year-end budget sprint use case
+    (args/use_cases.yaml). It joins:
+
+        proc_procurements (allocation_id)
+        -> cpmp_budget_allocations (tier, fiscal_year, initiative_code)
+        -> proc_igce_line_items (equipment_category, extended_cost)
+        -> proc_vendor_quotes (total_price, vendor_name)
+
+    The output is keyed by "<tier>.<equipment_category>" and contains,
+    per group:
+        - line_item_count: number of IGCE rows
+        - quote_count: number of vendor-quote rows
+        - igce_total_usd: sum of extended_cost (government estimate)
+        - quote_total_usd: sum of total_price (best vendor commitment)
+        - variance_usd: quote_total - igce_total (negative = under IGCE)
+        - variance_pct: variance_usd / igce_total * 100
+        - vendors: deduped list of vendor names
+        - procurements: list of procurement_ids contributing
+        - initiative_codes: list of initiative_codes contributing
+
+    Top-level summary:
+        - tier_1_total_usd, tier_2_total_usd (use the igce_total)
+        - by_group: dict keyed by "<tier>.<category>" as above
+        - filters_applied: echo of the input filters (for the CLI/log)
+
+    Filters are AND-combined:
+        - fiscal_year: only allocations in that FY
+        - allocation_ids: only those specific allocation ids (if provided)
+        - initiative_codes: only those specific initiative codes (if provided)
+
+    A procurement whose allocation_id does not resolve to a row in
+    cpmp_budget_allocations is silently skipped — that is the "no
+    initiative context" case and we don't want to invent a tier for it.
+
+    This function does NOT call _audit() — it is a read-only rollup
+    and emits no audit row. The link_procurement_to_initiative()
+    call that fed data into it already wrote an audit row.
+    """
+    conn = _get_db()
+    _ensure_tables(conn)
+
+    # Build the where clause against cpmp_budget_allocations.
+    alloc_where: List[str] = []
+    alloc_params: List[Any] = []
+    if fiscal_year is not None:
+        alloc_where.append("fiscal_year = ?")
+        alloc_params.append(int(fiscal_year))
+    if allocation_ids:
+        placeholders = ",".join("?" for _ in allocation_ids)
+        alloc_where.append(f"id IN ({placeholders})")
+        alloc_params.extend(allocation_ids)
+    if initiative_codes:
+        placeholders = ",".join("?" for _ in initiative_codes)
+        alloc_where.append(f"initiative_code IN ({placeholders})")
+        alloc_params.extend(initiative_codes)
+
+    where_sql = ("WHERE " + " AND ".join(alloc_where)) if alloc_where else ""
+
+    # Single query: join everything. Quote totals come from the BEST
+    # (lowest) vendor quote per (procurement, clin); we use a correlated
+    # subquery to pick the minimum total_price for each CLIN, then sum
+    # those into the rollup.
+    sql = f"""
+        SELECT
+            ba.id                AS allocation_id,
+            ba.initiative_code   AS initiative_code,
+            ba.tier              AS tier,
+            ba.fiscal_year       AS fiscal_year,
+            pp.id                AS procurement_id,
+            ig.id                AS igce_id,
+            ig.clin              AS clin,
+            ig.equipment_category AS equipment_category,
+            ig.quantity          AS igce_quantity,
+            ig.unit_cost         AS igce_unit_cost,
+            ig.extended_cost     AS igce_extended_cost,
+            ig.description       AS description
+        FROM cpmp_budget_allocations ba
+        JOIN proc_procurements pp
+          ON pp.allocation_id = ba.id
+        JOIN proc_igce_line_items ig
+          ON ig.procurement_id = pp.id
+        {where_sql}
+        ORDER BY ba.tier, ig.equipment_category, ig.clin
+    """
+    rows = conn.execute(sql, alloc_params).fetchall()
+
+    # Pre-fetch all quotes into a dict to avoid N+1.
+    all_quotes = {
+        (r["procurement_id"], r["clin"]): r
+        for r in conn.execute(
+            "SELECT procurement_id, clin, vendor_name, total_price "
+            "FROM proc_vendor_quotes WHERE total_price > 0"
+        ).fetchall()
+    }
+    # Filter to best-per-(proc,clin).
+    best_quote: Dict[tuple, Any] = {}
+    for (proc_id, clin), q in all_quotes.items():
+        existing = best_quote.get((proc_id, clin))
+        if existing is None or q["total_price"] < existing["total_price"]:
+            best_quote[(proc_id, clin)] = q
+
+    # Roll up.
+    by_group: Dict[str, Dict[str, Any]] = {}
+    tier_totals: Dict[str, float] = {"tier_1": 0.0, "tier_2": 0.0, "tier_unknown": 0.0}
+    contributing_procs: set = set()
+    contributing_inits: set = set()
+
+    for r in rows:
+        tier = r["tier"] or "tier_unknown"
+        category = r["equipment_category"] or "unspecified"
+        group_key = f"{tier}.{category}"
+        bucket = by_group.setdefault(group_key, {
+            "tier": tier,
+            "equipment_category": category,
+            "line_item_count": 0,
+            "quote_count": 0,
+            "igce_total_usd": 0.0,
+            "quote_total_usd": 0.0,
+            "variance_usd": 0.0,
+            "variance_pct": 0.0,
+            "vendors": set(),
+            "procurements": set(),
+            "initiative_codes": set(),
+            "clins": [],
+        })
+        bucket["line_item_count"] += 1
+        bucket["igce_total_usd"] = round(
+            bucket["igce_total_usd"] + float(r["igce_extended_cost"] or 0.0), 2
+        )
+        bucket["clins"].append({
+            "procurement_id": r["procurement_id"],
+            "clin": r["clin"],
+            "description": r["description"],
+            "igce_extended_cost": float(r["igce_extended_cost"] or 0.0),
+        })
+        bucket["procurements"].add(r["procurement_id"])
+        bucket["initiative_codes"].add(r["initiative_code"])
+        contributing_procs.add(r["procurement_id"])
+        contributing_inits.add(r["initiative_code"])
+
+        # Attach best quote if any.
+        q = best_quote.get((r["procurement_id"], r["clin"]))
+        if q is not None:
+            bucket["quote_count"] += 1
+            bucket["quote_total_usd"] = round(
+                bucket["quote_total_usd"] + float(q["total_price"] or 0.0), 2
+            )
+            bucket["vendors"].add(q["vendor_name"])
+
+        tier_totals[tier] = round(
+            tier_totals[tier] + float(r["igce_extended_cost"] or 0.0), 2
+        )
+
+    # Finalize variance + serialize sets.
+    for bucket in by_group.values():
+        igce = bucket["igce_total_usd"]
+        quote = bucket["quote_total_usd"]
+        bucket["variance_usd"] = round(quote - igce, 2)
+        bucket["variance_pct"] = round(
+            (quote - igce) / igce * 100, 2
+        ) if igce > 0 else 0.0
+        bucket["vendors"] = sorted(bucket["vendors"])
+        bucket["procurements"] = sorted(bucket["procurements"])
+        bucket["initiative_codes"] = sorted(bucket["initiative_codes"])
+
+    return {
+        "status": "ok",
+        "filters": {
+            "fiscal_year": fiscal_year,
+            "allocation_ids": allocation_ids or [],
+            "initiative_codes": initiative_codes or [],
+        },
+        "tier_1_total_usd": tier_totals.get("tier_1", 0.0),
+        "tier_2_total_usd": tier_totals.get("tier_2", 0.0),
+        "tier_unknown_total_usd": tier_totals.get("tier_unknown", 0.0),
+        "line_item_count": len(rows),
+        "procurement_count": len(contributing_procs),
+        "initiative_count": len(contributing_inits),
+        "by_group": by_group,
     }
 
 
