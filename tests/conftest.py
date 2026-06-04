@@ -809,6 +809,88 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     assessment_run_at TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- SIPA — Software Integrity & Provenance Assessor (sipa-db-03)
+-- Mirrors tools/db/init_icdev_db.py; CHECK values from tools/integrity/constants.py.
+CREATE TABLE IF NOT EXISTS integrity_assessments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type     TEXT NOT NULL CHECK(source_type IN ('local', 'git', 'unc', 'uri')),
+    source_ref      TEXT NOT NULL,
+    mode            TEXT NOT NULL CHECK(mode IN ('provenance_aware', 'provenance_blind', 'auto')),
+    project_id      TEXT,
+    session_id      TEXT,
+    dir_digest      TEXT,
+    status          TEXT NOT NULL DEFAULT 'quarantine'
+                        CHECK(status IN ('quarantine', 'assessed', 'approved', 'rejected')),
+    verdict         TEXT CHECK(verdict IN ('allow', 'review', 'quarantine') OR verdict IS NULL),
+    risk_score      REAL DEFAULT 0,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_by      TEXT NOT NULL DEFAULT 'system',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS integrity_capabilities (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    file_path       TEXT NOT NULL,
+    function_name   TEXT,
+    capability_type TEXT NOT NULL CHECK(capability_type IN (
+                        'network_egress', 'filesystem', 'process_exec', 'dynamic_code',
+                        'crypto', 'env_secret', 'serialization', 'obfuscation')),
+    evidence        TEXT,
+    line_start      INTEGER,
+    line_end        INTEGER,
+    risk_weight     REAL DEFAULT 0,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS integrity_findings (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    source_scanner  TEXT NOT NULL CHECK(source_scanner IN (
+                        'sast', 'secrets', 'deps', 'formal', 'semgrep',
+                        'capability', 'reconciliation', 'tamper')),
+    finding_type    TEXT NOT NULL CHECK(finding_type IN (
+                        'dangerous_api', 'secret', 'vuln_dependency', 'unauthorized_capability',
+                        'undisclosed_capability', 'tamper_mismatch', 'known_bad_signature')),
+    severity        TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'medium', 'low', 'info')),
+    file_path       TEXT,
+    line            INTEGER,
+    detail          TEXT,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS integrity_verdicts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    verdict         TEXT NOT NULL CHECK(verdict IN ('allow', 'review', 'quarantine')),
+    risk_score      REAL DEFAULT 0,
+    rationale       TEXT,
+    decided_by      TEXT NOT NULL DEFAULT 'system',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS integrity_authorizations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    capability_id   INTEGER REFERENCES integrity_capabilities(id) ON DELETE CASCADE,
+    requirement_id  TEXT,
+    claim_ref       TEXT,
+    authorized      INTEGER NOT NULL DEFAULT 0,
+    reason          TEXT,
+    reviewed_by     TEXT,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
