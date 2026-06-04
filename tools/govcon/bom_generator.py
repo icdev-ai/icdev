@@ -29,8 +29,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -418,6 +421,251 @@ def build_bom(
 
 
 # ----------------------------------------------------------------------------
+# Export: CSV + XLSX for procurement submission
+# ----------------------------------------------------------------------------
+
+# Flat row schema for procurement submission. Procurement metadata is
+# denormalised onto every CLIN row so the spreadsheet can be filtered /
+# pivoted in Excel without needing a second table.
+_CSV_COLUMNS: List[str] = [
+    "procurement_id",
+    "solicitation",
+    "initiative_code",
+    "initiative_title",
+    "tier",
+    "fiscal_year",
+    "agency",
+    "contract_type",
+    "procurement_status",
+    "clin",
+    "description",
+    "equipment_category",
+    "unit",
+    "quantity",
+    "igce_unit_cost",
+    "igce_extended_cost",
+    "vendor_quote_count",
+    "min_quote",
+    "max_quote",
+    "avg_quote",
+    "basis",
+    "poc",
+    "notes",
+]
+
+
+def _flatten_bom_rows(bom: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Convert the nested build_bom() result into one dict per CLIN."""
+    rows: List[Dict[str, Any]] = []
+    for proc in bom.get("procurements", []):
+        # Capture the full set of IGCE fields from the original line — the
+        # build_bom() output already aggregates per-CLIN, but we re-derive
+        # basis/poc/notes from the line records which contain them.
+        for line in proc.get("lines", []):
+            rows.append({
+                "procurement_id": proc.get("procurement_id", ""),
+                "solicitation": proc.get("solicitation", ""),
+                "initiative_code": proc.get("initiative_code", "") or "",
+                "initiative_title": proc.get("initiative_title", "") or "",
+                "tier": proc.get("tier", "") or "",
+                "fiscal_year": proc.get("fiscal_year", "") or "",
+                "agency": proc.get("agency", "") or "",
+                "contract_type": proc.get("contract_type", "") or "",
+                "procurement_status": proc.get("status", "") or "",
+                "clin": line.get("clin", ""),
+                "description": line.get("description", "") or "",
+                "equipment_category": line.get("equipment_category", "") or "",
+                "unit": line.get("unit", "") or "",
+                "quantity": line.get("quantity", 0) or 0,
+                "igce_unit_cost": line.get("igce_unit_cost", 0) or 0,
+                "igce_extended_cost": line.get("igce_extended_cost", 0) or 0,
+                "vendor_quote_count": line.get("vendor_quote_count", 0) or 0,
+                "min_quote": line.get("min_quote"),
+                "max_quote": line.get("max_quote"),
+                "avg_quote": line.get("avg_quote"),
+                "basis": line.get("basis", "") or "",
+                "poc": line.get("poc", "") or "",
+                "notes": line.get("notes", "") or "",
+            })
+    return rows
+
+
+def export_bom_csv(bom: Dict[str, Any]) -> bytes:
+    """Render a BOM rollup as a CSV byte payload for procurement submission.
+
+    Uses ``utf-8-sig`` so Microsoft Excel opens the file with the correct
+    encoding (no mojibake on accented characters). One row per CLIN with
+    procurement metadata denormalised onto every row.
+    """
+    rows = _flatten_bom_rows(bom)
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=_CSV_COLUMNS, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        # Round numeric fields for readability
+        for k, v in list(row.items()):
+            if isinstance(v, float):
+                row[k] = round(v, 2)
+        writer.writerow(row)
+    return buf.getvalue().encode("utf-8-sig")
+
+
+def export_bom_xlsx(bom: Dict[str, Any]) -> bytes:
+    """Render a BOM rollup as an XLSX workbook (Summary + Lines + By-Category).
+
+    Suitable for direct submission to a contracting officer — opens in
+    Excel without any further formatting. Returns a ``bytes`` blob; write
+    with ``open(path, "wb")`` or return as ``application/vnd.openxmlformats-…``.
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError as e:  # pragma: no cover - openpyxl is a hard dep
+        raise RuntimeError(
+            "openpyxl is required for XLSX export; install with `pip install openpyxl`"
+        ) from e
+
+    wb = openpyxl.Workbook()
+
+    # --- Sheet 1: Lines (one row per CLIN) ---
+    lines_ws = wb.active
+    lines_ws.title = "BOM Lines"
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+
+    rows = _flatten_bom_rows(bom)
+    lines_ws.append(_CSV_COLUMNS)
+    for cell in lines_ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+    for row in rows:
+        lines_ws.append([
+            round(row[col], 2) if isinstance(row[col], float) else row[col]
+            for col in _CSV_COLUMNS
+        ])
+
+    # Format money columns
+    money_cols = {"igce_unit_cost", "igce_extended_cost", "min_quote", "max_quote", "avg_quote"}
+    for col_idx, col_name in enumerate(_CSV_COLUMNS, start=1):
+        if col_name in money_cols:
+            for row_idx in range(2, lines_ws.max_row + 1):
+                cell = lines_ws.cell(row=row_idx, column=col_idx)
+                cell.number_format = '"$"#,##0.00'
+    # Autofit column widths
+    for col_idx, col_name in enumerate(_CSV_COLUMNS, start=1):
+        max_len = len(col_name)
+        for row in rows:
+            val = row.get(col_name, "")
+            if val is not None:
+                max_len = max(max_len, len(str(val)))
+        lines_ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = min(max_len + 2, 50)
+    lines_ws.freeze_panes = "A2"
+
+    # --- Sheet 2: Summary ---
+    summary_ws = wb.create_sheet("Summary")
+    summary_ws["A1"] = "BOM Summary"
+    summary_ws["A1"].font = Font(bold=True, size=14)
+    summary_ws["A2"] = f"Generated: {datetime.now(timezone.utc).isoformat()}"
+    summary_ws["A3"] = (
+        f"Filter: tier={bom.get('filter', {}).get('tier') or '-'}, "
+        f"FY={bom.get('filter', {}).get('fiscal_year') or '-'}, "
+        f"procurement_id={bom.get('filter', {}).get('procurement_id') or '-'}"
+    )
+
+    totals = bom.get("totals", {}) or {}
+    row_idx = 5
+    summary_ws.cell(row=row_idx, column=1, value="Metric").font = Font(bold=True)
+    summary_ws.cell(row=row_idx, column=2, value="Value").font = Font(bold=True)
+    row_idx += 1
+    for label in ("procurement_count", "line_count", "igce_total",
+                  "quote_min", "quote_max"):
+        summary_ws.cell(row=row_idx, column=1, value=label)
+        value = totals.get(label)
+        if label in ("igce_total", "quote_min", "quote_max") and value is not None:
+            cell = summary_ws.cell(row=row_idx, column=2, value=float(value))
+            cell.number_format = '"$"#,##0.00'
+        else:
+            summary_ws.cell(row=row_idx, column=2, value=value)
+        row_idx += 1
+
+    # By-category breakdown
+    row_idx += 1
+    summary_ws.cell(row=row_idx, column=1, value="By Equipment Category").font = Font(bold=True, size=12)
+    row_idx += 1
+    summary_ws.cell(row=row_idx, column=1, value="Category").font = Font(bold=True)
+    summary_ws.cell(row=row_idx, column=2, value="Line Count").font = Font(bold=True)
+    summary_ws.cell(row=row_idx, column=3, value="IGCE Total").font = Font(bold=True)
+    row_idx += 1
+    by_cat = bom.get("by_category", {}) or {}
+    for cat_name in sorted(by_cat.keys(), key=lambda k: -(by_cat[k].get("igce_total") or 0)):
+        cat = by_cat[cat_name]
+        summary_ws.cell(row=row_idx, column=1, value=cat_name)
+        summary_ws.cell(row=row_idx, column=2, value=cat.get("line_count", 0))
+        total_cell = summary_ws.cell(row=row_idx, column=3, value=float(cat.get("igce_total") or 0))
+        total_cell.number_format = '"$"#,##0.00'
+        row_idx += 1
+
+    # By-tier breakdown
+    row_idx += 1
+    summary_ws.cell(row=row_idx, column=1, value="By Initiative Tier").font = Font(bold=True, size=12)
+    row_idx += 1
+    summary_ws.cell(row=row_idx, column=1, value="Tier").font = Font(bold=True)
+    summary_ws.cell(row=row_idx, column=2, value="Procurement Count").font = Font(bold=True)
+    summary_ws.cell(row=row_idx, column=3, value="IGCE Total").font = Font(bold=True)
+    row_idx += 1
+    by_tier = totals.get("by_tier", {}) or {}
+    for tier_name in sorted(by_tier.keys()):
+        tier = by_tier[tier_name]
+        summary_ws.cell(row=row_idx, column=1, value=tier_name)
+        summary_ws.cell(row=row_idx, column=2, value=tier.get("procurement_count", 0))
+        total_cell = summary_ws.cell(row=row_idx, column=3, value=float(tier.get("igce_total") or 0))
+        total_cell.number_format = '"$"#,##0.00'
+        row_idx += 1
+
+    summary_ws.column_dimensions["A"].width = 30
+    summary_ws.column_dimensions["B"].width = 22
+    summary_ws.column_dimensions["C"].width = 22
+
+    # --- Sheet 3: By Category detail ---
+    cat_ws = wb.create_sheet("By Category")
+    cat_ws.append(["Category", "Tier", "Line Count", "IGCE Total"])
+    for cell in cat_ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+    for cat_name, cat in by_cat.items():
+        for tier_name, tb in (cat.get("tier_breakdown") or {}).items():
+            cell = cat_ws.cell(row=cat_ws.max_row + 1, column=1, value=cat_name)
+            cat_ws.cell(row=cat_ws.max_row, column=2, value=tier_name)
+            cat_ws.cell(row=cat_ws.max_row, column=3, value=tb.get("line_count", 0))
+            money = cat_ws.cell(row=cat_ws.max_row, column=4, value=float(tb.get("igce_total") or 0))
+            money.number_format = '"$"#,##0.00'
+    for col_idx in range(1, 5):
+        cat_ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 22
+
+    # Serialize
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def export_bom(bom: Dict[str, Any], format: str = "json") -> bytes | str:
+    """Dispatch helper: ``format`` is one of ``json|csv|xlsx``.
+
+    Returns ``bytes`` for csv/xlsx (write to disk as binary) and a JSON
+    string for ``format="json"``.
+    """
+    fmt = (format or "json").lower()
+    if fmt == "csv":
+        return export_bom_csv(bom)
+    if fmt == "xlsx":
+        return export_bom_xlsx(bom)
+    if fmt == "json":
+        return json.dumps(bom, indent=2, default=str)
+    raise ValueError(f"Unknown export format: {format!r}; expected csv|xlsx|json")
+
+
+# ----------------------------------------------------------------------------
 # CLI
 # ----------------------------------------------------------------------------
 
@@ -429,7 +677,11 @@ def _main(argv=None) -> int:
     ap.add_argument("--tier", choices=["tier_1", "tier_2"], help="Filter by initiative tier")
     ap.add_argument("--fiscal-year", type=int, help="Filter by allocation fiscal year")
     ap.add_argument("--category", choices=CANONICAL_CATEGORIES, help="Restrict to a single equipment category in the BOM lines")
-    ap.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    ap.add_argument("--json", action="store_true", help="Emit machine-readable JSON (default when stdout)")
+    ap.add_argument("--format", choices=["json", "csv", "xlsx"],
+                    help="Export format suitable for direct procurement submission. "
+                         "csv = utf-8-sig (Excel-friendly); xlsx = multi-sheet workbook.")
+    ap.add_argument("--output", "-o", help="Write payload to this file path (required for binary formats)")
     args = ap.parse_args(argv)
 
     if not (args.bom or args.procurement):
@@ -444,20 +696,31 @@ def _main(argv=None) -> int:
         for proc in result["procurements"]:
             proc["lines"] = [ln for ln in proc["lines"] if ln["equipment_category"] == args.category]
 
-    if args.json:
-        json.dump(result, sys.stdout, indent=2, default=str)
-        sys.stdout.write("\n")
-    else:
-        totals = result["totals"]
-        print(f"BOM rollup — {totals['procurement_count']} procurements, {totals['line_count']} lines, IGCE ${totals['igce_total']:,.2f}")
-        if result["by_tier"]:
-            print("\nBy tier:")
-            for t, b in result["by_tier"].items():
-                print(f"  {t:11s}  {b['procurement_count']:>3d} proc  {b['line_count']:>3d} lines  IGCE ${b['igce_total']:>14,.2f}")
-        if result["by_category"]:
-            print("\nBy equipment category:")
-            for c, b in sorted(result["by_category"].items(), key=lambda kv: -kv[1]["igce_total"]):
-                print(f"  {c:12s}  {b['line_count']:>3d} lines  IGCE ${b['igce_total']:>14,.2f}")
+    fmt = (args.format or ("xlsx" if args.output and args.output.lower().endswith(".xlsx")
+                           else "csv" if args.output and args.output.lower().endswith(".csv")
+                           else "json")).lower()
+
+    if fmt == "json":
+        if args.output:
+            Path(args.output).write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
+        elif args.json or not args.format:
+            json.dump(result, sys.stdout, indent=2, default=str)
+            sys.stdout.write("\n")
+        else:
+            # --format json with no --output — write JSON to stdout
+            json.dump(result, sys.stdout, indent=2, default=str)
+            sys.stdout.write("\n")
+        return 0
+
+    # Binary formats
+    if not args.output:
+        ap.error(f"--format {fmt} requires --output PATH (-o PATH)")
+
+    payload = export_bom(result, format=fmt)
+    if not isinstance(payload, bytes):  # pragma: no cover — defensive
+        raise RuntimeError(f"export_bom returned {type(payload).__name__}; expected bytes for {fmt}")
+    Path(args.output).write_bytes(payload)
+    print(f"BOM exported to {args.output} ({fmt.upper()}, {len(payload):,} bytes)", file=sys.stderr)
     return 0
 
 

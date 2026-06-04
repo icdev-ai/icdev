@@ -306,5 +306,229 @@ class BuildBomRollupTests(unittest.TestCase):
         self.assertEqual(result["procurements"], [])
 
 
+# ---------------------------------------------------------------------------
+# CSV / XLSX export
+# ---------------------------------------------------------------------------
+
+
+import csv
+import io
+
+
+def _build_seed_db():
+    """Helper: construct a small in-memory DB with one procurement + 2 CLINs."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    conn = sqlite3.connect(tmp.name)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE cpmp_budget_allocations (
+            id TEXT PRIMARY KEY, initiative_code TEXT NOT NULL,
+            title TEXT NOT NULL, fiscal_year INTEGER NOT NULL,
+            tier TEXT NOT NULL CHECK(tier IN ('tier_1','tier_2')),
+            allocated_usd REAL NOT NULL DEFAULT 0,
+            obligated_usd REAL NOT NULL DEFAULT 0,
+            available_usd REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'active'
+        );
+        CREATE TABLE proc_procurements (
+            id TEXT PRIMARY KEY, solicitation TEXT, title TEXT, agency TEXT,
+            contract_type TEXT, allocation_id TEXT, status TEXT, created_at TEXT
+        );
+        CREATE TABLE proc_igce_line_items (
+            id TEXT PRIMARY KEY, procurement_id TEXT NOT NULL, clin TEXT NOT NULL,
+            description TEXT, unit TEXT, quantity REAL, unit_cost REAL,
+            extended_cost REAL, basis TEXT, poc TEXT, notes TEXT,
+            equipment_category TEXT, created_at TEXT, updated_at TEXT
+        );
+        CREATE TABLE proc_vendor_quotes (
+            id TEXT PRIMARY KEY, procurement_id TEXT NOT NULL,
+            vendor_name TEXT NOT NULL, quote_ref TEXT, clin TEXT,
+            unit_price REAL, quantity REAL, total_price REAL, quote_date TEXT,
+            valid_until TEXT, status TEXT, notes TEXT,
+            created_at TEXT, updated_at TEXT
+        );
+        """
+    )
+    conn.execute(
+        "INSERT INTO cpmp_budget_allocations VALUES (?,?,?,?,?,?,?,?,?)",
+        ("alloc-1", "INIT-100", "Cloud Migration", 2026, "tier_1",
+         1_000_000, 0, 1_000_000, "active"),
+    )
+    conn.execute(
+        "INSERT INTO proc_procurements VALUES (?,?,?,?,?,?,?,?)",
+        ("PROC-001", "W912DY-26-R-0001", "Cloud Servers", "USACE",
+         "ffp", "alloc-1", "open", "2026-05-01"),
+    )
+    conn.executemany(
+        "INSERT INTO proc_igce_line_items VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [
+            ("l1", "PROC-001", "0001", "Dell PowerEdge Server",
+             "each", 10.0, 8000.0, 80000.0, "GSA", "POC", "", "unspecified",
+             "2026-05-01", "2026-05-01"),
+            ("l2", "PROC-001", "0002", "RedHat Enterprise Linux license",
+             "each", 10.0, 1000.0, 10000.0, "GSA", "POC", "", "unspecified",
+             "2026-05-01", "2026-05-01"),
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO proc_vendor_quotes VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [
+            ("q1", "PROC-001", "Acme Federal LLC", "AF-001", "0001",
+             7800.0, 10.0, 78000.0, "2026-05-15", "2026-06-15", "submitted",
+             "", "2026-05-15", "2026-05-15"),
+        ],
+    )
+    conn.commit()
+    return conn, Path(tmp.name)
+
+
+class BomExportTests(unittest.TestCase):
+    """Verify CSV + XLSX export of the BOM rollup for procurement submission."""
+
+    def setUp(self):
+        self.conn, self.tmp_path = _build_seed_db()
+        from tools.db import storage
+        self._storage_patcher = patch.object(
+            storage, "get_connection", lambda *a, **kw: self.conn
+        )
+        self._storage_patcher.start()
+        from tools.govcon import bom_generator
+        self.bom_module = bom_generator
+        bom_generator._get_db = lambda *a, **kw: self.conn
+
+    def tearDown(self):
+        self._storage_patcher.stop()
+        self.conn.close()
+        self.tmp_path.unlink(missing_ok=True)
+
+    def test_csv_export_returns_bytes_with_utf8_sig(self):
+        result = self.bom_module.build_bom(procurement_id="PROC-001")
+        payload = self.bom_module.export_bom_csv(result)
+        # Must be bytes, not str — for direct file write to /download
+        self.assertIsInstance(payload, bytes)
+        # UTF-8 BOM at the start so Excel opens it cleanly
+        self.assertEqual(payload[:3], b"\xef\xbb\xbf")
+
+    def test_csv_export_has_proper_headers(self):
+        result = self.bom_module.build_bom(procurement_id="PROC-001")
+        payload = self.bom_module.export_bom_csv(result)
+        text = payload.decode("utf-8-sig")
+        reader = csv.reader(io.StringIO(text))
+        rows = list(reader)
+        # Header + 2 CLINs
+        self.assertEqual(len(rows), 3)
+        header = rows[0]
+        # Must include all 9 BOM line-item fields + procurement metadata
+        for col in ("procurement_id", "solicitation", "agency", "clin",
+                    "description", "quantity", "igce_unit_cost",
+                    "igce_extended_cost", "equipment_category",
+                    "min_quote", "max_quote", "tier", "fiscal_year"):
+            self.assertIn(col, header, f"CSV missing column: {col}")
+
+    def test_csv_export_row_contents(self):
+        result = self.bom_module.build_bom(procurement_id="PROC-001")
+        payload = self.bom_module.export_bom_csv(result)
+        text = payload.decode("utf-8-sig")
+        reader = csv.DictReader(io.StringIO(text))
+        rows = list(reader)
+        self.assertEqual(len(rows), 2)
+        # Row 0: server (classified as computers)
+        row0 = next(r for r in rows if r["clin"] == "0001")
+        self.assertEqual(row0["procurement_id"], "PROC-001")
+        self.assertEqual(row0["solicitation"], "W912DY-26-R-0001")
+        self.assertEqual(row0["agency"], "USACE")
+        self.assertEqual(row0["equipment_category"], "computers")
+        self.assertEqual(row0["quantity"], "10.0")
+        self.assertEqual(row0["igce_extended_cost"], "80000.0")
+        self.assertEqual(row0["min_quote"], "78000.0")
+        # Row 1: license → software
+        row1 = next(r for r in rows if r["clin"] == "0002")
+        self.assertEqual(row1["equipment_category"], "software")
+
+    def test_csv_export_empty_rollup_has_header_only(self):
+        # Build an empty rollup (no procurements)
+        result = self.bom_module.build_bom(procurement_id="DOES-NOT-EXIST")
+        payload = self.bom_module.export_bom_csv(result)
+        text = payload.decode("utf-8-sig")
+        reader = csv.reader(io.StringIO(text))
+        rows = list(reader)
+        self.assertEqual(len(rows), 1)  # header only
+        self.assertIn("procurement_id", rows[0])
+
+    def test_xlsx_export_returns_bytes(self):
+        result = self.bom_module.build_bom(procurement_id="PROC-001")
+        payload = self.bom_module.export_bom_xlsx(result)
+        self.assertIsInstance(payload, bytes)
+        # XLSX files start with the PK zip signature
+        self.assertEqual(payload[:2], b"PK")
+        self.assertGreater(len(payload), 100)
+
+    def test_xlsx_export_has_summary_and_lines_sheets(self):
+        import openpyxl
+        result = self.bom_module.build_bom(procurement_id="PROC-001")
+        payload = self.bom_module.export_bom_xlsx(result)
+        wb = openpyxl.load_workbook(io.BytesIO(payload))
+        # Should have at least Lines + Summary sheets
+        sheet_names = wb.sheetnames
+        self.assertTrue(
+            any("line" in s.lower() for s in sheet_names),
+            f"XLSX missing Lines sheet: {sheet_names}",
+        )
+        self.assertTrue(
+            any("summar" in s.lower() for s in sheet_names),
+            f"XLSX missing Summary sheet: {sheet_names}",
+        )
+
+    def test_xlsx_export_lines_sheet_has_clin_rows(self):
+        import openpyxl
+        result = self.bom_module.build_bom(procurement_id="PROC-001")
+        payload = self.bom_module.export_bom_xlsx(result)
+        wb = openpyxl.load_workbook(io.BytesIO(payload))
+        lines_sheet = next(s for s in wb.worksheets if "line" in s.title.lower())
+        # Header row + 2 CLINs = 3 rows
+        self.assertEqual(lines_sheet.max_row, 3)
+        # Header should include procurement_id and clin
+        header = [c.value for c in lines_sheet[1]]
+        self.assertIn("procurement_id", header)
+        self.assertIn("clin", header)
+        self.assertIn("igce_extended_cost", header)
+
+    def test_xlsx_export_summary_has_totals(self):
+        import openpyxl
+        result = self.bom_module.build_bom(procurement_id="PROC-001")
+        payload = self.bom_module.export_bom_xlsx(result)
+        wb = openpyxl.load_workbook(io.BytesIO(payload))
+        summary_sheet = next(s for s in wb.worksheets if "summar" in s.title.lower())
+        # Find the procurement_count or igce_total label
+        all_text = []
+        for row in summary_sheet.iter_rows(values_only=True):
+            for cell in row:
+                if cell is not None:
+                    all_text.append(str(cell).lower())
+        joined = " ".join(all_text)
+        self.assertIn("procurement_count", joined)
+        self.assertIn("igce_total", joined)
+        # The actual count and total should be present as values
+        self.assertIn("1", all_text)  # 1 procurement
+        # 80000 + 10000 = 90000 IGCE total
+        self.assertTrue(
+            any("90000" in t or "90,000" in t for t in all_text),
+            f"XLSX summary missing 90000 IGCE total; got: {all_text}",
+        )
+
+    def test_export_bom_dispatches_to_csv(self):
+        result = self.bom_module.build_bom(procurement_id="PROC-001")
+        csv_bytes = self.bom_module.export_bom(result, format="csv")
+        self.assertIsInstance(csv_bytes, bytes)
+        self.assertEqual(csv_bytes[:3], b"\xef\xbb\xbf")
+
+    def test_export_bom_dispatches_to_xlsx(self):
+        result = self.bom_module.build_bom(procurement_id="PROC-001")
+        xlsx_bytes = self.bom_module.export_bom(result, format="xlsx")
+        self.assertEqual(xlsx_bytes[:2], b"PK")
+
+
 if __name__ == "__main__":
     unittest.main()
