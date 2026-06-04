@@ -5318,3 +5318,28 @@ projects:
     - key: lac
       title: LAC Simulator — OPA ABAC + 4-scenario what-if + Digital Twin (ZTA)
       priority: critical
+- key: wgint
+  name: WriteGuard Integration + Info Hints
+  description: >-
+    Two-epic initiative: (1) add contextual sliding help panels to every tab
+    and section of /proposals, /govcon, /cpmp, and /cpmp/deliverables, and
+    (2) wire WriteGuard inline quality badges into every text-editing surface
+    on those pages. Reuses the cpmp/detail.html help-panel pattern,
+    writeguard-inline.js, and the existing wg_analysis_results DB table.
+    No new schemas, no new reflexes, no new LLM calls.
+  task_prefix: wgint-
+  default_open: true
+  briefs:
+    - 'hints: contextual help panels for /proposals, /govcon, /cpmp/deliverables (center+detail) — wgint-hints-01..05'
+    - 'wg: WG score batch endpoint + badge columns in proposals+govcon tables + inline attrs on cpmp/detail MOD textareas + WG links in deliverable pages — wgint-wg-06..13'
+    - 'vv: icdev mirror + Playwright E2E verification all 4 pages — wgint-vv-14..15'
+  epics:
+    - key: hints
+      title: Contextual Help Panels — sliding ? panels on all 4 pages
+      priority: high
+    - key: wg
+      title: WriteGuard Integration — score badges, inline attrs, WG links
+      priority: high
+    - key: vv
+      title: V&V — icdev mirror + Playwright verification
+      priority: high

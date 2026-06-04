@@ -1751,3 +1751,44 @@ def auto_generate_portfolio_deliverables():
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ── PMO Weekly Brief Archive ──────────────────────────────────────────────────
+
+
+@cpmp_api.route("/reports/list", methods=["GET"])
+def cpmp_list_pmo_reports():
+    """Return sorted list of PMO weekly brief HTML files from data/reports/."""
+    import re
+    from datetime import datetime
+
+    reports_dir = BASE_DIR / "data" / "reports"
+    reports = []
+    if reports_dir.exists():
+        for f in sorted(reports_dir.glob("pmo_weekly_*.html"), reverse=True):
+            m = re.search(r"pmo_weekly_(\d{4}-\d{2}-\d{2})\.html", f.name)
+            if m:
+                date_str = m.group(1)
+                try:
+                    label = datetime.strptime(date_str, "%Y-%m-%d").strftime("%b %d, %Y")
+                except ValueError:
+                    label = date_str
+                reports.append({"filename": f.name, "date": date_str, "label": label})
+    return jsonify({"reports": reports})
+
+
+@cpmp_api.route("/reports/content/<path:filename>", methods=["GET"])
+def cpmp_pmo_report_content(filename):
+    """Serve a single PMO weekly brief HTML for iframe embedding."""
+    import re
+
+    if not re.fullmatch(r"pmo_weekly_\d{4}-\d{2}-\d{2}\.html", filename):
+        return jsonify({"status": "error", "message": "Invalid filename"}), 400
+    report_path = BASE_DIR / "data" / "reports" / filename
+    if not report_path.exists():
+        return jsonify({"status": "error", "message": "Report not found"}), 404
+    content = report_path.read_text(encoding="utf-8")
+    resp = make_response(content)
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+    return resp

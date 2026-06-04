@@ -499,7 +499,8 @@ def _auth_before_request():
 def _security_after_request(response):
     """Add security headers to all responses."""
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
+    # Use setdefault so routes can opt-in to SAMEORIGIN (e.g. iframe-served content)
+    response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response

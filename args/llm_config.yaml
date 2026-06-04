@@ -651,6 +651,16 @@ routing:
     chain: [qwen3-local, llama-local]
     effort: medium
 
+  # Proposal Genesis NLP keyword/entity extraction (aiify-opp-5401).
+  # Semantic keyword extraction over opportunity title/description for Pulse
+  # content-reuse matching, replacing brittle regex+stopword extraction.
+  # Local-first to keep proposal context off cloud where possible; claude-haiku
+  # (recommended) is the cloud fallback. Input is user-provided opportunity
+  # text — injection scanning stays ON (skip_injection_scan defaults False).
+  pg_keyword_extraction:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, llama-local]
+    effort: low
+
   requirement_extraction:
     chain: [kimi-cloud, qwen3-local]
     effort: medium

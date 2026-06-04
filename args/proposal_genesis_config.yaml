@@ -190,6 +190,23 @@ reflexes:
     max_drafts_per_run: 10
     pulse_integration: true
     kb_enrichment: true
+    # aiify-opp-5401: opt-in NLP keyword extractor for Pulse content matching.
+    # When true the matcher first tries LLM-based semantic keyword extraction
+    # (_ai_extract_keywords) and silently falls back to the deterministic regex
+    # extractor on any failure, so Pulse matching never depends on LLM
+    # availability. Defaults to the regex extractor (false).
+    ai_keywords: false
+    anomaly_detection:
+      enabled: true
+      # Minimum pg_pulse_proposal_links (content_reuse) rows required before the
+      # adaptive Pulse-match relevance cutoff is computed; below this the static
+      # fallback_relevance_threshold is used.
+      min_samples: 15
+      # Static fallback — the proven baseline cutoff used when under-sampled.
+      fallback_relevance_threshold: 0.1
+      # Hard floor — the adaptive cutoff never drops below this.
+      adaptive_bounds:
+        relevance_floor: 0.1
 
   polish:
     enabled: true
@@ -273,6 +290,7 @@ reflexes:
     days_ahead: 14
     max_generations_per_run: 10
     stale_threshold_days: 90
+    goveval_gate_threshold: 0.5  # GovEval composite below which a CDRL is flagged needs_review (anomaly)
     success_metric:
       name: cdrls_generated
       threshold: 0

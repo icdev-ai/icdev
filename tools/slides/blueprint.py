@@ -13,6 +13,7 @@ Routes:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from flask import Blueprint, jsonify, render_template, request, send_file
@@ -89,6 +90,7 @@ def new_deck():
         source_types=SOURCE_TYPES,
         default_theme=DEFAULT_THEME,
         default_deck_type=DEFAULT_DECK_TYPE,
+        env=os.environ,
     )
 
 

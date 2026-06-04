@@ -1412,3 +1412,80 @@ def get_pipeline_value():
         return jsonify(pipeline_value_rollup())
     except Exception as exc:
         return jsonify({"status": "error", "error": str(exc)}), 500
+
+
+_STATUS_TO_STAGE = {
+    "intake": "discover",
+    "bid_no_bid": "discover",
+    "no_bid": "discover",
+    "go": "extract",
+    "map": "map",
+    "writing": "draft",
+    "review": "draft",
+    "final": "draft",
+    "submitted": "submit",
+    "submit": "submit",
+}
+
+
+@govcon_api.route("/proposals/bubble-data", methods=["GET"])
+@require_role(*GOVCON_WRITE_ROLES)
+def get_proposals_bubble_data():
+    """GET /api/govcon/proposals/bubble-data — Per-opportunity bubble chart data."""
+    from datetime import datetime, timezone
+    from tools.govcon.bayesian_bid_scorer import pipeline_value_rollup
+
+    try:
+        rollup = pipeline_value_rollup()
+        rollup_opps = rollup.get("opportunities", [])
+    except Exception:
+        rollup_opps = []
+
+    rollup_map = {item["opportunity_id"]: item for item in rollup_opps}
+
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, title, status, estimated_value_high, due_date "
+            "FROM proposal_opportunities "
+            "WHERE status NOT IN ('won','lost','no_bid','cancelled')"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    opportunities = []
+    for row in rows:
+        r = dict(row)
+        opp_id = r["id"]
+        item = rollup_map.get(opp_id, {})
+
+        pwin_pct = item.get("pwin_pct")
+        pwin = (pwin_pct / 100.0) if pwin_pct is not None else 0.5
+
+        try:
+            ceiling = float(r.get("estimated_value_high") or 0) or 1_000_000
+        except (TypeError, ValueError):
+            ceiling = 1_000_000
+
+        weighted_value = item.get("weighted_value") or round(ceiling * pwin, 2)
+
+        stage = _STATUS_TO_STAGE.get(r.get("status") or "", "discover")
+
+        try:
+            due = datetime.strptime(r["due_date"], "%Y-%m-%d")
+            days_to_deadline = (due - now).days
+        except (ValueError, TypeError, KeyError):
+            days_to_deadline = 0
+
+        opportunities.append({
+            "opp_id": opp_id,
+            "title": r.get("title", ""),
+            "stage": stage,
+            "pwin": round(pwin, 4),
+            "weighted_value": round(weighted_value, 2),
+            "ceiling": ceiling,
+            "days_to_deadline": days_to_deadline,
+        })
+
+    return jsonify({"opportunities": opportunities, "count": len(opportunities)})

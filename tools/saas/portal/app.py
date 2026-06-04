@@ -28,6 +28,10 @@ Routes:
     GET  /portal/ai-transparency -> AI Transparency & Accountability (Phase 48)
     GET  /portal/ai-accountability -> AI Accountability (Phase 49)
     GET  /portal/logout    -> Clear session, redirect to login
+    GET  /portal/knowledge-search -> Knowledge search (RAG chunks + KG nodes)
+    GET  /portal/ai-ify   -> AI-ify posture snapshot + opportunities
+    GET  /portal/zig      -> ZIG assessment + pillar scores
+    GET  /portal/notifications -> Notification preferences + recent alerts
 
 Usage:
     from tools.saas.portal.app import portal_bp
@@ -545,6 +549,7 @@ def dashboard():
         alerts=alerts,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="dashboard",
     )
 
 
@@ -580,6 +585,7 @@ def projects():
         projects=project_list,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="projects",
     )
 
 
@@ -615,6 +621,7 @@ def compliance():
         compliance_data=compliance_data,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="compliance",
     )
 
 
@@ -651,6 +658,7 @@ def team():
         users=users,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="team",
     )
 
 
@@ -717,6 +725,7 @@ def profile():
         llm_keys=llm_keys,
         user_name=user_name,
         user_role=user_role,
+        active_page="profile",
     )
 
 
@@ -760,6 +769,7 @@ def settings():
         byok_allowed=byok_allowed,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="settings",
     )
 
 
@@ -802,6 +812,7 @@ def api_keys():
         new_key=new_key,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="api_keys",
     )
 
 
@@ -858,6 +869,7 @@ def usage():
         usage_data=usage_data,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="usage",
     )
 
 
@@ -910,6 +922,7 @@ def audit():
         total_entries=total_entries,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="audit",
     )
 
 
@@ -945,6 +958,7 @@ def cmmc():
         projects=project_list,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="cmmc",
     )
 
 
@@ -982,6 +996,7 @@ def oscal():
         artifacts=artifacts,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="oscal",
     )
 
 
@@ -1188,6 +1203,7 @@ def prod_audit():
         remediations=remediations,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="prod_audit",
     )
 
 
@@ -1230,6 +1246,7 @@ def ai_transparency():
         model_cards=model_cards,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="ai_transparency",
     )
 
 
@@ -1249,6 +1266,7 @@ def ai_accountability():
         tenant_name=tenant_name,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="ai_accountability",
     )
 
 
@@ -1268,4 +1286,207 @@ def code_quality():
         tenant_name=tenant_name,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+        active_page="code_quality",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: Knowledge Search (RAG + KG)
+# ---------------------------------------------------------------------------
+@portal_bp.route("/knowledge-search")
+@_portal_auth_required
+def knowledge_search():
+    """Knowledge Search — RAG chunks and KG nodes for the tenant."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    chunks = []
+    nodes = []
+    try:
+        conn = _get_tenant_conn(tenant_id)
+        if conn:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    "SELECT id, title, content, source, created_at"
+                    " FROM rag_chunks ORDER BY created_at DESC LIMIT 50"
+                )
+                chunks = [dict(zip([c[0] for c in cur.description], row)) for row in cur.fetchall()]
+            except Exception:
+                chunks = []
+            try:
+                cur.execute(
+                    "SELECT id, entity_type, label, created_at"
+                    " FROM kg_nodes ORDER BY created_at DESC LIMIT 50"
+                )
+                nodes = [dict(zip([c[0] for c in cur.description], row)) for row in cur.fetchall()]
+            except Exception:
+                nodes = []
+            cur.close()
+            conn.close()
+    except Exception:
+        pass
+
+    return render_template(
+        "knowledge_search.html",
+        chunks=chunks,
+        nodes=nodes,
+        tenant_name=tenant_name,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+        active_page="knowledge_search",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: AI-ify Posture
+# ---------------------------------------------------------------------------
+@portal_bp.route("/ai-ify")
+@_portal_auth_required
+def ai_ify():
+    """AI-ify — posture snapshot and top opportunities for the tenant."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    snapshot = None
+    opportunities = []
+    try:
+        conn = _get_tenant_conn(tenant_id)
+        if conn:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    "SELECT * FROM aiify_posture_snapshots ORDER BY created_at DESC LIMIT 1"
+                )
+                row = cur.fetchone()
+                if row:
+                    snapshot = dict(zip([c[0] for c in cur.description], row))
+            except Exception:
+                snapshot = None
+            try:
+                cur.execute(
+                    "SELECT * FROM aiify_opportunities ORDER BY priority DESC LIMIT 20"
+                )
+                opportunities = [dict(zip([c[0] for c in cur.description], row)) for row in cur.fetchall()]
+            except Exception:
+                opportunities = []
+            cur.close()
+            conn.close()
+    except Exception:
+        pass
+
+    return render_template(
+        "ai_ify.html",
+        snapshot=snapshot,
+        opportunities=opportunities,
+        tenant_name=tenant_name,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+        active_page="ai_ify",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: ZIG Assessment
+# ---------------------------------------------------------------------------
+@portal_bp.route("/zig")
+@_portal_auth_required
+def zig():
+    """ZIG — latest assessment and pillar scores for the tenant."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    assessment = None
+    pillars = []
+    try:
+        conn = _get_tenant_conn(tenant_id)
+        if conn:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    "SELECT * FROM zig_assessments ORDER BY created_at DESC LIMIT 1"
+                )
+                row = cur.fetchone()
+                if row:
+                    assessment = dict(zip([c[0] for c in cur.description], row))
+            except Exception:
+                assessment = None
+            if assessment:
+                try:
+                    cur.execute(
+                        "SELECT * FROM zig_pillar_scores WHERE assessment_id = %s",
+                        (assessment["id"],),
+                    )
+                    pillars = [dict(zip([c[0] for c in cur.description], row)) for row in cur.fetchall()]
+                except Exception:
+                    pillars = []
+            cur.close()
+            conn.close()
+    except Exception:
+        pass
+
+    return render_template(
+        "zig.html",
+        assessment=assessment,
+        pillars=pillars,
+        tenant_name=tenant_name,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+        active_page="zig",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: Notifications
+# ---------------------------------------------------------------------------
+@portal_bp.route("/notifications")
+@_portal_auth_required
+def notifications():
+    """Notifications — preferences and recent alerts for the tenant user."""
+    tenant_id = g.tenant_id
+    user_id = g.user_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    prefs = {}
+    recent = []
+    try:
+        conn = _get_platform_conn()
+        if conn:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    "SELECT * FROM notification_preferences WHERE user_id = %s",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                if row:
+                    prefs = dict(zip([c[0] for c in cur.description], row))
+            except Exception:
+                prefs = {}
+            try:
+                cur.execute(
+                    "SELECT * FROM notifications WHERE tenant_id = %s"
+                    " ORDER BY created_at DESC LIMIT 50",
+                    (tenant_id,),
+                )
+                recent = [dict(zip([c[0] for c in cur.description], row)) for row in cur.fetchall()]
+            except Exception:
+                recent = []
+            cur.close()
+            conn.close()
+    except Exception:
+        pass
+
+    return render_template(
+        "notifications.html",
+        prefs=prefs,
+        recent=recent,
+        tenant_name=tenant_name,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+        active_page="notifications",
     )

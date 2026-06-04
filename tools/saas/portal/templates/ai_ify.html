@@ -1,0 +1,111 @@
+<!-- [TEMPLATE: CUI // SP-CTI] -->
+{% extends "portal_base.html" %}
+{% set active_page = "ai_ify" %}
+{% block title %}AI-ify Compliance Posture - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <a href="{{ url_for('portal.compliance') }}">Compliance</a>
+    <span class="separator">/</span>
+    <span class="current">AI-ify Compliance Posture</span>
+</nav>
+<div class="page-header">
+    <h1>AI-ify Compliance Posture</h1>
+    <p>AI system compliance posture scored by the ICDEV AI-ify engine</p>
+</div>
+
+{% if snapshot is not none %}
+<!-- Grade Summary -->
+<div class="card">
+    <h2>Posture Snapshot</h2>
+    <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;margin:1rem 0;">
+        <div style="text-align:center;">
+            {% set grade = snapshot.grade if snapshot.grade else 'N/A' %}
+            {% if grade == 'A' %}
+                {% set grade_color = '#4caf50' %}
+            {% elif grade == 'B' %}
+                {% set grade_color = '#2196f3' %}
+            {% elif grade == 'C' %}
+                {% set grade_color = '#ff9800' %}
+            {% elif grade == 'D' %}
+                {% set grade_color = '#ff5722' %}
+            {% elif grade == 'F' %}
+                {% set grade_color = '#f44336' %}
+            {% else %}
+                {% set grade_color = '#9e9e9e' %}
+            {% endif %}
+            <div style="font-size:4rem;font-weight:bold;color:{{ grade_color }};line-height:1;
+                        border:4px solid {{ grade_color }};border-radius:12px;
+                        width:90px;height:90px;display:flex;align-items:center;justify-content:center;
+                        margin:0 auto;">
+                {{ grade }}
+            </div>
+            <div style="color:#666;font-size:0.85rem;margin-top:0.5rem;">Letter Grade</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.75rem;">
+            <div>
+                <span style="font-size:2rem;font-weight:bold;">{{ snapshot.overall_score|round(1) }}%</span>
+                <span style="color:#666;font-size:0.9rem;margin-left:0.5rem;">Overall Score</span>
+            </div>
+            <div style="color:#666;font-size:0.9rem;">
+                Assessed at: <span style="color:#333;">{{ snapshot.created_at }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Opportunities -->
+<div class="card">
+    <h2>Opportunities</h2>
+    {% if opportunities %}
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="AI-ify opportunities">
+            <thead>
+                <tr>
+                    <th>Opportunity</th>
+                    <th>Category</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for opp in opportunities %}
+                <tr>
+                    <td>{{ opp.title or opp.opportunity or opp.description or '' }}</td>
+                    <td>{{ opp.category or '' }}</td>
+                    <td>
+                        <span class="badge {% if opp.priority == 'high' %}badge-danger{% elif opp.priority == 'medium' %}badge-warning{% else %}badge-info{% endif %}">
+                            {{ opp.priority or 'low' }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge {% if opp.status == 'open' %}badge-warning{% elif opp.status == 'closed' or opp.status == 'done' %}badge-success{% else %}badge-info{% endif %}">
+                            {{ opp.status or 'open' }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No opportunities found for this snapshot.</p>
+    {% endif %}
+</div>
+
+{% else %}
+<!-- Empty State -->
+<div class="card">
+    <h2>No Posture Snapshot Available</h2>
+    <p class="empty-state">
+        No AI-ify compliance posture has been scored for this tenant yet.<br><br>
+        To generate a posture snapshot, run the AI-ify scanner from the ICDEV™ CLI:<br>
+        <code>python tools/aiify/scanner.py --tenant {{ tenant_name }} --score</code><br><br>
+        Or use the MCP tool <code>aiify_scan</code> to trigger a scan programmatically.
+        Once complete, refresh this page to view your compliance grade and opportunities.
+    </p>
+</div>
+{% endif %}
+{% endblock %}

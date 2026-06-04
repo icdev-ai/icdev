@@ -52,6 +52,14 @@ DAEMON_VERSION = "1.0.0-alpha"
 CONFIG_PATH = BASE_DIR / "args" / "proposal_genesis_config.yaml"
 PID_FILE = BASE_DIR / ".tmp" / "proposal_genesis" / "daemon.pid"
 
+# --- Status-display thresholds (AI-ify opp 5380, hardcoded_threshold -> --
+# anomaly_detection): named constants replace inline magic numbers in the
+# human-readable status table so layout/truncation caps are tunable in one
+# place. Mirrors the constant-extraction convention used by the sibling
+# discover/review/adapt reflexes (33d08035b, a64c26a2b).
+_STATUS_SEPARATOR_WIDTH = 100  # width of the "-" rule under the reflex header
+_LAST_RUN_DISPLAY_CHARS = 16  # chars of the ISO timestamp shown in "Last Run"
+
 REFLEX_NAMES = [
     # Phase 1: CAPTURE
     "discover",
@@ -363,12 +371,12 @@ class ProposalGenesisDaemon(DaemonBase):
             f"{'Reflex':<12} {'Phase':<10} {'Tier':<8} {'Enabled':<9} "
             f"{'CB':<5} {'Runs':<6} {'OK':<6} {'Fail':<6} {'Last Run'}"
         )
-        print("-" * 100)
+        print("-" * _STATUS_SEPARATOR_WIDTH)
         for name, r in status["reflexes"].items():
             reflex_config = self.config.get("reflexes", {}).get(name, {})
             phase = reflex_config.get("phase", "unknown")
             cb = "OPEN" if r["circuit_breaker_open"] else "ok"
-            last = r["last_run_at"][:16] if r["last_run_at"] else "never"
+            last = r["last_run_at"][:_LAST_RUN_DISPLAY_CHARS] if r["last_run_at"] else "never"
             print(
                 f"{name:<12} {phase:<10} {r['risk_tier']:<8} "
                 f"{str(r['enabled']):<9} {cb:<5} "
