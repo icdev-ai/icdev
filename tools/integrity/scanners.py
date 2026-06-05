@@ -51,7 +51,6 @@ without needing pip-audit / bandit / the network present.
 from __future__ import annotations
 
 import json
-import logging
 import os
 import re
 import subprocess  # nosec B404 — fixed-arg, shell=False scanner invocation (see _invoke_scanner)
@@ -72,7 +71,9 @@ from tools.integrity.ingest import (
     _quarantine_base,
 )
 
-logger = logging.getLogger("icdev.integrity.scanners")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.integrity.scanners")
 
 # --------------------------------------------------------------------------- #
 # Existing scanners we orchestrate (canonical paths). dependency_auditor lives

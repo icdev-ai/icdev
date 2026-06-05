@@ -4,7 +4,7 @@
 Where ``capability_extractor`` answers *"what can this code actually do?"* (the
 **exercised** capability manifest, derived from the AST), this module answers the
 complementary question *"what does the author **claim** it does?"* — the
-**declared** capability set, derived from natural-language prose.
+**declared** capability set, parsed from natural-language prose.
 
 The two feed SIPA's intent reconciliation:
 
@@ -53,7 +53,6 @@ Pure-stdlib + ``constants``: no DB, no network, no subprocess. Read-only.
 from __future__ import annotations
 
 import ast
-import logging
 import os
 import re
 from pathlib import Path
@@ -61,7 +60,9 @@ from typing import Optional
 
 from tools.integrity.constants import CAPABILITY_TYPES
 
-logger = logging.getLogger("icdev.integrity.claim_parser")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.integrity.claim_parser")
 
 # Directories never worth walking (mirror capability_extractor's exclusions).
 _EXCLUDE_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".tmp", ".mypy_cache"}

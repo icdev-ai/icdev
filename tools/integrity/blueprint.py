@@ -42,7 +42,6 @@ the sibling templates task) degrades to an empty list / JSON fallback instead of
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any, Optional
 
 from flask import Blueprint, g, jsonify, render_template, request
@@ -54,7 +53,9 @@ from tools.integrity.constants import (
     VERDICTS,
 )
 
-logger = logging.getLogger("icdev.integrity.blueprint")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.integrity.blueprint")
 
 # Default page-list size; callers can widen via ?limit=.
 _DEFAULT_LIMIT = 100

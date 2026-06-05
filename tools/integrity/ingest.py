@@ -39,7 +39,6 @@ defaults (``default`` / ``CUI`` / ``system``) when no context is active.
 from __future__ import annotations
 
 import json
-import logging
 import os
 import re
 import shutil
@@ -57,7 +56,9 @@ from tools.integrity.constants import SOURCE_TYPES
 from tools.integrity.db.init_db import init_db
 from tools.security.blueprint_verifier import BlueprintVerifier
 
-logger = logging.getLogger("icdev.integrity.ingest")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.integrity.ingest")
 
 # --------------------------------------------------------------------------- #
 # Paths / config

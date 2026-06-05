@@ -58,7 +58,6 @@ from __future__ import annotations
 
 import ast
 import json
-import logging
 import os
 import re
 from pathlib import Path
@@ -71,7 +70,9 @@ from tools.integrity.db.init_db import init_db
 # tenant/classification stamping match the finding writer exactly.
 from tools.integrity.ingest import _backend_of, _caller_context
 
-logger = logging.getLogger("icdev.integrity.capability_extractor")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.integrity.capability_extractor")
 
 # Directories never worth walking when a directory tree is scanned.
 _EXCLUDE_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".tmp", ".mypy_cache"}

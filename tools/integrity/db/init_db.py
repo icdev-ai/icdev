@@ -7,7 +7,7 @@ These are **sensitive findings** tables, so every table carries ``tenant_id`` +
 global row-level-security predicate is enforced on every query.
 
 Dual-backend: PostgreSQL (default) with a SQLite fallback. ``SCHEMA_PG`` is the
-single source of DDL truth; ``SCHEMA_SQLITE`` is derived from it via ``.replace()``
+single source of DDL truth; ``SCHEMA_SQLITE`` is generated from it via ``.replace()``
 transforms so the two backends never drift. The schema actually executed is
 selected from the live connection's backend so it can never mismatch.
 
