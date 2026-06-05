@@ -258,6 +258,9 @@ VALID_EVENT_TYPES = (
     "pir_alert_generated",
     # ANVIL build validation events
     "code.validation",
+    # SIPA — software integrity HITL promote/reject events
+    "integrity_promoted",
+    "integrity_rejected",
 )
 
 

@@ -373,6 +373,176 @@ def assess(
 
 
 # --------------------------------------------------------------------------- #
+# HITL — promote / reject (the only path out of quarantine)
+# --------------------------------------------------------------------------- #
+# Terminal lifecycle states: once an assessment is approved or rejected its
+# disposition is final and neither promote nor reject may act on it again.
+_TERMINAL_STATUS = ("approved", "rejected")
+
+_AUTH_INSERT_SQL = (
+    "INSERT INTO integrity_authorizations "
+    "(assessment_id, authorized, reason, reviewed_by, tenant_id, classification) "
+    "VALUES (?, ?, ?, ?, ?, ?)"
+)
+
+
+def _set_status(conn: Any, assessment_id: int, status: str) -> None:
+    """Transition the assessment lifecycle ``status`` (the only mutable column set).
+
+    ``integrity_assessments`` is the single mutable-lifecycle table; the findings
+    tables are append-only. This UPDATE is the HITL transition out of the
+    assessed/quarantine state into the terminal approved/rejected disposition.
+    """
+    sql = "UPDATE integrity_assessments SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    conn.execute(_q(conn, sql), (status, assessment_id))
+    conn.commit()
+
+
+def _insert_authorization(conn: Any, assessment_id: int, authorized: bool, reason: Optional[str],
+                          reviewed_by: str) -> int:
+    """Append a HITL decision to ``integrity_authorizations`` (append-only).
+
+    The row records the whole-assessment authorization decision (a promote or a
+    reject); ``capability_id`` / ``requirement_id`` / ``claim_ref`` stay NULL —
+    those columns are for the capability-level Mode A authorization edges. Stamps
+    ``tenant_id`` / ``classification`` from the active security context.
+    """
+    tenant_id, classification, _created_by = ingest._caller_context()
+    params = (assessment_id, authorized, reason, reviewed_by, tenant_id, classification)
+    if _backend_of(conn) == "postgresql":
+        cur = conn.execute(_AUTH_INSERT_SQL.replace("?", "%s") + " RETURNING id", params)
+        row = cur.fetchone()
+        conn.commit()
+        return int(row[0]) if row else 0
+    cur = conn.execute(_AUTH_INSERT_SQL, params)
+    conn.commit()
+    return int(cur.lastrowid or 0)
+
+
+def _decide(assessment_id: int, reviewed_by: str, reason: Optional[str], *,
+            authorized: bool, conn: Any = None) -> dict:
+    """Shared HITL transition for :func:`promote` / :func:`reject`.
+
+    Loads the assessment, refuses if it is missing or already in a terminal state,
+    flips ``status`` to the target disposition, appends an
+    ``integrity_authorizations`` row, and writes the matching append-only
+    ``audit_trail`` event. Returns an ``{"error": ...}`` dict (never raises) on a
+    missing / already-decided assessment so route + CLI callers can branch on it.
+    """
+    target_status = "approved" if authorized else "rejected"
+    event_type = "integrity_promoted" if authorized else "integrity_rejected"
+    verb = "promote" if authorized else "reject"
+
+    own_conn = conn is None
+    if own_conn:
+        from tools.db.storage import get_connection
+
+        conn = get_connection()
+    try:
+        init_db(conn)  # idempotent: tolerate a not-yet-initialized schema
+
+        status = _get_status(conn, assessment_id)
+        if status is None:
+            return {"error": f"assessment not found: {assessment_id}"}
+        if status in _TERMINAL_STATUS:
+            return {"error": f"cannot {verb}: assessment already {status}", "status": status}
+
+        _set_status(conn, assessment_id, target_status)
+        authorization_id = _insert_authorization(
+            conn, assessment_id, authorized, reason, reviewed_by,
+        )
+
+        # Append-only audit trail (NIST AU). Non-fatal: an audit hiccup must not
+        # roll back the recorded HITL decision, so log_event swallows its own
+        # errors and returns -1.
+        try:
+            from tools.audit.audit_logger import log_event
+
+            audit_id = log_event(
+                event_type=event_type,
+                actor=reviewed_by,
+                action=f"{verb}d integrity assessment {assessment_id}: {reason or '(no reason given)'}",
+                details={
+                    "assessment_id": assessment_id,
+                    "authorization_id": authorization_id,
+                    "status": target_status,
+                    "reason": reason,
+                },
+                classification="CUI",
+                conn=conn,
+            )
+        except Exception as exc:  # noqa: BLE001 — audit is best-effort, decision stands
+            logger.warning("%s: audit log_event failed for assessment %s: %s", verb, assessment_id, exc)
+            audit_id = -1
+    finally:
+        if own_conn:
+            conn.close()
+
+    logger.info(
+        "%s: assessment %s -> %s by %s (authorization %s, audit %s)",
+        verb, assessment_id, target_status, reviewed_by, authorization_id, audit_id,
+    )
+    return {
+        "success": True,
+        "assessment_id": assessment_id,
+        "status": target_status,
+        "reviewed_by": reviewed_by,
+        "reason": reason,
+        "authorization_id": authorization_id,
+        "audit_id": audit_id,
+    }
+
+
+def promote(assessment_id: int, reviewed_by: str, reason: Optional[str] = None,
+            conn: Any = None) -> dict:
+    """HITL-approve a quarantined assessment — the ONLY path to ``status='approved'``.
+
+    Transitions ``integrity_assessments.status`` to ``'approved'``, appends an
+    ``integrity_authorizations`` row (``authorized=True``) recording who cleared it
+    and why, and writes an ``integrity_promoted`` ``audit_trail`` event. No engine
+    code path other than this one sets ``status='approved'``, so quarantined
+    external code can only become approved through an explicit human review.
+
+    Args:
+        assessment_id: the ``integrity_assessments`` row to promote.
+        reviewed_by: the reviewer (ISSO / security officer) recorded on the
+            authorization + audit rows.
+        reason: optional free-text justification for the approval.
+        conn: optional existing RLS-aware connection to reuse (engine / tests);
+            when ``None`` one is opened and closed internally.
+
+    Returns:
+        ``{"success": True, "assessment_id", "status": "approved", "reviewed_by",
+        "reason", "authorization_id", "audit_id"}`` on success, or
+        ``{"error": ...}`` when the assessment is missing or already terminal.
+    """
+    return _decide(assessment_id, reviewed_by, reason, authorized=True, conn=conn)
+
+
+def reject(assessment_id: int, reviewed_by: str, reason: Optional[str] = None,
+           conn: Any = None) -> dict:
+    """HITL-reject a quarantined assessment — transition to ``status='rejected'``.
+
+    Mirror of :func:`promote`: flips ``integrity_assessments.status`` to
+    ``'rejected'``, appends an ``integrity_authorizations`` row
+    (``authorized=False``) with the reviewer + reason, and writes an
+    ``integrity_rejected`` ``audit_trail`` event. A rejected assessment is
+    terminal — it can be neither re-promoted nor re-rejected.
+
+    Args:
+        assessment_id: the ``integrity_assessments`` row to reject.
+        reviewed_by: the reviewer recorded on the authorization + audit rows.
+        reason: optional free-text justification for the rejection.
+        conn: optional existing connection to reuse (see :func:`promote`).
+
+    Returns:
+        ``{"success": True, ..., "status": "rejected", ...}`` on success, or
+        ``{"error": ...}`` when the assessment is missing or already terminal.
+    """
+    return _decide(assessment_id, reviewed_by, reason, authorized=False, conn=conn)
+
+
+# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 def main(argv: Optional[list] = None, conn: Any = None) -> int:
