@@ -1,0 +1,222 @@
+<!-- CUI // SP-CTI — SIPA Software Integrity & Provenance Assessor — Assessment List -->
+{% extends "base.html" %}
+{% block title %}Software Integrity Assessor — ICDEV{% endblock %}
+{% block content %}
+{#
+  Context (from tools/integrity/blueprint.py :: integrity_index):
+    assessments : list[dict] — id, source_type, source_ref, mode, project_id,
+                  session_id, status, verdict, risk_score, created_at, updated_at
+    summary     : {by_verdict: {allow/review/quarantine: n}, by_status: {...}, total}
+    verdicts    : VERDICTS  (allow, review, quarantine)
+    modes       : ASSESS_MODES (provenance_aware, provenance_blind, auto)
+#}
+<style>
+  .sipa-hero { padding: 20px 30px 6px; }
+  .sipa-hero h1 { font-size: 22px; margin: 0 0 4px; display:flex; align-items:center; gap:10px; }
+  .sipa-hero h1 .sipa-tag { font-size:10px; font-weight:700; letter-spacing:.08em; background:#0d2b4e; color:#4fc3f7; border:1px solid #1565c0; border-radius:4px; padding:2px 7px; }
+  .sipa-hero p { color: #7a8cb0; font-size: 13px; margin: 0; max-width: 880px; }
+
+  /* Verdict roll-up cards */
+  .sipa-rollup { display:flex; gap:14px; padding:16px 30px 4px; flex-wrap:wrap; }
+  .sipa-rcard { flex:1; min-width:150px; background:#16213e; border:1px solid #1e3a6e; border-radius:8px; padding:14px 16px; border-left-width:4px; }
+  .sipa-rcard .val { font-size:30px; font-weight:700; line-height:1; }
+  .sipa-rcard .lbl { font-size:11px; color:#7a8cb0; text-transform:uppercase; letter-spacing:.06em; margin-top:6px; }
+  .sipa-rcard.total      { border-left-color:#4fc3f7; }
+  .sipa-rcard.allow      { border-left-color:#66bb6a; }
+  .sipa-rcard.review     { border-left-color:#ffb300; }
+  .sipa-rcard.quarantine { border-left-color:#e53935; }
+  .sipa-rcard.total      .val { color:#4fc3f7; }
+  .sipa-rcard.allow      .val { color:#66bb6a; }
+  .sipa-rcard.review     .val { color:#ffb300; }
+  .sipa-rcard.quarantine .val { color:#e53935; }
+
+  /* Assess form */
+  .sipa-assess { margin:18px 30px; background:#0f1e36; border:1px solid #1e3a6e; border-radius:8px; padding:16px 18px; }
+  .sipa-assess h2 { font-size:14px; margin:0 0 10px; color:#eaeaea; }
+  .sipa-assess .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .sipa-field { display:flex; flex-direction:column; gap:4px; }
+  .sipa-field.grow { flex:1; min-width:280px; }
+  .sipa-field label { font-size:10px; color:#5a6e8c; text-transform:uppercase; letter-spacing:.05em; font-weight:700; }
+  .sipa-field input, .sipa-field select { background:#050d1f; border:1px solid #1e3a6e; border-radius:5px; color:#cfe2f5; font-size:13px; padding:8px 11px; font-family:inherit; }
+  .sipa-field input:focus, .sipa-field select:focus { outline:none; border-color:#2a6aad; }
+  .sipa-btn { padding:9px 20px; background:#1565c0; color:#fff; border:none; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap; transition:background .15s; }
+  .sipa-btn:hover { background:#1976d2; }
+  .sipa-btn:disabled { opacity:.5; cursor:not-allowed; }
+  .sipa-hint { font-size:11px; color:#5a6e8c; margin-top:8px; }
+  .sipa-status { margin-top:10px; font-size:12px; padding:7px 11px; border-radius:5px; display:none; }
+  .sipa-status.ok   { background:#0c2417; color:#66bb6a; border:1px solid #1b5e20; }
+  .sipa-status.err  { background:#2a0c0c; color:#ef5350; border:1px solid #b71c1c; }
+  .sipa-status.busy { background:#0a1830; color:#7a9cc0; border:1px solid #1e3a6e; }
+
+  /* Assessment table */
+  .sipa-section-title { padding:6px 30px 8px; font-size:15px; font-weight:600; color:#eaeaea; }
+  .sipa-tbl-wrap { padding:0 30px 24px; overflow-x:auto; }
+  .sipa-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+  .sipa-tbl th { background:#0f1e36; color:#6a86b0; text-align:left; padding:9px 12px; border-bottom:1px solid #1e3a6e; font-weight:600; white-space:nowrap; }
+  .sipa-tbl td { padding:9px 12px; border-bottom:1px solid #13233f; color:#c4d6ec; vertical-align:middle; }
+  .sipa-tbl tr.clickable { cursor:pointer; }
+  .sipa-tbl tr.clickable:hover td { background:#13233f; }
+  .sipa-src { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:#9fc0e0; word-break:break-all; max-width:420px; }
+  .sipa-srctype { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#5a9fd4; background:#0d2545; border:1px solid #1a4070; border-radius:3px; padding:1px 6px; margin-right:8px; }
+  .sipa-mode { font-size:11px; color:#8aa0c0; }
+
+  /* Verdict + status badges */
+  .vbadge, .sbadge { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.05em; padding:3px 9px; border-radius:4px; text-transform:uppercase; }
+  .vbadge.allow      { background:#0c2417; color:#66bb6a; border:1px solid #2e7d32; }
+  .vbadge.review     { background:#2a1f05; color:#ffb300; border:1px solid #b8860b; }
+  .vbadge.quarantine { background:#2a0c0c; color:#ef5350; border:1px solid #c62828; }
+  .vbadge.none       { background:#1a2438; color:#6a86b0; border:1px solid #2a3e60; }
+  .sbadge.quarantine { background:#2a0c0c; color:#ef9a9a; }
+  .sbadge.assessed   { background:#0a1830; color:#7aa8d8; }
+  .sbadge.approved   { background:#0c2417; color:#81c784; }
+  .sbadge.rejected   { background:#241a0c; color:#bcaaa4; }
+  .sbadge.unknown    { background:#1a2438; color:#6a86b0; }
+
+  /* Risk bar */
+  .sipa-risk { display:flex; align-items:center; gap:8px; min-width:120px; }
+  .sipa-risk .track { flex:1; height:6px; background:#13233f; border-radius:3px; overflow:hidden; min-width:60px; }
+  .sipa-risk .fill { height:100%; border-radius:3px; }
+  .sipa-risk .num { font-size:11px; color:#9fc0e0; font-variant-numeric:tabular-nums; min-width:30px; text-align:right; }
+  .sipa-empty { color:#7a8cb0; padding:24px 30px; font-size:13px; }
+</style>
+
+<div class="sipa-hero">
+  <h1>Software Integrity &amp; Provenance Assessor <span class="sipa-tag">SIPA</span></h1>
+  <p>Static-only assessment of ICDEV, contributed, and external code for malicious or unauthorized
+     capability — embedded by a human or an AI agent — that is not part of the original requirement
+     or claimed purpose. Quarantine-first; nothing executes the target.</p>
+</div>
+
+<!-- Verdict roll-up -->
+{% set bv = summary.by_verdict if summary and summary.by_verdict else {} %}
+<div class="sipa-rollup">
+  <div class="sipa-rcard total"><div class="val">{{ summary.total if summary else 0 }}</div><div class="lbl">Assessments</div></div>
+  <div class="sipa-rcard allow"><div class="val">{{ bv.get('allow', 0) }}</div><div class="lbl">Allow</div></div>
+  <div class="sipa-rcard review"><div class="val">{{ bv.get('review', 0) }}</div><div class="lbl">Review</div></div>
+  <div class="sipa-rcard quarantine"><div class="val">{{ bv.get('quarantine', 0) }}</div><div class="lbl">Quarantine</div></div>
+</div>
+
+<!-- Assess form -->
+<div class="sipa-assess">
+  <h2>Assess a Source</h2>
+  <div class="row">
+    <div class="sipa-field grow">
+      <label for="sipa-source">Source reference</label>
+      <input type="text" id="sipa-source" placeholder="e.g. tools/aiify  ·  https://github.com/org/repo.git  ·  \\host\share\pkg" autocomplete="off">
+    </div>
+    <div class="sipa-field">
+      <label for="sipa-mode">Mode</label>
+      <select id="sipa-mode">
+        {% for m in modes %}
+        <option value="{{ m }}"{% if m == 'auto' %} selected{% endif %}>{{ m.replace('_', ' ') }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="sipa-btn" id="sipa-assess-btn" onclick="sipaAssess()">&#x1F50E; Assess</button>
+  </div>
+  <div class="sipa-hint">A local path, git repo, UNC share, or remote URI. The source is staged in quarantine and
+     scanned statically (SAST, secrets, deps, capability manifest, intent reconciliation) — it is never run.</div>
+  <div class="sipa-status" id="sipa-status"></div>
+</div>
+
+<div class="sipa-section-title">Recent Assessments</div>
+<div class="sipa-tbl-wrap">
+  {% if assessments %}
+  <table class="sipa-tbl">
+    <thead>
+      <tr>
+        <th>#</th><th>Source</th><th>Mode</th><th>Verdict</th><th>Risk</th><th>Status</th><th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in assessments %}
+      {% set v = (a.verdict or 'none')|lower %}
+      {% set st = (a.status or 'unknown')|lower %}
+      {% set rs = a.risk_score if a.risk_score is not none else 0 %}
+      {% set rpct = (rs * 100) if rs <= 1 else rs %}
+      <tr class="clickable" onclick="location.href='/integrity/{{ a.id }}'">
+        <td style="color:#5a6e8c;font-variant-numeric:tabular-nums;">{{ a.id }}</td>
+        <td>
+          <span class="sipa-srctype">{{ a.source_type or '?' }}</span>
+          <span class="sipa-src">{{ a.source_ref or '—' }}</span>
+        </td>
+        <td><span class="sipa-mode">{{ (a.mode or '—').replace('_', ' ') }}</span></td>
+        <td><span class="vbadge {{ v if v in ['allow','review','quarantine'] else 'none' }}">{{ (a.verdict or 'pending')|upper }}</span></td>
+        <td>
+          <div class="sipa-risk">
+            <div class="track"><div class="fill" style="width:{{ rpct|round(0)|int }}%;background:{% if rpct >= 67 %}#e53935{% elif rpct >= 34 %}#ffb300{% else %}#66bb6a{% endif %};"></div></div>
+            <span class="num">{{ rpct|round(0)|int }}</span>
+          </div>
+        </td>
+        <td><span class="sbadge {{ st if st in ['quarantine','assessed','approved','rejected'] else 'unknown' }}">{{ a.status or '—' }}</span></td>
+        <td style="color:#7a8cb0;white-space:nowrap;">{{ (a.created_at[:16] if a.created_at is string else a.created_at.strftime('%Y-%m-%d %H:%M')) if a.created_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="sipa-empty">No assessments yet. Enter a source above and click <b>Assess</b> to run the first one.</div>
+  {% endif %}
+</div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "integrity" %}
+{% set iqe_api_route = "/integrity/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Integrity Assessments & Findings" %}
+{% set iqe_examples = [
+  {"label": "Quarantined assessments", "query": "foreach a in integrity.assessments where a.verdict == \"quarantine\" select a.id, a.source_ref, a.risk_score"},
+  {"label": "Critical findings", "query": "foreach f in integrity.findings where f.severity == \"critical\" select f.source_scanner, f.finding_type, f.file_path"},
+  {"label": "Network-egress capabilities", "query": "foreach c in integrity.capabilities where c.capability_type == \"network_egress\" select c.file_path, c.function_name, c.risk_weight"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+function sipaAssess() {
+  var srcEl = document.getElementById('sipa-source');
+  var modeEl = document.getElementById('sipa-mode');
+  var btn = document.getElementById('sipa-assess-btn');
+  var statusEl = document.getElementById('sipa-status');
+  var source = (srcEl.value || '').trim();
+  if (!source) { srcEl.focus(); return; }
+
+  function setStatus(cls, msg) {
+    statusEl.className = 'sipa-status ' + cls;
+    statusEl.style.display = '';
+    statusEl.textContent = msg;
+  }
+
+  btn.disabled = true;
+  setStatus('busy', 'Staging in quarantine and scanning… this may take a moment.');
+
+  fetch('/api/integrity/assess', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({source: source, mode: modeEl.value})
+  })
+  .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, status: r.status, data: d}; }); })
+  .then(function(res) {
+    if (!res.ok || res.data.error) {
+      setStatus('err', '⚠ ' + (res.data.error || ('Assessment failed (HTTP ' + res.status + ')')));
+      btn.disabled = false;
+      return;
+    }
+    var id = res.data.id || res.data.assessment_id || (res.data.assessment && res.data.assessment.id);
+    var verdict = res.data.verdict || (res.data.assessment && res.data.assessment.verdict) || 'recorded';
+    setStatus('ok', '✓ Assessment complete — verdict: ' + String(verdict).toUpperCase() + '. Opening detail…');
+    setTimeout(function() {
+      window.location.href = id ? ('/integrity/' + id) : '/integrity';
+    }, 700);
+  })
+  .catch(function(e) {
+    setStatus('err', '⚠ Network error: ' + e.message);
+    btn.disabled = false;
+  });
+}
+
+document.getElementById('sipa-source').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { e.preventDefault(); sipaAssess(); }
+});
+</script>
+{% endblock %}
