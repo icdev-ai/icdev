@@ -1026,6 +1026,36 @@ blueprint_integrity:
     require_digest_for_marketplace: true
     verification_max_age_days: 30
 
+# SIPA Integrity Gate (Software Integrity & Provenance Assessor)
+# Maps a SIPA assessment verdict to a CI / pre-merge exit-code policy. Wired to
+# `python -m tools.integrity.engine ... --gate`, which returns a non-zero exit
+# code (GATE_BLOCK=1) when the verdict is in `block_on` and zero (GATE_OK=0)
+# otherwise (including warn-only verdicts). The engine's own source of truth is
+# args/integrity_config.yaml -> gate.{block_on,warn_on}; this entry mirrors that
+# policy into the central gate catalog so reviewers see it alongside the other
+# merge/deploy gates. Keep the two in sync: block on QUARANTINE, warn on REVIEW.
+integrity_gate:
+  description: "SIPA software-integrity verdict gate — block on QUARANTINE, warn on REVIEW (engine --gate)"
+  blocking:
+    - integrity_verdict_quarantine          # assessment verdict == QUARANTINE (malicious / unauthorized code)
+  warning:
+    - integrity_verdict_review              # assessment verdict == REVIEW (needs HITL adjudication)
+  thresholds:
+    # Verdict-to-exit-code policy consumed by tools/integrity/engine.py --gate.
+    # Mirror of args/integrity_config.yaml -> gate; ALLOW always clears the gate.
+    block_on:
+      - QUARANTINE
+    warn_on:
+      - REVIEW
+    require_assessment_before_merge: false  # advisory until SIPA is wired into the merge pipeline
+  note: >
+    Run `python -m tools.integrity.engine --source <target> --gate` (optionally
+    `--json`) in CI to enforce this gate; exit code 1 means a QUARANTINE verdict
+    blocked the build. REVIEW is non-blocking (warn) so a human can adjudicate.
+    SIPA is static-only: it never executes the assessed target (see
+    docs/security/sandbox-coverage.md Gap 16 and the no-shell/no-exec regression
+    test tests/test_integrity_no_shell_exec.py).
+
 # Evolution Daemon Lifecycle Gates (Phase 36, D-EVO-1 through D-EVO-8)
 evolution_lifecycle:
   blocking:
