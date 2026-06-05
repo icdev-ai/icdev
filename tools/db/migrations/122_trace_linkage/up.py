@@ -35,12 +35,39 @@ _ALTERS = [
 ]
 
 
+def _table_exists(conn, table: str) -> bool:
+    """True if ``table`` exists (backend-agnostic). ``kanban_tasks`` is created at
+    app runtime by tools/kanban/init_db.py, not by this migration chain, so a
+    migrate-only fresh DB — e.g. the CI E2E PostgreSQL job's ``migrate.py --up`` —
+    legitimately lacks it. Skip its ALTERs rather than abort the whole chain,
+    matching migrations 020/040/041."""
+    if getattr(conn, "_backend", "sqlite") == "postgresql":
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
 def up(conn=None) -> None:
     from tools.db.storage import get_connection
 
     c = conn or get_connection()
     try:
+        # Cache table existence so an absent runtime table (kanban_tasks) skips
+        # only its own ALTERs without aborting the chain or re-probing per column.
+        exists = {}
         for table, col, col_type in _ALTERS:
+            if table not in exists:
+                exists[table] = _table_exists(c, table)
+            if not exists[table]:
+                continue
             try:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
             except Exception as exc:

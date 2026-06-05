@@ -153,7 +153,7 @@ _CREATE_STMTS = [
     # nc_governance_reviews — first referenced in tools/network/blueprint.py [known_schema]
     "CREATE TABLE IF NOT EXISTS nc_governance_reviews (\n    id TEXT PRIMARY KEY,\n    design_id TEXT DEFAULT '',\n    status TEXT DEFAULT 'pending',\n    reviewer TEXT DEFAULT '',\n    notes TEXT DEFAULT '',\n    reviewed_at TEXT,\n    created_at TEXT\n);",
     # ndc_audit — first referenced in tools/network/blueprint_helpers.py [known_schema]
-    "CREATE TABLE IF NOT EXISTS ndc_audit (\n    id TEXT PRIMARY KEY,\n    design_id TEXT DEFAULT '',\n    user TEXT DEFAULT '',\n    action TEXT DEFAULT '',\n    detail TEXT DEFAULT '',\n    classification TEXT DEFAULT 'public',\n    created_at TEXT\n);",
+    "CREATE TABLE IF NOT EXISTS ndc_audit (\n    id TEXT PRIMARY KEY,\n    design_id TEXT DEFAULT '',\n    \"user\" TEXT DEFAULT '',\n    action TEXT DEFAULT '',\n    detail TEXT DEFAULT '',\n    classification TEXT DEFAULT 'public',\n    created_at TEXT\n);",
     # ndc_designs — first referenced in tools/network/routes/projects.py [known_schema]
     "CREATE TABLE IF NOT EXISTS ndc_designs (\n    id TEXT PRIMARY KEY,\n    name TEXT DEFAULT '',\n    classification TEXT DEFAULT 'public',\n    status TEXT DEFAULT 'draft',\n    metadata TEXT DEFAULT '{}',\n    created_at TEXT,\n    updated_at TEXT\n);",
     # notifications — first referenced in tools/genesis/reflexes/kanban.py [known_schema]
