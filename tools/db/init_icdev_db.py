@@ -10507,7 +10507,8 @@ CREATE INDEX IF NOT EXISTS idx_requirements_created  ON requirements (created_at
 -- table). Canonical DDL lives in tools/integrity/db/init_db.py; mirrored here
 -- (SQLite-flavored) so a fresh icdev.db carries the schema. CHECK values are
 -- derived from tools/integrity/constants.py — keep the two in lock-step.
--- All but integrity_assessments are APPEND-ONLY (see APPEND_ONLY_TABLES).
+-- integrity_assessments is the mutable root row (HITL updates status/verdict);
+-- its child tables are protected (see APPEND_ONLY_TABLES in pre_tool_use.py).
 -- ============================================================
 CREATE TABLE IF NOT EXISTS integrity_assessments (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -10530,6 +10531,7 @@ CREATE TABLE IF NOT EXISTS integrity_assessments (
 CREATE INDEX IF NOT EXISTS idx_integrity_assessments_tenant  ON integrity_assessments(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_integrity_assessments_project ON integrity_assessments(project_id);
 
+-- append-only (NIST AU): findings/capability rows are evidence, never mutated.
 CREATE TABLE IF NOT EXISTS integrity_capabilities (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
@@ -10549,6 +10551,7 @@ CREATE TABLE IF NOT EXISTS integrity_capabilities (
 CREATE INDEX IF NOT EXISTS idx_integrity_capabilities_assessment ON integrity_capabilities(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_integrity_capabilities_tenant     ON integrity_capabilities(tenant_id);
 
+-- append-only (NIST AU): scanner findings are immutable evidence.
 CREATE TABLE IF NOT EXISTS integrity_findings (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
@@ -10569,6 +10572,7 @@ CREATE TABLE IF NOT EXISTS integrity_findings (
 CREATE INDEX IF NOT EXISTS idx_integrity_findings_assessment ON integrity_findings(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_integrity_findings_tenant     ON integrity_findings(tenant_id);
 
+-- append-only (NIST AU): each verdict is a permanent decision record.
 CREATE TABLE IF NOT EXISTS integrity_verdicts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
@@ -10583,6 +10587,7 @@ CREATE TABLE IF NOT EXISTS integrity_verdicts (
 CREATE INDEX IF NOT EXISTS idx_integrity_verdicts_assessment ON integrity_verdicts(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_integrity_verdicts_tenant     ON integrity_verdicts(tenant_id);
 
+-- append-only (NIST AU): HITL authorization decisions are immutable evidence.
 CREATE TABLE IF NOT EXISTS integrity_authorizations (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
