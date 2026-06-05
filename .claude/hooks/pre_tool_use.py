@@ -473,7 +473,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "session_risk_log",
         # AI Data Mapping — transformation artifact audit (NIST AU-9, append-only)
         "dd_mapping_transforms",
-        # SIPA Software Integrity Assessor (sipa-db-02 — capabilities/findings/verdicts/authorizations append-only, NIST AU)
+        # SIPA Software Integrity & Provenance Assessor (sipa-, NIST AU — assessment evidence is immutable)
         "integrity_capabilities",
         "integrity_findings",
         "integrity_verdicts",
