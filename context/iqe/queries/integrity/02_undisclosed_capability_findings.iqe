@@ -1,0 +1,3 @@
+foreach f in integrity.findings
+  where f.finding_type == "undisclosed_capability"
+  select f.id, f.assessment_id, f.source_scanner, f.severity, f.file_path, f.line, f.detail

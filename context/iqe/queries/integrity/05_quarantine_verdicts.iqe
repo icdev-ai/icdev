@@ -1,0 +1,3 @@
+foreach v in integrity.verdicts
+  where v.verdict == "quarantine"
+  select v.id, v.assessment_id, v.risk_score, v.decided_by, v.rationale, v.created_at
