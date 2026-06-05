@@ -860,21 +860,32 @@ class StorageConnection:
         if self._backend == "sqlite":
             return self._conn.executescript(sql)
 
-        # PostgreSQL: split statements and execute each
+        # PostgreSQL: split statements and execute each, isolating every
+        # statement in its own SAVEPOINT. A single failing statement (e.g.
+        # already-exists DDL or an untranslatable construct) must only roll
+        # back ITSELF — not the whole transaction. A bare conn.rollback()
+        # here would discard every object created earlier in the script,
+        # making later dependent statements fail with "relation ... does not
+        # exist" and cascading the whole baseline schema load to failure.
         statements = [s.strip() for s in sql.split(";") if s.strip()]
         cursor = self._conn.cursor()
         for stmt in statements:
             if not stmt:
                 continue
             translated = translate_sql(stmt, self._backend)
-            if translated.strip() and translated.strip() != "SELECT 1":
+            if not translated.strip() or translated.strip() == "SELECT 1":
+                continue
+            try:
+                cursor.execute("SAVEPOINT icdev_es_stmt")
+                cursor.execute(translated)
+                cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
+            except Exception:
+                # Roll back only this statement; keep prior successful ones.
                 try:
-                    cursor.execute(translated)
+                    cursor.execute("ROLLBACK TO SAVEPOINT icdev_es_stmt")
+                    cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
                 except Exception:
-                    # Skip DDL errors (table already exists, etc.)
                     self._conn.rollback()
-                    # Re-establish transaction
-                    pass
         self._conn.commit()
         return cursor
 
