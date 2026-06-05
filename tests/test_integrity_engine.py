@@ -258,3 +258,90 @@ def test_assess_appends_not_updates_verdicts(backdoor_source, conn, deterministi
     assert r1["assessment_id"] != r2["assessment_id"]
     n = conn.execute("SELECT COUNT(*) FROM integrity_verdicts").fetchone()[0]
     assert n == 2
+
+
+# --------------------------------------------------------------------------- #
+# Gate exit-code policy (unit)
+# --------------------------------------------------------------------------- #
+def test_gate_exit_code_default_policy():
+    # Defaults (or args/integrity_config.yaml): block on QUARANTINE, warn on REVIEW.
+    assert engine.gate_exit_code("quarantine") == engine.GATE_BLOCK
+    assert engine.gate_exit_code("allow") == engine.GATE_OK
+    assert engine.gate_exit_code("review") == engine.GATE_OK  # warn-only by default
+
+
+def test_gate_exit_code_is_case_insensitive():
+    assert engine.gate_exit_code("QUARANTINE") == engine.GATE_BLOCK
+    assert engine.gate_exit_code("Allow") == engine.GATE_OK
+
+
+def test_gate_exit_code_review_blockable_via_config():
+    # Operator opts REVIEW into the blocking set -> REVIEW now fails the gate.
+    cfg = {"gate": {"block_on": ["QUARANTINE", "REVIEW"], "warn_on": []}}
+    assert engine.gate_exit_code("review", cfg=cfg) == engine.GATE_BLOCK
+    assert engine.gate_exit_code("quarantine", cfg=cfg) == engine.GATE_BLOCK
+    assert engine.gate_exit_code("allow", cfg=cfg) == engine.GATE_OK
+
+
+# --------------------------------------------------------------------------- #
+# CLI main() — exit codes for benign vs backdoor fixtures
+# --------------------------------------------------------------------------- #
+def test_main_benign_no_gate_exits_zero(benign_source, conn, deterministic_scanners):
+    with pytest.raises(SystemExit) as exc:
+        engine.main(["--source", str(benign_source)], conn=conn)
+    assert exc.value.code == engine.GATE_OK
+
+
+def test_main_benign_gate_exits_zero(benign_source, conn, deterministic_scanners):
+    with pytest.raises(SystemExit) as exc:
+        engine.main(["--source", str(benign_source), "--gate"], conn=conn)
+    assert exc.value.code == engine.GATE_OK
+
+
+def test_main_backdoor_no_gate_exits_zero(backdoor_source, conn, deterministic_scanners):
+    # Without --gate a QUARANTINE verdict is still a clean run (exit 0); the gate
+    # only converts the verdict into a failing exit code on demand.
+    with pytest.raises(SystemExit) as exc:
+        engine.main(["--source", str(backdoor_source)], conn=conn)
+    assert exc.value.code == engine.GATE_OK
+
+
+def test_main_backdoor_gate_exits_nonzero(backdoor_source, conn, deterministic_scanners):
+    with pytest.raises(SystemExit) as exc:
+        engine.main(["--source", str(backdoor_source), "--gate"], conn=conn)
+    assert exc.value.code == engine.GATE_BLOCK
+    assert exc.value.code != 0
+
+
+def test_main_positional_source_backcompat(benign_source, conn, deterministic_scanners):
+    # The sipa-engine-01 positional form still works.
+    with pytest.raises(SystemExit) as exc:
+        engine.main([str(benign_source)], conn=conn)
+    assert exc.value.code == engine.GATE_OK
+
+
+def test_main_requires_source():
+    # argparse errors out (exit code 2) when no source is supplied.
+    with pytest.raises(SystemExit) as exc:
+        engine.main([])
+    assert exc.value.code == 2
+
+
+def test_main_json_emits_summary(benign_source, conn, deterministic_scanners, capsys):
+    with pytest.raises(SystemExit) as exc:
+        engine.main(["--source", str(benign_source), "--json"], conn=conn)
+    assert exc.value.code == engine.GATE_OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["verdict"] == "allow"
+    assert payload["mode"] == engine.PROVENANCE_BLIND
+    assert "risk_score" in payload and "assessment_id" in payload
+
+
+def test_main_json_gate_block_includes_gate_block(backdoor_source, conn, deterministic_scanners, capsys):
+    with pytest.raises(SystemExit) as exc:
+        engine.main(["--source", str(backdoor_source), "--gate", "--json"], conn=conn)
+    assert exc.value.code == engine.GATE_BLOCK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["verdict"] == "quarantine"
+    assert payload["gate"]["blocked"] is True
+    assert payload["gate"]["exit_code"] == engine.GATE_BLOCK
