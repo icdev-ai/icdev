@@ -59,7 +59,7 @@ def conn(monkeypatch):
     c.close()
 
 
-def _stage_quarantine(conn, *, source_ref="/tmp/quarantine/x", status="quarantine"):
+def _stage_quarantine(conn, *, source_ref="staging/quarantine/x", status="quarantine"):
     """Insert a minimal quarantined assessment row and return its id."""
     cur = conn.execute(
         "INSERT INTO integrity_assessments "
