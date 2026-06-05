@@ -186,3 +186,71 @@ def test_analyze_logs_accepts_anomaly_config_override():
     # Empty result set still returns the standard keys without raising.
     assert "frequency_anomalies" in result
     assert result["frequency_anomalies"] == []
+
+
+# ---------------------------------------------------------------------------
+# _detect_silence_gaps — ingestion-silence / "missing partition" counterpart
+# ---------------------------------------------------------------------------
+# This is the data-presence inverse of frequency-spike detection: instead of
+# flagging buckets that are anomalously high, it flags contiguous runs of
+# empty/near-zero buckets *between* periods of activity — the signature of an
+# ingestion outage or a log partition that silently stopped receiving data.
+# Absent buckets are reconstructed as count 0 at the frequency cadence, so a
+# silent run only appears in the reconstructed grid, never in the raw mapping.
+def _gaps_cfg(enabled=True, min_active=3, drop_ratio=0.2, window=5):
+    return {
+        "frequency": {"method": "zscore", "z_threshold": 2.0, "min_buckets": 2, "bucket_window_minutes": window},
+        "error_rate": {"spike_threshold": 0.10},
+        "gaps": {"enabled": enabled, "min_active_buckets": min_active, "drop_ratio": drop_ratio},
+    }
+
+
+def test_silence_gaps_disabled_by_default():
+    # An obvious interior gap (15 & 20 absent) is ignored while gaps.enabled is
+    # off, so existing output stays unchanged unless explicitly opted in.
+    buckets = {_bucket(0): 10, _bucket(5): 10, _bucket(10): 10, _bucket(25): 10, _bucket(30): 10}
+    assert la._detect_silence_gaps(buckets, _gaps_cfg(enabled=False)) == []
+
+
+def test_silence_gap_detected_interior():
+    # Activity at 0/5/10 and 25/30; buckets 15 & 20 are absent (reconstructed as
+    # 0) → one 2-bucket interior silence run bounded by activity on both sides.
+    buckets = {_bucket(0): 10, _bucket(5): 10, _bucket(10): 10, _bucket(25): 10, _bucket(30): 10}
+    out = la._detect_silence_gaps(buckets, _gaps_cfg())
+    assert len(out) == 1
+    g = out[0]
+    assert g["method"] == "silence_gap"
+    assert g["buckets"] == 2
+    assert g["start"] == _bucket(15).isoformat()
+    assert g["end"] == _bucket(20).isoformat()
+    assert g["max_count"] == 0
+    assert g["baseline"] == 10.0
+
+
+def test_silence_gap_none_when_continuous():
+    # No absent buckets and every count well above the floor → nothing to flag.
+    buckets = {_bucket(m): 10 for m in (0, 5, 10, 15, 20)}
+    assert la._detect_silence_gaps(buckets, _gaps_cfg()) == []
+
+
+def test_silence_gap_ignores_leading_edge():
+    # The first bucket is low-but-active (count 1, below the floor of 2). A quiet
+    # start is the query window opening, not an interior outage, so the run at
+    # i==0 is excluded — only activity-bounded interior runs are reported.
+    buckets = {_bucket(0): 1, _bucket(5): 10, _bucket(10): 10, _bucket(15): 10}
+    assert la._detect_silence_gaps(buckets, _gaps_cfg()) == []
+
+
+def test_silence_gap_requires_min_active_baseline():
+    # Only 2 active buckets, below min_active_buckets=3 → the baseline is too
+    # thin to trust, so no gap is computed even though 5 & 10 are absent.
+    buckets = {_bucket(0): 10, _bucket(15): 10}
+    assert la._detect_silence_gaps(buckets, _gaps_cfg(min_active=3)) == []
+
+
+def test_analyze_logs_includes_silence_gaps_key():
+    # Off-network → empty logs; the silence_gaps key resolves and stays empty
+    # (gaps detection is off by default), so callers can rely on it always being
+    # present without raising.
+    result = la.analyze_logs(source="elk", query="error", time_range="1h", elk_url="http://127.0.0.1:1")
+    assert result["silence_gaps"] == []
