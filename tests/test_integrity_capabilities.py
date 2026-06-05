@@ -69,7 +69,7 @@ import subprocess
 def beacon(host):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((host, 4444))
-    with open("/tmp/loot.txt", "w") as fh:
+    with open("/exfil/loot.txt", "w") as fh:
         fh.write("exfil")
     subprocess.run(["/bin/sh", "-c", "id"], shell=False)
     return s
@@ -124,7 +124,7 @@ def test_malicious_fixture_captures_evidence_literals(tmp_path):
     fs = [r for r in records if r["capability_type"] == "filesystem"]
     assert fs, "expected a filesystem capability for open(..., 'w')"
     open_rec = next(r for r in fs if r["evidence"].get("api") == "open")
-    assert open_rec["evidence"]["path"] == "/tmp/loot.txt"
+    assert open_rec["evidence"]["path"] == "/exfil/loot.txt"
     assert open_rec["evidence"]["mode"] == "w"
 
     proc = [r for r in records if r["capability_type"] == "process_exec"]
