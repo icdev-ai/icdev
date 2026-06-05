@@ -232,6 +232,19 @@ def test_live_banner_cpmp(results: TestResult) -> None:
         results.fail("live_cpmp_cui_banner", exc)
 
 
+def test_live_banner_cpmp_deliverables(results: TestResult) -> None:
+    # Covers route /cpmp/deliverables (Deliverable Command Center).
+    try:
+        r = requests.get(f"{BASE_URL}/cpmp/deliverables", headers=_ADMIN_HEADERS, timeout=15)
+        assert r.status_code == 200, f"cpmp/deliverables returned {r.status_code}"
+        html = r.text
+        assert "design-classification-banner" in html, "/cpmp/deliverables: banner element missing"
+        assert CUI_CLASS in html, f"/cpmp/deliverables: {CUI_CLASS} not in HTML"
+        results.ok("live_cpmp_deliverables_cui_banner")
+    except Exception as exc:
+        results.fail("live_cpmp_deliverables_cui_banner", exc)
+
+
 # ---------------------------------------------------------------------------
 # Suite 3: Role-scoped access assertions
 # ---------------------------------------------------------------------------
@@ -427,6 +440,63 @@ def test_pwin_ptw_browser(results: TestResult, driver: webdriver.Chrome) -> None
         results.fail("browser_ptw", exc)
 
 
+def test_cpmp_deliverables_browser(results: TestResult, driver: webdriver.Chrome) -> None:
+    # Covers route /cpmp/deliverables (Flask: cpmp_deliverable_center_page).
+    # Deliverable Command Center — all deliverables across all active contracts.
+    try:
+        driver.get(f"{BASE_URL}/cpmp/deliverables")
+        time.sleep(2)
+        assert driver.title, "empty title"
+        results.ok("browser_cpmp_deliverables_loads", driver.title[:60])
+    except Exception as exc:
+        results.fail("browser_cpmp_deliverables_loads", exc)
+        return
+
+    try:
+        assert _browser_has_cui_banner(driver), "CUI banner not found on /cpmp/deliverables"
+        results.ok("browser_cpmp_deliverables_cui_banner")
+    except Exception as exc:
+        results.fail("browser_cpmp_deliverables_cui_banner", exc)
+
+    try:
+        js_errors = check_js_errors(driver)
+        assert not js_errors, f"SEVERE JS: {js_errors}"
+        results.ok("browser_cpmp_deliverables_no_js_errors")
+    except Exception as exc:
+        results.fail("browser_cpmp_deliverables_no_js_errors", exc)
+
+    try:
+        path = _screenshot(driver, "cpmp_deliverable_center")
+        results.ok("browser_cpmp_deliverables_screenshot", str(path))
+    except Exception as exc:
+        results.fail("browser_cpmp_deliverables_screenshot", exc)
+
+
+def test_proposals_language_browser(results: TestResult, driver: webdriver.Chrome) -> None:
+    # Covers route /proposals//language (Flask: /proposals/<opp_id>/language)
+    # Proposal Language Settings — glossary, wall of truth, taxonomy, style templates.
+    try:
+        opp_id = _get_proposal_opp_id()
+
+        if opp_id:
+            driver.get(f"{BASE_URL}/proposals/{opp_id}/language")
+            time.sleep(2)
+            assert driver.title, "empty Language Settings title"
+            assert _browser_has_cui_banner(driver), "CUI banner missing on Language page"
+            results.ok("browser_language_loads_with_banner", f"opp={opp_id[:16]}")
+            path = _screenshot(driver, "proposals_language")
+            results.ok("browser_language_screenshot", str(path))
+        else:
+            # No opportunities in DB; graceful 404/redirect is fine
+            driver.get(f"{BASE_URL}/proposals/nonexistent/language")
+            time.sleep(1)
+            results.ok("browser_language_empty_graceful", f"url={driver.current_url[:60]}")
+            path = _screenshot(driver, "proposals_language_empty")
+            results.ok("browser_language_empty_screenshot", str(path))
+    except Exception as exc:
+        results.fail("browser_language", exc)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -443,6 +513,7 @@ def run_tests() -> int:
     test_live_banner_govcon(results)
     test_live_banner_proposals(results)
     test_live_banner_cpmp(results)
+    test_live_banner_cpmp_deliverables(results)
 
     print("\n=== Suite 3: Role-scoped access ===")
     test_role_scoped_govcon_page(results)
@@ -454,7 +525,9 @@ def run_tests() -> int:
         test_govcon_browser(results, driver)
         test_proposals_browser(results, driver)
         test_cpmp_browser(results, driver)
+        test_cpmp_deliverables_browser(results, driver)
         test_pwin_ptw_browser(results, driver)
+        test_proposals_language_browser(results, driver)
     finally:
         driver.quit()
 
