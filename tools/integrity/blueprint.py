@@ -385,6 +385,51 @@ def create_integrity_blueprint() -> Optional[Blueprint]:
             return jsonify({"error": f"assessment not found: {assessment_id}"}), 404
         return jsonify(detail)
 
+    # ── JSON API — IQE natural-language query ─────────────────────────────── #
+    @bp.route("/integrity/api/iqe-query", methods=["POST"])
+    def integrity_iqe_query():
+        """Plain-English → IQE → rows over the integrity_* collections.
+
+        Body: ``{question, execute?}``. Mirrors the canvas-aware dispatcher in
+        ``app.py`` (``nl_to_iqe`` → ``parse`` → ``execute_query``) so the shared
+        ``includes/iqe_query_widget.html`` widget renders the generated IQE plus
+        the matching rows. Reads run RLS-aware via the registered adapters.
+        """
+        collections = [
+            "integrity.assessments",
+            "integrity.capabilities",
+            "integrity.findings",
+            "integrity.verdicts",
+        ]
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        iqe_str = ""
+        try:
+            from tools.iqe import adapters as _adapters  # noqa: F401
+            from tools.iqe.adapters import integrity as _  # noqa: F401  registers collections
+            from tools.iqe.executor import execute_query
+            from tools.iqe.nl_to_iqe import nl_to_iqe
+            from tools.iqe.parser import IQESyntaxError, parse as iqe_parse
+
+            translated = nl_to_iqe(question, collections)
+            iqe_str = translated.get("iqe", "")
+            explanation = translated.get("explanation", "")
+            try:
+                ast = iqe_parse(iqe_str)
+                rows = execute_query(ast, conn=None)
+            except IQESyntaxError:
+                rows = []
+            return jsonify({
+                "ok": True, "canvas": "integrity", "iqe": iqe_str,
+                "explanation": explanation, "results": rows, "row_count": len(rows),
+            })
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("integrity iqe-query error: %s", exc)
+            return jsonify({"error": str(exc), "canvas": "integrity", "iqe": iqe_str}), 500
+
     # ── JSON API — writes (delegate to the engine) ────────────────────────── #
     @bp.route("/api/integrity/assess", methods=["POST"])
     def api_assess():
