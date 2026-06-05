@@ -48,7 +48,10 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any, Optional
+
+import yaml
 
 from tools.integrity import (
     capability_extractor,
@@ -67,6 +70,23 @@ logger = logging.getLogger("icdev.integrity.engine")
 # strategy; 'auto' is resolved away before any row is written).
 PROVENANCE_AWARE = "provenance_aware"
 PROVENANCE_BLIND = "provenance_blind"
+
+# --------------------------------------------------------------------------- #
+# Gate — CI / pre-merge exit-code policy
+# --------------------------------------------------------------------------- #
+# Exit codes for ``main`` when invoked with ``--gate`` (so the CLI can wire into
+# CI / pre-merge hooks). A blocking verdict fails the build; a warn verdict is
+# surfaced on stderr but does not fail.
+GATE_OK = 0     # verdict cleared the gate (ALLOW, or a warn-only verdict)
+GATE_BLOCK = 1  # verdict is in gate.block_on — fail the build
+
+BASE_DIR = Path(__file__).resolve().parents[2]  # tools/integrity/engine.py -> repo root
+_CONFIG_PATH = BASE_DIR / "args" / "integrity_config.yaml"
+
+# Fallbacks if integrity_config.yaml is missing/partial: block on QUARANTINE,
+# warn (non-blocking) on REVIEW.
+_DEFAULT_GATE_BLOCK_ON = ("quarantine",)
+_DEFAULT_GATE_WARN_ON = ("review",)
 
 
 # --------------------------------------------------------------------------- #
@@ -173,6 +193,44 @@ def _get_status(conn: Any, assessment_id: int) -> Optional[str]:
     sql = "SELECT status FROM integrity_assessments WHERE id = ?"
     row = conn.execute(_q(conn, sql), (assessment_id,)).fetchone()
     return _scalar(row, "status")
+
+
+# --------------------------------------------------------------------------- #
+# Gate config
+# --------------------------------------------------------------------------- #
+def _load_config() -> dict:
+    """Load integrity_config.yaml; tolerate a missing/empty file with defaults."""
+    try:
+        with open(_CONFIG_PATH, encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        return {}
+
+
+def _gate_verdicts(cfg: Optional[dict] = None) -> tuple[set[str], set[str]]:
+    """``(block_on, warn_on)`` verdict sets from config (lowercased).
+
+    Reads ``gate.block_on`` / ``gate.warn_on`` from ``integrity_config.yaml``,
+    falling back to ``block on QUARANTINE`` / ``warn on REVIEW`` when absent.
+    """
+    cfg = cfg if cfg is not None else _load_config()
+    gate = (cfg or {}).get("gate") or {}
+    block = gate.get("block_on")
+    warn = gate.get("warn_on")
+    block_set = {str(v).strip().lower() for v in (block if block is not None else _DEFAULT_GATE_BLOCK_ON)}
+    warn_set = {str(v).strip().lower() for v in (warn if warn is not None else _DEFAULT_GATE_WARN_ON)}
+    return block_set, warn_set
+
+
+def gate_exit_code(verdict: str, cfg: Optional[dict] = None) -> int:
+    """Map a verdict to a ``--gate`` exit code.
+
+    ``GATE_BLOCK`` (1) when ``verdict`` is in ``gate.block_on`` (QUARANTINE by
+    default, and REVIEW too when the operator adds it to ``block_on``);
+    ``GATE_OK`` (0) otherwise. Verdict matching is case-insensitive.
+    """
+    block_set, _warn = _gate_verdicts(cfg)
+    return GATE_BLOCK if str(verdict).strip().lower() in block_set else GATE_OK
 
 
 # --------------------------------------------------------------------------- #
@@ -317,17 +375,54 @@ def assess(
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
-def main() -> None:
+def main(argv: Optional[list] = None, conn: Any = None) -> int:
+    """SIPA engine CLI entrypoint.
+
+    ``python tools/integrity/engine.py --source <path|git-url|unc|uri>
+    [--mode auto|provenance_aware|provenance_blind] [--project-id ...]
+    [--session-id ...] [--declared-purpose ...] [--gate] [--json]``
+
+    ``--json`` emits the assessment summary as JSON; ``--gate`` turns the verdict
+    into a CI / pre-merge exit code (non-zero on ``gate.block_on`` — QUARANTINE by
+    default — zero otherwise) so it can fail a build.
+
+    Args:
+        argv: optional argument vector (defaults to ``sys.argv[1:]``); passed by
+            tests so they can drive the CLI without touching the process args.
+        conn: optional DB connection threaded into :func:`assess` (tests inject an
+            in-memory SQLite connection); ``None`` lets ``assess`` open its own.
+
+    Returns:
+        The process exit code (also raised via ``SystemExit`` so the CLI / tests
+        can assert on it): ``GATE_BLOCK`` (1) when ``--gate`` and the verdict is
+        blocking, else ``GATE_OK`` (0). The positional ``source`` form is still
+        accepted for backward compatibility with the sipa-engine-01 CLI.
+    """
     import argparse
     import json
+    import sys
 
     parser = argparse.ArgumentParser(
+        prog="engine.py",
         description="SIPA assessment engine — orchestrate ingest -> scan -> "
         "capability -> (Mode B) reconcile -> score over an untrusted artifact and "
         "emit a risk score + ALLOW / REVIEW / QUARANTINE verdict. Static-only: the "
         "target is never executed.",
     )
-    parser.add_argument("source", help="local path / UNC share / file:// URI / git clone URL")
+    # --source is the canonical flag; a bare positional is accepted too (back-compat).
+    parser.add_argument(
+        "--source",
+        dest="source_opt",
+        default=None,
+        help="local path / UNC share / file:// URI / git clone URL",
+    )
+    parser.add_argument(
+        "source_pos",
+        nargs="?",
+        default=None,
+        metavar="source",
+        help="positional alias for --source (back-compat)",
+    )
     parser.add_argument(
         "--mode",
         default="auto",
@@ -341,27 +436,56 @@ def main() -> None:
         default=None,
         help="free-text purpose claim folded into the Mode B claimed-capability set",
     )
+    parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="exit non-zero on a blocking verdict (gate.block_on; QUARANTINE by default) for CI / pre-merge",
+    )
     parser.add_argument("--json", action="store_true", help="emit JSON")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    source = args.source_opt or args.source_pos
+    if not source:
+        parser.error("a source is required (--source <path|git-url|unc|uri>)")
 
     result = assess(
-        args.source,
+        source,
         mode=args.mode,
         project_id=args.project_id,
         session_id=args.session_id,
         declared_purpose=args.declared_purpose,
+        conn=conn,
     )
 
-    if args.json:
-        print(json.dumps(result, indent=2))
-        return
+    verdict = str(result["verdict"]).lower()
+    block_set, warn_set = _gate_verdicts()
 
-    print(f"SIPA assessment {result['assessment_id']} — {result['mode']}")
-    print(f"  verdict:      {result['verdict'].upper()}")
-    print(f"  risk_score:   {result['risk_score']}")
-    print(f"  findings:     {result['findings_count']}")
-    print(f"  capabilities: {result['capabilities_count']}")
-    print(f"  status:       {result['status']}")
+    if args.json:
+        payload = dict(result)
+        if args.gate:
+            payload["gate"] = {
+                "blocked": verdict in block_set,
+                "warned": verdict in warn_set,
+                "exit_code": GATE_BLOCK if verdict in block_set else GATE_OK,
+            }
+        print(json.dumps(payload, indent=2))
+    else:
+        print(f"SIPA assessment {result['assessment_id']} — {result['mode']}")
+        print(f"  verdict:      {result['verdict'].upper()}")
+        print(f"  risk_score:   {result['risk_score']}")
+        print(f"  findings:     {result['findings_count']}")
+        print(f"  capabilities: {result['capabilities_count']}")
+        print(f"  status:       {result['status']}")
+
+    code = GATE_OK
+    if args.gate:
+        if verdict in block_set:
+            code = GATE_BLOCK
+            print(f"GATE: BLOCKED - verdict {verdict.upper()} is blocking", file=sys.stderr)
+        elif verdict in warn_set:
+            print(f"GATE: WARN - verdict {verdict.upper()} (non-blocking)", file=sys.stderr)
+
+    sys.exit(code)
 
 
 if __name__ == "__main__":
