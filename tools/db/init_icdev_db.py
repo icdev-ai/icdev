@@ -10552,7 +10552,7 @@ CREATE TABLE IF NOT EXISTS integrity_findings (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
     source_scanner  TEXT NOT NULL CHECK(source_scanner IN (
-                        'sast', 'secrets', 'deps', 'formal', 'semgrep',
+                        'sast', 'secrets', 'deps', 'formal', 'container', 'semgrep',
                         'capability', 'reconciliation', 'tamper')),
     finding_type    TEXT NOT NULL CHECK(finding_type IN (
                         'dangerous_api', 'secret', 'vuln_dependency', 'unauthorized_capability',

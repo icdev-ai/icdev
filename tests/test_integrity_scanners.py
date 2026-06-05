@@ -321,3 +321,197 @@ def test_scan_all_respects_disabled_toggle(staged_env, monkeypatch):
     assert result["scanners"]["deps"].get("skipped") is True
     assert result["scanners"]["sast"].get("skipped") is not True
     assert result["scanners"]["secrets"].get("skipped") is not True
+
+
+# --------------------------------------------------------------------------- #
+# formal_verifier adapter — property-check findings recorded as 'formal'
+# --------------------------------------------------------------------------- #
+def test_formal_scan_records_findings(staged_env, tmp_path, monkeypatch):
+    aid = _new_assessment(staged_env)
+    staged = tmp_path / "x"
+    app_py = staged / "app.py"  # absolute path, as verify_project reports
+    # Mirror formal_verifier.verify_project output: file_results -> check_results.
+    # Two property checks flag defects; the advisory cui_marking check is ignored.
+    payload = (
+        '{"project_dir":"' + str(staged).replace("\\", "/") + '","file_results":[{'
+        '"file":' + repr(str(app_py)).replace("'", '"') + ','
+        '"check_results":['
+        '{"check_name":"sql_injection_immunity","check_category":"security",'
+        '"severity":"critical","findings":[{"line":12,"description":"f-string in SQL execute","severity":"critical"}]},'
+        '{"check_name":"dangerous_patterns","check_category":"security",'
+        '"severity":"high","findings":[{"line":20,"description":"eval() usage","severity":"warning"}]},'
+        '{"check_name":"cui_marking_presence","check_category":"compliance",'
+        '"severity":"warning","findings":[{"description":"No CUI marking found"}]}'
+        ']}]}'
+    )
+    monkeypatch.setattr(scanners, "_invoke_scanner", _canned(payload))
+
+    result = scanners.run_formal_scan(aid, staged_path=str(staged))
+    assert result["scanner"] == "formal"
+    assert result["success"] is True
+    # Two property findings recorded; the advisory cui_marking finding is excluded.
+    assert result["findings_persisted"] == 2
+
+    rows = _findings(aid)
+    assert {r["source_scanner"] for r in rows} == {"formal"}
+    assert {r["finding_type"] for r in rows} == {"dangerous_api"}
+    by_line = {r["line"]: r for r in rows}
+    assert by_line[12]["severity"] == "critical"
+    assert by_line[20]["severity"] == "medium"      # warning -> medium
+    assert by_line[12]["file_path"] == "app.py"      # relativized to staged root
+    assert "sql_injection_immunity" in by_line[12]["detail"]
+
+
+def test_formal_scan_clean_tree_records_nothing(staged_env, tmp_path, monkeypatch):
+    aid = _new_assessment(staged_env)
+    # verify_project found files but every check passed (no findings).
+    payload = '{"file_results":[{"file":"main.py","check_results":[' \
+              '{"check_name":"dangerous_patterns","severity":"info","findings":[]}]}]}'
+    monkeypatch.setattr(scanners, "_invoke_scanner", _canned(payload))
+
+    result = scanners.run_formal_scan(aid, staged_path=str(tmp_path / "x"))
+    assert result["success"] is True
+    assert result["findings_persisted"] == 0
+    assert _findings(aid) == []
+
+
+# --------------------------------------------------------------------------- #
+# container adapter — conditional: no-op without a Dockerfile, scans with one
+# --------------------------------------------------------------------------- #
+def test_container_scan_noop_without_dockerfile(staged_env, tmp_path, monkeypatch):
+    aid = _new_assessment(staged_env)
+    staged = tmp_path / "plain_pkg"
+    staged.mkdir(parents=True)
+    (staged / "main.py").write_text("print('hi')\n", encoding="utf-8")
+
+    # _invoke_scanner must never be called when there is no Dockerfile.
+    def _boom(cmd, timeout):
+        raise AssertionError("container scanner invoked despite no Dockerfile")
+
+    monkeypatch.setattr(scanners, "_invoke_scanner", _boom)
+
+    result = scanners.run_container_scan(aid, staged_path=str(staged))
+    assert result["scanner"] == "container"
+    assert result["success"] is True
+    assert result["skipped"] is True
+    assert result["findings_persisted"] == 0
+    assert result["error"] is None
+    assert _findings(aid) == []
+
+
+def test_container_scan_records_dockerfile_findings(staged_env, tmp_path, monkeypatch):
+    aid = _new_assessment(staged_env)
+    staged = tmp_path / "containerized"
+    staged.mkdir(parents=True)
+    (staged / "Dockerfile").write_text(
+        "FROM python:latest\nADD . /app\n", encoding="utf-8"
+    )
+
+    df_path = str(staged / "Dockerfile")
+    payload = (
+        '{"dockerfile_scan":{"tool":"dockerfile-analyzer","file":' + repr(df_path).replace("'", '"') + ','
+        '"findings":['
+        '{"check_id":"DS001","name":"Running as root","description":"no USER",'
+        '"severity":"HIGH","line":0,"line_content":"(no USER directive found)"},'
+        '{"check_id":"DS007","name":"Secrets in ENV","description":"secret",'
+        '"severity":"HIGH","line":3,"line_content":"ENV API_KEY=..."}]}}'
+    )
+    fake = _canned(payload)
+    monkeypatch.setattr(scanners, "_invoke_scanner", fake)
+
+    result = scanners.run_container_scan(aid, staged_path=str(staged))
+    assert result["success"] is True
+    assert "skipped" not in result        # a real scan, not the no-op path
+    assert result["findings_persisted"] == 2
+    # The adapter targeted container_scanner.py with the discovered Dockerfile.
+    assert any("container_scanner.py" in c for c in fake.cmd)
+    assert "--dockerfile" in fake.cmd
+
+    rows = _findings(aid)
+    assert {r["source_scanner"] for r in rows} == {"container"}
+    # DS007 (secret in ENV) -> finding_type 'secret'; DS001 -> 'dangerous_api'.
+    assert {r["finding_type"] for r in rows} == {"dangerous_api", "secret"}
+    for r in rows:
+        assert r["severity"] == "high"   # HIGH -> high
+
+
+def test_container_scan_with_image_runs_trivy_path(staged_env, tmp_path, monkeypatch):
+    """An explicit image ref triggers the scan even without a Dockerfile."""
+    aid = _new_assessment(staged_env)
+    staged = tmp_path / "img_only"
+    staged.mkdir(parents=True)
+
+    payload = (
+        '{"image_scan":{"tool":"trivy","image":"myapp:latest","findings":['
+        '{"target":"myapp","vulnerability_id":"CVE-2021-1234","package":"openssl",'
+        '"installed_version":"1.1.1","fixed_version":"1.1.1k","severity":"CRITICAL",'
+        '"title":"buffer overflow"}]}}'
+    )
+    fake = _canned(payload)
+    monkeypatch.setattr(scanners, "_invoke_scanner", fake)
+
+    result = scanners.run_container_scan(aid, staged_path=str(staged), image="myapp:latest")
+    assert result["success"] is True
+    assert result["findings_persisted"] == 1
+    assert "--image" in fake.cmd
+
+    (r,) = _findings(aid)
+    assert r["source_scanner"] == "container"
+    assert r["finding_type"] == "vuln_dependency"
+    assert r["severity"] == "critical"
+    assert r["file_path"] == "openssl==1.1.1"
+    assert r["line"] is None
+
+
+# --------------------------------------------------------------------------- #
+# scan_all — opt-in scanners stay out unless enabled, then participate
+# --------------------------------------------------------------------------- #
+def test_scan_all_omits_optin_scanners_by_default(staged_env, monkeypatch):
+    aid = _new_assessment(staged_env)
+    monkeypatch.setattr(
+        scanners,
+        "_invoke_scanner",
+        _dispatch_fake(
+            secret_json='{"findings":[]}',
+            dep_json='{"results":{}}',
+            sast_json='{"all_findings":[]}',
+        ),
+    )
+    # Real config has formal/container off -> they must not appear in the report.
+    result = scanners.scan_all(aid, staged_path="/quarantine/x")
+    assert "formal" not in result["scanners"]
+    assert "container" not in result["scanners"]
+
+
+def test_scan_all_runs_formal_when_enabled(staged_env, tmp_path, monkeypatch):
+    aid = _new_assessment(staged_env)
+    staged = tmp_path / "x"
+    payload = (
+        '{"file_results":[{"file":"a.py","check_results":['
+        '{"check_name":"dangerous_patterns","severity":"high",'
+        '"findings":[{"line":3,"description":"exec() usage","severity":"critical"}]}]}]}'
+    )
+
+    def _fake(cmd, timeout):
+        joined = " ".join(cmd)
+        if "formal_verifier" in joined:
+            return 0, payload, ""
+        if "secret_detector.py" in joined:
+            return 0, '{"findings":[]}', ""
+        if "dependency_auditor.py" in joined:
+            return 0, '{"results":{}}', ""
+        return 0, '{"all_findings":[]}', ""
+
+    monkeypatch.setattr(scanners, "_invoke_scanner", _fake)
+    # Enable formal via config; container stays off.
+    monkeypatch.setattr(
+        scanners,
+        "_load_config",
+        lambda: {"scanners": {"sast": True, "secrets": True, "deps": True, "formal": True}},
+    )
+
+    result = scanners.scan_all(aid, staged_path=str(staged))
+    assert "formal" in result["scanners"]
+    assert result["scanners"]["formal"]["findings_persisted"] == 1
+    assert "container" not in result["scanners"]  # still off
+    assert any(r["source_scanner"] == "formal" for r in _findings(aid))

@@ -15,6 +15,13 @@ ones and normalize:
         ``finding_type='secret'``.
   * ``tools/security/dependency_auditor.py``— pip-audit / npm-audit / etc. SCA;
         ``source_scanner='deps'``, ``finding_type='vuln_dependency'``.
+  * ``tools/analysis/formal_verifier.py``   — property checks (SQLi immunity,
+        dangerous patterns, input validation); ``source_scanner='formal'``,
+        ``finding_type='dangerous_api'``. Opt-in (slow); off by default.
+  * ``tools/security/container_scanner.py`` — Dockerfile analysis + trivy image
+        scan; ``source_scanner='container'``. Runs **only** when a Dockerfile/image
+        is present in the quarantined tree (else a clean no-op). Opt-in; off by
+        default.
 
 SECURITY INVARIANTS (consistent with ingest.py — the SIPA static-only contract):
   * **Never executes target code.** Each adapter runs a *scanner* against the
@@ -67,6 +74,9 @@ logger = logging.getLogger("icdev.integrity.scanners")
 _SAST_RUNNER = BASE_DIR / "tools" / "security" / "sast_runner.py"
 _SECRET_DETECTOR = BASE_DIR / "tools" / "security" / "secret_detector.py"
 _DEPENDENCY_AUDITOR = BASE_DIR / "tools" / "security" / "dependency_auditor.py"
+_CONTAINER_SCANNER = BASE_DIR / "tools" / "security" / "container_scanner.py"
+# formal_verifier exposes multi-check verify_project(); reached via `python -c`
+# (the module CLI is per-file/dir but we want the aggregated project sweep).
 
 # Per-scanner subprocess wall-clock cap (seconds). A scan that hangs is killed,
 # never left running. Overridable via integrity_config.yaml ``scan_timeout``.
@@ -309,6 +319,125 @@ def _normalize_deps(payload: dict, root: Path) -> list[dict]:
     return out
 
 
+# Formal-verifier checks we fold into findings — the property checks that flag a
+# concrete security defect. Advisory/metric checks (cui_marking_presence,
+# invariant_detection, property_suggestions) are intentionally excluded: they are
+# not "unauthorized/malicious code" signals and would just be noise.
+_FORMAL_FINDING_CHECKS = {
+    "sql_injection_immunity",
+    "dangerous_patterns",
+    "input_validation",
+}
+
+
+def _normalize_formal(payload: dict, root: Path) -> list[dict]:
+    """``formal_verifier`` output -> normalized findings (finding_type='dangerous_api').
+
+    Accepts both the project sweep shape ``{"file_results": [{file, check_results}]}``
+    and a single-file shape ``{file, check_results}``. Only the property checks in
+    :data:`_FORMAL_FINDING_CHECKS` contribute findings; each contained finding maps
+    to one ``integrity_findings`` row with ``source_scanner='formal'``. Severity
+    comes from the per-finding severity (``warning``->``medium`` via the alias
+    table), falling back to the check's severity.
+    """
+    out = []
+    file_results = payload.get("file_results")
+    if file_results is None:
+        # single-file shape — treat the payload itself as one file result.
+        file_results = [payload] if payload.get("check_results") else []
+    for fr in file_results or []:
+        fpath = fr.get("file") or fr.get("file_path")
+        for chk in fr.get("check_results", []) or []:
+            name = chk.get("check_name", "")
+            if name not in _FORMAL_FINDING_CHECKS:
+                continue
+            for f in chk.get("findings", []) or []:
+                detail = {
+                    "check": name,
+                    "category": chk.get("check_category", ""),
+                    "description": f.get("description", ""),
+                    "text": f.get("text", ""),
+                    "function": f.get("function", ""),
+                }
+                out.append(
+                    {
+                        "source_scanner": "formal",
+                        "finding_type": "dangerous_api",
+                        "severity": _norm_severity(
+                            f.get("severity") or chk.get("severity"), default="medium"
+                        ),
+                        "file_path": _rel(fpath, root),
+                        "line": _to_int(f.get("line")),
+                        "detail": detail,
+                    }
+                )
+    return out
+
+
+def _normalize_container(payload: dict, root: Path) -> list[dict]:
+    """``container_scanner`` CLI output -> normalized findings.
+
+    The CLI emits ``{"dockerfile_scan": {findings:[...]}, "image_scan": {findings:[...]}}``
+    (either key may be absent depending on what was scanned):
+
+      * Dockerfile static findings (running-as-root, ADD-vs-COPY, …) ->
+        ``finding_type='dangerous_api'``; the ``DS007`` secrets-in-ENV check maps to
+        ``finding_type='secret'`` since it is a credential exposure.
+      * trivy image vulnerabilities -> ``finding_type='vuln_dependency'`` with the
+        package coordinate carried in ``file_path`` (no source line for a CVE).
+
+    Both land as ``source_scanner='container'``.
+    """
+    out = []
+
+    df = payload.get("dockerfile_scan") or {}
+    df_file = df.get("file")
+    for f in df.get("findings", []) or []:
+        ftype = "secret" if f.get("check_id") == "DS007" else "dangerous_api"
+        detail = {
+            "check_id": f.get("check_id", ""),
+            "name": f.get("name", ""),
+            "description": f.get("description", ""),
+            "line_content": f.get("line_content", ""),
+        }
+        out.append(
+            {
+                "source_scanner": "container",
+                "finding_type": ftype,
+                "severity": _norm_severity(f.get("severity"), default="low"),
+                "file_path": _rel(df_file, root),
+                "line": _to_int(f.get("line")),
+                "detail": detail,
+            }
+        )
+
+    img = payload.get("image_scan") or {}
+    for f in img.get("findings", []) or []:
+        pkg = f.get("package", "")
+        ver = f.get("installed_version", "")
+        coord = f"{pkg}=={ver}" if pkg and ver else (pkg or _rel(f.get("target"), root))
+        detail = {
+            "vulnerability_id": f.get("vulnerability_id", ""),
+            "package": pkg,
+            "installed_version": ver,
+            "fixed_version": f.get("fixed_version", ""),
+            "title": f.get("title", ""),
+            "primary_url": f.get("primary_url", ""),
+            "cvss_score": f.get("cvss_score"),
+        }
+        out.append(
+            {
+                "source_scanner": "container",
+                "finding_type": "vuln_dependency",
+                "severity": _norm_severity(f.get("severity"), default="info"),
+                "file_path": coord,
+                "line": None,
+                "detail": detail,
+            }
+        )
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Persistence
 # --------------------------------------------------------------------------- #
@@ -439,12 +568,126 @@ def run_dependency_scan(assessment_id: int, staged_path: Optional[str] = None, c
     ))
 
 
+def run_formal_scan(assessment_id: int, staged_path: Optional[str] = None, conn: Any = None) -> dict:
+    """Shell out to ``formal_verifier.verify_project`` over the quarantined tree.
+
+    Runs the property checks (SQL-injection immunity, dangerous patterns, input
+    validation) across every ``.py`` file in the staged tree and folds the flagged
+    defects into ``integrity_findings`` as ``source_scanner='formal'`` /
+    ``finding_type='dangerous_api'``. Opt-in (``scanners.formal`` defaults off) — it
+    is slower than the regex scanners. Disabled scanners are skipped, never failed.
+    """
+    staged = _staged_dir(assessment_id, staged_path)
+    # `python -c` to reach the aggregated verify_project() sweep. Fixed arg list;
+    # the staged path is argv[1], never interpolated into the snippet.
+    cmd = [
+        sys.executable,
+        "-c",
+        "import json,sys;from tools.analysis.formal_verifier import verify_project;"
+        "print(json.dumps(verify_project(sys.argv[1]), default=str))",
+        str(staged),
+    ]
+    return _with_conn(conn, lambda c: _run_adapter(
+        "formal", cmd, _normalize_formal, assessment_id, staged, c
+    ))
+
+
+def _find_dockerfiles(staged: Path) -> list[Path]:
+    """Locate Dockerfiles in the quarantined tree (``Dockerfile``, ``Dockerfile.*``,
+    ``*.Dockerfile``; case-insensitive). Returns ``[]`` when the tree is absent or
+    holds no container recipe — the signal the container adapter no-ops on."""
+    found: list[Path] = []
+    if not staged.exists():
+        return found
+    excludes = {".git", "__pycache__", "node_modules", ".venv", "venv", ".tmp"}
+    for root, dirs, files in os.walk(staged):
+        dirs[:] = [d for d in dirs if d not in excludes]
+        for fn in files:
+            low = fn.lower()
+            if low == "dockerfile" or low.startswith("dockerfile.") or low.endswith(".dockerfile"):
+                found.append(Path(root) / fn)
+    return found
+
+
+def run_container_scan(
+    assessment_id: int,
+    staged_path: Optional[str] = None,
+    conn: Any = None,
+    image: Optional[str] = None,
+) -> dict:
+    """Conditionally scan container artifacts in the quarantined tree.
+
+    The container scan runs **only when a Dockerfile is present** in the staged
+    tree (or an explicit ``image`` reference is supplied). When neither exists this
+    is a clean **no-op** — ``success=True``, zero findings, ``skipped=True`` — never
+    a failure: most quarantined sources are not containerized. When a Dockerfile is
+    present, ``container_scanner.py`` analyzes it (and trivy scans ``image`` if
+    given); findings land as ``source_scanner='container'``. Opt-in
+    (``scanners.container`` defaults off; requires trivy for image scans).
+    """
+    staged = _staged_dir(assessment_id, staged_path)
+    dockerfiles = _find_dockerfiles(staged)
+
+    if not dockerfiles and not image:
+        return {
+            "scanner": "container",
+            "success": True,
+            "findings_persisted": 0,
+            "finding_ids": [],
+            "error": None,
+            "skipped": True,
+            "reason": "no Dockerfile or image in quarantined tree",
+        }
+
+    def _body(c: Any) -> dict:
+        timeout = _scan_timeout(_load_config())
+        targets: list[list[str]] = [["--dockerfile", str(p)] for p in dockerfiles]
+        if image:
+            targets.append(["--image", image])
+
+        normalized: list[dict] = []
+        errors: list[str] = []
+        for target in targets:
+            cmd = [sys.executable, str(_CONTAINER_SCANNER), *target, "--json"]
+            rc, stdout, stderr = _invoke_scanner(cmd, timeout)
+            payload = _parse_json(stdout)
+            if payload is None:
+                errors.append(f"{target[0]} {target[1]}: " + (stderr or "no output").strip()[:160])
+                continue
+            normalized.extend(_normalize_container(payload, staged))
+
+        finding_ids = _persist(c, assessment_id, normalized)
+        return {
+            "scanner": "container",
+            "success": not errors,
+            "findings_persisted": len(finding_ids),
+            "finding_ids": finding_ids,
+            "error": "; ".join(errors)[:500] or None,
+            "dockerfiles_scanned": len(dockerfiles),
+        }
+
+    return _with_conn(conn, _body)
+
+
 # Map a scanner key (matches integrity_config.yaml ``scanners`` toggles and
 # constants.FINDING_SCANNERS) to its adapter.
 _ADAPTERS = {
     "sast": run_sast_scan,
     "secrets": run_secret_scan,
     "deps": run_dependency_scan,
+    "formal": run_formal_scan,
+    "container": run_container_scan,
+}
+
+# Default participation in ``scan_all`` when a toggle is absent from config. The
+# regex/SCA scanners default on; the heavier opt-in scanners (formal, container)
+# default off so they only run when explicitly enabled.
+_DEFAULT_TOGGLES = {
+    "sast": True,
+    "secrets": True,
+    "deps": True,
+    "formal": False,
+    "container": False,
 }
 
 
@@ -471,15 +714,21 @@ def scan_all(assessment_id: int, staged_path: Optional[str] = None, conn: Any = 
         per_scanner: dict[str, dict] = {}
         all_ids: list[int] = []
         for name, adapter in _ADAPTERS.items():
-            if toggles.get(name, True) is False:
-                per_scanner[name] = {
-                    "scanner": name,
-                    "success": True,
-                    "findings_persisted": 0,
-                    "finding_ids": [],
-                    "error": None,
-                    "skipped": True,
-                }
+            default = _DEFAULT_TOGGLES.get(name, True)
+            enabled = toggles.get(name, default)
+            if not enabled:
+                # A default-on scanner that is explicitly disabled is recorded as
+                # skipped (visibility). An opt-in scanner (default off) that was not
+                # turned on is omitted entirely so it doesn't clutter the report.
+                if default:
+                    per_scanner[name] = {
+                        "scanner": name,
+                        "success": True,
+                        "findings_persisted": 0,
+                        "finding_ids": [],
+                        "error": None,
+                        "skipped": True,
+                    }
                 continue
             result = adapter(assessment_id, staged_path=staged_path, conn=conn)
             per_scanner[name] = result
