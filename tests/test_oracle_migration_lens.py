@@ -5,7 +5,6 @@ Covers _MigrationAnomalyThresholds (IQR + config-driven fallbacks)
 and MigrationLens.score() prediction generation.
 """
 import json
-import pytest
 
 from tools.oracle.lenses.lens_migration import _MigrationAnomalyThresholds, MigrationLens
 

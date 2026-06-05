@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -98,7 +97,7 @@ class TestComputeAdaptiveCap:
         with patch("tools.genesis.reflexes.ingest.get_connection") as mock_gc:
             mock_gc.return_value = self._mock_conn(daily)
             # current_batch_size = 200 → z_score >> 2
-            cap_normal = _compute_adaptive_cap.__wrapped__(daily, 12) if hasattr(_compute_adaptive_cap, "__wrapped__") else None
+            _cap_normal = _compute_adaptive_cap.__wrapped__(daily, 12) if hasattr(_compute_adaptive_cap, "__wrapped__") else None
             cap_anomalous = _compute_adaptive_cap("feed", 200)
 
         # Just verify it's capped, not that it equals a specific value

@@ -1,5 +1,4 @@
 """Tests for AnomalyDetector and updated ConvergenceGate in tools/genesis/convergence.py."""
-import hashlib
 import statistics
 import sys
 from pathlib import Path

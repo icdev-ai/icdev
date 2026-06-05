@@ -18,7 +18,6 @@ Covers the LLM anomaly narrative (aiify-rm-ff651-phase-5371):
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -285,7 +284,7 @@ class TestGenerateReportUsesAdaptiveThresholds:
             result = m.generate_report(lookback_days=7)
 
         # With 50% failure but threshold=0.60, no "High failure rate" line should appear
-        report_text = (tmp_path / result["file"].split("/")[-1].split("\\")[-1]).read_text(encoding="utf-8") if result.get("file") else ""
+        _report_text = (tmp_path / result["file"].split("/")[-1].split("\\")[-1]).read_text(encoding="utf-8") if result.get("file") else ""
         # The key assertion: _compute_adaptive_thresholds was called (not bypassed)
         assert result["status"] == "generated"
 

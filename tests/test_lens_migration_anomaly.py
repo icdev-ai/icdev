@@ -1,7 +1,6 @@
 # CUI // SP-CTI
 """Tests for MigrationLens anomaly detection — IQR thresholds and confidence levels."""
 
-import pytest
 from tools.oracle.lenses.lens_migration import _MigrationAnomalyThresholds
 
 

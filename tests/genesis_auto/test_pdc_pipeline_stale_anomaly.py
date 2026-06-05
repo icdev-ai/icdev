@@ -102,6 +102,6 @@ def test_llm_assess_staleness_graceful_on_unavailable_llm(monkeypatch):
     monkeypatch.setattr(mod, "_llm_assess_staleness", _fail)
     # _llm_assess_staleness is patched to raise; run() must still complete
     # (run() catches the exception from _llm_assess_staleness inside try/except)
-    pipelines = [{"id": "p1", "name": "test", "days_since_update": 99}]
+    _pipelines = [{"id": "p1", "name": "test", "days_since_update": 99}]
     result = mod._compute_anomaly_threshold([99])
     assert result >= 14

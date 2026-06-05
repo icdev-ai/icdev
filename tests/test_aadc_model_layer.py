@@ -7,7 +7,6 @@ All LLM and RAG provider calls are mocked so the suite runs offline.
 
 import json
 import sys
-import types
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -25,7 +24,6 @@ from tools.agentic_ai_canvas.model_layer import (
     RankedChunk,
     ReRanker,
     SynthesisLLM,
-    SynthesisResult,
 )
 
 

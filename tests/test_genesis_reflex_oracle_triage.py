@@ -2,7 +2,6 @@
 """Tests for tools/genesis/reflexes/oracle_triage.py — NLP extractor modernization."""
 from __future__ import annotations
 
-import os
 import pytest
 
 
@@ -128,7 +127,6 @@ class TestNlpExtractBatchSubjectsCaching:
         ot._NLP_BATCH_SUBJECTS_CACHE[cache_key] = ["kanban_tasks", "oracle_predictions"]
 
         llm_called = []
-        original_invoke = None
 
         class FakeRouter:
             def invoke(self, *a, **kw):
@@ -156,14 +154,13 @@ class TestNlpExtractBatchSubjectsCaching:
         monkeypatch.setattr("tools.genesis.reflexes.oracle_triage.LLMRouter", FakeRouter, raising=False)
 
         try:
-            from tools.llm.router import LLMRouter as _orig
             monkeypatch.setattr("tools.llm.router.LLMRouter", FakeRouter)
         except Exception:
             pass
 
         # Directly patch within the function by providing a fake import
         import unittest.mock as mock
-        with mock.patch("tools.genesis.reflexes.oracle_triage._NLP_BATCH_SUBJECTS_CACHE", {}) as cache:
+        with mock.patch("tools.genesis.reflexes.oracle_triage._NLP_BATCH_SUBJECTS_CACHE", {}):
             with mock.patch("tools.genesis.reflexes.oracle_triage._validate_extracted_subject", return_value=True):
                 with mock.patch("tools.genesis.reflexes.oracle_triage.LLMRouter", FakeRouter, create=True):
                     pass  # Can't easily patch module-level imports here

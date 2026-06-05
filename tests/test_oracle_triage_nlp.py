@@ -6,12 +6,9 @@ and fallback), plus the gate behaviour of _nlp_extract_subject.
 """
 from __future__ import annotations
 
-import os
 import sys
-from typing import Optional
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 # Ensure repo root on path for import without installing the package.
 _REPO = str(__import__("pathlib").Path(__file__).resolve().parent.parent)
@@ -19,7 +16,6 @@ if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
 from tools.genesis.reflexes.oracle_triage import (
-    _LENS_VALIDATORS,
     _extract_subject,
     _validate_extracted_subject,
 )

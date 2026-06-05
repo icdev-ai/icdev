@@ -3,11 +3,9 @@
 import json
 import os
 import tempfile
-from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 import tools.genesis.reflexes.bgp_alerter_ingest as mod
 
@@ -71,7 +69,7 @@ class TestDescMaxLen:
     def test_env_override_desc_max_len(self, monkeypatch):
         monkeypatch.setenv("BGPALERTER_DESC_MAX_LEN", "200")
         # Reimport to pick up env override at module level; test via helper
-        result = mod._truncate_desc("x" * 400, mod.BGPALERTER_DESC_MAX_LEN)
+        _result = mod._truncate_desc("x" * 400, mod.BGPALERTER_DESC_MAX_LEN)
         # The module constant won't change after import; just test helper
         assert len(mod._truncate_desc("x" * 400, 200)) == 200
 

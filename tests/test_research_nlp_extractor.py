@@ -8,12 +8,9 @@ Covers:
 - Cache hit avoids second LLM call
 - html_scrape feed integration: NLP path used when enabled, regex fallback when disabled
 """
-import importlib
 import sys
-import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 
 # ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ Covers the hardcoded_threshold → config migration:
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -95,7 +95,7 @@ class TestAnomalyDetectorPrompt:
         detector._router = FakeRouter()
         detector._LLMRequest = FakeRequest
 
-        result = detector._llm_classify(
+        _result = detector._llm_classify(
             {"module_import": 2}, {"module_import": 2}, None
         )
         assert len(captured_requests) == 1

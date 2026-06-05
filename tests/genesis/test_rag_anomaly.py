@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -15,10 +14,8 @@ from tools.rag.crag_evaluator import (
     _ENTITY_HEAD_THRESHOLD,
     _ENTITY_TORSO_THRESHOLD,
     _ACCEPTABLE_WORD_OVERLAP,
-    _ACCEPTABLE_SHORT_GT_WORDS,
     _LLM_MAX_TOKENS,
     _LLM_TEMPERATURE,
-    _DEFAULT_FALLBACK_CONFIDENCE,
     _GATE_THRESHOLD,
     _HEURISTIC_CONFIDENCE_HIGH,
     _HEURISTIC_CONFIDENCE_MID,
@@ -139,7 +136,7 @@ class TestCRAGScorerConstants:
         assert r["score"] in (CRAG_SCORES["perfect"], CRAG_SCORES["acceptable"])
 
     def test_entity_popularity_head(self):
-        r = self.scorer.classify_entity_popularity.__wrapped__(
+        _r = self.scorer.classify_entity_popularity.__wrapped__(
             self.scorer, "NIST 800-53"
         ) if hasattr(self.scorer.classify_entity_popularity, "__wrapped__") else None
         # Just test the thresholds directly

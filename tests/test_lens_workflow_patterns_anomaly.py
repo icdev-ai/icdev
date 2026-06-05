@@ -10,7 +10,6 @@ Covers:
 from __future__ import annotations
 
 import json
-import unittest
 from unittest.mock import MagicMock, patch
 
 import pytest

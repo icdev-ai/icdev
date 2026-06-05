@@ -1,10 +1,8 @@
 # CUI // SP-CTI
 """Tests for cyber_feed_refresh anomaly detection cooldown logic."""
 import json
-import unittest
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 
 def _make_conn(rows):
@@ -33,7 +31,6 @@ def _result_json(nvd=0, kev=0, skipped=False):
 # Import under test
 # ---------------------------------------------------------------------------
 from tools.genesis.reflexes.cyber_feed_refresh import (  # noqa: E402
-    ANOMALY_Z_THRESHOLD,
     DEFAULT_COOLDOWN_HOURS,
     MAX_COOLDOWN_HOURS,
     MIN_COOLDOWN_HOURS,
