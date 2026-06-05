@@ -350,7 +350,8 @@ def _deterministic_recommendation(health_score, cpi, spi, cpars_rating, option) 
 
 
 if __name__ == "__main__":
-    import argparse, json as _json
+    import argparse
+    import json as _json
 
     parser = argparse.ArgumentParser(description="Option Period Tracker CLI")
     parser.add_argument("--list", metavar="CONTRACT_ID")

@@ -432,3 +432,41 @@ def api_autotune_evaluate():
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# IQE — natural-language query over AISG collections
+# ---------------------------------------------------------------------------
+
+@bp.route("/api/aisg/iqe-query", methods=["POST"])
+def api_iqe_query():
+    """Translate a plain-English question to IQE and execute it over the AISG
+    collections (aisg.roadmaps / aisg.skills / aisg.roi / aisg.patterns)."""
+    import importlib
+
+    data = request.get_json(force=True, silent=True) or {}
+    question = (data.get("question") or "").strip()
+    execute = data.get("execute", True)
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    collections = ["aisg.roadmaps", "aisg.skills", "aisg.roi", "aisg.patterns"]
+    iqe_str = ""
+    try:
+        importlib.import_module("tools.iqe.adapters.aisg")  # register collections
+        from tools.iqe.executor import execute_query
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import parse as _parse
+
+        result = nl_to_iqe(question, collections)
+        iqe_str = result.get("iqe", "")
+        explanation = result.get("explanation", "")
+        rows = execute_query(_parse(iqe_str), conn=None) if execute else []
+        return jsonify({
+            "iqe": iqe_str,
+            "explanation": explanation,
+            "results": rows,
+            "row_count": len(rows),
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "iqe": iqe_str}), 500

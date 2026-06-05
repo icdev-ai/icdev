@@ -117,31 +117,35 @@ def _scan_github_trending(config: dict) -> List[dict]:
     """Delegate to existing web_scanner for GitHub trending."""
     findings = []
     try:
-        from tools.innovation.web_scanner import scan_github
+        from tools.innovation.web_scanner import _load_config, scan_github
 
-        results = scan_github()
-        if isinstance(results, dict):
+        results = scan_github(_load_config())
+        if isinstance(results, list):
+            signals = results
+        elif isinstance(results, dict):
             signals = results.get("signals", results.get("results", []))
-            if isinstance(signals, list):
-                for sig in signals[:30]:
-                    title = sig.get("title", sig.get("name", ""))
-                    desc = sig.get("description", sig.get("body", ""))
-                    url = sig.get("url", sig.get("html_url", ""))
-                    combined = f"{title} {desc}"
-                    score = _score_relevance(combined)
-                    stars = sig.get("stars", sig.get("stargazers_count", 0))
-                    findings.append(
-                        _finding(
-                            category="github_trending",
-                            title=title,
-                            description=desc[:300] if desc else "",
-                            url=url,
-                            score=score,
-                            severity="high" if score >= 0.8 else "medium" if score >= 0.5 else "low",
-                            action="Evaluate for ICDEV™ integration" if score >= 0.6 else "",
-                            meta={"stars": stars, "source_type": "github"},
-                        )
+        else:
+            signals = []
+        if isinstance(signals, list):
+            for sig in signals[:30]:
+                title = sig.get("title", sig.get("name", ""))
+                desc = sig.get("description", sig.get("body", ""))
+                url = sig.get("url", sig.get("html_url", ""))
+                combined = f"{title} {desc}"
+                score = _score_relevance(combined)
+                stars = sig.get("stars", sig.get("stargazers_count", 0))
+                findings.append(
+                    _finding(
+                        category="github_trending",
+                        title=title,
+                        description=desc[:300] if desc else "",
+                        url=url,
+                        score=score,
+                        severity="high" if score >= 0.8 else "medium" if score >= 0.5 else "low",
+                        action="Evaluate for ICDEV™ integration" if score >= 0.6 else "",
+                        meta={"stars": stars, "source_type": "github"},
                     )
+                )
     except Exception as exc:
         findings.append(
             _finding(
@@ -159,29 +163,33 @@ def _scan_hackernews(config: dict) -> List[dict]:
     """Delegate to existing web_scanner for HackerNews."""
     findings = []
     try:
-        from tools.innovation.web_scanner import scan_hackernews
+        from tools.innovation.web_scanner import _load_config, scan_hackernews
 
-        results = scan_hackernews()
-        if isinstance(results, dict):
+        results = scan_hackernews(_load_config())
+        if isinstance(results, list):
+            signals = results
+        elif isinstance(results, dict):
             signals = results.get("signals", results.get("results", []))
-            if isinstance(signals, list):
-                for sig in signals[:20]:
-                    title = sig.get("title", "")
-                    url = sig.get("url", "")
-                    score = _score_relevance(title)
-                    hn_score = sig.get("score", sig.get("points", 0))
-                    findings.append(
-                        _finding(
-                            category="hackernews",
-                            title=title,
-                            description=f"HN score: {hn_score}",
-                            url=url,
-                            score=score,
-                            severity="medium" if score >= 0.5 else "low",
-                            action="Read and evaluate for ICDEV™ relevance" if score >= 0.6 else "",
-                            meta={"hn_score": hn_score, "source_type": "hackernews"},
-                        )
+        else:
+            signals = []
+        if isinstance(signals, list):
+            for sig in signals[:20]:
+                title = sig.get("title", "")
+                url = sig.get("url", "")
+                score = _score_relevance(title)
+                hn_score = sig.get("score", sig.get("points", 0))
+                findings.append(
+                    _finding(
+                        category="hackernews",
+                        title=title,
+                        description=f"HN score: {hn_score}",
+                        url=url,
+                        score=score,
+                        severity="medium" if score >= 0.5 else "low",
+                        action="Read and evaluate for ICDEV™ relevance" if score >= 0.6 else "",
+                        meta={"hn_score": hn_score, "source_type": "hackernews"},
                     )
+                )
     except Exception as exc:
         findings.append(
             _finding(
@@ -265,15 +273,23 @@ def _scan_arxiv(config: dict) -> List[dict]:
         ],
     )
 
-    cat_query = "+OR+".join(f"cat:{c}" for c in categories)
-    kw_query = "+OR+".join(f'all:"{k}"' for k in keywords[:5])
-    query = f"({cat_query})+AND+({kw_query})"
+    cat_query = " OR ".join(f"cat:{c}" for c in categories)
+    kw_query = " OR ".join(f'all:"{k}"' for k in keywords[:5])
+    search_query = f"({cat_query}) AND ({kw_query})"
 
-    url = (
-        f"https://export.arxiv.org/api/query?"
-        f"search_query={query}&start=0&max_results={max_results}"
-        f"&sortBy=submittedDate&sortOrder=descending"
+    # urlencode percent-encodes spaces/quotes/parens so the arXiv API accepts
+    # multi-word phrases like all:"autonomous agent" (literal spaces in the URL
+    # raise "URL can't contain control characters").
+    params = urllib.parse.urlencode(
+        {
+            "search_query": search_query,
+            "start": 0,
+            "max_results": max_results,
+            "sortBy": "submittedDate",
+            "sortOrder": "descending",
+        }
     )
+    url = f"https://export.arxiv.org/api/query?{params}"
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "ICDEV-Scout/1.0 (autonomous research scanner)"})

@@ -1821,3 +1821,165 @@ def cpmp_iqe_query():
         return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
     except Exception as exc:
         return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+
+# ---------------------------------------------------------------------------
+# Initiative Budget Allocation Routes
+# Tier 1 (execution-ready) / Tier 2 (backup) prioritization with obligation tracking.
+# ---------------------------------------------------------------------------
+
+
+@cpmp_api.route("/budget-allocations", methods=["GET"])
+def list_budget_allocations():
+    """List initiative budget allocations with optional tier/fy/status filters."""
+    from tools.budget.initiative_allocator import (
+        list_allocations, AllocationTier, AllocationStatus,
+    )
+    tier = request.args.get("tier")
+    fy = request.args.get("fiscal_year", type=int)
+    status = request.args.get("status")
+    kwargs = {}
+    if tier in ("tier_1", "tier_2"):
+        kwargs["tier"] = AllocationTier(tier)
+    if fy is not None:
+        kwargs["fiscal_year"] = fy
+    if status in ("active", "depleted", "deferred", "cancelled"):
+        kwargs["status"] = AllocationStatus(status)
+    return jsonify({"ok": True, "allocations": list_allocations(**kwargs)})
+
+
+@cpmp_api.route("/budget-allocations", methods=["POST"])
+def create_budget_allocation():
+    """Create a new budget allocation for an initiative."""
+    from tools.budget.initiative_allocator import create_allocation, AllocationTier
+    data = request.get_json(silent=True) or {}
+    try:
+        tier = AllocationTier(data.get("tier", "tier_1"))
+        alloc = create_allocation(
+            initiative_code=data.get("initiative_code", ""),
+            title=data.get("title", ""),
+            tier=tier,
+            fiscal_year=int(data.get("fiscal_year", 0)),
+            allocated_usd=float(data.get("allocated_usd", 0.0)),
+            agency=data.get("agency", ""),
+            contract_id=data.get("contract_id"),
+            owner=data.get("owner", ""),
+            justification=data.get("justification", ""),
+        )
+        return jsonify({"ok": True, "allocation": alloc}), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>", methods=["GET"])
+def get_budget_allocation(allocation_id):
+    """Fetch a single budget allocation by ID."""
+    from tools.budget.initiative_allocator import get_allocation
+    try:
+        return jsonify({"ok": True, "allocation": get_allocation(allocation_id)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 404
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>", methods=["PUT"])
+def update_budget_allocation(allocation_id):
+    """Update mutable metadata (title, owner, allocated_usd, contract_id, etc)."""
+    from tools.budget.initiative_allocator import update_allocation
+    data = request.get_json(silent=True) or {}
+    try:
+        alloc = update_allocation(
+            allocation_id=allocation_id,
+            title=data.get("title"),
+            agency=data.get("agency"),
+            owner=data.get("owner"),
+            justification=data.get("justification"),
+            allocated_usd=data.get("allocated_usd"),
+            contract_id=data.get("contract_id"),
+        )
+        return jsonify({"ok": True, "allocation": alloc})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>", methods=["DELETE"])
+def cancel_budget_allocation(allocation_id):
+    """Soft-cancel an allocation (sets status=cancelled)."""
+    from tools.budget.initiative_allocator import delete_allocation
+    try:
+        return jsonify({"ok": True, "allocation": delete_allocation(allocation_id)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>/obligations", methods=["POST"])
+def record_budget_obligation(allocation_id):
+    """Record an obligation against an allocation. Blocks over-allocation."""
+    from tools.budget.initiative_allocator import record_obligation
+    data = request.get_json(silent=True) or {}
+    try:
+        amount = float(data.get("amount_usd", 0.0))
+        result = record_obligation(
+            allocation_id=allocation_id,
+            amount_usd=amount,
+            description=data.get("description", ""),
+            reference_id=data.get("reference_id"),
+            recorded_by=data.get("recorded_by"),
+        )
+        return jsonify({"ok": True, "allocation": result})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>/obligations", methods=["GET"])
+def list_budget_obligations(allocation_id):
+    """List all obligations for an allocation (append-only audit trail)."""
+    from tools.budget.initiative_allocator import list_obligations
+    return jsonify({"ok": True, "obligations": list_obligations(allocation_id)})
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>/transition-tier", methods=["POST"])
+def transition_budget_tier(allocation_id):
+    """Move an initiative between Tier 1 and Tier 2 with audit trail."""
+    from tools.budget.initiative_allocator import transition_tier, AllocationTier
+    data = request.get_json(silent=True) or {}
+    try:
+        target = AllocationTier(data.get("tier", "tier_1"))
+        result = transition_tier(
+            allocation_id=allocation_id,
+            new_tier=target,
+            reason=data.get("reason", ""),
+            actor=data.get("actor"),
+        )
+        return jsonify({"ok": True, "allocation": result})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>/history", methods=["GET"])
+def get_budget_allocation_history(allocation_id):
+    """Return audit history (creation, tier transitions, obligations)."""
+    from tools.budget.initiative_allocator import get_initiative_history
+    return jsonify({"ok": True, "history": get_initiative_history(allocation_id)})
+
+
+@cpmp_api.route("/budget-allocations/tier-summary", methods=["GET"])
+def get_budget_tier_summary():
+    """Aggregate allocated/obligated/available per tier for a fiscal year."""
+    from tools.budget.initiative_allocator import get_tier_summary
+    fy = request.args.get("fiscal_year", type=int)
+    return jsonify({"ok": True, "summary": get_tier_summary(fiscal_year=fy)})
+
+
+@cpmp_api.route("/budget-allocations/portfolio-status", methods=["GET"])
+def get_budget_portfolio_status():
+    """Portfolio-level budget status (warnings + overspend detection)."""
+    from tools.budget.initiative_allocator import get_portfolio_budget_status
+    fy = request.args.get("fiscal_year", type=int)
+    warn = request.args.get("warning_threshold", default=0.90, type=float)
+    crit = request.args.get("critical_threshold", default=0.98, type=float)
+    return jsonify({
+        "ok": True,
+        "status": get_portfolio_budget_status(
+            fiscal_year=fy, warning_threshold=warn, critical_threshold=crit,
+        ),
+    })

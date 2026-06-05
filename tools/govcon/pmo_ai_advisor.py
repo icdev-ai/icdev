@@ -366,7 +366,7 @@ def predict_award_fee_narrative(contract_id):
     if dims.get("schedule", 1) < 0.7:
         risk_factors.append(f"Schedule performance below threshold (SPI={evm.get('spi','N/A')})")
     if dims.get("cost", 1) < 0.7:
-        risk_factors.append(f"Cost overrun risk — CPI trending below 0.90")
+        risk_factors.append("Cost overrun risk — CPI trending below 0.90")
     if ctx.get("overdue_deliverables", 0) > 0:
         risk_factors.append(f"{ctx['overdue_deliverables']} overdue CDRL(s) will impact Quality rating")
     if ctx.get("noncompliant_subs", 0) > 0:
