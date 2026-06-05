@@ -1,0 +1,121 @@
+# CUI // SP-CTI
+"""Tests for SIPA quarantine-first ingest (tools/integrity/ingest.py).
+
+Covers the two acceptance criteria from sipa-ingest-01 — a local directory is
+staged into quarantine with an ``integrity_assessments`` row created, and a
+disallowed scheme is rejected with no row written — plus mode auto-detection,
+``file://`` resolution, missing-path refusal, and remote-fetch deferral.
+
+SQLite-backed via the shared ``icdev_db`` fixture; quarantine is redirected to a
+tmp dir so staging never touches the repo tree.
+"""
+from pathlib import Path
+
+import pytest
+
+from tools.integrity import ingest
+
+
+@pytest.fixture
+def staged_env(icdev_db, tmp_path, monkeypatch):
+    """Point get_connection() at the temp SQLite db and quarantine at tmp."""
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_INTEGRITY_QUARANTINE_DIR", str(tmp_path / "quarantine"))
+    return icdev_db
+
+
+def _make_target(tmp_path):
+    src = tmp_path / "target_pkg"
+    src.mkdir()
+    (src / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    (src / "README.md").write_text("# demo\n", encoding="utf-8")
+    return src
+
+
+def _fetch_assessment(aid):
+    from tools.db.storage import get_connection
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT source_type, status, mode, source_ref, tenant_id, classification "
+            "FROM integrity_assessments WHERE id = ?",
+            (aid,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    cols = ["source_type", "status", "mode", "source_ref", "tenant_id", "classification"]
+    return row if hasattr(row, "keys") else dict(zip(cols, row))
+
+
+def _count_assessments():
+    from tools.db.storage import get_connection
+
+    conn = get_connection()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM integrity_assessments").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_stage_local_dir_creates_row_and_quarantine(staged_env, tmp_path):
+    src = _make_target(tmp_path)
+
+    result = ingest.stage(str(src))
+
+    assert result["source_type"] == "local"
+    aid = result["assessment_id"]
+    assert aid and aid > 0
+
+    # Files copied into quarantine (never executed — only copied).
+    staged = Path(result["staged_path"])
+    assert staged.is_dir()
+    assert staged.name == str(aid)
+    assert (staged / "main.py").read_text(encoding="utf-8") == "print('hello')\n"
+    assert (staged / "README.md").exists()
+
+    # Assessment row recorded in quarantine status, provenance_blind, CUI defaults.
+    row = _fetch_assessment(aid)
+    assert row is not None
+    assert row["source_type"] == "local"
+    assert row["status"] == "quarantine"
+    assert row["mode"] == "provenance_blind"
+    assert row["tenant_id"] == "default"
+    assert row["classification"] == "CUI"
+
+
+def test_stage_rejects_disallowed_scheme(staged_env):
+    with pytest.raises(ingest.IngestRejected):
+        ingest.stage("ftp://evil.example.com/payload.tar.gz")
+    # Rejected before any row is created.
+    assert _count_assessments() == 0
+
+
+def test_stage_provenance_aware_with_provenance_handle(staged_env, tmp_path):
+    src = _make_target(tmp_path)
+    result = ingest.stage(str(src), project_id="sipa")
+    row = _fetch_assessment(result["assessment_id"])
+    assert row["mode"] == "provenance_aware"
+
+
+def test_stage_file_uri_resolves_to_local(staged_env, tmp_path):
+    src = _make_target(tmp_path)
+    result = ingest.stage(src.as_uri())  # file:///... cross-platform
+    assert result["source_type"] == "local"
+    assert (Path(result["staged_path"]) / "main.py").exists()
+
+
+def test_stage_missing_path_rejected(staged_env, tmp_path):
+    with pytest.raises(ingest.IngestRejected):
+        ingest.stage(str(tmp_path / "does_not_exist"))
+    assert _count_assessments() == 0
+
+
+def test_stage_remote_git_deferred_to_ingest_02(staged_env):
+    # Allowlisted scheme/host, but remote fetch is sipa-ingest-02's job.
+    with pytest.raises(NotImplementedError):
+        ingest.stage("https://github.com/org/repo.git")
+    assert _count_assessments() == 0
