@@ -47,6 +47,41 @@ _STOPWORD_FIELDS = frozenset(
      "value", "values", "no", "that", "which", "has", "have", "having"}
 )
 
+# Date-comparison phrase → IQE operator map for the temporal extractor. Ordered
+# most-specific-first so multi-word phrases ("on or after") win over their
+# single-word prefixes ("after"/"on"), mirroring the comparison-phrase ordering.
+_TEMPORAL_PHRASES: list[tuple[str, str]] = [
+    (r"on or after|since|starting from|starting|as of|from", ">="),
+    (r"on or before|up to|through|until|by", "<="),
+    (r"after|newer than|more recent than", ">"),
+    (r"before|older than|prior to|earlier than", "<"),
+    (r"on|dated", "=="),
+]
+
+# Identifiers accepted as the date field when one sits before a temporal phrase.
+# Anything else (e.g. a collection noun like "logs") falls back to the default.
+_TEMPORAL_FIELDS = frozenset(
+    {"created", "created_at", "modified", "modified_at", "updated",
+     "updated_at", "timestamp", "date", "time", "datetime", "logged",
+     "occurred", "happened", "last_seen", "first_seen", "start", "end",
+     "expires", "expiry", "due", "published"}
+)
+
+# Bare ISO-8601 calendar date (YYYY-MM-DD). Date-only is deterministic and
+# matches date-partitioned log semantics (the S3 yyyy/mm/dd prefix); time-of-day
+# is deliberately left to the LLM path.
+_ISO_DATE_RX = r"\d{4}-\d{2}-\d{2}"
+
+# Default field when a temporal phrase has no recognizable date field before it.
+_DEFAULT_TEMPORAL_FIELD = "timestamp"
+
+
+def _temporal_field(token: str | None) -> str:
+    """Resolve the date field for a temporal predicate from an optional token."""
+    if token and token in _TEMPORAL_FIELDS:
+        return token
+    return _DEFAULT_TEMPORAL_FIELD
+
 
 def _match_collection(q: str, collections: list[str], default: str) -> str:
     """Pick the collection whose (singularized) name appears in the question."""
@@ -90,11 +125,70 @@ def _extract_comparison(question: str, collections: list[str]) -> dict[str, Any]
     return None
 
 
+def _extract_temporal(question: str, collections: list[str]) -> dict[str, Any] | None:
+    """Extract a date-range predicate from natural language.
+
+    Handles two unambiguous, deterministic forms anchored on an ISO calendar
+    date (``YYYY-MM-DD``):
+
+    * ``[<field>] between <date> and <date>`` → ``>=``/``<=`` range
+    * ``[<field>] <temporal-phrase> <date>``  → single comparison
+      (e.g. "created after 2026-01-01", "logs since 2026-03-01",
+      "events before 2026-02-15", "records on 2026-01-10").
+
+    The optional leading token names the date field when it is a recognized
+    field (see ``_TEMPORAL_FIELDS``); otherwise the predicate falls back to
+    ``timestamp``. Relative dates ("last 7 days") and time-of-day are left to
+    the LLM path. Returns an IQE/explanation dict, or ``None``.
+    """
+    q = question.lower().strip()
+    default_coll = collections[0] if collections else "nodes"
+    coll = _match_collection(q, collections, default_coll)
+
+    # Range form first (most specific) — "between D1 and D2".
+    m = re.search(
+        rf"\b(?:([a-z_][a-z0-9_]*)\s+)?between\s+({_ISO_DATE_RX})\s+and\s+({_ISO_DATE_RX})\b",
+        q,
+    )
+    if m:
+        field = _temporal_field(m.group(1))
+        d1, d2 = m.group(2), m.group(3)
+        iqe = (
+            f'foreach n in {coll} where n.{field} >= "{d1}" '
+            f'and n.{field} <= "{d2}" select *'
+        )
+        return {
+            "iqe": iqe,
+            "explanation": f"Filter {coll} where {field} between {d1} and {d2}",
+        }
+
+    for phrase_rx, op in _TEMPORAL_PHRASES:
+        m = re.search(
+            rf"\b(?:([a-z_][a-z0-9_]*)\s+)?(?:{phrase_rx})\s+({_ISO_DATE_RX})\b",
+            q,
+        )
+        if not m:
+            continue
+        field = _temporal_field(m.group(1))
+        d = m.group(2)
+        iqe = f'foreach n in {coll} where n.{field} {op} "{d}" select *'
+        return {"iqe": iqe, "explanation": f"Filter {coll} where {field} {op} {d}"}
+
+    return None
+
+
 def _pattern_translate(question: str, collections: list[str]) -> dict[str, Any] | None:
     """Try simple pattern-based translation before calling LLM."""
     q = question.lower().strip()
 
     default_coll = collections[0] if collections else "nodes"
+
+    # Temporal/date-range predicates take precedence (anchored on a full ISO
+    # date, so they are the most specific) — otherwise a dated question would be
+    # silently widened to "select *".
+    temporal = _extract_temporal(question, collections)
+    if temporal:
+        return temporal
 
     # Numeric comparison predicates take precedence over "show all" so that a
     # filtered question is not silently widened to "select *".
