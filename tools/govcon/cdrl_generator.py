@@ -239,13 +239,22 @@ def generate_all_due(contract_id=None, days_ahead=None):
     days = days_ahead or AUTO_GENERATE_DAYS
     conn = _get_db()
 
+    # Compute the date window in Python and compare due_date (TEXT, ISO-8601)
+    # as text — ISO dates sort chronologically. The previous SQLite-only
+    # `date('now', ? || ' days')` failed on PostgreSQL ("operator does not
+    # exist: text >= date").
+    from datetime import datetime, timedelta, timezone
+
+    today = datetime.now(timezone.utc).date()
+    lower = today.isoformat()
+    upper = (today + timedelta(days=int(days))).isoformat() + "T23:59:59"
     query = (
         "SELECT id, contract_id FROM cpmp_deliverables "
-        "WHERE due_date BETWEEN date('now') AND date('now', ? || ' days') "
+        "WHERE due_date BETWEEN ? AND ? "
         "AND status IN ('not_started', 'in_progress') "
         "AND generated_by_tool IS NULL"
     )
-    params = [str(days)]
+    params = [lower, upper]
     if contract_id:
         query += " AND contract_id = ?"
         params.append(contract_id)
