@@ -123,9 +123,15 @@ def test_stage_remote_git_routes_to_clone(staged_env, monkeypatch):
     def _fake_clone(url, dest, **kwargs):
         seen["url"] = url
         seen["dest"] = dest
+        # A real `git clone` materializes the tree; mirror that so the post-clone
+        # SHA-256 tamper-digest baseline (sipa-ingest-03) has a directory to hash.
+        dest = Path(dest)
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "main.py").write_text("print('cloned')\n", encoding="utf-8")
 
     monkeypatch.setattr(ingest, "_git_clone", _fake_clone)
     result = ingest.stage("https://github.com/org/repo.git")
     assert result["source_type"] == "git"
     assert seen["url"] == "https://github.com/org/repo.git"
+    assert result["dir_digest"] and len(result["dir_digest"]) == 64
     assert _count_assessments() == 1

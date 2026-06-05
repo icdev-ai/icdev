@@ -21,6 +21,11 @@ SECURITY INVARIANTS (locked design — see plan + docs/features/phase-sipa-softw
     *before* any row is created or any byte copied.
   * **Quarantine-first.** Staging goes to ``<quarantine_dir>/<assessment_id>/`` so a
     HITL gate can release or reject it later.
+  * **Tamper baseline.** Immediately after staging, a SHA-256 recursive directory
+    digest of the quarantined tree is recorded in ``integrity_assessments.dir_digest``
+    (via :func:`reverify`'s twin, reusing ``tools/security/blueprint_verifier``).
+    :func:`reverify` recomputes it before assessment and writes a ``tamper_mismatch``
+    finding if the staged tree changed in between.
 
 Source-type auto-detection maps a raw source string to the ``SOURCE_TYPES`` taxonomy
 (``local`` / ``git`` / ``unc`` / ``uri``) and an allowlist *scheme*; bare filesystem
@@ -33,6 +38,7 @@ defaults (``default`` / ``CUI`` / ``system``) when no context is active.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -49,6 +55,7 @@ import yaml
 
 from tools.integrity.constants import SOURCE_TYPES
 from tools.integrity.db.init_db import init_db
+from tools.security.blueprint_verifier import BlueprintVerifier
 
 logger = logging.getLogger("icdev.integrity.ingest")
 
@@ -339,6 +346,62 @@ def _caller_context() -> tuple[str, str, str]:
 
 
 # --------------------------------------------------------------------------- #
+# Tamper digest — SHA-256 directory baseline (reuses blueprint_verifier)
+# --------------------------------------------------------------------------- #
+def _dir_digest(directory: Path) -> str:
+    """SHA-256 recursive directory digest of a staged tree.
+
+    Reuses ``tools/security/blueprint_verifier.BlueprintVerifier.compute_digest``
+    (NemoClaw supply-chain pattern: hash = SHA-256 over sorted ``rel_path + bytes``,
+    then SHA-256 over the concatenated per-file hashes; ``.git``/dotfiles/caches are
+    skipped so a git clone digests identically to a copied tree).
+
+    ``compute_digest`` is a pure ``os.walk`` + ``hashlib`` computation that touches no
+    database, so we instantiate via ``object.__new__`` to skip ``BlueprintVerifier``'s
+    ``__init__`` (which would provision the ``blueprint_digests`` table) — staging must
+    never write to a digest log just to baseline a tree.
+    """
+    verifier = object.__new__(BlueprintVerifier)
+    result = verifier.compute_digest(Path(directory))
+    if "error" in result:
+        raise IngestRejected(f"cannot digest staged tree: {result['error']}")
+    return str(result["digest"])
+
+
+def _set_dir_digest(conn: Any, assessment_id: int, digest: str) -> None:
+    """Persist the baseline directory digest onto the assessment row."""
+    sql = (
+        "UPDATE integrity_assessments "
+        "SET dir_digest = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    )
+    if _backend_of(conn) == "postgresql":
+        conn.execute(sql.replace("?", "%s"), (digest, assessment_id))
+    else:
+        conn.execute(sql, (digest, assessment_id))
+    conn.commit()
+
+
+_FINDING_SQL = (
+    "INSERT INTO integrity_findings "
+    "(assessment_id, source_scanner, finding_type, severity, file_path, line, "
+    "detail, tenant_id, classification) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+
+def _insert_finding(conn: Any, params: tuple) -> int:
+    """Insert an append-only integrity_findings row and return its generated PK."""
+    if _backend_of(conn) == "postgresql":
+        cur = conn.execute(_FINDING_SQL.replace("?", "%s") + " RETURNING id", params)
+        row = cur.fetchone()
+        conn.commit()
+        return int(row[0]) if row else 0
+    cur = conn.execute(_FINDING_SQL, params)
+    conn.commit()
+    return int(cur.lastrowid or 0)
+
+
+# --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
 def stage(
@@ -417,22 +480,28 @@ def stage(
                 created_by,
             ),
         )
+
+        # 4. Copy into quarantine: <quarantine_dir>/<assessment_id>/.
+        dest = _quarantine_base(cfg) / str(assessment_id)
+        dest.mkdir(parents=True, exist_ok=True)
+        if src_path.is_dir():
+            shutil.copytree(src_path, dest, dirs_exist_ok=True)
+        else:
+            shutil.copy2(src_path, dest / src_path.name)
+
+        # 5. Baseline the staged tree: SHA-256 directory digest -> dir_digest. A later
+        #    reverify() recomputes this to detect tampering between stage and assess.
+        digest = _dir_digest(dest)
+        _set_dir_digest(conn, assessment_id, digest)
     finally:
         if own_conn:
             conn.close()
-
-    # 4. Copy into quarantine: <quarantine_dir>/<assessment_id>/.
-    dest = _quarantine_base(cfg) / str(assessment_id)
-    dest.mkdir(parents=True, exist_ok=True)
-    if src_path.is_dir():
-        shutil.copytree(src_path, dest, dirs_exist_ok=True)
-    else:
-        shutil.copy2(src_path, dest / src_path.name)
 
     return {
         "assessment_id": assessment_id,
         "staged_path": str(dest),
         "source_type": resolved_type,
+        "dir_digest": digest,
     }
 
 
@@ -474,24 +543,125 @@ def _stage_git(
                 created_by,
             ),
         )
+
+        # Clone into <quarantine_dir>/<assessment_id>/. git creates the target dir;
+        # only its parent must exist (git refuses to clone into a non-empty dir).
+        dest = _quarantine_base(cfg) / str(assessment_id)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _git_clone(
+            source.strip(),
+            dest,
+            depth=_clone_depth(cfg),
+            timeout=_clone_timeout(cfg),
+            hosts=hosts,
+        )
+
+        # Baseline the cloned tree (.git is skipped by the digest, so the digest is
+        # stable across re-clones of the same tip and tamper-detectable by reverify()).
+        digest = _dir_digest(dest)
+        _set_dir_digest(conn, assessment_id, digest)
     finally:
         if own_conn:
             conn.close()
-
-    # Clone into <quarantine_dir>/<assessment_id>/. git creates the target dir; only
-    # its parent must exist (git refuses to clone into a non-empty directory).
-    dest = _quarantine_base(cfg) / str(assessment_id)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    _git_clone(
-        source.strip(),
-        dest,
-        depth=_clone_depth(cfg),
-        timeout=_clone_timeout(cfg),
-        hosts=hosts,
-    )
 
     return {
         "assessment_id": assessment_id,
         "staged_path": str(dest),
         "source_type": "git",
+        "dir_digest": digest,
+    }
+
+
+def reverify(assessment_id: int, conn: Any = None) -> dict:
+    """Re-baseline a staged tree and flag tampering between stage and assess.
+
+    Recomputes the SHA-256 directory digest of ``<quarantine_dir>/<assessment_id>/``
+    and compares it to the ``dir_digest`` recorded by :func:`stage`. If the staged
+    tree changed (a file added/modified/removed) — or vanished entirely — an
+    append-only ``tamper_mismatch`` finding (scanner ``tamper``, severity
+    ``critical``) is written so the scoring stage can quarantine on it.
+
+    The quarantined tree is treated as inert data: this only walks + hashes it, never
+    executes it. Idempotent on a clean tree (no finding written when digests match).
+
+    Args:
+        assessment_id: the assessment whose staged tree to re-verify.
+        conn: optional existing DB connection to reuse; opened/closed internally
+            when ``None``.
+
+    Returns:
+        ``{"assessment_id", "tampered": bool, "baseline_digest", "current_digest",
+        "finding_id": int | None}``. ``tampered`` is ``False`` when no baseline digest
+        was recorded (nothing to compare against).
+
+    Raises:
+        IngestRejected: no assessment row exists for ``assessment_id``.
+    """
+    cfg = _load_config()
+    staged = _quarantine_base(cfg) / str(assessment_id)
+
+    own_conn = conn is None
+    if own_conn:
+        from tools.db.storage import get_connection
+
+        conn = get_connection()
+    try:
+        init_db(conn)  # idempotent: CREATE TABLE IF NOT EXISTS
+        sel = "SELECT dir_digest FROM integrity_assessments WHERE id = ?"
+        if _backend_of(conn) == "postgresql":
+            row = conn.execute(sel.replace("?", "%s"), (assessment_id,)).fetchone()
+        else:
+            row = conn.execute(sel, (assessment_id,)).fetchone()
+        if row is None:
+            raise IngestRejected(f"no assessment row for id {assessment_id}")
+        baseline = row["dir_digest"] if hasattr(row, "keys") else row[0]
+
+        current = _dir_digest(staged) if staged.exists() else None
+        # No baseline => nothing to compare; report untampered with both digests null/current.
+        tampered = baseline is not None and current != baseline
+
+        finding_id = None
+        if tampered:
+            tenant_id, classification, _ = _caller_context()
+            reason = (
+                "staged tree changed between stage and assess"
+                if current is not None
+                else "staged tree missing at re-verify"
+            )
+            detail = json.dumps(
+                {
+                    "expected": baseline,
+                    "actual": current,
+                    "staged_path": str(staged),
+                    "reason": reason,
+                }
+            )
+            finding_id = _insert_finding(
+                conn,
+                (
+                    assessment_id,
+                    "tamper",            # source_scanner
+                    "tamper_mismatch",   # finding_type
+                    "critical",          # severity
+                    str(staged),         # file_path
+                    None,                # line
+                    detail,              # detail (JSON)
+                    tenant_id,
+                    classification,
+                ),
+            )
+            logger.warning(
+                "tamper_mismatch on assessment %s: %s (expected %s, got %s)",
+                assessment_id, reason, baseline, current,
+            )
+    finally:
+        if own_conn:
+            conn.close()
+
+    return {
+        "assessment_id": assessment_id,
+        "tampered": tampered,
+        "baseline_digest": baseline,
+        "current_digest": current,
+        "finding_id": finding_id,
     }
