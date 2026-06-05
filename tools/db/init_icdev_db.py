@@ -199,7 +199,8 @@ CREATE TABLE IF NOT EXISTS audit_trail (
         'auto_resolution_failed', 'auto_resolution_escalated',
         'critique_session_created', 'critique_completed',
         'critique_revision_requested',
-        'pir_alert_generated'
+        'pir_alert_generated',
+        'integrity_promoted', 'integrity_rejected'
     )),
     actor TEXT NOT NULL,
     action TEXT NOT NULL,
