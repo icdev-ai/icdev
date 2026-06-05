@@ -251,6 +251,131 @@ def search_patterns(log_data: list, patterns: list = None) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Anomaly detection (anomaly_detection paradigm) — config-driven thresholds
+# ---------------------------------------------------------------------------
+# Frequency-spike and error-rate detection previously used thresholds hardcoded
+# inline (z-score > 2.0; error_rate > 0.10). Those constants now live in
+# ``args/monitoring_config.yaml`` under ``anomaly_detection`` and degrade to the
+# original values whenever the file, PyYAML, or a key is missing — so default
+# behavior is unchanged. The robust ``mad`` method (median absolute deviation)
+# is offered as an alternative that is not skewed by the very spike it detects.
+_ANOMALY_CONFIG_PATH = BASE_DIR.parent / "args" / "monitoring_config.yaml"
+_DEFAULT_ANOMALY_CFG = {
+    "frequency": {"method": "zscore", "z_threshold": 2.0, "mad_threshold": 3.5, "min_buckets": 2},
+    "error_rate": {"spike_threshold": 0.10},
+}
+
+
+def _median(values: list) -> float:
+    """Return the median of a non-empty numeric list (0.0 for an empty list)."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    return float(s[mid]) if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
+def _load_anomaly_cfg(config_path: Path = None) -> dict:
+    """Load the ``anomaly_detection`` tuning block from monitoring_config.yaml.
+
+    Returns defaults deep-merged with any configured overrides, so a missing
+    file, absent PyYAML, or absent key always yields the legacy hardcoded
+    behavior (z-score > 2.0, error-rate spike at 0.10). Any failure degrades to
+    defaults rather than raising — log analysis must never break on config.
+    """
+    cfg = {
+        "frequency": dict(_DEFAULT_ANOMALY_CFG["frequency"]),
+        "error_rate": dict(_DEFAULT_ANOMALY_CFG["error_rate"]),
+    }
+    path = config_path or _ANOMALY_CONFIG_PATH
+    try:
+        import yaml
+
+        with open(path, encoding="utf-8") as fh:
+            loaded = yaml.safe_load(fh) or {}
+        section = loaded.get("anomaly_detection") or {}
+        for group in ("frequency", "error_rate"):
+            overrides = section.get(group) or {}
+            for key in cfg[group]:
+                if overrides.get(key) is not None:
+                    cfg[group][key] = overrides[key]
+    except Exception:
+        pass  # Any failure → legacy defaults.
+    return cfg
+
+
+def _detect_frequency_anomalies(buckets: dict, cfg: dict) -> list:
+    """Flag time-buckets whose event count is anomalously high.
+
+    Args:
+        buckets: Mapping of bucket-start datetime -> event count.
+        cfg: Anomaly config (see ``_load_anomaly_cfg``); ``cfg["frequency"]``
+            selects the method and threshold.
+
+    Methods (``frequency.method``):
+        * ``zscore`` — classic mean/std-dev z-score: flag where
+          (count - mean) / std > ``z_threshold``. Simple, but the spike itself
+          inflates std-dev and can mask smaller co-occurring anomalies.
+        * ``mad`` — robust modified z-score (Iglewicz-Hoaglin):
+          0.6745 * (count - median) / MAD > ``mad_threshold``, where MAD is the
+          median absolute deviation. Resistant to the outliers being detected.
+
+    Returns:
+        Anomaly dicts ordered by bucket time; empty when there are too few
+        buckets (``min_buckets``) or none clears the threshold.
+    """
+    freq = cfg.get("frequency", {})
+    method = str(freq.get("method", "zscore")).lower()
+    min_buckets = int(freq.get("min_buckets", 2) or 2)
+    if len(buckets) < max(2, min_buckets):
+        return []
+
+    items = sorted(buckets.items())  # deterministic order by bucket time
+    counts = [c for _, c in items]
+    anomalies = []
+
+    if method == "mad":
+        med = _median(counts)
+        mad = _median([abs(c - med) for c in counts])
+        threshold = float(freq.get("mad_threshold", 3.5))
+        for bucket_time, count in items:
+            if mad > 0:
+                mod_z = 0.6745 * (count - med) / mad
+            else:
+                # Degenerate spread (≥ half the buckets identical): flag only
+                # buckets strictly above the median.
+                mod_z = float("inf") if count > med else 0.0
+            if mod_z > threshold:
+                anomalies.append(
+                    {
+                        "bucket": bucket_time.isoformat(),
+                        "count": count,
+                        "median": round(med, 1),
+                        "mod_z_score": None if mod_z == float("inf") else round(mod_z, 2),
+                        "method": "mad",
+                    }
+                )
+    else:  # zscore (default / legacy)
+        mean = sum(counts) / len(counts)
+        variance = sum((c - mean) ** 2 for c in counts) / len(counts)
+        std_dev = variance**0.5
+        threshold = float(freq.get("z_threshold", 2.0))
+        for bucket_time, count in items:
+            if std_dev > 0 and (count - mean) / std_dev > threshold:
+                anomalies.append(
+                    {
+                        "bucket": bucket_time.isoformat(),
+                        "count": count,
+                        "mean": round(mean, 1),
+                        "z_score": round((count - mean) / std_dev, 2),
+                        "method": "zscore",
+                    }
+                )
+    return anomalies
+
+
+# ---------------------------------------------------------------------------
 # Core analysis
 # ---------------------------------------------------------------------------
 def analyze_logs(
@@ -262,6 +387,7 @@ def analyze_logs(
     elk_url: str = None,
     splunk_url: str = None,
     splunk_token: str = None,
+    anomaly_config: dict = None,
 ) -> dict:
     """Analyze logs from ELK or Splunk.
 
@@ -338,6 +464,7 @@ def analyze_logs(
     top_messages = [{"message": msg, "count": count} for msg, count in message_counter.most_common(10) if count > 1]
 
     # ---------- Time-bucket anomaly detection (5-minute buckets) ----------
+    anomaly_cfg = anomaly_config if anomaly_config is not None else _load_anomaly_cfg()
     frequency_anomalies = []
     timestamps = []
     for entry in all_logs:
@@ -350,34 +477,18 @@ def analyze_logs(
                 pass
 
     if timestamps:
-        timestamps.sort()
         buckets = defaultdict(int)
         for ts_val in timestamps:
             bucket_key = ts_val.replace(minute=(ts_val.minute // 5) * 5, second=0, microsecond=0)
             buckets[bucket_key] += 1
-
-        if len(buckets) >= 2:
-            counts = list(buckets.values())
-            mean = sum(counts) / len(counts)
-            variance = sum((c - mean) ** 2 for c in counts) / len(counts)
-            std_dev = variance**0.5
-
-            for bucket_time, count in buckets.items():
-                if std_dev > 0 and (count - mean) / std_dev > 2.0:
-                    frequency_anomalies.append(
-                        {
-                            "bucket": bucket_time.isoformat(),
-                            "count": count,
-                            "mean": round(mean, 1),
-                            "z_score": round((count - mean) / std_dev, 2),
-                        }
-                    )
+        frequency_anomalies = _detect_frequency_anomalies(buckets, anomaly_cfg)
 
     # ---------- Error rate ----------
     total = len(all_logs)
     errors = severity_counts.get("error", 0)
     error_rate = round(errors / total, 4) if total > 0 else 0.0
-    is_spike = error_rate > 0.10
+    spike_threshold = float(anomaly_cfg.get("error_rate", {}).get("spike_threshold", 0.10))
+    is_spike = error_rate > spike_threshold
 
     # ---------- Build result ----------
     result = {
