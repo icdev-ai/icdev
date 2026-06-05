@@ -31,18 +31,22 @@ def _column_exists_sqlite(conn, table: str, column: str) -> bool:
 
 
 def _table_exists(conn, table: str) -> bool:
-    """True if `table` exists. kg_nodes is created by a later migration (058),
-    so on a fresh ordered replay it may not exist yet — guard against that."""
-    if _BACKEND == "postgresql":
-        row = conn.execute("SELECT to_regclass(?) AS t", (f"public.{table}",)).fetchone()
-        if row is None:
-            return False
-        try:
-            return row["t"] is not None
-        except Exception:
-            return row[0] is not None
+    """True if ``table`` exists. ``kg_nodes`` is created at runtime by the
+    knowledge_graph modules (not by the baseline schema or this chain), so a
+    migrate-only fresh DB — e.g. the CI E2E PostgreSQL job — legitimately lacks
+    it. Guard the kg_nodes operations rather than aborting the whole chain; the
+    rag_chunks column, cursor table, and seed (rag_chunks IS in the baseline)
+    still apply."""
+    if getattr(conn, "_backend", "sqlite") == "postgresql":
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
     row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
     ).fetchone()
     return row is not None
 
@@ -51,12 +55,11 @@ def up(conn=None):
     conn = get_connection()
     try:
         actions = []
-        kg_present = _table_exists(conn, "kg_nodes")
+        kg_nodes_present = _table_exists(conn, "kg_nodes")
 
         if _BACKEND == "postgresql":
-            # 1. FK column on kg_nodes — TEXT to match rag_chunks.id (which is TEXT).
-            #    kg_nodes is created later (migration 058); skip on fresh replay.
-            if kg_present:
+            # 1. FK column on kg_nodes — TEXT to match rag_chunks.id (which is TEXT)
+            if kg_nodes_present:
                 conn.execute(
                     "ALTER TABLE kg_nodes "
                     "ADD COLUMN IF NOT EXISTS source_chunk_id TEXT "
@@ -64,7 +67,7 @@ def up(conn=None):
                 )
                 actions.append("kg_nodes.source_chunk_id_ensured")
             else:
-                actions.append("kg_nodes.skipped_absent")
+                actions.append("kg_nodes_absent_skipped")
 
             # 2. JSON back-ref array on rag_chunks
             conn.execute(
@@ -90,8 +93,8 @@ def up(conn=None):
             )
             actions.append("cursor_seed_pg")
 
-            # 4. Index (only if kg_nodes exists yet)
-            if kg_present:
+            # 4. Index
+            if kg_nodes_present:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_kg_nodes_source_chunk "
                     "ON kg_nodes(source_chunk_id)"
@@ -99,15 +102,17 @@ def up(conn=None):
                 actions.append("idx_kg_nodes_source_chunk_ensured")
 
         else:
-            # SQLite path — kg_nodes is created later (058); skip if absent.
-            if kg_present and not _column_exists_sqlite(conn, "kg_nodes", "source_chunk_id"):
+            # SQLite path
+            if kg_nodes_present and not _column_exists_sqlite(conn, "kg_nodes", "source_chunk_id"):
                 conn.execute(
                     "ALTER TABLE kg_nodes ADD COLUMN source_chunk_id TEXT "
                     "REFERENCES rag_chunks(id) ON DELETE SET NULL"
                 )
                 actions.append("kg_nodes.source_chunk_id_added")
+            elif kg_nodes_present:
+                actions.append("kg_nodes.source_chunk_id_exists")
             else:
-                actions.append("kg_nodes.source_chunk_id_skipped")
+                actions.append("kg_nodes_absent_skipped")
 
             if not _column_exists_sqlite(conn, "rag_chunks", "kg_node_ids"):
                 conn.execute(
@@ -131,7 +136,7 @@ def up(conn=None):
             )
             actions.append("cursor_seed_sqlite")
 
-            if kg_present:
+            if kg_nodes_present:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_kg_nodes_source_chunk "
                     "ON kg_nodes(source_chunk_id)"

@@ -26,10 +26,24 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return any(row[1] == column for row in cur.fetchall())
 
 
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    cur = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    )
+    return cur.fetchone() is not None
+
+
 def run(conn=None) -> None:
     """Apply migration 119 to migration_canvas.db."""
     mc_conn = sqlite3.connect(str(_MC_DB_PATH))
     try:
+        # mc_migration_waves lives in the separate migration_canvas.db, created
+        # at runtime by the migration-canvas init. A fresh checkout (CI E2E job)
+        # has no such file/table — sqlite3.connect creates an empty DB, so guard
+        # rather than fail the chain with "no such table".
+        if not _table_exists(mc_conn, "mc_migration_waves"):
+            print(f"[migration-{MIGRATION_ID}] mc_migration_waves absent — skipping (created at runtime)")
+            return
         if not _column_exists(mc_conn, "mc_migration_waves", "app_count"):
             mc_conn.execute(
                 "ALTER TABLE mc_migration_waves ADD COLUMN app_count INTEGER DEFAULT 0"

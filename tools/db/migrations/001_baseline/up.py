@@ -31,13 +31,13 @@ def up(conn):
         COMPLIANCE_PLATFORM_ALTER_SQL,
         MOSA_ALTER_SQL,
     )
+    import os
     import sqlite3
 
     # Apply main schema
     conn.executescript(SCHEMA_SQL)
 
-    # Apply all ALTER TABLE lists (idempotent)
-    for alter_list in [
+    alter_lists = [
         MBSE_ALTER_SQL,
         MODERNIZATION_ALTER_SQL,
         RICOAS_ALTER_SQL,
@@ -46,12 +46,26 @@ def up(conn):
         FIPS_ALTER_SQL,
         COMPLIANCE_PLATFORM_ALTER_SQL,
         MOSA_ALTER_SQL,
-    ]:
-        for alter_sql in alter_list:
-            try:
-                conn.execute(alter_sql)
-            except sqlite3.OperationalError:
-                pass  # Column already exists
+    ]
+
+    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+    if backend == "postgresql":
+        # Route ALTERs through the resilient executescript() path (per-statement
+        # SAVEPOINTs). A direct conn.execute() that fails on PG aborts the whole
+        # transaction, and the existing `except sqlite3.OperationalError` never
+        # catches psycopg2 errors — so a single column-already-exists or
+        # missing-target ALTER would fail the entire baseline migration.
+        all_alters = ";\n".join(a for lst in alter_lists for a in lst)
+        if all_alters.strip():
+            conn.executescript(all_alters + ";")
+    else:
+        # SQLite: apply each ALTER idempotently (skip already-added columns).
+        for alter_list in alter_lists:
+            for alter_sql in alter_list:
+                try:
+                    conn.execute(alter_sql)
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
 
     conn.commit()
 

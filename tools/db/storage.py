@@ -678,7 +678,10 @@ def _pg_exec_statements(cursor, sql: str, backend: str) -> None:
         no_block = re.sub(r"/\*.*?\*/", "", no_line, flags=re.DOTALL)
         return not no_block.strip()
 
-    for raw in sql.split(";"):
+    # Strip -- line comments BEFORE splitting on ';' — a ';' inside a comment
+    # would otherwise corrupt the split into a bogus "statement" (prose) whose
+    # syntax error would skip a real CREATE/ALTER that follows it on the line.
+    for raw in _strip_sql_line_comments(sql).split(";"):
         stmt = raw.strip()
         if not stmt or _is_empty(stmt):
             continue
@@ -914,6 +917,45 @@ class StorageCursor:
                 _write_column_audit(self._table_name, role, list(policies.keys()))
         except Exception:
             pass
+
+
+def _strip_sql_line_comments(sql: str) -> str:
+    """Remove ``--`` line comments outside of single-quoted string literals.
+
+    The PG ``executescript`` path splits a multi-statement script on ``;``.
+    A semicolon inside a ``-- ...`` comment would otherwise corrupt that split,
+    producing a bogus statement (e.g. ``this table persists ...``) whose syntax
+    error aborts the whole transaction and rolls back every prior CREATE TABLE.
+    Stripping comments first makes the split robust. Single-quoted strings are
+    respected (SQL doubled-quote escaping ``''`` is handled by toggling).
+    """
+    out = []
+    in_string = False
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if in_string:
+            out.append(ch)
+            if ch == "'":
+                in_string = False
+            i += 1
+            continue
+        if ch == "'":
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "-" and i + 1 < n and sql[i + 1] == "-":
+            # Skip to end of line (keep the newline as a statement separator).
+            j = sql.find("\n", i)
+            if j == -1:
+                break
+            i = j
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 # ---------------------------------------------------------------------------
