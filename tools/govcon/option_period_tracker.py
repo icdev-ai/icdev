@@ -28,6 +28,15 @@ RISK_TIERS = {
     "watch":    90,   # ≤90 days → kanban medium
 }
 
+# Representative score for a qualitative health label, used only when no
+# numeric health_score has been computed. Keeps the go/no-go assessment
+# consistent with the contract's health flag instead of defaulting to RED.
+_HEALTH_LABEL_SCORE = {
+    "green": 0.85,
+    "yellow": 0.60,
+    "red": 0.30,
+}
+
 STATUS_VALUES = ("pending", "exercised", "lapsed", "waived")
 
 
@@ -238,9 +247,16 @@ def ai_exercise_recommendation(option_id: str) -> Dict[str, Any]:
     finally:
         conn.close()
 
-    # Gather context
-    health_score = float(option.get("health_score") or 0)
-    health = option.get("health", "unknown")
+    # Gather context. A NULL numeric health_score must NOT be coerced to 0.0
+    # (which the deterministic rules read as RED). When no score has been
+    # computed yet, fall back to the qualitative health label so an unscored
+    # GREEN contract is not misreported as RED.
+    raw_score = option.get("health_score")
+    health = option.get("health", "unknown") or "unknown"
+    if raw_score is None:
+        health_score = _HEALTH_LABEL_SCORE.get(str(health).lower())
+    else:
+        health_score = float(raw_score)
     cpars_rating = option.get("cpars_rating_current", "unknown")
 
     try:
@@ -307,7 +323,8 @@ def _try_llm_recommendation(option, health_score, cpi, spi, cpars_rating) -> Opt
             f"You are a Federal PMO advisor. Provide a concise go/no-go recommendation "
             f"for exercising Option {option['option_number']} on contract "
             f"{option.get('contract_number', 'N/A')} ({option.get('contract_title', 'N/A')}).\n\n"
-            f"Contract health: {option.get('health','unknown')} (score {health_score:.2f}/1.0)\n"
+            f"Contract health: {option.get('health','unknown')} "
+            f"(score {f'{health_score:.2f}/1.0' if health_score is not None else 'not yet computed'})\n"
             f"CPI: {cpi if cpi else 'N/A'} | SPI: {spi if spi else 'N/A'}\n"
             f"Current CPARS rating: {cpars_rating}\n"
             f"Option ceiling: ${option.get('ceiling_value', 0):,.0f}\n"
@@ -325,7 +342,13 @@ def _try_llm_recommendation(option, health_score, cpi, spi, cpars_rating) -> Opt
 
 def _deterministic_recommendation(health_score, cpi, spi, cpars_rating, option) -> str:
     lines = []
-    if health_score >= 0.75:
+    if health_score is None:
+        lines.append(
+            "Contract health has not been scored — insufficient data for a "
+            "data-driven go/no-go. Verify funding, CPARS, and COR performance "
+            "confirmation before exercising this option."
+        )
+    elif health_score >= 0.75:
         lines.append("Contract health is GREEN — recommend exercising this option.")
     elif health_score >= 0.50:
         lines.append("Contract health is YELLOW — exercise with remediation conditions.")
