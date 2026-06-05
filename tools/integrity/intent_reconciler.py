@@ -65,6 +65,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+from pathlib import Path
 from typing import Any, Optional
 
 from tools.integrity.constants import (
@@ -87,6 +89,26 @@ SOURCE_SCANNER = "reconciliation"
 # blob could exercise the same capability hundreds of times; the finding stays
 # auditable without ballooning the persisted JSON.
 _MAX_SITES = 25
+
+# integrity_config.yaml lives at the repo root; this module is three levels deep
+# (tools/integrity/intent_reconciler.py -> repo root).
+_CONFIG_PATH = Path(__file__).resolve().parents[2] / "args" / "integrity_config.yaml"
+
+
+def _load_config() -> dict:
+    """Load ``integrity_config.yaml``; tolerate a missing/empty file with ``{}``.
+
+    Mirrors :func:`tools.integrity.engine._load_config` so the LLM-assist toggle
+    reads the same file the rest of SIPA does. Never raises: a missing/unreadable
+    config simply means LLM assist stays off and the deterministic path runs.
+    """
+    try:
+        import yaml
+
+        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except Exception:  # noqa: BLE001 — config is advisory; default to deterministic-only
+        return {}
 
 
 # --------------------------------------------------------------------------- #
@@ -295,6 +317,192 @@ def _intrinsic_findings(records: list[dict]) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
+# Optional LLM-assisted second opinion (advisory; deterministic is primary)
+# --------------------------------------------------------------------------- #
+# The deterministic rule-based reconciliation above ALWAYS runs and is the
+# fallback. This pass is a *purely advisory* second opinion: when
+# ``integrity_config.yaml`` ``llm_assist.enabled`` is true AND a provider is
+# reachable, an LLM judges the claim/requirement prose against the exercised
+# capability manifest and returns a match/mismatch verdict + rationale. It never
+# changes a deterministic finding's severity or the verdict — it only annotates
+# the result so a HITL reviewer gets a natural-language second read. Air-gap safe:
+# disabled config or any LLM error degrades silently to deterministic-only.
+
+# JSON Schema the router forces the model onto, so we get a structured verdict
+# rather than parsing free text. ``judgement`` is the headline: does the claimed
+# purpose plausibly account for everything the code actually exercises?
+_ADVISORY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "judgement": {"type": "string", "enum": ["match", "mismatch"]},
+        "rationale": {"type": "string"},
+        "confidence": {"type": "number"},
+    },
+    "required": ["judgement", "rationale"],
+}
+
+
+def _manifest_summary(records: list[dict]) -> dict:
+    """Compact, LLM-friendly summary of the exercised capability manifest.
+
+    Keeps the payload small and deterministic: the distinct capability types, a
+    per-type occurrence count, and the files touched. No source code is sent.
+    """
+    by_capability: dict[str, int] = {}
+    files: list[str] = []
+    for rec in records:
+        cap = rec.get("capability_type")
+        if cap:
+            by_capability[cap] = by_capability.get(cap, 0) + 1
+        fp = rec.get("file_path")
+        if fp and fp not in files:
+            files.append(fp)
+    return {
+        "exercised_capabilities": sorted(by_capability),
+        "by_capability": by_capability,
+        "files": files[:_MAX_SITES],
+    }
+
+
+def _try_parse_json(text: str) -> Any:
+    """Best-effort JSON extraction from a model's free-text reply (fenced or raw)."""
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        text = text.split("\n", 1)[1] if "\n" in text else text
+    try:
+        return json.loads(text)
+    except Exception:  # noqa: BLE001
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except Exception:  # noqa: BLE001
+                return None
+    return None
+
+
+def llm_assist_enabled(config: Optional[dict] = None) -> bool:
+    """True iff ``integrity_config.yaml`` ``llm_assist.enabled`` is set."""
+    cfg = config if config is not None else _load_config()
+    return bool(((cfg or {}).get("llm_assist") or {}).get("enabled"))
+
+
+def llm_second_opinion(
+    claim_or_requirement_text: str,
+    capability_manifest_summary: dict,
+    *,
+    config: Optional[dict] = None,
+    router: Any = None,
+) -> Optional[dict]:
+    """Optional LLM second opinion on claim/requirement vs. exercised manifest.
+
+    Returns an advisory dict
+    ``{"source": "llm", "advisory": True, "judgement": "match"|"mismatch",
+    "rationale": str, "confidence": float, "function_key": str}`` when LLM assist
+    is enabled AND a provider serves the request; otherwise ``None``.
+
+    This is *never* on the critical path: the caller has already computed the
+    deterministic findings. Any failure — assist disabled, ``ICDEV_NO_LLM`` set,
+    no provider in the chain, a malformed reply — returns ``None`` so the
+    deterministic result stands alone. Air-gap safe by construction.
+
+    Args:
+        claim_or_requirement_text: the author's claim (Mode B) or the authorizing
+            requirement prose (Mode A) the manifest is judged against.
+        capability_manifest_summary: the :func:`_manifest_summary` rollup of what
+            the code actually exercises (no source code is sent to the provider).
+        config: pre-loaded ``integrity_config.yaml`` dict (tests inject this);
+            defaults to :func:`_load_config`.
+        router: an ``LLMRouter`` instance to reuse (tests inject a fake); defaults
+            to a fresh ``LLMRouter()``.
+    """
+    cfg = config if config is not None else _load_config()
+    llm_cfg = (cfg or {}).get("llm_assist") or {}
+    if not llm_cfg.get("enabled"):
+        return None  # deterministic-only by configuration
+    function_key = llm_cfg.get("function_key") or "intent_reconciliation"
+
+    try:
+        if router is None:
+            from tools.llm.router import LLMRouter
+
+            router = LLMRouter()
+        # Respect the global air-gap / no-LLM switch without a network round-trip.
+        if getattr(router, "is_no_llm_mode", None) and router.is_no_llm_mode():
+            return None
+
+        from tools.llm.provider import LLMRequest
+
+        prompt = (
+            "You are a software-integrity reviewer giving an ADVISORY second "
+            "opinion. A deterministic analyzer has already produced the primary "
+            "verdict; your judgement only annotates it.\n\n"
+            "Decide whether the CLAIMED PURPOSE plausibly accounts for every "
+            "capability the code actually EXERCISES. If the code exercises a "
+            "capability the claim does not justify (e.g. a 'JSON formatter' that "
+            "opens network sockets or spawns subprocesses), answer 'mismatch'.\n\n"
+            f"CLAIM / REQUIREMENT:\n{(claim_or_requirement_text or '(none provided)')[:2000]}\n\n"
+            f"EXERCISED CAPABILITY MANIFEST:\n{json.dumps(capability_manifest_summary)[:2000]}\n\n"
+            "Return JSON: judgement (one of 'match'|'mismatch'), rationale "
+            "(one or two sentences), confidence (0..1)."
+        )
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=400,
+            output_schema=_ADVISORY_SCHEMA,
+            skip_injection_scan=True,  # trusted internal pipeline call
+        )
+        resp = router.invoke(function=function_key, request=req)
+        verdict = getattr(resp, "structured_output", None)
+        if not verdict and getattr(resp, "content", None):
+            verdict = _try_parse_json(resp.content)
+        if not isinstance(verdict, dict):
+            return None
+        judgement = verdict.get("judgement") or verdict.get("verdict")
+        if judgement not in ("match", "mismatch"):
+            return None
+        try:
+            confidence = float(verdict.get("confidence"))
+        except (TypeError, ValueError):
+            confidence = None
+        return {
+            "source": "llm",
+            "advisory": True,
+            "judgement": judgement,
+            "rationale": str(verdict.get("rationale", "")),
+            "confidence": confidence,
+            "function_key": function_key,
+        }
+    except Exception as exc:  # noqa: BLE001 — advisory only; never break reconciliation
+        logger.warning("intent_reconciler: LLM second opinion unavailable (%s)", exc)
+        return None
+
+
+def _attach_advisory(
+    result: dict,
+    claim_or_requirement_text: str,
+    records: list[dict],
+    *,
+    config: Optional[dict] = None,
+    router: Any = None,
+) -> dict:
+    """Compute the optional LLM advisory and store it under ``result['llm_advisory']``.
+
+    Always sets the key (``None`` when assist is off / unavailable) so callers can
+    rely on its presence. Mutates and returns ``result``.
+    """
+    result["llm_advisory"] = llm_second_opinion(
+        claim_or_requirement_text,
+        _manifest_summary(records),
+        config=config,
+        router=router,
+    )
+    return result
+
+
+# --------------------------------------------------------------------------- #
 # Public reconciliation API
 # --------------------------------------------------------------------------- #
 def reconcile_blind(manifest: Any, claim: Any) -> list[dict]:
@@ -397,6 +605,8 @@ def assess_blind(
     declared_purpose: Optional[str] = None,
     assessment_id: Optional[int] = None,
     conn: Any = None,
+    llm_router: Any = None,
+    llm_config: Optional[dict] = None,
 ) -> dict:
     """End-to-end Mode B assessment of an external artifact at ``path``.
 
@@ -404,7 +614,10 @@ def assess_blind(
     artifact's own prose (+ an optional ``declared_purpose``), reconciles them,
     and — when ``assessment_id`` is given — persists the findings append-only.
 
-    This is the primary provenance-blind entrypoint: no RTM / PRD required.
+    This is the primary provenance-blind entrypoint: no RTM / PRD required. The
+    deterministic reconciliation always runs; when ``llm_assist.enabled`` an
+    advisory LLM second opinion is attached under ``result['llm_advisory']``
+    (``None`` otherwise — air-gap safe).
     """
     # Imported lazily so the pure reconcile path carries no extra import cost.
     from tools.integrity import capability_extractor, claim_parser
@@ -418,10 +631,18 @@ def assess_blind(
     else:
         result = reconcile_and_persist(assessment_id, manifest, claim, conn=conn)
 
-    result["claimed_capabilities"] = sorted(_normalize_claim(claim))
+    records = _normalize_manifest(manifest)
+    claimed = sorted(_normalize_claim(claim))
+    result["claimed_capabilities"] = claimed
     result["exercised_capabilities"] = sorted(
-        {r["capability_type"] for r in _normalize_manifest(manifest)}
+        {r["capability_type"] for r in records}
     )
+
+    # Advisory only — deterministic findings above are the primary verdict.
+    claim_text = "; ".join(
+        part for part in (declared_purpose, "claimed: " + (", ".join(claimed) or "(none)")) if part
+    )
+    _attach_advisory(result, claim_text, records, config=llm_config, router=llm_router)
     return result
 
 
@@ -474,7 +695,10 @@ def _fetch_requirements(
 
 
 def _allowed_capabilities(
-    conn: Any, project_id: Optional[str], session_id: Optional[str]
+    conn: Any,
+    project_id: Optional[str],
+    session_id: Optional[str],
+    requirements: Optional[list[tuple[Any, str]]] = None,
 ) -> dict[str, list[dict]]:
     """Derive the ALLOWED-capability set from the project's requirement prose.
 
@@ -487,11 +711,16 @@ def _allowed_capabilities(
     requirement(s) per capability, retained as evidence for the HITL reviewer. The
     key set is the allowed-capability set; anything the code exercises outside it is
     the Mode A ``unauthorized_capability`` signal.
+
+    ``requirements`` may be supplied pre-fetched (``(id, raw_text)`` tuples) to
+    avoid re-reading ``intake_requirements``; otherwise they are read from ``conn``.
     """
     from tools.integrity import claim_parser
 
+    if requirements is None:
+        requirements = _fetch_requirements(conn, project_id, session_id)
     allowed: dict[str, list[dict]] = {}
-    for req_id, text in _fetch_requirements(conn, project_id, session_id):
+    for req_id, text in requirements:
         for cap, phrases in claim_parser.map_text(text).items():
             allowed.setdefault(cap, []).append(
                 {"requirement_id": req_id, "phrases": phrases}
@@ -593,6 +822,8 @@ def reconcile_aware(
     session_id: Optional[str] = None,
     conn: Any = None,
     db_path: Optional[str] = None,
+    llm_router: Any = None,
+    llm_config: Optional[dict] = None,
 ) -> dict:
     """Reconcile an exercised manifest against the RTM-derived ALLOWED set (Mode A).
 
@@ -630,7 +861,10 @@ def reconcile_aware(
         conn = get_connection()
     try:
         init_db(conn)  # idempotent: CREATE TABLE IF NOT EXISTS
-        allowed_map = _allowed_capabilities(conn, project_id, session_id)
+        requirements = _fetch_requirements(conn, project_id, session_id)
+        allowed_map = _allowed_capabilities(
+            conn, project_id, session_id, requirements=requirements
+        )
     finally:
         if own_conn:
             conn.close()
@@ -639,7 +873,7 @@ def reconcile_aware(
     findings.extend(_intrinsic_findings(records))
     coverage_gaps = _coverage_gaps(project_id, session_id, db_path)
 
-    return {
+    result = {
         "mode": "provenance_aware",
         "project_id": project_id,
         "session_id": session_id,
@@ -651,6 +885,12 @@ def reconcile_aware(
         "coverage_gaps": coverage_gaps,
     }
 
+    # Advisory only — the unauthorized/intrinsic findings above are the primary
+    # verdict. The requirement prose is the text the manifest is judged against.
+    requirement_text = "\n".join(text for _, text in requirements if text)
+    _attach_advisory(result, requirement_text, records, config=llm_config, router=llm_router)
+    return result
+
 
 def reconcile_aware_and_persist(
     assessment_id: int,
@@ -659,13 +899,16 @@ def reconcile_aware_and_persist(
     session_id: Optional[str] = None,
     conn: Any = None,
     db_path: Optional[str] = None,
+    llm_router: Any = None,
+    llm_config: Optional[dict] = None,
 ) -> dict:
     """Reconcile (Mode A) and persist the findings append-only.
 
     Opens an RLS-aware connection when ``conn`` is ``None`` (closing it on exit);
     ``init_db`` runs idempotently. Returns the :func:`_summarize` rollup extended
     with ``coverage_gaps`` / ``allowed_capabilities`` / ``exercised_capabilities``
-    / ``mode`` so the engine + route surface the full Mode A disposition.
+    / ``mode`` / ``llm_advisory`` so the engine + route surface the full Mode A
+    disposition.
     """
     own_conn = conn is None
     if own_conn:
@@ -675,7 +918,13 @@ def reconcile_aware_and_persist(
     try:
         init_db(conn)  # idempotent: CREATE TABLE IF NOT EXISTS
         result = reconcile_aware(
-            manifest, project_id, session_id, conn=conn, db_path=db_path
+            manifest,
+            project_id,
+            session_id,
+            conn=conn,
+            db_path=db_path,
+            llm_router=llm_router,
+            llm_config=llm_config,
         )
         finding_ids = _persist(conn, assessment_id, result["findings"])
     finally:
@@ -687,6 +936,7 @@ def reconcile_aware_and_persist(
     summary["coverage_gaps"] = result["coverage_gaps"]
     summary["allowed_capabilities"] = result["allowed_capabilities"]
     summary["exercised_capabilities"] = result["exercised_capabilities"]
+    summary["llm_advisory"] = result.get("llm_advisory")
     return summary
 
 
@@ -697,6 +947,8 @@ def assess_aware(
     assessment_id: Optional[int] = None,
     conn: Any = None,
     db_path: Optional[str] = None,
+    llm_router: Any = None,
+    llm_config: Optional[dict] = None,
 ) -> dict:
     """End-to-end Mode A assessment of an artifact at ``path``.
 
@@ -705,7 +957,9 @@ def assess_aware(
     when ``assessment_id`` is given — persists the findings append-only.
 
     This is the provenance-aware entrypoint: an RTM / intake requirements drive the
-    authorization, unlike the claim-based :func:`assess_blind`.
+    authorization, unlike the claim-based :func:`assess_blind`. The deterministic
+    reconciliation always runs; an advisory LLM second opinion is attached under
+    ``result['llm_advisory']`` when ``llm_assist.enabled`` (``None`` otherwise).
     """
     # Imported lazily so the pure reconcile path carries no extra import cost.
     from tools.integrity import capability_extractor
@@ -714,12 +968,25 @@ def assess_aware(
 
     if assessment_id is None:
         return reconcile_aware(
-            manifest, project_id, session_id, conn=conn, db_path=db_path
+            manifest,
+            project_id,
+            session_id,
+            conn=conn,
+            db_path=db_path,
+            llm_router=llm_router,
+            llm_config=llm_config,
         )
     # The persist path's _summarize rollup already carries the findings list +
     # coverage_gaps / allowed / exercised — no need to reconcile a second time.
     return reconcile_aware_and_persist(
-        assessment_id, manifest, project_id, session_id, conn=conn, db_path=db_path
+        assessment_id,
+        manifest,
+        project_id,
+        session_id,
+        conn=conn,
+        db_path=db_path,
+        llm_router=llm_router,
+        llm_config=llm_config,
     )
 
 

