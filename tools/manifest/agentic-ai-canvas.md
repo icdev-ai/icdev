@@ -33,6 +33,19 @@ Model layer for Agentic Research Pipeline (AADC Template #5). Three composable c
   - `run(query, chunks)` → `PipelineResult`
 - Blueprint route: `POST /agentic-ai/api/designs/<id>/run-pipeline` — body: `{query, chunks, top_k}`
 
+### `tools/agentic_ai_canvas/agent_layer.py`
+Agent layer for Agentic Research Pipeline (AADC Template #5) — the `researcher-agent` node. Orchestrates the `web-search` and `chunker` upstream nodes.
+- `WebSearcher.search(query)` → `List[SearchHit]` — Tavily → SerpAPI → DuckDuckGo Lite fallback chain (air-gap unsafe at the scrape tier)
+- `TextChunker` — splits raw docs into model-ready chunks
+- `ResearchAgent.search(query)` → `ResearchResult(query, chunks, sources, duration_ms, error)` — chunks feed `AgenticResearchPipeline.run()`
+
+### `tools/agentic_ai_canvas/governance_layer.py`
+Governance layer for Agentic Research Pipeline (AADC Template #5) — the three governance nodes between Synthesis LLM and final output. Composed in order: `ConfidenceGate → OutputValidator → PipelineAuditLogger`.
+- `ConfidenceGate(threshold).evaluate(confidence)` → `ConfidenceGateResult`
+- `OutputValidator().validate(answer, error)` → `OutputValidationResult`
+- `PipelineAuditLogger` — non-fatal run start/failed audit logging
+- `GovernanceLayer(confidence_threshold, design_id, actor, session_id)` — public entry-point consumed by `AgenticResearchPipeline.run()`; `log_started(query)` / `log_failed(query, error)`
+
 ### `tools/agentic_ai_canvas/workflow.py`
 HITL workflow + loop_engine bridge.
 - `seed_hitl_templates()` — inserts AADC HITL templates into `wf_templates`
