@@ -307,6 +307,7 @@ class IngestOutcome:
     tenant_id: str
     classification: str
     summary: str = ""
+    ocr_cleaned: bool = False
     errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -323,6 +324,7 @@ class IngestOutcome:
             "tenant_id": self.tenant_id,
             "classification": self.classification,
             "summary": self.summary,
+            "ocr_cleaned": self.ocr_cleaned,
             "errors": self.errors,
         }
 
@@ -485,6 +487,103 @@ def _ai_document_summary(text: str, filename: str, page_count: int) -> dict | No
 
 
 # --------------------------------------------------------------------------- #
+# LLM OCR cleanup (aiify-opp-6118: ocr_extraction_pipeline -> llm_generation).
+# Text recovered from a scanned page by the OCR fallback (easyocr / vision-LLM /
+# pytesseract) is noisy: words split by line-break hyphenation, mis-segmented
+# tokens, garbled characters, and broken paragraph structure. Before that text
+# is chunked + embedded, this optional helper asks the LLM to *correct* the OCR
+# artifacts — grounded ONLY on the OCR text, never adding, removing, or
+# inventing content. A length-ratio guard rejects any result that drifts too far
+# from the original so the model cannot silently drop or hallucinate content.
+# Only fires for genuinely-OCR'd providers — clean digital text is left untouched.
+# --------------------------------------------------------------------------- #
+
+# Providers whose text came from OCR (noisy) rather than a digital text layer.
+_OCR_PROVIDERS = {"pypdf+ocr", "ocr"}
+
+# Cleanup is a single bounded LLM call that must round-trip the whole text. To
+# keep it cheap and avoid truncating real content, skip cleanup above this size
+# (large OCR docs are left as-is rather than partially corrected).
+_OCR_CLEANUP_MAX_CHARS = 8000
+
+# The corrected text must stay within this fraction of the original length in
+# both directions; outside the band we assume the model dropped or invented
+# content and discard the result, keeping the raw OCR text.
+_OCR_CLEANUP_MIN_RATIO = 0.5
+_OCR_CLEANUP_MAX_RATIO = 2.0
+
+_OCR_CLEANUP_SYSTEM_PROMPT = (
+    "You are correcting raw OCR output from a scanned document page. Fix only "
+    "mechanical OCR errors: rejoin words split by line-break hyphenation, merge "
+    "tokens that were wrongly broken apart, repair obviously garbled characters, "
+    "and restore natural paragraph and line spacing. Do NOT add, remove, "
+    "summarize, translate, reorder, or invent any content. Preserve every fact, "
+    "number, name, and the original language exactly. Return ONLY the corrected "
+    "text, with no commentary, preamble, or code fences."
+)
+
+
+def _ai_ocr_cleanup(text: str) -> str | None:
+    """Correct OCR artifacts in ``text`` via the LLM, grounded on the text alone.
+
+    Args:
+        text: Raw text emitted by an OCR extractor. Only invoked by the
+            orchestrator when the extraction provider is OCR-based and the text
+            is at most ``_OCR_CLEANUP_MAX_CHARS`` characters.
+
+    Returns:
+        The corrected text on success, or ``None`` when cleanup is unavailable,
+        the text is empty/too large, the model returns nothing, or the result
+        fails the length-ratio grounding guard. Callers MUST treat ``None`` as
+        "no cleanup" and proceed with the raw OCR text — this is a best-effort
+        enrichment, never a hard dependency.
+    """
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    # Bound cost: never truncate a large document — skip cleanup instead.
+    if len(snippet) > _OCR_CLEANUP_MAX_CHARS:
+        return None
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Correct the OCR errors in the following text:\n\n"
+                        f"{snippet}"
+                    ),
+                }
+            ],
+            system_prompt=_OCR_CLEANUP_SYSTEM_PROMPT,
+            max_tokens=4096,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        cleaned = resp.content.strip()
+        # Strip a stray fenced block if the model wrapped the text anyway.
+        if cleaned.startswith("```"):
+            cleaned = cleaned.strip("`").strip()
+        if not cleaned:
+            return None
+        # Grounding guard: a faithful correction stays close to the original
+        # length. Reject runaway expansion or content drop.
+        ratio = len(cleaned) / max(len(snippet), 1)
+        if ratio < _OCR_CLEANUP_MIN_RATIO or ratio > _OCR_CLEANUP_MAX_RATIO:
+            return None
+        return cleaned
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
@@ -498,6 +597,7 @@ def ingest_file(
     embed: bool = True,
     bridge_kg: bool = True,
     summarize: bool = True,
+    clean_ocr: bool = True,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -512,6 +612,11 @@ def ingest_file(
         bridge_kg: when True, extract entities/relationships into the KG.
         summarize: when True, best-effort LLM title/abstract enrichment grounded
             in the extracted text (aiify-opp-6098). Failures degrade silently.
+        clean_ocr: when True, best-effort LLM correction of noisy OCR text
+            (aiify-opp-6118) — only fires when the extractor used an OCR path
+            and the text fits the cleanup budget; grounded on the OCR text and
+            length-ratio guarded so it can never drop or invent content.
+            Failures degrade silently to the raw OCR text.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -538,8 +643,20 @@ def ingest_file(
     if extraction.warnings:
         errors.extend(extraction.warnings)
 
-    # Compute content hash early for duplicate detection.
+    # Compute content hash on the RAW extracted text for deterministic dedup —
+    # OCR cleanup below is non-deterministic, so hashing pre-cleanup keeps the
+    # same scanned file idempotent across ingests.
     content_hash = _sha256(text)
+
+    # LLM OCR cleanup (best-effort): correct noisy OCR output before chunking.
+    # Only fires for OCR-derived providers; the raw text is kept on any failure.
+    ocr_cleaned = False
+    if clean_ocr and text.strip() and extraction.provider in _OCR_PROVIDERS:
+        _emit("ocr_cleanup", "Correcting OCR artifacts…", 7)
+        corrected = _ai_ocr_cleanup(text)
+        if corrected:
+            text = corrected
+            ocr_cleaned = True
 
     # LLM enrichment (best-effort): a title + abstract grounded in the text.
     ai_title, ai_summary = "", ""
@@ -724,6 +841,7 @@ def ingest_file(
             tenant_id=tid,
             classification=cls,
             summary=ai_summary,
+            ocr_cleaned=ocr_cleaned,
             errors=errors,
         )
     finally:
