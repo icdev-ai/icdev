@@ -9,7 +9,6 @@ and basic invocation patterns.
 
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -21,9 +20,10 @@ import pytest
 def test_storage_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.db.storage
+        import tools.db.storage as storage_mod
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
+    assert storage_mod is not None
 
 
 # --- Function Signature Tests ---
