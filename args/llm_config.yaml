@@ -566,6 +566,15 @@ routing:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
 
+  # SIPA intent reconciliation (sipa-intent-04) — ADVISORY second opinion only.
+  # The deterministic rule-based reconciler in tools/integrity/intent_reconciler.py
+  # ALWAYS computes the primary verdict first (air-gap safe, no LLM required); this
+  # chain powers an optional match/mismatch judgement gated on integrity_config.yaml
+  # llm_assist.enabled. Local-first so it degrades cleanly with no cloud provider.
+  intent_reconciliation:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
   test_translation:
     chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
