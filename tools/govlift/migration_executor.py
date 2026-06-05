@@ -221,8 +221,11 @@ def get_migration_summary() -> dict:
                 except Exception:
                     pass
 
-            avg_duration_sec = (sum(durations) / len(durations)) if durations else None
-            avg_duration_h = avg_duration_sec / 3600 if avg_duration_sec else None
+            # Use numeric 0.0 (not None) on empty data so templates that render
+            # these with |round don't crash ("NoneType doesn't define __round__")
+            # when there are no completed migrations (e.g. a fresh schema-only DB).
+            avg_duration_sec = (sum(durations) / len(durations)) if durations else 0.0
+            avg_duration_h = avg_duration_sec / 3600 if avg_duration_sec else 0.0
 
             return {
                 "total": total,
