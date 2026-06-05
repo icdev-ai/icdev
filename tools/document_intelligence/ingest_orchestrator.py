@@ -306,6 +306,7 @@ class IngestOutcome:
     kg_relationships: int
     tenant_id: str
     classification: str
+    summary: str = ""
     errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -321,6 +322,7 @@ class IngestOutcome:
             "kg_relationships": self.kg_relationships,
             "tenant_id": self.tenant_id,
             "classification": self.classification,
+            "summary": self.summary,
             "errors": self.errors,
         }
 
@@ -392,6 +394,97 @@ def _embed_and_store(chunks: list, tenant_id: str, errors: list[str], progress_c
 
 
 # --------------------------------------------------------------------------- #
+# LLM document summarization (aiify-opp-6098: document_ingestion_pipeline ->
+# llm_generation). During ingestion the extractor often yields no embedded
+# title, so the document is stored under its bare filename stem. This optional
+# helper distils the extracted text into a descriptive title + short abstract,
+# grounded only in the document's own content so the model cannot invent facts.
+# --------------------------------------------------------------------------- #
+
+# Cap the text handed to the model so a large document stays within a cheap,
+# fast summarization budget. The lede of a document carries the title/abstract
+# signal, so the leading slice is sufficient and deterministic.
+_SUMMARY_INPUT_CHARS = 6000
+
+_DOC_SUMMARY_SYSTEM_PROMPT = (
+    "You summarize a single ingested document for a document-management index. "
+    "Use ONLY the provided text — never invent facts, names, or numbers not "
+    "present in it. Respond with a strict JSON object and nothing else, of the "
+    'form {"title": "<=12 word descriptive title", "summary": "1-3 sentence '
+    'abstract"}. If the text is too short or empty to summarize, return '
+    '{"title": "", "summary": ""}.'
+)
+
+
+def _ai_document_summary(text: str, filename: str, page_count: int) -> dict | None:
+    """Distil extracted document text into a title + abstract via the LLM.
+
+    Args:
+        text: The full extracted document text. Only the leading
+            ``_SUMMARY_INPUT_CHARS`` characters are sent to the model, keeping
+            the call cheap and bounded regardless of document size.
+        filename: Source filename, passed as weak context only (the model is
+            told to ground on the text, not the name).
+        page_count: Extracted page count, included as a grounding fact.
+
+    Returns:
+        ``{"title": str, "summary": str}`` on success, or ``None`` when
+        summarization is unavailable, the text is empty, or anything fails.
+        Callers MUST treat ``None`` as "no summary" and proceed with ingestion
+        unchanged — this is a best-effort enrichment, never a hard dependency.
+    """
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    snippet = snippet[:_SUMMARY_INPUT_CHARS]
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Filename: {filename}\n"
+                        f"Page count: {page_count}\n"
+                        "Document text (leading excerpt):\n"
+                        f"{snippet}\n\n"
+                        "Produce the title and summary JSON."
+                    ),
+                }
+            ],
+            system_prompt=_DOC_SUMMARY_SYSTEM_PROMPT,
+            max_tokens=256,
+            temperature=0.2,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+        title = str(parsed.get("title") or "").strip()
+        summary = str(parsed.get("summary") or "").strip()
+        if not title and not summary:
+            return None
+        return {"title": title, "summary": summary}
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
@@ -404,6 +497,7 @@ def ingest_file(
     created_by: str | None = None,
     embed: bool = True,
     bridge_kg: bool = True,
+    summarize: bool = True,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -416,6 +510,8 @@ def ingest_file(
         created_by: user id recorded on the initial version row.
         embed: when True, embed + upsert chunks into the vector store.
         bridge_kg: when True, extract entities/relationships into the KG.
+        summarize: when True, best-effort LLM title/abstract enrichment grounded
+            in the extracted text (aiify-opp-6098). Failures degrade silently.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -444,6 +540,14 @@ def ingest_file(
 
     # Compute content hash early for duplicate detection.
     content_hash = _sha256(text)
+
+    # LLM enrichment (best-effort): a title + abstract grounded in the text.
+    ai_title, ai_summary = "", ""
+    if summarize and text.strip():
+        _emit("summarizing", "Generating title and abstract…", 8)
+        ai = _ai_document_summary(text, p.name, extraction.page_count)
+        if ai:
+            ai_title, ai_summary = ai.get("title", ""), ai.get("summary", "")
 
     # ── Duplicate detection + bookkeeping ─────────────────────────────────────
     # Open a single DB connection (or reuse caller's) for dedup + writes.
@@ -542,7 +646,7 @@ def ingest_file(
             (
                 doc_id, collection_id, source_id, p.name, str(p),
                 extraction.content_type, extraction.provider,
-                extraction.title or p.stem, p.stat().st_size, content_hash,
+                extraction.title or ai_title or p.stem, p.stat().st_size, content_hash,
                 extraction.page_count, now, tid, cls,
             ),
         )
@@ -619,6 +723,7 @@ def ingest_file(
             kg_relationships=kg_rels,
             tenant_id=tid,
             classification=cls,
+            summary=ai_summary,
             errors=errors,
         )
     finally:
