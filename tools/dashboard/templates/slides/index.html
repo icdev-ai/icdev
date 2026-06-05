@@ -81,7 +81,7 @@
                             <span class="badge">{{ deck.status }}</span>
                         {% endif %}
                     </td>
-                    <td>{{ deck.created_at[:16] if deck.created_at else '—' }}</td>
+                    <td>{{ deck.created_at.strftime('%Y-%m-%d %H:%M') if deck.created_at else '—' }}</td>
                     <td>
                         <a href="/slides/{{ deck.deck_id }}" class="btn btn-sm btn-secondary">View</a>
                         {% if deck.status in ('completed', 'auto') %}
