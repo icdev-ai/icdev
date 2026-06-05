@@ -62,6 +62,7 @@ from tools.integrity import (
     claim_parser,
     ingest,
     intent_reconciler,
+    provenance,
     scanners,
     scoring,
 )
@@ -347,6 +348,7 @@ def assess(
         #    * provenance_aware: RTM-derived ALLOWED set vs exercised (manifest) ->
         #      unauthorized_capability findings + requirement coverage gaps.
         reconciled = False
+        allowed_capabilities: dict = {}
         if resolved_mode == PROVENANCE_BLIND:
             claim = claim_parser.parse_claim(staged_path, declared_purpose=declared_purpose)
             intent_reconciler.reconcile_and_persist(assessment_id, manifest, claim, conn=conn)
@@ -357,9 +359,12 @@ def assess(
             # already degrades to "nothing authorized" on a missing requirements
             # table, so this guard only covers unexpected RTM-build failures.
             try:
-                intent_reconciler.reconcile_aware_and_persist(
+                aware_summary = intent_reconciler.reconcile_aware_and_persist(
                     assessment_id, manifest, project_id, session_id, conn=conn
                 )
+                # The Mode A allowed-capability -> requirement map feeds the
+                # provenance edges (code -> capability -> requirement).
+                allowed_capabilities = aware_summary.get("allowed_capabilities") or {}
                 reconciled = True
             except Exception as exc:  # noqa: BLE001 — reconciliation is non-fatal to assess
                 logger.warning(
@@ -369,6 +374,29 @@ def assess(
 
         # 6. Scoring — combine every signal into a risk score + verdict.
         score_result = scoring.score(assessment_id, conn=conn)
+
+        # 7. Provenance linkage — record the assessment + verdict in the PROV graph
+        #    (report wasGeneratedBy assessment) and the source-citation registry with
+        #    a trust score; Mode A also links authorized capabilities to their
+        #    requirement_id. Best-effort: a provenance hiccup never aborts the
+        #    assessment — the verdict already stands on the integrity_verdicts row.
+        prov_result = None
+        try:
+            prov_result = provenance.record_assessment_provenance(
+                assessment_id,
+                staged.get("dir_digest"),
+                score_result["verdict"],
+                score_result["risk_score"],
+                resolved_mode,
+                project_id=project_id,
+                allowed_capabilities=allowed_capabilities,
+                conn=conn,
+            )
+        except Exception as exc:  # noqa: BLE001 — provenance is non-fatal to assess
+            logger.warning(
+                "assess: provenance linkage failed for assessment %s: %s",
+                assessment_id, exc,
+            )
 
         findings_count = _count_findings(conn, assessment_id)
         capabilities_count = _count_capabilities(conn, assessment_id)
@@ -392,6 +420,7 @@ def assess(
         "status": status,
         "mode": resolved_mode,
         "scanners": scan_summary.get("scanners", {}),
+        "provenance": prov_result,
     }
 
 
