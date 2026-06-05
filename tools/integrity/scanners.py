@@ -22,6 +22,12 @@ ones and normalize:
         scan; ``source_scanner='container'``. Runs **only** when a Dockerfile/image
         is present in the quarantined tree (else a clean no-op). Opt-in; off by
         default.
+  * malicious-signature Semgrep rules (``context/integrity/semgrep_rules/*.yaml``)
+        run via the generic Semgrep engine reused from
+        ``tools/aiify/pattern_classifier.py`` (``run_semgrep``), with a
+        deterministic regex fallback for the Semgrep-absent / air-gap case; emits
+        ``source_scanner='semgrep'`` / ``finding_type='known_bad_signature'`` with
+        the firing rule id + line. On by default.
 
 SECURITY INVARIANTS (consistent with ingest.py — the SIPA static-only contract):
   * **Never executes target code.** Each adapter runs a *scanner* against the
@@ -47,6 +53,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess  # nosec B404 — fixed-arg, shell=False scanner invocation (see _invoke_scanner)
 import sys
 from pathlib import Path
@@ -77,6 +84,12 @@ _DEPENDENCY_AUDITOR = BASE_DIR / "tools" / "security" / "dependency_auditor.py"
 _CONTAINER_SCANNER = BASE_DIR / "tools" / "security" / "container_scanner.py"
 # formal_verifier exposes multi-check verify_project(); reached via `python -c`
 # (the module CLI is per-file/dir but we want the aggregated project sweep).
+
+# Malicious-signature Semgrep rules (authored for SIPA). Run via the generic
+# Semgrep engine in tools/aiify/pattern_classifier (run_semgrep) when Semgrep is
+# installed; a deterministic regex fallback (_signature_fallback_scan) covers the
+# air-gap / Semgrep-absent case so a planted reverse shell still trips offline.
+_SIGNATURE_RULES_DIR = str(BASE_DIR / "context" / "integrity" / "semgrep_rules")
 
 # Per-scanner subprocess wall-clock cap (seconds). A scan that hangs is killed,
 # never left running. Overridable via integrity_config.yaml ``scan_timeout``.
@@ -669,12 +682,234 @@ def run_container_scan(
     return _with_conn(conn, _body)
 
 
+# --------------------------------------------------------------------------- #
+# Malicious-signature scan (Semgrep rules + regex fallback)
+# --------------------------------------------------------------------------- #
+# Signature CATEGORY -> default severity for the emitted known_bad_signature
+# finding. The category is the source of truth for severity so the Semgrep path
+# and the regex fallback agree regardless of a rule's native severity. Keys mirror
+# ``metadata.sipa_signature`` in context/integrity/semgrep_rules/*.yaml.
+_SIGNATURE_CATEGORIES: dict[str, str] = {
+    "reverse_shell":    "critical",   # socket-bound interactive shell / C2 callback
+    "decode_then_exec": "critical",   # base64/hex/zlib blob -> exec()/eval()
+    "credential_exfil": "high",       # environment / secrets POSTed to a host
+    "dynamic_import":   "medium",     # import of an attacker-controlled module name
+    "persistence":      "medium",     # cron / startup / Run-key survival
+}
+
+# Regex fallback — one or more compiled patterns per category, used only when
+# Semgrep is unavailable. Each pattern is deliberately narrow: it targets the
+# malicious idiom itself, not the individual benign primitives (a bare
+# ``socket.socket`` or ``base64.b64decode`` does NOT trip — only the weaponized
+# combination does), so benign code stays clean.
+_SIGNATURE_FALLBACK_PATTERNS: dict[str, list[re.Pattern]] = {
+    "reverse_shell": [
+        re.compile(r"os\.dup2\s*\(\s*\w+\.fileno\s*\(\s*\)"),
+        re.compile(r"""\[\s*['"]/bin/(?:ba)?sh['"]\s*,\s*['"]-i['"]"""),
+        re.compile(r"""pty\.spawn\s*\(\s*['"]/bin/(?:ba)?sh['"]"""),
+        re.compile(r"(?:ba)?sh\s+-i\s+>&\s*/dev/tcp/"),
+        re.compile(r"\bnc\s+-e\s+/bin/"),
+    ],
+    "decode_then_exec": [
+        re.compile(
+            r"\b(?:exec|eval)\s*\(\s*(?:base64\.b64decode|codecs\.decode|"
+            r"bytes\.fromhex|binascii\.unhexlify|zlib\.decompress)\b"
+        ),
+        re.compile(r"""\b(?:exec|eval)\s*\(\s*__import__\s*\(\s*['"]base64['"]"""),
+    ],
+    "credential_exfil": [
+        re.compile(r"requests\.(?:post|put|get)\s*\([^)]*\bos\.environ\b"),
+        re.compile(r"(?:urlopen|urlretrieve)\s*\([^)]*\bos\.environ\b"),
+    ],
+    "dynamic_import": [
+        # import of a NON-literal name (next non-space char is not a quote).
+        re.compile(r"""importlib\.import_module\s*\(\s*(?!['"\s)])"""),
+        re.compile(r"""__import__\s*\(\s*(?!['"\s)])"""),
+    ],
+    "persistence": [
+        re.compile(r"crontab\s+-[lrei]"),
+        re.compile(r"/etc/cron\.(?:d|daily|hourly|weekly)"),
+        re.compile(r"/etc/rc\.local"),
+        re.compile(r"/Library/Launch(?:Agents|Daemons)"),
+        re.compile(r"CurrentVersion\\+Run"),
+        re.compile(r"systemctl\s+enable\s"),
+    ],
+}
+
+# Text files worth scanning in the fallback (by suffix; extensionless files such
+# as a bare ``Dockerfile``/shell script are also scanned). Binaries are skipped by
+# a decode guard, not by this list.
+_FALLBACK_TEXT_SUFFIXES = {
+    ".py", ".pyw", ".js", ".ts", ".sh", ".bash", ".rb", ".pl", ".php",
+    ".ps1", ".psm1", ".txt", ".cfg", ".ini", ".yaml", ".yml", "",
+}
+_FALLBACK_MAX_BYTES = 2_000_000          # skip files larger than 2 MB
+_FALLBACK_EXCLUDES = {".git", "__pycache__", "node_modules", ".venv", "venv", ".tmp"}
+_FALLBACK_MAX_PER_FILE_CATEGORY = 5       # cap hits per (file, category) — anti-flood
+
+
+def _detect_signatures(staged: Path) -> Optional[list[dict]]:
+    """Run the malicious-signature Semgrep rules over ``staged`` and return hits.
+
+    Reuses the generic Semgrep CLI engine in ``tools.aiify.pattern_classifier``
+    (``run_semgrep``) pointed at :data:`_SIGNATURE_RULES_DIR`. Returns a list of
+    unified hit dicts (``rule_id``, ``category``, ``file``, ``line``, ``message``)
+    — one per rule match — or ``None`` when Semgrep is unavailable / the rules dir
+    is missing (the caller's cue to use :func:`_signature_fallback_scan`).
+
+    This is a monkeypatch seam: tests replace it to drive either branch
+    deterministically without depending on the Semgrep binary.
+    """
+    from tools.aiify.pattern_classifier import run_semgrep
+
+    raw = run_semgrep(str(staged), _SIGNATURE_RULES_DIR)
+    if raw is None:
+        return None
+    hits: list[dict] = []
+    for r in raw:
+        meta = r.get("metadata", {}) or {}
+        category = meta.get("sipa_signature")
+        if category not in _SIGNATURE_CATEGORIES:
+            # A rule in the dir that isn't a SIPA signature (or is misconfigured)
+            # — ignore rather than mislabel it as a known-bad signature.
+            continue
+        hits.append({
+            "rule_id": r.get("rule_id", ""),
+            "category": category,
+            "file": r.get("path", ""),
+            "line": _to_int(r.get("start_line")),
+            "message": r.get("message", ""),
+        })
+    return hits
+
+
+def _iter_text_files(staged: Path):
+    """Yield (path, text) for scannable text files under the staged tree."""
+    if not staged.exists():
+        return
+    for root, dirs, files in os.walk(staged):
+        dirs[:] = [d for d in dirs if d not in _FALLBACK_EXCLUDES]
+        for fn in files:
+            fp = Path(root) / fn
+            if fp.suffix.lower() not in _FALLBACK_TEXT_SUFFIXES:
+                continue
+            try:
+                if fp.stat().st_size > _FALLBACK_MAX_BYTES:
+                    continue
+                text = fp.read_text(encoding="utf-8")
+            except (OSError, ValueError, UnicodeDecodeError):
+                continue  # unreadable / binary — skip, never crash the scan
+            yield fp, text
+
+
+def _signature_fallback_scan(staged: Path) -> list[dict]:
+    """Deterministic regex fallback for the malicious signatures (no Semgrep).
+
+    Walks the quarantined tree and matches each category's narrow regexes line by
+    line, returning the same unified hit shape as :func:`_detect_signatures`. This
+    is purely static text matching — the bytes are read, never executed.
+    """
+    hits: list[dict] = []
+    for fp, text in _iter_text_files(staged):
+        per_cat: dict[str, int] = {}
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            for category, patterns in _SIGNATURE_FALLBACK_PATTERNS.items():
+                if per_cat.get(category, 0) >= _FALLBACK_MAX_PER_FILE_CATEGORY:
+                    continue
+                if any(p.search(line) for p in patterns):
+                    per_cat[category] = per_cat.get(category, 0) + 1
+                    hits.append({
+                        "rule_id": f"sipa-{category.replace('_', '-')}-fallback",
+                        "category": category,
+                        "file": str(fp),
+                        "line": lineno,
+                        "message": _SIGNATURE_CATEGORIES_MSG.get(category, category),
+                        "snippet": line.strip()[:200],
+                    })
+    return hits
+
+
+# Short human-readable message per category for the regex-fallback path (the
+# Semgrep path carries the rule's own message).
+_SIGNATURE_CATEGORIES_MSG: dict[str, str] = {
+    "reverse_shell":    "Reverse shell / interactive shell bound to a socket (C2 callback)",
+    "decode_then_exec": "Obfuscated code execution: decode-then-exec (base64/hex/zlib)",
+    "credential_exfil": "Possible credential exfiltration: environment/secrets sent to network",
+    "dynamic_import":   "Dynamic import of a non-literal (attacker-controllable) module name",
+    "persistence":      "Suspicious persistence mechanism (cron/startup/Run-key/systemd)",
+}
+
+
+def _normalize_signatures(hits: list[dict], root: Path, engine: str) -> list[dict]:
+    """Unified signature hits -> integrity_findings tuples (known_bad_signature).
+
+    Severity is category-driven (:data:`_SIGNATURE_CATEGORIES`) so the Semgrep and
+    fallback paths emit identical severities. ``detail`` records the firing rule
+    id, the category, the message, the engine, and (fallback only) a truncated
+    snippet for triage — never a full file dump of the malicious payload.
+    """
+    out: list[dict] = []
+    for h in hits:
+        category = h.get("category", "")
+        detail = {
+            "rule_id": h.get("rule_id", ""),
+            "category": category,
+            "message": h.get("message", ""),
+            "engine": engine,
+        }
+        if h.get("snippet"):
+            detail["snippet"] = h["snippet"]
+        out.append({
+            "source_scanner": "semgrep",
+            "finding_type": "known_bad_signature",
+            "severity": _norm_severity(
+                _SIGNATURE_CATEGORIES.get(category), default="high"
+            ),
+            "file_path": _rel(h.get("file"), root),
+            "line": _to_int(h.get("line")),
+            "detail": detail,
+        })
+    return out
+
+
+def run_signature_scan(assessment_id: int, staged_path: Optional[str] = None, conn: Any = None) -> dict:
+    """Match malicious-signature Semgrep rules against the quarantined tree.
+
+    Reuses the Semgrep CLI engine in ``tools.aiify.pattern_classifier`` pointed at
+    the SIPA malicious-signature rules dir; when Semgrep is unavailable it falls
+    back to a deterministic regex matcher over the same signatures. Every match is
+    persisted as ``source_scanner='semgrep'`` / ``finding_type='known_bad_signature'``
+    with the firing rule id + line carried in ``detail`` (+ ``file_path``/``line``).
+    """
+    staged = _staged_dir(assessment_id, staged_path)
+
+    def _body(c: Any) -> dict:
+        hits = _detect_signatures(staged)        # Semgrep (reused engine)
+        engine = "semgrep"
+        if hits is None:                          # Semgrep absent -> regex fallback
+            hits = _signature_fallback_scan(staged)
+            engine = "regex_fallback"
+        normalized = _normalize_signatures(hits, staged, engine)
+        finding_ids = _persist(c, assessment_id, normalized)
+        return {
+            "scanner": "semgrep",
+            "success": True,
+            "findings_persisted": len(finding_ids),
+            "finding_ids": finding_ids,
+            "error": None,
+            "engine": engine,
+        }
+
+    return _with_conn(conn, _body)
+
+
 # Map a scanner key (matches integrity_config.yaml ``scanners`` toggles and
 # constants.FINDING_SCANNERS) to its adapter.
 _ADAPTERS = {
     "sast": run_sast_scan,
     "secrets": run_secret_scan,
     "deps": run_dependency_scan,
+    "semgrep": run_signature_scan,
     "formal": run_formal_scan,
     "container": run_container_scan,
 }
@@ -686,6 +921,7 @@ _DEFAULT_TOGGLES = {
     "sast": True,
     "secrets": True,
     "deps": True,
+    "semgrep": True,
     "formal": False,
     "container": False,
 }
