@@ -164,6 +164,7 @@ _CANVAS_DEFS = [
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
     ("slides", "ICDEV_SLIDES_ENABLED", "tools.slides.blueprint", "slides_bp"),
     ("ace", "ICDEV_ACE_ENABLED", "icdev.tools.ace.blueprint", "ace_bp"),
+    ("aisg", "ICDEV_AISG_ENABLED", "tools.aisg.blueprint", "bp"),
 ]
 
 _CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc"}
