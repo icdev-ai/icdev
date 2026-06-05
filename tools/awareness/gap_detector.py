@@ -685,6 +685,34 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "ad_radar_snapshots",  # write path deferred pending radar reflex wiring
     }
 
+    # Idealized table names referenced ONLY by the synthetic AI-ify
+    # db -> render -> notify candidate handlers in tools/notification_service/
+    # (handler_service.py, render_handler_service.py, report_service.py). Those
+    # handler functions were generated as single-concern "AI augmentation
+    # candidates" for the aiify scanner: each SELECTs from a plausible-sounding
+    # subsystem table to build a notification body. They are NOT wired into any
+    # production route, reflex, dispatch, or registry, and their tests fully
+    # mock get_connection() (a _FakeConn), so these tables are never created and
+    # never queried at runtime. The names are also fictional — they do not match
+    # the real owning subsystems' schemas (DIC uses dic_documents/dic_sections/
+    # dic_chunk_links, NOT dic_chunks/dic_entities; data mapping uses dm_* tables,
+    # NOT data_mapping_*). Creating real CREATE TABLEs for these would add
+    # unpopulated, RLS-burdened schema cruft that duplicates the real canvases.
+    # Suppress here so this synthetic-handler class stops generating recurring
+    # orphan_db_table batch cards. If a real table of one of these names is ever
+    # added, its CREATE TABLE will be seen first (``if t in created: continue``)
+    # and the entry becomes a harmless no-op.
+    synthetic_handler_tables = {
+        "agent_errors", "agent_metrics",                 # handle_agent_incident_handler
+        "canvas_assessments", "canvas_findings",         # render_and_deliver_canvas_status
+        "canvas_gate_results",                           # report_service canvas gate report
+        "compliance_gates",                              # render compliance gate notice
+        "data_mapping_runs", "data_mapping_field_matches",
+        "data_mapping_schemas",                          # render_and_notify_data_mapping_run
+        "dic_chunks", "dic_entities",                    # render_and_send_dic_document_summary
+        "fedramp_ato_packages",                          # render fedramp ATO package notice
+    }
+
     # Table names that are legitimately referenced but are DBMS-provided
     # and have no CREATE TABLE anywhere in tool code. Filtered at the
     # end so they never enter the orphan list.
@@ -815,6 +843,8 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         if t in system_tables:
             continue
         if t in deferred_write_tables:
+            continue
+        if t in synthetic_handler_tables:
             continue
         # Catch any pg_*, sqlite_*, or information_schema.* catalog the
         # explicit set above hasn't enumerated yet.
