@@ -24,6 +24,13 @@ host_allowlist:
   - github.com
   - gitlab.com
 
+# Remote git clone — shallow by design. The clone uses a FIXED arg list with
+# shell=False (never string-interpolated into a shell); the cloned tree is data
+# only and is NEVER executed. clone_depth=1 fetches just the current tip;
+# clone_timeout kills a hung/slow clone instead of leaving it running.
+clone_depth: 1
+clone_timeout: 120
+
 # ---------------------------------------------------------------------------
 # Capability risk weights — per capability_type contribution to risk score.
 # Keys MUST match CAPABILITY_TYPES in tools/integrity/constants.py.

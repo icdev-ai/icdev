@@ -114,8 +114,18 @@ def test_stage_missing_path_rejected(staged_env, tmp_path):
     assert _count_assessments() == 0
 
 
-def test_stage_remote_git_deferred_to_ingest_02(staged_env):
-    # Allowlisted scheme/host, but remote fetch is sipa-ingest-02's job.
-    with pytest.raises(NotImplementedError):
-        ingest.stage("https://github.com/org/repo.git")
-    assert _count_assessments() == 0
+def test_stage_remote_git_routes_to_clone(staged_env, monkeypatch):
+    # sipa-ingest-02: an allowlisted github URL is now cloned (not deferred). Stub the
+    # subprocess clone so the test never touches the network; assert it was invoked
+    # with the validated URL and a row was recorded in quarantine.
+    seen = {}
+
+    def _fake_clone(url, dest, **kwargs):
+        seen["url"] = url
+        seen["dest"] = dest
+
+    monkeypatch.setattr(ingest, "_git_clone", _fake_clone)
+    result = ingest.stage("https://github.com/org/repo.git")
+    assert result["source_type"] == "git"
+    assert seen["url"] == "https://github.com/org/repo.git"
+    assert _count_assessments() == 1
