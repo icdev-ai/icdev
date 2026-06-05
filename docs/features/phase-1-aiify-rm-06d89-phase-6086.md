@@ -112,5 +112,35 @@ All behavior toggled via paperless settings / env (no hardcoded model IDs):
 
 ## Status
 
-Advisory design recommendation produced and recorded. No ICDEV code change is
-warranted (target is an external project). Opportunity closed as **designed**.
+Advisory design recommendation produced and recorded for the external
+paperless-ngx target (above). Per the established `aiify-opp` pattern — the
+scan repo is ephemeral, so the augmentation lands in the **analogous ICDEV
+subsystem** — the same metadata-extraction capability was then **implemented in
+the Document Intelligence Canvas (DIC)**, mirroring siblings `aiify-opp-6098`
+(title/abstract) and `aiify-opp-6118` (OCR cleanup).
+
+### Implemented (ICDEV / DIC)
+
+`tools/document_intelligence/ingest_orchestrator.py` — new
+`_ai_metadata_extraction(text, filename)` helper invoked during `ingest_file`
+(new `extract_metadata=True` flag). It proposes structured metadata from the
+document's own text:
+
+- **`document_type`** — constrained to a closed enum (`_METADATA_DOC_TYPES`);
+  anything outside it collapses to `"other"`, so the model cannot invent a type.
+- **`tags`** — topic keywords drawn from the text; lower-cased, de-duplicated,
+  length-capped (`_METADATA_TAG_MAX_LEN`) and count-capped (`_METADATA_MAX_TAGS`).
+- **`date`** — kept only when it is a real ISO (`YYYY-MM-DD`) calendar date.
+- **`confidence`** — a single 0..1 score gates the whole suggestion; below
+  `_METADATA_MIN_CONFIDENCE` (0.70) the result is dropped for the HITL / manual
+  path.
+
+Grounding & safety match the design above: leading-`_METADATA_INPUT_CHARS`
+input bound, temperature 0.0, `claude-sonnet-4-6` via the `summarization` LLM
+function, and silent degradation to `None` on empty input, garbled output, or
+provider failure (ingestion never breaks). The result is surfaced as a **HITL
+proposal** on `IngestOutcome.metadata` (and `to_dict()`) — never silently
+written to `dic_documents`. Covered by `tests/test_dic_ingest_metadata.py`
+(17 tests pinning the enum constraint, confidence gate, date validation, tag
+normalization, input bound, fenced-block tolerance, and every silent-fallback
+path). Opportunity closed as **implemented**.

@@ -763,6 +763,7 @@ def ingest_file(
     bridge_kg: bool = True,
     summarize: bool = True,
     clean_ocr: bool = True,
+    extract_metadata: bool = True,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -782,6 +783,11 @@ def ingest_file(
             and the text fits the cleanup budget; grounded on the OCR text and
             length-ratio guarded so it can never drop or invent content.
             Failures degrade silently to the raw OCR text.
+        extract_metadata: when True, best-effort LLM extraction of structured
+            document metadata — document_type (closed enum), topic tags, and the
+            document date (aiify-opp-6086) — grounded in the text and confidence
+            gated. Surfaced as a HITL proposal on ``IngestOutcome.metadata``;
+            never silently persisted. Failures degrade silently to no metadata.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -830,6 +836,16 @@ def ingest_file(
         ai = _ai_document_summary(text, p.name, extraction.page_count)
         if ai:
             ai_title, ai_summary = ai.get("title", ""), ai.get("summary", "")
+
+    # LLM metadata extraction (best-effort): structured document_type / tags /
+    # date proposed from the text, grounded + confidence-gated. Surfaced as a
+    # HITL proposal only — never silently written. (aiify-opp-6086)
+    ai_metadata: dict = {}
+    if extract_metadata and text.strip():
+        _emit("metadata", "Extracting document metadata…", 9)
+        md = _ai_metadata_extraction(text, p.name)
+        if md:
+            ai_metadata = md
 
     # ── Duplicate detection + bookkeeping ─────────────────────────────────────
     # Open a single DB connection (or reuse caller's) for dedup + writes.
@@ -1007,6 +1023,7 @@ def ingest_file(
             classification=cls,
             summary=ai_summary,
             ocr_cleaned=ocr_cleaned,
+            metadata=ai_metadata,
             errors=errors,
         )
     finally:
