@@ -88,7 +88,7 @@ CREATE INDEX IF NOT EXISTS idx_slides_deck_id ON slides_slides(deck_id);
 CREATE INDEX IF NOT EXISTS idx_slides_audit_deck_id ON slides_audit(deck_id);
 """
 
-_SCHEMA_SQLITE = f"""
+_SCHEMA_SQLITE = """
 CREATE TABLE IF NOT EXISTS slides_decks (
     deck_id       INTEGER PRIMARY KEY AUTOINCREMENT,
     title         TEXT NOT NULL,

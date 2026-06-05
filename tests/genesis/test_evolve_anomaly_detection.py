@@ -1,5 +1,4 @@
 """Tests for anomaly-detection and config-driven thresholds in genesis/reflexes/evolve.py."""
-import math
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch

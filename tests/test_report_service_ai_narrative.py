@@ -146,7 +146,6 @@ def test_max_tokens_and_temperature(monkeypatch):
 
 def _fake_conn(monkeypatch, *, scan_row=None, pattern_rows=(), module_rows=(), top_opps=()):
     """Patch get_connection() to return a stub with canned query results."""
-    import types
 
     rows_by_call = [scan_row, pattern_rows, module_rows, top_opps]
     call_counter = {"n": 0}

@@ -1,20 +1,17 @@
 """Tests for tools/genesis/goal_learner.py — hardcoded_threshold → anomaly_detection (aiify-5226)."""
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.genesis.goal_learner import (
-    DEFAULT_NOVELTY_THRESHOLD,
     _REFLEX_DEFAULTS,
     _AdaptiveThreshold,
     _cluster_into_domains,

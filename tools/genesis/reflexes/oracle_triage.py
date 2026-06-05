@@ -554,7 +554,7 @@ def _verify_orphan_db_table(
     if min_refs == 0:
         # High-confidence oracle — trust the prediction even with few refs
         return "promote", (
-            f"No CREATE TABLE migration; Oracle high-confidence — write migration"
+            "No CREATE TABLE migration; Oracle high-confidence — write migration"
             + (f" ({refs} code ref(s))" if refs else " (0 code refs)")
         )
 

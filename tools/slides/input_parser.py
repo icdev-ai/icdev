@@ -65,7 +65,7 @@ def _parse_pdf(path: Path) -> dict[str, Any]:
             "summary": content[:500],
         }
     except ImportError:
-        return parse_text(f"PDF parsing requires pypdf. Install with: pip install pypdf")
+        return parse_text("PDF parsing requires pypdf. Install with: pip install pypdf")
     except Exception as e:
         return {"source": "upload", "content": "", "summary": str(e), "error": str(e)}
 

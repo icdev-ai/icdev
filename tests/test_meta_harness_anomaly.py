@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +178,6 @@ class TestGetAdaptiveThresholdsConfigFallback:
 
     def test_uses_anomaly_detector_over_config_when_detector_available(self, monkeypatch):
         """When _AnomalyDetector works, its adaptive values take precedence over config gates."""
-        import importlib
         import sys
         from tools.genesis.harness import meta_harness
 

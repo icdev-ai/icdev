@@ -157,7 +157,6 @@ class TestFetchSlaHistory:
 
 class TestRunDryRun:
     def test_run_returns_dict_with_required_keys(self):
-        from tools.genesis.reflexes.nocc_sla_watcher import run
         with patch("tools.genesis.reflexes.nocc_sla_watcher.run") as mock_run:
             mock_run.return_value = {
                 "cadence_hours": 4,
@@ -174,7 +173,6 @@ class TestRunDryRun:
         assert "errors" in result
 
     def test_run_handles_db_error_gracefully(self):
-        from tools.genesis.reflexes.nocc_sla_watcher import run
         with patch("tools.genesis.reflexes.nocc_sla_watcher.run") as mock_run:
             mock_run.return_value = {"status": "error", "errors": ["db error"], "records_checked": 0,
                                      "breaches_marked": 0, "warnings_issued": 0, "events_published": 0}

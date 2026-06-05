@@ -4,7 +4,6 @@ Replaces hardcoded thresholds (3.5 rating, 2 reviews, 3 installs) with
 adaptive z-score / distribution-based detection + optional LLM triage.
 """
 import json
-import math
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch

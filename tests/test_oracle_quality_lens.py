@@ -6,19 +6,14 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import pytest
 
 from tools.oracle.lenses.lens_quality import (
     _mad_std_estimate,
     _ewma,
     _anomaly_bounds,
     _iqr_bounds,
-    _adaptive_z_thresholds,
-    _compute_stats,
-    _zscore,
     _MAD_FALLBACK_STD,
     _EWMA_ALPHA,
-    _MIN_SAMPLES,
     QualityLens,
 )
 

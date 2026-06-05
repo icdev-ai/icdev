@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import sys
-from types import ModuleType
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -52,8 +50,8 @@ class TestComputeFleetStats:
 
     def test_skips_non_numeric_utilization(self):
         from tools.genesis.reflexes.circuit_capacity_monitor import _compute_fleet_stats
-        rows = [(f"C1", "AT&T", 10.0, "N/A", "active"),
-                (f"C2", "AT&T", 10.0, 60.0, "active")]
+        rows = [("C1", "AT&T", 10.0, "N/A", "active"),
+                ("C2", "AT&T", 10.0, 60.0, "active")]
         stats = _compute_fleet_stats(rows)
         assert stats["count"] == 1
         assert stats["mean"] == 60.0
@@ -68,7 +66,6 @@ class TestLoadThresholds:
         from tools.genesis.reflexes.circuit_capacity_monitor import (
             _DEFAULT_THRESHOLDS,
             _load_thresholds,
-            _ARGS_PATH,
         )
         import tools.genesis.reflexes.circuit_capacity_monitor as m
         # Temporarily point _ARGS_PATH to a non-existent file

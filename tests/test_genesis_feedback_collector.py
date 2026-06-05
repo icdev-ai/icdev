@@ -1,7 +1,6 @@
 """Tests for genesis/feedback_collector.py — anomaly detection thresholds (aiify-rm-ff651-phase-5221)."""
 
 import json
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 

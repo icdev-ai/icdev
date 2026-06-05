@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -12,7 +11,6 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.genesis.stagnation_detector import (
     _NLPExtractor,
-    _STOPWORDS,
     _parse_json_array,
     _tokenize,
 )

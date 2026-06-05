@@ -10,9 +10,8 @@ Covers:
 from __future__ import annotations
 
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 _REPO = str(__import__("pathlib").Path(__file__).resolve().parent.parent)
 if _REPO not in sys.path:
@@ -21,7 +20,6 @@ if _REPO not in sys.path:
 from tools.genesis.harness.eval_harness import (
     _AnomalyDetector,
     _DEFAULT_GATES,
-    _load_harness_config,
     check_gates,
 )
 

@@ -15,11 +15,9 @@ elsewhere.
 
 from __future__ import annotations
 
-import sqlite3
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 from tools.notification_service import alert_service
 
