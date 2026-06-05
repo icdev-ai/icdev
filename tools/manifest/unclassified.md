@@ -17,3 +17,4 @@
 | Auto-added lineage_scanner.py | tools/data/lineage_scanner.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added terraform_executor.py | tools/data/terraform_executor.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added constants.py | tools/infra_canvas/constants.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added scanners.py | tools/integrity/scanners.py | (auto-added by remediation; update description) | --json | stdout |
