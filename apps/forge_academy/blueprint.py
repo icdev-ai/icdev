@@ -591,14 +591,11 @@ def oracle_page():
     stats = summary_stats()
     predictions = list_predictions(limit=200)
     convergence = list_convergence_events()
-    lenses = ["learner_risk", "content_quality", "skill_gap"]
-    by_lens = {lid: [p for p in predictions if p["lens_id"] == lid] for lid in lenses}
     return render_template(
         "forge_academy/oracle.html",
         stats=stats,
-        by_lens=by_lens,
+        predictions=predictions,
         convergence=convergence,
-        lenses=lenses,
     )
 
 
