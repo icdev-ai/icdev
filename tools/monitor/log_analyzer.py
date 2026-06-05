@@ -430,8 +430,15 @@ def _parse_ai_patterns(raw: str) -> list:
 # is offered as an alternative that is not skewed by the very spike it detects.
 _ANOMALY_CONFIG_PATH = BASE_DIR / "args" / "monitoring_config.yaml"
 _DEFAULT_ANOMALY_CFG = {
-    "frequency": {"method": "zscore", "z_threshold": 2.0, "mad_threshold": 3.5, "min_buckets": 2},
+    "frequency": {
+        "method": "zscore",
+        "z_threshold": 2.0,
+        "mad_threshold": 3.5,
+        "min_buckets": 2,
+        "bucket_window_minutes": 5,
+    },
     "error_rate": {"spike_threshold": 0.10},
+    "gaps": {"enabled": False, "min_active_buckets": 3, "drop_ratio": 0.2},
 }
 
 
@@ -445,6 +452,21 @@ def _median(values: list) -> float:
     return float(s[mid]) if n % 2 else (s[mid - 1] + s[mid]) / 2.0
 
 
+def _floor_to_window(dt: datetime, window_minutes: int) -> datetime:
+    """Floor a datetime to the start of its ``window_minutes`` time bucket.
+
+    Buckets are anchored at midnight by minutes-since-midnight, so a window that
+    divides evenly into 60 (1/5/15/30) keeps the legacy within-the-hour
+    alignment, while larger or non-dividing windows floor correctly and recompute
+    the hour. The window is clamped to ``>= 1`` minute; the default 5 preserves
+    the historical 5-minute bucketing exactly.
+    """
+    window = window_minutes if isinstance(window_minutes, int) and window_minutes >= 1 else 5
+    minutes_since_midnight = dt.hour * 60 + dt.minute
+    floored = (minutes_since_midnight // window) * window
+    return dt.replace(hour=floored // 60, minute=floored % 60, second=0, microsecond=0)
+
+
 def _load_anomaly_cfg(config_path: Path = None) -> dict:
     """Load the ``anomaly_detection`` tuning block from monitoring_config.yaml.
 
@@ -456,6 +478,7 @@ def _load_anomaly_cfg(config_path: Path = None) -> dict:
     cfg = {
         "frequency": dict(_DEFAULT_ANOMALY_CFG["frequency"]),
         "error_rate": dict(_DEFAULT_ANOMALY_CFG["error_rate"]),
+        "gaps": dict(_DEFAULT_ANOMALY_CFG["gaps"]),
     }
     path = config_path or _ANOMALY_CONFIG_PATH
     try:
@@ -464,13 +487,21 @@ def _load_anomaly_cfg(config_path: Path = None) -> dict:
         with open(path, encoding="utf-8") as fh:
             loaded = yaml.safe_load(fh) or {}
         section = loaded.get("anomaly_detection") or {}
-        for group in ("frequency", "error_rate"):
+        for group in ("frequency", "error_rate", "gaps"):
             overrides = section.get(group) or {}
             for key in cfg[group]:
                 if overrides.get(key) is not None:
                     cfg[group][key] = overrides[key]
     except Exception:
         pass  # Any failure → legacy defaults.
+
+    # bucket_window_minutes must be a positive int; a non-int / non-positive
+    # override falls back to the legacy 5-minute window rather than raising.
+    try:
+        bw = int(cfg["frequency"].get("bucket_window_minutes", 5))
+        cfg["frequency"]["bucket_window_minutes"] = bw if bw >= 1 else 5
+    except (TypeError, ValueError):
+        cfg["frequency"]["bucket_window_minutes"] = 5
     return cfg
 
 
@@ -542,6 +573,88 @@ def _detect_frequency_anomalies(buckets: dict, cfg: dict) -> list:
                     }
                 )
     return anomalies
+
+
+def _detect_silence_gaps(buckets: dict, cfg: dict) -> list:
+    """Flag contiguous interior time-buckets that fall (near-)silent.
+
+    This is the data-presence ("missing partition") counterpart to
+    ``_detect_frequency_anomalies``: where that flags buckets that are
+    anomalously *high*, this flags runs of buckets that are anomalously *low* or
+    empty **between** periods of normal activity — the signature of an ingestion
+    outage or a log pipeline that silently stopped writing (e.g. a date
+    partition that never received data). One-sided spike detection cannot see
+    this, because an absent bucket simply isn't in the ``buckets`` mapping.
+
+    The full bucket grid is reconstructed at the frequency
+    ``bucket_window_minutes`` cadence so absent buckets count as 0. A bucket is
+    "silent" when its count is below ``median(active) * drop_ratio``. Only runs
+    bounded by activity on BOTH sides are reported (a trailing quiet tail at the
+    edge of the query window is the window ending, not an outage).
+
+    Args:
+        buckets: Mapping of bucket-start datetime -> event count (only populated
+            buckets are present; reconstructed gaps are treated as count 0).
+        cfg: Anomaly config (see ``_load_anomaly_cfg``); ``cfg["gaps"]`` selects
+            the enable flag and thresholds, ``cfg["frequency"]`` the cadence.
+
+    Returns:
+        Run dicts ordered by start time, each describing one contiguous silence
+        interval; empty when gap detection is disabled (default), the active
+        baseline is too thin (``min_active_buckets``), or nothing drops below
+        the silence floor.
+    """
+    gaps = cfg.get("gaps", {})
+    if not gaps.get("enabled") or not buckets:
+        return []
+
+    min_active = int(gaps.get("min_active_buckets", 3) or 3)
+    drop_ratio = float(gaps.get("drop_ratio", 0.2))
+    window = int(cfg.get("frequency", {}).get("bucket_window_minutes", 5) or 5)
+
+    active_counts = [c for c in buckets.values() if c > 0]
+    if len(active_counts) < max(2, min_active):
+        return []
+    baseline = _median(active_counts)
+    if baseline <= 0:
+        return []
+    floor = baseline * drop_ratio
+
+    times = sorted(buckets)
+    step = timedelta(minutes=window)
+    grid = []
+    t = times[0]
+    end = times[-1]
+    while t <= end:
+        grid.append((t, buckets.get(t, 0)))
+        t += step
+
+    runs = []
+    i, n = 0, len(grid)
+    while i < n:
+        if grid[i][1] < floor:
+            j = i
+            while j < n and grid[j][1] < floor:
+                j += 1
+            # Interior only: real activity must bound the run on both sides.
+            # grid[0] is always a populated bucket, so i > 0 ⇒ a leading active
+            # bucket exists; j < n ⇒ a trailing active bucket exists.
+            if i > 0 and j < n:
+                run = grid[i:j]
+                runs.append(
+                    {
+                        "start": run[0][0].isoformat(),
+                        "end": run[-1][0].isoformat(),
+                        "buckets": len(run),
+                        "max_count": max(c for _, c in run),
+                        "baseline": round(baseline, 1),
+                        "method": "silence_gap",
+                    }
+                )
+            i = j + 1
+        else:
+            i += 1
+    return runs
 
 
 # ---------------------------------------------------------------------------
@@ -650,9 +763,14 @@ def analyze_logs(
 
     top_messages = [{"message": msg, "count": count} for msg, count in message_counter.most_common(10) if count > 1]
 
-    # ---------- Time-bucket anomaly detection (5-minute buckets) ----------
+    # ---------- Time-bucket anomaly detection (config-driven window) ----------
+    # The bucket window (default 5 minutes) is the time-partition granularity for
+    # frequency-spike detection — too wide masks short spikes, too narrow adds
+    # noise — so it loads from anomaly_detection.frequency.bucket_window_minutes.
     anomaly_cfg = anomaly_config if anomaly_config is not None else _load_anomaly_cfg()
+    bucket_window = int(anomaly_cfg.get("frequency", {}).get("bucket_window_minutes", 5) or 5)
     frequency_anomalies = []
+    silence_gaps = []
     timestamps = []
     for entry in all_logs:
         ts = entry.get("@timestamp") or entry.get("timestamp") or entry.get("_time")
@@ -666,9 +784,10 @@ def analyze_logs(
     if timestamps:
         buckets = defaultdict(int)
         for ts_val in timestamps:
-            bucket_key = ts_val.replace(minute=(ts_val.minute // 5) * 5, second=0, microsecond=0)
+            bucket_key = _floor_to_window(ts_val, bucket_window)
             buckets[bucket_key] += 1
         frequency_anomalies = _detect_frequency_anomalies(buckets, anomaly_cfg)
+        silence_gaps = _detect_silence_gaps(buckets, anomaly_cfg)
 
     # ---------- Error rate ----------
     total = len(all_logs)
