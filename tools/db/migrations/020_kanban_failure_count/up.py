@@ -22,6 +22,26 @@ def _is_pg(conn) -> bool:
     return getattr(conn, "_backend", "sqlite") == "postgresql"
 
 
+def _table_exists(conn, table: str) -> bool:
+    """True if ``table`` exists. ``kanban_tasks`` is created at app runtime by
+    tools/kanban/init_db.py (not by this migration chain), so a migrate-only
+    fresh DB — e.g. the CI E2E PostgreSQL job's ``migrate.py --up`` — legitimately
+    lacks it. Skip rather than abort the whole chain, matching how the fa_*/ttx_*
+    canvas migrations already self-skip when their runtime tables are absent."""
+    if _is_pg(conn):
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
 def _has_column(conn, table: str, column: str) -> bool:
     if _is_pg(conn):
         row = conn.execute(
@@ -40,6 +60,9 @@ def _has_column(conn, table: str, column: str) -> bool:
 
 def up(conn) -> dict:
     actions = []
+
+    if not _table_exists(conn, "kanban_tasks"):
+        return {"status": "skipped", "reason": "kanban_tasks absent (created at runtime by tools/kanban/init_db.py)"}
 
     if not _has_column(conn, "kanban_tasks", "failure_count"):
         conn.execute(

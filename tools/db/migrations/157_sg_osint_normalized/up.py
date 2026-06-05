@@ -7,8 +7,33 @@ with structured timestamp, source, lat/lon, and classified event_type.
 from tools.db.storage import get_connection, is_pg
 
 
+def _table_exists(conn, table: str) -> bool:
+    """True if ``table`` exists (backend-agnostic). ``sg_raw_signals`` is created
+    at app runtime by the Strategos canvas, so a migrate-only fresh DB — e.g. the
+    CI E2E PostgreSQL job's ``migrate.py --up`` — legitimately lacks it. On PG the
+    FK ``REFERENCES sg_raw_signals(id)`` would otherwise abort the chain; skip
+    rather than fail, matching migrations 020/040/041."""
+    if getattr(conn, "_backend", "sqlite") == "postgresql":
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
 def up(conn=None) -> None:
     conn = get_connection()
+
+    if not _table_exists(conn, "sg_raw_signals"):
+        print("Migration 157 up: sg_raw_signals absent — skipping (created at runtime by Strategos canvas).")
+        conn.close()
+        return
 
     if is_pg():
         conn.execute(

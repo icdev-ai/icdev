@@ -233,10 +233,26 @@ class MigrationRunner:
             conn.close()
 
     def get_pending_migrations(self) -> List[Dict]:
-        """Return list of migrations not yet applied."""
-        applied_versions = {m["version"] for m in self.get_applied_migrations()}
-        all_migrations = self.discover_migrations()
-        return [m for m in all_migrations if m["version"] not in applied_versions]
+        """Return list of migrations not yet applied.
+
+        schema_migrations.version is UNIQUE, so only one migration per version
+        number is ever recorded. Several version numbers are duplicated on disk
+        (e.g. two 010_* dirs); in steady state get_pending naturally yields only
+        the first because the version is already in applied_versions after the
+        first run. On a *fresh* database both same-version dirs would otherwise
+        be pending in the same run, and applying the second would violate the
+        UNIQUE constraint and fail the whole chain (seen on the CI E2E PG job).
+        Dedupe by version within the run too — keep the first by sort order,
+        matching the system's established one-migration-per-version behaviour.
+        """
+        seen = {m["version"] for m in self.get_applied_migrations()}
+        pending = []
+        for m in self.discover_migrations():
+            if m["version"] in seen:
+                continue
+            seen.add(m["version"])
+            pending.append(m)
+        return pending
 
     # ------------------------------------------------------------------
     # SQL parsing with engine directives

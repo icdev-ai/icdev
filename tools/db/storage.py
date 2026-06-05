@@ -289,6 +289,21 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         # BOOLEAN is native in PG
         # TEXT, REAL, INTEGER are compatible
 
+    # 8b. ALTER TABLE ... ADD COLUMN <col> → ADD COLUMN IF NOT EXISTS <col>
+    #     Many migrations add columns idempotently, guarding with
+    #     `except sqlite3.OperationalError ("duplicate column name")`. On PG the
+    #     duplicate-column error is a psycopg2 DuplicateColumn that those handlers
+    #     never catch, so re-adding an existing column aborts the migration. PG
+    #     supports ADD COLUMN IF NOT EXISTS (9.6+) — rewrite to make it idempotent
+    #     at the SQL level (no migration-file changes needed).
+    if "ALTER TABLE" in sql.upper() and "ADD COLUMN" in sql.upper():
+        sql = re.sub(
+            r"\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS\b)",
+            "ADD COLUMN IF NOT EXISTS ",
+            sql,
+            flags=re.IGNORECASE,
+        )
+
     # 9. Datetime expressions: leave as native PG timestamp (no ::text cast).
     #    PostgreSQL columns are proper TIMESTAMP type after migration from SQLite.
     #    NOW() and NOW() +/- INTERVAL compare natively with timestamp columns.
@@ -658,6 +673,34 @@ class StorageCursor:
                 self._cursor.execute(sql, (params,))
         return self
 
+    def executescript(self, sql: str):
+        """Execute multiple ``;``-separated statements (SQLite compatibility).
+
+        SQLite cursors expose ``executescript``; many migration ``up()`` bodies
+        call ``conn.cursor().executescript(ddl)``. On PostgreSQL the cursor is a
+        StorageCursor, which previously lacked this method (AttributeError). We
+        split on ``;`` and run each statement in its own SAVEPOINT so one failing
+        DDL statement (already-exists, FK to non-unique column, etc.) undoes only
+        itself rather than aborting the whole transaction.
+        """
+        if self._backend == "sqlite":
+            return self._cursor.executescript(sql)
+
+        statements = [s.strip() for s in _strip_sql_line_comments(sql).split(";") if s.strip()]
+        for stmt in statements:
+            translated = translate_sql(stmt, self._backend)
+            if translated.strip() and translated.strip() != "SELECT 1":
+                try:
+                    self._cursor.execute("SAVEPOINT icdev_cursor_es")
+                    self._cursor.execute(translated)
+                    self._cursor.execute("RELEASE SAVEPOINT icdev_cursor_es")
+                except Exception:
+                    try:
+                        self._cursor.execute("ROLLBACK TO SAVEPOINT icdev_cursor_es")
+                    except Exception:
+                        pass
+        return self
+
     def executemany(self, sql: str, params_list):
         self._table_name = _extract_table_name(sql)
         # Inject RLS once — modified SQL + the extra predicate params.
@@ -900,7 +943,13 @@ class StorageConnection:
             return self._conn.executescript(sql)
 
         # PostgreSQL: strip line comments (a ';' inside a comment would corrupt
-        # the split), then split statements and execute each.
+        # the split), then split statements and execute each inside its own
+        # SAVEPOINT. A bare self._conn.rollback() on a per-statement error would
+        # discard EVERY statement already applied in this transaction — so one
+        # bad CREATE TABLE (e.g. a FK to a non-unique column) would roll back
+        # `projects` and cascade into "relation does not exist" for every table
+        # that references it. ROLLBACK TO SAVEPOINT undoes only the failed
+        # statement and keeps the good ones.
         statements = [s.strip() for s in _strip_sql_line_comments(sql).split(";") if s.strip()]
         cursor = self._conn.cursor()
         for stmt in statements:
@@ -909,12 +958,16 @@ class StorageConnection:
             translated = translate_sql(stmt, self._backend)
             if translated.strip() and translated.strip() != "SELECT 1":
                 try:
+                    cursor.execute("SAVEPOINT icdev_executescript")
                     cursor.execute(translated)
+                    cursor.execute("RELEASE SAVEPOINT icdev_executescript")
                 except Exception:
-                    # Skip DDL errors (table already exists, etc.)
-                    self._conn.rollback()
-                    # Re-establish transaction
-                    pass
+                    # Skip DDL errors (table already exists, FK to non-unique
+                    # column, etc.) — undo only this statement, keep the rest.
+                    try:
+                        cursor.execute("ROLLBACK TO SAVEPOINT icdev_executescript")
+                    except Exception:
+                        self._conn.rollback()
         self._conn.commit()
         return cursor
 

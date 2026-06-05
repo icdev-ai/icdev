@@ -32,6 +32,17 @@ def up(conn):
     current_type = row[0] if not hasattr(row, "__getitem__") else row[0]
 
     if current_type == "bytea":
+        # pgvector may be absent (e.g. the CI E2E job's stock postgres:15 image
+        # has no `vector` type). Try to enable it; if it can't be created the
+        # type is unavailable, so leave embedding as bytea (untyped BLOB still
+        # stores raw embeddings) rather than failing the whole migration chain.
+        try:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        except Exception:
+            conn.rollback()
+        cur.execute("SELECT 1 FROM pg_type WHERE typname = 'vector'")
+        if cur.fetchone() is None:
+            return  # pgvector unavailable — skip the type change, keep bytea
         # Safe: 0 existing non-null embeddings; NULL rows stay NULL after cast
         cur.execute(
             "ALTER TABLE memory_entries "
