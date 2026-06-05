@@ -178,10 +178,23 @@
 
             <!-- ── Build ─────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/chat','/dev-profiles','/translations','/finetune','/diagrams','/ai-wizard','/ai-patterns','/connector-forge'] %}active{% endif %}">Build ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/chat','/dev-profiles','/translations','/finetune','/diagrams','/connector-forge','/slides'] or request.path.startswith('/ai-') or request.path in ['/dashboard/compliance-view','/dashboard/executive-view','/dashboard/pm-view'] %}active{% endif %}">Build ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/chat">Chat</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">AI Enablement</li>
                     <li><a href="/ai-wizard">AI Strategy Wizard</a></li>
+                    <li><a href="/ai-patterns">AI Pattern Library</a></li>
+                    <li><a href="/ai-builder">Visual Agent Builder</a></li>
+                    <li><a href="/ai-learning">Learning Paths</a></li>
+                    <li><a href="/ai-roi">AI ROI Dashboard</a></li>
+                    <li><a href="/ai-skills">Skills Tracker</a></li>
+                    <li><a href="/ai-handoff">Knowledge Handoff</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Role Views</li>
+                    <li><a href="/dashboard/executive-view">CIO / Executive</a></li>
+                    <li><a href="/dashboard/compliance-view">Compliance Officer</a></li>
+                    <li><a href="/dashboard/pm-view">Product Manager</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">Dev Tools</li>
                     <li><a href="/dev-profiles">Dev Profiles</a></li>
@@ -189,7 +202,6 @@
                     <li><a href="/diagrams">Diagrams</a></li>
                     <li><a href="/connector-forge">Connector Forge</a></li>
                     <li><a href="/translations">Translations</a></li>
-                    <li><a href="/ai-patterns">AI Pattern Library</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">Presentations</li>
                     <li><a href="/slides">Slide Deck Generator</a></li>
