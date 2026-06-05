@@ -154,6 +154,7 @@ jobs:
       ICDEV_PG_DATABASE: icdev
       ICDEV_NO_SERVER: "1"
       ICDEV_AAC_ENABLED: "true"
+      ICDEV_AIIFY_ENABLED: "true"
       ICDEV_INNOVATION_ENABLED: "true"
       ICDEV_GOVCON_ENABLED: "true"
       ICDEV_MIGRATION_CANVAS_ENABLED: "true"
