@@ -78,7 +78,7 @@ def _audit(action, entity_type="", entity_id="", detail="", classification="CUI"
     try:
         conn = _get_conn()
         conn.execute(
-            "INSERT INTO ndc_audit (id, design_id, user, action, detail, classification, created_at) "
+            'INSERT INTO ndc_audit (id, design_id, "user", action, detail, classification, created_at) '
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (f"na-{uuid.uuid4().hex[:10]}", entity_id, entity_type, action, detail, classification, _now()),
         )

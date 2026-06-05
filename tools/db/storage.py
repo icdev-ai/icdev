@@ -289,6 +289,34 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         # BOOLEAN is native in PG
         # TEXT, REAL, INTEGER are compatible
 
+    # 8b. ALTER TABLE ... ADD COLUMN  →  ADD COLUMN IF NOT EXISTS (PG 9.6+).
+    #     Migrations add columns idempotently but guard only
+    #     sqlite3.OperationalError ("duplicate column"), which does NOT catch
+    #     PostgreSQL's DuplicateColumn. Making ADD COLUMN idempotent at the
+    #     dialect layer fixes this uniformly across every migration instead of
+    #     patching each one's exception handling.
+    if "ALTER TABLE" in sql.upper() and "ADD COLUMN" in sql.upper():
+        sql = re.sub(
+            r"(ADD\s+COLUMN\s+)(?!IF\s+NOT\s+EXISTS\b)",
+            r"\1IF NOT EXISTS ",
+            sql,
+            flags=re.IGNORECASE,
+        )
+
+    # 8c. ALTER TABLE <t>  →  ALTER TABLE IF EXISTS <t> (PG 9.x+).
+    #     The migration chain has historical ordering assumptions where some
+    #     ALTERs reference a table created by a *later* migration (or by an
+    #     older init script). IF EXISTS turns those into safe no-ops on a fresh
+    #     PostgreSQL replay instead of "relation does not exist" failures.
+    #     (Genuinely-required base tables are created explicitly by their
+    #     migrations; this only tolerates out-of-order incremental ALTERs.)
+    if re.match(r"\s*ALTER\s+TABLE\s+", sql, re.IGNORECASE) and not re.match(
+        r"\s*ALTER\s+TABLE\s+IF\s+EXISTS", sql, re.IGNORECASE
+    ):
+        sql = re.sub(
+            r"(\bALTER\s+TABLE\s+)", r"\1IF EXISTS ", sql, count=1, flags=re.IGNORECASE
+        )
+
     # 9. Datetime expressions: leave as native PG timestamp (no ::text cast).
     #    PostgreSQL columns are proper TIMESTAMP type after migration from SQLite.
     #    NOW() and NOW() +/- INTERVAL compare natively with timestamp columns.
@@ -632,6 +660,55 @@ def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
         pass
 
 
+def _pg_exec_statements(cursor, sql: str, backend: str) -> None:
+    """Execute a multi-statement script on PostgreSQL, statement-isolated.
+
+    Each statement runs inside its own SAVEPOINT so one failing statement
+    (already-exists DDL, an out-of-order reference, or an untranslatable
+    construct) only rolls back ITSELF — never the objects created earlier in
+    the script. A bare conn.rollback() here would discard the whole schema and
+    cascade "relation ... does not exist" into every dependent statement.
+    Comment-only / empty chunks are skipped, and autocommit connections (where
+    SAVEPOINT is unavailable) fall back to direct per-statement execution.
+    """
+    def _is_empty(s: str) -> bool:
+        # Strip -- line and /* */ block comments; whitespace/comment-only chunks
+        # are not executable statements (PG raises "can't execute an empty query").
+        no_line = re.sub(r"--[^\n]*", "", s)
+        no_block = re.sub(r"/\*.*?\*/", "", no_line, flags=re.DOTALL)
+        return not no_block.strip()
+
+    for raw in sql.split(";"):
+        stmt = raw.strip()
+        if not stmt or _is_empty(stmt):
+            continue
+        translated = translate_sql(stmt, backend)
+        if _is_empty(translated) or translated.strip() == "SELECT 1":
+            continue
+        # Isolate each statement in a SAVEPOINT so one failure (already-exists
+        # DDL, an out-of-order reference, an untranslatable construct) cannot
+        # roll back the objects created earlier in the script. If the connection
+        # is in autocommit mode SAVEPOINT raises ("can only be used in
+        # transaction blocks") — then run the statement directly (each is its
+        # own txn, so a failure cannot poison the next).
+        use_sp = True
+        try:
+            cursor.execute("SAVEPOINT icdev_es_stmt")
+        except Exception:
+            use_sp = False
+        try:
+            cursor.execute(translated)
+            if use_sp:
+                cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
+        except Exception:  # noqa: BLE001 — skip; keep prior successful statements
+            if use_sp:
+                try:
+                    cursor.execute("ROLLBACK TO SAVEPOINT icdev_es_stmt")
+                    cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
+                except Exception:
+                    pass
+
+
 # ---------------------------------------------------------------------------
 # Cursor wrapper — translates SQL and wraps results
 # ---------------------------------------------------------------------------
@@ -656,6 +733,20 @@ class StorageCursor:
                 self._cursor.execute(sql, params)
             else:
                 self._cursor.execute(sql, (params,))
+        return self
+
+    def executescript(self, sql: str):
+        """Run multiple statements (SQLite executescript parity).
+
+        Some migrations call cursor.executescript(...). SQLite cursors have
+        this natively; psycopg2 cursors do not. On PostgreSQL, split on ';'
+        and run each statement in its own SAVEPOINT so a single failing
+        statement does not abort the whole transaction (mirrors
+        StorageConnection.executescript). Commit is left to the caller.
+        """
+        if self._backend == "sqlite":
+            return self._cursor.executescript(sql)
+        _pg_exec_statements(self._cursor, sql, self._backend)
         return self
 
     def executemany(self, sql: str, params_list):
@@ -867,25 +958,8 @@ class StorageConnection:
         # here would discard every object created earlier in the script,
         # making later dependent statements fail with "relation ... does not
         # exist" and cascading the whole baseline schema load to failure.
-        statements = [s.strip() for s in sql.split(";") if s.strip()]
         cursor = self._conn.cursor()
-        for stmt in statements:
-            if not stmt:
-                continue
-            translated = translate_sql(stmt, self._backend)
-            if not translated.strip() or translated.strip() == "SELECT 1":
-                continue
-            try:
-                cursor.execute("SAVEPOINT icdev_es_stmt")
-                cursor.execute(translated)
-                cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
-            except Exception:
-                # Roll back only this statement; keep prior successful ones.
-                try:
-                    cursor.execute("ROLLBACK TO SAVEPOINT icdev_es_stmt")
-                    cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
-                except Exception:
-                    self._conn.rollback()
+        _pg_exec_statements(cursor, sql, self._backend)
         self._conn.commit()
         return cursor
 
