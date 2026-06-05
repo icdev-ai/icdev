@@ -14,6 +14,7 @@ Functions:
     search_patterns(log_data, patterns)                -> matched patterns list
     _ai_extract_log_patterns(messages)                 -> emergent NLP categories | None
     _detect_frequency_anomalies(buckets, cfg)          -> frequency anomaly list
+    _detect_silence_gaps(buckets, cfg)                 -> ingestion-silence run list
 
 The regex catalog (DEFAULT_PATTERNS) only catches known error families; novel
 or free-text failures fall into an "unknown" bucket. An optional NLP extractor
@@ -25,7 +26,10 @@ Frequency-spike and error-rate detection (anomaly_detection paradigm) previously
 used thresholds hardcoded inline (z-score > 2.0; error_rate > 0.10). Those now
 load from args/monitoring_config.yaml (anomaly_detection block) and default to
 the legacy values when unset. A robust median-based method ("mad") is available
-that is not skewed by the very spike it is detecting.
+that is not skewed by the very spike it is detecting. The same paradigm also
+covers the inverse failure mode — ingestion-silence gaps (contiguous empty/near-
+zero buckets between periods of activity, i.e. a "missing partition"), surfaced
+under ``silence_gaps`` when ``anomaly_detection.gaps.enabled`` is set.
 
 CLI:
     python tools/monitor/log_analyzer.py --source elk|splunk --query "error" --time-range 24h
@@ -428,6 +432,9 @@ def _parse_ai_patterns(raw: str) -> list:
 # original values whenever the file, PyYAML, or a key is missing — so default
 # behavior is unchanged. The robust ``mad`` method (median absolute deviation)
 # is offered as an alternative that is not skewed by the very spike it detects.
+# ``_detect_silence_gaps`` adds the inverse: contiguous empty/near-zero buckets
+# between activity (an ingestion outage / missing partition), opt-in via the
+# ``gaps`` sub-block (off by default so output is unchanged).
 _ANOMALY_CONFIG_PATH = BASE_DIR / "args" / "monitoring_config.yaml"
 _DEFAULT_ANOMALY_CFG = {
     "frequency": {
@@ -811,6 +818,7 @@ def analyze_logs(
         "ai_extracted_patterns": ai_extracted_patterns,
         "top_messages": top_messages,
         "frequency_anomalies": frequency_anomalies,
+        "silence_gaps": silence_gaps,
         "source_results": source_results,
     }
 
@@ -834,6 +842,7 @@ def _record_findings(project_id: str, analysis: dict, db_path: Path = None) -> N
             "log_total_count": float(analysis.get("total_logs", 0)),
             "log_pattern_match_count": float(sum(p.get("count", 0) for p in analysis.get("matched_patterns", []))),
             "log_anomaly_count": float(len(analysis.get("frequency_anomalies", []))),
+            "log_silence_gap_count": float(len(analysis.get("silence_gaps", []))),
         }
 
         for metric_name, metric_value in metrics.items():
@@ -956,6 +965,16 @@ def main():
             print(f"\n  FREQUENCY ANOMALIES ({len(anomalies)} detected):")
             for a in anomalies[:5]:
                 print(f"    {a['bucket']}: {a['count']} events (z-score: {a['z_score']})")
+
+        # Silence gaps (ingestion outages / missing partitions)
+        gaps = result.get("silence_gaps", [])
+        if gaps:
+            print(f"\n  SILENCE GAPS ({len(gaps)} detected):")
+            for g in gaps[:5]:
+                print(
+                    f"    {g['start']} -> {g['end']}: {g['buckets']} quiet bucket(s) "
+                    f"(baseline {g['baseline']}/bucket)"
+                )
 
         # Top messages
         top = result.get("top_messages", [])

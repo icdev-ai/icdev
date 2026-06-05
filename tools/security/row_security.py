@@ -54,9 +54,56 @@ _RE_FROM_TABLE = re.compile(
 )
 
 
+def _depth0_skeleton(sql: str) -> str:
+    """Return ``sql`` with every parenthesized group (subqueries, CTE bodies)
+    and string literal blanked, leaving only depth-0 (outer query) tokens.
+
+    The RLS predicate is always injected at the *outer* WHERE (see
+    ``_find_outer_where``), so JOIN detection and primary-alias resolution must
+    also look only at the outer query scope. A naive whole-string scan grabs the
+    first ``FROM ... <alias>`` inside a CTE body (e.g. ``WITH x AS (SELECT ...
+    FROM t p ...) SELECT * FROM x WHERE ...``) and injects ``p.classification``
+    into the outer WHERE where alias ``p`` is out of scope — PostgreSQL then
+    raises ``missing FROM-clause entry for table "p"``.
+    """
+    out = []
+    depth = 0
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch in ("'", '"'):
+            quote = ch
+            i += 1
+            while i < n and sql[i] != quote:
+                if sql[i] == '\\':
+                    i += 1
+                i += 1
+            i += 1  # closing quote
+            out.append(" ")  # blank the literal
+            continue
+        if ch == '(':
+            depth += 1
+            out.append(" ")
+            i += 1
+            continue
+        if ch == ')':
+            depth -= 1
+            out.append(" ")
+            i += 1
+            continue
+        out.append(ch if depth == 0 else " ")
+        i += 1
+    return "".join(out)
+
+
 def _primary_alias(sql: str) -> str | None:
-    """Return the alias (or table name) of the primary FROM table, or None."""
-    m = _RE_FROM_TABLE.search(sql)
+    """Return the alias (or table name) of the primary FROM table, or None.
+
+    Operates on the depth-0 outer-query skeleton so a CTE/subquery's inner table
+    alias is never mistaken for the outer query's table (see _depth0_skeleton).
+    """
+    m = _RE_FROM_TABLE.search(_depth0_skeleton(sql))
     if not m:
         return None
     return m.group(2) or m.group(1)
@@ -165,10 +212,12 @@ def inject_row_predicate(
     extra_clauses: list[str] = []
     extra_params: list[Any] = []
 
-    # When the query joins multiple tables both columns must be qualified with
-    # the primary table's alias so PostgreSQL can resolve the reference
-    # unambiguously (AmbiguousColumn).
-    if _RE_JOIN.search(sql):
+    # When the OUTER query joins multiple tables both columns must be qualified
+    # with the primary table's alias so PostgreSQL can resolve the reference
+    # unambiguously (AmbiguousColumn). JOIN detection and alias resolution use
+    # the depth-0 skeleton so a JOIN inside a CTE/subquery body does not trigger
+    # qualification with an alias that is out of scope at the outer WHERE.
+    if _RE_JOIN.search(_depth0_skeleton(sql)):
         alias = _primary_alias(sql)
         if alias:
             tenant_column = f"{alias}.{tenant_column}"
