@@ -99,6 +99,16 @@ anomaly_detection:
   # Error-rate spike detection.
   error_rate:
     spike_threshold: 0.10 # Fraction of error-level logs that constitutes a spike
+  # Silence-gap detection — the data-presence ("missing partition") counterpart
+  # to frequency-spike detection. Flags contiguous runs of empty/near-zero time
+  # buckets *between* periods of normal activity (an ingestion outage, or a log
+  # pipeline that silently stopped writing). Off by default; enable to add a
+  # ``silence_gaps`` list to analysis output. The bucket cadence is shared with
+  # frequency.bucket_window_minutes. No effect on existing behavior when off.
+  gaps:
+    enabled: false        # Off by default → output and behavior unchanged
+    min_active_buckets: 3 # Minimum populated buckets needed to set a baseline
+    drop_ratio: 0.2       # A bucket below median(active) * drop_ratio is "silent"
 
 # Phase 29: Heartbeat daemon (D141-D142)
 heartbeat:
