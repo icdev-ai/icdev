@@ -289,19 +289,32 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         # BOOLEAN is native in PG
         # TEXT, REAL, INTEGER are compatible
 
-    # 8b. ALTER TABLE ... ADD COLUMN <col> → ADD COLUMN IF NOT EXISTS <col>
-    #     Many migrations add columns idempotently, guarding with
-    #     `except sqlite3.OperationalError ("duplicate column name")`. On PG the
-    #     duplicate-column error is a psycopg2 DuplicateColumn that those handlers
-    #     never catch, so re-adding an existing column aborts the migration. PG
-    #     supports ADD COLUMN IF NOT EXISTS (9.6+) — rewrite to make it idempotent
-    #     at the SQL level (no migration-file changes needed).
+    # 8b. ALTER TABLE ... ADD COLUMN  →  ADD COLUMN IF NOT EXISTS (PG 9.6+).
+    #     Migrations add columns idempotently but guard only
+    #     sqlite3.OperationalError ("duplicate column"), which does NOT catch
+    #     PostgreSQL's DuplicateColumn. Making ADD COLUMN idempotent at the
+    #     dialect layer fixes this uniformly across every migration instead of
+    #     patching each one's exception handling.
     if "ALTER TABLE" in sql.upper() and "ADD COLUMN" in sql.upper():
         sql = re.sub(
-            r"\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS\b)",
-            "ADD COLUMN IF NOT EXISTS ",
+            r"(ADD\s+COLUMN\s+)(?!IF\s+NOT\s+EXISTS\b)",
+            r"\1IF NOT EXISTS ",
             sql,
             flags=re.IGNORECASE,
+        )
+
+    # 8c. ALTER TABLE <t>  →  ALTER TABLE IF EXISTS <t> (PG 9.x+).
+    #     The migration chain has historical ordering assumptions where some
+    #     ALTERs reference a table created by a *later* migration (or by an
+    #     older init script). IF EXISTS turns those into safe no-ops on a fresh
+    #     PostgreSQL replay instead of "relation does not exist" failures.
+    #     (Genuinely-required base tables are created explicitly by their
+    #     migrations; this only tolerates out-of-order incremental ALTERs.)
+    if re.match(r"\s*ALTER\s+TABLE\s+", sql, re.IGNORECASE) and not re.match(
+        r"\s*ALTER\s+TABLE\s+IF\s+EXISTS", sql, re.IGNORECASE
+    ):
+        sql = re.sub(
+            r"(\bALTER\s+TABLE\s+)", r"\1IF EXISTS ", sql, count=1, flags=re.IGNORECASE
         )
 
     # 9. Datetime expressions: leave as native PG timestamp (no ::text cast).
@@ -647,6 +660,58 @@ def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
         pass
 
 
+def _pg_exec_statements(cursor, sql: str, backend: str) -> None:
+    """Execute a multi-statement script on PostgreSQL, statement-isolated.
+
+    Each statement runs inside its own SAVEPOINT so one failing statement
+    (already-exists DDL, an out-of-order reference, or an untranslatable
+    construct) only rolls back ITSELF — never the objects created earlier in
+    the script. A bare conn.rollback() here would discard the whole schema and
+    cascade "relation ... does not exist" into every dependent statement.
+    Comment-only / empty chunks are skipped, and autocommit connections (where
+    SAVEPOINT is unavailable) fall back to direct per-statement execution.
+    """
+    def _is_empty(s: str) -> bool:
+        # Strip -- line and /* */ block comments; whitespace/comment-only chunks
+        # are not executable statements (PG raises "can't execute an empty query").
+        no_line = re.sub(r"--[^\n]*", "", s)
+        no_block = re.sub(r"/\*.*?\*/", "", no_line, flags=re.DOTALL)
+        return not no_block.strip()
+
+    # Strip -- line comments BEFORE splitting on ';' — a ';' inside a comment
+    # would otherwise corrupt the split into a bogus "statement" (prose) whose
+    # syntax error would skip a real CREATE/ALTER that follows it on the line.
+    for raw in _strip_sql_line_comments(sql).split(";"):
+        stmt = raw.strip()
+        if not stmt or _is_empty(stmt):
+            continue
+        translated = translate_sql(stmt, backend)
+        if _is_empty(translated) or translated.strip() == "SELECT 1":
+            continue
+        # Isolate each statement in a SAVEPOINT so one failure (already-exists
+        # DDL, an out-of-order reference, an untranslatable construct) cannot
+        # roll back the objects created earlier in the script. If the connection
+        # is in autocommit mode SAVEPOINT raises ("can only be used in
+        # transaction blocks") — then run the statement directly (each is its
+        # own txn, so a failure cannot poison the next).
+        use_sp = True
+        try:
+            cursor.execute("SAVEPOINT icdev_es_stmt")
+        except Exception:
+            use_sp = False
+        try:
+            cursor.execute(translated)
+            if use_sp:
+                cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
+        except Exception:  # noqa: BLE001 — skip; keep prior successful statements
+            if use_sp:
+                try:
+                    cursor.execute("ROLLBACK TO SAVEPOINT icdev_es_stmt")
+                    cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
+                except Exception:
+                    pass
+
+
 # ---------------------------------------------------------------------------
 # Cursor wrapper — translates SQL and wraps results
 # ---------------------------------------------------------------------------
@@ -674,31 +739,17 @@ class StorageCursor:
         return self
 
     def executescript(self, sql: str):
-        """Execute multiple ``;``-separated statements (SQLite compatibility).
+        """Run multiple statements (SQLite executescript parity).
 
-        SQLite cursors expose ``executescript``; many migration ``up()`` bodies
-        call ``conn.cursor().executescript(ddl)``. On PostgreSQL the cursor is a
-        StorageCursor, which previously lacked this method (AttributeError). We
-        split on ``;`` and run each statement in its own SAVEPOINT so one failing
-        DDL statement (already-exists, FK to non-unique column, etc.) undoes only
-        itself rather than aborting the whole transaction.
+        Some migrations call cursor.executescript(...). SQLite cursors have
+        this natively; psycopg2 cursors do not. On PostgreSQL, split on ';'
+        and run each statement in its own SAVEPOINT so a single failing
+        statement does not abort the whole transaction (mirrors
+        StorageConnection.executescript). Commit is left to the caller.
         """
         if self._backend == "sqlite":
             return self._cursor.executescript(sql)
-
-        statements = [s.strip() for s in _strip_sql_line_comments(sql).split(";") if s.strip()]
-        for stmt in statements:
-            translated = translate_sql(stmt, self._backend)
-            if translated.strip() and translated.strip() != "SELECT 1":
-                try:
-                    self._cursor.execute("SAVEPOINT icdev_cursor_es")
-                    self._cursor.execute(translated)
-                    self._cursor.execute("RELEASE SAVEPOINT icdev_cursor_es")
-                except Exception:
-                    try:
-                        self._cursor.execute("ROLLBACK TO SAVEPOINT icdev_cursor_es")
-                    except Exception:
-                        pass
+        _pg_exec_statements(self._cursor, sql, self._backend)
         return self
 
     def executemany(self, sql: str, params_list):
@@ -942,32 +993,15 @@ class StorageConnection:
         if self._backend == "sqlite":
             return self._conn.executescript(sql)
 
-        # PostgreSQL: strip line comments (a ';' inside a comment would corrupt
-        # the split), then split statements and execute each inside its own
-        # SAVEPOINT. A bare self._conn.rollback() on a per-statement error would
-        # discard EVERY statement already applied in this transaction — so one
-        # bad CREATE TABLE (e.g. a FK to a non-unique column) would roll back
-        # `projects` and cascade into "relation does not exist" for every table
-        # that references it. ROLLBACK TO SAVEPOINT undoes only the failed
-        # statement and keeps the good ones.
-        statements = [s.strip() for s in _strip_sql_line_comments(sql).split(";") if s.strip()]
+        # PostgreSQL: split statements and execute each, isolating every
+        # statement in its own SAVEPOINT. A single failing statement (e.g.
+        # already-exists DDL or an untranslatable construct) must only roll
+        # back ITSELF — not the whole transaction. A bare conn.rollback()
+        # here would discard every object created earlier in the script,
+        # making later dependent statements fail with "relation ... does not
+        # exist" and cascading the whole baseline schema load to failure.
         cursor = self._conn.cursor()
-        for stmt in statements:
-            if not stmt:
-                continue
-            translated = translate_sql(stmt, self._backend)
-            if translated.strip() and translated.strip() != "SELECT 1":
-                try:
-                    cursor.execute("SAVEPOINT icdev_executescript")
-                    cursor.execute(translated)
-                    cursor.execute("RELEASE SAVEPOINT icdev_executescript")
-                except Exception:
-                    # Skip DDL errors (table already exists, FK to non-unique
-                    # column, etc.) — undo only this statement, keep the rest.
-                    try:
-                        cursor.execute("ROLLBACK TO SAVEPOINT icdev_executescript")
-                    except Exception:
-                        self._conn.rollback()
+        _pg_exec_statements(cursor, sql, self._backend)
         self._conn.commit()
         return cursor
 

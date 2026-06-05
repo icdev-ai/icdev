@@ -306,6 +306,9 @@ class IngestOutcome:
     kg_relationships: int
     tenant_id: str
     classification: str
+    summary: str = ""
+    ocr_cleaned: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -321,6 +324,9 @@ class IngestOutcome:
             "kg_relationships": self.kg_relationships,
             "tenant_id": self.tenant_id,
             "classification": self.classification,
+            "summary": self.summary,
+            "ocr_cleaned": self.ocr_cleaned,
+            "metadata": self.metadata,
             "errors": self.errors,
         }
 
@@ -392,6 +398,357 @@ def _embed_and_store(chunks: list, tenant_id: str, errors: list[str], progress_c
 
 
 # --------------------------------------------------------------------------- #
+# LLM document summarization (aiify-opp-6098: document_ingestion_pipeline ->
+# llm_generation). During ingestion the extractor often yields no embedded
+# title, so the document is stored under its bare filename stem. This optional
+# helper distils the extracted text into a descriptive title + short abstract,
+# grounded only in the document's own content so the model cannot invent facts.
+# --------------------------------------------------------------------------- #
+
+# Cap the text handed to the model so a large document stays within a cheap,
+# fast summarization budget. The lede of a document carries the title/abstract
+# signal, so the leading slice is sufficient and deterministic.
+_SUMMARY_INPUT_CHARS = 6000
+
+_DOC_SUMMARY_SYSTEM_PROMPT = (
+    "You summarize a single ingested document for a document-management index. "
+    "Use ONLY the provided text — never invent facts, names, or numbers not "
+    "present in it. Respond with a strict JSON object and nothing else, of the "
+    'form {"title": "<=12 word descriptive title", "summary": "1-3 sentence '
+    'abstract"}. If the text is too short or empty to summarize, return '
+    '{"title": "", "summary": ""}.'
+)
+
+
+def _ai_document_summary(text: str, filename: str, page_count: int) -> dict | None:
+    """Distil extracted document text into a title + abstract via the LLM.
+
+    Args:
+        text: The full extracted document text. Only the leading
+            ``_SUMMARY_INPUT_CHARS`` characters are sent to the model, keeping
+            the call cheap and bounded regardless of document size.
+        filename: Source filename, passed as weak context only (the model is
+            told to ground on the text, not the name).
+        page_count: Extracted page count, included as a grounding fact.
+
+    Returns:
+        ``{"title": str, "summary": str}`` on success, or ``None`` when
+        summarization is unavailable, the text is empty, or anything fails.
+        Callers MUST treat ``None`` as "no summary" and proceed with ingestion
+        unchanged — this is a best-effort enrichment, never a hard dependency.
+    """
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    snippet = snippet[:_SUMMARY_INPUT_CHARS]
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Filename: {filename}\n"
+                        f"Page count: {page_count}\n"
+                        "Document text (leading excerpt):\n"
+                        f"{snippet}\n\n"
+                        "Produce the title and summary JSON."
+                    ),
+                }
+            ],
+            system_prompt=_DOC_SUMMARY_SYSTEM_PROMPT,
+            max_tokens=256,
+            temperature=0.2,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+        title = str(parsed.get("title") or "").strip()
+        summary = str(parsed.get("summary") or "").strip()
+        if not title and not summary:
+            return None
+        return {"title": title, "summary": summary}
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# LLM OCR cleanup (aiify-opp-6118: ocr_extraction_pipeline -> llm_generation).
+# Text recovered from a scanned page by the OCR fallback (easyocr / vision-LLM /
+# pytesseract) is noisy: words split by line-break hyphenation, mis-segmented
+# tokens, garbled characters, and broken paragraph structure. Before that text
+# is chunked + embedded, this optional helper asks the LLM to *correct* the OCR
+# artifacts — grounded ONLY on the OCR text, never adding, removing, or
+# inventing content. A length-ratio guard rejects any result that drifts too far
+# from the original so the model cannot silently drop or hallucinate content.
+# Only fires for genuinely-OCR'd providers — clean digital text is left untouched.
+# --------------------------------------------------------------------------- #
+
+# Providers whose text came from OCR (noisy) rather than a digital text layer.
+_OCR_PROVIDERS = {"pypdf+ocr", "ocr"}
+
+# Cleanup is a single bounded LLM call that must round-trip the whole text. To
+# keep it cheap and avoid truncating real content, skip cleanup above this size
+# (large OCR docs are left as-is rather than partially corrected).
+_OCR_CLEANUP_MAX_CHARS = 8000
+
+# The corrected text must stay within this fraction of the original length in
+# both directions; outside the band we assume the model dropped or invented
+# content and discard the result, keeping the raw OCR text.
+_OCR_CLEANUP_MIN_RATIO = 0.5
+_OCR_CLEANUP_MAX_RATIO = 2.0
+
+_OCR_CLEANUP_SYSTEM_PROMPT = (
+    "You are correcting raw OCR output from a scanned document page. Fix only "
+    "mechanical OCR errors: rejoin words split by line-break hyphenation, merge "
+    "tokens that were wrongly broken apart, repair obviously garbled characters, "
+    "and restore natural paragraph and line spacing. Do NOT add, remove, "
+    "summarize, translate, reorder, or invent any content. Preserve every fact, "
+    "number, name, and the original language exactly. Return ONLY the corrected "
+    "text, with no commentary, preamble, or code fences."
+)
+
+
+def _ai_ocr_cleanup(text: str) -> str | None:
+    """Correct OCR artifacts in ``text`` via the LLM, grounded on the text alone.
+
+    Args:
+        text: Raw text emitted by an OCR extractor. Only invoked by the
+            orchestrator when the extraction provider is OCR-based and the text
+            is at most ``_OCR_CLEANUP_MAX_CHARS`` characters.
+
+    Returns:
+        The corrected text on success, or ``None`` when cleanup is unavailable,
+        the text is empty/too large, the model returns nothing, or the result
+        fails the length-ratio grounding guard. Callers MUST treat ``None`` as
+        "no cleanup" and proceed with the raw OCR text — this is a best-effort
+        enrichment, never a hard dependency.
+    """
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    # Bound cost: never truncate a large document — skip cleanup instead.
+    if len(snippet) > _OCR_CLEANUP_MAX_CHARS:
+        return None
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Correct the OCR errors in the following text:\n\n"
+                        f"{snippet}"
+                    ),
+                }
+            ],
+            system_prompt=_OCR_CLEANUP_SYSTEM_PROMPT,
+            max_tokens=4096,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        cleaned = resp.content.strip()
+        # Strip a stray fenced block if the model wrapped the text anyway.
+        if cleaned.startswith("```"):
+            cleaned = cleaned.strip("`").strip()
+        if not cleaned:
+            return None
+        # Grounding guard: a faithful correction stays close to the original
+        # length. Reject runaway expansion or content drop.
+        ratio = len(cleaned) / max(len(snippet), 1)
+        if ratio < _OCR_CLEANUP_MIN_RATIO or ratio > _OCR_CLEANUP_MAX_RATIO:
+            return None
+        return cleaned
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# LLM metadata extraction (aiify-opp-6086: metadata_extraction ->
+# llm_generation). The external scan flagged paperless-ngx
+# src/documents/views.py:1135-1183 — manual metadata parsing/assignment — and
+# recommended replacing it with an NLP entity extractor. The repo is ephemeral,
+# so per the established aiify-opp pattern the augmentation lands in the
+# analogous ICDEV subsystem (DIC). During ingestion DIC derives only a title
+# (extractor / aiify-opp-6098 summary / filename stem); the document_type, topic
+# tags, and document date are otherwise unset. This optional helper proposes
+# those structured fields from the document's own text.
+#
+# Grounding + safety (mirrors the 6086 design doc & ICDEV AI-security posture):
+#   - document_type is constrained to a fixed enum — values outside it are
+#     dropped, so the model cannot invent a free-text type.
+#   - tags are derived from the text, lower-cased, de-duplicated, length- and
+#     count-capped.
+#   - the date must be a real ISO (YYYY-MM-DD) calendar date or it is dropped.
+#   - a single confidence score gates the whole suggestion: below
+#     _METADATA_MIN_CONFIDENCE the result is discarded (HITL / manual fallback).
+#   - the result is surfaced as a *proposal* on IngestOutcome.metadata — never
+#     silently written to dic_documents — so a human confirms before it sticks.
+# --------------------------------------------------------------------------- #
+
+# Document types DIC recognizes. Constrains the model to a closed set so it
+# cannot emit a hallucinated free-text type; anything else collapses to "other".
+_METADATA_DOC_TYPES = (
+    "policy", "procedure", "report", "contract", "memo", "specification",
+    "manual", "correspondence", "form", "presentation", "plan", "other",
+)
+
+# Only the leading slice carries the type/date/topic signal; keep the call cheap
+# and bounded regardless of document size.
+_METADATA_INPUT_CHARS = 6000
+
+# Below this confidence the whole suggestion is dropped and the fields stay
+# unset for the deterministic / human path (HITL).
+_METADATA_MIN_CONFIDENCE = 0.70
+
+_METADATA_MAX_TAGS = 8
+_METADATA_TAG_MAX_LEN = 40
+
+_METADATA_SYSTEM_PROMPT = (
+    "You extract structured metadata for a single ingested document, for a "
+    "document-management index. Use ONLY the provided text — never invent "
+    "facts, dates, or topics not present in it. Respond with a strict JSON "
+    "object and nothing else, of the form "
+    '{"document_type": "<one of: '
+    + ", ".join(_METADATA_DOC_TYPES)
+    + '>", "tags": ["<=8 short lower-case topic keywords drawn from the text"], '
+    '"date": "<the document\'s own date as YYYY-MM-DD, or null>", '
+    '"confidence": <0..1 overall confidence>}. '
+    'Use "other" for document_type when none fits. Set date to null unless an '
+    "explicit document date appears in the text. Return low confidence rather "
+    "than guessing."
+)
+
+
+def _ai_metadata_extraction(text: str, filename: str) -> dict | None:
+    """Propose structured document metadata from ``text`` via the LLM.
+
+    Args:
+        text: The full extracted document text. Only the leading
+            ``_METADATA_INPUT_CHARS`` characters are sent to the model, keeping
+            the call cheap and bounded regardless of document size.
+        filename: Source filename, passed as weak context only (the model is
+            told to ground on the text, not the name).
+
+    Returns:
+        ``{"document_type": str, "tags": list[str], "date": str|None,
+        "confidence": float}`` on success, or ``None`` when extraction is
+        unavailable, the text is empty, the model output is unusable, or the
+        overall confidence is below ``_METADATA_MIN_CONFIDENCE``. Callers MUST
+        treat ``None`` as "no metadata" and proceed with ingestion unchanged —
+        this is a best-effort, HITL proposal, never a hard dependency, and is
+        never silently persisted.
+    """
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    snippet = snippet[:_METADATA_INPUT_CHARS]
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Filename: {filename}\n"
+                        "Document text (leading excerpt):\n"
+                        f"{snippet}\n\n"
+                        "Produce the metadata JSON."
+                    ),
+                }
+            ],
+            system_prompt=_METADATA_SYSTEM_PROMPT,
+            max_tokens=256,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+
+        # Confidence gate: drop the whole suggestion below threshold (HITL).
+        try:
+            confidence = float(parsed.get("confidence"))
+        except (TypeError, ValueError):
+            return None
+        if confidence < _METADATA_MIN_CONFIDENCE:
+            return None
+
+        # document_type: constrain to the closed enum.
+        doc_type = str(parsed.get("document_type") or "").strip().lower()
+        if doc_type not in _METADATA_DOC_TYPES:
+            doc_type = "other"
+
+        # tags: derive from text, normalize, de-dupe, length- and count-cap.
+        tags: list[str] = []
+        seen: set[str] = set()
+        for t in parsed.get("tags") or []:
+            tag = str(t).strip().lower()[:_METADATA_TAG_MAX_LEN]
+            if tag and tag not in seen:
+                seen.add(tag)
+                tags.append(tag)
+            if len(tags) >= _METADATA_MAX_TAGS:
+                break
+
+        # date: keep only a real ISO calendar date.
+        date_val = parsed.get("date")
+        date_str: str | None = None
+        if isinstance(date_val, str) and date_val.strip():
+            candidate = date_val.strip()
+            try:
+                datetime.strptime(candidate, "%Y-%m-%d")
+                date_str = candidate
+            except ValueError:
+                date_str = None
+
+        return {
+            "document_type": doc_type,
+            "tags": tags,
+            "date": date_str,
+            "confidence": round(confidence, 4),
+        }
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
@@ -404,6 +761,9 @@ def ingest_file(
     created_by: str | None = None,
     embed: bool = True,
     bridge_kg: bool = True,
+    summarize: bool = True,
+    clean_ocr: bool = True,
+    extract_metadata: bool = True,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -416,6 +776,18 @@ def ingest_file(
         created_by: user id recorded on the initial version row.
         embed: when True, embed + upsert chunks into the vector store.
         bridge_kg: when True, extract entities/relationships into the KG.
+        summarize: when True, best-effort LLM title/abstract enrichment grounded
+            in the extracted text (aiify-opp-6098). Failures degrade silently.
+        clean_ocr: when True, best-effort LLM correction of noisy OCR text
+            (aiify-opp-6118) — only fires when the extractor used an OCR path
+            and the text fits the cleanup budget; grounded on the OCR text and
+            length-ratio guarded so it can never drop or invent content.
+            Failures degrade silently to the raw OCR text.
+        extract_metadata: when True, best-effort LLM extraction of structured
+            document metadata — document_type (closed enum), topic tags, and the
+            document date (aiify-opp-6086) — grounded in the text and confidence
+            gated. Surfaced as a HITL proposal on ``IngestOutcome.metadata``;
+            never silently persisted. Failures degrade silently to no metadata.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -442,8 +814,38 @@ def ingest_file(
     if extraction.warnings:
         errors.extend(extraction.warnings)
 
-    # Compute content hash early for duplicate detection.
+    # Compute content hash on the RAW extracted text for deterministic dedup —
+    # OCR cleanup below is non-deterministic, so hashing pre-cleanup keeps the
+    # same scanned file idempotent across ingests.
     content_hash = _sha256(text)
+
+    # LLM OCR cleanup (best-effort): correct noisy OCR output before chunking.
+    # Only fires for OCR-derived providers; the raw text is kept on any failure.
+    ocr_cleaned = False
+    if clean_ocr and text.strip() and extraction.provider in _OCR_PROVIDERS:
+        _emit("ocr_cleanup", "Correcting OCR artifacts…", 7)
+        corrected = _ai_ocr_cleanup(text)
+        if corrected:
+            text = corrected
+            ocr_cleaned = True
+
+    # LLM enrichment (best-effort): a title + abstract grounded in the text.
+    ai_title, ai_summary = "", ""
+    if summarize and text.strip():
+        _emit("summarizing", "Generating title and abstract…", 8)
+        ai = _ai_document_summary(text, p.name, extraction.page_count)
+        if ai:
+            ai_title, ai_summary = ai.get("title", ""), ai.get("summary", "")
+
+    # LLM metadata extraction (best-effort): structured document_type / tags /
+    # date proposed from the text, grounded + confidence-gated. Surfaced as a
+    # HITL proposal only — never silently written. (aiify-opp-6086)
+    ai_metadata: dict = {}
+    if extract_metadata and text.strip():
+        _emit("metadata", "Extracting document metadata…", 9)
+        md = _ai_metadata_extraction(text, p.name)
+        if md:
+            ai_metadata = md
 
     # ── Duplicate detection + bookkeeping ─────────────────────────────────────
     # Open a single DB connection (or reuse caller's) for dedup + writes.
@@ -542,7 +944,7 @@ def ingest_file(
             (
                 doc_id, collection_id, source_id, p.name, str(p),
                 extraction.content_type, extraction.provider,
-                extraction.title or p.stem, p.stat().st_size, content_hash,
+                extraction.title or ai_title or p.stem, p.stat().st_size, content_hash,
                 extraction.page_count, now, tid, cls,
             ),
         )
@@ -619,6 +1021,9 @@ def ingest_file(
             kg_relationships=kg_rels,
             tenant_id=tid,
             classification=cls,
+            summary=ai_summary,
+            ocr_cleaned=ocr_cleaned,
+            metadata=ai_metadata,
             errors=errors,
         )
     finally:

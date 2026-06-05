@@ -72,6 +72,8 @@ def main():
     parser.add_argument("--down", action="store_true", help="Roll back last migration")
     parser.add_argument("--target", help="Target version (for --up or --down)")
     parser.add_argument("--dry-run", action="store_true", help="Preview without applying")
+    parser.add_argument("--converge", action="store_true",
+                        help="Apply in repeated passes until fixpoint (tolerates out-of-order migrations)")
     parser.add_argument("--validate", action="store_true", help="Validate migration checksums")
     parser.add_argument("--create", metavar="NAME", help="Create new migration scaffold")
     parser.add_argument("--mark-applied", metavar="VERSION", help="Mark version as applied")
@@ -134,6 +136,29 @@ def main():
         db_paths = [args.db_path]
         if args.all_tenants:
             db_paths.extend(_get_tenant_db_paths())
+
+        # ---- Converge mode: repeated passes until fixpoint ----
+        if args.converge:
+            all_conv = {}
+            for db_path in db_paths:
+                r = MigrationRunner(db_path=db_path, engine=_backend)
+                all_conv[str(db_path)] = r.migrate_up_converge(target=args.target)
+            if args.json:
+                print(json.dumps(all_conv, indent=2, default=str))
+            else:
+                for db_path, conv in all_conv.items():
+                    print(f"[{db_path}] converged in {len(conv['passes'])} pass(es); "
+                          f"applied {conv['applied_total']} migration(s)")
+                    for p in conv["passes"]:
+                        print(f"  pass {p['pass']}: applied={p['applied']} failed={p['failed']}")
+                    if conv["remaining_failures"]:
+                        print("  Unresolved after convergence:")
+                        for f in conv["remaining_failures"]:
+                            print(f"    [{f['version']}] {f['name']}: {f['error']}")
+            for conv in all_conv.values():
+                if conv["remaining_failures"]:
+                    sys.exit(1)
+            return
 
         all_results = {}
         for db_path in db_paths:
