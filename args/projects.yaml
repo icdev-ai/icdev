@@ -4,6 +4,60 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: plh
+  name: Plh Project
+  description: Auto-registered project for tasks with prefix 'plh-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: plh-
+  default_open: true
+  briefs: []
+  epics:
+  - key: scout
+    title: SCOUT
+    priority: medium
+  - key: testcov
+    title: TESTCOV
+    priority: medium
+- key: loe
+  name: Loe Project
+  description: Auto-registered project for tasks with prefix 'loe-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: loe-
+  default_open: true
+  briefs: []
+  epics:
+  - key: aiify
+    title: AIIFY
+    priority: medium
+  - key: dic
+    title: DIC
+    priority: medium
+  - key: slides
+    title: SLIDES
+    priority: medium
+- key: gco
+  name: Gco Project
+  description: Auto-registered project for tasks with prefix 'gco-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: gco-
+  default_open: true
+  briefs: []
+  epics:
+  - key: db
+    title: DB
+    priority: medium
+  - key: engine
+    title: ENGINE
+    priority: medium
+  - key: iqe
+    title: IQE
+    priority: medium
+  - key: ui
+    title: UI
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: sipa
   name: Sipa Project
   description: Auto-registered project for tasks with prefix 'sipa-'. Update name
