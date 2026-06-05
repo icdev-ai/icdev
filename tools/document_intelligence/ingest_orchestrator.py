@@ -308,6 +308,7 @@ class IngestOutcome:
     classification: str
     summary: str = ""
     ocr_cleaned: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -325,6 +326,7 @@ class IngestOutcome:
             "classification": self.classification,
             "summary": self.summary,
             "ocr_cleaned": self.ocr_cleaned,
+            "metadata": self.metadata,
             "errors": self.errors,
         }
 
@@ -579,6 +581,169 @@ def _ai_ocr_cleanup(text: str) -> str | None:
         if ratio < _OCR_CLEANUP_MIN_RATIO or ratio > _OCR_CLEANUP_MAX_RATIO:
             return None
         return cleaned
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# LLM metadata extraction (aiify-opp-6086: metadata_extraction ->
+# llm_generation). The external scan flagged paperless-ngx
+# src/documents/views.py:1135-1183 — manual metadata parsing/assignment — and
+# recommended replacing it with an NLP entity extractor. The repo is ephemeral,
+# so per the established aiify-opp pattern the augmentation lands in the
+# analogous ICDEV subsystem (DIC). During ingestion DIC derives only a title
+# (extractor / aiify-opp-6098 summary / filename stem); the document_type, topic
+# tags, and document date are otherwise unset. This optional helper proposes
+# those structured fields from the document's own text.
+#
+# Grounding + safety (mirrors the 6086 design doc & ICDEV AI-security posture):
+#   - document_type is constrained to a fixed enum — values outside it are
+#     dropped, so the model cannot invent a free-text type.
+#   - tags are derived from the text, lower-cased, de-duplicated, length- and
+#     count-capped.
+#   - the date must be a real ISO (YYYY-MM-DD) calendar date or it is dropped.
+#   - a single confidence score gates the whole suggestion: below
+#     _METADATA_MIN_CONFIDENCE the result is discarded (HITL / manual fallback).
+#   - the result is surfaced as a *proposal* on IngestOutcome.metadata — never
+#     silently written to dic_documents — so a human confirms before it sticks.
+# --------------------------------------------------------------------------- #
+
+# Document types DIC recognizes. Constrains the model to a closed set so it
+# cannot emit a hallucinated free-text type; anything else collapses to "other".
+_METADATA_DOC_TYPES = (
+    "policy", "procedure", "report", "contract", "memo", "specification",
+    "manual", "correspondence", "form", "presentation", "plan", "other",
+)
+
+# Only the leading slice carries the type/date/topic signal; keep the call cheap
+# and bounded regardless of document size.
+_METADATA_INPUT_CHARS = 6000
+
+# Below this confidence the whole suggestion is dropped and the fields stay
+# unset for the deterministic / human path (HITL).
+_METADATA_MIN_CONFIDENCE = 0.70
+
+_METADATA_MAX_TAGS = 8
+_METADATA_TAG_MAX_LEN = 40
+
+_METADATA_SYSTEM_PROMPT = (
+    "You extract structured metadata for a single ingested document, for a "
+    "document-management index. Use ONLY the provided text — never invent "
+    "facts, dates, or topics not present in it. Respond with a strict JSON "
+    "object and nothing else, of the form "
+    '{"document_type": "<one of: '
+    + ", ".join(_METADATA_DOC_TYPES)
+    + '>", "tags": ["<=8 short lower-case topic keywords drawn from the text"], '
+    '"date": "<the document\'s own date as YYYY-MM-DD, or null>", '
+    '"confidence": <0..1 overall confidence>}. '
+    'Use "other" for document_type when none fits. Set date to null unless an '
+    "explicit document date appears in the text. Return low confidence rather "
+    "than guessing."
+)
+
+
+def _ai_metadata_extraction(text: str, filename: str) -> dict | None:
+    """Propose structured document metadata from ``text`` via the LLM.
+
+    Args:
+        text: The full extracted document text. Only the leading
+            ``_METADATA_INPUT_CHARS`` characters are sent to the model, keeping
+            the call cheap and bounded regardless of document size.
+        filename: Source filename, passed as weak context only (the model is
+            told to ground on the text, not the name).
+
+    Returns:
+        ``{"document_type": str, "tags": list[str], "date": str|None,
+        "confidence": float}`` on success, or ``None`` when extraction is
+        unavailable, the text is empty, the model output is unusable, or the
+        overall confidence is below ``_METADATA_MIN_CONFIDENCE``. Callers MUST
+        treat ``None`` as "no metadata" and proceed with ingestion unchanged —
+        this is a best-effort, HITL proposal, never a hard dependency, and is
+        never silently persisted.
+    """
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    snippet = snippet[:_METADATA_INPUT_CHARS]
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Filename: {filename}\n"
+                        "Document text (leading excerpt):\n"
+                        f"{snippet}\n\n"
+                        "Produce the metadata JSON."
+                    ),
+                }
+            ],
+            system_prompt=_METADATA_SYSTEM_PROMPT,
+            max_tokens=256,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+
+        # Confidence gate: drop the whole suggestion below threshold (HITL).
+        try:
+            confidence = float(parsed.get("confidence"))
+        except (TypeError, ValueError):
+            return None
+        if confidence < _METADATA_MIN_CONFIDENCE:
+            return None
+
+        # document_type: constrain to the closed enum.
+        doc_type = str(parsed.get("document_type") or "").strip().lower()
+        if doc_type not in _METADATA_DOC_TYPES:
+            doc_type = "other"
+
+        # tags: derive from text, normalize, de-dupe, length- and count-cap.
+        tags: list[str] = []
+        seen: set[str] = set()
+        for t in parsed.get("tags") or []:
+            tag = str(t).strip().lower()[:_METADATA_TAG_MAX_LEN]
+            if tag and tag not in seen:
+                seen.add(tag)
+                tags.append(tag)
+            if len(tags) >= _METADATA_MAX_TAGS:
+                break
+
+        # date: keep only a real ISO calendar date.
+        date_val = parsed.get("date")
+        date_str: str | None = None
+        if isinstance(date_val, str) and date_val.strip():
+            candidate = date_val.strip()
+            try:
+                datetime.strptime(candidate, "%Y-%m-%d")
+                date_str = candidate
+            except ValueError:
+                date_str = None
+
+        return {
+            "document_type": doc_type,
+            "tags": tags,
+            "date": date_str,
+            "confidence": round(confidence, 4),
+        }
     except Exception:
         return None
 
