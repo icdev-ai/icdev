@@ -501,38 +501,26 @@ def _is_char_assembly(node: ast.Call) -> Optional[int]:
 # --------------------------------------------------------------------------- #
 # Detection — canonical name + call node -> [(capability_type, evidence), ...]
 # --------------------------------------------------------------------------- #
-def _classify(
-    name: Optional[str], node: ast.Call, aliases: dict[str, str]
-) -> list[tuple[str, dict]]:
-    """Map a resolved call to its capability records (possibly several, or none).
-
-    A single call can yield more than one capability — e.g. reading a secret file
-    is both ``filesystem`` and ``env_secret`` — so the result is a list.
-    """
+def _detect_attr_capabilities(attr: Optional[str], node: ast.Call) -> list[tuple[str, dict]]:
+    """Capabilities matched on the bare attribute name (receiver need not be a
+    plain name chain, e.g. ``Path('/x').read_text()`` or ``b'..'.fromhex(...)``)."""
     out: list[tuple[str, dict]] = []
-    # The immediate attribute name is available even when the receiver is not a
-    # plain name chain (e.g. ``Path('/x').read_text()`` — receiver is a Call, so
-    # ``name`` is None). pathlib's distinctive read/write methods are matched on
-    # this attr so a chained construction can't hide a filesystem capability.
-    attr = node.func.attr if isinstance(node.func, ast.Attribute) else None
     if attr in _FS_PATH_METHODS:
         ev = _filesystem_evidence(attr, node, attr)
         out.append(("filesystem", ev))
         out.extend(_secret_path_records(ev))
-    # bytes.fromhex(...) / b'..'.fromhex(...) — receiver may not be a name chain.
     if attr in _OBFUSCATION_ATTRS:
         out.append(("obfuscation", {"api": attr, "kind": "decode"}))
+    return out
 
-    if not name:
-        return out
-    head = name.split(".")[0]
-    tail = name.rsplit(".", 1)[-1]
 
-    # --- network egress ---------------------------------------------------- #
+def _detect_network(name: str, head: str, tail: str, node: ast.Call) -> list[tuple[str, dict]]:
     if name in _NETWORK_EXACT or (head in _NETWORK_HTTP_MODULES and tail in _NETWORK_HTTP_ATTRS):
-        out.append(("network_egress", _network_evidence(name, node)))
+        return [("network_egress", _network_evidence(name, node))]
+    return []
 
-    # --- process execution ------------------------------------------------- #
+
+def _detect_process(name: str, head: str, tail: str, node: ast.Call) -> list[tuple[str, dict]]:
     if (
         (head == "subprocess" and tail in _PROC_SUBPROCESS_ATTRS)
         or name in _PROC_OS_EXACT
@@ -541,43 +529,86 @@ def _classify(
         or name in _PROC_MULTIPROCESSING
         or name == "pty.spawn"
     ):
-        out.append(("process_exec", _process_evidence(name, node)))
+        return [("process_exec", _process_evidence(name, node))]
+    return []
 
-    # --- filesystem -------------------------------------------------------- #
+
+def _detect_filesystem(name: str, head: str, tail: str, node: ast.Call) -> list[tuple[str, dict]]:
     if name in _FS_OPEN or (head == "shutil" and tail in _FS_SHUTIL_ATTRS) or name in _FS_OS_EXACT:
         ev = _filesystem_evidence(name, node, None)
-        out.append(("filesystem", ev))
-        out.extend(_secret_path_records(ev))
+        return [("filesystem", ev), *_secret_path_records(ev)]
+    return []
 
-    # --- dynamic_code ------------------------------------------------------ #
+
+def _detect_dynamic_code(name: str, node: ast.Call, aliases: dict[str, str]) -> list[tuple[str, dict]]:
     if name in _DYNCODE_BUILTINS or name in _DYNCODE_EXACT:
-        out.append(("dynamic_code", _dynamic_code_evidence(name, node, aliases)))
+        return [("dynamic_code", _dynamic_code_evidence(name, node, aliases))]
+    return []
 
-    # --- crypto ------------------------------------------------------------ #
+
+def _detect_crypto(name: str, head: str, tail: str, node: ast.Call) -> list[tuple[str, dict]]:
     if (
         (head == "hashlib" and tail in _CRYPTO_HASHLIB)
         or head == "hmac"
         or name in _CRYPTO_SSL_EXACT
         or head in _CRYPTO_LIB_HEADS
     ):
-        out.append(("crypto", _crypto_evidence(name, node)))
+        return [("crypto", _crypto_evidence(name, node))]
+    return []
 
-    # --- env_secret -------------------------------------------------------- #
+
+def _detect_env_secret(name: str, head: str, node: ast.Call) -> list[tuple[str, dict]]:
     if name in _ENVSECRET_EXACT or head in _ENVSECRET_HEADS:
-        out.append(("env_secret", _env_secret_evidence(name, node)))
+        return [("env_secret", _env_secret_evidence(name, node))]
+    return []
 
-    # --- serialization ----------------------------------------------------- #
+
+def _detect_serialization(name: str, head: str, tail: str, node: ast.Call) -> list[tuple[str, dict]]:
     if name in _SERIAL_EXACT or (head == "yaml" and tail in _SERIAL_YAML_UNSAFE):
-        out.append(("serialization", _serialization_evidence(name, node)))
+        return [("serialization", _serialization_evidence(name, node))]
+    return []
 
-    # --- obfuscation (decode/decompress + char-code assembly) -------------- #
+
+def _detect_obfuscation(name: str, node: ast.Call) -> list[tuple[str, dict]]:
     if name in _OBFUSCATION_DECODE:
-        out.append(("obfuscation", {"api": name, "kind": "decode"}))
-    elif name in ("bytes", "bytearray"):
+        return [("obfuscation", {"api": name, "kind": "decode"})]
+    if name in ("bytes", "bytearray"):
         count = _is_char_assembly(node)
         if count is not None:
-            out.append(("obfuscation", {"api": name, "kind": "char_code_assembly", "count": count}))
+            return [("obfuscation", {"api": name, "kind": "char_code_assembly", "count": count})]
+    return []
 
+
+def _classify(
+    name: Optional[str], node: ast.Call, aliases: dict[str, str]
+) -> list[tuple[str, dict]]:
+    """Map a resolved call to its capability records (possibly several, or none).
+
+    A single call can yield more than one capability — e.g. reading a secret file
+    is both ``filesystem`` and ``env_secret`` — so the result is a list. Each
+    capability family is a focused ``_detect_*`` helper; this dispatcher runs them
+    in a fixed order and concatenates their records (preserving record ordering).
+    """
+    # The immediate attribute name is available even when the receiver is not a
+    # plain name chain (e.g. ``Path('/x').read_text()`` — receiver is a Call, so
+    # ``name`` is None). pathlib's distinctive read/write methods are matched on
+    # this attr so a chained construction can't hide a filesystem capability.
+    attr = node.func.attr if isinstance(node.func, ast.Attribute) else None
+    out = _detect_attr_capabilities(attr, node)
+
+    if not name:
+        return out
+    head = name.split(".")[0]
+    tail = name.rsplit(".", 1)[-1]
+
+    out += _detect_network(name, head, tail, node)
+    out += _detect_process(name, head, tail, node)
+    out += _detect_filesystem(name, head, tail, node)
+    out += _detect_dynamic_code(name, node, aliases)
+    out += _detect_crypto(name, head, tail, node)
+    out += _detect_env_secret(name, head, node)
+    out += _detect_serialization(name, head, tail, node)
+    out += _detect_obfuscation(name, node)
     return out
 
 
