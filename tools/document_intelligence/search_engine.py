@@ -44,6 +44,35 @@ class Citation:
 
 
 @dataclass
+class DICAnswer:
+    """A grounded, LLM-synthesized answer over DIC search results.
+
+    The answer is generated ONLY from the cited search results; it never draws
+    on the model's own knowledge. ``grounded`` is False (and ``answer`` empty)
+    whenever there is no supporting evidence, the LLM is unavailable, or the
+    model itself declines for lack of grounding — callers must surface
+    ``refusal_reason`` rather than fabricating a reply.
+    """
+
+    answer: str = ""
+    grounded: bool = False
+    citations: list[Citation] = field(default_factory=list)
+    result_count: int = 0
+    refusal_reason: str = ""
+    origin: str = "ai_generated"
+
+    def to_dict(self) -> dict:
+        return {
+            "answer": self.answer,
+            "grounded": self.grounded,
+            "citations": [c.to_dict() for c in self.citations],
+            "result_count": self.result_count,
+            "refusal_reason": self.refusal_reason,
+            "origin": self.origin,
+        }
+
+
+@dataclass
 class DICSearchResult:
     chunk_id: str = ""
     doc_id: str = ""
@@ -127,6 +156,38 @@ def _chunk_meta(conn, chunk_id: str) -> dict[str, Any]:
     except Exception:
         pass
     return result
+
+
+# --------------------------------------------------------------------------- #
+# LLM grounded answer synthesis (aiify-opp-6046: fulltext_search_engine ->
+# llm_generation). DIC search returns cited chunks with NO LLM by default
+# (air-gap safe). This OPTIONAL layer takes the top cited results and asks the
+# LLM to compose a natural-language answer grounded STRICTLY in those chunks,
+# with inline [n] citation markers. It never runs unless explicitly requested,
+# never invents content beyond the retrieved evidence, and refuses (grounded=
+# False) when there is no evidence or the model cannot answer from the context.
+# The query is user-provided, so injection scanning stays ON (not skipped).
+# --------------------------------------------------------------------------- #
+
+# Per-result excerpt budget when building the grounding context. Bounds cost and
+# keeps each citation block readable; longer chunks are truncated, not dropped.
+_ANSWER_CHARS_PER_RESULT = 800
+
+# Never feed more than this many top results into the synthesis prompt.
+_ANSWER_MAX_RESULTS = 6
+
+_ANSWER_SYSTEM_PROMPT = (
+    "You are a grounded question-answering assistant for a document repository. "
+    "Answer the user's question using ONLY the numbered source excerpts provided. "
+    "Cite every claim with the matching bracketed marker, e.g. [1] or [2]. Do NOT "
+    "use any outside knowledge, and do NOT invent facts, numbers, names, or "
+    "sources. If the provided excerpts do not contain enough information to answer, "
+    "reply with exactly: INSUFFICIENT_EVIDENCE. Keep the answer concise and "
+    "strictly supported by the cited excerpts."
+)
+
+# Sentinel the model is instructed to emit when the context cannot answer.
+_ANSWER_REFUSAL_SENTINEL = "INSUFFICIENT_EVIDENCE"
 
 
 class DICSearchEngine:
@@ -245,3 +306,95 @@ class DICSearchEngine:
             return []
         finally:
             conn.close()
+
+    def answer(
+        self,
+        query: str,
+        collection_id: str | None = None,
+        top_k: int = 10,
+        mode: str = "grounded",
+    ) -> DICAnswer:
+        """Synthesize a grounded LLM answer over cited DIC search results.
+
+        This is an OPT-IN layer on top of :meth:`search`. It first runs the
+        normal cited search, then asks the LLM to compose an answer using ONLY
+        the retrieved excerpts, citing each with a bracketed ``[n]`` marker.
+
+        Args:
+            query: Natural language question (user-provided — injection-scanned).
+            collection_id: Restrict to a specific collection (None = all).
+            top_k: How many results to retrieve before synthesis.
+            mode: "grounded" (BM25+KG, default) or "hybrid".
+
+        Returns:
+            A :class:`DICAnswer`. ``grounded`` is True only when the LLM produced
+            a real answer from the evidence. It is False (with ``refusal_reason``)
+            when no results were found ("no_evidence"), the LLM is unavailable
+            ("llm_unavailable"), or the model declined for lack of grounding
+            ("insufficient_evidence"). The answer is NEVER fabricated.
+        """
+        results = self.search(query, collection_id=collection_id, top_k=top_k, mode=mode)
+        if not results:
+            return DICAnswer(grounded=False, refusal_reason="no_evidence", result_count=0)
+
+        used = results[:_ANSWER_MAX_RESULTS]
+        context = "\n\n".join(
+            f"[{i}] (source: {r.doc_title or r.doc_id or 'unknown'})\n"
+            f"{(r.content or '').strip()[:_ANSWER_CHARS_PER_RESULT]}"
+            for i, r in enumerate(used, start=1)
+        )
+
+        try:
+            from tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+
+            req = LLMRequest(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Question: {query}\n\n"
+                            "Numbered source excerpts:\n"
+                            f"{context}\n\n"
+                            "Answer the question using only these excerpts, citing "
+                            "each claim with its [n] marker."
+                        ),
+                    }
+                ],
+                system_prompt=_ANSWER_SYSTEM_PROMPT,
+                max_tokens=512,
+                temperature=0.1,
+                classification="CUI",
+            )
+            resp = LLMRouter().invoke("summarization", req)
+        except Exception:
+            return DICAnswer(
+                grounded=False,
+                refusal_reason="llm_unavailable",
+                citations=[r.citation for r in used],
+                result_count=len(results),
+            )
+
+        if not resp or not resp.content or not resp.content.strip():
+            return DICAnswer(
+                grounded=False,
+                refusal_reason="llm_unavailable",
+                citations=[r.citation for r in used],
+                result_count=len(results),
+            )
+
+        text = resp.content.strip()
+        if _ANSWER_REFUSAL_SENTINEL in text:
+            return DICAnswer(
+                grounded=False,
+                refusal_reason="insufficient_evidence",
+                citations=[r.citation for r in used],
+                result_count=len(results),
+            )
+
+        return DICAnswer(
+            answer=text,
+            grounded=True,
+            citations=[r.citation for r in used],
+            result_count=len(results),
+        )
