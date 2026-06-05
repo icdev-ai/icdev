@@ -76,6 +76,65 @@ _ISO_DATE_RX = r"\d{4}-\d{2}-\d{2}"
 _DEFAULT_TEMPORAL_FIELD = "timestamp"
 
 
+# --- IP / CIDR extraction -------------------------------------------------
+# Analog of reputation-list parsers (regex_user_input -> nlp_extractor): pull a
+# concrete IPv4 / CIDR predicate out of NL query input instead of widening to a
+# bare "select *"/LLM call. Mirrors the comparison/temporal extractors.
+
+# A single, validated IPv4 octet (0-255) — rejects 256+ so "999.1.1.1" never
+# parses as an address.
+_OCTET = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+# Dotted-quad IPv4 literal.
+_IPV4_RX = rf"{_OCTET}(?:\.{_OCTET}){{3}}"
+# CIDR block: IPv4 plus a /0-32 prefix length.
+_CIDR_RX = rf"{_IPV4_RX}/(?:3[0-2]|[12]?\d)"
+
+# Phrases asserting an exact IP match (field <phrase> <ip>).
+_IP_EQ_PHRASES = r"is in the list|listed as|equal to|equals|matches|matching|is|are|=="
+# Phrases asserting subnet/CIDR membership (field <phrase> <cidr>).
+_IP_MEMBERSHIP_PHRASES = (
+    r"belongs to|part of|in the range|in subnet|in cidr|within|inside|under|in"
+)
+
+# Identifiers accepted as the address field when one sits before an IP phrase.
+_IP_FIELDS = frozenset(
+    {"ip", "ip_address", "ipaddress", "address", "addr", "host", "hostname",
+     "src", "src_ip", "source", "source_ip", "dst", "dst_ip", "dest",
+     "destination", "destination_ip", "client_ip", "remote_ip", "peer_ip",
+     "peer", "gateway", "subnet", "network", "cidr"}
+)
+
+# Default field when an IP phrase has no recognizable address field before it.
+_DEFAULT_IP_FIELD = "ip"
+
+
+def _ip_field(token: str | None) -> str:
+    """Resolve the address field for an IP predicate from an optional token."""
+    if token and token in _IP_FIELDS:
+        return token
+    return _DEFAULT_IP_FIELD
+
+
+def _cidr_to_predicate(cidr: str) -> tuple[str, str] | None:
+    """Translate an octet-aligned CIDR block into an IQE (op, literal) pair.
+
+    Only byte-boundary prefixes (/8, /16, /24) and a host route (/32) map to a
+    deterministic predicate: the aligned ones become a ``startswith`` on the
+    network octets (the trailing dot prevents 10.x matching 100.x), and /32
+    becomes an exact ``==``. Non-aligned prefixes (e.g. /20) have no simple
+    string form and are returned as ``None`` so the caller defers to the LLM.
+    """
+    ip, _, prefix_s = cidr.partition("/")
+    prefix = int(prefix_s)
+    if prefix == 32:
+        return ("==", f'"{ip}"')
+    if prefix in (8, 16, 24):
+        keep = prefix // 8
+        network = ".".join(ip.split(".")[:keep]) + "."
+        return ("startswith", f'"{network}"')
+    return None
+
+
 def _temporal_field(token: str | None) -> str:
     """Resolve the date field for a temporal predicate from an optional token."""
     if token and token in _TEMPORAL_FIELDS:
@@ -177,11 +236,70 @@ def _extract_temporal(question: str, collections: list[str]) -> dict[str, Any] |
     return None
 
 
+def _extract_ip(question: str, collections: list[str]) -> dict[str, Any] | None:
+    """Extract an IPv4 address / CIDR-subnet predicate from natural language.
+
+    This is the IQE analog of a reputation-list parser: rather than collapse an
+    address-filtered question to ``select *``, recognize two unambiguous forms
+    anchored on a validated IPv4 literal:
+
+    * ``[<field>] <membership-phrase> <CIDR>`` → octet-aligned subnet match
+      (e.g. "source_ip in 10.0.0.0/8" → ``startswith "10."``); /32 collapses to
+      an exact match. Non-byte-aligned prefixes (/20) are left to the LLM.
+    * ``[<field>] <equality-phrase> <IPv4>`` → exact match
+      (e.g. "ip is 192.168.1.1" → ``== "192.168.1.1"``).
+
+    The optional leading token names the address field when recognized (see
+    ``_IP_FIELDS``); otherwise the predicate falls back to ``ip``. Returns an
+    IQE/explanation dict, or ``None`` when no predicate is found.
+    """
+    q = question.lower().strip()
+    default_coll = collections[0] if collections else "nodes"
+    coll = _match_collection(q, collections, default_coll)
+
+    # CIDR membership first (most specific — carries a prefix length).
+    m = re.search(
+        rf"\b(?:([a-z_][a-z0-9_]*)\s+)?(?:{_IP_MEMBERSHIP_PHRASES})\s+({_CIDR_RX})\b",
+        q,
+    )
+    if m:
+        pred = _cidr_to_predicate(m.group(2))
+        if pred:  # None → non-aligned prefix, defer to LLM
+            field = _ip_field(m.group(1))
+            op, lit = pred
+            iqe = f"foreach n in {coll} where n.{field} {op} {lit} select *"
+            return {
+                "iqe": iqe,
+                "explanation": f"Filter {coll} where {field} {op} {lit} (subnet {m.group(2)})",
+            }
+
+    # Exact IPv4 equality — the negative lookahead skips a CIDR's base address
+    # so "in 10.0.0.0/8" is not also read as "== 10.0.0.0".
+    m = re.search(
+        rf"\b(?:([a-z_][a-z0-9_]*)\s+)?(?:{_IP_EQ_PHRASES})\s+({_IPV4_RX})(?![\d./])",
+        q,
+    )
+    if m:
+        field = _ip_field(m.group(1))
+        ip = m.group(2)
+        iqe = f'foreach n in {coll} where n.{field} == "{ip}" select *'
+        return {"iqe": iqe, "explanation": f'Filter {coll} where {field} == "{ip}"'}
+
+    return None
+
+
 def _pattern_translate(question: str, collections: list[str]) -> dict[str, Any] | None:
     """Try simple pattern-based translation before calling LLM."""
     q = question.lower().strip()
 
     default_coll = collections[0] if collections else "nodes"
+
+    # IP / CIDR predicates are the most specific (anchored on a validated IPv4
+    # literal), so they run first — otherwise an address-filtered question would
+    # be silently widened to "select *".
+    ip_pred = _extract_ip(question, collections)
+    if ip_pred:
+        return ip_pred
 
     # Temporal/date-range predicates take precedence (anchored on a full ISO
     # date, so they are the most specific) — otherwise a dated question would be
