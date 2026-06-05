@@ -2104,6 +2104,16 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Supply Chain blueprint failed to register: %s", _exc)
 
+    # ---- SIPA Software Integrity & Provenance Assessor Blueprint ----
+    try:
+        from tools.integrity.blueprint import create_integrity_blueprint
+        _int_bp = create_integrity_blueprint()
+        if _int_bp is not None:
+            app.register_blueprint(_int_bp)
+            app.logger.info("Integrity (SIPA) blueprint registered at /integrity")
+    except Exception as _exc:
+        app.logger.warning("Integrity blueprint failed to register: %s", _exc)
+
     # ---- Strategos Blueprint ----
     if _HAS_STRATEGOS:
         try:
