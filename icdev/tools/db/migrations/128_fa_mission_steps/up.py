@@ -33,7 +33,30 @@ CREATE INDEX IF NOT EXISTS idx_fa_mission_steps_mission_step
 """
 
 
+def _table_exists(conn, table: str) -> bool:
+    """True if ``table`` exists (backend-agnostic). ``fa_missions`` is owned by
+    apps/forge_academy/db.py and created at app runtime, so a migrate-only fresh
+    DB — e.g. the CI E2E PostgreSQL job's ``migrate.py --up`` — legitimately lacks
+    it. On PG the FK ``REFERENCES fa_missions(id)`` would otherwise abort the
+    chain; skip rather than fail, matching migrations 020/040/041."""
+    if getattr(conn, "_backend", "sqlite") == "postgresql":
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
 def up(conn):
+    if not _table_exists(conn, "fa_missions"):
+        print("Migration 128 up: fa_missions absent — skipping (created at runtime by apps/forge_academy/db.py).")
+        return
     for stmt in SQL.strip().split(";"):
         s = stmt.strip()
         if s:

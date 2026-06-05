@@ -62,10 +62,33 @@ def _column_exists(conn, table: str, column: str) -> bool:
     return any((r[1] if isinstance(r, tuple) else dict(r).get("name")) == column for r in rows)
 
 
+def _table_exists(conn, table: str) -> bool:
+    """True if ``table`` exists. ``kanban_tasks`` is created at app runtime by
+    tools/kanban/init_db.py, so a migrate-only fresh DB (the CI E2E PostgreSQL
+    job) legitimately lacks it. kanban_task_tags also has an FK to kanban_tasks,
+    so skip the whole migration rather than abort the chain — matching the other
+    kanban migrations (020/040/041)."""
+    if _is_pg(conn):
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
 def up(conn=None) -> dict:
     from tools.db.storage import get_connection
     if conn is None:
         conn = get_connection()
+
+    if not _table_exists(conn, "kanban_tasks"):
+        return {"status": "skipped", "reason": "kanban_tasks absent (created at runtime by tools/kanban/init_db.py)"}
 
     actions = []
 

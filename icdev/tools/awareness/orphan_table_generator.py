@@ -418,7 +418,9 @@ _KNOWN_SCHEMAS: Dict[str, List[Tuple[str, str]]] = {
     "ndc_audit": [
         ("id", "TEXT PRIMARY KEY"),
         ("design_id", "TEXT DEFAULT ''"),
-        ("user", "TEXT DEFAULT ''"),
+        # "user" is a PostgreSQL reserved word — must stay quoted everywhere
+        # (CREATE here, INSERT in tools/network/blueprint_helpers.py).
+        ('"user"', "TEXT DEFAULT ''"),
         ("action", "TEXT DEFAULT ''"),
         ("detail", "TEXT DEFAULT ''"),
         ("classification", "TEXT DEFAULT 'public'"),

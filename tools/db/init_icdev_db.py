@@ -7122,7 +7122,11 @@ CREATE INDEX IF NOT EXISTS idx_wg_style_guides_scope
 -- 2. Style guide locks — ISSO-lockable dimensions (D-WG-3)
 CREATE TABLE IF NOT EXISTS wg_style_guide_locks (
     id TEXT PRIMARY KEY,
-    guide_id TEXT NOT NULL REFERENCES wg_style_guides(id),
+    -- guide_id references a style guide by id only; wg_style_guides has a
+    -- composite PK (id, version), so id alone is not unique and a SQL FK is
+    -- invalid on PostgreSQL ("no unique constraint matching given keys").
+    -- A lock applies to a guide id across all its versions, so no per-row FK.
+    guide_id TEXT NOT NULL,
     dimension_path TEXT NOT NULL,
     lock_owner_role TEXT NOT NULL CHECK(lock_owner_role IN ('isso','architect','pm','admin')),
     locked_by TEXT NOT NULL,
