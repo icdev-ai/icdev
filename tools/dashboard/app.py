@@ -162,9 +162,10 @@ _CANVAS_DEFS = [
     ("aiify_compat", "ICDEV_AIIFY_ENABLED", "tools.aiify.blueprint", "aiify_compat_bp"),
     ("dic", "ICDEV_DIC_ENABLED", "tools.document_intelligence.blueprint", "dic_bp"),
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
+    ("integrity", "ICDEV_INTEGRITY_ENABLED", "tools.integrity.blueprint", "create_integrity_blueprint"),
 ]
 
-_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc"}
+_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity"}
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
     _default = "true" if _key in _CANVAS_DEFAULTS_TRUE else "false"
@@ -2056,6 +2057,7 @@ def create_app() -> Flask:
         "pmc": "",
         "ccc": "",
         "dsoc": "",
+        "integrity": "",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
@@ -2105,14 +2107,9 @@ def create_app() -> Flask:
         app.logger.warning("Supply Chain blueprint failed to register: %s", _exc)
 
     # ---- SIPA Software Integrity & Provenance Assessor Blueprint ----
-    try:
-        from tools.integrity.blueprint import create_integrity_blueprint
-        _int_bp = create_integrity_blueprint()
-        if _int_bp is not None:
-            app.register_blueprint(_int_bp)
-            app.logger.info("Integrity (SIPA) blueprint registered at /integrity")
-    except Exception as _exc:
-        app.logger.warning("Integrity blueprint failed to register: %s", _exc)
+    # Registered via the _CANVAS_DEFS loop above (key "integrity", empty url_prefix
+    # in _CANVAS_ROUTES so the blueprint's explicit /integrity + /api/integrity
+    # paths are not double-prefixed). No manual registration here.
 
     # ---- Strategos Blueprint ----
     if _HAS_STRATEGOS:
