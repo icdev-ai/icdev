@@ -13,6 +13,9 @@ from tools.rag.quality_feedback_loop import (
     run_feedback_cycle,
     get_feedback_status,
     _get_config,
+    _compute_feedback_anomaly_thresholds,
+    flag_quality_anomaly,
+    _METRIC_ANOMALY_FLOORS,
     DEFAULT_CONFIG,
 )
 
@@ -120,6 +123,88 @@ class TestFeedbackCycle:
             mock_cfg.return_value = {**DEFAULT_CONFIG, "auto_remediate": False}
             result = run_feedback_cycle()
             assert "auto_remediate_disabled" in result["actions"]
+
+
+class TestAnomalyThresholds:
+    """Adaptive anomaly-detection threshold tests (aiify rm-6efad-phase-5496)."""
+
+    def test_disabled_returns_fallback_floors(self):
+        th = _compute_feedback_anomaly_thresholds({"enabled": False})
+        assert th["computed"] is False
+        assert th["floors"] == {m: float(v) for m, v in _METRIC_ANOMALY_FLOORS.items()}
+
+    def test_fallback_floors_override_from_config(self):
+        th = _compute_feedback_anomaly_thresholds(
+            {"enabled": False, "fallback_floors": {"ndcg": 0.45}}
+        )
+        assert th["floors"]["ndcg"] == 0.45
+        # untouched metrics keep their module defaults
+        assert th["floors"]["mrr"] == float(_METRIC_ANOMALY_FLOORS["mrr"])
+
+    def test_sparse_history_falls_back(self):
+        # No / sparse history (or missing table) must not raise — falls back.
+        th = _compute_feedback_anomaly_thresholds({"enabled": True, "min_samples": 10**9})
+        assert th["computed"] is False
+        assert set(th["floors"]) == set(_METRIC_ANOMALY_FLOORS)
+
+
+class TestFlagQualityAnomaly:
+    """flag_quality_anomaly() tests using explicit thresholds (no DB)."""
+
+    _TH = {"floors": {"ndcg": 0.30, "mrr": 0.30, "avg_retrieval_score": 0.30}}
+
+    def test_clean_when_above_floors(self):
+        out = flag_quality_anomaly({"ndcg": 0.8, "mrr": 0.7}, thresholds=self._TH)
+        assert out["anomalous"] is False
+        assert out["reasons"] == []
+
+    def test_flags_metric_below_floor(self):
+        out = flag_quality_anomaly({"ndcg": 0.1, "mrr": 0.7}, thresholds=self._TH)
+        assert out["anomalous"] is True
+        assert any("ndcg" in r for r in out["reasons"])
+
+    def test_ignores_missing_and_none_metrics(self):
+        out = flag_quality_anomaly({"mrr": None}, thresholds=self._TH)
+        assert out["anomalous"] is False
+
+    def test_ignores_non_numeric_metric(self):
+        out = flag_quality_anomaly({"ndcg": "n/a"}, thresholds=self._TH)
+        assert out["anomalous"] is False
+
+
+class TestCycleAnomalyIntegration:
+    """run_feedback_cycle surfaces an anomaly_detection block."""
+
+    @patch("tools.rag.quality_feedback_loop.flag_quality_anomaly")
+    @patch("tools.finetune.quality_monitor.check_quality")
+    def test_cycle_includes_anomaly_block(self, mock_check, mock_flag):
+        mock_check.return_value = {
+            "status": "ok",
+            "metrics": {"ndcg": 0.8},
+            "alerts": [],
+            "retrain_recommended": False,
+        }
+        mock_flag.return_value = {"anomalous": False, "reasons": [], "floors": {}}
+        result = run_feedback_cycle(dry_run=False)
+        assert "anomaly_detection" in result
+        assert result["anomaly_detection"]["anomalous"] is False
+
+    @patch("tools.rag.quality_feedback_loop.flag_quality_anomaly")
+    @patch("tools.finetune.quality_monitor.check_quality")
+    def test_anomaly_action_recorded_when_flagged(self, mock_check, mock_flag):
+        mock_check.return_value = {
+            "status": "ok",
+            "metrics": {"ndcg": 0.1},
+            "alerts": [],
+            "retrain_recommended": False,
+        }
+        mock_flag.return_value = {
+            "anomalous": True,
+            "reasons": ["ndcg 0.1 < floor 0.30"],
+            "floors": {"ndcg": 0.30},
+        }
+        result = run_feedback_cycle(dry_run=False)
+        assert "quality_anomaly_detected" in result["actions"]
 
 
 class TestFeedbackStatus:

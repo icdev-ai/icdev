@@ -102,6 +102,26 @@ reflexes:
       name: plans_updated
       threshold: 0
       operator: gte
+    anomaly_detection:
+      enabled: true
+      min_samples: 15
+      adaptive_bounds:
+        strong_floor: 0.50
+        good_floor: 0.30
+        marginal_floor: 0.10
+      # Static fallbacks when fewer than min_samples assessments exist
+      fallback_strong_threshold: 0.70
+      fallback_good_threshold: 0.50
+      fallback_marginal_threshold: 0.30
+      # Scoring formula weights — tunable without code changes
+      cap_weight: 0.40
+      cert_weight: 0.20
+      vehicle_weight: 0.20
+      setaside_weight: 0.20
+      cap_overlap_divisor: 0.30
+      cert_score_per_match: 0.25
+      vehicle_score_per_match: 0.30
+      setaside_score_per_match: 0.30
 
   engage:
     enabled: true  # Phase C — implemented
@@ -139,6 +159,22 @@ reflexes:
       name: coverage_score
       threshold: 0
       operator: gte
+    anomaly_detection:
+      enabled: true
+      min_samples: 20
+      fallback_top_k: 5
+      # Hit rate thresholds for adaptive top_k adjustment
+      low_recall_threshold: 0.30
+      high_recall_threshold: 0.70
+      adaptive_bounds:
+        top_k_floor: 2
+        top_k_ceil: 10
+      # Operational parameter overrides
+      req_fetch_limit: 50
+      opp_process_limit: 10
+      parallel_patterns_cap: 20
+      parallel_max_workers: 3
+      parallel_future_timeout: 30
 
   draft:
     enabled: true
@@ -154,6 +190,23 @@ reflexes:
     max_drafts_per_run: 10
     pulse_integration: true
     kb_enrichment: true
+    # aiify-opp-5401: opt-in NLP keyword extractor for Pulse content matching.
+    # When true the matcher first tries LLM-based semantic keyword extraction
+    # (_ai_extract_keywords) and silently falls back to the deterministic regex
+    # extractor on any failure, so Pulse matching never depends on LLM
+    # availability. Defaults to the regex extractor (false).
+    ai_keywords: false
+    anomaly_detection:
+      enabled: true
+      # Minimum pg_pulse_proposal_links (content_reuse) rows required before the
+      # adaptive Pulse-match relevance cutoff is computed; below this the static
+      # fallback_relevance_threshold is used.
+      min_samples: 15
+      # Static fallback — the proven baseline cutoff used when under-sampled.
+      fallback_relevance_threshold: 0.1
+      # Hard floor — the adaptive cutoff never drops below this.
+      adaptive_bounds:
+        relevance_floor: 0.1
 
   polish:
     enabled: true
@@ -174,6 +227,35 @@ reflexes:
         - tone
         - plagiarism
         - ai_detection
+    anomaly_detection:
+      enabled: true
+      # Minimum pg_proposal_quality_scores rows required for statistical computation.
+      # Below this falls back to fallback_* values.
+      min_samples: 15
+      # Thresholds are set at mean ± sigma * std_dev from historical distributions.
+      sigma_quality: 1.0      # quality_threshold = mean_composite - sigma * std
+      sigma_stub: 1.0         # stub_gate = mean_stub_score - sigma * std
+      # Static fallbacks — used when fewer than min_samples rows exist
+      fallback_quality_threshold: 0.65
+      fallback_stub_gate_threshold: 0.50
+      # Hard floors — statistical thresholds never drop below these
+      adaptive_bounds:
+        quality_threshold_floor: 0.40
+        stub_gate_floor: 0.25
+      # Formula coefficients — tunable without code changes
+      grammar_deduction_per_issue: 0.15
+      tone_deduction_per_signal: 0.10
+      tone_strength_bonus: 0.03
+      stub_min_words: 50
+      stub_template_ratio: 0.05
+      stub_signal_deduction: 0.12
+      stub_thin_deduction: 0.20
+      stub_no_ref_deduction: 0.08
+      ai_burstiness_low: 0.30
+      ai_burstiness_mid: 0.50
+      context_warning_tokens: 6000
+      context_critical_tokens: 10000
+      context_window_size: 200000
 
   decide:
     enabled: true  # Phase F — implemented
@@ -208,6 +290,7 @@ reflexes:
     days_ahead: 14
     max_generations_per_run: 10
     stale_threshold_days: 90
+    goveval_gate_threshold: 0.5  # GovEval composite below which a CDRL is flagged needs_review (anomaly)
     success_metric:
       name: cdrls_generated
       threshold: 0
@@ -225,6 +308,20 @@ reflexes:
       name: articles_staged
       threshold: 0
       operator: gte
+    anomaly_detection:
+      enabled: true
+      min_samples: 15
+      sigma_multiplier: 1.0
+      fallback_min_quality_score: 70.0
+      adaptive_bounds:
+        quality_floor: 50.0
+      # Content generation limits — tunable without code changes
+      max_drafts_per_run: 5
+      max_kb_blocks: 5
+      max_capabilities_shown: 8
+      max_kb_blocks_used: 3
+      kb_block_summary_chars: 200
+      default_relevance_score: 0.80
 
   # ── PHASE 4: LEARN (Feedback Loop) ─────────────────────────────────────
 

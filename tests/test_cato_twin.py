@@ -461,7 +461,83 @@ class TestCatoTwinReflex:
 
 
 # ---------------------------------------------------------------------------
-# 6. IQE Seed Queries — file existence checks
+# 6. AI Anomaly Detection
+# ---------------------------------------------------------------------------
+
+class TestCatoTwinAnomalyDetection:
+    """AI-driven anomaly detection replaces hardcoded 0.5 threshold."""
+
+    def test_ai_score_threshold_default_exists(self):
+        """Module must expose _AI_SCORE_THRESHOLD_DEFAULT as the fallback."""
+        from tools.genesis.reflexes.cato_twin import _AI_SCORE_THRESHOLD_DEFAULT
+        assert isinstance(_AI_SCORE_THRESHOLD_DEFAULT, float)
+        assert 0.0 <= _AI_SCORE_THRESHOLD_DEFAULT <= 1.0
+
+    def test_determine_anomaly_threshold_returns_float(self):
+        """_determine_anomaly_threshold() must return a float in [0, 1]."""
+        from tools.genesis.reflexes.cato_twin import _determine_anomaly_threshold
+        controls = [
+            {"control_id": "AC-2", "score": 0.3, "implementation_status": "not_satisfied"},
+            {"control_id": "IA-2", "score": 0.8, "implementation_status": "satisfied"},
+        ]
+        with patch("tools.llm.router.LLMRouter.is_no_llm_mode", return_value=True):
+            threshold = _determine_anomaly_threshold(controls, "FedRAMP Moderate")
+        assert isinstance(threshold, float)
+        assert 0.0 <= threshold <= 1.0
+
+    def test_determine_anomaly_threshold_falls_back_on_llm_error(self):
+        """LLM errors must return the default threshold, not raise."""
+        from tools.genesis.reflexes.cato_twin import (
+            _determine_anomaly_threshold,
+            _AI_SCORE_THRESHOLD_DEFAULT,
+        )
+        controls = [{"control_id": "AC-2", "score": 0.4, "implementation_status": "not_satisfied"}]
+        with patch("tools.llm.router.LLMRouter.invoke", side_effect=RuntimeError("LLM unavailable")):
+            threshold = _determine_anomaly_threshold(controls, "FedRAMP High")
+        assert threshold == _AI_SCORE_THRESHOLD_DEFAULT
+
+    def test_detect_anomalies_llm_returns_list(self):
+        """_detect_anomalies_llm() returns a list (possibly empty) of anomaly dicts."""
+        from tools.genesis.reflexes.cato_twin import _detect_anomalies_llm
+        controls = [
+            {"control_id": "AC-2", "score": 0.1, "implementation_status": "not_satisfied"},
+            {"control_id": "IA-5", "score": 0.0, "implementation_status": "not_satisfied"},
+        ]
+        with patch("tools.llm.router.LLMRouter.is_no_llm_mode", return_value=True):
+            result = _detect_anomalies_llm(controls, "FedRAMP Moderate", "proj-001")
+        assert isinstance(result, list)
+
+    def test_detect_anomalies_llm_falls_back_gracefully(self):
+        """LLM failure must return rule-based fallback list, not raise."""
+        from tools.genesis.reflexes.cato_twin import _detect_anomalies_llm
+        controls = [
+            {"control_id": "AC-2", "score": 0.2, "implementation_status": "not_satisfied"},
+        ]
+        with patch("tools.llm.router.LLMRouter.invoke", side_effect=RuntimeError("timeout")):
+            result = _detect_anomalies_llm(controls, "FedRAMP Moderate", "proj-001")
+        assert isinstance(result, list)
+
+    def test_reflex_result_includes_ai_anomalies_key(self, mem_db):
+        """run() result dict must include 'ai_anomalies_found' key."""
+        from tools.genesis.reflexes.cato_twin import run
+        with patch("tools.db.storage.get_connection", return_value=mem_db):
+            with patch("tools.llm.router.LLMRouter.is_no_llm_mode", return_value=True):
+                result = run({}, mem_db)
+        assert "ai_anomalies_found" in result
+
+    def test_seed_queries_built_with_threshold(self):
+        """_build_seed_queries() must accept a threshold and use it in query strings."""
+        from tools.genesis.reflexes.cato_twin import _build_seed_queries
+        queries = _build_seed_queries(threshold=0.3)
+        assert isinstance(queries, list)
+        assert len(queries) > 0
+        # At least one query must embed the threshold value
+        threshold_present = any("0.3" in q for q in queries)
+        assert threshold_present, "Expected threshold 0.3 in at least one seed query"
+
+
+# ---------------------------------------------------------------------------
+# 7. IQE Seed Queries — file existence checks
 # ---------------------------------------------------------------------------
 
 IQE_QUERY_DIR = ROOT / "context" / "iqe" / "queries" / "boundary"

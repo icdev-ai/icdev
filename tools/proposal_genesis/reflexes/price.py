@@ -22,6 +22,18 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Module-level constants — Price Reflex (R17) thresholds & limits.
+# Extracted from inline magic numbers (AI-ify opp 5427, hardcoded_threshold).
+# Overridable from proposal_genesis_config.yaml under reflexes.price.
+# Change config, not code.
+# ---------------------------------------------------------------------------
+_VOLUMES_UPDATE_LIMIT          = 20  # draft/needs_update cost volumes scanned per run
+_OPPS_WITHOUT_PRICING_LIMIT    = 10  # tracked opps lacking a cost volume fetched per run
+_MIN_LINE_ITEMS_FOR_COMPLETE   = 1   # line-item count at/above which a volume is "populated"
+_INCOMPLETE_DETAILS_LIMIT      = 10  # incomplete volumes surfaced in the details payload
+_MISSING_PRICING_DETAILS_LIMIT = 10  # missing-pricing opps surfaced in the details payload
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -40,7 +52,7 @@ def _get_volumes_needing_update() -> List[Dict]:
     """Find cost volumes in draft status that need pricing updates."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT cv.id, cv.opportunity_id, cv.status, cv.total_price,
                    cv.updated_at, po.title
             FROM pg_cost_volumes cv
@@ -48,7 +60,7 @@ def _get_volumes_needing_update() -> List[Dict]:
             WHERE cv.status IN ('draft', 'needs_update')
             AND po.status IN ('tracking', 'drafting')
             ORDER BY cv.updated_at ASC
-            LIMIT 20
+            LIMIT {_VOLUMES_UPDATE_LIMIT}
         """).fetchall()
         return [dict(r) for r in rows]
     except Exception:
@@ -61,14 +73,14 @@ def _get_opportunities_without_pricing() -> List[Dict]:
     """Find tracked opportunities that have no cost volume yet."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT po.id, po.title, po.estimated_value
             FROM proposal_opportunities po
             LEFT JOIN pg_cost_volumes cv ON cv.opportunity_id = po.id
             WHERE po.status IN ('tracking', 'drafting')
             AND cv.id IS NULL
             ORDER BY po.created_at DESC
-            LIMIT 10
+            LIMIT {_OPPS_WITHOUT_PRICING_LIMIT}
         """).fetchall()
         return [dict(r) for r in rows]
     except Exception:
@@ -86,7 +98,7 @@ def _check_line_item_coverage(volume_id: str) -> Dict[str, Any]:
             (volume_id,),
         ).fetchone()
         count = row["cnt"] if row else 0
-        return {"line_items": count, "has_items": count > 0}
+        return {"line_items": count, "has_items": count >= _MIN_LINE_ITEMS_FOR_COMPLETE}
     except Exception:
         return {"line_items": 0, "has_items": False}
     finally:
@@ -171,8 +183,11 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "incomplete_volumes": len(incomplete_volumes),
             "opportunities_missing_pricing": len(missing_pricing),
             "total_pricing_issues": total_issues,
-            "incomplete_details": incomplete_volumes[:10],
-            "missing_pricing_details": [{"opportunity_id": m["id"], "title": m["title"]} for m in missing_pricing[:10]],
+            "incomplete_details": incomplete_volumes[:_INCOMPLETE_DETAILS_LIMIT],
+            "missing_pricing_details": [
+                {"opportunity_id": m["id"], "title": m["title"]}
+                for m in missing_pricing[:_MISSING_PRICING_DETAILS_LIMIT]
+            ],
         },
     }
 

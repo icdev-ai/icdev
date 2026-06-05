@@ -1,0 +1,3 @@
+foreach d in slides.decks
+  where d.status in ("completed", "auto")
+  select d.title, d.deck_type, d.theme, d.slide_count, d.created_at

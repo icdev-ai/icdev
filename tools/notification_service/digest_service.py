@@ -18,6 +18,31 @@ from .event_service import (
 )
 
 # ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/notification_config.yaml
+# under digest_service.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_NARRATIVE_MAX_TOKENS     = 512
+_NARRATIVE_TEMPERATURE    = 0.3
+_KANBAN_DONE_LIMIT        = 5     # recent completed tasks shown in kanban digest
+_ORACLE_TOP_PREDS_LIMIT   = 10    # top oracle predictions in weekly digest
+_AIIFY_TOP_OPPS_LIMIT     = 10    # top aiify opportunities in weekly digest
+_AIIFY_SCAN_LIMIT         = 10    # aiify scans fetched in weekly digest
+_AGENT_ERRORS_LIMIT       = 10    # recent agent errors in health alert
+_ZIG_GAPS_LIMIT           = 10    # ZIG unstarted capabilities in maturity report
+_AUDIT_EVENTS_LIMIT       = 20    # audit events in trail summary
+_POAM_DAYS_AHEAD          = 30    # default look-ahead window for POA&M digest
+_AUDIT_SINCE_HOURS        = 24    # default audit trail summary window
+
+# Narrative slice limits (for narrative fact building, not DB queries)
+_NARRATIVE_TOP_PREDS_SLICE   = 5
+_NARRATIVE_TOP_OPPS_SLICE    = 3
+_NARRATIVE_RECENT_ERR_SLICE  = 3
+_NARRATIVE_LOWEST_CANVAS_SLICE = 3
+_NARRATIVE_DUE_ITEMS_SLICE   = 5
+_NARRATIVE_TOP_ACTORS_SLICE  = 5
+_NARRATIVE_TOP_EVENTS_SLICE  = 5
+
+# ---------------------------------------------------------------------------
 # AI-ification (aiify-opp-5556): optional LLM-synthesized digest narrative.
 #
 # Every send_* function below is a deterministic db → render → notify chain.
@@ -80,8 +105,8 @@ def _ai_digest_narrative(digest_kind: str, facts: dict) -> str | None:
                 }
             ],
             system_prompt=_DIGEST_NARRATIVE_SYSTEM_PROMPT,
-            max_tokens=512,
-            temperature=0.3,
+            max_tokens=_NARRATIVE_MAX_TOKENS,
+            temperature=_NARRATIVE_TEMPERATURE,
             skip_injection_scan=True,  # trusted first-party fact dict, not user input
             classification="CUI",
         )
@@ -102,7 +127,7 @@ def send_daily_kanban_digest(recipient: str, ai_narrative: bool = False) -> dict
     ).fetchall()
     done = conn.execute(
         "SELECT id, title FROM kanban_tasks WHERE status='done' "
-        "AND updated_at >= DATE('now','-1 day') LIMIT 5"
+        f"AND updated_at >= DATE('now','-1 day') LIMIT {_KANBAN_DONE_LIMIT}"
     ).fetchall()
     conn.close()
     body = render_template("digests/kanban_daily.html", rows=rows, done=done, date=_now_iso()[:10])
@@ -131,7 +156,7 @@ def send_oracle_weekly_digest(recipient: str, ai_narrative: bool = False) -> dic
     top_preds = conn.execute(
         "SELECT title, severity, confidence FROM oracle_predictions "
         "WHERE created_at >= DATE('now','-7 days') "
-        "ORDER BY confidence DESC LIMIT 10"
+        f"ORDER BY confidence DESC LIMIT {_ORACLE_TOP_PREDS_LIMIT}"
     ).fetchall()
     lens_stats = conn.execute(
         "SELECT lens_id, COUNT(*) as cnt FROM oracle_predictions "
@@ -150,7 +175,7 @@ def send_oracle_weekly_digest(recipient: str, ai_narrative: bool = False) -> dic
         ) or "none",
         "top_predictions": "; ".join(
             f"{p['title']} ({p['severity']}, conf {round(float(p['confidence'] or 0), 2)})"
-            for p in top_preds[:5]
+            for p in top_preds[:_NARRATIVE_TOP_PREDS_SLICE]
         ) or "none",
         "active_lens_count": len(lens_stats),
     }) if ai_narrative else None
@@ -186,7 +211,7 @@ def send_compliance_posture_report(recipient: str, canvas_filter: list | None = 
         "overall_score": overall_score,
         "canvas_count": len(canvases),
         "lowest_canvases": "; ".join(
-            f"{c['canvas_name']}: {round(float(c['score'] or 0), 1)}" for c in canvases[:3]
+            f"{c['canvas_name']}: {round(float(c['score'] or 0), 1)}" for c in canvases[:_NARRATIVE_LOWEST_CANVAS_SLICE]
         ) or "none",
         "open_findings_by_severity": "; ".join(
             f"{f['severity']}: {f['cnt']}" for f in open_findings
@@ -211,7 +236,7 @@ def send_agent_health_alert(recipient: str, ai_narrative: bool = False) -> dict:
     ).fetchone()
     recent_errors = conn.execute(
         "SELECT agent_id, error_msg, created_at FROM agent_errors "
-        "WHERE created_at >= DATE('now','-1 hour') ORDER BY created_at DESC LIMIT 10"
+        f"WHERE created_at >= DATE('now','-1 hour') ORDER BY created_at DESC LIMIT {_AGENT_ERRORS_LIMIT}"
     ).fetchall()
     conn.close()
     inactive_count = int((inactive or {}).get("cnt", 0))
@@ -224,7 +249,7 @@ def send_agent_health_alert(recipient: str, ai_narrative: bool = False) -> dict:
         "inactive_count": inactive_count,
         "recent_error_count": len(recent_errors),
         "recent_errors": "; ".join(
-            f"{e['agent_id']}: {e['error_msg']}" for e in recent_errors[:3]
+            f"{e['agent_id']}: {e['error_msg']}" for e in recent_errors[:_NARRATIVE_RECENT_ERR_SLICE]
         ) or "none",
     }) if ai_narrative else None
     send(to=recipient, subject=f"Agent Health Alert — {inactive_count} inactive", body=rendered)
@@ -283,7 +308,7 @@ def send_zig_maturity_report(recipient: str, ai_narrative: bool = False) -> dict
     ).fetchall()
     gaps = conn.execute(
         "SELECT pillar_slug, title, phase FROM zig_capabilities "
-        "WHERE implementation_status='not_started' ORDER BY pillar_slug LIMIT 10"
+        f"WHERE implementation_status='not_started' ORDER BY pillar_slug LIMIT {_ZIG_GAPS_LIMIT}"
     ).fetchall()
     conn.close()
     overall = round(sum(float(p["score"]) for p in pillars) / len(pillars) * 100, 1) if pillars else 0
@@ -295,10 +320,10 @@ def send_zig_maturity_report(recipient: str, ai_narrative: bool = False) -> dict
         "pillar_count": len(pillars),
         "lowest_pillars": "; ".join(
             f"{p['pillar_slug']}: {round(float(p['score'] or 0) * 100, 1)}% ({p['maturity_level']})"
-            for p in pillars[:3]
+            for p in pillars[:_NARRATIVE_LOWEST_CANVAS_SLICE]
         ) or "none",
         "not_started_capabilities": "; ".join(
-            f"{g['pillar_slug']}/{g['title']}" for g in gaps[:5]
+            f"{g['pillar_slug']}/{g['title']}" for g in gaps[:_NARRATIVE_DUE_ITEMS_SLICE]
         ) or "none",
     }) if ai_narrative else None
     sendmail(to=recipient, subject=f"ZIG Maturity Report — {overall}% overall", html=rendered)
@@ -306,7 +331,7 @@ def send_zig_maturity_report(recipient: str, ai_narrative: bool = False) -> dict
     return {"status": "sent", "recipient": recipient, "overall_pct": overall, "pillars": len(pillars), "narrative": narrative}
 
 
-def send_poam_due_soon_digest(recipient: str, days_ahead: int = 30, ai_narrative: bool = False) -> dict:
+def send_poam_due_soon_digest(recipient: str, days_ahead: int = _POAM_DAYS_AHEAD, ai_narrative: bool = False) -> dict:
     """Fetch upcoming POA&M deadlines, render digest, and deliver."""
     conn = get_connection()
     due_items = conn.execute(
@@ -330,7 +355,7 @@ def send_poam_due_soon_digest(recipient: str, days_ahead: int = 30, ai_narrative
         "overdue_count": overdue_count,
         "soonest_due": "; ".join(
             f"{d['title']} ({d['severity']}, {d['days_left']}d, owner {d['owner']})"
-            for d in due_items[:5]
+            for d in due_items[:_NARRATIVE_DUE_ITEMS_SLICE]
         ) or "none",
     }) if ai_narrative else None
     sendmail(to=recipient, subject=f"POA&M Digest — {len(due_items)} due in {days_ahead}d", html=rendered)
@@ -341,13 +366,13 @@ def send_poam_due_soon_digest(recipient: str, days_ahead: int = 30, ai_narrative
     return {"status": "sent", "recipient": recipient, "due_count": len(due_items), "overdue": overdue_count, "narrative": narrative}
 
 
-def send_audit_trail_summary(recipient: str, since_hours: int = 24, ai_narrative: bool = False) -> dict:
+def send_audit_trail_summary(recipient: str, since_hours: int = _AUDIT_SINCE_HOURS, ai_narrative: bool = False) -> dict:
     """Fetch recent audit trail events, render activity summary, and deliver."""
     conn = get_connection()
     events = conn.execute(
         "SELECT resource_type, event, actor, COUNT(*) as cnt "
         "FROM audit_trail WHERE created_at >= datetime('now', '-? hours') "
-        "GROUP BY resource_type, event, actor ORDER BY cnt DESC LIMIT 20", (since_hours,)
+        f"GROUP BY resource_type, event, actor ORDER BY cnt DESC LIMIT {_AUDIT_EVENTS_LIMIT}", (since_hours,)
     ).fetchall()
     actors = conn.execute(
         "SELECT actor, COUNT(*) as cnt FROM audit_trail "
@@ -363,9 +388,9 @@ def send_audit_trail_summary(recipient: str, since_hours: int = 24, ai_narrative
         "window_hours": since_hours,
         "total_events": total_events,
         "top_event_types": "; ".join(
-            f"{e['resource_type']}/{e['event']} by {e['actor']}: {e['cnt']}" for e in events[:5]
+            f"{e['resource_type']}/{e['event']} by {e['actor']}: {e['cnt']}" for e in events[:_NARRATIVE_TOP_EVENTS_SLICE]
         ) or "none",
-        "top_actors": "; ".join(f"{a['actor']}: {a['cnt']}" for a in actors[:5]) or "none",
+        "top_actors": "; ".join(f"{a['actor']}: {a['cnt']}" for a in actors[:_NARRATIVE_TOP_ACTORS_SLICE]) or "none",
     }) if ai_narrative else None
     send(to=recipient, subject=f"Audit Summary ({since_hours}h) — {total_events} events", body=rendered)
     payload = {"total_events": total_events, "since_hours": since_hours}

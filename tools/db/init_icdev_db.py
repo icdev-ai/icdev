@@ -8988,6 +8988,123 @@ CREATE TABLE IF NOT EXISTS pg_ai_clause_compliance (
 );
 CREATE INDEX IF NOT EXISTS idx_pg_aiclause_opp ON pg_ai_clause_compliance(opportunity_id);
 
+-- §3.15b IGCE Estimator — pre-bid cost estimates (task-plan-ddef9424ab46)
+-- System shall produce IGCE estimates within 10% of vendor actuals,
+-- validated against GSA Schedule pricing or market data.
+
+-- GSA Schedule reference rates (hourly unit prices by labor category + SIN)
+-- Used as one of two benchmarks when generating IGCE estimates.
+CREATE TABLE IF NOT EXISTS gsa_schedule_rates (
+    id                  TEXT PRIMARY KEY,
+    labor_category      TEXT NOT NULL,
+    bls_soc_code        TEXT,
+    sin                 TEXT NOT NULL DEFAULT '',
+    schedule_contractor TEXT NOT NULL DEFAULT '',
+    hourly_rate         REAL NOT NULL,
+    year                INTEGER NOT NULL,
+    region              TEXT,
+    education_level     TEXT,
+    min_years_experience INTEGER,
+    source              TEXT NOT NULL DEFAULT 'gsa_schedule',
+    created_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gsa_rate_lc ON gsa_schedule_rates(labor_category);
+CREATE INDEX IF NOT EXISTS idx_gsa_rate_soc ON gsa_schedule_rates(bls_soc_code);
+CREATE INDEX IF NOT EXISTS idx_gsa_rate_year ON gsa_schedule_rates(year);
+
+-- Market data benchmarks — secondary source when GSA rates unavailable
+-- (e.g., from FPDS-NG, BLS OEWS, commercial surveys).
+CREATE TABLE IF NOT EXISTS gsa_market_rates (
+    id              TEXT PRIMARY KEY,
+    labor_category  TEXT NOT NULL,
+    bls_soc_code    TEXT,
+    source          TEXT NOT NULL,                 -- e.g., "fpds_ng", "bls_oews", "vendor_award"
+    p25_hourly      REAL,
+    median_hourly   REAL NOT NULL,
+    p75_hourly      REAL,
+    sample_size     INTEGER DEFAULT 0,
+    year            INTEGER NOT NULL,
+    region          TEXT,
+    notes           TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_market_rate_lc ON gsa_market_rates(labor_category);
+CREATE INDEX IF NOT EXISTS idx_market_rate_source ON gsa_market_rates(source);
+
+-- IGCE estimate header — one row per generated IGCE
+CREATE TABLE IF NOT EXISTS igce_estimates (
+    id                      TEXT PRIMARY KEY,
+    procurement_id          TEXT,
+    opportunity_id          TEXT,
+    solicitation            TEXT NOT NULL DEFAULT '',
+    agency                  TEXT NOT NULL DEFAULT '',
+    title                   TEXT NOT NULL DEFAULT '',
+    period_of_performance   TEXT,
+    estimation_method       TEXT NOT NULL DEFAULT 'deterministic'
+                            CHECK(estimation_method IN ('deterministic', 'historical_blend', 'market_only')),
+    status                  TEXT NOT NULL DEFAULT 'draft'
+                            CHECK(status IN ('draft', 'reviewed', 'submitted', 'archived')),
+    total_estimated_cost    REAL NOT NULL DEFAULT 0.0,
+    total_low_estimate      REAL NOT NULL DEFAULT 0.0,
+    total_high_estimate     REAL NOT NULL DEFAULT 0.0,
+    within_10pct_confidence REAL,                  -- 0.0-1.0
+    benchmark_source        TEXT,                  -- "gsa_schedule", "market", "blended", "historical"
+    benchmark_sample_size   INTEGER DEFAULT 0,
+    notes                   TEXT,
+    created_by              TEXT,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_igce_est_proc ON igce_estimates(procurement_id);
+CREATE INDEX IF NOT EXISTS idx_igce_est_opp ON igce_estimates(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_igce_est_status ON igce_estimates(status);
+
+-- IGCE line items — one row per CLIN in an estimate
+CREATE TABLE IF NOT EXISTS igce_estimate_line_items (
+    id                      TEXT PRIMARY KEY,
+    igce_estimate_id        TEXT NOT NULL,
+    clin                    TEXT NOT NULL DEFAULT '',
+    description             TEXT NOT NULL,
+    unit                    TEXT NOT NULL DEFAULT 'each',
+    quantity                REAL NOT NULL DEFAULT 1.0,
+    unit_cost_estimate      REAL NOT NULL DEFAULT 0.0,
+    unit_cost_low           REAL,
+    unit_cost_high          REAL,
+    extended_cost           REAL NOT NULL DEFAULT 0.0,
+    bls_soc_code            TEXT,
+    labor_category          TEXT,
+    benchmark_source        TEXT,                  -- which table provided the rate
+    benchmark_rate          REAL,                  -- actual benchmark rate pulled
+    benchmark_year          INTEGER,
+    benchmark_n             INTEGER DEFAULT 0,     -- sample size backing the benchmark
+    confidence              REAL,                  -- 0.0-1.0 for hitting within 10% of vendor actuals
+    rationale               TEXT,                  -- human-readable basis (GSA Schedule, market median, etc.)
+    created_at              TEXT NOT NULL,
+    FOREIGN KEY (igce_estimate_id) REFERENCES igce_estimates(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_igce_line_est ON igce_estimate_line_items(igce_estimate_id);
+
+-- Calibration history — actuals vs estimates (for tracking 10% accuracy)
+-- Populated by procurement_quote_compare when an IGCE estimate is linked to a
+-- procurement and actuals come in. Used to refine future confidence scoring.
+CREATE TABLE IF NOT EXISTS igce_calibration_log (
+    id                  TEXT PRIMARY KEY,
+    igce_estimate_id    TEXT NOT NULL,
+    procurement_id      TEXT,
+    clin                TEXT NOT NULL DEFAULT '',
+    estimated_unit_cost REAL NOT NULL,
+    actual_unit_cost    REAL NOT NULL,
+    actual_vendor       TEXT,
+    variance_pct        REAL NOT NULL,             -- (actual - estimate) / estimate * 100
+    within_10pct        INTEGER NOT NULL,         -- 1 if |variance_pct| <= 10, else 0
+    benchmark_source    TEXT,
+    confidence_predicted REAL,
+    captured_at         TEXT NOT NULL,
+    FOREIGN KEY (igce_estimate_id) REFERENCES igce_estimates(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_igce_cal_est ON igce_calibration_log(igce_estimate_id);
+CREATE INDEX IF NOT EXISTS idx_igce_cal_proc ON igce_calibration_log(procurement_id);
+
 -- §3.16 Talent Intelligence (R20 Talent)
 CREATE TABLE IF NOT EXISTS pg_talent_signals (
     id                          TEXT PRIMARY KEY,

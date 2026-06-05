@@ -112,3 +112,97 @@ class TestCatoMonitorReflex:
         assert result["scanned"] == 3
         assert result["violations"] == 1
         assert result["details"]["queries_failed"] == 1
+
+    def test_violation_threshold_suppresses_poam_below_limit(
+        self, reflex, monkeypatch, mock_conn, tmp_path
+    ):
+        """POAM not generated when violations < violation_threshold from config."""
+        fake_files = [tmp_path / "q0.iqe"]
+        violation = {"control_id": "AC-2"}
+
+        monkeypatch.setattr(reflex, "_collect_iqe_files", lambda: fake_files)
+        monkeypatch.setattr(
+            reflex,
+            "_run_iqe_query",
+            lambda qf, conn: {"name": "q0", "rows": [violation], "error": None},
+        )
+        poam_calls: list = []
+        monkeypatch.setattr(
+            reflex,
+            "_call_poam_generator",
+            lambda pid: poam_calls.append(pid) or {"success": True, "path": "/tmp/p.md"},  # nosec B108
+        )
+
+        # Pass threshold=5 via config; only 1 violation → should NOT trigger POAM
+        result = reflex.run({"violation_threshold": 5}, None)
+
+        assert result["success"] is True
+        assert result["violations"] == 1
+        assert result["poam_created"] == 0
+        assert len(poam_calls) == 0
+        assert result["details"]["violation_threshold"] == 5
+
+    def test_violation_threshold_triggers_poam_at_limit(
+        self, reflex, monkeypatch, mock_conn, tmp_path
+    ):
+        """POAM IS generated when violations >= violation_threshold."""
+        fake_files = [tmp_path / f"q{i}.iqe" for i in range(2)]
+
+        def _two_violations(qf, conn):
+            return {"name": qf.stem, "rows": [{"control_id": "AU-9"}], "error": None}
+
+        poam_calls: list = []
+
+        monkeypatch.setattr(reflex, "_collect_iqe_files", lambda: fake_files)
+        monkeypatch.setattr(reflex, "_run_iqe_query", _two_violations)
+        monkeypatch.setattr(
+            reflex,
+            "_call_poam_generator",
+            lambda pid: poam_calls.append(pid) or {"success": True, "path": "/tmp/p.md"},  # nosec B108
+        )
+
+        # threshold=2, violations=2 → exactly at threshold → POAM triggered
+        result = reflex.run({"violation_threshold": 2}, None)
+
+        assert result["success"] is True
+        assert result["violations"] == 2
+        assert result["poam_created"] == 1
+        assert len(poam_calls) == 1
+
+    def test_llm_anomaly_assessment_appended_when_enabled(
+        self, reflex, monkeypatch, mock_conn, tmp_path
+    ):
+        """When LLM anomaly detection is enabled, anomaly key appears in details."""
+        fake_files = [tmp_path / "q0.iqe"]
+        violation = {"control_id": "SI-3"}
+
+        monkeypatch.setattr(reflex, "_collect_iqe_files", lambda: fake_files)
+        monkeypatch.setattr(
+            reflex,
+            "_run_iqe_query",
+            lambda qf, conn: {"name": "q0", "rows": [violation], "error": None},
+        )
+        monkeypatch.setattr(
+            reflex,
+            "_call_poam_generator",
+            lambda pid: {"success": True, "path": "/tmp/p.md"},  # nosec B108
+        )
+
+        fake_anomaly = {
+            "anomaly_score": 0.8,
+            "anomaly_label": "anomalous",
+            "rationale": "All violations in a single control family.",
+        }
+        monkeypatch.setattr(reflex, "_LLM_ENABLED", True)
+        monkeypatch.setattr(
+            reflex,
+            "_llm_assess_anomaly",
+            lambda total, scanned, results: fake_anomaly,
+        )
+
+        result = reflex.run({}, None)
+
+        assert result["success"] is True
+        assert "anomaly" in result["details"]
+        assert result["details"]["anomaly"]["anomaly_label"] == "anomalous"
+        assert result["details"]["anomaly"]["anomaly_score"] == 0.8

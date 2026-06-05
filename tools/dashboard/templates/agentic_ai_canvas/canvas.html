@@ -387,7 +387,7 @@ body { overflow: hidden; height: 100vh; }
     </div>
 
     <!-- Pan mode hint -->
-    <div id="pan-hint">Space+Drag to pan · Scroll to zoom</div>
+    <div id="pan-hint">Drag to pan · Shift+Drag to select · Scroll to zoom</div>
 
     <!-- Copy/Paste toast -->
     <div id="canvas-toast"></div>
@@ -841,7 +841,7 @@ document.addEventListener('DOMContentLoaded', () => {
   applyVP();
   if (graph.nodes.length > 0) {
     document.getElementById('drop-hint').style.display = 'none';
-    requestAnimationFrame(() => setTimeout(fitView, 100));
+    requestAnimationFrame(() => setTimeout(zoomFit, 100));
   }
 });
 
@@ -904,9 +904,12 @@ function setupCanvasEvents() {
     vpScaleTo(vp.scale + (e.deltaY < 0 ? VP_STEP : -VP_STEP), cx, cy);
   }, {passive: false});
 
-  // Middle-mouse or Space+left-drag → pan; else rubber-band selection
+  // Left-drag / Space+left-drag / middle-mouse → pan; Shift+left-drag on empty → rubber-band
   container.addEventListener('mousedown', e => {
-    const isPanTrigger = e.button === 1 || (e.button === 0 && _spaceDown);
+    const onNode = !!e.target.closest('.canvas-node');
+    const isPanTrigger = e.button === 1
+      || (e.button === 0 && _spaceDown)
+      || (e.button === 0 && !onNode && !e.shiftKey);
     if (isPanTrigger) {
       e.preventDefault();
       _panning = true;
@@ -915,8 +918,8 @@ function setupCanvasEvents() {
       container.style.cursor = 'grabbing';
       return;
     }
-    // Rubber-band: left button, not space, not starting on a node
-    if (e.button === 0 && !e.target.closest('.canvas-node')) {
+    // Rubber-band: Shift+left button, not starting on a node
+    if (e.button === 0 && e.shiftKey && !onNode) {
       _rbActive = true;
       _rbStart = {x: e.clientX, y: e.clientY};
       const rbEl = document.createElement('div');
@@ -1304,10 +1307,24 @@ function saveDesign() {
 }
 
 function assessDesign() {
+  if (!DESIGN_ID) {
+    setStatus('Save the design first before running an assessment.');
+    return;
+  }
   setStatus('Running assessment…');
   fetch('/agentic-ai/api/designs/'+DESIGN_ID+'/assess', {method:'POST'})
-    .then(r => r.json())
-    .then(d => { setStatus('Assessment done · Score: '+d.score+'%'); setTimeout(() => location.reload(), 1200); });
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || ('HTTP '+r.status)); });
+      return r.json();
+    })
+    .then(function(d) {
+      if (d.error) throw new Error(d.error);
+      setStatus('Assessment done · Score: '+d.score+'%');
+      setTimeout(function() { location.reload(); }, 1200);
+    })
+    .catch(function(err) {
+      setStatus('Assessment failed: ' + err.message);
+    });
 }
 
 function launchDesign() {
@@ -2881,5 +2898,11 @@ function doOscalExport() {
 .sim-halted   { box-shadow: 0 0 0 3px #f97316, 0 0 12px #f9731688 !important; }
 .sim-filtered { box-shadow: 0 0 0 3px #fbbf24, 0 0 12px #fbbf2488 !important; }
 </style>
+<script>
+window.CANVAS_CONFIG = {
+  designId: "{{ design.id | default('', true) }}",
+  apiBase: "/agentic-ai/api"
+};
+</script>
 <script src="/static/js/agentic-canvas.js" defer></script>
 {% endblock %}

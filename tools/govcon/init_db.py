@@ -452,6 +452,32 @@ CREATE TABLE IF NOT EXISTS cpmp_risks (
 )
 """
 
+_CPMP_OPTION_PERIODS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_option_periods (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    option_number INTEGER NOT NULL,
+    description TEXT,
+    period_start TEXT,
+    period_end TEXT,
+    ceiling_value REAL NOT NULL DEFAULT 0.0,
+    exercise_deadline TEXT NOT NULL,
+    exercise_notice_days INTEGER NOT NULL DEFAULT 60,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','exercised','lapsed','waived')),
+    exercised_date TEXT,
+    exercised_by TEXT,
+    ai_recommendation TEXT,
+    ai_recommendation_ts TEXT,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (contract_id) REFERENCES cpmp_contracts(id)
+)
+"""
+
 _CPMP_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_status ON cpmp_contracts(status)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_contract_health ON cpmp_contracts(health)",
@@ -482,6 +508,9 @@ _CPMP_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cpmp_risk_status    ON cpmp_risks(status)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_risk_exposure  ON cpmp_risks(exposure)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_risk_milestone ON cpmp_risks(milestone_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_opt_contract   ON cpmp_option_periods(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_opt_status     ON cpmp_option_periods(status)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_opt_deadline   ON cpmp_option_periods(exercise_deadline)",
 ]
 
 _ALL_DDLS = [
@@ -502,6 +531,7 @@ _ALL_DDLS = [
     _CPMP_MILESTONES_DDL,
     _CPMP_MILESTONE_DEPS_DDL,
     _CPMP_RISKS_DDL,
+    _CPMP_OPTION_PERIODS_DDL,
 ]
 
 

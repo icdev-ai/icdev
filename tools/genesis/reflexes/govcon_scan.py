@@ -12,15 +12,67 @@ IMPLEMENTATION_STATUS = "full"
 
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 
+def _load_govcon_config() -> Dict[str, Any]:
+    """Load govcon_config.yaml; return empty dict on failure."""
+    try:
+        import yaml
+        cfg_path = BASE_DIR / "args" / "govcon_config.yaml"
+        with open(cfg_path, encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+def _select_anomalous_signals(signals: List[Dict], cfg: Dict[str, Any]) -> List[Dict]:
+    """Return signals selected by z-score anomaly detection on demand_score.
+
+    Replaces the previous hardcoded [:3] slice.  Signals whose demand_score
+    is >= z_score_threshold standard deviations above the mean are treated as
+    anomalous and prioritised for article generation.  Falls back to a
+    configurable fallback_max when there are too few signals to compute
+    meaningful statistics.
+    """
+    bridge = cfg.get("pulse_bridge", {})
+    anomaly = bridge.get("anomaly_detection", {})
+    max_per_cycle = int(bridge.get("max_articles_per_cycle", 5))
+
+    if not anomaly.get("enabled", True):
+        return signals[: int(anomaly.get("fallback_max", 3))]
+
+    min_for_stats = int(anomaly.get("min_signals_for_stats", 3))
+    z_threshold = float(anomaly.get("z_score_threshold", 1.0))
+    fallback_max = int(anomaly.get("fallback_max", 3))
+
+    if len(signals) < min_for_stats:
+        return signals[:fallback_max]
+
+    scores = [
+        float(s.get("demand_score", s.get("signal_score", 1.0))) for s in signals
+    ]
+    mean = sum(scores) / len(scores)
+    variance = sum((x - mean) ** 2 for x in scores) / len(scores)
+    stdev = variance ** 0.5
+
+    if stdev == 0:
+        return signals[:fallback_max]
+
+    anomalous = [
+        s for s, sc in zip(signals, scores) if (sc - mean) / stdev >= z_threshold
+    ]
+    selected = anomalous if anomalous else signals[:1]
+    return selected[:max_per_cycle]
+
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the GovCon Scan Reflex."""
+    govcon_cfg = _load_govcon_config()
     results = {
         "sam_scan": None,
         "demand_signals": None,
@@ -77,7 +129,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     pending = results.get("demand_signals", {}).get("pending_articles", 0)
     if pending > 0 and new_high:
         articles_created = 0
-        for signal in new_high[:3]:  # Max 3 articles per cycle
+        for signal in _select_anomalous_signals(new_high, govcon_cfg):
             topic = signal.get("pain_point_text", "")
             keywords = signal.get("keywords", "")
             if not topic:

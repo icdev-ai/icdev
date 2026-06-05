@@ -20,6 +20,24 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — overridable from genesis_config.yaml
+# under migration_canvas.  Change config, not code.
+# ---------------------------------------------------------------------------
+_STALE_SESSION_DAYS          = 7      # days without update → session flagged as stale
+_EOL_URGENCY_DAYS            = 90     # days-to-EOL threshold to flag missing migration
+_STALE_PLAN_DAYS             = 14     # days in draft state → protocol plan flagged
+_STALE_SESSION_BASE_CONF     = 0.70   # base confidence for stale session findings
+_STALE_SESSION_CONF_PER_DAY  = 0.01   # confidence increment per extra day over threshold
+_STALE_SESSION_MAX_CONF      = 0.95   # confidence cap for stale sessions
+_EOL_CONF_BASE               = 0.70   # base urgency for EOL no-migration findings
+_EOL_CONF_MULTIPLIER         = 0.003  # urgency increment per day under EOL threshold
+_EOL_CONF_MAX                = 0.98   # urgency cap for EOL findings
+_STALE_PLAN_CONFIDENCE       = 0.75   # fixed confidence for stale protocol plans
+_PROMOTION_THRESHOLD_DEFAULT = 0.70   # minimum confidence to promote finding to kanban
+_HIGH_PRIORITY_THRESHOLD     = 0.85   # findings above this → "high" priority
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -61,13 +79,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             ).fetchall()
         for r in rows:
             age = _days_since(r["updated_at"] or r.get("created_at", _now()))
-            if age > 7:
+            if age > _STALE_SESSION_DAYS:
                 findings.append({
                     "type": "stale_migration_session",
                     "session_id": r["id"],
                     "message": f"Session {r['id']} ({r['src_model']} → {r['tgt_model'] or 'TBD'}) "
                                f"has been {r['status']} for {age} days with no progress.",
-                    "confidence": min(0.70 + age * 0.01, 0.95),
+                    "confidence": min(_STALE_SESSION_BASE_CONF + age * _STALE_SESSION_CONF_PER_DAY, _STALE_SESSION_MAX_CONF),
                     "suggested_action": f"Review or close session {r['id']}",
                 })
     except Exception as exc:
@@ -94,8 +112,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         for d in devices:
             days_left = _days_until(d["eol_date"])
             label = d["label"] or d["id"]
-            if days_left <= 90 and label not in active_device_labels:
-                urgency = max(0.70, min(0.98, 0.70 + (90 - days_left) * 0.003))
+            if days_left <= _EOL_URGENCY_DAYS and label not in active_device_labels:
+                urgency = max(_EOL_CONF_BASE, min(_EOL_CONF_MAX, _EOL_CONF_BASE + (_EOL_URGENCY_DAYS - days_left) * _EOL_CONF_MULTIPLIER))
                 findings.append({
                     "type": "eol_no_migration",
                     "device_id": d["id"],
@@ -118,13 +136,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             ).fetchall()
         for d in drafts:
             age = _days_since(d["created_at"])
-            if age > 14:
+            if age > _STALE_PLAN_DAYS:
                 findings.append({
                     "type": "stale_protocol_plan",
                     "session_id": d["session_id"],
                     "message": f"Protocol plan for {d['protocol']} in session {d['session_id']} "
                                f"has been in draft for {age} days.",
-                    "confidence": 0.75,
+                    "confidence": _STALE_PLAN_CONFIDENCE,
                     "suggested_action": f"Complete or approve {d['protocol']} migration plan for session {d['session_id']}",
                 })
     except Exception as exc:
@@ -135,7 +153,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     try:
         import uuid
         from tools.db.storage import get_connection as _icdev_conn
-        threshold = float((config or {}).get("promotion_threshold", 0.70))
+        threshold = float((config or {}).get("promotion_threshold", _PROMOTION_THRESHOLD_DEFAULT))
         with _icdev_conn() as ic:
             for f in findings:
                 if f["confidence"] < threshold:
@@ -150,7 +168,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                         f"[NMCE] {f['suggested_action']}",
                         f"{f['message']} (confidence={f['confidence']:.2f})",
                         "suggested",
-                        "high" if f["confidence"] >= 0.85 else "medium",
+                        "high" if f["confidence"] >= _HIGH_PRIORITY_THRESHOLD else "medium",
                         "genesis_reflex:migration_canvas",
                         _now(),
                         _now(),

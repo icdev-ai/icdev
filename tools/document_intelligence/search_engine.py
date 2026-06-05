@@ -9,6 +9,7 @@ are suppressed (never returned uncited).
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -55,6 +56,8 @@ class DICSearchResult:
     matched_terms: list[str] = field(default_factory=list)
     kg_path: list[str] = field(default_factory=list)
     citation: Citation = field(default_factory=Citation)
+    sha256: str = ""
+    attribution_pct: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -69,6 +72,9 @@ class DICSearchResult:
             "matched_terms": self.matched_terms,
             "kg_path": self.kg_path,
             "citation": self.citation.to_dict(),
+            "sha256": self.sha256,
+            "attribution_pct": self.attribution_pct,
+            "archive_url": f"/document-intelligence/doc/{self.doc_id}" if self.doc_id else "#",
         }
 
 
@@ -91,18 +97,36 @@ def _doc_meta(conn, doc_id: str) -> dict[str, Any]:
 
 
 def _chunk_meta(conn, chunk_id: str) -> dict[str, Any]:
-    """Pull page/section from dic_chunk_links if available."""
+    """Pull page/section/sha256 from rag_chunks + dic_chunk_links if available."""
+    result: dict[str, Any] = {"page": 0, "section": "", "doc_id": "", "collection_id": "", "sha256": "", "attribution_pct": 0}
     try:
         cur = conn.execute(
-            "SELECT page, section, doc_id, collection_id FROM dic_chunk_links WHERE rag_chunk_id = ?",
+            "SELECT content, content_hash FROM rag_chunks WHERE id = ?",
             (chunk_id,),
         )
         row = cur.fetchone()
         if row:
-            return {"page": row[0] or 0, "section": row[1] or "", "doc_id": row[2] or "", "collection_id": row[3] or ""}
+            content = row["content"] if hasattr(row, "keys") else row[0]
+            content_hash = row["content_hash"] if hasattr(row, "keys") else row[1]
+            sha256 = content_hash or hashlib.sha256((content or "").encode()).hexdigest()
+            result["sha256"] = sha256
+            result["attribution_pct"] = min(100, max(40, int((len(content or "") / 500) * 80)))
     except Exception:
         pass
-    return {"page": 0, "section": "", "doc_id": "", "collection_id": ""}
+    try:
+        cur2 = conn.execute(
+            "SELECT page, section, doc_id, collection_id FROM dic_chunk_links WHERE rag_chunk_id = ?",
+            (chunk_id,),
+        )
+        row2 = cur2.fetchone()
+        if row2:
+            if hasattr(row2, "keys"):
+                result.update({"page": row2["page"] or 0, "section": row2["section"] or "", "doc_id": row2["doc_id"] or "", "collection_id": row2["collection_id"] or ""})
+            else:
+                result.update({"page": row2[0] or 0, "section": row2[1] or "", "doc_id": row2[2] or "", "collection_id": row2[3] or ""})
+    except Exception:
+        pass
+    return result
 
 
 class DICSearchEngine:
@@ -172,6 +196,8 @@ class DICSearchEngine:
                     score=r.final_score or r.score,
                     matched_terms=matched,
                     citation=citation,
+                    sha256=meta.get("sha256", ""),
+                    attribution_pct=meta.get("attribution_pct", 0),
                 ))
                 if len(out) >= top_k:
                     break

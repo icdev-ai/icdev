@@ -41,24 +41,35 @@ def _generate_id(prefix: str = "pgadp") -> str:
 # Process level determination
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Module-level constants — Shipley process-level tiering, overridable from
+# proposal_genesis_config.yaml under reflexes.adapt.  Change config, not code.
+# ---------------------------------------------------------------------------
+_LEVEL1_MAX_TEAM     = 3          # Lite: team ≤ this
+_LEVEL2_MAX_TEAM     = 8          # Standard: team ≤ this
+_LEVEL3_MAX_TEAM     = 999        # Full: effectively unlimited
+_LEVEL1_MAX_VALUE    = 500_000    # Lite: value < $500K
+_LEVEL3_MIN_VALUE    = 5_000_000  # Full: value > $5M
+_OPP_FETCH_LIMIT     = 20         # max opportunities processed per run
+
 PROCESS_LEVELS = {
     1: {
         "label": "Lite",
         "description": "Streamlined process for small proposals",
         "reviews": ["pink"],
-        "max_team": 3,
+        "max_team": _LEVEL1_MAX_TEAM,
     },
     2: {
         "label": "Standard",
         "description": "Standard Shipley process with key reviews",
         "reviews": ["pink", "red"],
-        "max_team": 8,
+        "max_team": _LEVEL2_MAX_TEAM,
     },
     3: {
         "label": "Full",
         "description": "Full Shipley process with all color reviews",
         "reviews": ["pink", "red", "gold", "white_glove"],
-        "max_team": 999,
+        "max_team": _LEVEL3_MAX_TEAM,
     },
 }
 
@@ -96,12 +107,12 @@ def _determine_process_level(opp: Dict, team_size: int) -> Dict[str, Any]:
     set_aside = (opp.get("set_aside") or "").lower()
 
     # Level 3 triggers
-    if value > 5_000_000 or team_size > 8:
+    if value > _LEVEL3_MIN_VALUE or team_size > _LEVEL2_MAX_TEAM:
         level = 3
         rationale = []
-        if value > 5_000_000:
+        if value > _LEVEL3_MIN_VALUE:
             rationale.append(f"High value (${value:,.0f})")
-        if team_size > 8:
+        if team_size > _LEVEL2_MAX_TEAM:
             rationale.append(f"Large team ({team_size} members)")
         return {
             "level": level,
@@ -110,7 +121,7 @@ def _determine_process_level(opp: Dict, team_size: int) -> Dict[str, Any]:
         }
 
     # Level 1 triggers
-    if team_size <= 3 and value < 500_000:
+    if team_size <= _LEVEL1_MAX_TEAM and value < _LEVEL1_MAX_VALUE:
         rationale = f"Small team ({team_size}), low value (${value:,.0f})"
         if set_aside in ("sbir", "sttr"):
             rationale += ", SBIR/STTR"
@@ -146,12 +157,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT id, title, estimated_value, set_aside, status
             FROM proposal_opportunities
             WHERE status IN ('tracking', 'drafting')
             ORDER BY created_at DESC
-            LIMIT 20
+            LIMIT {_OPP_FETCH_LIMIT}
         """).fetchall()
         opportunities = [dict(r) for r in rows]
     except Exception:

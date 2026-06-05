@@ -13,11 +13,13 @@ Usage:
 
 import argparse
 import json
+import math
+import os
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -25,6 +27,16 @@ sys.path.insert(0, str(BASE_DIR))
 from tools.db.storage import get_connection  # noqa: E402
 
 REPORTS_DIR = BASE_DIR / "data" / "genesis" / "reports"
+
+_REPORTER_LLM_MODEL: str = os.environ.get("REPORTER_LLM_MODEL", "claude-haiku-4-5-20251001")
+
+_ANOMALY_NARRATIVE_SYSTEM_PROMPT = (
+    "You are an AI operations analyst for the ICDEV™ Genesis autonomous research platform. "
+    "Given Genesis reflex run statistics and adaptive threshold metadata for a reporting period, "
+    "provide a 2-3 sentence anomaly analysis narrative. Focus on: whether the success rate is "
+    "within the adaptive normal band, any notable deviation from historical patterns, and the "
+    "key risk or opportunity to highlight. Return ONLY the narrative text — no JSON, no headers."
+)
 
 
 def _utcnow() -> datetime:
@@ -74,6 +86,131 @@ def _collect_circuit_breakers() -> List[Dict]:
         "circuit_breaker_tripped_at, total_runs, total_successes, total_failures "
         "FROM genesis_reflex_state WHERE circuit_breaker_open = 1"
     )
+
+
+def _load_report_config() -> Dict:
+    """Load report reflex config from genesis_config.yaml."""
+    config_path = BASE_DIR / "args" / "genesis_config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+
+        with open(config_path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return cfg.get("reflexes", {}).get("report", {})
+    except Exception:
+        return {}
+
+
+def _compute_adaptive_thresholds() -> Dict:
+    """Compute recommendation thresholds via z-score over historical report audit data.
+
+    Queries success_rate from prior genesis.report.generated events in genesis_audit.
+    Returns adaptive thresholds when anomaly_detection is enabled and enough history
+    exists; falls back to static config values otherwise.
+    """
+    cfg = _load_report_config()
+    static: Dict = {
+        "high_failure_rate_threshold": float(cfg.get("high_failure_rate_threshold", 0.30)),
+        "nominal_success_rate_threshold": float(cfg.get("nominal_success_rate_threshold", 90.0)),
+        "adaptive": False,
+    }
+
+    ad_cfg = cfg.get("anomaly_detection", {})
+    if not ad_cfg.get("enabled", False):
+        return static
+
+    min_samples = int(ad_cfg.get("min_samples", 5))
+    sigma = float(ad_cfg.get("sigma_multiplier", 1.0))
+    bounds = ad_cfg.get("adaptive_bounds", {})
+
+    rows = _safe_query(
+        "SELECT details FROM genesis_audit "
+        "WHERE event_type = 'genesis.report.generated' "
+        "ORDER BY created_at DESC LIMIT ?",
+        (min_samples + 10,),
+    )
+
+    success_rates: List[float] = []
+    for row in rows:
+        try:
+            d = json.loads(row.get("details") or "{}")
+            sr = d.get("success_rate")
+            if sr is not None:
+                success_rates.append(float(sr))
+        except (ValueError, TypeError):
+            continue
+
+    if len(success_rates) < min_samples:
+        return static
+
+    n = len(success_rates)
+    mean = sum(success_rates) / n
+    std = math.sqrt(sum((v - mean) ** 2 for v in success_rates) / n) if n > 1 else 0.0
+
+    # Below-mean success is anomalously bad; convert to failure rate threshold
+    adaptive_success_low = mean - sigma * std
+    adaptive_failure_threshold = max(0.0, (100.0 - adaptive_success_low) / 100.0)
+
+    # Above-mean success is "all good" — nominal threshold
+    adaptive_nominal = mean + sigma * std
+
+    fail_floor = float(bounds.get("failure_rate_floor", 0.10))
+    fail_ceiling = float(bounds.get("failure_rate_ceiling", 0.50))
+    success_floor = float(bounds.get("success_rate_floor", 70.0))
+    success_ceiling = float(bounds.get("success_rate_ceiling", 99.0))
+
+    adaptive_failure_threshold = max(fail_floor, min(fail_ceiling, adaptive_failure_threshold))
+    adaptive_nominal = max(success_floor, min(success_ceiling, adaptive_nominal))
+
+    return {
+        "high_failure_rate_threshold": adaptive_failure_threshold,
+        "nominal_success_rate_threshold": adaptive_nominal,
+        "adaptive": True,
+        "_n": n,
+        "_success_rate_mean": round(mean, 2),
+        "_success_rate_std": round(std, 2),
+    }
+
+
+def _llm_anomaly_narrative(thresholds: Dict, stats: Dict) -> Optional[str]:
+    """Use Claude Haiku to generate a 2-3 sentence anomaly analysis narrative.
+
+    Skipped (returns None) when anomaly_detection is disabled in config or on any LLM failure.
+    Private threshold keys (prefixed with '_') are excluded from the LLM payload.
+    """
+    cfg = _load_report_config()
+    ad_cfg = cfg.get("anomaly_detection", {})
+    if not ad_cfg.get("enabled", False):
+        return None
+    try:
+        from tools.llm.router import LLMRouter  # noqa: PLC0415
+        from tools.llm.provider import LLMRequest  # noqa: PLC0415
+
+        user_content = json.dumps(
+            {
+                "period_stats": stats,
+                "thresholds": {k: v for k, v in thresholds.items() if not k.startswith("_")},
+                "adaptive_mode": thresholds.get("adaptive", False),
+            },
+            indent=2,
+        )
+        request = LLMRequest(
+            messages=[{"role": "user", "content": user_content}],
+            system_prompt=_ANOMALY_NARRATIVE_SYSTEM_PROMPT,
+            model=_REPORTER_LLM_MODEL,
+            max_tokens=200,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        response = LLMRouter().invoke("reporter_anomaly_detection", request)
+        if not (response and response.content):
+            return None
+        return response.content.strip() or None
+    except Exception:
+        return None
 
 
 def _collect_reflex_summary() -> List[Dict]:
@@ -224,6 +361,20 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
         ]
     )
 
+    thresholds = _compute_adaptive_thresholds()
+    high_failure_threshold = thresholds["high_failure_rate_threshold"]
+    nominal_success_threshold = thresholds["nominal_success_rate_threshold"]
+
+    narrative_stats = {
+        "total_runs": total_runs,
+        "success_rate": round(success_rate, 1),
+        "failures": failures,
+        "promoted": len(promoted),
+        "pending": len(pending),
+        "circuit_breakers_open": len(breakers),
+    }
+    narrative = _llm_anomaly_narrative(thresholds, narrative_stats)
+
     if pending:
         lines.append(
             f"1. Review {len(pending)} pending GKPs: "
@@ -231,10 +382,23 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
         )
     if breakers:
         lines.append(f"2. Investigate {len(breakers)} tripped circuit breaker(s)")
-    if failures > total_runs * 0.3 and total_runs > 0:
+    if failures > total_runs * high_failure_threshold and total_runs > 0:
         lines.append(f"3. High failure rate ({100 - success_rate:.0f}%) — review reflex configurations")
-    if not pending and not breakers and success_rate > 90:
+    if not pending and not breakers and success_rate > nominal_success_threshold:
         lines.append("1. All systems nominal — no action required")
+
+    if narrative:
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                "## Anomaly Analysis",
+                "",
+                narrative,
+                "",
+            ]
+        )
 
     lines.extend(["", "---", "", "*Generated by Genesis Reporter — ICDEV™ v2.0 Autonomous Research Lab*"])
 
@@ -266,6 +430,7 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
                         "gkps_promoted": len(promoted),
                         "gkps_pending": len(pending),
                         "circuit_breakers_open": len(breakers),
+                        "thresholds_adaptive": thresholds.get("adaptive", False),
                     }
                 ),
                 _utcnow_iso(),

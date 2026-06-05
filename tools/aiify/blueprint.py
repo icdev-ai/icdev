@@ -83,6 +83,17 @@ def index():
             "status, project_summary, created_at FROM aiify_scans ORDER BY created_at DESC LIMIT 10"
         ).fetchall()]
 
+        # Fetch distinct recent sources from full history for the recents picker
+        # Use a subquery to get the most-recent scan_id per input_ref, then join back
+        # for input_type — avoids GROUP BY non-aggregate column on PostgreSQL.
+        _all_sources = [dict(r) for r in conn.execute(
+            "SELECT s.input_type, s.input_ref FROM aiify_scans s "
+            "INNER JOIN ("
+            "  SELECT input_ref, MAX(created_at) AS last_used FROM aiify_scans GROUP BY input_ref"
+            ") g ON s.input_ref = g.input_ref AND s.created_at = g.last_used "
+            "ORDER BY g.last_used DESC LIMIT 10"
+        ).fetchall()]
+
         # Lazy backfill: compute summary for old scans that predate the feature
         _needs_commit = False
         for scan in scans:
@@ -131,11 +142,19 @@ def index():
     finally:
         conn.close()
 
+    # Build deduplicated recent sources (most-recent first, max 8)
+    recent_sources: list[dict] = [
+        {"input_type": s.get("input_type", "local_path"), "input_ref": s.get("input_ref", "")}
+        for s in _all_sources
+        if (s.get("input_ref") or "").strip()
+    ][:10]
+
     return render_template(
         "aiify/page.html",
         scans=scans,
         opportunities=opportunities,
         roadmap=roadmap,
+        recent_sources=recent_sources,
         iqe_canvas="aiify",
         iqe_api_route="/ai-ify/api/iqe-query",
         iqe_title="AI-ify IQE",

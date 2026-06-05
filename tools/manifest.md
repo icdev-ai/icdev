@@ -930,3 +930,60 @@
 | Zig Pillar Scorer | tools\security_canvas\zig_pillar_scorer.py | Auto-registered: security_canvas/zig_pillar_scorer.py | --json | JSON |
 | Zig Roadmap Generator | tools\security_canvas\zig_roadmap_generator.py | Auto-registered: security_canvas/zig_roadmap_generator.py | --json | JSON |
 | Qa Verify Backgrounds | tools\testing\qa_verify_backgrounds.py | Auto-registered: testing/qa_verify_backgrounds.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Option Period Tracker | tools\govcon\option_period_tracker.py | Auto-registered: govcon/option_period_tracker.py | --json | JSON |
+| Pmo Ai Advisor | tools\govcon\pmo_ai_advisor.py | Auto-registered: govcon/pmo_ai_advisor.py | --json | JSON |
+| Alert Service | tools\notification_service\alert_service.py | Auto-registered: notification_service/alert_service.py | --json | JSON |
+| Digest Service | tools\notification_service\digest_service.py | Auto-registered: notification_service/digest_service.py | --json | JSON |
+| Event Service | tools\notification_service\event_service.py | Auto-registered: notification_service/event_service.py | --json | JSON |
+| Handler Service | tools\notification_service\handler_service.py | Auto-registered: notification_service/handler_service.py | --json | JSON |
+| Render Handler Service | tools\notification_service\render_handler_service.py | Auto-registered: notification_service/render_handler_service.py | --json | JSON |
+| Report Service | tools\notification_service\report_service.py | Auto-registered: notification_service/report_service.py | --json | JSON |
+| Cpmp Monitor | tools\genesis\reflexes\cpmp_monitor.py | Auto-registered: reflexes/cpmp_monitor.py | --json | JSON |
+| Pmo Option Tracker | tools\genesis\reflexes\pmo_option_tracker.py | Auto-registered: reflexes/pmo_option_tracker.py | --json | JSON |
+| Pmo Weekly Report | tools\genesis\reflexes\pmo_weekly_report.py | Auto-registered: reflexes/pmo_weekly_report.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Agent Layer | tools\agentic_ai_canvas\agent_layer.py | Auto-registered: agentic_ai_canvas/agent_layer.py | --json | JSON |
+| Governance Layer | tools\agentic_ai_canvas\governance_layer.py | Auto-registered: agentic_ai_canvas/governance_layer.py | --json | JSON |
+| Initiative Allocator | tools\budget\initiative_allocator.py | Auto-registered: budget/initiative_allocator.py | --json | JSON |
+| Provenance Adapter | tools\dic\provenance_adapter.py | Auto-registered: dic/provenance_adapter.py | --json | JSON |
+| Igce Estimator | tools\govcon\igce_estimator.py | Auto-registered: govcon/igce_estimator.py | --json | JSON |
+| Vehicle Identifier | tools\govcon\vehicle_identifier.py | Auto-registered: govcon/vehicle_identifier.py | --json | JSON |
+| Seed Ace Kanban | tools\kanban\seed_ace_kanban.py | Auto-registered: kanban/seed_ace_kanban.py | --json | JSON |
+| Seed Irad Kanban | tools\kanban\seed_irad_kanban.py | Auto-registered: kanban/seed_irad_kanban.py | --json | JSON |
+| Seed Pmo Demo Wow | tools\kanban\seed_pmo_demo_wow.py | Auto-registered: kanban/seed_pmo_demo_wow.py | --json | JSON |
+| Seed Wgint | tools\kanban\seed_wgint.py | Auto-registered: kanban/seed_wgint.py | --json | JSON |
+| Seed Demo Showcase | tools\ndc\seed_demo_showcase.py | Auto-registered: ndc/seed_demo_showcase.py | --json | JSON |
+| Entitlement Rag | tools\rag\entitlement_rag.py | Auto-registered: rag/entitlement_rag.py | --json | JSON |
+| Ndaa 889 Screener | tools\supply_chain\ndaa_889_screener.py | Auto-registered: supply_chain/ndaa_889_screener.py | --json | JSON |
+| Lac Scenarios | tools\zta\lac_scenarios.py | Auto-registered: zta/lac_scenarios.py | --json | JSON |
+| Lac Simulator | tools\zta\lac_simulator.py | Auto-registered: zta/lac_simulator.py | --json | JSON |
+| Aidp Monitor | tools\genesis\reflexes\aidp_monitor.py | Auto-registered: reflexes/aidp_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Icdev Executive Overview | tools\slides\curated_decks\icdev_executive_overview.py | Auto-registered: curated_decks/icdev_executive_overview.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Procurement Vehicles | tools\govcon\procurement_vehicles.py | Auto-registered: govcon/procurement_vehicles.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Aisg Ship | tools\kanban\seed_aisg_ship.py | Auto-registered: kanban/seed_aisg_ship.py | --json | JSON |
+| Seed Appendix Initiatives | tools\kanban\seed_appendix_initiatives.py | Auto-registered: kanban/seed_appendix_initiatives.py | --json | JSON |
+| Seed Sipa Integrity | tools\kanban\seed_sipa_integrity.py | Auto-registered: kanban/seed_sipa_integrity.py | --json | JSON |

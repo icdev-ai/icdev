@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block title %}Deliverable Command Center - ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+{% include "includes/ai_brief_banner.html" ignore missing %}
+<div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><a href="/cpmp">CPMP</a><span class="separator">/</span><span>Deliverable Command Center</span></div>
+
+<div class="page-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+    <div>
+        <h1>Deliverable Command Center</h1>
+        <p class="subtitle">All CDRLs and deliverables across every active contract &mdash; sorted by due date</p>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="bulkGenerate()" id="bulk-gen-btn">Generate All Due in 14 Days</button>
+        <button class='btn btn-secondary btn-sm'
+                onclick="window.open('/writeguard','_blank')"
+                title='Open WriteGuard to validate auto-generated CDRL language'
+                style='font-size:0.8rem;'>
+            🛡️ Validate All Generated
+        </button>
+    </div>
+</div>
+
+<div id="bulk-gen-status" style="display:none; padding:10px 16px; border-radius:6px; margin-bottom:16px; font-size:13px;"></div>
+
+<!-- Summary Stat Cards -->
+<div class="stat-grid" id="summary-cards" aria-label="Deliverable summary statistics">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-total">—</div>
+        <div class="stat-label">Total Deliverables</div>
+    </div>
+    <div class="stat-card" style="border-color: var(--status-red, #dc3545);">
+        <div class="stat-value text-danger" id="stat-overdue">—</div>
+        <div class="stat-label">Overdue</div>
+    </div>
+    <div class="stat-card" style="border-color: var(--status-yellow, #ffc107);">
+        <div class="stat-value" id="stat-7" style="color:var(--status-yellow,#ffc107);">—</div>
+        <div class="stat-label">Due in ≤7 Days</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-14">—</div>
+        <div class="stat-label">Due in ≤14 Days</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-gen-pct">—</div>
+        <div class="stat-label">Auto-Generated %</div>
+    </div>
+</div>
+
+<!-- Filter Bar -->
+<div style="display:flex; gap:10px; flex-wrap:wrap; margin:20px 0 12px; align-items:center;">
+    <select id="filter-window" class="form-control" style="width:160px;" onchange="loadDeliverables()">
+        <option value="all">All Dates</option>
+        <option value="overdue">Overdue Only</option>
+        <option value="7">Due in 7 Days</option>
+        <option value="14">Due in 14 Days</option>
+        <option value="30">Due in 30 Days</option>
+    </select>
+    <select id="filter-contract" class="form-control" style="width:220px;" onchange="loadDeliverables()">
+        <option value="">All Contracts</option>
+    </select>
+    <select id="filter-status" class="form-control" style="width:180px;" onchange="loadDeliverables()">
+        <option value="">All Statuses</option>
+        <option value="not_started">Not Started</option>
+        <option value="in_progress">In Progress</option>
+        <option value="draft_complete">Draft Complete</option>
+        <option value="internal_review">Internal Review</option>
+        <option value="submitted">Submitted</option>
+        <option value="government_review">Government Review</option>
+        <option value="accepted">Accepted</option>
+        <option value="rejected">Rejected</option>
+    </select>
+    <select id="filter-sort" class="form-control" style="width:160px;" onchange="loadDeliverables()">
+        <option value="due_date">Sort: Due Date</option>
+        <option value="contract">Sort: Contract</option>
+        <option value="status">Sort: Status</option>
+    </select>
+    <button class="btn btn-secondary" onclick="loadDeliverables()" style="padding:6px 14px; font-size:13px;">Refresh</button>
+    <span id="last-updated" style="font-size:11px; color:var(--text-secondary); margin-left:4px;"></span>
+</div>
+
+<!-- Deliverables Table -->
+<div class="table-container" id="table-container">
+    <div id="table-loading" style="padding:40px; text-align:center; color:var(--text-secondary);">Loading deliverables…</div>
+    <table id="deliverables-table" style="display:none;" aria-label="All deliverables across active contracts">
+        <thead>
+            <tr>
+                <th>Contract</th>
+                <th>CDRL #</th>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Due Date</th>
+                <th>Days</th>
+                <th>Status</th>
+                <th>Generated?</th>
+                <th title='WriteGuard quality score (AI-generated CDRLs only)'>WG</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="deliverables-tbody"></tbody>
+    </table>
+    <div id="table-empty" style="display:none; padding:40px; text-align:center; color:var(--text-secondary);">No deliverables found for the selected filters.</div>
+</div>
+
+<style>
+.urgency-overdue { background: rgba(220,53,69,0.08); border-left: 3px solid #dc3545; }
+.urgency-critical { background: rgba(255,149,0,0.06); border-left: 3px solid #fd7e14; }
+.urgency-warning  { background: rgba(255,193,7,0.06);  border-left: 3px solid #ffc107; }
+.urgency-ok       { border-left: 3px solid transparent; }
+.days-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; }
+.days-overdue { background:#dc3545; color:#fff; }
+.days-critical { background:#fd7e14; color:#fff; }
+.days-warning { background:#ffc107; color:#000; }
+.days-ok { background:var(--bg-secondary,#1a1a2e); color:var(--text-secondary); }
+</style>
+
+<script>
+var _deliverables = [];
+var _contracts = {};
+
+function loadDeliverables() {
+    var window_ = document.getElementById('filter-window').value;
+    var contractId = document.getElementById('filter-contract').value;
+    var status = document.getElementById('filter-status').value;
+    var sort = document.getElementById('filter-sort').value;
+
+    document.getElementById('table-loading').style.display = 'block';
+    document.getElementById('deliverables-table').style.display = 'none';
+    document.getElementById('table-empty').style.display = 'none';
+
+    var params = new URLSearchParams();
+    if (window_) params.append('window', window_);
+    if (contractId) params.append('contract_id', contractId);
+    if (status) params.append('status', status);
+    if (sort) params.append('sort', sort);
+
+    fetch('/api/cpmp/deliverables/portfolio?' + params.toString())
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.status === 'error') {
+                document.getElementById('table-loading').innerHTML = 'Error: ' + data.message;
+                return;
+            }
+            _deliverables = data.deliverables || [];
+            renderSummary(data.summary || {}, data.total || 0);
+            renderTable(_deliverables);
+            populateContractFilter(_deliverables);
+            document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+        })
+        .catch(function(err) {
+            document.getElementById('table-loading').innerHTML = 'Network error: ' + err;
+        });
+}
+
+function renderSummary(s, total) {
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-overdue').textContent = s.overdue || 0;
+    document.getElementById('stat-7').textContent = s.due_in_7_days || 0;
+    document.getElementById('stat-14').textContent = s.due_in_14_days || 0;
+    document.getElementById('stat-gen-pct').textContent = (s.generated_pct || 0) + '%';
+}
+
+function populateContractFilter(deliverables) {
+    var sel = document.getElementById('filter-contract');
+    var current = sel.value;
+    var seen = {};
+    deliverables.forEach(function(d) {
+        seen[d.contract_id] = d.contract_number + ' — ' + (d.contract_title || '');
+    });
+    // Only rebuild if contracts changed
+    var newHtml = '<option value="">All Contracts</option>';
+    Object.keys(seen).sort().forEach(function(id) {
+        newHtml += '<option value="' + id + '"' + (id === current ? ' selected' : '') + '>' + seen[id] + '</option>';
+    });
+    sel.innerHTML = newHtml;
+}
+
+function renderTable(items) {
+    document.getElementById('table-loading').style.display = 'none';
+    if (!items.length) {
+        document.getElementById('table-empty').style.display = 'block';
+        return;
+    }
+    document.getElementById('deliverables-table').style.display = '';
+    var rows = items.map(function(d) {
+        var urgency = d.urgency || 'ok';
+        var daysVal = d.days_until_due;
+        var daysBadge = '';
+        if (d.is_overdue) {
+            daysBadge = '<span class="days-badge days-overdue">' + Math.abs(daysVal) + 'd overdue</span>';
+        } else if (daysVal === null) {
+            daysBadge = '<span class="days-badge days-ok">—</span>';
+        } else if (urgency === 'critical') {
+            daysBadge = '<span class="days-badge days-critical">' + daysVal + 'd</span>';
+        } else if (urgency === 'warning') {
+            daysBadge = '<span class="days-badge days-warning">' + daysVal + 'd</span>';
+        } else {
+            daysBadge = '<span class="days-badge days-ok">' + daysVal + 'd</span>';
+        }
+
+        var statusBadge = _statusBadge(d.status);
+        var autoGenField = d.auto_generated || d.generated_by_tool;
+        var genBadge = autoGenField
+            ? '<span class="badge badge-success" style="font-size:10px;">✓ ' + autoGenField + '</span>'
+            : '<span class="badge" style="font-size:10px; opacity:0.5;">—</span>';
+
+        var contractLink = '<a href="/cpmp/' + d.contract_id + '" style="font-size:12px;">' +
+            (d.contract_number || '—') + '</a>' +
+            '<br><small style="color:var(--text-secondary);font-size:10px;">' + (d.agency || '') + '</small>';
+
+        var actions = '<a href="/cpmp/' + d.contract_id + '/deliverables/' + d.id + '" class="btn btn-secondary" style="padding:3px 8px;font-size:11px;">View</a>';
+
+        var wgCell = '<a href="/writeguard" target="_blank"' +
+            ' style="font-size:0.72rem;padding:2px 6px;border-radius:4px;' +
+            'background:rgba(74,144,217,0.15);color:#6db3f8;' +
+            'text-decoration:none;border:1px solid rgba(74,144,217,0.3);"' +
+            ' title="Validate this CDRL with WriteGuard">🛡️ Check</a>';
+
+        return '<tr class="urgency-' + urgency + '">' +
+            '<td>' + contractLink + '</td>' +
+            '<td><code style="font-size:11px;">' + (d.cdrl_number || '—') + '</code></td>' +
+            '<td><strong style="font-size:13px;">' + _esc(d.title || '—') + '</strong></td>' +
+            '<td><span style="font-size:11px; color:var(--text-secondary);">' + (d.deliverable_type || '—') + '</span></td>' +
+            '<td style="white-space:nowrap;">' + (d.due_date || '—') + '</td>' +
+            '<td style="text-align:center;">' + daysBadge + '</td>' +
+            '<td>' + statusBadge + '</td>' +
+            '<td>' + genBadge + '</td>' +
+            '<td style="text-align:center;">' + wgCell + '</td>' +
+            '<td>' + actions + '</td>' +
+            '</tr>';
+    });
+    document.getElementById('deliverables-tbody').innerHTML = rows.join('');
+}
+
+function _statusBadge(status) {
+    var cls = {
+        'accepted': 'badge-success',
+        'submitted': 'badge-info',
+        'government_review': 'badge-info',
+        'rejected': 'badge-error',
+        'not_started': '',
+        'in_progress': 'badge-warning',
+        'draft_complete': 'badge-warning',
+        'internal_review': 'badge-warning',
+    }[status] || '';
+    return '<span class="badge ' + cls + '" style="font-size:10px;">' + (status || '—').replace(/_/g, ' ') + '</span>';
+}
+
+function _esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function bulkGenerate() {
+    var btn = document.getElementById('bulk-gen-btn');
+    var statusEl = document.getElementById('bulk-gen-status');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    statusEl.style.display = 'block';
+    statusEl.style.background = 'rgba(74,144,217,0.12)';
+    statusEl.style.color = 'var(--accent-color,#4a90d9)';
+    statusEl.textContent = 'Running CDRL auto-generation across all active contracts…';
+
+    fetch('/api/cpmp/deliverables/auto-generate-portfolio', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({days_ahead: 14})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        btn.disabled = false;
+        btn.textContent = 'Generate All Due in 14 Days';
+        if (data.status === 'ok') {
+            statusEl.style.background = 'rgba(40,167,69,0.12)';
+            statusEl.style.color = 'var(--status-green,#28a745)';
+            statusEl.textContent = 'Generated ' + data.total_generated + ' CDRL(s) across ' + data.contracts_processed + ' contract(s).';
+            loadDeliverables();
+        } else {
+            statusEl.style.background = 'rgba(220,53,69,0.12)';
+            statusEl.style.color = 'var(--status-red,#dc3545)';
+            statusEl.textContent = 'Error: ' + (data.message || data.error || 'Unknown error');
+        }
+    })
+    .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Generate All Due in 14 Days';
+        statusEl.style.background = 'rgba(220,53,69,0.12)';
+        statusEl.style.color = 'var(--status-red,#dc3545)';
+        statusEl.textContent = 'Network error: ' + err;
+    });
+}
+
+// Auto-load on page open
+document.addEventListener('DOMContentLoaded', loadDeliverables);
+</script>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "cpmp" %}
+{% set iqe_api_route = "/api/cpmp/iqe-query" %}
+{% set iqe_title = "Ask the AI — Deliverable Command Center" %}
+{% set iqe_examples = [
+    {"label": "Overdue deliverables", "query": "Which deliverables are overdue?"},
+    {"label": "Due in 14 days", "query": "Show me deliverables due in the next 14 days"},
+    {"label": "By contract", "query": "Which contracts have the most pending deliverables?"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

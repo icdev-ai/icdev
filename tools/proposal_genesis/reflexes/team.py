@@ -28,6 +28,24 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Module-level constants — Team Reflex (R23) thresholds & limits.
+# Extracted from inline magic numbers (AI-ify opp 5450, hardcoded_threshold ->
+# anomaly_detection). Overridable from proposal_genesis_config.yaml under
+# reflexes.team. Change config, not code.
+# ---------------------------------------------------------------------------
+_OPPS_WITH_TEAMS_LIMIT     = 20     # opportunities-with-partners scanned per run
+
+# Teaming-agreement (TA) expiration anomaly windows, in days.
+_TA_EXPIRED_DAYS           = 0      # days_until below this -> TA already expired (critical)
+_TA_EXPIRATION_WARN_DAYS   = 30     # days_until below this -> TA expiring soon (warning)
+
+_FULL_WORKSHARE_PCT        = 100.0  # target total workshare allocation; gap = target - actual
+
+# Caps on per-opportunity detail slices surfaced in the result payload.
+_TA_DETAILS_LIMIT          = 5      # TA issues surfaced per opportunity
+_OCI_DETAILS_LIMIT         = 5      # OCI risks surfaced per opportunity
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -46,13 +64,13 @@ def _get_opportunities_with_teams() -> List[Dict]:
     """Find opportunities that have teaming partners assigned."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT DISTINCT tw.opportunity_id, po.title, po.status
             FROM pg_teaming_workshare tw
             JOIN proposal_opportunities po ON po.id = tw.opportunity_id
             WHERE po.status IN ('tracking', 'drafting', 'reviewing')
             ORDER BY po.created_at DESC
-            LIMIT 20
+            LIMIT {_OPPS_WITH_TEAMS_LIMIT}
         """).fetchall()
         return [dict(r) for r in rows]
     except Exception:
@@ -89,7 +107,7 @@ def _check_ta_expiration(opp_id: str) -> List[Dict]:
         try:
             exp_dt = datetime.fromisoformat(exp_date.replace("Z", "+00:00"))
             days_until = (exp_dt - now).days
-            if days_until < 0:
+            if days_until < _TA_EXPIRED_DAYS:
                 issues.append(
                     {
                         "partner": row["partner_name"],
@@ -97,7 +115,7 @@ def _check_ta_expiration(opp_id: str) -> List[Dict]:
                         "issue": f"TA expired {abs(days_until)} days ago",
                     }
                 )
-            elif days_until < 30:
+            elif days_until < _TA_EXPIRATION_WARN_DAYS:
                 issues.append(
                     {
                         "partner": row["partner_name"],
@@ -173,7 +191,7 @@ def _check_workshare_gaps(opp_id: str) -> Dict[str, Any]:
     return {
         "total_partners": len(rows),
         "total_workshare_pct": round(total_pct, 1),
-        "workshare_gap": max(0, round(100.0 - total_pct, 1)),
+        "workshare_gap": max(0, round(_FULL_WORKSHARE_PCT - total_pct, 1)),
         "gaps": gaps,
     }
 
@@ -218,8 +236,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "unfilled_roles": len(workshare.get("gaps", [])),
                 "total_partners": workshare["total_partners"],
                 "total_issues": issues,
-                "ta_details": ta_issues[:5],
-                "oci_details": oci_risks[:5],
+                "ta_details": ta_issues[:_TA_DETAILS_LIMIT],
+                "oci_details": oci_risks[:_OCI_DETAILS_LIMIT],
             }
         )
 

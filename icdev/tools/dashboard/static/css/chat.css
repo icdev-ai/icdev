@@ -149,6 +149,10 @@
 .chat-toggle-btn--intel  { background: #00bfa5; }
 .chat-toggle-btn--close  { background: var(--accent-red, #d44); display: none; }
 .chat-toggle-btn--focus  { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border-color); }
+.chat-toggle-btn--reasoning                    { background: #6b7280; color: #fff; }
+.chat-toggle-btn--reasoning[data-mode="off"]   { background: #6b7280; color: #fff; }
+.chat-toggle-btn--reasoning[data-mode="auto"]  { background: #d97706; color: #fff; }
+.chat-toggle-btn--reasoning[data-mode="on"]    { background: #059669; color: #fff; }
 
 /* ===================================================================
    Message Stream

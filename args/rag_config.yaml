@@ -185,6 +185,18 @@ rag:
     hot_days: 30
     warm_compression: float16
     warm_days: 365
+    # Adaptive anomaly detection over chunk age — flag chunks lingering in a
+    # tier far beyond their peers (age > mean + k·stddev) as overdue-migration
+    # outliers instead of relying solely on the frozen hot_days/warm_days rule.
+    anomaly_detection:
+      enabled: true
+      min_samples: 20            # min chunks in a tier before adapting
+      stddev_k: 2.0              # flag chunks older than mean + k·stddev
+      adaptive_bounds:
+        hot_min: 30              # hot overdue threshold never drops below (days)
+        hot_max: 120             # ...nor rises above (days)
+        warm_min: 365            # warm overdue threshold never drops below (days)
+        warm_max: 1460           # ...nor rises above (days)
   retrieval:
     bm25_boost_weight: 0.3
     final_top_k: 5
@@ -202,3 +214,141 @@ rag:
       index_type: IVF256_HNSW32
     sqlite:
       db_path: data/rag/rag_vectors.db
+
+# ── Query Classifier Anomaly Detection (aiify refactor) ──────────────────────
+query_classifier:
+  anomaly_detection:
+    enabled: true
+    min_samples: 20
+    fallback_overlap_threshold: 0.10
+    fallback_promote_threshold: 0.75
+    adaptive_bounds:
+      overlap_floor: 0.05
+      overlap_ceil: 0.30
+    # Classification constants — tunable without code changes
+    min_query_words: 3
+    heuristic_confidence_unanswerable: 0.65
+    heuristic_confidence_high: 0.80
+    heuristic_confidence_default: 0.50
+    llm_context_chars: 1500
+    llm_temperature: 0.10
+    llm_max_tokens: 200
+    llm_confidence: 0.90
+    batch_max_workers: 4
+
+# ── CRAG Evaluator Anomaly Detection ─────────────────────────────────────────
+crag_evaluator:
+  anomaly_detection:
+    enabled: true
+    min_samples: 50
+    fallback_entity_head: 100
+    fallback_entity_torso: 10
+    fallback_acceptable_overlap: 0.80
+    adaptive_bounds:
+      overlap_floor: 0.60
+      overlap_ceil: 0.95
+    # Classification constants
+    llm_context_chars: 500
+    llm_max_tokens: 64
+    llm_temperature: 0.0
+    heuristic_confidence_high: 0.85
+    heuristic_confidence_mid: 0.75
+    heuristic_confidence_low: 0.70
+    gate_threshold: 0.30
+
+# ── PDF Provider Constants ────────────────────────────────────────────────────
+pdf_provider:
+  max_pages: 200
+  max_file_size_mb: 25
+  anthropic_max_tokens: 4096
+  scanned_text_min_chars: 50
+  render_dpi: 150
+  vision_timeout: 60
+  availability_timeout: 3
+
+# ── Ingestion Manager Anomaly Detection ──────────────────────────────────────
+ingestion_manager:
+  anomaly_detection:
+    enabled: true
+    min_samples: 30
+    fallback_embed_batch: 20          # chunks embedded per provider batch
+    fallback_skip_rate_anomaly: 0.95  # dedup skip-rate above this flags a run
+    adaptive_bounds:
+      batch_floor: 5
+      batch_ceil: 100
+      skip_floor: 0.50
+      skip_ceil: 0.99
+    # Non-adaptive constants — tunable without code changes
+    db_busy_timeout_ms: 5000
+
+# ── RAG→KG Ingester Anomaly Detection ────────────────────────────────────────
+rag_to_kg_ingester:
+  anomaly_detection:
+    enabled: true
+    min_samples: 50
+    target_pages: 20                  # size backfill pages so ~N pages cover corpus
+    fallback_page_size: 500           # rag_chunks per backfill page
+    fallback_empty_rate_anomaly: 0.85 # zero-entity extraction rate above this flags a run
+    adaptive_bounds:
+      page_floor: 50
+      page_ceil: 2000
+      empty_floor: 0.30
+      empty_ceil: 0.99
+
+# ── Chunker Constants ─────────────────────────────────────────────────────────
+chunker:
+  default_short_threshold: 500
+  default_chunk_size: 2000
+  default_overlap_pct: 0.10
+  boundary_search_radius: 200
+  boundary_whitespace_scan: 100
+
+# ── RAG Evaluator Anomaly Detection ───────────────────────────────────────────
+evaluator:
+  anomaly_detection:
+    enabled: true
+    min_samples: 30
+    stddev_k: 2.0                  # flag runs below mean − k·stddev of history
+    fallback_ndcg_floor: 0.30     # NDCG@k below this is flagged when history is sparse
+    fallback_mrr_floor: 0.30      # MRR below this is flagged when history is sparse
+    adaptive_bounds:
+      floor_min: 0.05             # adaptive floor never drops below this
+      floor_max: 0.80             # adaptive floor never rises above this
+    # LLM-as-judge constants
+    default_k: 5
+    llm_max_tokens: 256
+    llm_temperature: 0.0
+    llm_chunk_chars: 300
+    llm_context_chars: 2000
+    llm_answer_chars: 1000
+    score_precision: 4
+
+# ── Reranker Anomaly Detection ────────────────────────────────────────────────
+reranker:
+  anomaly_detection:
+    enabled: true
+    min_samples: 30
+    stddev_k: 2.0                 # flag reranks below mean − k·stddev of history
+    fallback_score_floor: 0.30    # top rerank score below this is flagged when history is sparse
+    adaptive_bounds:
+      floor_min: 0.05            # adaptive floor never drops below this
+      floor_max: 0.80            # adaptive floor never rises above this
+    # Provider tunables (rag.rerank section may also carry these)
+    bge_doc_chars: 800           # per-document chars sent to BGE cross-encoder
+    bge_embed_timeout: 30        # seconds for an Ollama /api/embed call
+    bge_avail_timeout: 5         # seconds for an Ollama /api/tags probe
+    llm_max_tokens: 512          # max tokens for the LLM-as-reranker call
+    llm_temperature: 0.1         # temperature for (near-)deterministic ranking
+
+# ── SQLite Vector Store Anomaly Detection ─────────────────────────────────────
+sqlite_vector_store:
+  anomaly_detection:
+    enabled: true
+    min_samples: 30
+    stddev_k: 2.0                 # flag searches below mean − k·stddev of history
+    fallback_score_floor: 0.30    # top similarity below this is flagged when history is sparse
+    adaptive_bounds:
+      floor_min: 0.05            # adaptive floor never drops below this
+      floor_max: 0.80            # adaptive floor never rises above this
+    # Store tunable (overrides module default)
+    busy_timeout_ms: 5000        # SQLite busy_timeout (ms) for WAL contention

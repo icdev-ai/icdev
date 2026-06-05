@@ -2644,3 +2644,24 @@ python tools/pmc_canvas/transit_pricing_benchmark.py --roi --json
 #   POST /api/pmc/transit/roi — Peering-vs-transit NPV analysis
 #   GET  /pmc/transit         — Transit pricing dashboard page
 ```
+
+## ANVIL Co-Worker Engine (ACE) Commands
+```bash
+# Launch a new ACE problem-solving instance
+python -m icdev.tools.ace.controller --launch 'problem text' [--json]
+
+# Check status of a running ACE instance
+python -m icdev.tools.ace.controller --status <instance_id> [--json]
+
+# Abort a running ACE instance
+python -m icdev.tools.ace.controller --abort <instance_id>
+
+# List available ACE roles
+python -m icdev.tools.ace.controller --list-roles
+
+# Seed ACE kanban tasks (dry-run preview)
+python tools/kanban/seed_ace_kanban.py [--dry-run]
+
+# Environment variable to enable /coworker/ canvas
+ICDEV_ACE_ENABLED=true
+```

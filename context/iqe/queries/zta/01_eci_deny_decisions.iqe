@@ -1,0 +1,9 @@
+# Intent: Show all DENY decisions for ECI (Exceptional Controlled Information) resources.
+# Scenario: SCENARIO_ECI_SPILLAGE_PREVENTION — foreign national (FVEY) blocked from ECI.
+# Expected violation shape: rows where decision == "DENY" and resource_is_eci == 1
+#   indicate ECI spillage prevention enforcement events that require mission review.
+
+foreach r in lac.audit_trail
+  where r.decision == "DENY"
+  where r.resource_is_eci == 1
+  select r.scenario_name, r.decision, r.deny_reasons, r.principal_citizenship, r.principal_clearance, r.resource_id, r.created_at

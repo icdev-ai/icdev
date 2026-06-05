@@ -96,20 +96,66 @@ def _count_pending_prompts() -> int:
         conn.close()
 
 
+def _int_env(key: str, default: int) -> int:
+    """Load an integer threshold from an env var, falling back to default."""
+    import os as _os
+    try:
+        val = _os.getenv(key)
+        return int(val) if val else default
+    except (ValueError, TypeError):
+        return default
+
+
+def _float_env(key: str, default: float) -> float:
+    """Load a float threshold from an env var, falling back to default."""
+    import os as _os
+    try:
+        val = _os.getenv(key)
+        return float(val) if val else default
+    except (ValueError, TypeError):
+        return default
+
+
 # Max tasks to auto-promote per cycle — matches MAX_IN_PROGRESS so a full
 # batch fills all available slots in one cycle rather than two.
-MAX_AUTO_PROMOTE = 3
-# Max in-progress tasks at any time (prevents pile-up)
-MAX_IN_PROGRESS = 3
-# Max seconds a Claude CLI subprocess can run before being killed
-MAX_EXECUTION_SECONDS = 900           # 15 min — default for normal tasks
-MAX_EXECUTION_SECONDS_SCAN = 1200     # 20 min — codelens, coherence, E2E (tool ~10s but Claude overhead + fix cycles ~15 min)
-MAX_EXECUTION_SECONDS_PYTEST = 2400   # 40 min — full test suite (7,519 tests @ ~0.3s each + Claude overhead)
-# Minimum remaining budget required to start post-process operations (guard-budget)
-VERIFICATION_MIN_BUDGET_SECONDS = 30   # verification pipeline can take ~10-25s
-REMEDIATION_MIN_BUDGET_SECONDS = 60    # remediation + re-verify can take ~30-50s
-SELF_DEBUG_MIN_BUDGET_SECONDS = 15     # self-debug dispatch is lightweight but still costs time
-MAX_TIMEOUT_RETRIES = 3               # hard-quarantine a task after this many identical timeouts
+# Override via KANBAN_MAX_AUTO_PROMOTE env var.
+MAX_AUTO_PROMOTE = _int_env("KANBAN_MAX_AUTO_PROMOTE", 3)
+# Max in-progress tasks at any time (prevents pile-up).
+# Override via KANBAN_MAX_IN_PROGRESS env var.
+MAX_IN_PROGRESS = _int_env("KANBAN_MAX_IN_PROGRESS", 3)
+# Bounded auto-revive of failure-quarantined ('suggested', fc>=5/HITL) tasks.
+# A quarantined task whose dependency is satisfied and that has been parked
+# longer than the cooldown is auto-revived to backlog (failure_count reset),
+# up to MAX_AUTO_REVIVE times. After the cap it is held for HITL review with a
+# one-time Telegram alert. Prevents tasks (and their dependency chains) from
+# rotting in 'suggested' forever after repeated failures.
+MAX_AUTO_REVIVE = _int_env("KANBAN_MAX_AUTO_REVIVE", 2)
+QUARANTINE_REVIVE_COOLDOWN_MIN = _int_env("KANBAN_REVIVE_COOLDOWN_MIN", 30)
+# Max seconds a Claude CLI subprocess can run before being killed.
+# Override via KANBAN_MAX_EXECUTION_SECONDS / _SCAN / _PYTEST env vars.
+MAX_EXECUTION_SECONDS = _int_env("KANBAN_MAX_EXECUTION_SECONDS", 900)
+MAX_EXECUTION_SECONDS_SCAN = _int_env("KANBAN_MAX_EXECUTION_SECONDS_SCAN", 1200)
+MAX_EXECUTION_SECONDS_PYTEST = _int_env("KANBAN_MAX_EXECUTION_SECONDS_PYTEST", 2400)
+# Minimum remaining budget required to start post-process operations (guard-budget).
+# Override via KANBAN_VERIFICATION_MIN_BUDGET_SECONDS / _REMEDIATION / _SELF_DEBUG env vars.
+VERIFICATION_MIN_BUDGET_SECONDS = _int_env("KANBAN_VERIFICATION_MIN_BUDGET_SECONDS", 30)
+REMEDIATION_MIN_BUDGET_SECONDS = _int_env("KANBAN_REMEDIATION_MIN_BUDGET_SECONDS", 60)
+SELF_DEBUG_MIN_BUDGET_SECONDS = _int_env("KANBAN_SELF_DEBUG_MIN_BUDGET_SECONDS", 15)
+# Hard-quarantine a task after this many identical timeouts.
+# Override via KANBAN_MAX_TIMEOUT_RETRIES env var.
+MAX_TIMEOUT_RETRIES = _int_env("KANBAN_MAX_TIMEOUT_RETRIES", 3)
+# Failures before a task is flagged for decomposition.
+# Override via KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION env var.
+_MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT = _int_env("KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION", 1)
+# Minimum claude output length (chars) to be considered non-trivial.
+# Override via KANBAN_MIN_OUTPUT_LENGTH env var.
+MIN_OUTPUT_LENGTH = _int_env("KANBAN_MIN_OUTPUT_LENGTH", 200)
+# Phantom-completion ratio — fraction of claimed paths that may be missing.
+# Override via KANBAN_PHANTOM_RATIO_THRESHOLD env var.
+PHANTOM_RATIO_THRESHOLD = _float_env("KANBAN_PHANTOM_RATIO_THRESHOLD", 0.5)
+# Scan-only task minimum run duration before accepting as successful.
+# Override via KANBAN_SCAN_MIN_RUN_SECONDS env var.
+SCAN_MIN_RUN_SECONDS = _int_env("KANBAN_SCAN_MIN_RUN_SECONDS", 60)
 
 # Task ID patterns that get extended timeouts (regex, case-insensitive).
 # Order matters: first match wins.
@@ -121,18 +167,228 @@ _EXTENDED_TIMEOUT_PATTERNS = [
 ]
 
 
+def _detect_execution_anomalies(task_type: Optional[str] = None, window: int = 200) -> dict:
+    """Anomaly detection for kanban execution metrics using IQR outlier analysis.
+
+    Reads recent completed tasks from kanban_tasks and computes adaptive
+    threshold recommendations for execution_seconds and failure_count.
+    Uses interquartile range (IQR) to identify statistical outliers without
+    requiring external ML dependencies.
+
+    Args:
+        task_type: Optional filter to restrict analysis to a specific task type.
+        window: Number of recent completed tasks to sample (default 200).
+
+    Returns a dict with:
+        - exec_seconds_p50: median execution time (seconds)
+        - exec_seconds_upper_fence: IQR upper fence — tasks above this are anomalous
+        - failure_rate_mean: mean failure_count across completed tasks
+        - failure_rate_upper_fence: IQR upper fence for failure counts
+        - sample_size: number of tasks analysed
+        - recommended_max_execution_seconds: adaptive cap (clamped 300–7200)
+        - recommended_max_failures: adaptive decomposition threshold (clamped 1–10)
+
+    Non-fatal: any DB or arithmetic error returns an empty dict so callers can
+    fall back to the static configured constants.
+    """
+    try:
+        conn = get_connection()
+        try:
+            query = (
+                "SELECT execution_seconds, failure_count "
+                "FROM kanban_tasks "
+                "WHERE status IN ('done', 'verified') "
+                "  AND execution_seconds IS NOT NULL "
+                "  AND execution_seconds > 0 "
+            )
+            params: list = []
+            if task_type:
+                query += "  AND task_type = ? "
+                params.append(task_type)
+            query += "ORDER BY updated_at DESC LIMIT ?"
+            params.append(window)
+            rows = conn.execute(query, params).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return {}
+
+    if not rows:
+        return {}
+
+    exec_times = sorted(float(dict(r).get("execution_seconds") or 0) for r in rows)
+    fail_counts = sorted(float(dict(r).get("failure_count") or 0) for r in rows)
+    n = len(exec_times)
+
+    def _iqr_fence(values: list) -> tuple:
+        if len(values) < 4:
+            return values[-1], values[-1]
+        q1 = values[len(values) // 4]
+        q3 = values[(3 * len(values)) // 4]
+        iqr = q3 - q1
+        return q1 - 1.5 * iqr, q3 + 1.5 * iqr
+
+    exec_p50 = exec_times[n // 2]
+    _, exec_upper = _iqr_fence(exec_times)
+    fail_mean = sum(fail_counts) / n if n else 0.0
+    _, fail_upper = _iqr_fence(fail_counts)
+
+    # Clamp to sensible operational ranges.
+    adaptive_exec = int(min(7200, max(300, exec_upper)))
+    adaptive_fails = int(min(10, max(1, round(fail_upper))))
+
+    return {
+        "exec_seconds_p50": exec_p50,
+        "exec_seconds_upper_fence": exec_upper,
+        "failure_rate_mean": fail_mean,
+        "failure_rate_upper_fence": fail_upper,
+        "sample_size": n,
+        "recommended_max_execution_seconds": adaptive_exec,
+        "recommended_max_failures": adaptive_fails,
+    }
+
+
+def _nlp_extract_timeout_hint(desc: str) -> Optional[int]:
+    """Use LLM (Haiku) to extract a timeout in seconds from natural language.
+
+    Augments the structured ``timeout_hint:NNN`` regex so human-written phrases
+    like "allow 25 minutes" or "needs about 1 hour" are also understood.
+
+    Returns seconds (clamped 60–3600) or None.  Never raises — any failure
+    falls through silently so existing heuristics remain in control.
+    """
+    if not desc or len(desc) < 20:
+        return None
+    try:
+        import json as _json
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        req = LLMRequest(
+            system_prompt=(
+                "Extract a timeout duration from the task description. "
+                "If the text states a specific time budget (e.g. '25 minutes', "
+                "'allow 30 min', 'needs 1 hour', 'takes about 20 minutes'), "
+                "return JSON: {\"timeout_seconds\": <integer>}. "
+                "If no timeout intent is found, return JSON: {\"timeout_seconds\": null}. "
+                "Return ONLY the JSON object, nothing else."
+            ),
+            messages=[{"role": "user", "content": desc[:500]}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=32,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("timeout_extraction", req)
+        if resp and resp.content:
+            raw = resp.content.strip()
+            # Strip markdown fences if present
+            import re as _re2
+            raw = _re2.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=_re2.MULTILINE).strip()
+            data = _json.loads(raw)
+            secs = data.get("timeout_seconds")
+            if secs is not None:
+                return min(3600, max(60, int(secs)))
+    except Exception:
+        pass
+    return None
+
+
+def _nlp_extract_gap_subject(title: str, description: str, gap_type: str) -> Optional[str]:
+    """Use LLM (Haiku) to extract a gap entity from natural language task text.
+
+    Augments regex patterns in _pre_dispatch_check that require specific
+    formatting (e.g. "tool_not_in_manifest: tools/foo.py") so natural language
+    variants ("register tools/foo.py in the manifest") are also understood.
+
+    gap_type must be one of: "tool_not_in_manifest", "route_not_listed".
+    Returns the extracted entity string or None. Never raises.
+    """
+    if not title and not description:
+        return None
+
+    _PROMPTS = {
+        "tool_not_in_manifest": (
+            "Extract the Python tool file path (e.g. 'tools/foo/bar.py') that "
+            "needs to be registered in the manifest. "
+            "Return JSON: {\"subject\": \"<path>\"} or {\"subject\": null} if not found."
+        ),
+        "route_not_listed": (
+            "Extract the URL route path (e.g. '/dashboard/foo') that needs to be "
+            "listed in the Pages configuration. "
+            "Return JSON: {\"subject\": \"<route>\"} or {\"subject\": null} if not found."
+        ),
+        "orphan_db_table": (
+            "Extract the database table name from a task about an orphaned DB table. "
+            "Look for patterns like 'orphan_db_table gap: <name>', 'orphan_db_table on <name>', "
+            "'Subject: <name>', or 'table: <name>'. "
+            "Return JSON: {\"subject\": \"<table_name>\"} or {\"subject\": null} if not found."
+        ),
+        "db_table": (
+            "Extract the database table name that needs to be created. "
+            "Look for phrases like 'CREATE TABLE <name>', 'add table <name>', "
+            "'add DB table <name>', or 'add schema <name>'. "
+            "Return JSON: {\"subject\": \"<table_name>\"} or {\"subject\": null} if not found."
+        ),
+    }
+
+    system_prompt = _PROMPTS.get(gap_type)
+    if not system_prompt:
+        return None
+
+    combined = f"Title: {title}\n\nDescription: {description[:400]}"
+    try:
+        import json as _json
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        import re as _re2
+
+        req = LLMRequest(
+            system_prompt=system_prompt + " Return ONLY the JSON object, nothing else.",
+            messages=[{"role": "user", "content": combined}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=48,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("gap_subject_extraction", req)
+        if resp and resp.content:
+            raw = _re2.sub(
+                r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re2.MULTILINE
+            ).strip()
+            data = _json.loads(raw)
+            subject = data.get("subject")
+            if subject and isinstance(subject, str):
+                return subject.strip()
+    except Exception:
+        pass
+    return None
+
+
 def _get_task_timeout(task_id: str) -> int:
     """Return per-task timeout budget in seconds.
 
-    pytest / E2E suite / regression tasks get MAX_EXECUTION_SECONDS_PYTEST (40 min);
-    codelens / coherence / single-E2E tasks get MAX_EXECUTION_SECONDS_SCAN (20 min);
-    everything else gets MAX_EXECUTION_SECONDS (15 min).
-    Also checks the task description for a TIMEOUT_HINT:NNNs directive.
+    Uses adaptive anomaly detection (_detect_execution_anomalies) when sufficient
+    historical data exists to compute a data-driven ceiling; falls back to the
+    configured static constants when data is sparse or the DB is unreachable.
+
+    Priority order (highest first):
+      1. Pattern match on task_id (pytest / scan) — but ceiling is still adaptive
+      2. timeout_hint:NNNs directive in description — hard override, no adaptation
+      3. NLP-extracted timeout from description — hard override, no adaptation
+      4. Description / task_type keyword match — adaptive ceiling
+      5. Default — adaptive ceiling or MAX_EXECUTION_SECONDS
     """
     task_id_lower = task_id.lower()
-    for pattern, timeout in _EXTENDED_TIMEOUT_PATTERNS:
+    for pattern, static_timeout in _EXTENDED_TIMEOUT_PATTERNS:
         if re.search(pattern, task_id_lower):
-            return timeout
+            anomalies = _detect_execution_anomalies(window=100)
+            adaptive = anomalies.get("recommended_max_execution_seconds")
+            if adaptive and adaptive > static_timeout:
+                return adaptive
+            return static_timeout
 
     # Check task description + task_type for TIMEOUT_HINT or heavy-tool heuristics
     try:
@@ -144,25 +400,38 @@ def _get_task_timeout(task_id: str) -> int:
         d = dict(row) if row else {}
         desc = (d.get("description") or "").lower()
         task_type = (d.get("task_type") or "").lower()
-        # Explicit override always wins
+        # Explicit structured override always wins — no anomaly adaptation
         m = re.search(r"timeout_hint:\s*(\d+)", desc, re.IGNORECASE)
         if m:
             return min(3600, int(m.group(1)))  # cap at 1 hour
-        # PYTEST-level (40 min): full test suites, E2E suites, regression runs
+        # NLP fallback: understand natural language timeout hints
+        nlp_secs = _nlp_extract_timeout_hint(desc)
+        if nlp_secs is not None:
+            return nlp_secs
+        # PYTEST-level: try adaptive ceiling first, then fall back to static
         _pytest_kw = ("pytest", "regression", "full test", "test suite",
                       "e2e suite", "e2e test", "test_orchestrator")
         if any(kw in desc for kw in _pytest_kw):
-            return MAX_EXECUTION_SECONDS_PYTEST
+            anomalies = _detect_execution_anomalies(task_type="test", window=100)
+            adaptive = anomalies.get("recommended_max_execution_seconds")
+            return adaptive if adaptive and adaptive > MAX_EXECUTION_SECONDS_PYTEST else MAX_EXECUTION_SECONDS_PYTEST
         if task_type == "test" and any(kw in desc for kw in ("e2e", "playwright", "selenium")):
-            return MAX_EXECUTION_SECONDS_PYTEST
-        # SCAN-level (20 min): single tool runs, coherence checks, single E2E steps
+            anomalies = _detect_execution_anomalies(task_type="test", window=100)
+            adaptive = anomalies.get("recommended_max_execution_seconds")
+            return adaptive if adaptive and adaptive > MAX_EXECUTION_SECONDS_PYTEST else MAX_EXECUTION_SECONDS_PYTEST
+        # SCAN-level: single tool runs, coherence checks, single E2E steps
         _scan_kw = ("codelens", "coherence_checker", "e2e_full", "companion", "e2e")
         if any(kw in desc for kw in _scan_kw):
-            return MAX_EXECUTION_SECONDS_SCAN
+            anomalies = _detect_execution_anomalies(window=100)
+            adaptive = anomalies.get("recommended_max_execution_seconds")
+            return adaptive if adaptive and adaptive > MAX_EXECUTION_SECONDS_SCAN else MAX_EXECUTION_SECONDS_SCAN
     except Exception:
         pass
 
-    return MAX_EXECUTION_SECONDS
+    # Default: use anomaly-detected ceiling or static fallback
+    anomalies = _detect_execution_anomalies(window=100)
+    adaptive = anomalies.get("recommended_max_execution_seconds")
+    return adaptive if adaptive and adaptive > MAX_EXECUTION_SECONDS else MAX_EXECUTION_SECONDS
 
 
 # ── Token exhaustion detection ────────────────────────────────────────────────
@@ -222,6 +491,53 @@ def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optiona
     return False, None
 
 
+def _nlp_extract_resume_at(reset_hint: str, now: datetime) -> Optional[datetime]:
+    """Use LLM (Haiku) to parse a reset time hint into a UTC datetime.
+
+    Augments the structured regex in _parse_resume_at for natural language
+    expressions like "in about twenty minutes", "at noon", "try again tomorrow".
+
+    Returns a UTC datetime or None. Never raises.
+    """
+    if not reset_hint or len(reset_hint) < 2:
+        return None
+    try:
+        import json as _json
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        import re as _re2
+
+        now_str = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+        req = LLMRequest(
+            system_prompt=(
+                f"Current time is {now_str}. "
+                "Parse the rate-limit reset hint and return how many seconds from now "
+                "to wait before retrying. "
+                "Return JSON: {\"wait_seconds\": <integer>} or "
+                "{\"wait_seconds\": null} if the hint is unparseable. "
+                "Clamp to [60, 21600]. Return ONLY the JSON object, nothing else."
+            ),
+            messages=[{"role": "user", "content": reset_hint[:200]}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=32,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("resume_at_extraction", req)
+        if resp and resp.content:
+            raw = _re2.sub(
+                r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re2.MULTILINE
+            ).strip()
+            data = _json.loads(raw)
+            secs = data.get("wait_seconds")
+            if secs is not None:
+                return now + timedelta(seconds=min(21600, max(60, int(secs))))
+    except Exception:
+        pass
+    return None
+
+
 def _parse_resume_at(reset_hint: Optional[str]) -> datetime:
     """Parse a reset hint into an absolute UTC datetime for resume.
 
@@ -230,6 +546,7 @@ def _parse_resume_at(reset_hint: Optional[str]) -> datetime:
       - "1 hour" / "2h" / "1 hr"            → now + N hours
       - "300 seconds" / "300s"               → now + N seconds
       - "2:00 AM" / "2:00 pm" / "14:00"     → next occurrence of that wall-clock time (local TZ)
+      - Natural language (e.g. "twenty minutes", "at noon") → NLP extraction via Haiku
       - None / unparseable                   → now + TOKEN_RETRY_DELAY_SECONDS (5 min fallback)
     """
     now = datetime.now(timezone.utc)
@@ -277,6 +594,11 @@ def _parse_resume_at(reset_hint: Optional[str]) -> datetime:
             return target.astimezone(timezone.utc)
         except (ValueError, OverflowError):
             pass
+
+    # NLP fallback: understand natural language hints the regex couldn't parse
+    nlp_dt = _nlp_extract_resume_at(hint, now)
+    if nlp_dt is not None:
+        return nlp_dt
 
     return fallback
 
@@ -795,7 +1117,8 @@ def _push_main(cwd: str) -> None:
 # currently in_progress and whose marker/dir mtime is older than this are
 # force-cleaned. Disk hygiene for the failure-train class (many failed tasks
 # leaving 500 MB worktrees each).
-_WORKTREE_STALE_AGE_DAYS = 7
+# Override via KANBAN_WORKTREE_STALE_AGE_DAYS env var.
+_WORKTREE_STALE_AGE_DAYS = _int_env("KANBAN_WORKTREE_STALE_AGE_DAYS", 7)
 
 
 def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[str]:
@@ -1614,7 +1937,7 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
     return result
 
 
-MAX_FAILURES_BEFORE_DECOMPOSITION = 1
+MAX_FAILURES_BEFORE_DECOMPOSITION = _MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT
 
 
 def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
@@ -3379,34 +3702,47 @@ def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
     tool_match = re.search(r"tool_not_in_manifest[^:]*:\s*(tools/[A-Za-z0-9_/\-]+\.py)", title)
     if not tool_match:
         tool_match = re.search(r"(tools/[A-Za-z0-9_/\-]+\.py)", description)
-    if tool_match and ("tool_not_in_manifest" in title or "tool_not_in_manifest" in description):
-        tool_path = tool_match.group(1)
-        try:
-            manifest_text = (BASE_DIR / "tools" / "manifest.md").read_text(encoding="utf-8")
-            if tool_path in manifest_text:
-                return True, (
-                    f"Pre-dispatch check: {tool_path} is already in tools/manifest.md "
-                    f"(false-positive gap)"
-                )
-            # Also search shard files under tools/manifest/
-            manifest_dir = BASE_DIR / "tools" / "manifest"
-            if manifest_dir.is_dir():
-                for shard in manifest_dir.glob("*.md"):
-                    try:
-                        if tool_path in shard.read_text(encoding="utf-8"):
-                            return True, (
-                                f"Pre-dispatch check: {tool_path} is already in "
-                                f"tools/manifest/{shard.name} (false-positive gap)"
-                            )
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+    if ("tool_not_in_manifest" in title or "tool_not_in_manifest" in description):
+        tool_path = (
+            tool_match.group(1) if tool_match
+            else _nlp_extract_gap_subject(title, description, "tool_not_in_manifest")
+        )
+        if tool_path:
+            try:
+                manifest_text = (BASE_DIR / "tools" / "manifest.md").read_text(encoding="utf-8")
+                if tool_path in manifest_text:
+                    return True, (
+                        f"Pre-dispatch check: {tool_path} is already in tools/manifest.md "
+                        f"(false-positive gap)"
+                    )
+                # Also search shard files under tools/manifest/
+                manifest_dir = BASE_DIR / "tools" / "manifest"
+                if manifest_dir.is_dir():
+                    for shard in manifest_dir.glob("*.md"):
+                        try:
+                            if tool_path in shard.read_text(encoding="utf-8"):
+                                return True, (
+                                    f"Pre-dispatch check: {tool_path} is already in "
+                                    f"tools/manifest/{shard.name} (false-positive gap)"
+                                )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
     # route_not_listed gap: is the route already in start.md Pages line?
     route_match = re.search(r"route_not_listed[^:]*:\s*(/[A-Za-z0-9_<>/\-]+)", title)
-    if route_match:
+    if not route_match and "route_not_listed" in (title + description).lower():
+        nlp_route = _nlp_extract_gap_subject(title, description, "route_not_listed")
+        if nlp_route:
+            route = nlp_route
+        else:
+            route = None
+    elif route_match:
         route = route_match.group(1)
+    else:
+        route = None
+    if route:
         # API routes don't belong in Pages list — treat as resolved
         if route.startswith("/api/"):
             return True, f"Pre-dispatch check: {route} is an API route (N/A for Pages list)"
@@ -3867,7 +4203,7 @@ def _run_verify_checks(task_id, claude_output):
         _desc0b = ""
         _type0b = ""
     _is_scan_task = _type0b == "test" and any(kw in _desc0b for kw in _SCAN_ONLY_KEYWORDS)
-    if _is_scan_task and (not claude_output or len(claude_output) < 200):
+    if _is_scan_task and (not claude_output or len(claude_output) < MIN_OUTPUT_LENGTH):
         # Scan task with empty/short output — check process exit code
         _proc = _running.get(task_id)
         _exit_ok = (_proc is not None and hasattr(_proc, 'returncode')
@@ -3875,7 +4211,7 @@ def _run_verify_checks(task_id, claude_output):
         _dispatch_t = _dispatch_times.get(task_id)
         _ran_long = (
             _dispatch_t is not None
-            and (datetime.now(timezone.utc) - _dispatch_t).total_seconds() > 60
+            and (datetime.now(timezone.utc) - _dispatch_t).total_seconds() > SCAN_MIN_RUN_SECONDS
         )
         if _exit_ok:
             return True, (
@@ -3930,7 +4266,7 @@ def _run_verify_checks(task_id, claude_output):
         pass
 
     # Check 1: Claude output must be substantial
-    if not claude_output or len(claude_output) < 200:
+    if not claude_output or len(claude_output) < MIN_OUTPUT_LENGTH:
         return False, "Output too short — likely no work done"
 
     # Check 2: Look for failure indicators (scan first 1000 chars — the
@@ -4083,14 +4419,14 @@ def _run_verify_checks(task_id, claude_output):
                 f"but NONE exist on disk (missing: {missing_preview}). "
                 f"Output was likely hallucinated — see agent log."
             )
-        # If 50%+ of claimed paths are missing, treat as phantom completion.
+        # If PHANTOM_RATIO_THRESHOLD+ of claimed paths are missing, treat as phantom.
         phantom_ratio = (claimed - existing) / claimed
-        if phantom_ratio >= 0.5:
+        if phantom_ratio >= PHANTOM_RATIO_THRESHOLD:
             missing_preview = ", ".join(missing[:3])
             return False, (
                 f"PHANTOM COMPLETION: {claimed - existing}/{claimed} claimed paths "
                 f"missing ({missing_preview}). "
-                f"Ratio {phantom_ratio:.0%} >= 50% threshold — failing."
+                f"Ratio {phantom_ratio:.0%} >= {PHANTOM_RATIO_THRESHOLD:.0%} threshold — failing."
             )
 
     # Check 5: Git commit check on the WORKTREE branch (not main).
@@ -4536,6 +4872,9 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             route_match = re.search(r"gap: (/[A-Za-z0-9_<>/\-]+)", title)
         if route_match:
             route = route_match.group(1)
+        else:
+            route = _nlp_extract_gap_subject(title, description, "route_not_listed")
+        if route:
             # API routes don't need to be in Pages list
             if not route.startswith("/api/"):
                 try:
@@ -4569,6 +4908,8 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
         )
         if m:
             table_name = m.group(1)
+        else:
+            table_name = _nlp_extract_gap_subject(title, description, "orphan_db_table")
         # Skip pg_*, sqlite_*, information_schema.* — system catalogs are
         # never "orphan" tables to create.
         if table_name and re.match(r"^(pg_|sqlite_|information_schema)", table_name, re.IGNORECASE):
@@ -4604,6 +4945,8 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             }
             if table_name and table_name.lower() in _PROSE_WORDS:
                 table_name = None
+        if not table_name:
+            table_name = _nlp_extract_gap_subject(title, description, "db_table")
     if table_name:
         # For orphan_db_table fixes, the agent commits a new migration
         # file with CREATE TABLE <name>, but that migration has not been
@@ -4958,8 +5301,16 @@ _dispatch_times: Dict[str, datetime] = {}
 # Current executor tier — updated once per scheduler cycle
 _current_exec_tier: Optional[str] = None
 
-_SILENT_DISPATCH_THRESHOLD = 1 * 60  # 1 min — no log file content yet = never dispatched
-_ABSOLUTE_MAX_IN_PROGRESS_SECONDS = 24 * 60 * 60  # 24 h hard ceiling — force-reap even if in _running
+# Override via KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS / KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS env vars.
+_SILENT_DISPATCH_THRESHOLD = _int_env("KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS", 1 * 60)
+_ABSOLUTE_MAX_IN_PROGRESS_SECONDS = _int_env("KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS", 24 * 60 * 60)
+
+# Anomaly detection parameters for _detect_execution_anomaly.
+# Override via env vars to tune sensitivity without code changes.
+_ANOMALY_HISTORY_LIMIT = _int_env("KANBAN_ANOMALY_HISTORY_LIMIT", 50)
+_ANOMALY_MIN_SAMPLES = _int_env("KANBAN_ANOMALY_MIN_SAMPLES", 10)
+_ANOMALY_MIN_STD_SECONDS = _float_env("KANBAN_ANOMALY_MIN_STD_SECONDS", 1.0)
+_ANOMALY_Z_THRESHOLD = _float_env("KANBAN_ANOMALY_Z_THRESHOLD", 2.0)
 
 
 def _task_log_is_empty(tid: str) -> bool:
@@ -4971,7 +5322,55 @@ def _task_log_is_empty(tid: str) -> bool:
         return False
 
 
-_SUGGESTED_DECAY_HOURS = 48  # tasks soft-stuck in 'suggested' are re-queued after this
+def _detect_execution_anomaly(age_seconds: float) -> Tuple[bool, str]:
+    """Detect if age_seconds is anomalously long vs historical task durations.
+
+    Queries the last _ANOMALY_HISTORY_LIMIT completed tasks and applies the
+    z-score method (mean + _ANOMALY_Z_THRESHOLD × σ). Returns
+    (is_anomaly, description). Falls back to (False, "") on insufficient data
+    or any error. All parameters are configurable via env vars:
+      KANBAN_ANOMALY_HISTORY_LIMIT, KANBAN_ANOMALY_MIN_SAMPLES,
+      KANBAN_ANOMALY_MIN_STD_SECONDS, KANBAN_ANOMALY_Z_THRESHOLD.
+    """
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT (julianday(completed_at) - julianday(created_at)) * 86400.0 AS dur
+                FROM kanban_tasks
+                WHERE status = 'done'
+                  AND completed_at IS NOT NULL
+                  AND created_at IS NOT NULL
+                ORDER BY completed_at DESC
+                LIMIT {_ANOMALY_HISTORY_LIMIT}
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+
+        durations = [dict(r)["dur"] for r in rows if (dict(r).get("dur") or 0) > 0]
+        if len(durations) < _ANOMALY_MIN_SAMPLES:
+            return False, ""
+
+        mean = sum(durations) / len(durations)
+        variance = sum((d - mean) ** 2 for d in durations) / len(durations)
+        std = variance ** 0.5
+        if std < _ANOMALY_MIN_STD_SECONDS:
+            return False, ""
+
+        z = (age_seconds - mean) / std
+        if z > _ANOMALY_Z_THRESHOLD:
+            return True, (
+                f"anomaly_detection: {age_seconds / 60:.0f} min is {z:.1f}σ above "
+                f"historical mean {mean / 60:.0f} min (σ={std / 60:.0f} min, n={len(durations)})"
+            )
+    except Exception:
+        pass
+    return False, ""
+
+
+_SUGGESTED_DECAY_HOURS = _int_env("KANBAN_SUGGESTED_DECAY_HOURS", 48)
 
 
 def _promote_stale_suggested() -> None:
@@ -5014,8 +5413,154 @@ def _promote_stale_suggested() -> None:
                 logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
                 for tid in promoted:
                     print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
+
+            # ── BOUNDED AUTO-REVIVE of failure-quarantined tasks ──────────
+            # The decay pass above deliberately skips fc>=5 / HITL-quarantined
+            # tasks. Without this pass they (and their dependency chains) rot
+            # in 'suggested' forever. Here we revive them to backlog when their
+            # dependency is satisfied and they've cooled down — capped at
+            # MAX_AUTO_REVIVE per task (tracked in kanban_task_revivals so the
+            # cap survives re-quarantine), then held for HITL with one alert.
+            _revive_quarantined_suggested(conn)
     except Exception as exc:
         logger.warning("suggested-decay sweep failed: %s", exc)
+
+
+def _revive_quarantined_suggested(conn: Any) -> None:
+    """Auto-revive failure-quarantined 'suggested' tasks, bounded by a cap.
+
+    A task qualifies as failure-quarantined when failure_count >= 5 OR its
+    last_failure_reason mentions 'hitl' / 'hard-quarantine' (genuine AI
+    prediction cards have fc=0 and no failure reason, so they never match).
+    Such a task is revived to 'backlog' (failure_count reset) when:
+      - its dependency is satisfied (no dep, or parent done/decomposed), and
+      - it has been parked longer than QUARANTINE_REVIVE_COOLDOWN_MIN, and
+      - it has been auto-revived fewer than MAX_AUTO_REVIVE times.
+    After the cap it stays quarantined and fires a one-time HITL Telegram alert.
+    """
+    # Self-healing: create the side table if the migration hasn't run yet.
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS kanban_task_revivals ("
+            "  task_id TEXT PRIMARY KEY,"
+            "  revive_count INTEGER NOT NULL DEFAULT 0,"
+            "  last_revived_at TEXT,"
+            "  hitl_alerted INTEGER NOT NULL DEFAULT 0,"
+            "  updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))"
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.warning("auto-revive: could not ensure kanban_task_revivals table: %s", exc)
+        return
+
+    now = datetime.now(timezone.utc)
+    cooldown_cutoff = (now - timedelta(minutes=QUARANTINE_REVIVE_COOLDOWN_MIN)).isoformat()
+    now_iso = now.isoformat()
+
+    rows = conn.execute(
+        "SELECT id, failure_count, last_failure_reason, depends_on_task_id "
+        "FROM kanban_tasks "
+        "WHERE status = 'suggested' AND updated_at < ?",
+        (cooldown_cutoff,),
+    ).fetchall()
+
+    revived: list[str] = []
+    held: list[str] = []
+    for r in rows:
+        d = dict(r)
+        tid = d["id"]
+        fc = d.get("failure_count") or 0
+        reason = (d.get("last_failure_reason") or "").lower()
+        # Only act on failure-quarantined tasks (skip genuine prediction cards).
+        is_quarantined = fc >= 5 or "hard-quarantine" in reason or "hitl" in reason
+        if not is_quarantined:
+            continue
+
+        # Dependency must be satisfied (no dep, or parent done/decomposed).
+        dep = d.get("depends_on_task_id")
+        if dep:
+            prow = conn.execute(
+                "SELECT status FROM kanban_tasks WHERE id = ?", (dep,)
+            ).fetchone()
+            if not prow or dict(prow).get("status") not in ("done", "decomposed"):
+                continue  # still blocked — leave quarantined
+
+        # How many times have we already auto-revived this task?
+        rc_row = conn.execute(
+            "SELECT revive_count, hitl_alerted FROM kanban_task_revivals WHERE task_id = ?",
+            (tid,),
+        ).fetchone()
+        revive_count = (dict(rc_row).get("revive_count") if rc_row else 0) or 0
+        hitl_alerted = (dict(rc_row).get("hitl_alerted") if rc_row else 0) or 0
+
+        if revive_count >= MAX_AUTO_REVIVE:
+            # Cap reached — hold for human review, alert once.
+            if not hitl_alerted:
+                held.append(tid)
+                conn.execute(
+                    "UPDATE kanban_task_revivals SET hitl_alerted = 1, updated_at = ? "
+                    "WHERE task_id = ?",
+                    (now_iso, tid),
+                )
+            continue
+
+        # Revive to backlog with a fresh failure budget.
+        new_rc = revive_count + 1
+        conn.execute(
+            "UPDATE kanban_tasks SET status = 'backlog', failure_count = 0, "
+            "last_failure_reason = ?, updated_at = ? "
+            "WHERE id = ? AND status = 'suggested'",
+            (
+                f"auto-revive {new_rc}/{MAX_AUTO_REVIVE}: deps satisfied + cooled down, "
+                "re-queued to backlog for another attempt.",
+                now_iso,
+                tid,
+            ),
+        )
+        # Upsert the revival counter (works on both SQLite and PostgreSQL).
+        if rc_row:
+            conn.execute(
+                "UPDATE kanban_task_revivals SET revive_count = ?, last_revived_at = ?, "
+                "updated_at = ? WHERE task_id = ?",
+                (new_rc, now_iso, now_iso, tid),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO kanban_task_revivals "
+                "(task_id, revive_count, last_revived_at, hitl_alerted, updated_at) "
+                "VALUES (?, ?, ?, 0, ?)",
+                (tid, new_rc, now_iso, now_iso),
+            )
+        revived.append(tid)
+
+    if revived or held:
+        conn.commit()
+    for tid in revived:
+        print(f"  Kanban: auto-revive quarantined {tid} -> backlog")
+    if revived:
+        logger.info("auto-revive: re-queued %d quarantined task(s): %s", len(revived), revived)
+    if held:
+        logger.warning(
+            "auto-revive: %d task(s) hit revive cap (%d) — holding for HITL: %s",
+            len(held), MAX_AUTO_REVIVE, held,
+        )
+        import os as _os
+        if not (_os.environ.get("PYTEST_CURRENT_TEST")
+                or _os.environ.get("ICDEV_SUPPRESS_NOTIFICATIONS") == "1"):
+            for tid in held:
+                try:
+                    from tools.notifications.adapters.telegram import send as tg_send
+                    tg_send(
+                        f"HITL REVIEW NEEDED: {tid[:32]}",
+                        (
+                            f"Task '{tid}' has been auto-revived {MAX_AUTO_REVIVE} times and "
+                            "still fails. It is now held in 'suggested' for human review — "
+                            "the task likely needs to be split, fixed, or closed."
+                        ),
+                        severity="warning",
+                    )
+                except Exception:
+                    pass
 
 
 def _reap_stale_in_progress() -> None:
@@ -5115,9 +5660,11 @@ def _reap_stale_in_progress() -> None:
             ).fetchone()
             new_fc = (fc_row[0] if fc_row else 0) + 1
             next_status = "suggested" if new_fc >= 5 else "backlog"
+            _is_anomaly, _anomaly_detail = _detect_execution_anomaly(age_seconds)
+            _anomaly_suffix = f" [{_anomaly_detail}]" if _is_anomaly else ""
             reason = (
                 f"stale-reaper: task was in_progress for {age_seconds / 60:.0f} min "
-                f"with {reap_label} (threshold={threshold / 60:.0f} min). "
+                f"with {reap_label} (threshold={threshold / 60:.0f} min){_anomaly_suffix}. "
                 + (
                     f"fc={new_fc}>=5 - escalated to suggested for HITL review."
                     if next_status == "suggested"
@@ -5912,7 +6459,7 @@ def _auto_decompose_stalled_tasks() -> list:
                 processed.append(tid)
                 continue
 
-            _decompose_one_task(task)
+            _decompose_one_task(task, ai_narrative=True)
             processed.append(tid)
         except Exception as exc:
             logger.warning("auto_decompose: LLM failed for %s: %s — falling back to backlog reset", tid, exc)
@@ -6028,8 +6575,87 @@ def _complexity_score(task: dict) -> int:
     return score
 
 
-def _decompose_one_task(task: dict) -> None:
-    """Call LLM to decompose a single needs_decomposition task into subtasks."""
+# ---------------------------------------------------------------------------
+# AI-ification (aiify-opp-5304): optional LLM-synthesized decomposition
+# narrative (metadata_extraction → llm_generation).
+#
+# _decompose_one_task already uses an LLM to decide *how* to split a task.
+# This companion helper synthesises a short, grounded narrative that explains
+# *what* was decided — useful for Telegram notifications, audit trails, and
+# operator dashboards. Any failure degrades silently so the deterministic
+# decomposition always completes.
+# ---------------------------------------------------------------------------
+
+_DECOMPOSE_NARRATIVE_SYSTEM_PROMPT = (
+    "You are a DoD/IC engineering lead writing a brief decomposition note for "
+    "a kanban task. Write a concise narrative (2-4 sentences) that: "
+    "(1) states what the original task was and why it needed splitting, "
+    "(2) describes the resulting subtasks and their execution order, and "
+    "(3) highlights the single most important risk or dependency to watch. "
+    "Use only the facts provided — never invent task IDs, titles, or counts. "
+    "Output only the narrative prose; no headers, no markdown, no preamble."
+)
+
+
+def _ai_decompose_narrative(task_id: str, facts: dict) -> str | None:
+    """Synthesize an optional LLM narrative for a completed task decomposition.
+
+    Args:
+        task_id: The parent task ID being decomposed. Used for log context only;
+            the model receives it through ``facts``.
+        facts: Grounding facts already derived from the deterministic
+            decomposition (task title, subtask count, subtask titles, failure
+            reason if any). Passed verbatim so the narrative cannot drift from
+            the authoritative result.
+
+    Returns:
+        A short narrative string, or ``None`` if generation is unavailable or
+        fails for any reason. Callers MUST treat ``None`` as "no narrative"
+        and proceed with the deterministic decomposition unchanged.
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        fact_lines = "\n".join(f"- {k}: {v}" for k, v in sorted(facts.items()))
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Task decomposition: {task_id}\n"
+                        f"Facts:\n{fact_lines}\n\n"
+                        "Write the decomposition narrative."
+                    ),
+                }
+            ],
+            system_prompt=_DECOMPOSE_NARRATIVE_SYSTEM_PROMPT,
+            max_tokens=512,
+            temperature=0.3,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("narrative_generation", req)
+        if resp and resp.content:
+            return resp.content.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _decompose_one_task(task: dict, ai_narrative: bool = False) -> dict:
+    """Call LLM to decompose a single needs_decomposition task into subtasks.
+
+    Args:
+        task: Kanban task row dict containing at minimum ``id``.
+        ai_narrative: When ``True``, an optional LLM narrative is synthesized
+            from the decomposition facts and returned under the ``narrative``
+            key. Defaults to ``False`` for backward compatibility.
+
+    Returns:
+        Dict with keys ``subtasks`` (list of inserted child IDs) and
+        ``narrative`` (str or None).
+    """
     from tools.llm.router import LLMRouter, LLMRequest
 
     tid = task["id"]
@@ -6175,16 +6801,37 @@ def _decompose_one_task(task: dict) -> None:
             + ", ".join(inserted)
         )
 
+        # Optional LLM narrative (aiify-opp-5304: metadata_extraction → llm_generation)
+        narrative: str | None = None
+        if ai_narrative:
+            sub_titles = [
+                str(subtasks[i].get("title") or f"{title} — part {i+1}")[:80]
+                for i in range(len(subtasks[:5]))
+            ]
+            narrative = _ai_decompose_narrative(tid, {
+                "task_id": tid,
+                "task_title": title,
+                "subtask_count": len(inserted),
+                "subtask_ids": ", ".join(inserted),
+                "subtask_titles": "; ".join(sub_titles),
+                "failure_reason": failure_reason if not is_upfront else "none (upfront decomposition)",
+            })
+
         # Telegram notification
         try:
             import os as _os
             if not (_os.environ.get("PYTEST_CURRENT_TEST") or
                     _os.environ.get("ICDEV_SUPPRESS_NOTIFICATIONS") == "1"):
                 from tools.notifications.adapters.telegram import send as tg_send
+                body = (
+                    f"Task {tid} was split into {len(inserted)} subtasks: "
+                    + ", ".join(inserted)
+                )
+                if narrative:
+                    body = f"{narrative}\n\nSubtasks: " + ", ".join(inserted)
                 tg_send(
                     f"AUTO-DECOMPOSED: {title[:50]}",
-                    f"Task {tid} was split into {len(inserted)} subtasks: "
-                    + ", ".join(inserted),
+                    body,
                     severity="info",
                 )
         except Exception:
@@ -6192,6 +6839,8 @@ def _decompose_one_task(task: dict) -> None:
 
     finally:
         conn.close()
+
+    return {"subtasks": inserted, "narrative": narrative}
 
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
@@ -6548,7 +7197,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 f"(score={_cscore}) — decomposing upfront to avoid wasted token run"
             )
             try:
-                _decompose_one_task(task)
+                _decompose_one_task(task, ai_narrative=True)
             except Exception as _pd_exc:
                 logger.warning(
                     "pre-dispatch decompose failed for %s (%s) — dispatching anyway",

@@ -35,6 +35,97 @@ MEMORY_DB = BASE_DIR / "data" / "memory.db"
 # RAGKG_HOOK_ENABLED=false disables KG enrichment without touching RAG pipeline.
 RAGKG_HOOK_ENABLED = os.environ.get("RAGKG_HOOK_ENABLED", "true").lower() not in ("false", "0")
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/rag_config.yaml
+# under ingestion_manager.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_EMBED_BATCH_SIZE   = 20     # chunks embedded per provider batch
+_DB_BUSY_TIMEOUT_MS = 5000   # SQLite busy_timeout (ms) before raising lock error
+_SKIP_RATE_ANOMALY  = 0.95   # dedup skip-rate above this flags an anomalous ingestion run
+
+
+def _load_anomaly_cfg() -> dict:
+    """Load ingestion_manager.anomaly_detection config from args/rag_config.yaml."""
+    config_path = BASE_DIR / "args" / "rag_config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return cfg.get("ingestion_manager", {}).get("anomaly_detection", {})
+    except Exception:
+        return {}
+
+
+def _compute_ingestion_thresholds(anomaly_cfg: "dict | None" = None) -> dict:
+    """Compute adaptive ingestion thresholds from historical rag_ingestion_log data.
+
+    Anomaly-detection calibration (replaces hardcoded constants):
+    - embed_batch_size: scaled toward the observed average chunks-per-ingestion so
+      small corpora use small batches and high-throughput sources use larger ones.
+    - skip_rate_anomaly: the dedup skip-rate (chunks_skipped / total) above which an
+      ingestion run is considered anomalous, derived from the historical norm.
+
+    Falls back to module-level defaults when fewer than min_samples rows exist or
+    anomaly detection is disabled.
+    """
+    cfg = anomaly_cfg or {}
+    fallback_batch = int(cfg.get("fallback_embed_batch", _EMBED_BATCH_SIZE))
+    fallback_skip  = float(cfg.get("fallback_skip_rate_anomaly", _SKIP_RATE_ANOMALY))
+
+    if not cfg.get("enabled", True):
+        return {"embed_batch_size": fallback_batch,
+                "skip_rate_anomaly": fallback_skip,
+                "computed": False}
+
+    min_samples = cfg.get("min_samples", 30)
+    bounds      = cfg.get("adaptive_bounds", {})
+    batch_floor = int(bounds.get("batch_floor", 5))
+    batch_ceil  = int(bounds.get("batch_ceil", 100))
+    skip_floor  = float(bounds.get("skip_floor", 0.50))
+    skip_ceil   = float(bounds.get("skip_ceil", 0.99))
+
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT AVG(chunks_created) AS avg_created, "
+            "SUM(chunks_skipped) * 1.0 / NULLIF(SUM(chunks_created + chunks_skipped), 0) AS skip_rate, "
+            "COUNT(*) AS n "
+            "FROM rag_ingestion_log"
+        ).fetchone()
+        if row:
+            n = row["n"] if isinstance(row, dict) else row[2]
+            if n and n >= min_samples:
+                avg_created = float(row["avg_created"] if isinstance(row, dict) else row[0]) or 0.0
+                skip_rate   = float(row["skip_rate"] if isinstance(row, dict) else row[1]) or 0.0
+                # Scale embed batch toward observed throughput; keep within safe bounds.
+                new_batch = int(max(batch_floor, min(batch_ceil, round(avg_created) or fallback_batch)))
+                # Flag runs whose skip-rate exceeds the historical norm by a small margin.
+                new_skip  = max(skip_floor, min(skip_ceil, round(skip_rate + 0.05, 3)))
+                return {
+                    "embed_batch_size": new_batch,
+                    "skip_rate_anomaly": new_skip,
+                    "computed": True,
+                    "n_samples": n,
+                    "avg_chunks_created": round(avg_created, 2),
+                    "historical_skip_rate": round(skip_rate, 3),
+                }
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    return {"embed_batch_size": fallback_batch,
+            "skip_rate_anomaly": fallback_skip,
+            "computed": False}
+
 
 def _kg_enrich_chunks(embeddable: list) -> None:
     """Call KG bridge for each newly-inserted chunk. KG failures are silenced."""
@@ -86,12 +177,16 @@ def _get_embedding_provider():
         return None
 
 
-def _embed_chunks(chunks, provider) -> int:
-    """Embed chunks using embedding provider. Returns count embedded."""
+def _embed_chunks(chunks, provider, batch_size: "int | None" = None) -> int:
+    """Embed chunks using embedding provider. Returns count embedded.
+
+    batch_size defaults to the adaptive/configured value (see
+    _compute_ingestion_thresholds); falls back to _EMBED_BATCH_SIZE.
+    """
     if not provider or not chunks:
         return 0
     embedded = 0
-    batch_size = 20
+    batch_size = batch_size or _EMBED_BATCH_SIZE
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i : i + batch_size]
         for chunk in batch:
@@ -182,6 +277,10 @@ def ingest_source(
     if not provider:
         return {"error": "No embedding provider available", "ingested": 0}
 
+    # Adaptive thresholds (anomaly_detection) — replaces hardcoded batch size.
+    thresholds = _compute_ingestion_thresholds(_load_anomaly_cfg())
+    embed_batch_size = thresholds["embed_batch_size"]
+
     # Get vector store
     store = VectorStoreFactory.create(tenant_id=tenant_id)
 
@@ -209,7 +308,7 @@ def ingest_source(
     else:
         conn = get_connection()
         try:
-            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute(f"PRAGMA busy_timeout={_DB_BUSY_TIMEOUT_MS}")
         except Exception:
             pass  # Postgres doesn't support PRAGMA
         _canvas_conn = False
@@ -288,7 +387,7 @@ def ingest_source(
             continue
 
         # Embed new chunks
-        embedded = _embed_chunks(new_chunks, provider)
+        embedded = _embed_chunks(new_chunks, provider, batch_size=embed_batch_size)
         total_embedded += embedded
 
         # Filter to only chunks that got embeddings
@@ -312,6 +411,11 @@ def ingest_source(
                 project_id=project_id,
             )
 
+    # Anomaly check: flag runs whose dedup skip-rate exceeds the adaptive norm.
+    _processed = total_chunks + total_skipped
+    skip_rate = (total_skipped / _processed) if _processed else 0.0
+    skip_anomaly = skip_rate > thresholds["skip_rate_anomaly"]
+
     return {
         "classification": "CUI // SP-CTI",
         "source_type": source_type,
@@ -321,6 +425,9 @@ def ingest_source(
         "chunks_skipped": total_skipped,
         "chunks_embedded": total_embedded,
         "mode": ingestion_mode,
+        "embed_batch_size": embed_batch_size,
+        "skip_rate": round(skip_rate, 3),
+        "skip_rate_anomaly": skip_anomaly,
     }
 
 
@@ -475,7 +582,8 @@ def ingest_single_record(
     if not new_chunks:
         return {"ingested": 0, "skipped": len(chunks), "reason": "dedup"}
 
-    _embed_chunks(new_chunks, provider)
+    embed_batch_size = _compute_ingestion_thresholds(_load_anomaly_cfg())["embed_batch_size"]
+    _embed_chunks(new_chunks, provider, batch_size=embed_batch_size)
     embeddable = [c for c in new_chunks if c.embedding is not None]
     inserted = store.upsert(embeddable) if embeddable else 0
 

@@ -22,12 +22,36 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+# ---------------------------------------------------------------------------
+# Module-level constants — discovery thresholds, generation caps, and
+# subprocess limits. These were previously inline magic numbers. The
+# max-tests-per-run value is config-overridable from genesis_config under
+# `test.max_tests_per_run`; this named value is the in-code fallback.
+# Change config, not code.
+# ---------------------------------------------------------------------------
+_DEFAULT_MAX_TESTS_PER_RUN = 10   # in-code fallback for test.max_tests_per_run
+_MIN_MODULE_LINES          = 20   # skip files shorter than this (stubs/__init__)
+
+_MAX_FUNCS_PER_MODULE      = 15   # cap functions covered per generated file
+_MAX_SIG_PARAMS_ASSERTED   = 5    # cap params asserted in a signature test
+_MAX_INVOCATION_PARAMS     = 3    # only emit invocation test below this arity
+_MAX_PARAM_VALUES          = 5    # cap synthesised positional arg values
+_MAX_CLASSES_PER_MODULE    = 5    # cap classes covered per generated file
+_MAX_METHODS_ASSERTED      = 8    # cap public methods asserted per class
+_MAX_CONSTANTS_ASSERTED    = 10   # cap module constants asserted
+
+_EXTRACT_TIMEOUT_SEC       = 30   # api_surface_extractor subprocess timeout
+_RUN_TEST_TIMEOUT_SEC      = 60   # per-file pytest subprocess timeout
+_STDOUT_TAIL_CHARS         = 1000 # captured pytest stdout tail
+_STDERR_TAIL_CHARS         = 500  # captured pytest stderr tail
+_ERROR_SNIPPET_CHARS       = 200  # failure-result stderr snippet in results
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _find_untested_modules(max_results: int = 10) -> List[Dict[str, Any]]:
+def _find_untested_modules(max_results: int = _DEFAULT_MAX_TESTS_PER_RUN) -> List[Dict[str, Any]]:
     """Find Python modules in tools/ that lack corresponding test files."""
     tools_dir = BASE_DIR / "tools"
     tests_dir = BASE_DIR / "tests"
@@ -41,7 +65,7 @@ def _find_untested_modules(max_results: int = 10) -> List[Dict[str, Any]]:
         # Skip very small files (< 20 lines likely just __init__ or stubs)
         try:
             line_count = len(py_file.read_text(encoding="utf-8", errors="replace").splitlines())
-            if line_count < 20:
+            if line_count < _MIN_MODULE_LINES:
                 continue
         except OSError:
             continue
@@ -85,7 +109,7 @@ def _extract_api_surface(file_path: str) -> Optional[Dict[str, Any]]:
             [sys.executable, "tools/testing/api_surface_extractor.py", "--file", file_path, "--json"],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=_EXTRACT_TIMEOUT_SEC,
             cwd=str(BASE_DIR),
             env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
@@ -198,7 +222,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                 "",
             ]
         )
-        for func in pub_funcs[:15]:  # Cap at 15 functions
+        for func in pub_funcs[:_MAX_FUNCS_PER_MODULE]:  # Cap functions covered
             fname = func["name"]
             params = func.get("parameters", [])
             return_type = func.get("return_type")
@@ -236,7 +260,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                         "        params = list(sig.parameters.keys())",
                     ]
                 )
-                for p in non_default_params[:5]:
+                for p in non_default_params[:_MAX_SIG_PARAMS_ASSERTED]:
                     pname = p["name"]
                     lines.append(
                         f'        assert "{pname}" in params, f"Missing parameter \\"{pname}\\" in {{params}}"'
@@ -251,7 +275,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
 
             # Test invocation with mock DB (if function uses get_connection)
             db_mock_needed = any("get_connection" in t or "storage" in t for t in mock_targets)
-            if db_mock_needed and not is_async and len(non_default_params) <= 3:
+            if db_mock_needed and not is_async and len(non_default_params) <= _MAX_INVOCATION_PARAMS:
                 param_values = []
                 for p in params:
                     if p["name"] in ("self", "cls"):
@@ -260,7 +284,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                         continue
                     param_values.append(_generate_param_fixture(p))
 
-                if len(param_values) <= 5:
+                if len(param_values) <= _MAX_PARAM_VALUES:
                     lines.extend(
                         [
                             f"def test_{module_name}_{fname}_invocation():",
@@ -312,7 +336,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                 "",
             ]
         )
-        for cls in pub_classes[:5]:
+        for cls in pub_classes[:_MAX_CLASSES_PER_MODULE]:
             cname = cls["name"]
             lines.extend(
                 [
@@ -330,7 +354,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
             # Test class has expected public methods
             pub_methods = cls.get("public_methods", [])
             if pub_methods:
-                method_names = [m["name"] for m in pub_methods[:8]]
+                method_names = [m["name"] for m in pub_methods[:_MAX_METHODS_ASSERTED]]
                 lines.extend(
                     [
                         f"def test_{module_name}_{cname}_methods():",
@@ -362,7 +386,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                 f"        import {import_path} as mod",
             ]
         )
-        for const in constants[:10]:
+        for const in constants[:_MAX_CONSTANTS_ASSERTED]:
             cname = const["name"]
             lines.append(f'        assert hasattr(mod, "{cname}"), "Missing constant {cname}"')
         lines.extend(
@@ -417,7 +441,7 @@ def test_{module_name}_has_expected_attributes():
 '''
 
 
-def _run_test(test_file: Path, timeout: int = 60) -> Dict[str, Any]:
+def _run_test(test_file: Path, timeout: int = _RUN_TEST_TIMEOUT_SEC) -> Dict[str, Any]:
     """Run a single test file via pytest."""
     try:
         result = subprocess.run(
@@ -432,8 +456,8 @@ def _run_test(test_file: Path, timeout: int = 60) -> Dict[str, Any]:
         return {
             "passed": passed,
             "returncode": result.returncode,
-            "stdout": result.stdout[-1000:] if result.stdout else "",
-            "stderr": result.stderr[-500:] if result.stderr else "",
+            "stdout": result.stdout[-_STDOUT_TAIL_CHARS:] if result.stdout else "",
+            "stderr": result.stderr[-_STDERR_TAIL_CHARS:] if result.stderr else "",
         }
     except subprocess.TimeoutExpired:
         return {"passed": False, "error": "timeout"}
@@ -443,7 +467,7 @@ def _run_test(test_file: Path, timeout: int = 60) -> Dict[str, Any]:
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Test Reflex."""
-    max_tests = config.get("max_tests_per_run", 10)
+    max_tests = config.get("max_tests_per_run", _DEFAULT_MAX_TESTS_PER_RUN)
 
     # Find untested modules
     untested = _find_untested_modules(max_results=max_tests)
@@ -498,7 +522,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     "module": module_info["module"],
                     "generation_method": generation_method,
                     "status": "failed",
-                    "error": result.get("error", result.get("stderr", "")[:200]),
+                    "error": result.get("error", result.get("stderr", "")[:_ERROR_SNIPPET_CHARS]),
                 }
             )
 

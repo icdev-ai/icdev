@@ -33,6 +33,14 @@
             {{ alerts }}
         </div>
     </div>
+    <div class="card summary-card">
+        <div class="card-label">AI Posture Grade</div>
+        <div class="card-value">{{ ai_posture_grade or 'N/A' }}</div>
+    </div>
+    <div class="card summary-card">
+        <div class="card-label">Zero Trust Score</div>
+        <div class="card-value">{{ zig_score or 'N/A' }}{% if zig_score %}%{% endif %}</div>
+    </div>
 </div>
 
 <!-- Quick Actions -->

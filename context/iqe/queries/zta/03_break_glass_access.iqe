@@ -1,0 +1,8 @@
+# Intent: List scenarios that triggered break-glass emergency access with mission rationale.
+# Scenario: SCENARIO_BREAK_GLASS — ECI_EMERGENCY_ACCESS role overrides export control for mission-critical ops.
+# Expected violation shape: rows where break_glass_activated == 1 indicate emergency overrides
+#   that require mandatory supervisor review and audit trail verification per NIST AU controls.
+
+foreach r in lac.audit_trail
+  where r.break_glass_activated == 1
+  select r.scenario_name, r.decision, r.principal_citizenship, r.principal_clearance, r.resource_id, r.break_glass_activated, r.audit_json, r.created_at

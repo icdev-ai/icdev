@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% block title %}LAC Simulator — ZTA Digital Twin{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>ZTA Canvas <span class="badge badge-cui">CUI // SP-CTI</span></h1>
+  <p class="text-muted">Zero Trust Architecture — Location-based Access Control &amp; AI Data Warehouse Posture</p>
+</div>
+
+<!-- AI Data Warehouse Posture Card -->
+<div class="card mb-4" id="cls-posture-card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>AI Data Warehouse Posture</strong>
+    <span id="cls-tier-badge" class="badge" style="font-size:0.9rem;padding:4px 10px">Loading…</span>
+  </div>
+  <div class="card-body">
+    <div class="d-flex align-items-center mb-3">
+      <div id="cls-score-tile" style="font-size:2.2rem;font-weight:bold;margin-right:16px">—</div>
+      <div class="text-muted small">CLS Compliance Score</div>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary mb-2" type="button"
+            data-bs-toggle="collapse" data-bs-target="#cls-checklist"
+            aria-expanded="false" aria-controls="cls-checklist"
+            onclick="toggleClsChecklist(this)">
+      Expand Checklist
+    </button>
+    <div id="cls-checklist" style="display:none">
+      <ul id="cls-check-list" class="list-unstyled mt-2 mb-0"></ul>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <!-- Scenario Library -->
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header"><strong>Scenario Library</strong></div>
+      <div class="card-body">
+        <label for="scenario-select" class="form-label">Load Canonical Scenario</label>
+        <select id="scenario-select" class="form-control" onchange="loadScenario(this.value)">
+          <option value="">— Select scenario —</option>
+          {% for s in scenarios %}
+          <option value="{{ s.id }}">{{ s.label }}</option>
+          {% endfor %}
+        </select>
+        <div id="scenario-desc" class="mt-2 text-muted small"></div>
+      </div>
+    </div>
+
+    <!-- Principal Builder -->
+    <div class="card mt-3">
+      <div class="card-header"><strong>Principal Context</strong></div>
+      <div class="card-body">
+        <label class="form-label">Citizenship</label>
+        <select id="p-citizenship" class="form-control mb-2">
+          <option value="US">US</option>
+          <option value="FVEY">FVEY</option>
+          <option value="NATO">NATO</option>
+          <option value="COALITION">COALITION</option>
+        </select>
+        <label class="form-label">Clearance Level</label>
+        <select id="p-clearance" class="form-control mb-2">
+          <option value="UNCLASS">UNCLASS</option>
+          <option value="CUI">CUI</option>
+          <option value="SECRET">SECRET</option>
+          <option value="TS">TS</option>
+          <option value="TS//SCI">TS//SCI</option>
+        </select>
+        <label class="form-label">COIs (comma-separated)</label>
+        <input id="p-cois" type="text" class="form-control mb-2" placeholder="COI_ALPHA,COI_BRAVO">
+        <label class="form-label">Roles (comma-separated)</label>
+        <input id="p-roles" type="text" class="form-control mb-2" placeholder="ANALYST">
+      </div>
+    </div>
+
+    <!-- Resource Tagger -->
+    <div class="card mt-3">
+      <div class="card-header"><strong>Resource Metadata</strong></div>
+      <div class="card-body">
+        <label class="form-label">Resource ID</label>
+        <input id="r-id" type="text" class="form-control mb-2" placeholder="res-alpha-001">
+        <label class="form-label">Classification</label>
+        <select id="r-classification" class="form-control mb-2">
+          <option value="UNCLASS">UNCLASS</option>
+          <option value="CUI">CUI</option>
+          <option value="SECRET">SECRET</option>
+          <option value="TS">TS</option>
+          <option value="TS//SCI">TS//SCI</option>
+        </select>
+        <div class="form-check mb-2">
+          <input id="r-eci" type="checkbox" class="form-check-input">
+          <label for="r-eci" class="form-check-label">ECI (Export Controlled Information)</label>
+        </div>
+        <label class="form-label">Resource COIs (comma-separated)</label>
+        <input id="r-cois" type="text" class="form-control mb-2" placeholder="COI_ALPHA">
+      </div>
+    </div>
+
+    <button id="run-sim-btn" class="btn btn-primary w-100 mt-3" onclick="runSimulation()">
+      Run Simulation
+    </button>
+  </div>
+
+  <!-- Results Panel -->
+  <div class="col-md-8">
+    <div class="card" id="results-card" style="display:none">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Simulation Results</strong>
+        <span id="verdict-badge" class="badge" style="font-size:1.1rem"></span>
+      </div>
+      <div class="card-body">
+        <div id="deny-reasons-panel" style="display:none">
+          <h6 class="text-danger">Deny Reasons</h6>
+          <ul id="deny-reasons-list" class="list-unstyled"></ul>
+        </div>
+        <div id="break-glass-panel" class="alert alert-warning" style="display:none">
+          Break-glass emergency access activated — mandatory audit trail recorded.
+        </div>
+        <hr>
+        <h6>Audit Trail</h6>
+        <pre id="audit-json" style="font-size:0.75rem;max-height:200px;overflow:auto;background:var(--bg-tertiary,#12122a);padding:8px;border-radius:4px"></pre>
+      </div>
+    </div>
+
+    <!-- Audit Trail Table -->
+    <div class="card mt-3">
+      <div class="card-header"><strong>Audit Trail Log</strong></div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0" id="audit-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Scenario</th>
+              <th>Decision</th>
+              <th>Deny Reasons</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody id="audit-table-body">
+            <tr><td colspan="5" class="text-muted text-center py-3">No simulations yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SCENARIOS_DATA = {{ scenarios|tojson }};
+
+function loadScenario(id) {
+  if (!id) return;
+  const local = SCENARIOS_DATA.find(x => x.id === id);
+  if (local && local.description) {
+    document.getElementById('scenario-desc').textContent = local.description;
+  }
+  // Fetch full scenario data (includes principal_config / resource_config)
+  fetch('/zta/lac/scenarios/' + id)
+    .then(r => r.json())
+    .then(s => {
+      if (s.description) document.getElementById('scenario-desc').textContent = s.description;
+      const pc = s.principal_config || {};
+      const rc = s.resource_config || {};
+      if (pc.citizenship) document.getElementById('p-citizenship').value = pc.citizenship;
+      if (pc.clearance_level) document.getElementById('p-clearance').value = pc.clearance_level;
+      document.getElementById('p-cois').value = (pc.cois || []).join(',');
+      document.getElementById('p-roles').value = (pc.roles || []).join(',');
+      if (rc.resource_id) document.getElementById('r-id').value = rc.resource_id;
+      if (rc.classification) document.getElementById('r-classification').value = rc.classification;
+      document.getElementById('r-eci').checked = !!rc.is_eci;
+      document.getElementById('r-cois').value = (rc.cois || []).join(',');
+    })
+    .catch(() => {});
+}
+
+function runSimulation() {
+  const scenarioId = document.getElementById('scenario-select').value;
+  const citizenshipEl = document.getElementById('p-citizenship');
+  const clearanceEl = document.getElementById('p-clearance');
+  const coisEl = document.getElementById('p-cois');
+  const rolesEl = document.getElementById('p-roles');
+  const ridEl = document.getElementById('r-id');
+  const rclsEl = document.getElementById('r-classification');
+  const reciEl = document.getElementById('r-eci');
+  const rcoisEl = document.getElementById('r-cois');
+
+  const payload = {
+    scenario_id: scenarioId || 'ad_hoc',
+    principal: {
+      citizenship: citizenshipEl.value,
+      clearance_level: clearanceEl.value,
+      cois: coisEl.value ? coisEl.value.split(',').map(s => s.trim()).filter(Boolean) : [],
+      roles: rolesEl.value ? rolesEl.value.split(',').map(s => s.trim()).filter(Boolean) : [],
+    },
+    resource: {
+      resource_id: ridEl.value || 'res-unknown',
+      classification: rclsEl.value,
+      is_eci: reciEl.checked,
+      cois: rcoisEl.value ? rcoisEl.value.split(',').map(s => s.trim()).filter(Boolean) : [],
+      ownership: 'US',
+    },
+    action: 'read',
+    environment: {},
+  };
+
+  const btn = document.getElementById('run-sim-btn');
+  btn.disabled = true;
+  btn.textContent = 'Simulating…';
+
+  fetch('/zta/lac/simulate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  })
+  .then(r => r.json())
+  .then(data => {
+    showResults(data);
+    refreshAuditTable();
+  })
+  .catch(err => {
+    alert('Simulation error: ' + err);
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.textContent = 'Run Simulation';
+  });
+}
+
+function showResults(data) {
+  const card = document.getElementById('results-card');
+  card.style.display = '';
+
+  const badge = document.getElementById('verdict-badge');
+  if (data.decision === 'DENY') {
+    badge.textContent = 'DENY';
+    badge.className = 'badge badge-deny';
+    badge.style.cssText = 'background:#b71c1c;color:#fff;font-size:1.1rem;padding:6px 14px;border-radius:4px';
+  } else {
+    badge.textContent = 'PERMIT';
+    badge.className = 'badge badge-permit';
+    badge.style.cssText = 'background:#1b5e20;color:#fff;font-size:1.1rem;padding:6px 14px;border-radius:4px';
+  }
+
+  const denyPanel = document.getElementById('deny-reasons-panel');
+  const denyList = document.getElementById('deny-reasons-list');
+  if (data.deny_reasons && data.deny_reasons.length > 0) {
+    denyPanel.style.display = '';
+    denyList.innerHTML = data.deny_reasons.map(r =>
+      `<li class="text-danger mb-1"><span style="margin-right:6px">&#9888;</span>${r}</li>`
+    ).join('');
+  } else {
+    denyPanel.style.display = 'none';
+  }
+
+  const bgPanel = document.getElementById('break-glass-panel');
+  bgPanel.style.display = data.break_glass_activated ? '' : 'none';
+
+  document.getElementById('audit-json').textContent = JSON.stringify(data.audit_trail, null, 2);
+}
+
+function refreshAuditTable() {
+  fetch('/zta/lac/audit')
+    .then(r => r.json())
+    .then(data => {
+      const tbody = document.getElementById('audit-table-body');
+      if (!data.rows || data.rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">No simulations yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.rows.map((row, i) => {
+        const decisionStyle = row.decision === 'DENY'
+          ? 'color:#ef5350;font-weight:bold'
+          : 'color:#66bb6a;font-weight:bold';
+        const reasons = (() => {
+          try { return JSON.parse(row.deny_reasons || '[]'); } catch { return []; }
+        })();
+        return `<tr>
+          <td>${row.id}</td>
+          <td>${row.scenario_name || '—'}</td>
+          <td style="${decisionStyle}">${row.decision}</td>
+          <td>${reasons.length > 0 ? reasons.length + ' reason(s)' : '—'}</td>
+          <td>${(row.created_at || '').substring(0, 19)}</td>
+        </tr>`;
+      }).join('');
+    }).catch(() => {});
+}
+
+// Initial load
+refreshAuditTable();
+loadClsPosture();
+
+function loadClsPosture() {
+  fetch('/zta/cls-posture')
+    .then(r => r.json())
+    .then(data => {
+      const pct = Math.round((data.score || 0) * 100);
+      document.getElementById('cls-score-tile').textContent = pct + '%';
+
+      const badge = document.getElementById('cls-tier-badge');
+      const colors = {green: '#1b5e20', yellow: '#e65100', red: '#b71c1c'};
+      const tier = data.tier || 'red';
+      badge.textContent = tier.charAt(0).toUpperCase() + tier.slice(1);
+      badge.style.cssText = 'background:' + (colors[tier] || '#555') + ';color:#fff;font-size:0.9rem;padding:4px 10px;border-radius:4px';
+
+      const list = document.getElementById('cls-check-list');
+      list.innerHTML = (data.checks || []).map(c => {
+        const icon = c.passed ? '&#10003;' : '&#10007;';
+        const color = c.passed ? '#66bb6a' : '#ef5350';
+        const label = c.name.replace(/_/g, ' ');
+        return `<li class="mb-1" style="color:${color}">
+          <span style="margin-right:6px">${icon}</span>
+          <strong>${label}</strong>
+          <span class="text-muted small ms-2">${c.detail || ''}</span>
+        </li>`;
+      }).join('');
+    })
+    .catch(() => {
+      document.getElementById('cls-score-tile').textContent = 'ERR';
+      document.getElementById('cls-tier-badge').textContent = 'Error';
+    });
+}
+
+function toggleClsChecklist(btn) {
+  const panel = document.getElementById('cls-checklist');
+  const visible = panel.style.display !== 'none';
+  panel.style.display = visible ? 'none' : '';
+  btn.textContent = visible ? 'Expand Checklist' : 'Collapse Checklist';
+}
+</script>
+
+<style>
+.badge-cui { background:#0d2b4e; color:#4fc3f7; font-size:0.75rem; vertical-align:middle; }
+</style>
+{% endblock %}
