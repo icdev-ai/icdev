@@ -31,6 +31,36 @@ def _get_db():
     return get_connection()
 
 
+def _compute_adaptive_threshold(
+    fallback: float = 0.70,
+    z_factor: float = 0.5,
+    min_samples: int = 10,
+) -> float:
+    """Compute adaptive signal threshold via statistical anomaly detection.
+
+    Selects the positive-outlier region (mean + z_factor * std) from the
+    scored innovation_signals distribution.  Falls back to ``fallback`` when
+    the table has fewer than ``min_samples`` rows.
+    """
+    try:
+        with _get_db() as conn:
+            row = conn.execute(
+                "SELECT AVG(innovation_score), "
+                "AVG(innovation_score * innovation_score) - "
+                "AVG(innovation_score) * AVG(innovation_score) AS variance, "
+                "COUNT(*) "
+                "FROM innovation_signals WHERE status = 'scored'"
+            ).fetchone()
+            if row and row[2] >= min_samples:
+                mean = float(row[0] or 0.0)
+                variance = max(float(row[1] or 0.0), 0.0)
+                std = variance ** 0.5
+                return min(max(mean + z_factor * std, 0.0), 1.0)
+    except Exception:
+        pass
+    return fallback
+
+
 def _fetch_high_score_signals(threshold: float = 0.70, limit: int = 10) -> list:
     """Pull high-scoring signals from Innovation/Creative engines."""
     signals = []
@@ -52,7 +82,7 @@ def _fetch_high_score_signals(threshold: float = 0.70, limit: int = 10) -> list:
 def run(config: dict, trust=None) -> dict:
     """Execute the Experiment Reflex.
 
-    1. Pull high-scoring signals from innovation_signals (score >= 0.70)
+    1. Pull high-scoring signals from innovation_signals (adaptive or static threshold)
     2. Load experiment programs for eligible domains
     3. Run Bayesian-guided experiment loop per domain
     4. Export results as GKP for promotion
@@ -65,7 +95,15 @@ def run(config: dict, trust=None) -> dict:
     Returns:
         Dict with success, metric_value, details
     """
-    signal_threshold = config.get("signal_score_threshold", 0.70)
+    adaptive_cfg = config.get("adaptive_threshold", {})
+    if adaptive_cfg.get("enabled", False):
+        signal_threshold = _compute_adaptive_threshold(
+            fallback=config.get("signal_score_threshold", 0.70),
+            z_factor=adaptive_cfg.get("z_factor", 0.5),
+            min_samples=adaptive_cfg.get("min_samples", 10),
+        )
+    else:
+        signal_threshold = config.get("signal_score_threshold", 0.70)
     max_experiments = config.get("max_experiments_per_run", 3)
     domains = config.get("domains", ["compliance", "code_quality", "security"])
 

@@ -628,6 +628,51 @@ CREATE TABLE IF NOT EXISTS cpmp_contract_mods (
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_contract ON cpmp_contract_mods(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_mods_status ON cpmp_contract_mods(status);
+CREATE TABLE IF NOT EXISTS cpmp_budget_allocations (
+    id TEXT PRIMARY KEY,
+    initiative_code TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    fiscal_year INTEGER NOT NULL,
+    tier TEXT NOT NULL CHECK(tier IN ('tier_1', 'tier_2')),
+    allocated_usd REAL NOT NULL DEFAULT 0.0,
+    obligated_usd REAL NOT NULL DEFAULT 0.0,
+    available_usd REAL NOT NULL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','depleted','deferred','cancelled')),
+    agency TEXT NOT NULL DEFAULT '',
+    contract_id TEXT,
+    owner TEXT NOT NULL DEFAULT '',
+    justification TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(initiative_code, fiscal_year)
+);
+CREATE TABLE IF NOT EXISTS cpmp_budget_obligations (
+    id TEXT PRIMARY KEY,
+    allocation_id TEXT NOT NULL,
+    amount_usd REAL NOT NULL DEFAULT 0.0,
+    description TEXT NOT NULL DEFAULT '',
+    reference_id TEXT,
+    recorded_by TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+CREATE TABLE IF NOT EXISTS cpmp_budget_tier_history (
+    id TEXT PRIMARY KEY,
+    allocation_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('allocation_created','tier_transition','status_change','obligation_recorded')),
+    from_tier TEXT,
+    to_tier TEXT,
+    from_status TEXT,
+    to_status TEXT,
+    amount_usd REAL,
+    reason TEXT NOT NULL DEFAULT '',
+    actor TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_budget_allocations_tier ON cpmp_budget_allocations(tier);
+CREATE INDEX IF NOT EXISTS idx_cpmp_budget_allocations_fy ON cpmp_budget_allocations(fiscal_year);
+CREATE INDEX IF NOT EXISTS idx_cpmp_budget_allocations_status ON cpmp_budget_allocations(status);
+CREATE INDEX IF NOT EXISTS idx_cpmp_budget_obligations_alloc ON cpmp_budget_obligations(allocation_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_budget_tier_history_alloc ON cpmp_budget_tier_history(allocation_id);
 CREATE TABLE IF NOT EXISTS cpmp_risks (
     id TEXT PRIMARY KEY,
     contract_id TEXT NOT NULL,
@@ -701,6 +746,19 @@ CREATE TABLE IF NOT EXISTS dic_handoff_items (
     classification  TEXT    DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_dic_handoff_items_session ON dic_handoff_items(session_id);
+CREATE TABLE IF NOT EXISTS dic_doc_freshness (
+    doc_id          TEXT    PRIMARY KEY,
+    collection_id   TEXT    NOT NULL DEFAULT 'default',
+    state           TEXT    DEFAULT 'unknown',
+    reason          TEXT    DEFAULT '',
+    source_event    TEXT    DEFAULT '',
+    score           REAL    DEFAULT 0.0,
+    updated_at      TEXT    DEFAULT (datetime('now')),
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_tenant ON dic_doc_freshness(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_collection ON dic_doc_freshness(collection_id);
 CREATE TABLE IF NOT EXISTS dd_mapping_sessions (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL DEFAULT 'Untitled Mapping',
@@ -809,6 +867,200 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     assessment_run_at TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS slides_decks (
+    deck_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    title         TEXT NOT NULL,
+    deck_type     TEXT NOT NULL DEFAULT 'executive_overview',
+    theme         TEXT NOT NULL DEFAULT 'midnight_executive',
+    status        TEXT NOT NULL DEFAULT 'pending',
+    source_types  TEXT DEFAULT '[]',
+    pptx_path     TEXT,
+    slide_count   INTEGER DEFAULT 0,
+    error_message TEXT,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at  DATETIME
+);
+CREATE TABLE IF NOT EXISTS slides_slides (
+    slide_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    deck_id       INTEGER NOT NULL REFERENCES slides_decks(deck_id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL,
+    slide_type    TEXT NOT NULL DEFAULT 'content',
+    title         TEXT NOT NULL,
+    bullets       TEXT DEFAULT '[]',
+    speaker_notes TEXT,
+    image_path    TEXT,
+    image_prompt  TEXT,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS slides_audit (
+    audit_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+    deck_id   INTEGER REFERENCES slides_decks(deck_id),
+    action    TEXT NOT NULL,
+    actor     TEXT DEFAULT 'system',
+    details   TEXT,
+    ts        DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Procurement Quote vs IGCE Comparison (task-plan-7fe75cb8f440) ──
+CREATE TABLE IF NOT EXISTS proc_procurements (
+    id              TEXT PRIMARY KEY,
+    solicitation    TEXT NOT NULL DEFAULT '',
+    title           TEXT NOT NULL DEFAULT '',
+    agency          TEXT NOT NULL DEFAULT '',
+    contract_type   TEXT NOT NULL DEFAULT 'ffp',
+    description     TEXT,
+    status          TEXT NOT NULL DEFAULT 'open',
+    metadata        TEXT DEFAULT '{}',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    classification  TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS proc_igce_line_items (
+    id              TEXT PRIMARY KEY,
+    procurement_id  TEXT NOT NULL,
+    clin            TEXT NOT NULL DEFAULT '',
+    description     TEXT NOT NULL DEFAULT '',
+    unit            TEXT NOT NULL DEFAULT 'each',
+    quantity        REAL NOT NULL DEFAULT 1.0,
+    unit_cost       REAL NOT NULL DEFAULT 0.0,
+    extended_cost   REAL NOT NULL DEFAULT 0.0,
+    basis           TEXT NOT NULL DEFAULT '',
+    notes           TEXT,
+    metadata        TEXT DEFAULT '{}',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    classification  TEXT DEFAULT 'CUI',
+    UNIQUE (procurement_id, clin)
+);
+CREATE TABLE IF NOT EXISTS proc_vendor_quotes (
+    id              TEXT PRIMARY KEY,
+    procurement_id  TEXT NOT NULL,
+    vendor_name     TEXT NOT NULL,
+    quote_ref       TEXT NOT NULL DEFAULT '',
+    clin            TEXT NOT NULL DEFAULT '',
+    unit_price      REAL NOT NULL DEFAULT 0.0,
+    quantity        REAL,
+    total_price     REAL NOT NULL DEFAULT 0.0,
+    quote_date      TEXT,
+    valid_until     TEXT,
+    status          TEXT NOT NULL DEFAULT 'submitted',
+    notes           TEXT,
+    metadata        TEXT DEFAULT '{}',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    classification  TEXT DEFAULT 'CUI',
+    UNIQUE (procurement_id, vendor_name, quote_ref, clin)
+);
+CREATE INDEX IF NOT EXISTS idx_igce_proc ON proc_igce_line_items(procurement_id);
+CREATE INDEX IF NOT EXISTS idx_quote_proc ON proc_vendor_quotes(procurement_id);
+CREATE INDEX IF NOT EXISTS idx_quote_vendor ON proc_vendor_quotes(vendor_name);
+CREATE INDEX IF NOT EXISTS idx_quote_clin ON proc_vendor_quotes(clin);
+
+-- ── IGCE Estimator (task-plan-ddef9424ab46) ───────────────────────────
+-- Pre-bid Independent Government Cost Estimate generator that produces
+-- estimates within 10% of vendor actuals, validated against GSA
+-- Schedule pricing or market data.
+CREATE TABLE IF NOT EXISTS gsa_schedule_rates (
+    id                  TEXT PRIMARY KEY,
+    labor_category      TEXT NOT NULL,
+    bls_soc_code        TEXT,
+    sin                 TEXT NOT NULL DEFAULT '',
+    schedule_contractor TEXT NOT NULL DEFAULT '',
+    hourly_rate         REAL NOT NULL,
+    year                INTEGER NOT NULL,
+    region              TEXT,
+    education_level     TEXT,
+    min_years_experience INTEGER,
+    source              TEXT NOT NULL DEFAULT 'gsa_schedule',
+    created_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gsa_rate_lc ON gsa_schedule_rates(labor_category);
+CREATE INDEX IF NOT EXISTS idx_gsa_rate_soc ON gsa_schedule_rates(bls_soc_code);
+CREATE INDEX IF NOT EXISTS idx_gsa_rate_year ON gsa_schedule_rates(year);
+
+CREATE TABLE IF NOT EXISTS gsa_market_rates (
+    id              TEXT PRIMARY KEY,
+    labor_category  TEXT NOT NULL,
+    bls_soc_code    TEXT,
+    source          TEXT NOT NULL,
+    p25_hourly      REAL,
+    median_hourly   REAL NOT NULL,
+    p75_hourly      REAL,
+    sample_size     INTEGER DEFAULT 0,
+    year            INTEGER NOT NULL,
+    region          TEXT,
+    notes           TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_market_rate_lc ON gsa_market_rates(labor_category);
+CREATE INDEX IF NOT EXISTS idx_market_rate_source ON gsa_market_rates(source);
+
+CREATE TABLE IF NOT EXISTS igce_estimates (
+    id                      TEXT PRIMARY KEY,
+    procurement_id          TEXT,
+    opportunity_id          TEXT,
+    solicitation            TEXT NOT NULL DEFAULT '',
+    agency                  TEXT NOT NULL DEFAULT '',
+    title                   TEXT NOT NULL DEFAULT '',
+    period_of_performance   TEXT,
+    estimation_method       TEXT NOT NULL DEFAULT 'deterministic',
+    status                  TEXT NOT NULL DEFAULT 'draft',
+    total_estimated_cost    REAL NOT NULL DEFAULT 0.0,
+    total_low_estimate      REAL NOT NULL DEFAULT 0.0,
+    total_high_estimate     REAL NOT NULL DEFAULT 0.0,
+    within_10pct_confidence REAL,
+    benchmark_source        TEXT,
+    benchmark_sample_size   INTEGER DEFAULT 0,
+    notes                   TEXT,
+    created_by              TEXT,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_igce_est_proc ON igce_estimates(procurement_id);
+CREATE INDEX IF NOT EXISTS idx_igce_est_opp ON igce_estimates(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_igce_est_status ON igce_estimates(status);
+
+CREATE TABLE IF NOT EXISTS igce_estimate_line_items (
+    id                      TEXT PRIMARY KEY,
+    igce_estimate_id        TEXT NOT NULL,
+    clin                    TEXT NOT NULL DEFAULT '',
+    description             TEXT NOT NULL,
+    unit                    TEXT NOT NULL DEFAULT 'each',
+    quantity                REAL NOT NULL DEFAULT 1.0,
+    unit_cost_estimate      REAL NOT NULL DEFAULT 0.0,
+    unit_cost_low           REAL,
+    unit_cost_high          REAL,
+    extended_cost           REAL NOT NULL DEFAULT 0.0,
+    bls_soc_code            TEXT,
+    labor_category          TEXT,
+    benchmark_source        TEXT,
+    benchmark_rate          REAL,
+    benchmark_year          INTEGER,
+    benchmark_n             INTEGER DEFAULT 0,
+    confidence              REAL,
+    rationale               TEXT,
+    created_at              TEXT NOT NULL,
+    FOREIGN KEY (igce_estimate_id) REFERENCES igce_estimates(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_igce_line_est ON igce_estimate_line_items(igce_estimate_id);
+
+CREATE TABLE IF NOT EXISTS igce_calibration_log (
+    id                  TEXT PRIMARY KEY,
+    igce_estimate_id    TEXT NOT NULL,
+    procurement_id      TEXT,
+    clin                TEXT NOT NULL DEFAULT '',
+    estimated_unit_cost REAL NOT NULL,
+    actual_unit_cost    REAL NOT NULL,
+    actual_vendor       TEXT,
+    variance_pct        REAL NOT NULL,
+    within_10pct        INTEGER NOT NULL,
+    benchmark_source    TEXT,
+    confidence_predicted REAL,
+    captured_at         TEXT NOT NULL,
+    FOREIGN KEY (igce_estimate_id) REFERENCES igce_estimates(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_igce_cal_est ON igce_calibration_log(igce_estimate_id);
+CREATE INDEX IF NOT EXISTS idx_igce_cal_proc ON igce_calibration_log(procurement_id);
 """
 
 

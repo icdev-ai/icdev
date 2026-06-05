@@ -387,7 +387,7 @@ body { overflow: hidden; height: 100vh; }
     </div>
 
     <!-- Pan mode hint -->
-    <div id="pan-hint">Space+Drag to pan · Scroll to zoom</div>
+    <div id="pan-hint">Drag to pan · Shift+Drag to select · Scroll to zoom</div>
 
     <!-- Copy/Paste toast -->
     <div id="canvas-toast"></div>
@@ -904,9 +904,12 @@ function setupCanvasEvents() {
     vpScaleTo(vp.scale + (e.deltaY < 0 ? VP_STEP : -VP_STEP), cx, cy);
   }, {passive: false});
 
-  // Middle-mouse or Space+left-drag → pan; else rubber-band selection
+  // Left-drag / Space+left-drag / middle-mouse → pan; Shift+left-drag on empty → rubber-band
   container.addEventListener('mousedown', e => {
-    const isPanTrigger = e.button === 1 || (e.button === 0 && _spaceDown);
+    const onNode = !!e.target.closest('.canvas-node');
+    const isPanTrigger = e.button === 1
+      || (e.button === 0 && _spaceDown)
+      || (e.button === 0 && !onNode && !e.shiftKey);
     if (isPanTrigger) {
       e.preventDefault();
       _panning = true;
@@ -915,8 +918,8 @@ function setupCanvasEvents() {
       container.style.cursor = 'grabbing';
       return;
     }
-    // Rubber-band: left button, not space, not starting on a node
-    if (e.button === 0 && !e.target.closest('.canvas-node')) {
+    // Rubber-band: Shift+left button, not starting on a node
+    if (e.button === 0 && e.shiftKey && !onNode) {
       _rbActive = true;
       _rbStart = {x: e.clientX, y: e.clientY};
       const rbEl = document.createElement('div');

@@ -17,6 +17,61 @@ from .event_service import (
     send, sendmail, notify, emit, publish, dispatch, _now_iso,
 )
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/notification_config.yaml
+# under alert_service.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_NARRATIVE_MAX_TOKENS       = 512
+_NARRATIVE_TEMPERATURE      = 0.3
+_CAT1_DIGEST_LIMIT          = 20    # max CAT-I findings in digest query
+_STIG_DIGEST_LIMIT          = 20    # max open STIG CAT-I/II checks in digest
+_POAM_DAYS_THRESHOLD        = 14    # days-remaining window for "critical" urgency
+_DIGEST_DAYS_WINDOW         = 7     # default look-back window for alert digest
+_POAM_AUTO_DUE_DAYS         = 90    # days ahead for auto-created POA&M due date
+
+
+def _compute_poam_deadline_threshold(anomaly_cfg: "dict | None" = None) -> int:
+    """Compute adaptive POA&M urgency window from historical remediation lead times.
+
+    If the median remediation lead time is shorter than 14 days, tighten the
+    threshold so alerts fire earlier.  If longer, widen it.
+
+    Falls back to _POAM_DAYS_THRESHOLD when fewer than min_samples rows exist.
+    """
+    cfg = anomaly_cfg or {}
+    if not cfg.get("enabled", True):
+        return int(cfg.get("fallback_days_threshold", _POAM_DAYS_THRESHOLD))
+
+    min_samples = cfg.get("min_samples", 15)
+    fallback    = int(cfg.get("fallback_days_threshold", _POAM_DAYS_THRESHOLD))
+    bounds      = cfg.get("adaptive_bounds", {})
+    floor_days  = int(bounds.get("threshold_floor", 3))
+    ceil_days   = int(bounds.get("threshold_ceil", 60))
+
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT AVG(CAST(julianday(closed_at) - julianday(created_at) AS INTEGER)) AS avg_days, "
+            "COUNT(*) AS n FROM poam_items "
+            "WHERE status = 'closed' AND closed_at IS NOT NULL AND created_at IS NOT NULL"
+        ).fetchone()
+        if row:
+            n = row["n"] if isinstance(row, dict) else row[1]
+            if n and n >= min_samples:
+                avg_days = float(row["avg_days"] if isinstance(row, dict) else row[0]) or fallback
+                threshold = max(floor_days, min(ceil_days, int(avg_days * 0.5)))
+                return threshold
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return fallback
+
 ESCALATION_LEVELS = {
     "cat1": {"priority": "CRITICAL", "sla_hours": 24,  "auto_escalate": True,  "page": True},
     "cat2": {"priority": "HIGH",     "sla_hours": 72,  "auto_escalate": True,  "page": False},
@@ -60,7 +115,7 @@ POAM_REMINDER_TEMPLATE = (
 )
 
 # ---------------------------------------------------------------------------
-# AI-ification (aiify-opp-5525, aiify-opp-5544, aiify-opp-5599, aiify-opp-5601): optional LLM-synthesized triage narrative.
+# AI-ification (aiify-opp-151, aiify-opp-153, aiify-opp-155, aiify-opp-5525, aiify-opp-5544, aiify-opp-5599, aiify-opp-5601, aiify-opp-5632, aiify-opp-5634, aiify-opp-5636, aiify-opp-5665, aiify-opp-5667, aiify-opp-5698, aiify-opp-5700, aiify-opp-5738, aiify-opp-5740, aiify-opp-5742, aiify-opp-5776, aiify-opp-5778, aiify-opp-5780, aiify-opp-5814, aiify-opp-5816, aiify-opp-5850, aiify-opp-5926, aiify-opp-5928): optional LLM-synthesized triage narrative.
 #
 # The db → render → notify chains above produce deterministic, template-based
 # alert text that remains the AUTHORITATIVE payload — security operations must
@@ -117,8 +172,8 @@ def _ai_alert_narrative(alert_kind: str, facts: dict) -> str | None:
                 }
             ],
             system_prompt=_NARRATIVE_SYSTEM_PROMPT,
-            max_tokens=512,
-            temperature=0.3,
+            max_tokens=_NARRATIVE_MAX_TOKENS,
+            temperature=_NARRATIVE_TEMPERATURE,
             skip_injection_scan=True,  # trusted first-party fact dict, not user input
             classification="CUI",
         )
@@ -311,12 +366,6 @@ def dispatch_stig_alert(
 
         # --- Render ---
         rendered = Template(STIG_ALERT_TEMPLATE).safe_substitute(vars_)
-        rendered_html = render_template(
-            "alerts/stig_finding.html",
-            check=check_row,
-            workload=workload_row,
-            stig_severity=stig_sev,
-        )
 
         # --- AI (optional): synthesize triage narrative; None if unavailable ---
         narrative = _ai_alert_narrative(
@@ -328,7 +377,7 @@ def dispatch_stig_alert(
         if auto_create_poam and not existing_poam and check_row["status"] == "open":
             poam_cursor = conn.execute(
                 "INSERT INTO poam_items (finding_ref, title, severity, status, workload_id, due_date) "
-                "VALUES (?, ?, ?, 'open', ?, DATE('now', '+90 days'))",
+                f"VALUES (?, ?, ?, 'open', ?, DATE('now', '+{_POAM_AUTO_DUE_DAYS} days'))",
                 (check_id, check_row["check_name"], check_row["severity"], workload_id),
             )
             poam_id = poam_cursor.lastrowid
@@ -379,7 +428,7 @@ def send_poam_reminder(
     poam_id: str,
     project_id: str,
     channels: Iterable[str],
-    days_threshold: int = 14,
+    days_threshold: int = _POAM_DAYS_THRESHOLD,
     ai_narrative: bool = False,
 ) -> dict:
     """Query POA&M item, render deadline reminder, and deliver to owner.
@@ -417,8 +466,10 @@ def send_poam_reminder(
             return {"status": "error", "reason": f"POA&M {poam_id!r} not found"}
 
         days_remaining = int((days_row or {}).get("days_remaining", 0))
+        # Use statistically computed threshold when sufficient history is available.
+        effective_threshold = _compute_poam_deadline_threshold()
         urgency_map = {True: "critical", False: "high"}
-        urgency = urgency_map.get(days_remaining in range(days_threshold), "normal") if days_remaining else "high"
+        urgency = urgency_map.get(days_remaining in range(effective_threshold), "normal") if days_remaining else "high"
 
         vars_ = {
             "poam_id": poam_id,
@@ -491,6 +542,99 @@ def send_poam_reminder(
             "rendered": rendered,
             "narrative": narrative,
             "receipts": receipts,
+        }
+    finally:
+        conn.close()
+
+
+def send_security_alert_digest(
+    recipient: str,
+    project_id: str | None = None,
+    days: int = _DIGEST_DAYS_WINDOW,
+    ai_narrative: bool = False,
+) -> dict:
+    """Fetch recent security alerts, render a digest summary, and deliver.
+
+    Aggregates open CAT-I findings, recent STIG CAT-I/II open checks, and
+    POA&M items due within ``days`` days into a single digest and delivers to
+    ``recipient``. When ``ai_narrative`` is True, attaches a best-effort LLM
+    triage narrative (``None`` if unavailable); the deterministic summary
+    remains authoritative.
+    """
+    conn = get_connection()
+    try:
+        # --- DB: fetch open CAT-I findings ---
+        cat1_rows = conn.execute(
+            "SELECT id, title, severity, vid, component, detected_at "
+            "FROM stig_findings WHERE severity = 'I' AND status = 'open'"
+            + (" AND project_id = ?" if project_id else "")
+            + f" ORDER BY detected_at DESC LIMIT {_CAT1_DIGEST_LIMIT}",
+            (project_id,) if project_id else (),
+        ).fetchall()
+
+        # --- DB: fetch open STIG CAT-I/II checks ---
+        stig_rows = conn.execute(
+            "SELECT check_id, check_name, severity, status "
+            f"FROM govlift_stig_checks WHERE severity IN ('I','II') AND status = 'open' "
+            f"ORDER BY severity, check_id LIMIT {_STIG_DIGEST_LIMIT}",
+        ).fetchall()
+
+        # --- DB: fetch POA&M items due within the window ---
+        poam_rows = conn.execute(
+            "SELECT id, title, severity, due_date, owner, status "
+            "FROM poam_items WHERE status = 'open' "
+            "AND julianday(due_date) - julianday('now') BETWEEN 0 AND ?"
+            + (" AND project_id = ?" if project_id else ""),
+            (days, project_id) if project_id else (days,),
+        ).fetchall()
+
+        cat1_count = len(cat1_rows)
+        stig_count = len(stig_rows)
+        poam_due_count = len(poam_rows)
+
+        vars_ = {
+            "cat1_count": cat1_count,
+            "days_window": days,
+            "poam_due_count": poam_due_count,
+            "project_id": project_id or "all",
+            "stig_critical_count": stig_count,
+        }
+
+        # --- Render ---
+        rendered = render_template(
+            "alerts/security_alert_digest.html",
+            cat1_findings=cat1_rows,
+            stig_checks=stig_rows,
+            poam_items=poam_rows,
+            days=days,
+        )
+
+        # --- AI (optional): synthesize narrative; None if unavailable ---
+        narrative = _ai_alert_narrative(
+            "security alert digest summary", vars_
+        ) if ai_narrative else None
+
+        # --- Deliver ---
+        sendmail(
+            to=recipient,
+            subject=(
+                f"[SECURITY DIGEST] {cat1_count} CAT-I findings, "
+                f"{poam_due_count} POA&M items due in {days}d"
+            ),
+            html=rendered,
+        )
+        payload = {**vars_, "recipient": recipient}
+        if narrative:
+            payload["narrative"] = narrative
+        emit("security.alert_digest_sent", payload)
+
+        return {
+            "status": "sent",
+            "recipient": recipient,
+            "cat1_count": cat1_count,
+            "stig_critical_count": stig_count,
+            "poam_due_count": poam_due_count,
+            "narrative": narrative,
         }
     finally:
         conn.close()

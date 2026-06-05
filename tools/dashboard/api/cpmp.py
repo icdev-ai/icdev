@@ -463,6 +463,41 @@ def transition_deliverable(deliverable_id):
 
 
 # =====================================================================
+# AI PMO Advisor Routes
+# =====================================================================
+
+
+@cpmp_api.route("/contracts/<contract_id>/ai-advisor/recommendations", methods=["GET"])
+def ai_recommendations(contract_id):
+    """GET /api/cpmp/contracts/<id>/ai-advisor/recommendations"""
+    try:
+        from tools.govcon.pmo_ai_advisor import get_recommendations
+        return jsonify(get_recommendations(contract_id))
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/ai-advisor/award-fee", methods=["GET"])
+def ai_award_fee(contract_id):
+    """GET /api/cpmp/contracts/<id>/ai-advisor/award-fee"""
+    try:
+        from tools.govcon.pmo_ai_advisor import predict_award_fee
+        return jsonify(predict_award_fee(contract_id))
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/ai-advisor/auto-detect", methods=["POST"])
+def ai_auto_detect(contract_id):
+    """POST /api/cpmp/contracts/<id>/ai-advisor/auto-detect"""
+    try:
+        from tools.govcon.pmo_ai_advisor import auto_detect_issues
+        return jsonify(auto_detect_issues(contract_id))
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =====================================================================
 # Phase A — Portfolio + Transition
 # =====================================================================
 
@@ -545,6 +580,31 @@ def evm_forecast(contract_id):
         return jsonify(result)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/monte-carlo", methods=["POST"])
+def evm_monte_carlo(contract_id):
+    """POST /api/cpmp/contracts/<id>/monte-carlo — Monte Carlo EAC forecast (UI endpoint)."""
+    try:
+        from tools.govcon.evm_engine import forecast_monte_carlo
+
+        body = request.get_json(silent=True) or {}
+        iterations = int(body.get("iterations", 10000))
+        result = forecast_monte_carlo(contract_id, iterations)
+        if result.get("status") == "error":
+            return jsonify({"error": result.get("message", "Forecast failed")}), 400
+        pct = result.get("percentiles", {})
+        return jsonify({
+            "status": "ok",
+            "p50": pct.get("P50"),
+            "p80": pct.get("P80"),
+            "p95": pct.get("P95"),
+            "mean": result.get("distribution", {}).get("mean"),
+            "deterministic_eac": result.get("deterministic_eac"),
+            "iterations": result.get("iterations"),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @cpmp_api.route("/contracts/<contract_id>/evm/scurve", methods=["GET"])
@@ -1366,3 +1426,560 @@ def transition_contract_mod(mod_id):
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+# =====================================================================
+# Option Period Tracker
+# =====================================================================
+
+
+@cpmp_api.route("/contracts/<contract_id>/options", methods=["GET"])
+def list_contract_options(contract_id):
+    """GET /api/cpmp/contracts/<id>/options — List option periods."""
+    try:
+        from tools.govcon.option_period_tracker import list_option_periods
+        return jsonify(list_option_periods(contract_id))
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/options", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
+def create_contract_option(contract_id):
+    """POST /api/cpmp/contracts/<id>/options — Create option period."""
+    try:
+        from tools.govcon.option_period_tracker import create_option_period
+        data = request.get_json(force=True) or {}
+        result = create_option_period(contract_id, data)
+        if result.get("status") == "error":
+            return jsonify(result), 400
+        return jsonify(result), 201
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/options/<option_id>", methods=["PUT"])
+@require_role("admin", "pm", "co", "contract_mgr")
+def update_contract_option(option_id):
+    """PUT /api/cpmp/options/<id> — Update option period fields."""
+    try:
+        from tools.govcon.option_period_tracker import update_option_period
+        data = request.get_json(force=True) or {}
+        result = update_option_period(option_id, data)
+        if result.get("status") == "error":
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/options/<option_id>/exercise", methods=["PUT"])
+@require_role("admin", "pm", "co")
+def exercise_contract_option(option_id):
+    """PUT /api/cpmp/options/<id>/exercise — Mark option as exercised."""
+    try:
+        from tools.govcon.option_period_tracker import exercise_option
+        actor = "system"
+        if hasattr(g, "current_user") and g.current_user:
+            actor = (g.current_user.get("username") or "system") if isinstance(g.current_user, dict) else "system"
+        result = exercise_option(option_id, exercised_by=actor)
+        if result.get("status") == "error":
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/options/<option_id>/recommend", methods=["GET"])
+def option_ai_recommendation(option_id):
+    """GET /api/cpmp/options/<id>/recommend — AI go/no-go recommendation."""
+    try:
+        from tools.govcon.option_period_tracker import ai_exercise_recommendation
+        return jsonify(ai_exercise_recommendation(option_id))
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/options/countdown", methods=["GET"])
+def options_portfolio_countdown():
+    """GET /api/cpmp/options/countdown — Portfolio-wide option period countdown."""
+    try:
+        from tools.govcon.option_period_tracker import get_portfolio_countdown
+        return jsonify(get_portfolio_countdown())
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =====================================================================
+# Portfolio Deliverable Command Center
+# =====================================================================
+
+
+@cpmp_api.route("/portfolio/health-matrix", methods=["GET"])
+def portfolio_health_matrix():
+    """GET /api/cpmp/portfolio/health-matrix — Per-contract health dimension breakdown for the matrix grid."""
+    try:
+        from tools.govcon.portfolio_manager import compute_contract_health
+
+        conn = _get_db()
+        rows = conn.execute(
+            "SELECT id, contract_number, title, agency, status FROM cpmp_contracts "
+            "WHERE status NOT IN ('closed', 'terminated') ORDER BY contract_number ASC"
+        ).fetchall()
+        conn.close()
+
+        matrix = []
+        for r in rows:
+            cid = r["id"]
+            try:
+                health = compute_contract_health(cid)
+                dims = health.get("dimensions", {})
+                matrix.append({
+                    "contract_id": cid,
+                    "contract_number": r["contract_number"],
+                    "title": r["title"],
+                    "agency": r["agency"],
+                    "status": r["status"],
+                    "overall": health.get("health", "unknown"),
+                    "health_score": health.get("health_score"),
+                    "evm": _dim_tier(dims.get("evm")),
+                    "deliverables": _dim_tier(dims.get("deliverables")),
+                    "cpars": _dim_tier(dims.get("cpars")),
+                    "funding": _dim_tier(dims.get("funding")),
+                    "negative_events": _dim_tier(dims.get("negative_events")),
+                })
+            except Exception:
+                matrix.append({
+                    "contract_id": cid,
+                    "contract_number": r["contract_number"],
+                    "title": r["title"],
+                    "agency": r["agency"],
+                    "status": r["status"],
+                    "overall": "unknown",
+                    "health_score": None,
+                    "evm": "unknown", "deliverables": "unknown",
+                    "cpars": "unknown", "funding": "unknown", "negative_events": "unknown",
+                })
+
+        return jsonify({"status": "ok", "contracts": matrix, "total": len(matrix)})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def _dim_tier(score):
+    """Map a 0-1 dimension score to green/yellow/red/unknown."""
+    if score is None:
+        return "unknown"
+    try:
+        s = float(score)
+    except (TypeError, ValueError):
+        return "unknown"
+    if s >= 0.75:
+        return "green"
+    if s >= 0.50:
+        return "yellow"
+    return "red"
+
+
+@cpmp_api.route("/deliverables/portfolio", methods=["GET"])
+def portfolio_deliverables():
+    """GET /api/cpmp/deliverables/portfolio — All deliverables across all contracts.
+
+    Query params:
+        contract_id  filter to single contract
+        status       filter by deliverable status
+        window       7 | 14 | 30 | overdue | all  (default: all)
+        sort         due_date | contract | status  (default: due_date)
+    """
+    try:
+
+        conn = _get_db()
+        contract_id = request.args.get("contract_id")
+        status_filter = request.args.get("status")
+        window = request.args.get("window", "all")
+        sort = request.args.get("sort", "due_date")
+
+        where_clauses = ["1=1"]
+        params = []
+
+        if contract_id:
+            where_clauses.append("d.contract_id = ?")
+            params.append(contract_id)
+
+        if status_filter:
+            where_clauses.append("d.status = ?")
+            params.append(status_filter)
+
+        # Date window filtering is done in Python after fetch (avoids SQLite vs PG date syntax)
+
+        order_col = {
+            "contract": "c.contract_number",
+            "status": "d.status",
+        }.get(sort, "d.due_date")
+
+        where_sql = " AND ".join(where_clauses)
+        rows = conn.execute(
+            f"""
+            SELECT
+                d.id, d.contract_id, d.cdrl_number, d.title, d.deliverable_type,
+                d.due_date, d.submitted_date, d.accepted_date, d.status,
+                d.days_overdue, d.generated_by_tool, d.reviewer, d.notes,
+                c.contract_number, c.title AS contract_title, c.agency
+            FROM cpmp_deliverables d
+            JOIN cpmp_contracts c ON c.id = d.contract_id
+            WHERE {where_sql}
+            ORDER BY {order_col} ASC
+            """,
+            params,
+        ).fetchall()
+        conn.close()
+
+        deliverables = []
+        for r in rows:
+            d = dict(r)
+            due = d.get("due_date") or ""
+            if due and d.get("status") not in ("accepted",):
+                try:
+                    from datetime import date as _d2
+                    delta = (_d2.fromisoformat(due) - _d2.today()).days
+                    d["days_until_due"] = delta
+                    d["is_overdue"] = delta < 0
+                    if delta < 0:
+                        d["urgency"] = "overdue"
+                    elif delta <= 7:
+                        d["urgency"] = "critical"
+                    elif delta <= 14:
+                        d["urgency"] = "warning"
+                    else:
+                        d["urgency"] = "ok"
+                except Exception:
+                    d["days_until_due"] = None
+                    d["is_overdue"] = False
+                    d["urgency"] = "ok"
+            else:
+                d["days_until_due"] = None
+                d["is_overdue"] = False
+                d["urgency"] = "ok"
+            deliverables.append(d)
+
+        # Apply window filter in Python (avoids SQLite vs PostgreSQL date syntax differences)
+        if window == "overdue":
+            deliverables = [d for d in deliverables if d["is_overdue"]]
+        elif window in ("7", "14", "30"):
+            limit = int(window)
+            deliverables = [d for d in deliverables
+                            if d.get("days_until_due") is not None and 0 <= d["days_until_due"] <= limit]
+
+        # Sort in Python since we filtered post-query
+        if sort == "contract":
+            deliverables.sort(key=lambda d: d.get("contract_number") or "")
+        elif sort == "status":
+            deliverables.sort(key=lambda d: d.get("status") or "")
+        else:
+            deliverables.sort(key=lambda d: d.get("due_date") or "")
+
+        # Summary stats
+        overdue = sum(1 for d in deliverables if d["is_overdue"])
+        due_7 = sum(1 for d in deliverables if d.get("urgency") == "critical")
+        due_14 = sum(1 for d in deliverables if d.get("urgency") in ("critical", "warning"))
+        generated = sum(1 for d in deliverables if d.get("generated_by_tool"))
+
+        return jsonify({
+            "status": "ok",
+            "total": len(deliverables),
+            "summary": {
+                "overdue": overdue,
+                "due_in_7_days": due_7,
+                "due_in_14_days": due_14,
+                "generated_pct": round(generated / len(deliverables) * 100, 1) if deliverables else 0,
+            },
+            "deliverables": deliverables,
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/deliverables/auto-generate-portfolio", methods=["POST"])
+def auto_generate_portfolio_deliverables():
+    """POST /api/cpmp/deliverables/auto-generate-portfolio — Auto-generate CDRLs due within N days.
+
+    Body: { "days_ahead": 14 }
+    """
+    try:
+        from tools.govcon.cdrl_generator import generate_all_due
+
+        body = request.get_json(silent=True) or {}
+        days_ahead = int(body.get("days_ahead", 14))
+
+        conn = _get_db()
+        contracts = conn.execute(
+            "SELECT id, contract_number FROM cpmp_contracts WHERE status = 'active'"
+        ).fetchall()
+        conn.close()
+
+        results = []
+        total_generated = 0
+        for c in contracts:
+            try:
+                res = generate_all_due(c["id"], days_ahead)
+                generated = res.get("generated", 0)
+                total_generated += generated
+                results.append({
+                    "contract_id": c["id"],
+                    "contract_number": c["contract_number"],
+                    "generated": generated,
+                    "skipped": res.get("skipped", 0),
+                    "errors": res.get("errors", []),
+                })
+            except Exception as ex:
+                results.append({
+                    "contract_id": c["id"],
+                    "contract_number": c["contract_number"],
+                    "generated": 0,
+                    "error": str(ex),
+                })
+
+        return jsonify({
+            "status": "ok",
+            "contracts_processed": len(contracts),
+            "total_generated": total_generated,
+            "days_ahead": days_ahead,
+            "results": results,
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ── PMO Weekly Brief Archive ──────────────────────────────────────────────────
+
+
+@cpmp_api.route("/reports/list", methods=["GET"])
+def cpmp_list_pmo_reports():
+    """Return sorted list of PMO weekly brief HTML files from data/reports/."""
+    import re
+    from datetime import datetime
+
+    reports_dir = BASE_DIR / "data" / "reports"
+    reports = []
+    if reports_dir.exists():
+        for f in sorted(reports_dir.glob("pmo_weekly_*.html"), reverse=True):
+            m = re.search(r"pmo_weekly_(\d{4}-\d{2}-\d{2})\.html", f.name)
+            if m:
+                date_str = m.group(1)
+                try:
+                    label = datetime.strptime(date_str, "%Y-%m-%d").strftime("%b %d, %Y")
+                except ValueError:
+                    label = date_str
+                reports.append({"filename": f.name, "date": date_str, "label": label})
+    return jsonify({"reports": reports})
+
+
+@cpmp_api.route("/reports/content/<path:filename>", methods=["GET"])
+def cpmp_pmo_report_content(filename):
+    """Serve a single PMO weekly brief HTML for iframe embedding."""
+    import re
+
+    if not re.fullmatch(r"pmo_weekly_\d{4}-\d{2}-\d{2}\.html", filename):
+        return jsonify({"status": "error", "message": "Invalid filename"}), 400
+    report_path = BASE_DIR / "data" / "reports" / filename
+    if not report_path.exists():
+        return jsonify({"status": "error", "message": "Report not found"}), 404
+    content = report_path.read_text(encoding="utf-8")
+    resp = make_response(content)
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+    return resp
+
+
+@cpmp_api.route("/iqe-query", methods=["POST"])
+def cpmp_iqe_query():
+    """IQE NL-to-SQL for CPMP (Contract Portfolio Management) canvas."""
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import IQESyntaxError, parse
+    from tools.iqe.executor import execute_query
+    import tools.iqe.adapters.cpmp  # noqa: F401
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    collections = ["cpmp.contracts", "cpmp.deliverables", "cpmp.clins", "cpmp.cpars", "cpmp.evm"]
+    translation = nl_to_iqe(question, collections)
+    iqe_str = translation.get("iqe", "")
+    explanation = translation.get("explanation", "")
+
+    if not data.get("execute", True):
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+    try:
+        ast = parse(iqe_str)
+        rows = execute_query(ast, None)
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                        "results": rows, "row_count": len(rows)}), 200
+    except IQESyntaxError as exc:
+        return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+
+# ---------------------------------------------------------------------------
+# Initiative Budget Allocation Routes
+# Tier 1 (execution-ready) / Tier 2 (backup) prioritization with obligation tracking.
+# ---------------------------------------------------------------------------
+
+
+@cpmp_api.route("/budget-allocations", methods=["GET"])
+def list_budget_allocations():
+    """List initiative budget allocations with optional tier/fy/status filters."""
+    from tools.budget.initiative_allocator import (
+        list_allocations, AllocationTier, AllocationStatus,
+    )
+    tier = request.args.get("tier")
+    fy = request.args.get("fiscal_year", type=int)
+    status = request.args.get("status")
+    kwargs = {}
+    if tier in ("tier_1", "tier_2"):
+        kwargs["tier"] = AllocationTier(tier)
+    if fy is not None:
+        kwargs["fiscal_year"] = fy
+    if status in ("active", "depleted", "deferred", "cancelled"):
+        kwargs["status"] = AllocationStatus(status)
+    return jsonify({"ok": True, "allocations": list_allocations(**kwargs)})
+
+
+@cpmp_api.route("/budget-allocations", methods=["POST"])
+def create_budget_allocation():
+    """Create a new budget allocation for an initiative."""
+    from tools.budget.initiative_allocator import create_allocation, AllocationTier
+    data = request.get_json(silent=True) or {}
+    try:
+        tier = AllocationTier(data.get("tier", "tier_1"))
+        alloc = create_allocation(
+            initiative_code=data.get("initiative_code", ""),
+            title=data.get("title", ""),
+            tier=tier,
+            fiscal_year=int(data.get("fiscal_year", 0)),
+            allocated_usd=float(data.get("allocated_usd", 0.0)),
+            agency=data.get("agency", ""),
+            contract_id=data.get("contract_id"),
+            owner=data.get("owner", ""),
+            justification=data.get("justification", ""),
+        )
+        return jsonify({"ok": True, "allocation": alloc}), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>", methods=["GET"])
+def get_budget_allocation(allocation_id):
+    """Fetch a single budget allocation by ID."""
+    from tools.budget.initiative_allocator import get_allocation
+    try:
+        return jsonify({"ok": True, "allocation": get_allocation(allocation_id)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 404
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>", methods=["PUT"])
+def update_budget_allocation(allocation_id):
+    """Update mutable metadata (title, owner, allocated_usd, contract_id, etc)."""
+    from tools.budget.initiative_allocator import update_allocation
+    data = request.get_json(silent=True) or {}
+    try:
+        alloc = update_allocation(
+            allocation_id=allocation_id,
+            title=data.get("title"),
+            agency=data.get("agency"),
+            owner=data.get("owner"),
+            justification=data.get("justification"),
+            allocated_usd=data.get("allocated_usd"),
+            contract_id=data.get("contract_id"),
+        )
+        return jsonify({"ok": True, "allocation": alloc})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>", methods=["DELETE"])
+def cancel_budget_allocation(allocation_id):
+    """Soft-cancel an allocation (sets status=cancelled)."""
+    from tools.budget.initiative_allocator import delete_allocation
+    try:
+        return jsonify({"ok": True, "allocation": delete_allocation(allocation_id)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>/obligations", methods=["POST"])
+def record_budget_obligation(allocation_id):
+    """Record an obligation against an allocation. Blocks over-allocation."""
+    from tools.budget.initiative_allocator import record_obligation
+    data = request.get_json(silent=True) or {}
+    try:
+        amount = float(data.get("amount_usd", 0.0))
+        result = record_obligation(
+            allocation_id=allocation_id,
+            amount_usd=amount,
+            description=data.get("description", ""),
+            reference_id=data.get("reference_id"),
+            recorded_by=data.get("recorded_by"),
+        )
+        return jsonify({"ok": True, "allocation": result})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>/obligations", methods=["GET"])
+def list_budget_obligations(allocation_id):
+    """List all obligations for an allocation (append-only audit trail)."""
+    from tools.budget.initiative_allocator import list_obligations
+    return jsonify({"ok": True, "obligations": list_obligations(allocation_id)})
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>/transition-tier", methods=["POST"])
+def transition_budget_tier(allocation_id):
+    """Move an initiative between Tier 1 and Tier 2 with audit trail."""
+    from tools.budget.initiative_allocator import transition_tier, AllocationTier
+    data = request.get_json(silent=True) or {}
+    try:
+        target = AllocationTier(data.get("tier", "tier_1"))
+        result = transition_tier(
+            allocation_id=allocation_id,
+            new_tier=target,
+            reason=data.get("reason", ""),
+            actor=data.get("actor"),
+        )
+        return jsonify({"ok": True, "allocation": result})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@cpmp_api.route("/budget-allocations/<allocation_id>/history", methods=["GET"])
+def get_budget_allocation_history(allocation_id):
+    """Return audit history (creation, tier transitions, obligations)."""
+    from tools.budget.initiative_allocator import get_initiative_history
+    return jsonify({"ok": True, "history": get_initiative_history(allocation_id)})
+
+
+@cpmp_api.route("/budget-allocations/tier-summary", methods=["GET"])
+def get_budget_tier_summary():
+    """Aggregate allocated/obligated/available per tier for a fiscal year."""
+    from tools.budget.initiative_allocator import get_tier_summary
+    fy = request.args.get("fiscal_year", type=int)
+    return jsonify({"ok": True, "summary": get_tier_summary(fiscal_year=fy)})
+
+
+@cpmp_api.route("/budget-allocations/portfolio-status", methods=["GET"])
+def get_budget_portfolio_status():
+    """Portfolio-level budget status (warnings + overspend detection)."""
+    from tools.budget.initiative_allocator import get_portfolio_budget_status
+    fy = request.args.get("fiscal_year", type=int)
+    warn = request.args.get("warning_threshold", default=0.90, type=float)
+    crit = request.args.get("critical_threshold", default=0.98, type=float)
+    return jsonify({
+        "ok": True,
+        "status": get_portfolio_budget_status(
+            fiscal_year=fy, warning_threshold=warn, critical_threshold=crit,
+        ),
+    })

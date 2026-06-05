@@ -31,6 +31,95 @@ logger = get_logger("icdev.rag.query_classifier")
 # Constants
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/rag_config.yaml
+# under query_classifier.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_UNANSWERABLE_OVERLAP_THRESHOLD = 0.10  # overlap_ratio below this → unanswerable
+_MIN_QUERY_WORDS                = 3     # minimum distinct words to check unanswerability
+_HEURISTIC_CONFIDENCE_UNANSWERABLE = 0.65
+_HEURISTIC_CONFIDENCE_HIGH      = 0.80  # confidence for pattern-matched labels
+_HEURISTIC_CONFIDENCE_DEFAULT   = 0.50  # fallback when no pattern matches
+_HEURISTIC_PROMOTE_THRESHOLD    = 0.75  # minimum heuristic confidence to skip fallback
+_LLM_CONTEXT_CHARS              = 1500  # max context chars forwarded to LLM
+_LLM_TEMPERATURE                = 0.10
+_LLM_MAX_TOKENS                 = 200
+_LLM_CONFIDENCE                 = 0.90
+_BATCH_MAX_WORKERS              = 4
+_EMPTY_QUERY_CONFIDENCE         = 1.0
+
+
+def _compute_classification_thresholds(anomaly_cfg: "dict | None" = None) -> dict:
+    """Compute adaptive classification thresholds from historical query accuracy data.
+
+    Reads from rag_evaluation_results to calibrate the overlap_ratio threshold:
+    - If false-positive rate on 'unanswerable' is high → increase threshold (stricter)
+    - If false-negative rate is high → decrease threshold (more sensitive)
+
+    Falls back to module-level defaults when fewer than min_samples rows exist or
+    anomaly detection is disabled.
+    """
+    cfg = anomaly_cfg or {}
+    if not cfg.get("enabled", True):
+        return {
+            "unanswerable_threshold": cfg.get("fallback_overlap_threshold", _UNANSWERABLE_OVERLAP_THRESHOLD),
+            "heuristic_promote_threshold": cfg.get("fallback_promote_threshold", _HEURISTIC_PROMOTE_THRESHOLD),
+            "computed": False,
+        }
+
+    min_samples  = cfg.get("min_samples", 20)
+    fallback_ot  = cfg.get("fallback_overlap_threshold", _UNANSWERABLE_OVERLAP_THRESHOLD)
+    fallback_pt  = cfg.get("fallback_promote_threshold", _HEURISTIC_PROMOTE_THRESHOLD)
+    bounds       = cfg.get("adaptive_bounds", {})
+    ot_floor     = float(bounds.get("overlap_floor", 0.05))
+    ot_ceil      = float(bounds.get("overlap_ceil", 0.30))
+
+    conn = None
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT "
+            "SUM(CASE WHEN predicted_label = 'unanswerable' AND ground_truth_label != 'unanswerable' THEN 1 ELSE 0 END) * 1.0 "
+            "  / NULLIF(SUM(CASE WHEN predicted_label = 'unanswerable' THEN 1 ELSE 0 END), 0) AS fp_rate, "
+            "SUM(CASE WHEN predicted_label != 'unanswerable' AND ground_truth_label = 'unanswerable' THEN 1 ELSE 0 END) * 1.0 "
+            "  / NULLIF(SUM(CASE WHEN ground_truth_label = 'unanswerable' THEN 1 ELSE 0 END), 0) AS fn_rate, "
+            "COUNT(*) AS n "
+            "FROM rag_evaluation_results "
+            "WHERE predicted_label IS NOT NULL AND ground_truth_label IS NOT NULL"
+        ).fetchone()
+        if row:
+            n = row["n"] if isinstance(row, dict) else row[2]
+            if n and n >= min_samples:
+                fp_rate = float(row["fp_rate"] if isinstance(row, dict) else row[0]) or 0.0
+                fn_rate = float(row["fn_rate"] if isinstance(row, dict) else row[1]) or 0.0
+                # Too many false positives → tighten threshold (higher = fewer flags)
+                # Too many false negatives → loosen threshold (lower = more flags)
+                adjustment = (fp_rate - fn_rate) * 0.05
+                new_ot = max(ot_floor, min(ot_ceil, fallback_ot + adjustment))
+                return {
+                    "unanswerable_threshold": round(new_ot, 3),
+                    "heuristic_promote_threshold": fallback_pt,
+                    "computed": True,
+                    "n_samples": n,
+                    "fp_rate": round(fp_rate, 3),
+                    "fn_rate": round(fn_rate, 3),
+                }
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return {
+        "unanswerable_threshold": fallback_ot,
+        "heuristic_promote_threshold": fallback_pt,
+        "computed": False,
+    }
+
+
 TAXONOMY_LABELS: List[str] = ["fact_single", "summary", "reasoning", "unanswerable"]
 
 LABEL_DESCRIPTIONS: Dict[str, str] = {
@@ -114,10 +203,10 @@ def _heuristic_classify(query: str, context: str = "") -> Dict[str, Any]:
         context_words = set(re.findall(r"\b\w{4,}\b", context.lower()))
         overlap = query_words & context_words
         overlap_ratio = len(overlap) / max(len(query_words), 1)
-        if overlap_ratio < 0.1 and len(query_words) >= 3:
+        if overlap_ratio < _UNANSWERABLE_OVERLAP_THRESHOLD and len(query_words) >= _MIN_QUERY_WORDS:
             return {
                 "label": "unanswerable",
-                "confidence": 0.65,
+                "confidence": _HEURISTIC_CONFIDENCE_UNANSWERABLE,
                 "method": "heuristic",
                 "reasoning": (
                     f"Query keywords overlap with context is {overlap_ratio:.0%}, "
@@ -128,7 +217,7 @@ def _heuristic_classify(query: str, context: str = "") -> Dict[str, Any]:
     if _REASONING_PATTERNS.search(query_stripped):
         return {
             "label": "reasoning",
-            "confidence": 0.80,
+            "confidence": _HEURISTIC_CONFIDENCE_HIGH,
             "method": "heuristic",
             "reasoning": "Query contains reasoning/causal keywords (why, how does, explain, compare, etc.).",
         }
@@ -136,7 +225,7 @@ def _heuristic_classify(query: str, context: str = "") -> Dict[str, Any]:
     if _SUMMARY_PATTERNS.search(query_stripped):
         return {
             "label": "summary",
-            "confidence": 0.80,
+            "confidence": _HEURISTIC_CONFIDENCE_HIGH,
             "method": "heuristic",
             "reasoning": "Query contains summary/overview keywords (summarize, describe, list, overview, etc.).",
         }
@@ -144,14 +233,14 @@ def _heuristic_classify(query: str, context: str = "") -> Dict[str, Any]:
     if _FACT_SINGLE_PATTERNS.match(query_stripped):
         return {
             "label": "fact_single",
-            "confidence": 0.80,
+            "confidence": _HEURISTIC_CONFIDENCE_HIGH,
             "method": "heuristic",
             "reasoning": "Query starts with factual interrogative pattern (what is, who, when, where, how many, etc.).",
         }
 
     return {
         "label": "fact_single",
-        "confidence": 0.50,
+        "confidence": _HEURISTIC_CONFIDENCE_DEFAULT,
         "method": "heuristic",
         "reasoning": "No strong pattern match — defaulting to fact_single.",
     }
@@ -166,7 +255,7 @@ def _llm_classify(query: str, context: str = "") -> Optional[Dict[str, Any]]:
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
 
-        context_section = f"\n\nCONTEXT:\n{context[:1500]}" if context else ""
+        context_section = f"\n\nCONTEXT:\n{context[:_LLM_CONTEXT_CHARS]}" if context else ""
         user_content = (
             f"QUERY: {query}{context_section}\n\n"
             f"Classify into one of: {', '.join(TAXONOMY_LABELS)}.\n"
@@ -179,8 +268,8 @@ def _llm_classify(query: str, context: str = "") -> Optional[Dict[str, Any]]:
                 {"role": "system", "content": _LLM_CLASSIFY_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ],
-            temperature=0.1,
-            max_tokens=200,
+            temperature=_LLM_TEMPERATURE,
+            max_tokens=_LLM_MAX_TOKENS,
         )
 
         response = router.invoke("ft_pair_generation", request)
@@ -206,7 +295,7 @@ def _llm_classify(query: str, context: str = "") -> Optional[Dict[str, Any]]:
 
         return {
             "label": label,
-            "confidence": 0.90,
+            "confidence": _LLM_CONFIDENCE,
             "method": "llm",
             "reasoning": parsed.get("reasoning", "LLM classification."),
         }
@@ -237,7 +326,7 @@ def classify_query(query: str, context: str = "") -> Dict[str, Any]:
     if not query or not query.strip():
         return {
             "label": "unanswerable",
-            "confidence": 1.0,
+            "confidence": _EMPTY_QUERY_CONFIDENCE,
             "method": "default",
             "reasoning": "Empty query — cannot classify.",
         }
@@ -249,7 +338,7 @@ def classify_query(query: str, context: str = "") -> Dict[str, Any]:
 
     # Strategy 2: Heuristic (deterministic, air-gap safe)
     heuristic_result = _heuristic_classify(query, context)
-    if heuristic_result["confidence"] >= 0.75:
+    if heuristic_result["confidence"] >= _HEURISTIC_PROMOTE_THRESHOLD:
         return heuristic_result
 
     # Strategy 3: Default fallback
@@ -290,7 +379,7 @@ def classify_batch(
             c = item.get("context", "")
             return idx, classify_query(q, c)
 
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        with ThreadPoolExecutor(max_workers=_BATCH_MAX_WORKERS) as executor:
             futures = {executor.submit(_classify_indexed, i, item): i for i, item in enumerate(queries)}
             for future in as_completed(futures):
                 try:

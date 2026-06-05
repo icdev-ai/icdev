@@ -83,6 +83,7 @@ REFLEX_NAMES = [
     "academy_reflex",
     "e2e_runner",
     "log_triage",
+    "aidp_monitor",
 ]
 
 # Backward-compat aliases for module-level access used by other code

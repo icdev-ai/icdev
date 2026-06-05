@@ -162,6 +162,9 @@ _CANVAS_DEFS = [
     ("aiify_compat", "ICDEV_AIIFY_ENABLED", "tools.aiify.blueprint", "aiify_compat_bp"),
     ("dic", "ICDEV_DIC_ENABLED", "tools.document_intelligence.blueprint", "dic_bp"),
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
+    ("slides", "ICDEV_SLIDES_ENABLED", "tools.slides.blueprint", "slides_bp"),
+    ("ace", "ICDEV_ACE_ENABLED", "icdev.tools.ace.blueprint", "ace_bp"),
+    ("aisg", "ICDEV_AISG_ENABLED", "tools.aisg.blueprint", "bp"),
 ]
 
 _CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc"}
@@ -253,12 +256,72 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 risk_summary = get_portfolio_risk_summary().get("summary", {})
             except Exception:
                 risk_summary = {}
+
+            # Health matrix: per-contract dimension breakdown (fast DB-only calls)
+            health_matrix = []
+            try:
+                from tools.govcon.portfolio_manager import compute_contract_health
+                from tools.govcon.option_period_tracker import get_portfolio_countdown
+
+                def _dim_tier(score):
+                    if score is None:
+                        return "unknown"
+                    try:
+                        s = float(score)
+                    except (TypeError, ValueError):
+                        return "unknown"
+                    return "green" if s >= 0.75 else "yellow" if s >= 0.50 else "red"
+
+                for c in contracts:
+                    cid = c.get("id") or c.get("contract_id")
+                    if not cid:
+                        continue
+                    try:
+                        h = compute_contract_health(cid)
+                        dims = h.get("dimension_scores") or h.get("dimensions") or {}
+                        raw_score = h.get("health_score")
+                        # Normalize: score may be 0-1 or 0-100
+                        if raw_score is not None and raw_score <= 1.0:
+                            display_score = round(raw_score * 100)
+                        else:
+                            display_score = round(raw_score) if raw_score is not None else None
+                        health_matrix.append({
+                            "contract_id": cid,
+                            "contract_number": c.get("contract_number", "—"),
+                            "title": c.get("title", ""),
+                            "agency": c.get("agency", ""),
+                            "overall": h.get("health", "unknown"),
+                            "health_score": display_score,
+                            "evm": _dim_tier(dims.get("evm")),
+                            "deliverables": _dim_tier(dims.get("deliverables")),
+                            "cpars": _dim_tier(dims.get("cpars")),
+                            "funding": _dim_tier(dims.get("funding")),
+                            "negative_events": _dim_tier(dims.get("negative_events")),
+                        })
+                    except Exception:
+                        health_matrix.append({
+                            "contract_id": cid,
+                            "contract_number": c.get("contract_number", "—"),
+                            "title": c.get("title", ""),
+                            "agency": c.get("agency", ""),
+                            "overall": "unknown",
+                            "health_score": None,
+                            "evm": "unknown", "deliverables": "unknown",
+                            "cpars": "unknown", "funding": "unknown", "negative_events": "unknown",
+                        })
+
+                option_countdown = get_portfolio_countdown().get("options", [])
+            except Exception:
+                option_countdown = []
+
             return render_template(
                 "cpmp/portfolio.html",
                 portfolio=portfolio,
                 contracts=contracts,
                 upcoming_deliverables=upcoming,
                 risk_summary=risk_summary,
+                health_matrix=health_matrix,
+                option_countdown=option_countdown,
             )
         except Exception as e:
             import traceback
@@ -277,6 +340,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 contracts=[],
                 upcoming_deliverables=[],
                 risk_summary={},
+                health_matrix=[],
+                option_countdown=[],
                 error=str(e),
             )
 
@@ -493,6 +558,80 @@ def _register_govcon_pages(app: "Flask", _get_db):
             return render_template("404.html", message=f"Error: {e}"), 500
         finally:
             conn.close()
+
+    @app.route("/cpmp/deliverables")
+    def cpmp_deliverable_center_page():
+        """Deliverable Command Center — all deliverables across all active contracts."""
+        return render_template("cpmp/deliverable_center.html")
+
+    @app.route("/api/ai-brief/<canvas>")
+    def api_ai_brief(canvas):
+        """Return rendered AI brief banner HTML for a given canvas key."""
+        from flask import jsonify
+        try:
+            from tools.dashboard.components.ai_brief_banner import render_ai_brief
+            html_content = render_ai_brief(canvas, {})
+        except Exception as exc:
+            html_content = (
+                f'<aside class="ai-brief-banner card border-0 shadow-sm mb-3">'
+                f'<div class="card-body py-2 px-3 text-muted small">'
+                f'AI brief unavailable: {exc}'
+                f'</div></aside>'
+            )
+        return jsonify({"html": html_content, "canvas": canvas})
+
+    @app.route("/cpmp/reports")
+    @require_role("admin", "pm", "capture_mgr", "bd")
+    def cpmp_reports_page():
+        """CPMP Reports — exportable contract performance reports and analytics."""
+        try:
+            from tools.govcon.portfolio_manager import get_portfolio_summary
+
+            portfolio_data = get_portfolio_summary()
+            pf = portfolio_data.get("portfolio", {})
+            contracts = pf.get("contracts", [])
+            upcoming = pf.get("upcoming_deliverables", [])
+            portfolio = {
+                "total_contracts": pf.get("total_contracts", 0),
+                "active_contracts": pf.get("active_contracts", 0),
+                "total_value": pf.get("total_value", 0),
+                "burn_rate": pf.get("burn_rate_pct", 0),
+                "overdue_deliverables": pf.get("overdue_deliverables", 0),
+                "at_risk": pf.get("at_risk_contracts", 0),
+                "health_distribution": pf.get("health_distribution", {"green": 0, "yellow": 0, "red": 0}),
+            }
+            try:
+                from tools.govcon.risk_manager import get_portfolio_risk_summary
+
+                risk_summary = get_portfolio_risk_summary().get("summary", {})
+            except Exception:
+                risk_summary = {}
+            return render_template(
+                "cpmp/reports.html",
+                portfolio=portfolio,
+                contracts=contracts,
+                upcoming_deliverables=upcoming,
+                risk_summary=risk_summary,
+            )
+        except Exception as e:
+            import traceback
+
+            traceback.print_exc()
+            return render_template(
+                "cpmp/reports.html",
+                portfolio={
+                    "total_contracts": 0,
+                    "active_contracts": 0,
+                    "total_value": 0,
+                    "burn_rate": 0,
+                    "overdue_deliverables": 0,
+                    "health_distribution": {"green": 0, "yellow": 0, "red": 0},
+                },
+                contracts=[],
+                upcoming_deliverables=[],
+                risk_summary={},
+                error=str(e),
+            )
 
     @app.route("/proposals")
     def proposals_list_page():
@@ -2204,6 +2343,15 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("System Graph blueprint failed to register: %s", _exc)
 
+    # ---- ZTA LAC Simulator Blueprint (irad-lac-06 / irad-lac-07) ----
+    try:
+        from tools.zta.blueprint import create_zta_blueprint
+        _zta_bp = create_zta_blueprint()
+        app.register_blueprint(_zta_bp, url_prefix="/zta")
+        app.logger.info("ZTA LAC Simulator blueprint registered at /zta")
+    except Exception as _exc:
+        app.logger.warning("ZTA LAC Simulator blueprint failed to register: %s", _exc)
+
     # ---- GovLift Cloud Migration Tool ----
     try:
         from tools.govlift.blueprint import create_govlift_blueprint as _gv_factory
@@ -3249,12 +3397,16 @@ def create_app() -> Flask:
             "strategos":      ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
             "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
             "aiify":            ("tools.iqe.adapters.aiify", ["aiify.opportunities", "aiify.scans", "aiify.roadmaps", "aiify.posture"]),
+            "aisg":             ("tools.iqe.adapters.aisg",  ["aisg.roadmaps", "aisg.skills", "aisg.roi", "aisg.patterns"]),
             "dic":              ("tools.iqe.adapters.dic",   ["dic.drift_events", "dic.regen_queue", "dic.ssp_fragments"]),
             "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
             "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
             "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),
             "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
             "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
+            "slides":         ("tools.iqe.adapters.slides",            ["slides.decks", "slides.slides"]),
+            "cpmp":           ("tools.iqe.adapters.cpmp",              ["cpmp.contracts", "cpmp.deliverables", "cpmp.clins", "cpmp.cpars", "cpmp.evm"]),
+            "ace":            ("icdev.tools.iqe.adapters.ace",          ["ace.coworkers", "ace.sessions", "ace.suggestions"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
@@ -4519,6 +4671,7 @@ def create_app() -> Flask:
     def ai_transparency_page():
         """AI Transparency — OMB M-25-21, M-26-04, NIST AI 600-1, GAO-21-519SP (Phase 48, D307-D315)."""
         return render_template("ai_transparency.html")
+
 
     @app.route("/ai-accountability")
     def ai_accountability_page():

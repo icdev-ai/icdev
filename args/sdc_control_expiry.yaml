@@ -1,0 +1,31 @@
+# CUI // SP-CTI
+# SDC Security Control Expiry Reflex — configuration.
+# Read by tools/genesis/reflexes/sdc_control_expiry.py.
+
+schedule:
+  cadence_hours: 4
+
+thresholds:
+  # Static fallback warn threshold (days).  Used when too few data points exist
+  # for statistical anomaly detection (< min_rows_for_anomaly_detection).
+  warn_days_fallback: 90
+
+  # IQR-based anomaly detection: flag controls whose days-until-expiry fall
+  # below  Q1 - iqr_multiplier * IQR  (lower outliers).
+  iqr_multiplier: 1.5
+
+  # Minimum number of controls with a review date before statistical
+  # anomaly detection is attempted.  Below this the fallback is used.
+  min_rows_for_anomaly_detection: 5
+
+  # Always flag controls that are already past-due or expire within this
+  # many days regardless of the statistical threshold.
+  always_flag_days: 7
+
+llm:
+  # Set to false to disable Claude Haiku severity analysis entirely.
+  enabled: true
+  # Model used for severity triage.  Env var AIIFY_SDC_LLM_MODEL overrides.
+  model: claude-haiku-4-5-20251001
+  # Max controls sent to the LLM in one prompt.
+  max_controls_per_call: 20

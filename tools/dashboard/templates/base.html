@@ -159,6 +159,7 @@
                     <li class="nav-section-label">DevOps</li>
                     <li><a href="/projects">Projects</a></li>
                     <li><a href="/agents">Agents</a></li>
+                    <li><a href="/coworker/">Co-Worker Teams</a></li>
                     <li><a href="/kanban">Task Board</a></li>
                     <li><a href="/cicd">CI/CD</a></li>
                     <li><a href="/orchestration">Orchestration</a></li>
@@ -177,10 +178,23 @@
 
             <!-- ── Build ─────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/chat','/dev-profiles','/translations','/finetune','/diagrams','/ai-wizard','/ai-patterns','/connector-forge'] %}active{% endif %}">Build ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/chat','/dev-profiles','/translations','/finetune','/diagrams','/connector-forge','/slides'] or request.path.startswith('/ai-') or request.path in ['/dashboard/compliance-view','/dashboard/executive-view','/dashboard/pm-view'] %}active{% endif %}">Build ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/chat">Chat</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">AI Enablement</li>
                     <li><a href="/ai-wizard">AI Strategy Wizard</a></li>
+                    <li><a href="/ai-patterns">AI Pattern Library</a></li>
+                    <li><a href="/ai-builder">Visual Agent Builder</a></li>
+                    <li><a href="/ai-learning">Learning Paths</a></li>
+                    <li><a href="/ai-roi">AI ROI Dashboard</a></li>
+                    <li><a href="/ai-skills">Skills Tracker</a></li>
+                    <li><a href="/ai-handoff">Knowledge Handoff</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Role Views</li>
+                    <li><a href="/dashboard/executive-view">CIO / Executive</a></li>
+                    <li><a href="/dashboard/compliance-view">Compliance Officer</a></li>
+                    <li><a href="/dashboard/pm-view">Product Manager</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">Dev Tools</li>
                     <li><a href="/dev-profiles">Dev Profiles</a></li>
@@ -188,7 +202,9 @@
                     <li><a href="/diagrams">Diagrams</a></li>
                     <li><a href="/connector-forge">Connector Forge</a></li>
                     <li><a href="/translations">Translations</a></li>
-                    <li><a href="/ai-patterns">AI Pattern Library</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Presentations</li>
+                    <li><a href="/slides">Slide Deck Generator</a></li>
                 </ul>
             </li>
 
@@ -404,7 +420,7 @@
 
             <!-- ── Compliance ────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/oscal','/prod-audit','/ai-transparency','/ai-accountability','/sbd','/cato','/compliance-debt','/ato-package','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost','/provenance','/traces','/xai'] or request.path.startswith('/security') or request.path.startswith('/security/zig') %}active{% endif %}">Compliance ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/oscal','/prod-audit','/ai-transparency','/ai-accountability','/sbd','/cato','/compliance-debt','/ato-package','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost','/provenance','/traces','/xai'] or request.path.startswith('/security') or request.path.startswith('/security/zig') or request.path.startswith('/zta') %}active{% endif %}">Compliance ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li class="nav-section-label">Risk &amp; ATO</li>
                     <li><a href="/poam">POA&amp;M Findings</a></li>
@@ -419,6 +435,7 @@
                     <li><a href="/security/zig/phase" style="color:#aaa;">&#x1f4c5; Phase Tracker</a></li>
                     <li><a href="/security/zig/assessment" style="color:#aaa;">&#x1f4ca; Assessment</a></li>
                     <li><a href="/security/zig/roadmap" style="color:#aaa;">&#x1f5fa; FY2027 Roadmap</a></li>
+                    <li><a href="/zta/lac-simulator" style="color:#aaa;">&#x1f512; LAC / ECI / COI Simulator</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">Security</li>
                     <li><a href="/security/" style="color:#e94560;">Security Canvas</a></li>
@@ -498,7 +515,7 @@
 
             <!-- ── Platforms ─────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/fathomdesk','/fathomdesk/trap-events','/news','/options','/analysis','/machine-momentum','/quality-scores','/genesis','/oracle','/proposals','/govcon'] or '/geosigint' in request.path or '/gameday' in request.path or '/academy' in request.path or '/info-ops' in request.path %}active{% endif %}">Platforms ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/fathomdesk','/fathomdesk/trap-events','/news','/options','/analysis','/machine-momentum','/quality-scores','/genesis','/oracle','/proposals','/govcon','/cpmp'] or '/geosigint' in request.path or '/gameday' in request.path or '/academy' in request.path or '/info-ops' in request.path or request.path.startswith('/cpmp/') %}active{% endif %}">Platforms ▾</a>
                 <ul class="nav-dropdown-menu">
                     {% if not airgap_mode %}
                     <li class="nav-section-label">Market &amp; AI</li>
@@ -527,6 +544,8 @@
                     <li class="nav-section-label">GovCon</li>
                     <li><a href="/proposals">Proposals</a></li>
                     <li><a href="/govcon">Intelligence</a></li>
+                    <li><a href="/cpmp">Program Mgmt (CPMP)</a></li>
+                    <li><a href="/cpmp/deliverables">All Deliverables</a></li>
                     {% endif %}
                     {% if gameday_enabled or academy_enabled %}
                     <li class="nav-dropdown-divider"></li>
@@ -764,11 +783,7 @@
                 .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
                 .then(function(data) {
                     if (loading) loading.style.display = 'none';
-                    if (content) {
-                        content.innerHTML = typeof data.html === 'string'
-                            ? data.html
-                            : '<pre>' + (data.explanation || data.text || JSON.stringify(data, null, 2)) + '</pre>';
-                    }
+                    if (content) content.innerHTML = renderExplanation(data);
                 })
                 .catch(function() {
                     if (loading) loading.style.display = 'none';
@@ -878,6 +893,7 @@
 
         var PATH_CANVAS = [
             [/^\/network|^\/twin/, 'ndc'],
+            [/^\/zta/, 'zta'],
             [/^\/security/, 'sdc'],
             [/^\/devops/, 'pdc'],
             [/^\/data/, 'ddc'],
@@ -911,6 +927,11 @@
             [/^\/mission-canvas/, 'mission_canvas'],
             [/^\/proposals/, 'govcon'],
             [/^\/govcon/, 'govcon'],
+            [/^\/cpmp\/deliverables/, 'govcon'],
+            [/^\/cpmp/, 'govcon'],
+            [/^\/slides/, 'slides'],
+            [/^\/coworker/, 'ace'],
+            [/^\/ai-|^\/dashboard\/.*-view/, 'aisg'],
         ];
 
         function detectCanvas() {

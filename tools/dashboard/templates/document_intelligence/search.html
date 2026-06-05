@@ -3,6 +3,28 @@
 {% block content %}
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
 
+<!-- Footnote Attribution Popover -->
+<style>
+.aidp-popover {
+  display:none;position:fixed;z-index:9999;
+  background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;
+  padding:12px 15px;min-width:320px;max-width:420px;
+  box-shadow:0 6px 24px rgba(0,0,0,.6);font-size:11px;
+}
+.aidp-popover.visible { display:block; }
+.aidp-popover-row { display:flex;align-items:center;gap:8px;margin-bottom:6px;line-height:1.4; }
+.aidp-popover-row:last-child { margin-bottom:0; }
+.aidp-footnote {
+  display:inline-flex;align-items:center;justify-content:center;
+  width:16px;height:16px;border-radius:3px;
+  background:#0f3460;color:#7ab3f0;font-size:10px;font-weight:700;
+  cursor:pointer;vertical-align:super;margin-left:4px;line-height:1;
+  border:1px solid #1e3a6e;user-select:none;
+}
+.aidp-footnote:hover { background:#1a4a80;border-color:#4f8ef7; }
+</style>
+<div id="aidp-popover" class="aidp-popover" role="tooltip" aria-label="Attribution Details"></div>
+
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
   <div>
     <h2 style="margin:0;color:#eaeaea;font-size:20px;">🔍 Search &amp; Chat</h2>
@@ -117,6 +139,64 @@ function submitQuery() {
   else runChat(query);
 }
 
+// ── Footnote popover (AIDP attribution) ──────────────────────────────────────
+var _popover = null;
+var _popoverTimer = null;
+var _resultMeta = {};
+
+async function _sha256hex(text) {
+  try {
+    var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  } catch(e) { return null; }
+}
+
+function _showPopover(ev, meta) {
+  if (!_popover) _popover = document.getElementById('aidp-popover');
+  clearTimeout(_popoverTimer);
+  var clf = meta.classification || 'CUI';
+  var clfColor = clf === 'SECRET' ? '#ef4444' : clf === 'TOP SECRET' ? '#f97316' : '#e94560';
+  var pct = meta.score !== undefined ? (meta.score * 100).toFixed(1) + '%' : '—';
+  var sha = meta.sha256 || meta.content_sha256 || '—';
+  var archiveHref = meta.source_uri
+    ? '<a href="' + escHtml(meta.source_uri) + '" target="_blank" style="color:#4f8ef7;text-decoration:none;">Open source ↗</a>'
+    : meta.doc_id
+      ? '<a href="/document-intelligence/doc/' + escHtml(meta.doc_id) + '" style="color:#4f8ef7;text-decoration:none;">View document ↗</a>'
+      : '<span style="color:#5a7aa0;">—</span>';
+  _popover.innerHTML =
+    '<div style="color:#7ab3f0;font-size:12px;font-weight:700;margin-bottom:8px;border-bottom:1px solid #1a3560;padding-bottom:6px;">📎 Attribution</div>' +
+    '<div class="aidp-popover-row"><span style="color:#5a7aa0;min-width:90px;">SHA-256</span>' +
+    '<code data-testid="aidp-sha256" style="color:#86efac;font-size:10px;word-break:break-all;background:#060f1e;padding:2px 5px;border-radius:3px;">' + escHtml(sha) + '</code></div>' +
+    '<div class="aidp-popover-row"><span style="color:#5a7aa0;min-width:90px;">Classification</span>' +
+    '<span data-testid="aidp-classification" style="background:#2a0a14;color:' + clfColor + ';padding:2px 8px;border-radius:3px;font-weight:600;">' + escHtml(clf) + '</span></div>' +
+    '<div class="aidp-popover-row"><span style="color:#5a7aa0;min-width:90px;">Attribution</span>' +
+    '<span data-testid="aidp-attribution" style="color:#a8c8e0;">' + escHtml(pct) + '</span></div>' +
+    '<div class="aidp-popover-row"><span style="color:#5a7aa0;min-width:90px;">Archive</span>' +
+    '<span data-testid="aidp-archive">' + archiveHref + '</span></div>';
+  _popover.classList.add('visible');
+  var vw = window.innerWidth, vh = window.innerHeight;
+  var x = ev.clientX + 14, y = ev.clientY + 10;
+  if (x + 430 > vw) x = ev.clientX - 430;
+  if (y + 160 > vh) y = ev.clientY - 160;
+  _popover.style.left = Math.max(4, x) + 'px';
+  _popover.style.top = Math.max(4, y) + 'px';
+}
+
+function _hidePopover(delay) {
+  _popoverTimer = setTimeout(function() {
+    if (_popover) _popover.classList.remove('visible');
+  }, delay || 300);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var p = document.getElementById('aidp-popover');
+  if (p) {
+    p.addEventListener('mouseenter', function() { clearTimeout(_popoverTimer); });
+    p.addEventListener('mouseleave', function() { _hidePopover(200); });
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 function runSearch(query) {
   var collection = document.getElementById('collection-filter').value.trim();
   var results = document.getElementById('search-results');
@@ -131,26 +211,57 @@ function runSearch(query) {
         results.innerHTML = '<p style="color:#5a7aa0;padding:12px 0;">No results found. Try uploading documents or broadening your query.</p>';
         return;
       }
-      results.innerHTML = data.results.map(function(r) {
+      _resultMeta = {};
+      results.innerHTML = data.results.map(function(r, idx) {
+        var fnId = 'fn-' + idx;
+        _resultMeta[fnId] = {
+          content_sha256: r.content_sha256 || '',
+          classification: r.citation.classification || 'CUI',
+          score: r.score,
+          source_uri: r.citation.source_uri || '',
+          doc_id: r.doc_id || '',
+          _content: r.content || ''
+        };
         var terms = r.matched_terms && r.matched_terms.length
           ? '<div style="margin-top:6px;font-size:11px;color:#5a7aa0;">Matched: ' + r.matched_terms.join(', ') + '</div>' : '';
         var kg = r.kg_path && r.kg_path.length
           ? '<details style="margin-top:6px;"><summary style="color:#5a7aa0;font-size:11px;cursor:pointer;">Why this result?</summary><div style="color:#7a8cb0;font-size:11px;padding:4px 0;">' + r.kg_path.join(' → ') + '</div></details>' : '';
+        var footnoteBtn = '<span class="aidp-footnote" data-fn="' + fnId + '" data-testid="aidp-footnote-' + idx + '" ' +
+          'aria-label="Attribution details" role="button" tabindex="0">' + (idx + 1) + '</span>';
         return '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;margin-bottom:12px;">' +
           '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px;">' +
-          '<div style="font-size:13px;color:#eaeaea;font-weight:600;">' + (r.doc_title || r.doc_id || 'Document') + '</div>' +
+          '<div style="font-size:13px;color:#eaeaea;font-weight:600;">' + escHtml(r.doc_title || r.doc_id || 'Document') + '</div>' +
           '<span style="background:#1e293b;color:#94a3b8;font-size:10px;padding:2px 7px;border-radius:3px;">' + (r.score ? (r.score * 100).toFixed(0) + '% match' : '') + '</span>' +
           '</div>' +
-          '<div style="color:#a8c8e0;font-size:12px;line-height:1.6;">' + (r.content || '').substring(0, 400) + (r.content && r.content.length > 400 ? '…' : '') + '</div>' +
+          '<div style="color:#a8c8e0;font-size:12px;line-height:1.6;">' +
+          escHtml((r.content || '').substring(0, 400)) + (r.content && r.content.length > 400 ? '…' : '') +
+          footnoteBtn + '</div>' +
           '<div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
           '<span style="background:#0a2040;color:#4f8ef7;font-size:10px;padding:2px 8px;border-radius:3px;border:1px solid #1a3a60;">' +
-          '📎 ' + (r.citation.doc_title || r.citation.doc_id || 'doc') +
+          '📎 ' + escHtml(r.citation.doc_title || r.citation.doc_id || 'doc') +
           (r.citation.page ? ' · p.' + r.citation.page : '') +
           (r.citation.section ? ' · ' + r.citation.section : '') +
           '</span>' +
-          '<span style="background:#1e293b;color:#e94560;font-size:10px;padding:2px 6px;border-radius:3px;">' + (r.citation.classification || 'CUI') + '</span>' +
+          '<span style="background:#1e293b;color:#e94560;font-size:10px;padding:2px 6px;border-radius:3px;">' + escHtml(r.citation.classification || 'CUI') + '</span>' +
           '</div>' + terms + kg + '</div>';
       }).join('');
+
+      // Pre-compute SHA-256 for each result (async) and wire hover events
+      var _fnKeys = Object.keys(_resultMeta);
+      Promise.all(_fnKeys.map(function(fnId) {
+        var meta = _resultMeta[fnId];
+        return _sha256hex(meta._content || fnId).then(function(hex) {
+          if (hex) meta.sha256 = hex;
+        });
+      })).catch(function() {});
+
+      document.querySelectorAll('.aidp-footnote').forEach(function(btn) {
+        var fnId = btn.getAttribute('data-fn');
+        btn.addEventListener('mouseenter', function(ev) { _showPopover(ev, _resultMeta[fnId]); });
+        btn.addEventListener('mouseleave', function() { _hidePopover(300); });
+        btn.addEventListener('focus', function(ev) { _showPopover(ev, _resultMeta[fnId]); });
+        btn.addEventListener('blur', function() { _hidePopover(300); });
+      });
     })
     .catch(function() { results.innerHTML = '<p style="color:#f87171;">Search failed. Check that documents have been ingested.</p>'; });
 }

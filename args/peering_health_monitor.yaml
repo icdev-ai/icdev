@@ -1,0 +1,28 @@
+# CUI // SP-CTI
+# Peering Health Monitor — adaptive threshold configuration
+# All static values here serve as YAML-level fallbacks.
+# When anomaly_detection.enabled=true, thresholds are computed from live peer
+# distribution (IQR method) and optionally calibrated by Claude Haiku.
+
+stale_threshold_days: 7          # fallback: days before a peer sync is considered stale
+high_traffic_ratio_threshold: 0.5 # fallback: traffic_ratio above which RPKI is re-validated
+
+anomaly_detection:
+  enabled: true
+  min_peers_for_adaptive: 5       # minimum active peers needed for statistical computation
+
+  stale_days:
+    iqr_multiplier: 1.5           # upper fence = Q3 + multiplier * IQR
+    floor_days: 3                 # minimum allowable adaptive threshold (days)
+    ceiling_days: 30              # maximum allowable adaptive threshold (days)
+
+  traffic_ratio:
+    iqr_multiplier: 0.75          # tighter fence for traffic anomalies
+    floor: 0.2
+    ceiling: 0.9
+
+  llm:
+    enabled: true
+    model: "claude-haiku-4-5-20251001"
+    max_tokens: 256
+    temperature: 0.0

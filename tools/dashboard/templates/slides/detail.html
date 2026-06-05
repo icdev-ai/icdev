@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ deck.title }} - Slides - ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+<div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><a href="/slides">Slide Decks</a><span class="separator">/</span><span>{{ deck.title | truncate(50) }}</span></div>
+
+<div class="page-header" style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+    <div>
+        <h1>{{ deck.title }}</h1>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:6px;">
+            <span class="badge badge-info">{{ deck.deck_type | replace('_', ' ') | title }}</span>
+            <span class="badge">{{ deck.theme | replace('_', ' ') | title }}</span>
+            {% if deck.status == 'completed' or deck.status == 'auto' %}
+            <span class="badge badge-success">{{ deck.status | title }}</span>
+            {% elif deck.status == 'failed' %}
+            <span class="badge badge-danger">Failed</span>
+            {% else %}
+            <span class="badge badge-warning">{{ deck.status | title }}</span>
+            {% endif %}
+            <span style="color:var(--text-secondary); font-size:13px;">{{ deck.slide_count }} slides</span>
+        </div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        {% if deck.status in ('completed', 'auto') %}
+        <a href="/slides/api/{{ deck.deck_id }}/download" class="btn btn-primary">↓ Download PPTX</a>
+        {% endif %}
+        <a href="/slides/new" class="btn btn-secondary">+ New Deck</a>
+    </div>
+</div>
+
+{% if deck.error_message %}
+<div class="alert alert-danger" style="margin-bottom:20px;">
+    <strong>Generation Error:</strong> {{ deck.error_message }}
+</div>
+{% endif %}
+
+<!-- Slide Preview Grid -->
+<div style="margin-bottom:24px;">
+    <h3 style="margin-bottom:16px;">Slides ({{ slides | length }})</h3>
+
+    {% if slides %}
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px,1fr)); gap:16px;">
+        {% for slide in slides %}
+        <div class="slide-card" id="slide-{{ slide.slide_id }}"
+             style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; overflow:hidden;">
+
+            <!-- Slide header bar (themed) -->
+            <div style="background:#0A1628; padding:12px 16px; border-bottom:2px solid #C8A951; display:flex; align-items:center; justify-content:space-between;">
+                <span style="color:#C8A951; font-weight:700; font-size:13px;">
+                    {{ loop.index }}. {{ slide.slide_type | upper }}
+                </span>
+                <span style="color:#E0E6F0; font-size:11px;">
+                    {% if slide.image_path %}<span title="Has image">🖼</span>{% endif %}
+                </span>
+            </div>
+
+            <!-- Slide image (if generated) -->
+            {% if slide.image_path and slide.image_path | e %}
+            <div style="background:#0A1628; text-align:center; padding:8px;">
+                <img src="/slides/api/image?path={{ slide.image_path | urlencode }}"
+                     alt="Slide {{ loop.index }} visual"
+                     style="max-width:100%; max-height:160px; object-fit:cover; border-radius:4px;"
+                     onerror="this.parentElement.style.display='none'">
+            </div>
+            {% endif %}
+
+            <div style="padding:14px 16px;">
+                <div style="font-weight:700; font-size:15px; margin-bottom:10px; color:var(--text-primary);">
+                    {{ slide.title }}
+                </div>
+                {% if slide.bullets %}
+                <ul style="margin:0; padding-left:18px; font-size:13px; color:var(--text-secondary); line-height:1.7;">
+                    {% for bullet in slide.bullets[:5] %}
+                    <li>{{ bullet }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+                {% if slide.speaker_notes %}
+                <details style="margin-top:10px;">
+                    <summary style="font-size:12px; color:var(--text-secondary); cursor:pointer;">Speaker notes</summary>
+                    <div style="font-size:12px; color:var(--text-secondary); margin-top:6px; font-style:italic; padding:8px; background:var(--bg-primary); border-radius:4px;">
+                        {{ slide.speaker_notes }}
+                    </div>
+                </details>
+                {% endif %}
+            </div>
+
+            <!-- HITL Revision UI -->
+            <div style="padding:0 16px 14px;" class="revision-panel" id="revise-panel-{{ slide.slide_id }}">
+                <div style="display:flex; gap:6px; margin-top:8px;">
+                    <input type="text" class="form-control form-control-sm"
+                           id="feedback-{{ slide.slide_id }}"
+                           placeholder="Revision feedback…"
+                           style="font-size:12px;">
+                    <button class="btn btn-sm btn-secondary"
+                            onclick="reviseSlide({{ deck.deck_id }}, {{ slide.slide_id }})">
+                        Revise
+                    </button>
+                </div>
+                <div id="revise-status-{{ slide.slide_id }}" style="font-size:11px; color:var(--text-secondary); margin-top:4px; display:none;"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="padding:32px; text-align:center; color:var(--text-secondary);">
+        No slides found for this deck.
+    </div>
+    {% endif %}
+</div>
+
+<!-- IQE Query Widget -->
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+async function reviseSlide(deckId, slideId) {
+    var feedback = document.getElementById('feedback-' + slideId).value.trim();
+    if (!feedback) return;
+    var statusEl = document.getElementById('revise-status-' + slideId);
+    statusEl.textContent = 'Revising…';
+    statusEl.style.display = '';
+    try {
+        var resp = await fetch('/slides/api/' + deckId + '/revise', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({slide_id: slideId, feedback: feedback}),
+        });
+        var data = await resp.json();
+        if (data.slide) {
+            statusEl.textContent = '✓ Revised — refresh to see changes.';
+            document.getElementById('feedback-' + slideId).value = '';
+        } else {
+            statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+        }
+    } catch(err) {
+        statusEl.textContent = 'Network error: ' + err.message;
+    }
+}
+</script>
+{% endblock %}

@@ -50,3 +50,82 @@ routing:
   kanban_task_due: [telegram]          # Kanban task activated
   kanban_task_done: [telegram]         # Kanban task completed
   test: [slack, telegram]              # For --test flag
+
+# ── Report Service Anomaly Detection (aiify refactor) ────────────────────────
+report_service:
+  anomaly_detection:
+    enabled: true
+    min_samples: 20
+    sigma_fraction: 0.5      # threshold = sigma_fraction * std_dev of historical scores
+    fallback_regression_pts: 2.0
+    adaptive_bounds:
+      regression_floor: 0.5
+      regression_ceil: 10.0
+    # Operational limits — tunable without code changes
+    narrative_context_chars: 1500
+    narrative_max_tokens: 512
+    narrative_temperature: 0.3
+    gate_rows_limit: 5
+    top_opps_roadmap_limit: 10
+    top_opps_scan_limit: 5
+    module_rows_limit: 10
+    summarise_findings_count: 3
+
+# ── Alert Service Anomaly Detection ──────────────────────────────────────────
+alert_service:
+  anomaly_detection:
+    enabled: true
+    min_samples: 15
+    fallback_days_threshold: 14
+    adaptive_bounds:
+      threshold_floor: 3
+      threshold_ceil: 60
+    narrative_max_tokens: 512
+    narrative_temperature: 0.3
+    cat1_digest_limit: 20
+    stig_digest_limit: 20
+    poam_auto_due_days: 90
+    digest_days_window: 7
+
+# ── Digest Service Anomaly Detection ─────────────────────────────────────────
+digest_service:
+  anomaly_detection:
+    narrative_max_tokens: 512
+    narrative_temperature: 0.3
+    kanban_done_limit: 5
+    oracle_top_preds_limit: 10
+    aiify_top_opps_limit: 10
+    aiify_scan_limit: 10
+    agent_errors_limit: 10
+    zig_gaps_limit: 10
+    audit_events_limit: 20
+    poam_days_ahead: 30
+    audit_since_hours: 24
+
+# ── Handler Service Anomaly Detection ────────────────────────────────────────
+handler_service:
+  anomaly_detection:
+    narrative_max_tokens: 512
+    narrative_temperature: 0.3
+    task_audit_history_limit: 3
+    canvas_assessment_limit: 1
+    genesis_phase_limit: 3
+    scan_top_opps_limit: 5
+    roadmap_top_opps_limit: 5
+    supply_chain_vulns_limit: 5
+    agent_errors_limit: 5
+    agent_metrics_limit: 10
+    cmmc_gaps_limit: 10
+
+# ── Event Service Anomaly Detection ──────────────────────────────────────────
+event_service:
+  anomaly_detection:
+    narrative_max_tokens: 512
+    narrative_temperature: 0.3
+    task_audit_limit: 5
+    genesis_reflex_limit: 3
+    aiify_top_opps_limit: 5
+    kanban_digest_limit: 20
+    genesis_digest_limit: 10
+    oracle_digest_limit: 10
+    oracle_horizon_fallback: 24

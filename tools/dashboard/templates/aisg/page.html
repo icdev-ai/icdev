@@ -85,6 +85,17 @@
   <div id="wizard-error" class="alert alert-danger" style="display:none;margin-top:1rem;"></div>
 </div>
 
+{# ── IQE natural-language query widget (AISG collections) ── #}
+{% set iqe_canvas = "aisg" %}
+{% set iqe_api_route = "/api/aisg/iqe-query" %}
+{% set iqe_title = "AISG IQE — ask your AI adoption data" %}
+{% set iqe_examples = [
+  {"label": "ROI hours saved", "query": "show ROI hours saved this month"},
+  {"label": "Skill usage", "query": "list skill usage by maturity band"},
+  {"label": "Deployed patterns", "query": "which AI patterns are deployed"}
+] %}
+{% include "includes/iqe_query_widget.html" ignore missing %}
+
 <script>
 document.getElementById('wizard-form').addEventListener('submit', async function(e) {
   e.preventDefault();

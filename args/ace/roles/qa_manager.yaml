@@ -1,0 +1,29 @@
+role_id: qa_manager
+display_name: QA Manager
+description: Quality assurance manager that designs test plans, reviews coverage, and gates releases on passing thresholds.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+  - review_requirements
+  - design_test_plan
+  - run_test_suite
+  - analyze_coverage
+  - report_defects
+  - approve_release
+communication:
+  protocol: a2a
+  listen_topics:
+    - task.completed
+    - pr.ready
+  emit_topics:
+    - qa.approved
+    - qa.rejected
+    - defect.created
+llm_function: test_generation
+tool_permissions:
+  - Read
+  - Bash
+  - Grep
+genesis_reflex: test

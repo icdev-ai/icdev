@@ -25,6 +25,65 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from proposal_genesis_config.yaml
+# under reflexes.publish.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_MIN_QUALITY_SCORE      = 70.0  # Minimum overall_score to qualify for publication
+_MAX_DRAFTS_PER_RUN     = 5     # Max publishable drafts processed per run
+_MAX_KB_BLOCKS          = 5     # Max knowledge-base blocks fetched per opportunity
+_MAX_CAPABILITIES_SHOWN = 8     # Max capabilities listed in case-study body
+_MAX_KB_BLOCKS_USED     = 3     # Max KB blocks included in "Technical Depth" section
+_KB_BLOCK_SUMMARY_CHARS = 200   # Max chars used as block summary
+_DEFAULT_RELEVANCE_SCORE = 0.80 # Default relevance score for pulse-proposal links
+
+
+def _compute_quality_publish_threshold(anomaly_cfg: "dict | None" = None) -> float:
+    """Compute the minimum quality score for publication from historical distribution.
+
+    Uses mean - sigma*std of approved-draft overall_score so the threshold tracks
+    the real quality distribution rather than a static cut-off.
+    Falls back to _MIN_QUALITY_SCORE when < min_samples rows.
+    """
+    cfg = anomaly_cfg or {}
+    if not cfg.get("enabled", True):
+        return float(cfg.get("fallback_min_quality_score", _MIN_QUALITY_SCORE))
+
+    min_samples  = cfg.get("min_samples", 15)
+    sigma        = cfg.get("sigma_multiplier", 1.0)
+    fallback     = float(cfg.get("fallback_min_quality_score", _MIN_QUALITY_SCORE))
+    bounds       = cfg.get("adaptive_bounds", {})
+    score_floor  = float(bounds.get("quality_floor", 50.0))
+
+    import math
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT AVG(overall_score) AS mean_s, "
+            "AVG(overall_score * overall_score) - AVG(overall_score) * AVG(overall_score) AS var_s, "
+            "COUNT(*) AS n "
+            "FROM pg_proposal_quality_scores "
+            "WHERE overall_score IS NOT NULL"
+        ).fetchone()
+        if row:
+            n = row["n"] if isinstance(row, dict) else row[2]
+            if n and n >= min_samples:
+                mean_s = float(row["mean_s"] if isinstance(row, dict) else row[0])
+                var_s  = max(0.0, float(row["var_s"] if isinstance(row, dict) else row[1]))
+                std_s  = math.sqrt(var_s)
+                threshold = max(score_floor, mean_s - sigma * std_s)
+                return round(threshold, 1)
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return fallback
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -39,12 +98,12 @@ def _generate_id(prefix: str = "pg") -> str:
 # ---------------------------------------------------------------------------
 
 
-def _get_publishable_drafts(limit: int = 5) -> List[Dict]:
+def _get_publishable_drafts(limit: int = _MAX_DRAFTS_PER_RUN, min_quality: float = _MIN_QUALITY_SCORE) -> List[Dict]:
     """Find approved proposal drafts that haven't been published to Pulse yet.
 
     Criteria:
       - Draft status = 'approved' (human-reviewed)
-      - Quality score >= 70 (WriteGuard passed)
+      - Quality score >= min_quality (WriteGuard passed; computed from history)
       - Not already linked to a Pulse article
     """
     conn = get_connection()
@@ -70,12 +129,12 @@ def _get_publishable_drafts(limit: int = 5) -> List[Dict]:
                 AND ppl.opportunity_id = psd.opportunity_id
                 AND ppl.link_type = 'cdrl_to_case_study'
             WHERE psd.status = 'approved'
-            AND (pqs.overall_score >= 70 OR pqs.overall_score IS NULL)
+            AND (pqs.overall_score >= ? OR pqs.overall_score IS NULL)
             AND ppl.id IS NULL
             ORDER BY pqs.overall_score DESC, psd.created_at DESC
             LIMIT ?
         """,
-            (limit,),
+            (min_quality, limit),
         ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
@@ -99,9 +158,9 @@ def _get_knowledge_blocks(opportunity_id: str) -> List[Dict]:
                 WHERE opportunity_id = ?
             )
             ORDER BY usage_count DESC
-            LIMIT 5
+            LIMIT ?
         """,
-            (opportunity_id,),
+            (opportunity_id, _MAX_KB_BLOCKS),
         ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
@@ -155,20 +214,19 @@ def _generate_case_study(draft: Dict, kb_blocks: List[Dict]) -> Dict[str, str]:
     # Capabilities
     if capabilities:
         sections.append("## Key Capabilities\n")
-        for cap in capabilities[:8]:
+        for cap in capabilities[:_MAX_CAPABILITIES_SHOWN]:
             sections.append(f"- {cap}")
         sections.append("")
 
     # Knowledge base enrichment
     if kb_blocks:
         sections.append("## Technical Depth\n")
-        for block in kb_blocks[:3]:
+        for block in kb_blocks[:_MAX_KB_BLOCKS_USED]:
             block_title = block.get("title", "")
             block_content = block.get("content", "")
             if block_title and block_content:
-                # Take first 200 chars as summary
-                summary = block_content[:200].strip()
-                if len(block_content) > 200:
+                summary = block_content[:_KB_BLOCK_SUMMARY_CHARS].strip()
+                if len(block_content) > _KB_BLOCK_SUMMARY_CHARS:
                     summary += "..."
                 sections.append(f"**{block_title}**: {summary}\n")
 
@@ -465,13 +523,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     Returns standard reflex result dict.
     """
-    max_articles = config.get("max_articles_per_run", 5)
+    # Compute quality gate threshold — statistical from history when ≥min_samples,
+    # otherwise falls back to config-driven default.
+    anomaly_cfg   = config.get("anomaly_detection", {})
+    min_quality   = _compute_quality_publish_threshold(anomaly_cfg)
+    max_articles  = config.get("max_articles_per_run", _MAX_DRAFTS_PER_RUN)
     articles_staged = 0
     links_created = 0
     errors = 0
 
     # Step 1: Find publishable drafts
-    drafts = _get_publishable_drafts(limit=max_articles)
+    drafts = _get_publishable_drafts(limit=max_articles, min_quality=min_quality)
     if not drafts:
         return {
             "success": True,
@@ -516,7 +578,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             opportunity_id=opp_id,
             section_id=section_id,
             link_type="cdrl_to_case_study",
-            relevance_score=draft.get("confidence_score", 0.8) or 0.8,
+            relevance_score=draft.get("confidence_score", _DEFAULT_RELEVANCE_SCORE) or _DEFAULT_RELEVANCE_SCORE,
         )
         if link_id:
             links_created += 1

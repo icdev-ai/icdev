@@ -27,6 +27,18 @@ logger = get_logger("e2e_runner")
 
 IMPLEMENTATION_STATUS = "full"
 
+# Anomaly detection defaults — all overridable via config dict passed to run()
+_ANOMALY_DEFAULTS: dict = {
+    "base_interval_hours": 24,
+    "min_interval_hours": 6,
+    "max_interval_hours": 48,
+    "lookback_runs": 20,
+    "failure_duration_threshold_hours": 4.0,
+    "failure_rate_threshold": 0.3,
+    "consecutive_fail_threshold": 2,
+    "min_runs_for_analysis": 3,
+}
+
 _TASK_TITLE = "[AUTO-RUN] Playwright E2E Suite — full smoke"
 _TASK_DESC = (
     "Run the full Playwright E2E smoke suite targeting all menus, use cases, "
@@ -125,14 +137,102 @@ def _create_run_task(conn) -> str:
     return task_id
 
 
+def _get_recent_run_history(conn, lookback_runs: int) -> list[dict]:
+    """Fetch recent completed E2E run records for anomaly analysis."""
+    rows = conn.execute(
+        """
+        SELECT id, title, status, created_at, completed_at
+        FROM kanban_tasks
+        WHERE title LIKE '%Playwright E2E Suite%'
+          AND status = 'done'
+        ORDER BY completed_at DESC
+        LIMIT ?
+        """,
+        (lookback_runs,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _detect_anomaly(history: list[dict], cfg: dict) -> tuple[bool, str, float]:
+    """Analyse run history and return (anomaly_detected, reason, anomaly_score in [0,1]).
+
+    A run is counted as a failure when its wall-clock duration exceeds
+    failure_duration_threshold_hours (proxy for a stuck or crashing suite).
+    """
+    min_runs = int(cfg.get("min_runs_for_analysis", _ANOMALY_DEFAULTS["min_runs_for_analysis"]))
+    fail_dur = float(cfg.get("failure_duration_threshold_hours", _ANOMALY_DEFAULTS["failure_duration_threshold_hours"]))
+    fail_rate_thr = float(cfg.get("failure_rate_threshold", _ANOMALY_DEFAULTS["failure_rate_threshold"]))
+    consec_thr = int(cfg.get("consecutive_fail_threshold", _ANOMALY_DEFAULTS["consecutive_fail_threshold"]))
+
+    if len(history) < min_runs:
+        return False, "insufficient_history", 0.0
+
+    failures = 0
+    consecutive = 0
+    max_consecutive = 0
+
+    for run in history:
+        completed = run.get("completed_at")
+        created = run.get("created_at")
+        is_slow = False
+        if completed and created:
+            try:
+                c_dt = datetime.fromisoformat(str(completed)) if not isinstance(completed, datetime) else completed
+                s_dt = datetime.fromisoformat(str(created)) if not isinstance(created, datetime) else created
+                if (c_dt - s_dt).total_seconds() / 3600 > fail_dur:
+                    is_slow = True
+            except (ValueError, TypeError):
+                pass
+
+        if is_slow:
+            failures += 1
+            consecutive += 1
+            max_consecutive = max(max_consecutive, consecutive)
+        else:
+            consecutive = 0
+
+    total = len(history)
+    failure_rate = failures / total
+    # Score weighs both overall rate and streak severity
+    anomaly_score = min(1.0, failure_rate + (max_consecutive * 0.15))
+
+    if max_consecutive >= consec_thr:
+        return True, f"consecutive_slow_runs={max_consecutive}", anomaly_score
+    if failure_rate >= fail_rate_thr:
+        return True, f"high_failure_rate={failure_rate:.2f}", anomaly_score
+
+    return False, "normal", anomaly_score
+
+
+def _adaptive_interval(base: float, anomaly_detected: bool, anomaly_score: float, cfg: dict) -> float:
+    """Return an adjusted interval clamped to [min_interval_hours, max_interval_hours]."""
+    lo = float(cfg.get("min_interval_hours", _ANOMALY_DEFAULTS["min_interval_hours"]))
+    hi = float(cfg.get("max_interval_hours", _ANOMALY_DEFAULTS["max_interval_hours"]))
+
+    if anomaly_detected:
+        # Scale toward lo proportionally to anomaly severity
+        scale = max(0.25, 1.0 - anomaly_score)
+        interval = base * scale
+    else:
+        interval = base
+
+    return max(lo, min(hi, interval))
+
+
 def run(config: dict, state: object) -> dict:
     """Main reflex entry point called by the Genesis daemon."""
-    interval_hours = float(config.get("interval_hours", 24))
+    base_interval = float(config.get("interval_hours", config.get("base_interval_hours", _ANOMALY_DEFAULTS["base_interval_hours"])))
+    lookback_runs = int(config.get("lookback_runs", _ANOMALY_DEFAULTS["lookback_runs"]))
+
     results: dict = {
         "reflex": "e2e_runner",
         "timestamp": _utcnow().isoformat(),
         "action": "skip",
         "task_id": None,
+        "anomaly_detected": False,
+        "anomaly_score": 0.0,
+        "anomaly_reason": "not_evaluated",
+        "interval_hours": base_interval,
     }
 
     conn = None
@@ -144,12 +244,31 @@ def run(config: dict, state: object) -> dict:
             results["reason"] = "run already pending or in_progress"
             return results
 
+        # Anomaly detection — adaptively adjust the run interval
+        history = _get_recent_run_history(conn, lookback_runs)
+        anomaly_detected, anomaly_reason, anomaly_score = _detect_anomaly(history, config)
+        interval_hours = _adaptive_interval(base_interval, anomaly_detected, anomaly_score, config)
+
+        results["anomaly_detected"] = anomaly_detected
+        results["anomaly_score"] = round(anomaly_score, 3)
+        results["anomaly_reason"] = anomaly_reason
+        results["interval_hours"] = round(interval_hours, 2)
+
+        if anomaly_detected:
+            logger.warning(
+                "e2e_runner: anomaly detected (%s, score=%.2f) — interval reduced %.1f→%.1fh",
+                anomaly_reason,
+                anomaly_score,
+                base_interval,
+                interval_hours,
+            )
+
         # Skip if last run completed less than interval_hours ago
         last = _last_completed_at(conn)
         if last:
             elapsed_hours = (_utcnow() - last).total_seconds() / 3600
             if elapsed_hours < interval_hours:
-                results["reason"] = f"last run {elapsed_hours:.1f}h ago (interval={interval_hours}h)"
+                results["reason"] = f"last run {elapsed_hours:.1f}h ago (interval={interval_hours:.1f}h)"
                 return results
 
         # Create the task
@@ -174,5 +293,5 @@ def run(config: dict, state: object) -> dict:
 
 if __name__ == "__main__":
     import json
-    result = run({"interval_hours": 24}, None)
+    result = run({}, None)  # uses _ANOMALY_DEFAULTS for all thresholds
     print(json.dumps(result, indent=2))

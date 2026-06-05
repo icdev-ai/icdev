@@ -425,6 +425,101 @@ class TestDraftReflex:
 
         assert _keyword_overlap_score([], "Some text") == 0.0
 
+    # ── aiify-opp-5401: NLP keyword extractor (nlp_extractor paradigm) ──────────
+
+    def test_parse_keyword_response_comma_separated(self):
+        from tools.proposal_genesis.reflexes.draft import _parse_keyword_response
+
+        kws = _parse_keyword_response("zero trust, c5isr, cybersecurity, dod")
+        assert kws == ["zero trust", "c5isr", "cybersecurity", "dod"]
+
+    def test_parse_keyword_response_newline_and_decoration(self):
+        # Tolerates bullets / numbering and newline separation, lowercases.
+        from tools.proposal_genesis.reflexes.draft import _parse_keyword_response
+
+        kws = _parse_keyword_response("- Zero Trust\n* C5ISR\n1. Cybersecurity")
+        assert kws == ["zero trust", "c5isr", "cybersecurity"]
+
+    def test_parse_keyword_response_dedup_and_short_token_drop(self):
+        # <3-char tokens dropped; duplicates collapse preserving first-seen order.
+        from tools.proposal_genesis.reflexes.draft import _parse_keyword_response
+
+        assert _parse_keyword_response("ai, ai, security, security, ml") == ["security"]
+
+    def test_parse_keyword_response_caps_at_thirty(self):
+        from tools.proposal_genesis.reflexes.draft import _parse_keyword_response
+
+        big = ", ".join(f"kw{n:03d}" for n in range(40))
+        assert len(_parse_keyword_response(big)) == 30
+
+    def test_parse_keyword_response_empty_input(self):
+        from tools.proposal_genesis.reflexes.draft import _parse_keyword_response
+
+        assert _parse_keyword_response("") == []
+        assert _parse_keyword_response(None) == []
+
+    def test_ai_extract_keywords_empty_text_returns_none(self):
+        from tools.proposal_genesis.reflexes.draft import _ai_extract_keywords
+
+        assert _ai_extract_keywords("", "") is None
+
+    def test_ai_extract_keywords_router_failure_falls_back_to_none(self, monkeypatch):
+        # On any LLM failure the extractor degrades to None so the caller falls
+        # back to the deterministic _extract_keywords (graceful degradation).
+        import importlib
+
+        router_mod = importlib.import_module("tools.llm.router")
+
+        class _BoomRouter:
+            def invoke(self, *a, **k):
+                raise RuntimeError("no LLM available")
+
+        monkeypatch.setattr(router_mod, "LLMRouter", _BoomRouter)
+
+        from tools.proposal_genesis.reflexes.draft import _ai_extract_keywords
+
+        assert _ai_extract_keywords("Cyber Opportunity", "DoD security testing") is None
+
+    def test_ai_extract_keywords_parses_llm_response(self, monkeypatch):
+        import importlib
+
+        router_mod = importlib.import_module("tools.llm.router")
+
+        class _Resp:
+            content = "zero trust, c5isr, cybersecurity"
+
+        class _FakeRouter:
+            def invoke(self, function, request):
+                # Routed under the dedicated pg_keyword_extraction function.
+                assert function == "pg_keyword_extraction"
+                return _Resp()
+
+        monkeypatch.setattr(router_mod, "LLMRouter", _FakeRouter)
+
+        from tools.proposal_genesis.reflexes.draft import _ai_extract_keywords
+
+        kws = _ai_extract_keywords("Cyber Opportunity", "Zero trust for DoD")
+        assert kws == ["zero trust", "c5isr", "cybersecurity"]
+
+    def test_ai_extract_keywords_empty_llm_response_returns_none(self, monkeypatch):
+        # An empty/whitespace LLM response yields no keywords → None (fallback).
+        import importlib
+
+        router_mod = importlib.import_module("tools.llm.router")
+
+        class _Resp:
+            content = "   "
+
+        class _FakeRouter:
+            def invoke(self, function, request):
+                return _Resp()
+
+        monkeypatch.setattr(router_mod, "LLMRouter", _FakeRouter)
+
+        from tools.proposal_genesis.reflexes.draft import _ai_extract_keywords
+
+        assert _ai_extract_keywords("Cyber", "DoD") is None
+
 
 # ── Discover Reflex Tests ─────────────────────────────────────────────────────
 

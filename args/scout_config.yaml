@@ -183,3 +183,28 @@ heartbeat:
 # Audit
 audit:
   enabled: true
+
+# ---------------------------------------------------------------------------
+# Genesis Reflex (tools/genesis/reflexes/scout.py) — configurable thresholds
+# ---------------------------------------------------------------------------
+genesis_reflex:
+  # GitHub API timeout in seconds
+  api_timeout_seconds: 15
+  # Text truncation limits for external data
+  description_max_chars: 300
+  release_body_max_chars: 500
+  notes_preview_max_chars: 200
+  # How many top-by-stars repos to include in the brief summary
+  top_repos_n: 5
+  # Anomaly detection — flag repos whose metrics are statistical outliers
+  anomaly_detection:
+    enabled: true
+    # Z-score magnitude required to flag a repo as anomalous (|z| >= threshold)
+    z_score_threshold: 2.0
+    # Minimum number of repos needed before anomaly detection runs
+    min_samples: 3
+    # Repo metrics to analyse
+    metrics:
+      - stars
+      - forks
+      - open_issues

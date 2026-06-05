@@ -10,3 +10,12 @@ traps:
   vol_lookback: 20            # bars to average for volume baseline
   max_reentry_bars: 3         # bars after breakout to look for re-entry close
   confirmation_lookback: 5    # bars after re-entry to look for lower-high/higher-low
+
+# Anomaly-detection thresholds for fathomdesk_trap_sweep reflex
+trap_sweep:
+  cooldown_hours: 4            # reflex-level cooldown between full sweeps
+  dedup_window_hours: 24       # skip ticker if an event already exists within this window
+  min_confidence: 0.50         # minimum signal confidence to qualify a direction flip as a trap
+  sentiment_elevation: 0.15    # confidence boost when bearish sentiment coincides with near-resistance
+  sentiment_bearish_threshold: 0.40  # sentiment_weight below this is classified as bearish
+  use_llm_anomaly_scoring: false  # set true to enable Claude Haiku adaptive threshold calibration

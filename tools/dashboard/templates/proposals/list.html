@@ -4,10 +4,11 @@
 {% block content %}
 {% from "includes/classification_macros.html" import design_classification_banner %}
 {{ design_classification_banner('CUI') }}
+{% include "includes/ai_brief_banner.html" ignore missing %}
 <div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><span>Proposals</span></div>
 
 <div class="page-header">
-    <h1>Proposal Opportunities</h1>
+    <h1>Proposal Opportunities <button class="section-help-btn" onclick="showSectionHelp('stage_lifecycle')" title="Help: Stage Lifecycle">?</button></h1>
     <p class="subtitle">GovCon proposal writing lifecycle tracker</p>
 </div>
 
@@ -59,7 +60,23 @@
 .prop-stage-won     {background:rgba(0,137,123,.15);  color:#26a69a;border-color:rgba(0,137,123,.3);}
 .prop-stage-lost    {background:rgba(220,53,69,.15);  color:#ef5350;border-color:rgba(220,53,69,.3);}
 .prop-content-pill{display:inline-flex;align-items:center;gap:3px;font-size:0.67rem;padding:1px 6px;border-radius:10px;background:rgba(74,144,217,.15);color:#6db3f8;border:1px solid rgba(74,144,217,.25);vertical-align:middle;margin-left:4px;}
+.section-help-btn{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--accent-blue,#4a90d9);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer;margin-left:6px;vertical-align:middle;line-height:1;padding:0;opacity:.85;}
+.section-help-btn:hover{opacity:1;}
+#proposals-help-panel{position:fixed;top:0;right:-420px;width:400px;height:100vh;background:var(--bg-card,#16213e);border-left:1px solid var(--border-color,#2a2a4a);z-index:1400;transition:right 0.28s ease;overflow-y:auto;padding:20px;box-shadow:-4px 0 20px rgba(0,0,0,.4);}
+#proposals-help-panel.open{right:0;}
+#proposals-help-panel .php-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid var(--border-color,#2a2a4a);padding-bottom:12px;}
+#proposals-help-panel .php-title{font-size:1rem;font-weight:700;color:var(--text-primary,#e0e0e0);}
+#proposals-help-panel .php-close{background:none;border:none;color:var(--text-secondary,#a0a0b8);font-size:22px;cursor:pointer;line-height:1;}
+#proposals-help-panel .php-body h4{color:var(--text-primary,#e0e0e0);margin:12px 0 4px;font-size:.85rem;}
+#proposals-help-panel .php-body table{width:100%;border-collapse:collapse;font-size:.78rem;margin:6px 0;}
+#proposals-help-panel .php-body th{color:var(--text-secondary,#a0a0b8);padding:4px 6px;border-bottom:1px solid var(--border-color,#2a2a4a);text-align:left;}
+#proposals-help-panel .php-body td{padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.05);color:var(--text-secondary,#a0a0b8);}
+#proposals-help-panel .php-body .formula{font-family:monospace;font-size:.78rem;padding:4px 8px;background:var(--bg-secondary,#1a1a2e);border-radius:4px;margin:4px 0;color:var(--accent-blue,#4a90d9);display:block;}
 </style>
+<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+    <span style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);font-weight:600;">Pipeline Stats</span>
+    <button class="section-help-btn" onclick="showSectionHelp('pipeline_stats')" title="Help: Pipeline Stats">?</button>
+</div>
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;" id="prop-stats">
     <div class="prop-stat blue">
         <div class="prop-stat-val" id="stat-total">{{ opportunities | length }}</div>
@@ -83,6 +100,41 @@
         </div>
         <div class="prop-stat-lbl">Days to Deadline</div>
     </div>
+</div>
+
+<!-- Bubble Chart Section: pWin × Weighted Value -->
+<div id="opp-chart-section" style="margin-bottom:16px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--bg-card,#16213e);border:1px solid var(--border-color,#2a2a4a);border-radius:8px 8px 0 0;border-bottom:1px solid var(--border-color,#2a2a4a);">
+    <div>
+      <span style="font-size:0.9rem;font-weight:600;">Capture Portfolio — pWin × Weighted Value</span>
+      <span style="font-size:0.72rem;color:var(--text-muted,#888);margin-left:8px;">Bubble size = ceiling · click to open</span>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button id="btn-view-chart" onclick="switchView('chart')"
+        style="font-size:0.78rem;padding:3px 10px;background:var(--accent-blue,#4a90d9);color:#fff;border:none;border-radius:4px;cursor:pointer;">View as chart</button>
+      <button id="btn-view-table" onclick="switchView('table')"
+        style="font-size:0.78rem;padding:3px 10px;background:none;border:1px solid var(--border-color,#2a2a4a);border-radius:4px;cursor:pointer;color:var(--text-secondary);">View as table</button>
+    </div>
+  </div>
+  <div id="chart-view" style="background:var(--bg-card,#16213e);border:1px solid var(--border-color,#2a2a4a);border-top:none;border-radius:0 0 8px 8px;min-height:300px;position:relative;">
+    <svg id="bubble-svg" width="100%" height="300" style="display:block;"></svg>
+    <div id="chart-empty" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--text-muted,#888);font-size:0.85rem;">No active opportunities to chart</div>
+    <div id="chart-loading" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--text-muted,#888);font-size:0.85rem;">Loading…</div>
+  </div>
+  <div id="table-view" style="display:none;background:var(--bg-card,#16213e);border:1px solid var(--border-color,#2a2a4a);border-top:none;border-radius:0 0 8px 8px;overflow:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border-color,#2a2a4a);color:var(--text-secondary);">
+          <th style="padding:8px 12px;text-align:left;font-weight:600;">Title</th>
+          <th style="padding:8px 12px;text-align:center;font-weight:600;">Stage</th>
+          <th style="padding:8px 12px;text-align:right;font-weight:600;">pWin</th>
+          <th style="padding:8px 12px;text-align:right;font-weight:600;">Wtd Value</th>
+          <th style="padding:8px 12px;text-align:right;font-weight:600;">Days Left</th>
+        </tr>
+      </thead>
+      <tbody id="chart-table-body"></tbody>
+    </table>
+  </div>
 </div>
 
 <!-- Actions -->
@@ -355,6 +407,17 @@ function filterOpps(q) {
   </div>
 </div>
 
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "govcon" %}
+{% set iqe_api_route = "/api/govcon/iqe-query" %}
+{% set iqe_title = "Ask the AI — Proposals & Pipeline" %}
+{% set iqe_examples = [
+    {"label": "Active pursuits", "query": "show all active proposal opportunities"},
+    {"label": "High pWin opps", "query": "list opportunities with win probability above 60 percent"},
+    {"label": "Proposals due soon", "query": "show proposals with submission deadline in the next 30 days"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 <style>
 .modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:flex; align-items:center; justify-content:center; }
 .modal-content { background:var(--bg-card, #16213e); border:1px solid var(--border-color, #2a2a4a); border-radius:8px; padding:24px; max-width:700px; width:90%; max-height:85vh; overflow-y:auto; }
@@ -528,6 +591,148 @@ function showFactors(oppId, factors) {
     legend.style.display = 'block';
     legend.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
+
+// ---- Bubble Chart ----
+var _bubbleData = null;
+var STAGE_COLORS = {
+  discover: '#4a90d9', extract: '#f57c4a', map: '#4caf50', draft: '#ce93d8', submit: '#66bb6a'
+};
+var STAGE_LABELS = {
+  discover: '🔍 Discover', extract: '⚙️ Extract', map: '🗺️ Map', draft: '✍️ Draft', submit: '✅ Submit'
+};
+
+function switchView(view) {
+  var cv = document.getElementById('chart-view');
+  var tv = document.getElementById('table-view');
+  var bc = document.getElementById('btn-view-chart');
+  var bt = document.getElementById('btn-view-table');
+  var on  = 'background:var(--accent-blue,#4a90d9);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.78rem;padding:3px 10px;';
+  var off = 'background:none;color:var(--text-secondary);border:1px solid var(--border-color,#2a2a4a);border-radius:4px;cursor:pointer;font-size:0.78rem;padding:3px 10px;';
+  if (view === 'chart') {
+    cv.style.display = ''; tv.style.display = 'none';
+    bc.setAttribute('style', on); bt.setAttribute('style', off);
+  } else {
+    cv.style.display = 'none'; tv.style.display = '';
+    bt.setAttribute('style', on); bc.setAttribute('style', off);
+    if (_bubbleData) renderBubbleTable(_bubbleData);
+  }
+}
+
+function renderBubbleTable(opps) {
+  var tbody = document.getElementById('chart-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = opps.map(function(o) {
+    var color = STAGE_COLORS[o.stage] || '#aaa';
+    var pct = Math.round(o.pwin * 100);
+    var barColor = pct >= 70 ? 'var(--status-green,#4caf50)' : pct >= 40 ? 'var(--status-yellow,#ffc107)' : 'var(--status-red,#dc3545)';
+    var title = o.title.length > 55 ? o.title.substring(0, 55) + '…' : o.title;
+    return '<tr style="border-bottom:1px solid var(--border-color,#2a2a4a);cursor:pointer;" onclick="location.href=\'/proposals/' + o.opp_id + '\'">' +
+      '<td style="padding:7px 12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + o.title.replace(/"/g,'&quot;') + '">' + title + '</td>' +
+      '<td style="padding:7px 12px;text-align:center;"><span style="font-size:0.7rem;padding:2px 7px;border-radius:4px;background:' + color + '33;color:' + color + ';border:1px solid ' + color + '55;">' + (STAGE_LABELS[o.stage] || o.stage) + '</span></td>' +
+      '<td style="padding:7px 12px;text-align:right;font-weight:700;color:' + barColor + ';">' + pct + '%</td>' +
+      '<td style="padding:7px 12px;text-align:right;color:var(--status-green,#28a745);">$' + o.weighted_value.toLocaleString('en-US', {maximumFractionDigits:0}) + '</td>' +
+      '<td style="padding:7px 12px;text-align:right;color:var(--text-secondary);">' + (o.days_to_deadline !== null ? o.days_to_deadline : '—') + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+function renderBubbleChart(opps) {
+  var ns = 'http://www.w3.org/2000/svg';
+  var svg = document.getElementById('bubble-svg');
+  var loading = document.getElementById('chart-loading');
+  var empty = document.getElementById('chart-empty');
+  if (loading) loading.style.display = 'none';
+  if (!opps || !opps.length) { if (empty) empty.style.display = ''; return; }
+
+  var W = svg.parentElement.clientWidth || 700;
+  svg.setAttribute('width', W);
+  var H = 300, ML = 68, MR = 20, MT = 20, MB = 50;
+  var cW = W - ML - MR, cH = H - MT - MB;
+
+  var maxY = Math.max.apply(null, opps.map(function(o) { return o.weighted_value; })) || 1;
+  var maxCeil = Math.max.apply(null, opps.map(function(o) { return o.ceiling; })) || 1;
+  function xSc(p)  { return ML + p * cW; }
+  function ySc(v)  { return MT + cH - (v / maxY) * cH; }
+  function rSc(c)  { return 8 + Math.sqrt(c / maxCeil) * 24; }
+
+  svg.innerHTML = '';
+
+  // Grid
+  var gs = 'stroke:var(--border-color,#2a2a4a);stroke-dasharray:4,4;stroke-width:1;';
+  [0, 0.25, 0.5, 0.75, 1].forEach(function(p) {
+    var x = xSc(p);
+    var gl = document.createElementNS(ns, 'line');
+    gl.setAttribute('x1', x); gl.setAttribute('y1', MT); gl.setAttribute('x2', x); gl.setAttribute('y2', MT + cH);
+    gl.setAttribute('style', gs); svg.appendChild(gl);
+    var tl = document.createElementNS(ns, 'text');
+    tl.setAttribute('x', x); tl.setAttribute('y', MT + cH + 16);
+    tl.setAttribute('text-anchor', 'middle'); tl.setAttribute('style', 'font-size:10px;fill:var(--text-muted,#888);');
+    tl.textContent = Math.round(p * 100) + '%'; svg.appendChild(tl);
+  });
+  [0, 0.5, 1].forEach(function(p) {
+    var y = ySc(maxY * p);
+    var gl = document.createElementNS(ns, 'line');
+    gl.setAttribute('x1', ML); gl.setAttribute('y1', y); gl.setAttribute('x2', ML + cW); gl.setAttribute('y2', y);
+    gl.setAttribute('style', gs); svg.appendChild(gl);
+    var v = maxY * p;
+    var tl = document.createElementNS(ns, 'text');
+    tl.setAttribute('x', ML - 5); tl.setAttribute('y', y + 4);
+    tl.setAttribute('text-anchor', 'end'); tl.setAttribute('style', 'font-size:10px;fill:var(--text-muted,#888);');
+    tl.textContent = v >= 1e6 ? '$' + (v/1e6).toFixed(1)+'M' : v >= 1e3 ? '$' + (v/1e3).toFixed(0)+'K' : '$' + Math.round(v);
+    svg.appendChild(tl);
+  });
+  // Axis labels
+  var xLbl = document.createElementNS(ns, 'text');
+  xLbl.setAttribute('x', ML + cW / 2); xLbl.setAttribute('y', H - 4);
+  xLbl.setAttribute('text-anchor', 'middle'); xLbl.setAttribute('style', 'font-size:10px;fill:var(--text-muted,#888);');
+  xLbl.textContent = 'pWin (%)'; svg.appendChild(xLbl);
+  var yLbl = document.createElementNS(ns, 'text');
+  yLbl.setAttribute('x', -(MT + cH / 2)); yLbl.setAttribute('y', 13);
+  yLbl.setAttribute('transform', 'rotate(-90)'); yLbl.setAttribute('text-anchor', 'middle');
+  yLbl.setAttribute('style', 'font-size:10px;fill:var(--text-muted,#888);');
+  yLbl.textContent = 'Weighted Value'; svg.appendChild(yLbl);
+
+  // Bubbles: large first so small ones render on top
+  var sorted = opps.slice().sort(function(a, b) { return b.ceiling - a.ceiling; });
+  sorted.forEach(function(o) {
+    var cx = xSc(o.pwin), cy = ySc(o.weighted_value), r = rSc(o.ceiling);
+    var color = STAGE_COLORS[o.stage] || '#aaa';
+    var g = document.createElementNS(ns, 'g');
+    g.setAttribute('style', 'cursor:pointer;');
+    g.addEventListener('click', function() { window.location.href = '/proposals/' + o.opp_id; });
+    var c = document.createElementNS(ns, 'circle');
+    c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
+    c.setAttribute('fill', color + 'bb'); c.setAttribute('stroke', color); c.setAttribute('stroke-width', '2');
+    c.setAttribute('style', 'transition:fill 0.15s;');
+    g.addEventListener('mouseenter', function() { c.setAttribute('fill', color + 'ee'); });
+    g.addEventListener('mouseleave', function() { c.setAttribute('fill', color + 'bb'); });
+    var ti = document.createElementNS(ns, 'title');
+    ti.textContent = o.title + '\npWin: ' + Math.round(o.pwin*100) + '%  Wtd: $' + o.weighted_value.toLocaleString('en-US',{maximumFractionDigits:0}) + '\n' + (STAGE_LABELS[o.stage] || o.stage);
+    g.appendChild(ti); g.appendChild(c);
+    if (r >= 18) {
+      var lbl = document.createElementNS(ns, 'text');
+      lbl.setAttribute('x', cx); lbl.setAttribute('y', cy + 4);
+      lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('style', 'font-size:9px;fill:#fff;font-weight:bold;pointer-events:none;');
+      lbl.textContent = o.title.substring(0, 10) + (o.title.length > 10 ? '…' : '');
+      g.appendChild(lbl);
+    }
+    svg.appendChild(g);
+  });
+}
+
+(function initBubbleChart() {
+  if (!document.getElementById('opp-chart-section')) return;
+  fetch('/api/govcon/proposals/bubble-data')
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(d) {
+      _bubbleData = d.opportunities || [];
+      renderBubbleChart(_bubbleData);
+    })
+    .catch(function(err) {
+      var loading = document.getElementById('chart-loading');
+      if (loading) { loading.style.display = ''; loading.textContent = 'Chart unavailable — ' + err.message; }
+    });
+})();
 
 // ---- Pipeline Value Refresh ----
 function refreshPipelineValue() {

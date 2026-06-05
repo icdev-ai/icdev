@@ -15,22 +15,83 @@ logger = get_logger(__name__)
 
 bp = Blueprint("system_graph", __name__)
 
-# Simple in-process cache for the full (unfiltered) graph payload — 5 min TTL
+# In-process cache for the full (unfiltered) graph payload.
+# Strategy: stale-while-revalidate — serve stale data instantly, rebuild in background.
 _cache_lock = threading.Lock()
 _cache: dict = {}
-_CACHE_TTL = 300  # seconds
+_rebuilding: set = set()
+_CACHE_TTL = 900        # serve fresh for 15 min
+_STALE_TTL = 3600       # serve stale (while rebuilding) for up to 1 h
+
+
+def _rebuild_in_background(cache_key: str, kwargs: dict) -> None:
+    """Spawn a daemon thread to rebuild the graph without blocking the request."""
+    with _cache_lock:
+        if cache_key in _rebuilding:
+            return  # already in progress
+        _rebuilding.add(cache_key)
+
+    def _worker():
+        try:
+            data = build_graph(**kwargs)
+            with _cache_lock:
+                _cache[cache_key] = {"data": data, "ts": time.time()}
+            logger.info("system-graph cache refreshed (key=%s)", cache_key[:20])
+        except Exception as exc:
+            logger.warning("system-graph background rebuild failed: %s", exc)
+        finally:
+            with _cache_lock:
+                _rebuilding.discard(cache_key)
+
+    t = threading.Thread(target=_worker, daemon=True, name="sys-graph-rebuild")
+    t.start()
 
 
 def _get_cached_graph(**kwargs) -> dict:
+    """Return graph data; uses stale-while-revalidate so the caller never blocks."""
     cache_key = str(sorted(kwargs.items()))
+
     with _cache_lock:
         entry = _cache.get(cache_key)
-        if entry and (time.time() - entry["ts"]) < _CACHE_TTL:
-            return entry["data"]
+
+    if entry:
+        age = time.time() - entry["ts"]
+        if age < _CACHE_TTL:
+            return entry["data"]                  # fresh — serve immediately
+        if age < _STALE_TTL:
+            _rebuild_in_background(cache_key, kwargs)
+            return entry["data"]                  # stale but usable — serve immediately, rebuild async
+
+    # No cache at all: build synchronously (only on very first load or after _STALE_TTL)
     data = build_graph(**kwargs)
     with _cache_lock:
         _cache[cache_key] = {"data": data, "ts": time.time()}
     return data
+
+
+def _prewarm_cache() -> None:
+    """Build the default graph in a background thread at startup."""
+    def _worker():
+        try:
+            logger.info("system-graph: pre-warming cache…")
+            data = build_graph()
+            key = str(sorted({}.items()))
+            with _cache_lock:
+                _cache[key] = {"data": data, "ts": time.time()}
+            logger.info(
+                "system-graph: cache ready — %d nodes, %d edges",
+                len(data.get("nodes", [])),
+                len(data.get("edges", [])),
+            )
+        except Exception as exc:
+            logger.warning("system-graph: pre-warm failed: %s", exc)
+
+    t = threading.Thread(target=_worker, daemon=True, name="sys-graph-prewarm")
+    t.start()
+
+
+# Pre-warm immediately when this module is imported (i.e. at dashboard startup)
+_prewarm_cache()
 
 
 @bp.route("/system-graph")

@@ -101,3 +101,35 @@ external:
     enabled: true
     url: https://services.nvd.nist.gov/rest/json/cves/2.0
     severity_filter: [CRITICAL, HIGH]
+
+# =========================================================================
+# Oracle Lens — Migration Anomaly Detection
+# Thresholds used by tools/oracle/lenses/lens_migration.py
+# =========================================================================
+oracle_lens:
+  # IQR anomaly detection: min portfolio size before statistical bounds activate.
+  # Below this count the lens falls back to the hardcoded baselines below.
+  min_samples: 5
+
+  # Tukey fence multiplier for IQR anomaly detection.
+  # 1.5 = standard outlier (Tukey), 3.0 = far outlier.
+  iqr_multiplier: 1.5
+
+  # Score / readiness baselines (0–100).  Values below these are flagged when
+  # the portfolio is too small for reliable IQR computation.
+  fallback_score: 60.0        # mc_assessments.score below this → low-score warning
+  fallback_readiness: 60.0    # mc_assessments.readiness_score below this → readiness gap
+
+  # Design-graph baselines.  Values at-or-above these are flagged when the
+  # portfolio is too small for reliable IQR computation.
+  fallback_source_count: 5    # designs with >= this many src- nodes may need wave planning
+  fallback_orphan_count: 3    # designs with >= this many disconnected nodes → quality flag
+
+  # Prediction confidence levels per finding category (0.0–1.0).
+  confidence:
+    compliance_gap:   0.92
+    assessment_risk:  0.88
+    readiness_gap:    0.85
+    unassessed:       0.80
+    planning_gap:     0.82
+    design_quality:   0.75

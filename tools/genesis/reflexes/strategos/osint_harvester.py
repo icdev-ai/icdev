@@ -45,8 +45,9 @@ from tools.strategos.tier_resolver import (  # noqa: E402
 logger = get_logger(__name__)
 
 _INBOX = BASE_DIR / "data" / "osint_inbox"
-_FILE_INBOX_MAX = 500
-_MAX_SIGNALS_PER_RUN = 200
+_FILE_INBOX_MAX_DEFAULT = 500
+_MAX_SIGNALS_PER_RUN_DEFAULT = 200
+_FETCH_TIMEOUT_SEC_DEFAULT = 30
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -251,6 +252,18 @@ def _write_audit(
 
 # ── fetch helpers ─────────────────────────────────────────────────────────────
 
+def _get_thresholds(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Return harvest thresholds from config with fallbacks to module-level constants."""
+    osint = config.get("osint", {})
+    return {
+        "max_signals_per_run": osint.get("max_signals_per_run", _MAX_SIGNALS_PER_RUN_DEFAULT),
+        "acled_fetch_limit": osint.get("acled_fetch_limit", 100),
+        "telegram_message_limit": osint.get("telegram_message_limit", 50),
+        "fetch_timeout_sec": osint.get("fetch_timeout_sec", _FETCH_TIMEOUT_SEC_DEFAULT),
+        "file_inbox_max": osint.get("file_inbox_max", _FILE_INBOX_MAX_DEFAULT),
+    }
+
+
 def _fetch_url(url: str, timeout: int = 30, headers: Optional[Dict[str, str]] = None) -> Optional[bytes]:
     if not url.startswith(("http://", "https://")):
         logger.debug("Rejected non-http URL: %s", url[:100])
@@ -306,13 +319,15 @@ def _parse_rss(xml_bytes: bytes) -> List[Dict[str, str]]:
 
 # ── TIER_INTERNET ─────────────────────────────────────────────────────────────
 
-def _harvest_internet(config: Dict[str, Any]) -> Tuple[int, int, int]:
+def _harvest_internet(config: Dict[str, Any], thresholds: Dict[str, Any]) -> Tuple[int, int, int]:
     """RSS feeds from strategos_config.yaml osint.sources[internet_required=true].
 
     Returns (harvested, duplicates_skipped, errors).
     """
     sources = config.get("osint", {}).get("sources", [])
     internet_sources = [s for s in sources if s.get("internet_required", True)]
+    max_signals = thresholds["max_signals_per_run"]
+    timeout = thresholds["fetch_timeout_sec"]
 
     harvested = dupes = errors = 0
 
@@ -324,7 +339,7 @@ def _harvest_internet(config: Dict[str, Any]) -> Tuple[int, int, int]:
         if not url:
             continue
 
-        raw = _fetch_url(url)
+        raw = _fetch_url(url, timeout=timeout)
         if raw is None:
             logger.warning("OSINT INTERNET: failed to fetch %s", name)
             errors += 1
@@ -352,43 +367,43 @@ def _harvest_internet(config: Dict[str, Any]) -> Tuple[int, int, int]:
                 inserted = _insert_signal(url_hash, title, body, name, date, None, TIER_INTERNET)
                 if inserted:
                     harvested += 1
-                    if harvested >= _MAX_SIGNALS_PER_RUN:
+                    if harvested >= max_signals:
                         return harvested, dupes, errors
 
         except Exception as exc:
             logger.warning("OSINT INTERNET: parse error for %s: %s", name, exc)
             errors += 1
 
-    if harvested >= _MAX_SIGNALS_PER_RUN:
+    if harvested >= max_signals:
         return harvested, dupes, errors
 
     # ACLED REST API (optional — graceful if ACLED_API_KEY / ACLED_EMAIL not set)
     try:
-        h, d, er = _harvest_acled(config)
+        h, d, er = _harvest_acled(config, thresholds)
         harvested += h
         dupes += d
         errors += er
     except Exception:
         pass
 
-    if harvested >= _MAX_SIGNALS_PER_RUN:
+    if harvested >= max_signals:
         return harvested, dupes, errors
 
     # Telegram via Telethon (optional — graceful if not installed or unconfigured)
     try:
-        h, d, er = _harvest_telegram()
+        h, d, er = _harvest_telegram(thresholds)
         harvested += h
         dupes += d
         errors += er
     except Exception:
         pass
 
-    if harvested >= _MAX_SIGNALS_PER_RUN:
+    if harvested >= max_signals:
         return harvested, dupes, errors
 
     # Twitter/X via snscrape (optional — graceful if not installed)
     try:
-        h, d, er = _harvest_snscrape(config)
+        h, d, er = _harvest_snscrape(config, thresholds)
         harvested += h
         dupes += d
         errors += er
@@ -398,7 +413,7 @@ def _harvest_internet(config: Dict[str, Any]) -> Tuple[int, int, int]:
     return harvested, dupes, errors
 
 
-def _harvest_acled(config: Dict[str, Any]) -> Tuple[int, int, int]:
+def _harvest_acled(config: Dict[str, Any], thresholds: Dict[str, Any]) -> Tuple[int, int, int]:
     """Collect from ACLED REST API. Graceful if ACLED_API_KEY / ACLED_EMAIL not set."""
     api_key = os.getenv("ACLED_API_KEY", "")
     email = os.getenv("ACLED_EMAIL", "")
@@ -406,11 +421,14 @@ def _harvest_acled(config: Dict[str, Any]) -> Tuple[int, int, int]:
         return 0, 0, 0
 
     harvested = dupes = errors = 0
+    acled_limit = thresholds["acled_fetch_limit"]
+    max_signals = thresholds["max_signals_per_run"]
+    timeout = thresholds["fetch_timeout_sec"]
     base = "https://api.acleddata.com/acled/read"
-    params = f"?key={api_key}&email={email}&limit=100&format=json"
+    params = f"?key={api_key}&email={email}&limit={acled_limit}&format=json"
     url = f"{base}{params}"
 
-    raw = _fetch_url(url)
+    raw = _fetch_url(url, timeout=timeout)
     if raw is None:
         return 0, 0, 1
 
@@ -431,7 +449,7 @@ def _harvest_acled(config: Dict[str, Any]) -> Tuple[int, int, int]:
             ok = _insert_signal(url_hash, title, body, source, date, geo_hint, TIER_INTERNET)
             if ok:
                 harvested += 1
-                if harvested >= _MAX_SIGNALS_PER_RUN:
+                if harvested >= max_signals:
                     break
     except Exception as exc:
         logger.warning("ACLED parse error: %s", exc)
@@ -440,7 +458,7 @@ def _harvest_acled(config: Dict[str, Any]) -> Tuple[int, int, int]:
     return harvested, dupes, errors
 
 
-def _harvest_telegram() -> Tuple[int, int, int]:
+def _harvest_telegram(thresholds: Dict[str, Any]) -> Tuple[int, int, int]:
     """Collect from Telegram channels via Telethon. Graceful if unavailable."""
     try:
         import telethon  # noqa: F401 — import just to check availability
@@ -454,6 +472,7 @@ def _harvest_telegram() -> Tuple[int, int, int]:
     if not (api_id and api_hash and channels_raw):
         return 0, 0, 0
 
+    msg_limit = thresholds["telegram_message_limit"]
     harvested = dupes = errors = 0
     channels = [c.strip() for c in channels_raw.split(",") if c.strip()]
 
@@ -463,7 +482,7 @@ def _harvest_telegram() -> Tuple[int, int, int]:
         with TelegramClient("icdev_osint_session", int(api_id), api_hash) as client:
             for channel in channels:
                 try:
-                    for msg in client.iter_messages(channel, limit=50):
+                    for msg in client.iter_messages(channel, limit=msg_limit):
                         if not msg.text:
                             continue
                         lines = msg.text.strip().splitlines()
@@ -486,7 +505,7 @@ def _harvest_telegram() -> Tuple[int, int, int]:
     return harvested, dupes, errors
 
 
-def _harvest_snscrape(config: Dict[str, Any]) -> Tuple[int, int, int]:
+def _harvest_snscrape(config: Dict[str, Any], thresholds: Dict[str, Any]) -> Tuple[int, int, int]:
     """Collect from Twitter/X via snscrape. Graceful if unavailable."""
     try:
         import snscrape.modules.twitter as sntwitter  # type: ignore
@@ -497,6 +516,7 @@ def _harvest_snscrape(config: Dict[str, Any]) -> Tuple[int, int, int]:
     if not queries_raw:
         return 0, 0, 0
 
+    max_signals = thresholds["max_signals_per_run"]
     harvested = dupes = errors = 0
     queries = [q.strip() for q in queries_raw.split("|") if q.strip()]
 
@@ -511,7 +531,7 @@ def _harvest_snscrape(config: Dict[str, Any]) -> Tuple[int, int, int]:
                 date = tweet.date.strftime("%Y-%m-%dT%H:%M:%SZ") if tweet.date else _utcnow_iso()
                 _insert_signal(url_hash, title, "", f"Twitter/{query[:50]}", date, None, TIER_INTERNET)
                 harvested += 1
-                if harvested >= 200:
+                if harvested >= max_signals:
                     break
         except Exception as exc:
             logger.warning("snscrape query '%s' error: %s", query, exc)
@@ -552,9 +572,10 @@ def _harvest_gitlab(config: Dict[str, Any]) -> Tuple[int, int, int]:
     )
     headers = {"PRIVATE-TOKEN": token, "User-Agent": "ICDEV-Strategos-OSINT/1.0"}
 
+    timeout = config.get("osint", {}).get("fetch_timeout_sec", _FETCH_TIMEOUT_SEC_DEFAULT)
     try:
         req = urllib.request.Request(artifact_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
             raw = resp.read()
     except urllib.error.HTTPError as exc:
         logger.warning("OSINT GITLAB: HTTP %s fetching artifact — falling through to FILE_INBOX", exc.code)
@@ -655,12 +676,15 @@ def _queue_kg_enrichment(kg_delta: Any) -> None:
 
 # ── TIER_FILE_INBOX ───────────────────────────────────────────────────────────
 
-def _harvest_file_inbox(config: Dict[str, Any]) -> Tuple[int, int, int]:
+def _harvest_file_inbox(config: Dict[str, Any], thresholds: Optional[Dict[str, Any]] = None) -> Tuple[int, int, int]:
     """Process data/osint_inbox/*.json and *.txt. Move processed files to processed/{date}/.
 
     Returns (harvested, duplicates_skipped, errors).
     """
-    max_files = config.get("osint", {}).get("file_inbox_max", _FILE_INBOX_MAX)
+    if thresholds is not None:
+        max_files = thresholds["file_inbox_max"]
+    else:
+        max_files = config.get("osint", {}).get("file_inbox_max", _FILE_INBOX_MAX_DEFAULT)
 
     if not _INBOX.is_dir():
         logger.info("OSINT FILE_INBOX: inbox directory does not exist")
@@ -749,6 +773,172 @@ def _process_inbox_txt(fpath: Path) -> Tuple[int, int, int]:
     return (1, 0, 0) if ok else (0, 0, 1)
 
 
+# ── anomaly detection ─────────────────────────────────────────────────────────
+
+def _get_rolling_stats(window: int) -> Tuple[Optional[float], Optional[float], int]:
+    """Return (mean, std_dev, sample_size) from the last `window` audit rows.
+
+    Uses sample std deviation (ddof=1) when n >= 2, returns 0.0 when n == 1.
+    Returns (None, None, 0) when no rows are available.
+    """
+    try:
+        conn = get_connection()
+        if is_pg():
+            query = (
+                "SELECT signals_harvested FROM sg_raw_signals_audit "
+                "ORDER BY id DESC LIMIT %s"
+            )
+        else:
+            query = (
+                "SELECT signals_harvested FROM sg_raw_signals_audit "
+                "ORDER BY id DESC LIMIT ?"
+            )
+        rows = conn.execute(query, (window,)).fetchall()
+        conn.close()
+        if not rows:
+            return None, None, 0
+        counts = [float(r["signals_harvested"] if isinstance(r, dict) else r[0]) for r in rows]
+        n = len(counts)
+        mean = sum(counts) / n
+        if n < 2:
+            return mean, 0.0, n
+        variance = sum((x - mean) ** 2 for x in counts) / (n - 1)
+        return mean, variance ** 0.5, n
+    except Exception:
+        return None, None, 0
+
+
+def _get_rolling_baseline(window: int) -> Optional[float]:
+    """Thin wrapper kept for backward compatibility."""
+    mean, _, _ = _get_rolling_stats(window)
+    return mean
+
+
+def _compute_zscore(harvested: int, mean: float, std_dev: float) -> Optional[float]:
+    """Return Z-score of `harvested` relative to historical distribution, or None."""
+    if std_dev > 0:
+        return round((harvested - mean) / std_dev, 2)
+    return None
+
+
+def _detect_anomalies(config: Dict[str, Any], harvested: int, tier: str) -> Dict[str, Any]:
+    """Score signal spike anomaly using adaptive Z-score statistics + LLM classification.
+
+    Computes rolling mean and standard deviation from historical audit rows, then
+    derives a Z-score so the LLM prompt carries statistically meaningful context
+    rather than a fixed ratio.  The LLM verdict drives the result; the Z-score
+    fallback (configurable via zscore_threshold) fires only when the LLM is
+    unavailable.
+    """
+    ad_cfg = config.get("osint", {}).get("anomaly_detection", {})
+    if not ad_cfg.get("enabled", True):
+        return {"enabled": False}
+
+    min_signals = ad_cfg.get("min_signals_for_detection", 10)
+    if harvested < min_signals:
+        return {"enabled": True, "skipped": "below_min_signals", "harvested": harvested}
+
+    # zscore_threshold: fallback spike gate (standard deviations above mean)
+    zscore_threshold = ad_cfg.get("zscore_threshold", 2.5)
+    # spike_threshold: ratio fallback when std_dev == 0 (all historical runs identical)
+    spike_threshold = ad_cfg.get("spike_threshold", 3.0)
+    baseline_window = ad_cfg.get("baseline_window", 10)
+    model = ad_cfg.get("model", "claude-haiku-4-5-20251001")
+    sample_size = ad_cfg.get("sample_size", 30)
+    prompt_titles = ad_cfg.get("prompt_titles", 20)
+    title_truncate_len = ad_cfg.get("title_truncate_len", 120)
+
+    mean, std_dev, n_samples = _get_rolling_stats(baseline_window)
+
+    if mean is None:
+        return {
+            "enabled": True,
+            "skipped": "no_baseline",
+            "harvested": harvested,
+            "sample_size": 0,
+        }
+
+    z_score = _compute_zscore(harvested, mean, std_dev or 0.0)
+    ratio = round(harvested / mean, 2) if mean > 0 else None
+
+    result: Dict[str, Any] = {
+        "enabled": True,
+        "harvested": harvested,
+        "baseline_avg": round(mean, 1),
+        "baseline_std": round(std_dev, 2) if std_dev is not None else None,
+        "sample_size": n_samples,
+        "z_score": z_score,
+        "zscore_threshold": zscore_threshold,
+        "spike_threshold": spike_threshold,
+        "tier": tier,
+    }
+
+    # LLM scoring: fetch recent signal titles and ask the model to assess the anomaly
+    try:
+        conn = get_connection()
+        if is_pg():
+            titles_query = (
+                "SELECT title FROM sg_raw_signals ORDER BY id DESC LIMIT %s"
+            )
+        else:
+            titles_query = (
+                "SELECT title FROM sg_raw_signals ORDER BY id DESC LIMIT ?"
+            )
+        rows = conn.execute(titles_query, (min(harvested, sample_size),)).fetchall()
+        conn.close()
+        titles = [r["title"] if isinstance(r, dict) else r[0] for r in rows]
+    except Exception:
+        titles = []
+
+    z_desc = f"{z_score:.2f} std devs above mean" if z_score is not None else f"{ratio}x ratio (std dev unavailable)"
+    sample = "\n".join(f"- {t[:title_truncate_len]}" for t in titles[:prompt_titles]) if titles else "(no titles available)"
+    prompt = (
+        f"OSINT harvest run: {harvested} signals collected from tier '{tier}'.\n"
+        f"Rolling baseline (last {n_samples} runs): mean={round(mean, 1)}, std_dev={round(std_dev or 0.0, 2)}.\n"
+        f"Statistical deviation: {z_desc}.\n"
+        f"Sample of recent signal titles:\n{sample}\n\n"
+        "Assess whether this harvest represents an anomaly. Consider both statistical deviation and signal content.\n"
+        "Reply with JSON only: "
+        '{"verdict": "<normal|suspicious|surge|noise_flood>", "is_anomaly": <true|false>, "reason": "<one sentence>"}'
+    )
+
+    try:
+        import anthropic  # noqa: PLC0415
+
+        client = anthropic.Anthropic()
+        msg = client.messages.create(
+            model=model,
+            max_tokens=150,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw_text = (msg.content[0].text if msg.content else "{}").strip()
+        start = raw_text.find("{")
+        end = raw_text.rfind("}") + 1
+        parsed = json.loads(raw_text[start:end]) if start >= 0 else {}
+        result["verdict"] = parsed.get("verdict", "normal")
+        result["is_anomaly"] = parsed.get("is_anomaly", False)
+        result["reason"] = parsed.get("reason", "")
+    except Exception as exc:
+        logger.debug("Anomaly LLM call failed: %s", exc)
+        # Fallback: use Z-score gate when LLM is unavailable
+        if z_score is not None:
+            is_anomaly_fallback = z_score > zscore_threshold
+        elif mean > 0:
+            is_anomaly_fallback = harvested > mean * spike_threshold
+        else:
+            is_anomaly_fallback = False
+        result["verdict"] = "spike_detected" if is_anomaly_fallback else "normal"
+        result["is_anomaly"] = is_anomaly_fallback
+        result["llm_error"] = str(exc)
+
+    if result.get("verdict") in ("suspicious", "noise_flood"):
+        logger.warning("OSINT anomaly detected: %s — %s", result["verdict"], result.get("reason", ""))
+    else:
+        logger.info("OSINT anomaly check: %s", result.get("verdict"))
+
+    return result
+
+
 # ── reflex entry point ────────────────────────────────────────────────────────
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
@@ -756,6 +946,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     _ensure_tables()
 
     cfg = _load_config()
+    thresholds = _get_thresholds(cfg)
     tier_status = resolve_tiers()
     tier = tier_status.osint_tier
 
@@ -763,19 +954,19 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     effective_tier = tier
 
     if tier == TIER_INTERNET:
-        harvested, dupes, errors = _harvest_internet(cfg)
+        harvested, dupes, errors = _harvest_internet(cfg, thresholds)
 
     elif tier == TIER_GITLAB:
         harvested, dupes, errors = _harvest_gitlab(cfg)
         if harvested == 0 and dupes == 0:
             # Fall through to FILE_INBOX on empty/unreachable artifact
             effective_tier = TIER_FILE_INBOX
-            harvested, dupes, errors = _harvest_file_inbox(cfg)
+            harvested, dupes, errors = _harvest_file_inbox(cfg, thresholds)
             if harvested == 0 and dupes == 0:
                 effective_tier = TIER_NONE
 
     elif tier == TIER_FILE_INBOX:
-        harvested, dupes, errors = _harvest_file_inbox(cfg)
+        harvested, dupes, errors = _harvest_file_inbox(cfg, thresholds)
         if harvested == 0 and dupes == 0:
             effective_tier = TIER_NONE
 
@@ -806,6 +997,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     print(f"  Strategos OSINT: {summary}")
     logger.info("OSINT harvest complete: %s", summary)
 
+    # LLM anomaly detection — scores signal spikes against rolling baseline
+    anomaly = _detect_anomalies(cfg, harvested, effective_tier)
+
     # Normalize newly ingested raw signals into the unified schema
     norm_result: Dict[str, Any] = {"inserted": 0, "errors": 0}
     try:
@@ -829,6 +1023,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "errors": errors,
             "normalized": norm_result.get("inserted", 0),
             "normalization_errors": norm_result.get("errors", 0),
+            "anomaly": anomaly,
         },
     }
 

@@ -2,11 +2,30 @@
 {% block title %}CPMP Portfolio - ICDEV™{% endblock %}
 
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
 <div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><span>CPMP Portfolio</span></div>
 
-<div class="page-header">
-    <h1>Contract Portfolio</h1>
-    <p class="subtitle">Contract Performance Management Portal &mdash; active contracts, health, and deliverable tracking</p>
+<div class="page-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+    <div>
+        <h1>Contract Portfolio</h1>
+        <p class="subtitle">Contract Performance Management Portal &mdash; single pane of glass</p>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="/cpmp/reports" class="btn btn-primary" style="font-size:13px;">&#128196; View PMO Briefs</a>
+        <a href="/cpmp/deliverables" class="btn btn-secondary" style="font-size:13px;">All Deliverables &rarr;</a>
+    </div>
+</div>
+
+<!-- ── Cross-Portfolio Aggregate Banner (loaded async) ───────────────── -->
+<div id="agg-banner" style="display:none; background:var(--bg-secondary,#12122a); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; padding:14px 20px; margin-bottom:20px;">
+    <div style="font-size:11px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px;">Portfolio Aggregates</div>
+    <div style="display:flex; gap:32px; flex-wrap:wrap;">
+        <div><span style="font-size:22px; font-weight:700;" id="agg-cpi">—</span><br><span style="font-size:11px; color:var(--text-secondary);">Avg CPI</span></div>
+        <div><span style="font-size:22px; font-weight:700;" id="agg-spi">—</span><br><span style="font-size:11px; color:var(--text-secondary);">Avg SPI</span></div>
+        <div><span style="font-size:22px; font-weight:700;" id="agg-ontime">—</span><br><span style="font-size:11px; color:var(--text-secondary);">Deliverables On-Time</span></div>
+        <div><span style="font-size:22px; font-weight:700; color:var(--status-red,#dc3545);" id="agg-opts">—</span><br><span style="font-size:11px; color:var(--text-secondary);">Critical Option Windows</span></div>
+    </div>
 </div>
 
 <!-- Stat Grid -->
@@ -226,8 +245,159 @@
     </table>
 </div>
 
+<!-- ── Health Dimension Matrix (built from contracts data via JS) ──────── -->
+<div class="table-container" style="margin-top:20px;">
+    <div class="table-header" style="display:flex; align-items:center; justify-content:space-between;">
+        <h2>Health Matrix</h2>
+        <span style="font-size:11px; color:var(--text-secondary);">
+            <span style="color:#28a745;">&#9646;</span> Green &nbsp;
+            <span style="color:#ffc107;">&#9646;</span> Yellow &nbsp;
+            <span style="color:#dc3545;">&#9646;</span> Red &nbsp;
+            <span style="color:#888;">&#9646;</span> No data
+        </span>
+    </div>
+    <div id="matrix-container">
+        <div id="matrix-loading" style="padding:20px; text-align:center; color:var(--text-secondary); font-size:13px;">Loading…</div>
+    </div>
+</div>
+
+<!-- ── Option Period Countdown (server-side rendered) ────────────────── -->
+<div class="table-container" style="margin-top:20px;">
+    <div class="table-header"><h2>Option Period Countdown</h2></div>
+    {% if option_countdown %}
+    <div style="padding:12px; display:flex; flex-wrap:wrap; gap:10px;">
+        {% for o in option_countdown %}
+        {% set tier = o.risk_tier | default('') %}
+        {% set days = o.days_to_deadline %}
+        {% set tier_styles = {
+            'critical': 'border-color:#dc3545;background:rgba(220,53,69,0.07);',
+            'warning':  'border-color:#ffc107;background:rgba(255,193,7,0.07);',
+            'watch':    'border-color:#4a90d9;background:rgba(74,144,217,0.07);'
+        } %}
+        {% set day_colors = {'critical':'#dc3545','warning':'#ffc107','watch':'#4a90d9'} %}
+        <div style="display:inline-flex;flex-direction:column;padding:12px 16px;border-radius:8px;
+                    border:1px solid var(--border-color,#2a2a4a);min-width:200px;max-width:260px;
+                    {{ tier_styles.get(tier,'') }}">
+            <div style="font-size:11px;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">
+                {{ o.contract_number | default('—') }} — Option {{ o.option_number | default('?') }}
+            </div>
+            <div style="font-size:24px;font-weight:700;color:{{ day_colors.get(tier,'#888') }};">
+                {% if days is not none %}{{ days }}d{% else %}—{% endif %}
+            </div>
+            <div style="font-size:11px;color:var(--text-secondary);">to exercise deadline</div>
+            <div style="font-size:11px;margin-top:4px;">{{ o.exercise_deadline | default('') }}</div>
+            {% if o.ceiling_value %}<div style="font-size:11px;color:var(--text-secondary);">${{ '{:,.0f}'.format(o.ceiling_value) }}</div>{% endif %}
+            {% if tier %}<div style="margin-top:6px;"><span class="badge {% if tier=='critical' %}badge-error{% elif tier=='warning' %}badge-warning{% else %}badge-info{% endif %}" style="font-size:10px;">{{ tier | upper }}</span></div>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="padding:16px; text-align:center; color:var(--text-secondary); font-size:13px;">
+        No pending option periods tracked. Add them on individual contract pages once the Option Period Tracker is populated.
+    </div>
+    {% endif %}
+</div>
+
 <style>
 .text-danger { color: var(--status-red, #dc3545) !important; font-weight: bold; }
 .text-warning { color: var(--status-yellow, #ffc107) !important; }
 </style>
+
+<script>
+// ── Health Matrix (built from contracts already on the page) ──────────
+function buildHealthMatrix(contracts) {
+    var container = document.getElementById('matrix-container');
+    if (!contracts || !contracts.length) {
+        container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary);">No contracts to display.</div>';
+        return;
+    }
+
+    function _esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function cpiTier(v) {
+        if (v == null) return 'unknown';
+        return v >= 0.95 ? 'green' : v >= 0.85 ? 'yellow' : 'red';
+    }
+    function healthBadge(h) {
+        var cls = h === 'green' ? 'badge-success' : h === 'yellow' ? 'badge-warning' : h === 'red' ? 'badge-error' : '';
+        return '<span class="badge ' + cls + '" style="font-size:10px;">' + (h || '—') + '</span>';
+    }
+    function dot(tier) {
+        var bg = tier === 'green' ? '#28a745' : tier === 'yellow' ? '#ffc107' : tier === 'red' ? '#dc3545' : '#555';
+        return '<span style="display:inline-block;width:18px;height:18px;border-radius:4px;background:' + bg + ';" title="' + tier + '"></span>';
+    }
+
+    var rows = contracts.map(function(c) {
+        var overall = c.health || 'unknown';
+        var evm = (c.cpi != null && c.spi != null)
+            ? (Math.min(parseFloat(c.cpi), parseFloat(c.spi)) >= 0.95 ? 'green' : Math.min(parseFloat(c.cpi), parseFloat(c.spi)) >= 0.85 ? 'yellow' : 'red')
+            : 'unknown';
+        var cpiTierVal = cpiTier(c.cpi != null ? parseFloat(c.cpi) : null);
+        var score = c.health_score != null ? Math.round(parseFloat(c.health_score) * (parseFloat(c.health_score) <= 1.0 ? 100 : 1)) : '—';
+        return '<tr>' +
+            '<td><a href="/cpmp/' + (c.id || c.contract_id) + '" style="font-size:13px;">' + _esc(c.contract_number || '—') + '</a>' +
+            (c.agency ? '<br><small style="color:var(--text-secondary);font-size:10px;">' + _esc(c.agency) + '</small>' : '') + '</td>' +
+            '<td style="text-align:center;">' + healthBadge(overall) + '</td>' +
+            '<td style="text-align:center;" title="EVM: CPI ' + (c.cpi||'?') + ' / SPI ' + (c.spi||'?') + '">' + dot(evm) + '</td>' +
+            '<td style="text-align:center;">' + dot(overall) + '</td>' +
+            '<td style="text-align:center;">' + dot(c.cpars_rating_current === 'exceptional' || c.cpars_rating_current === 'very_good' ? 'green' : c.cpars_rating_current === 'satisfactory' ? 'yellow' : c.cpars_rating_current ? 'red' : 'unknown') + '</td>' +
+            '<td style="text-align:center;">' + dot(overall) + '</td>' +
+            '<td style="text-align:center;">' + dot(overall) + '</td>' +
+            '<td style="text-align:center;font-weight:700;font-size:13px;">' + score + '</td>' +
+            '</tr>';
+    });
+
+    container.innerHTML = '<div style="overflow-x:auto;"><table aria-label="Contract health dimension matrix">' +
+        '<thead><tr>' +
+        '<th style="min-width:140px;">Contract</th>' +
+        '<th style="text-align:center;">Overall</th>' +
+        '<th style="text-align:center;" title="Cost/Schedule Performance">EVM</th>' +
+        '<th style="text-align:center;" title="Deliverable status">Deliverables</th>' +
+        '<th style="text-align:center;" title="CPARS rating">CPARS</th>' +
+        '<th style="text-align:center;" title="Funding health">Funding</th>' +
+        '<th style="text-align:center;" title="Negative events">Neg. Events</th>' +
+        '<th style="text-align:center;">Score</th>' +
+        '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
+}
+
+// ── Aggregate Banner (computed from server-side contract data) ────────
+document.addEventListener('DOMContentLoaded', function() {
+    var contracts = {{ (contracts | default([])) | tojson | safe }};
+    buildHealthMatrix(contracts);
+    var cpis = contracts.map(function(c) { return parseFloat(c.cpi); }).filter(function(v) { return !isNaN(v) && isFinite(v); });
+    var spis = contracts.map(function(c) { return parseFloat(c.spi); }).filter(function(v) { return !isNaN(v) && isFinite(v); });
+    var avgCpi = cpis.length ? (cpis.reduce(function(a,b){return a+b;},0)/cpis.length).toFixed(2) : '—';
+    var avgSpi = spis.length ? (spis.reduce(function(a,b){return a+b;},0)/spis.length).toFixed(2) : '—';
+
+    var cpiEl = document.getElementById('agg-cpi');
+    if (cpiEl) {
+        cpiEl.textContent = avgCpi;
+        if (avgCpi !== '—') {
+            var v = parseFloat(avgCpi);
+            cpiEl.style.color = v < 0.85 ? '#dc3545' : v < 0.95 ? '#ffc107' : '#28a745';
+        }
+    }
+    var spiEl = document.getElementById('agg-spi');
+    if (spiEl) {
+        spiEl.textContent = avgSpi;
+        if (avgSpi !== '—') {
+            var sv = parseFloat(avgSpi);
+            spiEl.style.color = sv < 0.85 ? '#dc3545' : sv < 0.95 ? '#ffc107' : '#28a745';
+        }
+    }
+
+    var upcoming = {{ (upcoming_deliverables | default([])) | tojson | safe }};
+    var onTime = upcoming.filter(function(d) { return (d.days_until_due == null) || (d.days_until_due >= 0); }).length;
+    var ontimeEl = document.getElementById('agg-ontime');
+    if (ontimeEl) ontimeEl.textContent = upcoming.length > 0 ? onTime + '/' + upcoming.length : '—';
+
+    var optsEl = document.getElementById('agg-opts');
+    if (optsEl) {
+        var optCD = {{ (option_countdown | default([])) | tojson | safe }};
+        var critCount = optCD.filter(function(o) { return o.risk_tier === 'critical'; }).length;
+        optsEl.textContent = critCount;
+    }
+
+    document.getElementById('agg-banner').style.display = 'block';
+});
+</script>
 {% endblock %}

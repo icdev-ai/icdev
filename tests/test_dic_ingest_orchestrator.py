@@ -190,8 +190,7 @@ def test_pdf_text_path_returns_pypdf_provider(tmp_path: Path):
 
     # Create a minimal text-based PDF using pypdf
     try:
-        from pypdf import PdfWriter, PdfReader
-        from io import BytesIO
+        from pypdf import PdfWriter
     except ImportError:
         pytest.skip("pypdf not installed")
 

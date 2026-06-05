@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Slide Deck Generator - ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+<div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><span>Slide Decks</span></div>
+
+<div class="page-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+    <div>
+        <h1>Slide Deck Generator</h1>
+        <p class="subtitle">Agentic PPTX generation from ICDEV™ live data — canvases, kanban, genesis, and capabilities</p>
+    </div>
+    <a href="/slides/new" class="btn btn-primary">+ Generate New Deck</a>
+</div>
+
+<!-- Stat Grid -->
+<div class="stat-grid" style="margin-bottom:24px;">
+    <div class="stat-card">
+        <div class="stat-value">{{ decks | selectattr('status', 'equalto', 'completed') | list | length }}</div>
+        <div class="stat-label">Completed Decks</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ decks | selectattr('status', 'equalto', 'auto') | list | length }}</div>
+        <div class="stat-label">Auto-Generated</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ decks | sum(attribute='slide_count') }}</div>
+        <div class="stat-label">Total Slides</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ decks | length }}</div>
+        <div class="stat-label">All Decks</div>
+    </div>
+</div>
+
+<!-- Deck Table -->
+<div class="card">
+    <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
+        <h3 style="margin:0;">Recent Decks</h3>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <select id="filter-status" class="form-control form-control-sm" style="width:auto;" onchange="filterDecks()">
+                <option value="">All Statuses</option>
+                <option value="completed">Completed</option>
+                <option value="auto">Auto-Generated</option>
+                <option value="failed">Failed</option>
+            </select>
+        </div>
+    </div>
+    <div class="card-body" style="padding:0;">
+        {% if decks %}
+        <table class="table" id="decks-table">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Type</th>
+                    <th>Theme</th>
+                    <th>Slides</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for deck in decks %}
+                <tr data-status="{{ deck.status }}">
+                    <td><a href="/slides/{{ deck.deck_id }}">{{ deck.title | truncate(60) }}</a></td>
+                    <td><span class="badge badge-info">{{ deck.deck_type | replace('_', ' ') | title }}</span></td>
+                    <td>{{ deck.theme | replace('_', ' ') | title }}</td>
+                    <td>{{ deck.slide_count }}</td>
+                    <td>
+                        {% if deck.status == 'completed' %}
+                            <span class="badge badge-success">Completed</span>
+                        {% elif deck.status == 'auto' %}
+                            <span class="badge badge-primary">Auto</span>
+                        {% elif deck.status == 'running' %}
+                            <span class="badge badge-warning">Running…</span>
+                        {% elif deck.status == 'failed' %}
+                            <span class="badge badge-danger">Failed</span>
+                        {% else %}
+                            <span class="badge">{{ deck.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ deck.created_at.strftime('%Y-%m-%d %H:%M') if deck.created_at else '—' }}</td>
+                    <td>
+                        <a href="/slides/{{ deck.deck_id }}" class="btn btn-sm btn-secondary">View</a>
+                        {% if deck.status in ('completed', 'auto') %}
+                        <a href="/slides/api/{{ deck.deck_id }}/download" class="btn btn-sm btn-primary">↓ PPTX</a>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="padding:48px; text-align:center; color:var(--text-secondary);">
+            <div style="font-size:48px; margin-bottom:12px;">🎨</div>
+            <div style="font-size:18px; font-weight:600; margin-bottom:8px;">No decks yet</div>
+            <div style="margin-bottom:20px;">Generate your first ICDEV™ slide deck from live data.</div>
+            <a href="/slides/new" class="btn btn-primary">Generate New Deck</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- IQE Query Widget -->
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+function filterDecks() {
+    var val = document.getElementById('filter-status').value;
+    document.querySelectorAll('#decks-table tbody tr').forEach(function(row) {
+        row.style.display = (!val || row.dataset.status === val) ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}

@@ -78,3 +78,23 @@ database:
   path: "data/dat.db"
   # Audit log table name
   audit_table: dat_ingestion_log
+
+# ---------------------------------------------------------------------------
+# Anomaly detection — adaptive cooldown for dat_refresh reflex
+# When DTI scores show a statistically significant spike or drop (|z| ≥
+# z_score_threshold), the reflex fires sooner (cooldown_hours_min).
+# When scores are stable the cooldown extends to cooldown_hours_max.
+# Requires at least min_samples snapshots; falls back to static when scarce.
+# ---------------------------------------------------------------------------
+anomaly_detection:
+  enabled: true
+  # Minimum snapshots required before adaptive mode activates
+  min_samples: 4
+  # Standard deviations from the historical mean to classify as an anomaly
+  z_score_threshold: 2.0
+  # Cooldown when anomaly detected (hours) — fire sooner to track rapid change
+  cooldown_hours_min: 1
+  # Cooldown when signal is stable (hours) — save resources during quiet periods
+  cooldown_hours_max: 12
+  # Use static COOLDOWN_HOURS_DEFAULT when not enough history exists
+  fallback_to_static: true

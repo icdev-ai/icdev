@@ -33,6 +33,20 @@ def _generate_id(prefix: str = "pg") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Module-level constants — win/loss analysis thresholds, overridable from
+# proposal_genesis_config.yaml under reflexes.analyze.  Change config, not code.
+# ---------------------------------------------------------------------------
+_STRENGTH_THRESHOLD     = 0.60   # dimension score ≥ this → strength
+_WEAKNESS_THRESHOLD     = 0.40   # dimension score < this → weakness
+_CAP_FIT_WEAKNESS       = 0.50   # capability_fit below this → capability-gap lesson
+_COMPLIANCE_WEAKNESS    = 0.50   # compliance_readiness below this → compliance lesson
+_RESOURCE_WEAKNESS      = 0.50   # resource_availability below this → staffing lesson
+_QUALITY_FLOOR          = 65     # avg draft quality below this (out of 100) → quality lesson
+_COMPETITOR_FETCH_LIMIT = 5      # max recent competitor awards fetched
+_MAX_ANALYSES_PER_RUN   = 20     # max opportunities analyzed per run
+
+
+# ---------------------------------------------------------------------------
 # Lesson categories and keyword detection
 # ---------------------------------------------------------------------------
 
@@ -163,14 +177,14 @@ def _get_competitor_data(opportunity_id: str) -> Optional[Dict]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            """
+            f"""
             SELECT vendor_name, award_amount, award_date
             FROM govcon_awards
             WHERE naics_code IN (
                 SELECT naics_code FROM sam_gov_opportunities
                 WHERE id = ?
             )
-            ORDER BY award_date DESC LIMIT 5
+            ORDER BY award_date DESC LIMIT {_COMPETITOR_FETCH_LIMIT}
         """,
             (opportunity_id,),
         ).fetchall()
@@ -242,9 +256,9 @@ def _analyze_opportunity(opp: Dict) -> Dict:
     weaknesses = []
     for dim, score in sorted(dimensions.items(), key=lambda x: x[1], reverse=True):
         label = dim.replace("_", " ").title()
-        if score >= 0.6:
+        if score >= _STRENGTH_THRESHOLD:
             strengths.append(f"{label} ({score:.0%})")
-        elif score < 0.4:
+        elif score < _WEAKNESS_THRESHOLD:
             weaknesses.append(f"{label} ({score:.0%})")
 
     # Competitor data
@@ -298,7 +312,7 @@ def _analyze_opportunity(opp: Dict) -> Dict:
 
     # Lesson from capability gaps
     cap_fit = dimensions.get("capability_fit", 0)
-    if cap_fit < 0.5 and outcome == "lost":
+    if cap_fit < _CAP_FIT_WEAKNESS and outcome == "lost":
         lessons.append(
             {
                 "category": "technical",
@@ -308,7 +322,7 @@ def _analyze_opportunity(opp: Dict) -> Dict:
         )
 
     # Lesson from quality
-    if quality and quality["avg_composite"] < 65 and outcome == "lost":
+    if quality and quality["avg_composite"] < _QUALITY_FLOOR and outcome == "lost":
         lessons.append(
             {
                 "category": "technical",
@@ -322,7 +336,7 @@ def _analyze_opportunity(opp: Dict) -> Dict:
 
     # Lesson from compliance
     comp_readiness = dimensions.get("compliance_readiness", 0)
-    if comp_readiness < 0.5:
+    if comp_readiness < _COMPLIANCE_WEAKNESS:
         lessons.append(
             {
                 "category": "compliance",
@@ -336,7 +350,7 @@ def _analyze_opportunity(opp: Dict) -> Dict:
 
     # Lesson from staffing/resources
     resource = dimensions.get("resource_availability", 0)
-    if resource < 0.5:
+    if resource < _RESOURCE_WEAKNESS:
         lessons.append(
             {
                 "category": "staffing",
@@ -480,7 +494,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     Returns standard reflex result dict.
     """
-    max_analyses = config.get("max_analyses_per_run", 20)
+    max_analyses = config.get("max_analyses_per_run", _MAX_ANALYSES_PER_RUN)
 
     completed = _get_completed_opportunities()
     analyzed = 0

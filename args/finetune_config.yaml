@@ -246,3 +246,18 @@ quality_feedback:
   use_statement_extraction: true     # D-FT-23: Use Know Your RAG statement extraction
   taxonomy_aware_generation: true    # Target weak taxonomy labels
   max_auto_pairs_per_cycle: 50
+  min_pairs_per_source: 5            # floor on per-source generation budget
+  # Adaptive anomaly detection (aiify rm-6efad-phase-5497):
+  # derive RAG quality floors as mean − k·stddev of ft_quality_snapshots history
+  # instead of frozen magic numbers; falls back to fallback_floors when sparse.
+  anomaly_detection:
+    enabled: true
+    min_samples: 30                  # min history rows per metric before adapting
+    stddev_k: 2.0                    # flag metrics below mean − k·stddev
+    fallback_floors:                 # used when < min_samples history exists
+      ndcg: 0.30
+      mrr: 0.30
+      avg_retrieval_score: 0.30
+    adaptive_bounds:
+      floor_min: 0.05                # clamp adaptive floor lower bound
+      floor_max: 0.80                # clamp adaptive floor upper bound

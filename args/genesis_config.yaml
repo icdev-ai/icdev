@@ -12,6 +12,18 @@
 
 classification: "CUI // SP-CTI"
 
+# ── Daemon Defaults ──────────────────────────────────────────────────────────
+# Configurable fallback thresholds used when a per-reflex override is absent.
+# Moving these out of Python constants lets the anomaly_detection convergence
+# layer adapt them over time without code changes.
+
+defaults:
+  # Watchdog timeout for any reflex that doesn't set its own timeout_seconds.
+  reflex_timeout_seconds: 300
+  # Lines-of-code heuristics for stub detection in _classify_reflex_impl.
+  stub_loc_min: 10
+  stub_loc_full: 15
+
 # ── Master Switch ────────────────────────────────────────────────────────────
 
 enabled: true  # D-GEN-9: enabled for persistent daemon
@@ -27,9 +39,9 @@ trust_mode: full
 # Reflexes only run within this window. Outside it, is_due() returns false.
 # Interval/continuous reflexes (research, ingest, heal) are also gated.
 active_hours:
-  enabled: false   # Time gate disabled — running until BACKLOG clears (17 AAC tasks). Re-enable at 09:00 tomorrow.
-  start_hour: 9    # restore to 9 AM once backlog is done
-  end_hour: 23     # 11 PM local
+  enabled: false   # Quiet hours disabled — scheduler runs 24/7 with no time gate.
+  start_hour: 9
+  end_hour: 23
   timezone: "America/New_York"
 
 # ── LLM Configuration ───────────────────────────────────────────────────────
@@ -247,6 +259,20 @@ reflexes:
       - knowledge_growth_metrics
       - circuit_breaker_status
       - recommendations
+    # Recommendation thresholds — moved from hardcoded Python constants so the
+    # anomaly_detection layer can adapt them from historical report data at runtime.
+    high_failure_rate_threshold: 0.30    # failure_rate > this fraction → high failure recommendation
+    nominal_success_rate_threshold: 90.0 # success_rate > this (with no other issues) → all nominal
+    anomaly_detection:
+      enabled: true
+      min_samples: 5               # minimum historical genesis.report.generated events before adaptive mode
+      sigma_multiplier: 1.0        # adaptive threshold = mean ± (sigma_multiplier * std)
+      fallback_to_static: true     # use static thresholds when history is insufficient
+      adaptive_bounds:
+        failure_rate_floor: 0.10   # adaptive failure threshold never drops below this
+        failure_rate_ceiling: 0.50 # adaptive failure threshold never exceeds this
+        success_rate_floor: 70.0   # nominal success threshold never drops below this
+        success_rate_ceiling: 99.0 # nominal success threshold never exceeds this
 
   govcon_scan:
     enabled: true
@@ -287,6 +313,13 @@ reflexes:
     require_writeguard_pass: true
     require_cui_check: true
     max_articles_per_day: 2
+    writeguard_min_score: 80        # absolute floor; anomaly detection may lower it
+    anomaly_detection:
+      enabled: true
+      lookback_days: 30             # how many days of history to sample
+      min_history: 5                # minimum posts required before adapting threshold
+      z_score_floor: -1.5           # dynamic threshold = mean + z_score_floor * std
+      absolute_floor: 60            # never accept articles below this score
 
   test:
     enabled: true
@@ -316,6 +349,7 @@ reflexes:
         - research_signals
         - innovation_signals
         - pulse_posts
+      pairs_per_table: 20            # max pair-generation attempts per source table
       min_pass_rate: 0.2
       max_pass_rate: 0.8
     fine_tune:
@@ -323,6 +357,17 @@ reflexes:
       method: lora  # LoRA for efficient local fine-tuning
       epochs: 3
       validation_split: 0.2
+    # ── Anomaly Detection: adaptive fine-tune readiness threshold ─────────────
+    # Threshold moved from hardcoded Python constant (100) so the anomaly_detection
+    # layer can adapt it from historical pair accumulation rates without code changes.
+    anomaly_detection:
+      enabled: true                  # use adaptive threshold based on pair history
+      min_samples: 5                 # minimum historical cycle rows before adaptive mode
+      sigma_multiplier: 1.0          # threshold = mean + (sigma_multiplier * std)
+      fallback_to_static: true       # use fallback_min_pairs when history is insufficient
+      fallback_min_pairs: 100        # static fallback: minimum pairs before fine-tune attempt
+      adaptive_bounds:
+        min_pairs_floor: 20          # adaptive threshold never drops below this
 
   heal:
     enabled: true
@@ -336,6 +381,8 @@ reflexes:
       operator: gte  # 0 = no failures (healthy), > 0 = healed something
     confidence_threshold: 0.7
     max_auto_heals_per_hour: 5
+    lookback_hours: 6
+    max_failures_per_cycle: 20
     cooldown_minutes: 10
 
   log_triage:
@@ -343,13 +390,16 @@ reflexes:
     risk_tier: green
     schedule: "every 30m"
     interval_seconds: 1800
-    description: "Read .logs/build.ndjson tail, deduplicate failure signatures, create Kanban tasks for unseen failures. Fully autonomous — no LLM required."
+    description: "Read .logs/build.ndjson tail, score events with LLM anomaly detection (haiku), deduplicate signatures, create Kanban tasks for unseen anomalies."
     success_metric:
       name: tasks_created
       threshold: 0
       operator: gte
     tail_lines: 500           # NDJSON lines to read per cycle
     build_log: .logs/build.ndjson
+    # Anomaly detection — replaces hardcoded level/failed/returncode thresholds
+    anomaly_threshold: 0.4    # [0,1] minimum LLM score to classify an event as a failure
+    score_batch_size: 20      # events per LLM call (haiku stays cheap at this size)
 
   failure_triage:
     enabled: true
@@ -376,6 +426,54 @@ reflexes:
     success_metric:
       name: tasks_created
       threshold: 0
+      operator: gte
+
+  cpmp_monitor:
+    enabled: true
+    risk_tier: yellow
+    schedule: "every 3h"
+    interval_seconds: 10800
+    timeout_seconds: 600
+    description: "CPMP proactive surveillance: PMO issue detection, CPARS trajectory alerts, subcontractor noncompliance sweep, 14-day CDRL auto-generation"
+    success_metric:
+      name: cards_created
+      threshold: 0
+      operator: gte
+
+  pmo_option_tracker:
+    enabled: true
+    risk_tier: yellow
+    schedule: "daily 06:30"
+    interval_seconds: 86400
+    timeout_seconds: 300
+    description: "Check all pending option periods for approaching exercise deadlines (90/60/30-day windows); create kanban tasks and escalate critical windows"
+    success_metric:
+      name: alerts_created
+      threshold: 0
+      operator: gte
+
+  pmo_weekly_report:
+    enabled: true
+    risk_tier: yellow
+    schedule: "every Monday at 07:00"
+    interval_seconds: 604800
+    timeout_seconds: 300
+    description: "AI-narrated weekly portfolio health report: EVM aggregates, overdue deliverables, option countdowns, top issues. Pushes to kanban and data/reports/"
+    success_metric:
+      name: total_contracts
+      threshold: 0
+      operator: gte
+
+  slides:
+    enabled: true
+    risk_tier: green
+    schedule: "0 17 * * 5"
+    interval_seconds: 604800
+    timeout_seconds: 300
+    description: "Weekly auto-generated ICDEV™ status deck: pulls canvases, kanban, genesis, capabilities → produces .pptx via Midnight Executive theme"
+    success_metric:
+      name: slide_count
+      threshold: 1
       operator: gte
 
   kanban:
@@ -460,6 +558,33 @@ reflexes:
     peer_review:
       enabled: false  # Off by default
       reviewer_function: wg_coherence_check  # Scanner tier in LLM router
+    # ── Anomaly Detection: adaptive thresholds for code quality filtering ─────
+    # Thresholds moved from hardcoded Python constants so the anomaly_detection
+    # layer can adapt them at runtime without code changes.
+    anomaly_detection:
+      enabled: true                # use population-variance based adaptive thresholds
+      min_samples: 10              # minimum code_quality_metrics rows before adaptive mode
+      sigma_multiplier: 0.5        # threshold = mean ± (sigma_multiplier * std)
+      fallback_to_static: true     # use static fallbacks when data is insufficient
+      fallback_smell_threshold: 1.0             # static fallback: smell_count > this
+      fallback_maintainability_threshold: 50.0  # static fallback: maintainability_score < this
+      adaptive_bounds:
+        smell_threshold_floor: 1.0   # adaptive smell threshold never drops below this
+        maint_threshold_floor: 0.0   # adaptive maint threshold never drops below this
+    # ── Confidence tier thresholds ────────────────────────────────────────────
+    # GKP confidence values per quality-gate outcome. Tune without code changes.
+    thresholds:
+      min_confidence: 0.50        # reject variant if confidence falls below this
+      expedited_review: 0.55      # confidence >= this → expedited_review status
+      auto_promotable: 0.70       # confidence >= this → auto_promotable status
+      confidence_tiers:
+        tests_failed: 0.35
+        low_risk_improved: 0.75
+        low_risk: 0.65
+        medium_risk_improved: 0.60
+        medium_risk: 0.50
+        high_risk: 0.45
+        sandbox_penalty: 0.10     # subtracted when sandbox verification fails
 
   docs:
     enabled: true
@@ -491,7 +616,11 @@ reflexes:
       name: experiments_accepted_pct
       threshold: 0
       operator: gte
-    signal_score_threshold: 0.70
+    signal_score_threshold: 0.70  # static fallback when adaptive is disabled or has insufficient data
+    adaptive_threshold:
+      enabled: true
+      z_factor: 0.5     # mean + 0.5*std selects top ~31% of a normal distribution
+      min_samples: 10   # minimum scored signals required before using adaptive mode
     max_experiments_per_run: 3
     export_gkp: true
     domains:
@@ -510,10 +639,35 @@ reflexes:
       name: patterns_detected
       threshold: 0
       operator: gte  # 0 = no patterns (healthy), > 0 = new patterns found
+    # Thresholds moved from hardcoded Python constants — anomaly_detection layer
+    # adapts min_pattern_frequency at runtime without code changes.
     min_pattern_frequency: 3
     min_chain_length: 3
     lookback_days: 7
+    max_gap_seconds: 300
+    top_k: 20
+    session_ids_cap: 10
     max_goals_per_run: 3
+    # Confabulation risk threshold — moved from hardcoded 0.6 constant so the
+    # anomaly_detection layer can adapt it from historical flag rates at runtime.
+    confabulation_risk_threshold: 0.6   # static fallback: flag goal when risk_score >= this
+    confabulation_anomaly_detection:
+      enabled: true                     # use adaptive threshold based on historical flag history
+      min_samples: 5                    # minimum canvas_ai_decisions rows before adaptive mode
+      sigma_multiplier: 0.5             # threshold = mean + (sigma_multiplier * std) of past scores
+      fallback_to_static: true          # use confabulation_risk_threshold when data is sparse
+      adaptive_bounds:
+        threshold_floor: 0.3            # adaptive threshold never drops below this
+        threshold_ceiling: 0.9          # adaptive threshold never exceeds this
+    # Adaptive IQR-based frequency threshold (anomaly_detection paradigm).
+    # When enabled, min_pattern_frequency becomes a fallback used only when
+    # there are fewer than min_samples distinct n-grams in the dataset.
+    anomaly_detection:
+      enabled: true          # replace static threshold with IQR-based detection
+      min_samples: 4         # minimum distinct n-grams before adaptive mode activates
+      sensitivity: 1.0       # IQR multiplier: 1.0 = Q3 (75th percentile), 2.0 = upper fence
+      fallback_to_static: true  # use min_pattern_frequency when data is insufficient
+      frequency_floor: 2     # adaptive threshold never drops below this
 
   # ── Goal Learner — Self-Improving Goals from Experience ─────────────────────
 
@@ -526,8 +680,28 @@ reflexes:
       name: goals_generated
       threshold: 0
       operator: gte  # 0 = no novel events (healthy), > 0 = new goals learned
-    novelty_threshold: 0.6
-    max_goals_per_run: 3
+    novelty_threshold: 0.6     # minimum novelty score (0–1) to qualify for goal generation
+    min_evidence_count: 2      # minimum audit+kanban events a domain must have to qualify
+    max_goals_per_run: 3       # cap on goals emitted per scan
+    lookback_days: 7           # audit/kanban look-back window
+    quality_weights:           # scoring dimension weights (must sum to 1.0)
+      novelty_score: 0.40
+      evidence_count: 0.25
+      domain_clarity: 0.20
+      tool_coverage: 0.15
+    evidence_count_normalizer: 4.0  # (count-1)/N → 1.0 at 5+ events
+    domain_clarity_divisor: 10.0   # avg keyword length ÷ N → 1.0 at 10-char avg
+    tool_coverage_placeholder: 0.5  # static until tool-analysis is implemented
+    max_audit_events: 500           # LIMIT for genesis_audit scan query
+    max_kanban_completions: 200     # LIMIT for kanban_tasks completions query
+    top_terms_count: 60             # top-N frequency terms used for domain clustering
+    max_keywords_per_domain: 30     # keyword cap stored per domain
+    write_files: true               # write suggested goal .md files to data/genesis/suggested_goals/
+    # Adaptive threshold via anomaly detection — inherits convergence.anomaly_detection
+    # when not set here; local keys override the global block.
+    anomaly_detection:
+      min_samples: 5    # min historical records before adaptive threshold activates
+      z_score: 2.0      # std deviations above historical mean sets the threshold
 
   # ── Oracle Predictive Intelligence (tools/oracle/) ──────────────────────────
 
@@ -581,9 +755,49 @@ reflexes:
       threshold: 0
       operator: gte  # 0 firing = healthy; >0 surfaces real failures (always succeeds)
     refresh_probes: [http_head]   # cheap probes re-run live each cycle; others reused from awareness
-    min_fail_to_alert: 1          # per-category failing count before an alert fires
+    min_fail_to_alert: 1          # static fallback: per-category failing count before an alert fires
     max_failure_rows: 200         # cap failure_log inserts per cycle
     max_snapshot_age_hours: 168   # ignore failures whose latest probe is >7d old (stale/abandoned)
+    # Adaptive min_fail_to_alert — threshold moved from hardcoded Python constant so the
+    # anomaly_detection layer can raise the bar when a category has many historical
+    # failures (normal noise) and keep it low when failures are rare (high signal).
+    # Uses daily failure_log insert counts: adaptive = mean + sigma_multiplier * std,
+    # bounded to [min_fail_floor, min_fail_ceiling]. Falls back to min_fail_to_alert
+    # until min_samples days of history accumulate.
+    anomaly_detection:
+      enabled: true                # use adaptive threshold based on historical failure_log data
+      min_samples: 10              # minimum days of history before adaptive mode activates
+      sigma_multiplier: 1.0        # adaptive = mean + (sigma_multiplier * std)
+      fallback_to_static: true     # use min_fail_to_alert when history is insufficient
+      history_days: 30             # rolling look-back window for daily failure counts
+      adaptive_bounds:
+        min_fail_floor: 1          # adaptive threshold never drops below this
+        min_fail_ceiling: 20       # adaptive threshold never exceeds this
+      # Per-category guidance thresholds for the LLM anomaly classifier.
+      # Moved from hardcoded strings in _ANOMALY_SYSTEM_PROMPT so operators can
+      # adjust anomaly sensitivity per category without code changes.
+      # Each entry: {guidance: <text>, noise_max: <int>, anomalous_min: <int>}
+      category_thresholds:
+        module_import:
+          guidance: "any failure (>=1) is critical and anomalous"
+          noise_max: 0
+          anomalous_min: 1
+        http_head:
+          guidance: "1-3 route errors may be noise; 5+ is anomalous"
+          noise_max: 3
+          anomalous_min: 5
+        coherence_status:
+          guidance: "1-2 may be transient; 3+ is anomalous"
+          noise_max: 2
+          anomalous_min: 3
+        twin_probe:
+          guidance: "treat like coherence_status (1-2 transient; 3+ anomalous)"
+          noise_max: 2
+          anomalous_min: 3
+        "gap::tool_not_in_manifest":
+          guidance: "informational; <=4 is not anomalous"
+          noise_max: 4
+          anomalous_min: 5
 
   # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
 
@@ -678,6 +892,32 @@ reflexes:
       - risk
       - execution
 
+  # ── NOCC SLA Watcher (4h cadence) ────────────────────────────────────────
+
+  nocc_sla_watcher:
+    enabled: true
+    risk_tier: green
+    schedule: "every 4h"
+    description: "Watch NOCC SLA records, flag projected breaches and warn on anomalous measurements"
+    success_metric:
+      name: warnings_issued
+      threshold: 0
+      operator: gte  # 0 = all SLAs healthy, >0 = projections surfaced
+    # Warn margin moved from hardcoded Python constant (_WARN_MARGIN_PCT = 0.5) so the
+    # anomaly_detection layer can adapt it from historical measurement variance at runtime.
+    warn_margin_pct: 0.5              # static fallback: warn when within this % of target
+    anomaly_detection:
+      enabled: true                   # use adaptive margin based on per-circuit measurement history
+      min_samples: 10                 # minimum historical rows before adaptive mode activates
+      sigma_multiplier: 1.5           # adaptive_margin = mean_deviation + sigma_multiplier * std
+      fallback_to_static: true        # use warn_margin_pct when data is insufficient
+      history_days: 30               # days of SLA measurement history to analyze per circuit+sla_type
+      stable_std: 0.01               # std threshold below which a circuit is "stable" (use mean+fallback buffer)
+      borderline_ratio: 0.8          # LLM contextual check only when gap >= this fraction of dynamic margin
+      adaptive_bounds:
+        margin_floor: 0.1             # adaptive margin never drops below this
+        margin_ceiling: 5.0           # adaptive margin never exceeds this
+
   # ── Network Migration Canvas Health Monitor (NMCE — 2026-05-08) ──────────
 
   migration_canvas:
@@ -692,6 +932,77 @@ reflexes:
       name: findings
       threshold: 0
       operator: gte  # 0 = all migrations healthy, >0 = issues surfaced
+
+  aadc_compliance:
+    enabled: true
+    risk_tier: green
+    schedule: "on_event"
+    description: "AADC design compliance scoring — NIST AI RMF / OWASP LLM / MITRE ATLAS node-coverage"
+    success_metric:
+      name: overall_score
+      threshold: 0
+      operator: gte
+    # Thresholds moved from hardcoded Python constants — anomaly_detection layer
+    # adapts them at runtime using z-score over historical aadc_assessments data.
+    critical_threshold: 40.0       # framework coverage below this triggers a Kanban suggestion
+    memory_delta_threshold: 5.0    # min overall_score change (points) to write a memory insight
+    anomaly_detection:
+      enabled: true                # replace static thresholds with z-score adaptive ones
+      min_samples: 5               # historical assessments needed before adaptive mode activates
+      z_score: 2.0                 # std deviations below historical mean sets adaptive critical_threshold
+      fallback_to_static: true     # use critical_threshold/memory_delta_threshold when data is sparse
+      adaptive_bounds:
+        critical_threshold_floor: 20.0    # adaptive threshold never drops below this
+        critical_threshold_ceiling: 60.0  # adaptive threshold never exceeds this
+        memory_delta_floor: 2.0           # adaptive delta never drops below this
+        memory_delta_ceiling: 15.0        # adaptive delta never exceeds this
+
+  peering_agreement_renewal:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 06:00"
+    interval_seconds: 86400
+    description: "Check nc_peering_agreements for contracts expiring; issue NOCC alarms for at-risk agreements"
+    success_metric:
+      name: at_risk_count
+      threshold: 0
+      operator: gte  # 0 = no expiring agreements (healthy), >0 = alarms issued
+    # Thresholds moved from hardcoded Python constants — anomaly_detection layer
+    # can adapt them at runtime without code changes.
+    days_ahead: 90          # static fallback: look-ahead window for expiring agreements
+    critical_days: 30       # static fallback: agreements <= this days remaining → critical severity
+    anomaly_detection:
+      enabled: true         # use AI to assess per-agreement severity (replaces days <= 30 rule)
+      fallback_to_static: true  # use critical_days when LLM unavailable
+
+  quality:
+    enabled: true
+    risk_tier: yellow
+    schedule: "daily 03:00"
+    description: "Self-Learning QA/QC: run all QDC gates, detect regressions, auto-remediate safe issues, propose improvements via GKP"
+    success_metric:
+      name: regressions_detected
+      threshold: 0
+      operator: gte  # 0 = stable quality, >0 = regressions found (always succeeds)
+    # Thresholds moved from hardcoded Python constants — anomaly_detection layer
+    # can adapt them at runtime from historical quality_snapshots data.
+    uqs_regression_threshold: -5.0    # static fallback: UQS drop (points) that triggers a regression event
+    uqs_critical_threshold: -15.0     # static fallback: UQS drop below which severity becomes "critical"
+    findings_increase_threshold: 5    # static fallback: new findings count increase that triggers a regression event
+    gate_score_threshold: 80          # static fallback: gate score below which a GKP improvement is proposed
+    worst_gates_count: 3              # number of worst-performing gates to inspect for GKP generation
+    anomaly_detection:
+      enabled: true                   # use adaptive thresholds based on quality_snapshots history
+      min_samples: 5                  # minimum historical snapshots before adaptive mode activates
+      sigma_multiplier: 1.0           # adaptive_threshold = mean + sigma_multiplier * std
+      critical_sigma_multiplier: 2.0  # critical threshold = mean - (critical_sigma_multiplier * sigma * std)
+      critical_floor_multiplier: 2.0  # critical floor = uqs_regression_floor * critical_floor_multiplier
+      fetch_buffer: 10                # extra rows fetched beyond min_samples for delta computation
+      fallback_to_static: true        # use static thresholds when history is insufficient
+      adaptive_bounds:
+        uqs_regression_floor: -20.0   # adaptive UQS regression threshold never goes below this
+        findings_increase_floor: 1    # adaptive findings threshold never drops below this
+        gate_score_floor: 50          # adaptive gate score threshold never drops below this
 
   academy_reflex:
     enabled: true
@@ -813,6 +1124,31 @@ audit:
     - genesis.stagnation.detected
     - genesis.stagnation.plateau_broken
 
+# ── Eval Harness Gates (AI-ify Phase 2 — anomaly_detection) ────────────────
+# Thresholds moved from hardcoded Python constants to config so the
+# anomaly_detection layer can adapt them without code changes.
+harness:
+  gates:
+    precision_min: 0.80       # oracle_triage/heal: alert when precision < this
+    ece_max: 0.15             # calibration: alert when ECE > this
+    false_heal_max: 0.20      # heal: alert when false-heal rate > this
+    heal_success_min: 0.60    # heal: alert when heal success rate < this
+    min_decisions: 10         # skip gate check when fewer decisions than this
+  anomaly_detection:
+    enabled: true             # use adaptive z-score anomaly detection
+    min_samples: 10           # minimum historical windows before adaptive mode activates
+    window_days: 90           # rolling window in days for snapshot collection
+    chunk_size: 20            # decision rows per sliding snapshot
+    z_score: 2.0              # std deviations from mean to set adaptive threshold
+    fallback_to_static: true  # fall back to gates.* thresholds when insufficient data
+    # Hard safety bounds for adaptive thresholds — prevents z-score from producing
+    # nonsensical values when history is noisy or sparse.
+    adaptive_bounds:
+      precision_min_floor: 0.50      # adaptive precision_min never goes below this
+      ece_max_ceiling: 0.50          # adaptive ece_max never goes above this
+      false_heal_max_ceiling: 0.60   # adaptive false_heal_max never goes above this
+      heal_success_min_floor: 0.30   # adaptive heal_success_min never goes below this
+
 # ── Convergence Gates (Phase 65 — Ouroboros-inspired) ──────────────────────
 
 convergence:
@@ -833,6 +1169,14 @@ convergence:
     trigger_every_n_cycles: 5
     trigger_on_drift_above: 0.30
   window_size: 10
+  # Anomaly detection: adaptive thresholds derived from per-reflex historical data.
+  # When n_samples >= min_samples, thresholds become mean + z_score*std instead of
+  # the static values above. Falls back to static thresholds until history builds up.
+  anomaly_detection:
+    min_samples: 5    # minimum records before adaptive thresholds activate
+    z_score: 2.0      # std deviations above historical mean to set threshold
+    slope_normalizer: 10.0  # maps linear metric slope → [0,1] drift; slope ≥ 1/slope_normalizer → zero drift
+    clarity_keyword_divisor: 3  # keyword hits per dimension needed to score full clarity
 
 # ── Stagnation Detector (Phase 65 — Ouroboros-inspired) ────────────────────
 

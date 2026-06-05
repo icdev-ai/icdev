@@ -20,6 +20,18 @@ from typing import Any, Dict, List, Optional
 
 logger = get_logger("icdev.rag.pdf_provider")
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/rag_config.yaml
+# under pdf_provider.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_PDF_MAX_PAGES          = 200    # maximum pages to extract per document
+_PDF_MAX_FILE_SIZE_MB   = 25     # file size limit in MB (reduced from 50 for memory safety)
+_PDF_ANTHROPIC_TOKENS   = 4096   # max_tokens for Anthropic PDF extraction call
+_PDF_SCANNED_TEXT_MIN   = 50     # min chars extracted for a page to skip vision OCR
+_PDF_RENDER_DPI         = 150    # DPI for pdf2image page rendering
+_PDF_VISION_TIMEOUT     = 60     # HTTP timeout (s) for vision OCR request
+_PDF_AVAIL_TIMEOUT      = 3      # HTTP timeout (s) for provider availability probe
+
 
 @dataclass
 class PDFPage:
@@ -111,7 +123,7 @@ class AnthropicPDFProvider(PDFProvider):
 
         return os.environ.get("ANTHROPIC_API_KEY", "")
 
-    def extract(self, pdf_path: Path, max_pages: int = 200) -> List[PDFPage]:
+    def extract(self, pdf_path: Path, max_pages: int = _PDF_MAX_PAGES) -> List[PDFPage]:
         import base64
 
         from tools.llm.anthropic_provider import AnthropicLLMProvider
@@ -126,7 +138,7 @@ class AnthropicPDFProvider(PDFProvider):
         client = AnthropicLLMProvider(api_key=key)._get_client()
         message = client.messages.create(
             model=self._model,
-            max_tokens=4096,
+            max_tokens=_PDF_ANTHROPIC_TOKENS,
             messages=[
                 {
                     "role": "user",
@@ -218,7 +230,7 @@ class GooglePDFProvider(PDFProvider):
 
         return os.environ.get("GOOGLE_API_KEY", "")
 
-    def extract(self, pdf_path: Path, max_pages: int = 200) -> List[PDFPage]:
+    def extract(self, pdf_path: Path, max_pages: int = _PDF_MAX_PAGES) -> List[PDFPage]:
         import google.generativeai as genai
 
         key = self._resolve_key()
@@ -270,7 +282,7 @@ class VisionPDFProvider(PDFProvider):
             from tools.http.client import request
 
             base = self._base_url or self._get_base_url()
-            resp = request("GET", f"{base}/api/tags", timeout=3)
+            resp = request("GET", f"{base}/api/tags", timeout=_PDF_AVAIL_TIMEOUT)
             if resp.status_code == 200:
                 models = resp.json().get("models", [])
                 return any("llava" in m.get("name", "").lower() for m in models)
@@ -285,7 +297,7 @@ class VisionPDFProvider(PDFProvider):
 
         return os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/v1").rstrip("/")
 
-    def extract(self, pdf_path: Path, max_pages: int = 200) -> List[PDFPage]:
+    def extract(self, pdf_path: Path, max_pages: int = _PDF_MAX_PAGES) -> List[PDFPage]:
         try:
             from pypdf import PdfReader
         except ImportError:
@@ -302,7 +314,7 @@ class VisionPDFProvider(PDFProvider):
         for i, page in enumerate(reader.pages[:max_pages]):
             # Try text extraction first
             text = page.extract_text() or ""
-            if len(text.strip()) > 50:
+            if len(text.strip()) > _PDF_SCANNED_TEXT_MIN:
                 pages.append(
                     PDFPage(
                         page_number=i + 1,
@@ -318,7 +330,7 @@ class VisionPDFProvider(PDFProvider):
                 # Use pdf2image if available, otherwise skip vision for this page
                 from pdf2image import convert_from_path
 
-                images = convert_from_path(str(pdf_path), first_page=i + 1, last_page=i + 1, dpi=150)
+                images = convert_from_path(str(pdf_path), first_page=i + 1, last_page=i + 1, dpi=_PDF_RENDER_DPI)
                 if not images:
                     continue
 
@@ -337,7 +349,7 @@ class VisionPDFProvider(PDFProvider):
                         "images": [img_b64],
                         "stream": False,
                     },
-                    timeout=60,
+                    timeout=_PDF_VISION_TIMEOUT,
                 )
                 if resp.status_code == 200:
                     text = resp.json().get("response", "").strip()
@@ -395,7 +407,7 @@ class PyPDFProvider(PDFProvider):
         except ImportError:
             return False
 
-    def extract(self, pdf_path: Path, max_pages: int = 200) -> List[PDFPage]:
+    def extract(self, pdf_path: Path, max_pages: int = _PDF_MAX_PAGES) -> List[PDFPage]:
         from pypdf import PdfReader
 
         reader = PdfReader(str(pdf_path))
@@ -517,7 +529,7 @@ def get_pdf_provider_chain(config: Optional[dict] = None) -> List[PDFProvider]:
 def extract_pdf(
     pdf_path: Path,
     config: Optional[dict] = None,
-    max_pages: int = 200,
+    max_pages: int = _PDF_MAX_PAGES,
 ) -> PDFExtraction:
     """Extract text from a PDF using the best available provider.
 
@@ -533,8 +545,7 @@ def extract_pdf(
     """
     cfg = config or {}
     max_pages = cfg.get("max_pages", max_pages)
-    # SEC: Default max size reduced from 50MB to 25MB to limit memory usage
-    max_size_mb = cfg.get("max_file_size_mb", 25)
+    max_size_mb = cfg.get("max_file_size_mb", _PDF_MAX_FILE_SIZE_MB)
 
     path = Path(pdf_path)
     if not path.exists():

@@ -338,7 +338,7 @@ def create_network_blueprint():
                                     "model": cfg.get("model", ""),
                                     "eol_date": eol,
                                     "months_remaining": round(months, 1),
-                                    "topology": r["name"],
+                                    "topology": r["topo_name"],
                                     "past_eol": months <= 0,
                                 }
                             )

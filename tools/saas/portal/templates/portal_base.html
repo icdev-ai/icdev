@@ -116,6 +116,26 @@
                         <span class="nav-icon">&#9998;</span> Audit Trail
                     </a>
                 </li>
+                <li class="{% if active_page == 'knowledge_search' %}active{% endif %}">
+                    <a href="{{ url_for('portal.knowledge_search') }}">
+                        <span class="nav-icon">&#128269;</span> Knowledge Search
+                    </a>
+                </li>
+                <li class="{% if active_page == 'ai_ify' %}active{% endif %}">
+                    <a href="{{ url_for('portal.ai_ify') }}">
+                        <span class="nav-icon">&#9889;</span> AI-ify
+                    </a>
+                </li>
+                <li class="{% if active_page == 'zig' %}active{% endif %}">
+                    <a href="{{ url_for('portal.zig') }}">
+                        <span class="nav-icon">&#128274;</span> ZIG
+                    </a>
+                </li>
+                <li class="{% if active_page == 'notifications' %}active{% endif %}">
+                    <a href="{{ url_for('portal.notifications') }}">
+                        <span class="nav-icon">&#128276;</span> Notifications
+                    </a>
+                </li>
             </ul>
 
             <div class="sidebar-footer">
