@@ -131,7 +131,9 @@ jobs:
     timeout-minutes: 30
     services:
       postgres:
-        image: postgres:15
+        # pgvector image matches production; the consolidated schema needs the
+        # `vector` extension (CREATE EXTENSION vector in pg_consolidated.sql).
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: icdev
           POSTGRES_PASSWORD: icdev_ci
@@ -174,8 +176,11 @@ jobs:
         run: npm ci
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
-      - name: Initialize database (PostgreSQL migrations)
-        run: python tools/db/migrate.py --up
+      - name: Initialize database (consolidated PG schema snapshot)
+        # The 212-migration chain is not cleanly replayable on a fresh PG DB;
+        # load the authoritative consolidated schema and mark migrations applied.
+        # Regenerate the snapshot with: docker exec ... pg_dump --schema-only ...
+        run: python tools/db/bootstrap_pg.py
       - name: Start dashboard server
         run: |
           python tools/dashboard/app.py &
