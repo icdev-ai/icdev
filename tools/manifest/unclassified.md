@@ -17,4 +17,4 @@
 | Auto-added lineage_scanner.py | tools/data/lineage_scanner.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added terraform_executor.py | tools/data/terraform_executor.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added constants.py | tools/infra_canvas/constants.py | (auto-added by remediation; update description) | --json | stdout |
-| Auto-added scanners.py | tools/integrity/scanners.py | (auto-added by remediation; update description) | --json | stdout |
+| SIPA scanner adapters | tools/integrity/scanners.py | Shell out to existing static scanners (sast / secrets / deps / formal / container) over a quarantined tree and normalize into integrity_findings; honors args/integrity_config.yaml scanner toggles | --assessment-id N [--scanner sast\|secrets\|deps\|formal\|container] [--staged-path P] --json | stdout |

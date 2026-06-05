@@ -59,7 +59,7 @@ except Exception:  # pragma: no cover - exercised only when constants absent
         "crypto", "env_secret", "serialization", "obfuscation",
     ]
     FINDING_SCANNERS = [
-        "sast", "secrets", "deps", "formal", "semgrep",
+        "sast", "secrets", "deps", "formal", "container", "semgrep",
         "capability", "reconciliation", "tamper",
     ]
     FINDING_TYPES = [

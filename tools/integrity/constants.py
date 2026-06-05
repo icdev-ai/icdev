@@ -87,7 +87,8 @@ FINDING_SCANNERS = [
     "sast",            # static application security testing
     "secrets",         # secret / credential detection
     "deps",            # dependency / SCA vulnerability scan
-    "formal",          # formal / model checking
+    "formal",          # formal / property verification (SQLi / dangerous-pattern / input-validation)
+    "container",       # container image / Dockerfile scan (trivy + dockerfile analyzer)
     "semgrep",         # semgrep rule matches
     "capability",      # capability extraction / exercise analysis
     "reconciliation",  # disclosed-vs-exercised reconciliation
