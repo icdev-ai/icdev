@@ -68,17 +68,34 @@ sla:
   latency_p99_ms: 1000
   error_rate_percent: 1.0
 
+# Metric anomaly detection (anomaly_detection paradigm) for tools/monitor/
+# metric_collector.py. The static SLA thresholds above answer "is this value
+# above a fixed line?" — they cannot catch a metric that is drifting badly but
+# still inside its SLA, nor adapt to a service whose normal baseline differs
+# from the global default. This block adds baseline-relative detection: each
+# current metric is compared against its own historical metric_snapshots and
+# flagged when it deviates anomalously. Opt-in (run with --detect-anomalies);
+# a missing block/key or absent PyYAML degrades to these defaults.
+metric_anomaly:
+  method: "zscore"       # "zscore" (mean/std-dev) or "mad" (robust, median-based)
+  z_threshold: 3.0       # |z| above which a value is anomalous (zscore method)
+  mad_threshold: 3.5     # Modified z-score cutoff (mad method; Iglewicz-Hoaglin)
+  min_samples: 5         # Minimum history points required before scoring
+  direction: "both"      # "high" (only spikes), "low" (only drops), or "both"
+  history_limit: 200     # Most-recent snapshots per metric to baseline against
+
 # Log anomaly detection (anomaly_detection paradigm) — replaces the previously
 # hardcoded z-score (2.0) and error-rate spike (0.10) thresholds in
 # tools/monitor/log_analyzer.py with configurable, optionally-robust detection.
 # Omit this block (or any key) and the legacy hardcoded behavior is preserved.
 anomaly_detection:
-  # Frequency anomalies over 5-minute time buckets.
+  # Frequency anomalies over fixed time buckets.
   frequency:
     method: "zscore"      # "zscore" (mean/std-dev) or "mad" (robust, median-based)
     z_threshold: 2.0      # Std-devs above the mean to flag a bucket (zscore method)
     mad_threshold: 3.5    # Modified z-score cutoff (mad method; Iglewicz-Hoaglin)
     min_buckets: 2        # Minimum buckets required before computing statistics
+    bucket_window_minutes: 5  # Time-partition granularity for bucketing (>=1; wider masks short spikes, narrower adds noise)
   # Error-rate spike detection.
   error_rate:
     spike_threshold: 0.10 # Fraction of error-level logs that constitutes a spike

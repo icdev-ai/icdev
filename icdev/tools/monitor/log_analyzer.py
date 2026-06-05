@@ -261,7 +261,13 @@ def search_patterns(log_data: list, patterns: list = None) -> list:
 # is offered as an alternative that is not skewed by the very spike it detects.
 _ANOMALY_CONFIG_PATH = BASE_DIR.parent / "args" / "monitoring_config.yaml"
 _DEFAULT_ANOMALY_CFG = {
-    "frequency": {"method": "zscore", "z_threshold": 2.0, "mad_threshold": 3.5, "min_buckets": 2},
+    "frequency": {
+        "method": "zscore",
+        "z_threshold": 2.0,
+        "mad_threshold": 3.5,
+        "min_buckets": 2,
+        "bucket_window_minutes": 5,
+    },
     "error_rate": {"spike_threshold": 0.10},
 }
 
@@ -274,6 +280,21 @@ def _median(values: list) -> float:
     n = len(s)
     mid = n // 2
     return float(s[mid]) if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
+def _floor_to_window(dt: datetime, window_minutes: int) -> datetime:
+    """Floor a datetime to the start of its ``window_minutes`` time bucket.
+
+    Buckets are anchored at midnight by minutes-since-midnight, so a window that
+    divides evenly into 60 (1/5/15/30) keeps the legacy within-the-hour
+    alignment, while larger or non-dividing windows floor correctly and recompute
+    the hour. The window is clamped to ``>= 1`` minute; the default 5 preserves
+    the historical 5-minute bucketing exactly.
+    """
+    window = window_minutes if isinstance(window_minutes, int) and window_minutes >= 1 else 5
+    minutes_since_midnight = dt.hour * 60 + dt.minute
+    floored = (minutes_since_midnight // window) * window
+    return dt.replace(hour=floored // 60, minute=floored % 60, second=0, microsecond=0)
 
 
 def _load_anomaly_cfg(config_path: Path = None) -> dict:
@@ -302,6 +323,14 @@ def _load_anomaly_cfg(config_path: Path = None) -> dict:
                     cfg[group][key] = overrides[key]
     except Exception:
         pass  # Any failure → legacy defaults.
+
+    # bucket_window_minutes must be a positive int; a non-int / non-positive
+    # override falls back to the legacy 5-minute window rather than raising.
+    try:
+        bw = int(cfg["frequency"].get("bucket_window_minutes", 5))
+        cfg["frequency"]["bucket_window_minutes"] = bw if bw >= 1 else 5
+    except (TypeError, ValueError):
+        cfg["frequency"]["bucket_window_minutes"] = 5
     return cfg
 
 
@@ -463,8 +492,12 @@ def analyze_logs(
 
     top_messages = [{"message": msg, "count": count} for msg, count in message_counter.most_common(10) if count > 1]
 
-    # ---------- Time-bucket anomaly detection (5-minute buckets) ----------
+    # ---------- Time-bucket anomaly detection (config-driven window) ----------
+    # The bucket window (default 5 minutes) is the time-partition granularity for
+    # frequency-spike detection — too wide masks short spikes, too narrow adds
+    # noise — so it loads from anomaly_detection.frequency.bucket_window_minutes.
     anomaly_cfg = anomaly_config if anomaly_config is not None else _load_anomaly_cfg()
+    bucket_window = int(anomaly_cfg.get("frequency", {}).get("bucket_window_minutes", 5) or 5)
     frequency_anomalies = []
     timestamps = []
     for entry in all_logs:
@@ -479,7 +512,7 @@ def analyze_logs(
     if timestamps:
         buckets = defaultdict(int)
         for ts_val in timestamps:
-            bucket_key = ts_val.replace(minute=(ts_val.minute // 5) * 5, second=0, microsecond=0)
+            bucket_key = _floor_to_window(ts_val, bucket_window)
             buckets[bucket_key] += 1
         frequency_anomalies = _detect_frequency_anomalies(buckets, anomaly_cfg)
 
