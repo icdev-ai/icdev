@@ -50,7 +50,6 @@ the explicit engine primitive and runs whenever it is called.
 """
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -69,7 +68,9 @@ from tools.integrity import (
 from tools.integrity.constants import FEATURE_FLAG
 from tools.integrity.db.init_db import init_db
 
-logger = logging.getLogger("icdev.integrity.engine")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.integrity.engine")
 
 # Canonical mode tokens (subset of constants.ASSESS_MODES that name a concrete
 # strategy; 'auto' is resolved away before any row is written).

@@ -63,7 +63,6 @@ use, so reconciliation findings can never drift from the rest.
 from __future__ import annotations
 
 import json
-import logging
 import os
 import re
 from pathlib import Path
@@ -79,7 +78,9 @@ from tools.integrity.db.init_db import init_db
 # the tenant/classification stamping match the scanner + capability writers exactly.
 from tools.integrity.ingest import _backend_of, _caller_context, _insert_finding
 
-logger = logging.getLogger("icdev.integrity.intent_reconciler")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.integrity.intent_reconciler")
 
 # This module is the disclosed-vs-exercised reconciler — its findings are tagged
 # with this scanner so the UI / risk scorer can group them.

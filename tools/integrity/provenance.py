@@ -41,7 +41,6 @@ it can never abort an assessment — the verdict already stands on the append-on
 from __future__ import annotations
 
 import json
-import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -52,7 +51,9 @@ from typing import Any, Optional
 # core D287 tables — so only classification + project_id are stamped).
 from tools.integrity.ingest import _caller_context
 
-logger = logging.getLogger("icdev.integrity.provenance")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.integrity.provenance")
 
 # PROV vocabulary tokens (D287 — mirror ProvRecorder's documented enums).
 ENTITY_TYPE = "report"               # the assessment report artifact

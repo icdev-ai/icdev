@@ -49,7 +49,6 @@ rather than string literals.
 from __future__ import annotations
 
 import json
-import logging
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -63,7 +62,9 @@ from tools.integrity.constants import (
 )
 from tools.integrity.db.init_db import init_db
 
-logger = logging.getLogger("icdev.integrity.scoring")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.integrity.scoring")
 
 # Canonical verdict symbols (lowercase, matching constants.VERDICTS + the DB
 # CHECK constraint). Downstream code should reference these, not bare literals.
