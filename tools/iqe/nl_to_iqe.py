@@ -29,11 +29,78 @@ Given the user question and available collections, output ONLY the IQE query —
 If you cannot generate a valid query, output: foreach n in nodes select *"""
 
 
+# Comparison-phrase → IQE operator map. Ordered most-specific-first so that
+# ">= / <=" phrases are matched before their "> / <" prefixes (e.g. "at least"
+# before "less than", "greater than or equal to" before "greater than").
+_COMPARISON_PHRASES: list[tuple[str, str]] = [
+    (r"greater than or equal to|at least|no less than|>=", ">="),
+    (r"less than or equal to|at most|no more than|<=", "<="),
+    (r"greater than|more than|larger than|over|above|exceeds|exceeding", ">"),
+    (r"less than|fewer than|smaller than|under|below", "<"),
+    (r"not equal to|!=", "!="),
+    (r"equal to|equals|exactly|is equal to", "=="),
+]
+
+# Filler tokens that may sit directly before a comparison phrase — never a field.
+_STOPWORD_FIELDS = frozenset(
+    {"is", "are", "of", "than", "and", "or", "the", "a", "an", "with",
+     "value", "values", "no", "that", "which", "has", "have", "having"}
+)
+
+
+def _match_collection(q: str, collections: list[str], default: str) -> str:
+    """Pick the collection whose (singularized) name appears in the question."""
+    for c in collections:
+        root = c.lower().rstrip("s")
+        if root and root in q:
+            return c
+    return default
+
+
+def _extract_comparison(question: str, collections: list[str]) -> dict[str, Any] | None:
+    """Extract a numeric comparison predicate from natural language.
+
+    Handles the unambiguous ``<field> <comparison-phrase> <number>`` word order
+    (e.g. "weight greater than 10", "degree at least 3", "score under 5"). The
+    inverted form ("more than 5 connections") is ambiguous about which token is
+    the field, so it is deliberately left to the LLM translation path.
+
+    Returns an IQE/explanation dict, or ``None`` when no predicate is found.
+    """
+    q = question.lower().strip()
+    default_coll = collections[0] if collections else "nodes"
+
+    for phrase_rx, op in _COMPARISON_PHRASES:
+        m = re.search(
+            rf"\b([a-z_][a-z0-9_]*)\s+(?:is\s+|are\s+|of\s+)?(?:{phrase_rx})\s+"
+            r"(\d+(?:\.\d+)?)\b",
+            q,
+        )
+        if not m:
+            continue
+        field = m.group(1)
+        if field in _STOPWORD_FIELDS:
+            continue
+        raw = m.group(2)
+        val = raw if "." in raw else str(int(raw))
+        coll = _match_collection(q, collections, default_coll)
+        iqe = f"foreach n in {coll} where n.{field} {op} {val} select *"
+        return {"iqe": iqe, "explanation": f"Filter {coll} where {field} {op} {val}"}
+
+    return None
+
+
 def _pattern_translate(question: str, collections: list[str]) -> dict[str, Any] | None:
     """Try simple pattern-based translation before calling LLM."""
     q = question.lower().strip()
 
     default_coll = collections[0] if collections else "nodes"
+
+    # Numeric comparison predicates take precedence over "show all" so that a
+    # filtered question is not silently widened to "select *".
+    comparison = _extract_comparison(question, collections)
+    if comparison:
+        return comparison
 
     # "show all X" / "list all X" / "get all X"
     m = re.search(r"\b(?:show|list|get|display)\s+all\s+(\w+)", q)
