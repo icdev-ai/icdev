@@ -12,9 +12,17 @@ counts occurrences, and records findings in the metric_snapshots table.
 Functions:
     analyze_logs(source, query, time_range, db_path)  -> analysis results dict
     search_patterns(log_data, patterns)                -> matched patterns list
+    _ai_extract_log_patterns(messages)                 -> emergent NLP categories | None
+
+The regex catalog (DEFAULT_PATTERNS) only catches known error families; novel
+or free-text failures fall into an "unknown" bucket. An optional NLP extractor
+(nlp_extractor paradigm) clusters those unmatched lines into emergent error
+categories. It is opt-in (use_ai_extraction / --ai-extract) and degrades
+gracefully — the deterministic regex result is always authoritative.
 
 CLI:
     python tools/monitor/log_analyzer.py --source elk|splunk --query "error" --time-range 24h
+    python tools/monitor/log_analyzer.py --source elk --ai-extract   # add NLP extraction
 """
 
 import argparse
@@ -35,6 +43,30 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # Default endpoints — override via CLI args or environment
 DEFAULT_ELK_URL = "http://localhost:9200"
 DEFAULT_SPLUNK_URL = "https://localhost:8089"
+
+# ---------------------------------------------------------------------------
+# AI pattern extraction (nlp_extractor paradigm) — tuning knobs
+# ---------------------------------------------------------------------------
+# The regex catalog below only catches *known* error families. Novel or
+# free-text failures land in the "unknown" bucket and stay invisible. The
+# optional NLP extractor (``_ai_extract_log_patterns``) clusters those
+# unmatched messages into named, emergent categories. It degrades to ``None``
+# whenever the LLM is unavailable, so the deterministic regex result is always
+# authoritative and shipped unchanged.
+_AI_EXTRACT_SYSTEM_PROMPT = (
+    "You are a site-reliability log triage assistant. You are given log lines "
+    "that did NOT match any known error-pattern regex. Cluster them into a small "
+    "set of emergent error categories (at most 8). Respond with ONLY a JSON array; "
+    "each element is an object with keys: name (short PascalCase label), "
+    "description (one sentence), count (integer, how many of the provided lines "
+    "fall in this category), sample_messages (array of up to 3 representative "
+    "lines, each truncated to 200 chars). Do not invent categories for lines that "
+    "are plainly informational; omit them. Return [] if nothing is noteworthy."
+)
+_AI_EXTRACT_MAX_TOKENS = 1024
+_AI_EXTRACT_TEMPERATURE = 0.0
+# Bound the prompt so a noisy log window can't blow up cost / context.
+_AI_EXTRACT_MAX_SAMPLES = 60
 
 # Common error patterns for automatic detection
 DEFAULT_PATTERNS = [
@@ -250,6 +282,135 @@ def search_patterns(log_data: list, patterns: list = None) -> list:
     return results
 
 
+def _unmatched_messages(log_data: list, patterns: list = None) -> list:
+    """Return log messages that matched none of the regex patterns.
+
+    These are the candidates the NLP extractor reasons over — the "unknown"
+    bucket that the deterministic regex catalog leaves uncategorized.
+
+    Args:
+        log_data: List of log entry dicts.
+        patterns: Pattern dicts (defaults to DEFAULT_PATTERNS).
+
+    Returns:
+        List of message strings (deduplicated, order-preserving) that no
+        pattern's regex matched.
+    """
+    if patterns is None:
+        patterns = DEFAULT_PATTERNS
+
+    compiled = [re.compile(p["regex"], re.IGNORECASE) for p in patterns if p.get("regex")]
+    seen = set()
+    unmatched = []
+    for entry in log_data:
+        msg = entry.get("message") or entry.get("msg") or entry.get("_raw") or ""
+        if not msg or msg in seen:
+            continue
+        if not any(c.search(msg) for c in compiled):
+            seen.add(msg)
+            unmatched.append(msg[:200])
+    return unmatched
+
+
+def _ai_extract_log_patterns(messages: list) -> list | None:
+    """Cluster unmatched log messages into emergent error categories via NLP.
+
+    This is the ``nlp_extractor`` augmentation of the regex-only
+    ``search_patterns`` path: it surfaces failure families the static regex
+    catalog cannot anticipate (novel stack traces, free-text operator notes,
+    third-party error strings).
+
+    Args:
+        messages: Free-text log lines that matched no known regex pattern.
+            Only the first ``_AI_EXTRACT_MAX_SAMPLES`` are sent to bound cost.
+
+    Returns:
+        A list of ``{name, description, count, sample_messages, source}`` dicts
+        sorted by count descending, or ``None`` if extraction is unavailable or
+        fails for any reason. Callers MUST treat ``None`` as "no AI patterns"
+        and ship the deterministic regex result unchanged.
+    """
+    if not messages:
+        return None
+
+    sample = messages[:_AI_EXTRACT_MAX_SAMPLES]
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        numbered = "\n".join(f"{i + 1}. {m}" for i, m in enumerate(sample))
+        req = LLMRequest(
+            messages=[{"role": "user", "content": f"Unmatched log lines:\n{numbered}"}],
+            system_prompt=_AI_EXTRACT_SYSTEM_PROMPT,
+            max_tokens=_AI_EXTRACT_MAX_TOKENS,
+            temperature=_AI_EXTRACT_TEMPERATURE,
+            skip_injection_scan=False,  # log lines are untrusted content — keep the scanner on
+            classification="CUI",
+        )
+        # Reuse the structured-extraction route; the router falls back to the
+        # default provider when this logical function is unconfigured.
+        resp = LLMRouter().invoke("requirement_extraction", req)
+        if not resp or not resp.content:
+            return None
+        parsed = _parse_ai_patterns(resp.content)
+    except Exception:
+        return None  # Graceful degradation — deterministic regex result is authoritative.
+
+    if not parsed:
+        return None
+    parsed.sort(key=lambda r: r.get("count", 0), reverse=True)
+    return parsed
+
+
+def _parse_ai_patterns(raw: str) -> list:
+    """Parse and sanitize the LLM's JSON pattern array.
+
+    Tolerates markdown code fences and stray prose around the JSON. Drops any
+    element that lacks a usable name. Returns ``[]`` on any parse failure so the
+    caller can degrade cleanly.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        # Strip a leading ```json / ``` fence and trailing fence.
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text).strip()
+    # Isolate the outermost JSON array if the model added prose.
+    start, end = text.find("["), text.rfind("]")
+    if start == -1 or end == -1 or end < start:
+        return []
+    try:
+        items = json.loads(text[start : end + 1])
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(items, list):
+        return []
+
+    cleaned = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        samples = item.get("sample_messages") or []
+        if not isinstance(samples, list):
+            samples = []
+        try:
+            count = int(item.get("count", 0))
+        except (TypeError, ValueError):
+            count = 0
+        cleaned.append(
+            {
+                "name": name,
+                "description": str(item.get("description", "")).strip(),
+                "count": count,
+                "sample_messages": [str(s)[:200] for s in samples[:3]],
+                "source": "ai",
+            }
+        )
+    return cleaned
+
+
 # ---------------------------------------------------------------------------
 # Core analysis
 # ---------------------------------------------------------------------------
@@ -262,6 +423,7 @@ def analyze_logs(
     elk_url: str = None,
     splunk_url: str = None,
     splunk_token: str = None,
+    use_ai_extraction: bool = False,
 ) -> dict:
     """Analyze logs from ELK or Splunk.
 
@@ -277,6 +439,11 @@ def analyze_logs(
         elk_url: Elasticsearch URL override.
         splunk_url: Splunk URL override.
         splunk_token: Splunk authentication token.
+        use_ai_extraction: When True, run the optional NLP extractor over log
+            lines that matched no known regex pattern and add the resulting
+            emergent categories under ``ai_extracted_patterns``. Off by default
+            so behavior stays fully deterministic unless explicitly requested;
+            degrades silently to ``[]`` if the LLM is unavailable.
 
     Returns:
         Dict with analysis results including error patterns, severity counts,
@@ -326,6 +493,14 @@ def analyze_logs(
 
     # ---------- Detect error patterns ----------
     matched_patterns = search_patterns(all_logs)
+
+    # ---------- NLP extraction over the unmatched "unknown" bucket ----------
+    ai_extracted_patterns = []
+    if use_ai_extraction:
+        unmatched = _unmatched_messages(all_logs)
+        ai_result = _ai_extract_log_patterns(unmatched)
+        if ai_result:
+            ai_extracted_patterns = ai_result
 
     # ---------- Top repeated messages ----------
     message_counter = Counter()
@@ -391,6 +566,7 @@ def analyze_logs(
         "error_rate": error_rate,
         "error_rate_is_spike": is_spike,
         "matched_patterns": matched_patterns,
+        "ai_extracted_patterns": ai_extracted_patterns,
         "top_messages": top_messages,
         "frequency_anomalies": frequency_anomalies,
         "source_results": source_results,
@@ -459,6 +635,12 @@ def main():
     parser.add_argument("--splunk-url", default=DEFAULT_SPLUNK_URL, help="Splunk URL")
     parser.add_argument("--splunk-token", help="Splunk authentication token")
     parser.add_argument("--db-path", help="Override database path")
+    parser.add_argument(
+        "--ai-extract",
+        action="store_true",
+        dest="use_ai_extraction",
+        help="Run the NLP extractor over unmatched log lines to surface emergent error categories",
+    )
     parser.add_argument("--format", choices=["json", "text"], default="text", help="Output format (default: text)")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
@@ -474,6 +656,7 @@ def main():
         elk_url=args.elk_url,
         splunk_url=args.splunk_url,
         splunk_token=args.splunk_token,
+        use_ai_extraction=args.use_ai_extraction,
     )
 
     if args.format == "json":
@@ -503,6 +686,15 @@ def main():
                 print(f"    [{p['count']:>4d}x] {p['name']}")
                 for sample in p.get("sample_messages", [])[:2]:
                     print(f"           {sample[:80]}")
+
+        # AI-extracted (emergent) patterns
+        ai_patterns = result.get("ai_extracted_patterns", [])
+        if ai_patterns:
+            print(f"\n  AI-EXTRACTED PATTERNS ({len(ai_patterns)} emergent):")
+            for p in ai_patterns[:10]:
+                print(f"    [{p.get('count', 0):>4d}x] {p['name']}")
+                if p.get("description"):
+                    print(f"           {p['description'][:80]}")
 
         # Frequency anomalies
         anomalies = result.get("frequency_anomalies", [])
