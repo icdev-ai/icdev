@@ -250,6 +250,53 @@ def test_assess_planted_backdoor_is_quarantine(backdoor_source, conn, determinis
     assert json.loads(vrow["rationale"])["forced_quarantine"] is True
 
 
+def test_assess_provenance_aware_emits_unauthorized_capability(
+    backdoor_source, conn, deterministic_scanners, monkeypatch
+):
+    # Mode A: a project_id selects provenance_aware. Seed an intake requirement that
+    # authorizes ONLY network egress; the backdoor also exercises process_exec /
+    # dynamic_code, which no requirement authorizes -> unauthorized_capability.
+    from tools.integrity import intent_reconciler
+
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS intake_requirements (
+               id TEXT PRIMARY KEY, session_id TEXT, project_id TEXT, raw_text TEXT,
+               requirement_type TEXT, priority TEXT, status TEXT)"""
+    )
+    conn.execute(
+        "INSERT INTO intake_requirements (id, session_id, project_id, raw_text) "
+        "VALUES ('req-1', 'sess-1', 'proj-A', ?)",
+        ("The agent shall send telemetry to the remote server.",),
+    )
+    conn.commit()
+    # The coverage-gap pass builds the full RTM against the real DB; stub it so the
+    # in-memory engine test stays hermetic.
+    monkeypatch.setattr(intent_reconciler, "_coverage_gaps", lambda *a, **k: [])
+
+    result = engine.assess(str(backdoor_source), project_id="proj-A", conn=conn)
+    assert result["mode"] == engine.PROVENANCE_AWARE
+    aid = result["assessment_id"]
+
+    unauthorized = {
+        json.loads(r[0]).get("capability_type")
+        for r in conn.execute(
+            "SELECT detail FROM integrity_findings "
+            "WHERE assessment_id = ? AND finding_type = 'unauthorized_capability'",
+            (aid,),
+        ).fetchall()
+    }
+    # process_exec is unauthorized (only network egress was authorized).
+    assert "process_exec" in unauthorized
+    assert "network_egress" not in unauthorized
+    # Mode A path does NOT emit Mode B undisclosed findings.
+    n_undisclosed = conn.execute(
+        "SELECT COUNT(*) FROM integrity_findings "
+        "WHERE assessment_id = ? AND finding_type = 'undisclosed_capability'",
+        (aid,),
+    ).fetchone()[0]
+    assert n_undisclosed == 0
+
+
 def test_assess_appends_not_updates_verdicts(backdoor_source, conn, deterministic_scanners):
     # Re-assessing the SAME staged source writes a second assessment + verdict row
     # (append-only; the engine never rewrites a prior disposition).

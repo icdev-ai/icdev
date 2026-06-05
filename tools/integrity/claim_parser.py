@@ -91,6 +91,7 @@ _LEXICON: dict[str, list[str]] = {
         "socket", "network", "internet", "remote server", "web service",
         "dns", "call the api", "calls an api", "calls out to", "phone home",
         "telemetry", "report back", "transmit", "exfiltrate", "beacon",
+        "email", "e-mail", "smtp", "send mail", "mail server", "notify by email",
     ],
     "filesystem": [
         "save", "write", "wrote", "written", "cache", "persist", "store",

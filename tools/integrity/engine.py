@@ -24,11 +24,15 @@ MODE SELECTION (``mode`` argument):
     ``provenance_blind`` otherwise — the primary external-code path.
   * An explicit ``'provenance_aware'`` / ``'provenance_blind'`` overrides the
     auto-selection.
-  * The **Mode B** reconciliation stage (claim_parser + reconcile) runs only in
-    ``provenance_blind`` mode: it judges the exercised capability manifest against
-    the author's *claimed* set (README / docstrings / declared purpose). In
-    ``provenance_aware`` mode an RTM/PRD reconciler (a separate stage) owns that
-    comparison, so the engine leaves capability-vs-claim reconciliation to it.
+  * The reconciliation stage is mode-specific:
+      - ``provenance_blind`` runs **Mode B** (``claim_parser`` +
+        ``reconcile_and_persist``): the exercised manifest vs. the author's
+        *claimed* set (README / docstrings / declared purpose) ->
+        ``undisclosed_capability`` findings.
+      - ``provenance_aware`` runs **Mode A** (``reconcile_aware_and_persist``): the
+        exercised manifest vs. the RTM-derived *ALLOWED* set (intake requirements
+        mapped through the same lexicon) -> ``unauthorized_capability`` findings,
+        plus requirement coverage gaps.
 
 SECURITY INVARIANTS (inherited from every stage — the SIPA static-only contract):
   * **Never executes the target.** Staging only copies/clones bytes; scanners run
@@ -258,9 +262,11 @@ def assess(
          (SAST / secrets / deps / malicious-signature) -> ``integrity_findings``.
       4. **Capabilities** — ``capability_extractor.extract`` builds the AST
          behavioral manifest and persists it -> ``integrity_capabilities``.
-      5. **Mode B reconciliation** (``provenance_blind`` only) — ``claim_parser``
-         + ``intent_reconciler.reconcile_and_persist`` flag undisclosed /
-         intrinsically-dangerous capabilities -> ``integrity_findings``.
+      5. **Reconciliation** — ``provenance_blind`` runs Mode B (``claim_parser`` +
+         ``reconcile_and_persist`` -> ``undisclosed_capability``);
+         ``provenance_aware`` runs Mode A (``reconcile_aware_and_persist`` -> RTM
+         ``unauthorized_capability`` + coverage gaps). Both append to
+         ``integrity_findings``.
       6. **Scoring** — ``scoring.score`` combines every signal into a 0–100
          ``risk_score`` + verdict and transitions the assessment to ``'assessed'``.
 
@@ -335,14 +341,31 @@ def assess(
         manifest = capability_extractor.extract(staged_path)
         capability_extractor._persist(conn, assessment_id, manifest)
 
-        # 5. Mode B reconciliation — disclosed (claim) vs exercised (manifest).
-        #    Only in provenance_blind mode; the provenance_aware RTM/PRD reconciler
-        #    is a separate stage that owns capability-vs-requirement comparison.
+        # 5. Reconciliation — capability manifest vs. intent.
+        #    * provenance_blind: disclosed (claim) vs exercised (manifest) ->
+        #      undisclosed_capability findings.
+        #    * provenance_aware: RTM-derived ALLOWED set vs exercised (manifest) ->
+        #      unauthorized_capability findings + requirement coverage gaps.
         reconciled = False
         if resolved_mode == PROVENANCE_BLIND:
             claim = claim_parser.parse_claim(staged_path, declared_purpose=declared_purpose)
             intent_reconciler.reconcile_and_persist(assessment_id, manifest, claim, conn=conn)
             reconciled = True
+        elif resolved_mode == PROVENANCE_AWARE:
+            # Best-effort: a missing RTM / intake_requirements table must never abort
+            # the assessment (mirrors the reverify guard above). The reconciler
+            # already degrades to "nothing authorized" on a missing requirements
+            # table, so this guard only covers unexpected RTM-build failures.
+            try:
+                intent_reconciler.reconcile_aware_and_persist(
+                    assessment_id, manifest, project_id, session_id, conn=conn
+                )
+                reconciled = True
+            except Exception as exc:  # noqa: BLE001 — reconciliation is non-fatal to assess
+                logger.warning(
+                    "assess: provenance-aware reconciliation failed for %s: %s",
+                    assessment_id, exc,
+                )
 
         # 6. Scoring — combine every signal into a risk score + verdict.
         score_result = scoring.score(assessment_id, conn=conn)

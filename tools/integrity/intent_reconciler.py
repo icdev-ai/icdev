@@ -1,8 +1,32 @@
 # CUI // SP-CTI
-"""SIPA — Software Integrity & Provenance Assessor — Intent reconciler (Mode B).
+"""SIPA — Software Integrity & Provenance Assessor — Intent reconciler (Modes A + B).
 
-The **primary external-code path**. When a third-party artifact arrives with no
-formal RTM / PRD (the Mode A provenance-aware input), SIPA still has two signals:
+Two reconciliation strategies share one finding shape and one persistence path:
+
+  * **Mode B (provenance-blind / claim-based)** — ``reconcile_blind`` — the
+    **primary external-code path**. When a third-party artifact arrives with no
+    formal RTM / PRD, SIPA reconciles the *exercised* capability manifest against
+    the author's *claimed* set (README / docstrings / declared purpose) and flags
+    the gap as ``undisclosed_capability`` (see below).
+
+  * **Mode A (provenance-aware)** — ``reconcile_aware`` — the artifact *does* have
+    a provenance handle (``project_id`` / ``session_id``), so SIPA can build the
+    Requirements Traceability Matrix
+    (:func:`tools.requirements.traceability_builder.build_rtm`) and read the
+    ``intake_requirements`` text. It derives an **ALLOWED-capability set** by
+    mapping each requirement's prose through the *same* deterministic lexicon
+    ``claim_parser`` uses (a requirement that says "notify by email" authorizes
+    ``network_egress``; "run the packaged binary" authorizes ``process_exec``).
+    Every capability the code exercises that **no requirement authorizes** is the
+    *semantic backdoor* case and is emitted as an ``unauthorized_capability``
+    finding (severity from the capability's inherent risk). Requirements with no
+    implementing code are surfaced as **coverage gaps** (reusing the RTM's
+    ``review_traceability`` rows). Mode A still runs the intrinsic-risk pass, so a
+    decode-then-exec shape is flagged ``critical`` even if a requirement authorizes
+    it.
+
+When a third-party artifact arrives with no formal RTM / PRD (the Mode B input),
+SIPA still has two signals:
 
   * the **exercised** capability manifest from
     :func:`tools.integrity.capability_extractor.extract` — *what the code can
@@ -51,7 +75,7 @@ from tools.integrity.db.init_db import init_db
 
 # Reuse ingest's context/backend/insert helpers so the reconciliation INSERT and
 # the tenant/classification stamping match the scanner + capability writers exactly.
-from tools.integrity.ingest import _caller_context, _insert_finding
+from tools.integrity.ingest import _backend_of, _caller_context, _insert_finding
 
 logger = logging.getLogger("icdev.integrity.intent_reconciler")
 
@@ -399,6 +423,304 @@ def assess_blind(
         {r["capability_type"] for r in _normalize_manifest(manifest)}
     )
     return result
+
+
+# --------------------------------------------------------------------------- #
+# Mode A — provenance-aware reconciliation (RTM-derived ALLOWED capabilities)
+# --------------------------------------------------------------------------- #
+def _q(conn: Any, sql: str) -> str:
+    """Translate ``?`` placeholders to ``%s`` for the PostgreSQL backend."""
+    return sql.replace("?", "%s") if _backend_of(conn) == "postgresql" else sql
+
+
+def _row_val(row: Any, key: str, idx: int) -> Any:
+    """One column of a DB row, dict-cursor (aliased ``key``) or positional (``idx``)."""
+    if row is None:
+        return None
+    if hasattr(row, "keys") and key in row.keys():
+        return row[key]
+    try:
+        return row[idx]
+    except (IndexError, KeyError, TypeError):
+        return None
+
+
+def _fetch_requirements(
+    conn: Any, project_id: Optional[str], session_id: Optional[str]
+) -> list[tuple[Any, str]]:
+    """Read ``(id, raw_text)`` for a project's intake requirements.
+
+    Optionally narrowed to a single ``session_id``. A missing ``intake_requirements``
+    table (e.g. an environment that never ran intake) is tolerated: the query is
+    wrapped so reconciliation degrades to "nothing authorized" rather than aborting
+    the assessment.
+    """
+    sql = "SELECT id, raw_text FROM intake_requirements WHERE project_id = ?"
+    params: list[Any] = [project_id]
+    if session_id:
+        sql += " AND session_id = ?"
+        params.append(session_id)
+    try:
+        rows = conn.execute(_q(conn, sql), tuple(params)).fetchall()
+    except Exception as exc:  # noqa: BLE001 — missing table / schema variant -> no claims
+        logger.warning(
+            "reconcile_aware: cannot read intake_requirements for %s: %s", project_id, exc
+        )
+        return []
+    out: list[tuple[Any, str]] = []
+    for r in rows:
+        out.append((_row_val(r, "id", 0), _row_val(r, "raw_text", 1) or ""))
+    return out
+
+
+def _allowed_capabilities(
+    conn: Any, project_id: Optional[str], session_id: Optional[str]
+) -> dict[str, list[dict]]:
+    """Derive the ALLOWED-capability set from the project's requirement prose.
+
+    Maps every requirement's ``raw_text`` through the *same* deterministic lexicon
+    :func:`claim_parser.map_text` uses, so a requirement that says "notify by email"
+    authorizes ``network_egress`` exactly as a README claim would. A capability is
+    *allowed* iff at least one requirement implies it.
+
+    Returns ``{capability_type: [{"requirement_id", "phrases"}]}`` — the authorizing
+    requirement(s) per capability, retained as evidence for the HITL reviewer. The
+    key set is the allowed-capability set; anything the code exercises outside it is
+    the Mode A ``unauthorized_capability`` signal.
+    """
+    from tools.integrity import claim_parser
+
+    allowed: dict[str, list[dict]] = {}
+    for req_id, text in _fetch_requirements(conn, project_id, session_id):
+        for cap, phrases in claim_parser.map_text(text).items():
+            allowed.setdefault(cap, []).append(
+                {"requirement_id": req_id, "phrases": phrases}
+            )
+    return allowed
+
+
+def _unauthorized_findings(records: list[dict], allowed: set[str]) -> list[dict]:
+    """One ``unauthorized_capability`` finding per (file, capability) gap.
+
+    The Mode A mirror of :func:`_undisclosed_findings`: a capability the code
+    exercises that **no requirement authorizes** is the semantic-backdoor case.
+    Records group by ``(file_path, capability_type)`` so multiple call sites in one
+    file collapse to a single finding (anchored at the earliest line). Severity is
+    the capability's inherent risk (``constants.RISK_WEIGHTS_CAPABILITY``).
+    """
+    groups: dict[tuple[Optional[str], str], list[dict]] = {}
+    order: list[tuple[Optional[str], str]] = []
+    for rec in records:
+        cap = rec.get("capability_type")
+        if not cap or cap in allowed:
+            continue
+        key = (rec.get("file_path"), cap)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(rec)
+
+    findings: list[dict] = []
+    allowed_sorted = sorted(allowed)
+    for key in order:
+        file_path, cap = key
+        group = groups[key]
+        weight = RISK_WEIGHTS_CAPABILITY.get(cap, 0.0)
+        findings.append(
+            {
+                "source_scanner": SOURCE_SCANNER,
+                "finding_type": "unauthorized_capability",
+                "severity": _severity_for_weight(weight),
+                "file_path": file_path,
+                "line": _earliest_line(group),
+                "detail": {
+                    "capability_type": cap,
+                    "reason": (
+                        f"code exercises '{cap}' but no intake requirement (RTM) "
+                        f"authorizes it — the semantic-backdoor case"
+                    ),
+                    "risk_weight": weight,
+                    "occurrences": len(group),
+                    "allowed_capabilities": allowed_sorted,
+                    "sites": [_site(r) for r in group[:_MAX_SITES]],
+                },
+            }
+        )
+    return findings
+
+
+def _coverage_gaps(
+    project_id: Optional[str],
+    session_id: Optional[str] = None,
+    db_path: Optional[str] = None,
+) -> list[dict]:
+    """Requirements with **no implementing code**, via the full RTM.
+
+    Builds the Requirements Traceability Matrix
+    (:func:`tools.requirements.traceability_builder.build_rtm`, which also persists
+    ``review_traceability``) and keeps the gaps where the ``code_modules`` trace
+    dimension is missing — a requirement the delivered code never implements (the
+    inverse of an unauthorized capability). Best-effort: a missing project / RTM
+    table / DB never aborts reconciliation, it just yields no coverage gaps.
+    """
+    try:
+        from tools.requirements.traceability_builder import build_rtm
+
+        rtm = build_rtm(project_id, session_id=session_id, db_path=db_path)
+    except Exception as exc:  # noqa: BLE001 — RTM is advisory; never abort the assessment
+        logger.warning(
+            "reconcile_aware: RTM build unavailable for %s: %s", project_id, exc
+        )
+        return []
+    gaps: list[dict] = []
+    for gap in rtm.get("gaps", []):
+        if "code_modules" in (gap.get("missing_links") or []):
+            gaps.append(
+                {
+                    "requirement_id": gap.get("requirement_id"),
+                    "requirement_text": gap.get("requirement_text"),
+                    "missing_links": gap.get("missing_links"),
+                    "severity": gap.get("severity"),
+                    "coverage_pct": gap.get("coverage_pct"),
+                }
+            )
+    return gaps
+
+
+def reconcile_aware(
+    manifest: Any,
+    project_id: Optional[str],
+    session_id: Optional[str] = None,
+    conn: Any = None,
+    db_path: Optional[str] = None,
+) -> dict:
+    """Reconcile an exercised manifest against the RTM-derived ALLOWED set (Mode A).
+
+    Derives the allowed-capability set from the project's ``intake_requirements``
+    prose (mapped through the shared ``claim_parser`` lexicon), flags every
+    exercised capability with no authorizing requirement as
+    ``unauthorized_capability``, runs the intrinsic-risk pass (dangerous regardless
+    of authorization), and surfaces requirements with no implementing code as
+    coverage gaps.
+
+    Args:
+        manifest: the :func:`capability_extractor.extract` output (list of
+            capability records), or a bare iterable of capability-type strings.
+        project_id: the provenance handle whose RTM / requirements authorize the
+            capability set.
+        session_id: optional intake-session narrowing of the requirement scope.
+        conn: optional existing RLS-aware connection to reuse (engine / tests);
+            when ``None`` one is opened and closed internally for the requirement
+            read.
+        db_path: optional DB path forwarded to ``build_rtm`` for the coverage-gap
+            pass (defaults to the configured ICDEV DB).
+
+    Returns:
+        ``{"mode", "project_id", "session_id", "findings", "allowed_capabilities",
+        "exercised_capabilities", "coverage_gaps"}``. ``findings`` are the
+        ``integrity_findings``-shaped ``unauthorized_capability`` + intrinsic-risk
+        dicts — identical in shape to the scanner adapters' output.
+    """
+    records = _normalize_manifest(manifest)
+
+    own_conn = conn is None
+    if own_conn:
+        from tools.db.storage import get_connection
+
+        conn = get_connection()
+    try:
+        init_db(conn)  # idempotent: CREATE TABLE IF NOT EXISTS
+        allowed_map = _allowed_capabilities(conn, project_id, session_id)
+    finally:
+        if own_conn:
+            conn.close()
+
+    findings = _unauthorized_findings(records, set(allowed_map))
+    findings.extend(_intrinsic_findings(records))
+    coverage_gaps = _coverage_gaps(project_id, session_id, db_path)
+
+    return {
+        "mode": "provenance_aware",
+        "project_id": project_id,
+        "session_id": session_id,
+        "findings": findings,
+        "allowed_capabilities": {cap: allowed_map[cap] for cap in sorted(allowed_map)},
+        "exercised_capabilities": sorted(
+            {r["capability_type"] for r in records if r.get("capability_type")}
+        ),
+        "coverage_gaps": coverage_gaps,
+    }
+
+
+def reconcile_aware_and_persist(
+    assessment_id: int,
+    manifest: Any,
+    project_id: Optional[str],
+    session_id: Optional[str] = None,
+    conn: Any = None,
+    db_path: Optional[str] = None,
+) -> dict:
+    """Reconcile (Mode A) and persist the findings append-only.
+
+    Opens an RLS-aware connection when ``conn`` is ``None`` (closing it on exit);
+    ``init_db`` runs idempotently. Returns the :func:`_summarize` rollup extended
+    with ``coverage_gaps`` / ``allowed_capabilities`` / ``exercised_capabilities``
+    / ``mode`` so the engine + route surface the full Mode A disposition.
+    """
+    own_conn = conn is None
+    if own_conn:
+        from tools.db.storage import get_connection
+
+        conn = get_connection()
+    try:
+        init_db(conn)  # idempotent: CREATE TABLE IF NOT EXISTS
+        result = reconcile_aware(
+            manifest, project_id, session_id, conn=conn, db_path=db_path
+        )
+        finding_ids = _persist(conn, assessment_id, result["findings"])
+    finally:
+        if own_conn:
+            conn.close()
+
+    summary = _summarize(result["findings"], assessment_id, finding_ids)
+    summary["mode"] = "provenance_aware"
+    summary["coverage_gaps"] = result["coverage_gaps"]
+    summary["allowed_capabilities"] = result["allowed_capabilities"]
+    summary["exercised_capabilities"] = result["exercised_capabilities"]
+    return summary
+
+
+def assess_aware(
+    path: str | os.PathLike,
+    project_id: Optional[str],
+    session_id: Optional[str] = None,
+    assessment_id: Optional[int] = None,
+    conn: Any = None,
+    db_path: Optional[str] = None,
+) -> dict:
+    """End-to-end Mode A assessment of an artifact at ``path``.
+
+    Extracts the exercised capability manifest, reconciles it against the
+    RTM-derived ALLOWED set for ``project_id`` (+ optional ``session_id``), and —
+    when ``assessment_id`` is given — persists the findings append-only.
+
+    This is the provenance-aware entrypoint: an RTM / intake requirements drive the
+    authorization, unlike the claim-based :func:`assess_blind`.
+    """
+    # Imported lazily so the pure reconcile path carries no extra import cost.
+    from tools.integrity import capability_extractor
+
+    manifest = capability_extractor.extract(path)
+
+    if assessment_id is None:
+        return reconcile_aware(
+            manifest, project_id, session_id, conn=conn, db_path=db_path
+        )
+    # The persist path's _summarize rollup already carries the findings list +
+    # coverage_gaps / allowed / exercised — no need to reconcile a second time.
+    return reconcile_aware_and_persist(
+        assessment_id, manifest, project_id, session_id, conn=conn, db_path=db_path
+    )
 
 
 # --------------------------------------------------------------------------- #
