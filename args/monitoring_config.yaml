@@ -68,6 +68,21 @@ sla:
   latency_p99_ms: 1000
   error_rate_percent: 1.0
 
+# Log anomaly detection (anomaly_detection paradigm) — replaces the previously
+# hardcoded z-score (2.0) and error-rate spike (0.10) thresholds in
+# tools/monitor/log_analyzer.py with configurable, optionally-robust detection.
+# Omit this block (or any key) and the legacy hardcoded behavior is preserved.
+anomaly_detection:
+  # Frequency anomalies over 5-minute time buckets.
+  frequency:
+    method: "zscore"      # "zscore" (mean/std-dev) or "mad" (robust, median-based)
+    z_threshold: 2.0      # Std-devs above the mean to flag a bucket (zscore method)
+    mad_threshold: 3.5    # Modified z-score cutoff (mad method; Iglewicz-Hoaglin)
+    min_buckets: 2        # Minimum buckets required before computing statistics
+  # Error-rate spike detection.
+  error_rate:
+    spike_threshold: 0.10 # Fraction of error-level logs that constitutes a spike
+
 # Phase 29: Heartbeat daemon (D141-D142)
 heartbeat:
   enabled: true
