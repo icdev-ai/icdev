@@ -18,7 +18,6 @@ Schema bootstrapped in conftest.py:
 from __future__ import annotations
 
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 

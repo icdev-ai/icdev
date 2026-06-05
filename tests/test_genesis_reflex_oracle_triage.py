@@ -217,7 +217,7 @@ class TestVerifyBatchNlpLensFallback:
 
         monkeypatch.setattr(ot, "_nlp_extract_batch_lens", lambda title: "orphan_db_table")
         monkeypatch.setattr(ot, "_parse_batch_subjects", lambda desc: ["foo_table"])
-        monkeypatch.setattr(ot, "_verify_orphan_db_table", lambda t: ("promote", "no migration"))
+        monkeypatch.setattr(ot, "_verify_orphan_db_table", lambda t, oracle_confidence=None: ("promote", "no migration"))
 
         task = {"title": "[Batch] 3 orphan tables found", "description": ""}
         action, reason = ot._verify_batch(task)

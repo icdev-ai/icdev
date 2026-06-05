@@ -1,0 +1,34 @@
+<aside id="ai-brief-container" class="mb-3" style="display:none;">
+  <div id="ai-brief-inner"></div>
+</aside>
+<script>
+(function () {
+  var PATH_CANVAS = {
+    '/proposals':         'proposals',
+    '/govcon':            'govcon',
+    '/cpmp/deliverables': 'cpmp_deliverables',
+    '/cpmp':              'cpmp',
+  };
+  var path = window.location.pathname.replace(/\/$/, '');
+  var canvas = null;
+  // Longest-match first (cpmp/deliverables before cpmp)
+  var keys = Object.keys(PATH_CANVAS).sort(function(a,b){ return b.length - a.length; });
+  for (var i = 0; i < keys.length; i++) {
+    if (path === keys[i] || path.startsWith(keys[i] + '/')) {
+      canvas = PATH_CANVAS[keys[i]];
+      break;
+    }
+  }
+  if (!canvas) return;
+  fetch('/api/ai-brief/' + canvas)
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(data){
+      if (!data || !data.html) return;
+      var el = document.getElementById('ai-brief-inner');
+      var wrap = document.getElementById('ai-brief-container');
+      if (el) el.innerHTML = data.html;
+      if (wrap) wrap.style.display = '';
+    })
+    .catch(function(){});
+})();
+</script>

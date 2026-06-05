@@ -564,6 +564,22 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """Deliverable Command Center — all deliverables across all active contracts."""
         return render_template("cpmp/deliverable_center.html")
 
+    @app.route("/api/ai-brief/<canvas>")
+    def api_ai_brief(canvas):
+        """Return rendered AI brief banner HTML for a given canvas key."""
+        from flask import jsonify
+        try:
+            from tools.dashboard.components.ai_brief_banner import render_ai_brief
+            html_content = render_ai_brief(canvas, {})
+        except Exception as exc:
+            html_content = (
+                f'<aside class="ai-brief-banner card border-0 shadow-sm mb-3">'
+                f'<div class="card-body py-2 px-3 text-muted small">'
+                f'AI brief unavailable: {exc}'
+                f'</div></aside>'
+            )
+        return jsonify({"html": html_content, "canvas": canvas})
+
     @app.route("/cpmp/reports")
     @require_role("admin", "pm", "capture_mgr", "bd")
     def cpmp_reports_page():
@@ -3381,6 +3397,7 @@ def create_app() -> Flask:
             "strategos":      ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
             "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
             "aiify":            ("tools.iqe.adapters.aiify", ["aiify.opportunities", "aiify.scans", "aiify.roadmaps", "aiify.posture"]),
+            "aisg":             ("tools.iqe.adapters.aisg",  ["aisg.roadmaps", "aisg.skills", "aisg.roi", "aisg.patterns"]),
             "dic":              ("tools.iqe.adapters.dic",   ["dic.drift_events", "dic.regen_queue", "dic.ssp_fragments"]),
             "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
             "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),

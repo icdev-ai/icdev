@@ -3,6 +3,7 @@
 {% block content %}
 {% from "includes/classification_macros.html" import design_classification_banner %}
 {{ design_classification_banner('CUI') }}
+{% include "includes/ai_brief_banner.html" ignore missing %}
 
 <style>
 .gc-hero { background: linear-gradient(135deg, rgba(74,144,217,0.12) 0%, rgba(40,167,69,0.08) 100%); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 20px 24px; margin-bottom: 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }

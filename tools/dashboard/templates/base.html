@@ -783,11 +783,7 @@
                 .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
                 .then(function(data) {
                     if (loading) loading.style.display = 'none';
-                    if (content) {
-                        content.innerHTML = typeof data.html === 'string'
-                            ? data.html
-                            : '<pre>' + (data.explanation || data.text || JSON.stringify(data, null, 2)) + '</pre>';
-                    }
+                    if (content) content.innerHTML = renderExplanation(data);
                 })
                 .catch(function() {
                     if (loading) loading.style.display = 'none';
@@ -935,6 +931,7 @@
             [/^\/cpmp/, 'govcon'],
             [/^\/slides/, 'slides'],
             [/^\/coworker/, 'ace'],
+            [/^\/ai-|^\/dashboard\/.*-view/, 'aisg'],
         ];
 
         function detectCanvas() {
