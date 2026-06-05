@@ -355,7 +355,7 @@ CREATE TABLE IF NOT EXISTS poam_items (
 
 -- Canvas-finding approval state (one row per unique finding across all canvas DBs).
 -- Findings live in their source canvas DBs (security_canvas.db, data_canvas.db, etc.)
--- and are re-generated each scan; this table persists the human approval decision
+-- and are re-generated each scan. This table persists the human approval decision
 -- keyed by a stable SHA-256 hash of (canvas, rule_id, title, affected_entity).
 -- Mutable: a finding can move pending -> approved -> remediated. Each transition
 -- is also logged to audit_trail (append-only) for compliance.

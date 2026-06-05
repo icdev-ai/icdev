@@ -137,7 +137,7 @@ def main():
 
         all_results = {}
         for db_path in db_paths:
-            r = MigrationRunner(db_path=db_path)
+            r = MigrationRunner(db_path=db_path, engine=_backend)
             results = r.migrate_up(target=args.target, dry_run=args.dry_run)
             all_results[str(db_path)] = results
 
