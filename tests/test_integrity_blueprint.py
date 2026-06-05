@@ -73,7 +73,7 @@ def _seed_assessment(conn, *, status="assessed", verdict="quarantine", risk_scor
         "INSERT INTO integrity_assessments "
         "(source_type, source_ref, mode, project_id, status, verdict, risk_score) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("local", "/tmp/untrusted_pkg", "provenance_blind", None, status, verdict, risk_score),
+        ("local", "/srv/staging/untrusted_pkg", "provenance_blind", None, status, verdict, risk_score),
     )
     aid = cur.lastrowid
     conn.execute(
@@ -251,7 +251,7 @@ def test_api_assess_bad_mode_is_400(client, shared_conn, monkeypatch):
         raise ValueError("invalid mode 'nonsense'")
 
     monkeypatch.setattr(engine, "assess", _raise)
-    resp = client.post("/api/integrity/assess", json={"source": "/tmp/x", "mode": "nonsense"})
+    resp = client.post("/api/integrity/assess", json={"source": "/srv/x", "mode": "nonsense"})
     assert resp.status_code == 400
     assert "invalid mode" in resp.get_json()["error"]
 
