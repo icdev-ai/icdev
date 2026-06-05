@@ -33,6 +33,15 @@ def up(conn):
 
     if current_type == "bytea":
         # Safe: 0 existing non-null embeddings; NULL rows stay NULL after cast
+        # Requires the pgvector extension. It is per-database, so create it
+        # explicitly rather than assuming it is pre-loaded. If it cannot be
+        # created (e.g. a stock postgres image in CI without pgvector), leave
+        # the column as bytea instead of failing the whole migration chain.
+        try:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        except Exception:
+            conn.rollback()
+            return {"status": "skipped", "reason": "pgvector unavailable; kept bytea"}
         cur.execute(
             "ALTER TABLE memory_entries "
             "ALTER COLUMN embedding TYPE vector(1536) USING NULL"

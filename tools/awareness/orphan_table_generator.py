@@ -418,7 +418,7 @@ _KNOWN_SCHEMAS: Dict[str, List[Tuple[str, str]]] = {
     "ndc_audit": [
         ("id", "TEXT PRIMARY KEY"),
         ("design_id", "TEXT DEFAULT ''"),
-        ("user", "TEXT DEFAULT ''"),
+        ('"user"', "TEXT DEFAULT ''"),  # quoted: 'user' is a PG reserved word
         ("action", "TEXT DEFAULT ''"),
         ("detail", "TEXT DEFAULT ''"),
         ("classification", "TEXT DEFAULT 'public'"),
