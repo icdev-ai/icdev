@@ -123,6 +123,14 @@ MAX_AUTO_PROMOTE = _int_env("KANBAN_MAX_AUTO_PROMOTE", 3)
 # Max in-progress tasks at any time (prevents pile-up).
 # Override via KANBAN_MAX_IN_PROGRESS env var.
 MAX_IN_PROGRESS = _int_env("KANBAN_MAX_IN_PROGRESS", 3)
+# Bounded auto-revive of failure-quarantined ('suggested', fc>=5/HITL) tasks.
+# A quarantined task whose dependency is satisfied and that has been parked
+# longer than the cooldown is auto-revived to backlog (failure_count reset),
+# up to MAX_AUTO_REVIVE times. After the cap it is held for HITL review with a
+# one-time Telegram alert. Prevents tasks (and their dependency chains) from
+# rotting in 'suggested' forever after repeated failures.
+MAX_AUTO_REVIVE = _int_env("KANBAN_MAX_AUTO_REVIVE", 2)
+QUARANTINE_REVIVE_COOLDOWN_MIN = _int_env("KANBAN_REVIVE_COOLDOWN_MIN", 30)
 # Max seconds a Claude CLI subprocess can run before being killed.
 # Override via KANBAN_MAX_EXECUTION_SECONDS / _SCAN / _PYTEST env vars.
 MAX_EXECUTION_SECONDS = _int_env("KANBAN_MAX_EXECUTION_SECONDS", 900)
@@ -5405,8 +5413,154 @@ def _promote_stale_suggested() -> None:
                 logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
                 for tid in promoted:
                     print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
+
+            # ── BOUNDED AUTO-REVIVE of failure-quarantined tasks ──────────
+            # The decay pass above deliberately skips fc>=5 / HITL-quarantined
+            # tasks. Without this pass they (and their dependency chains) rot
+            # in 'suggested' forever. Here we revive them to backlog when their
+            # dependency is satisfied and they've cooled down — capped at
+            # MAX_AUTO_REVIVE per task (tracked in kanban_task_revivals so the
+            # cap survives re-quarantine), then held for HITL with one alert.
+            _revive_quarantined_suggested(conn)
     except Exception as exc:
         logger.warning("suggested-decay sweep failed: %s", exc)
+
+
+def _revive_quarantined_suggested(conn: Any) -> None:
+    """Auto-revive failure-quarantined 'suggested' tasks, bounded by a cap.
+
+    A task qualifies as failure-quarantined when failure_count >= 5 OR its
+    last_failure_reason mentions 'hitl' / 'hard-quarantine' (genuine AI
+    prediction cards have fc=0 and no failure reason, so they never match).
+    Such a task is revived to 'backlog' (failure_count reset) when:
+      - its dependency is satisfied (no dep, or parent done/decomposed), and
+      - it has been parked longer than QUARANTINE_REVIVE_COOLDOWN_MIN, and
+      - it has been auto-revived fewer than MAX_AUTO_REVIVE times.
+    After the cap it stays quarantined and fires a one-time HITL Telegram alert.
+    """
+    # Self-healing: create the side table if the migration hasn't run yet.
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS kanban_task_revivals ("
+            "  task_id TEXT PRIMARY KEY,"
+            "  revive_count INTEGER NOT NULL DEFAULT 0,"
+            "  last_revived_at TEXT,"
+            "  hitl_alerted INTEGER NOT NULL DEFAULT 0,"
+            "  updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))"
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.warning("auto-revive: could not ensure kanban_task_revivals table: %s", exc)
+        return
+
+    now = datetime.now(timezone.utc)
+    cooldown_cutoff = (now - timedelta(minutes=QUARANTINE_REVIVE_COOLDOWN_MIN)).isoformat()
+    now_iso = now.isoformat()
+
+    rows = conn.execute(
+        "SELECT id, failure_count, last_failure_reason, depends_on_task_id "
+        "FROM kanban_tasks "
+        "WHERE status = 'suggested' AND updated_at < ?",
+        (cooldown_cutoff,),
+    ).fetchall()
+
+    revived: list[str] = []
+    held: list[str] = []
+    for r in rows:
+        d = dict(r)
+        tid = d["id"]
+        fc = d.get("failure_count") or 0
+        reason = (d.get("last_failure_reason") or "").lower()
+        # Only act on failure-quarantined tasks (skip genuine prediction cards).
+        is_quarantined = fc >= 5 or "hard-quarantine" in reason or "hitl" in reason
+        if not is_quarantined:
+            continue
+
+        # Dependency must be satisfied (no dep, or parent done/decomposed).
+        dep = d.get("depends_on_task_id")
+        if dep:
+            prow = conn.execute(
+                "SELECT status FROM kanban_tasks WHERE id = ?", (dep,)
+            ).fetchone()
+            if not prow or dict(prow).get("status") not in ("done", "decomposed"):
+                continue  # still blocked — leave quarantined
+
+        # How many times have we already auto-revived this task?
+        rc_row = conn.execute(
+            "SELECT revive_count, hitl_alerted FROM kanban_task_revivals WHERE task_id = ?",
+            (tid,),
+        ).fetchone()
+        revive_count = (dict(rc_row).get("revive_count") if rc_row else 0) or 0
+        hitl_alerted = (dict(rc_row).get("hitl_alerted") if rc_row else 0) or 0
+
+        if revive_count >= MAX_AUTO_REVIVE:
+            # Cap reached — hold for human review, alert once.
+            if not hitl_alerted:
+                held.append(tid)
+                conn.execute(
+                    "UPDATE kanban_task_revivals SET hitl_alerted = 1, updated_at = ? "
+                    "WHERE task_id = ?",
+                    (now_iso, tid),
+                )
+            continue
+
+        # Revive to backlog with a fresh failure budget.
+        new_rc = revive_count + 1
+        conn.execute(
+            "UPDATE kanban_tasks SET status = 'backlog', failure_count = 0, "
+            "last_failure_reason = ?, updated_at = ? "
+            "WHERE id = ? AND status = 'suggested'",
+            (
+                f"auto-revive {new_rc}/{MAX_AUTO_REVIVE}: deps satisfied + cooled down, "
+                "re-queued to backlog for another attempt.",
+                now_iso,
+                tid,
+            ),
+        )
+        # Upsert the revival counter (works on both SQLite and PostgreSQL).
+        if rc_row:
+            conn.execute(
+                "UPDATE kanban_task_revivals SET revive_count = ?, last_revived_at = ?, "
+                "updated_at = ? WHERE task_id = ?",
+                (new_rc, now_iso, now_iso, tid),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO kanban_task_revivals "
+                "(task_id, revive_count, last_revived_at, hitl_alerted, updated_at) "
+                "VALUES (?, ?, ?, 0, ?)",
+                (tid, new_rc, now_iso, now_iso),
+            )
+        revived.append(tid)
+
+    if revived or held:
+        conn.commit()
+    for tid in revived:
+        print(f"  Kanban: auto-revive quarantined {tid} -> backlog")
+    if revived:
+        logger.info("auto-revive: re-queued %d quarantined task(s): %s", len(revived), revived)
+    if held:
+        logger.warning(
+            "auto-revive: %d task(s) hit revive cap (%d) — holding for HITL: %s",
+            len(held), MAX_AUTO_REVIVE, held,
+        )
+        import os as _os
+        if not (_os.environ.get("PYTEST_CURRENT_TEST")
+                or _os.environ.get("ICDEV_SUPPRESS_NOTIFICATIONS") == "1"):
+            for tid in held:
+                try:
+                    from tools.notifications.adapters.telegram import send as tg_send
+                    tg_send(
+                        f"HITL REVIEW NEEDED: {tid[:32]}",
+                        (
+                            f"Task '{tid}' has been auto-revived {MAX_AUTO_REVIVE} times and "
+                            "still fails. It is now held in 'suggested' for human review — "
+                            "the task likely needs to be split, fixed, or closed."
+                        ),
+                        severity="warning",
+                    )
+                except Exception:
+                    pass
 
 
 def _reap_stale_in_progress() -> None:
