@@ -14,9 +14,29 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from tools.document_intelligence.constants import CLASSIFICATION_LEVELS
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _clearance_rank(classification: str) -> int:
+    """Map a classification marking to its position in CLASSIFICATION_LEVELS.
+
+    Higher rank == more restricted. Unknown / compound markings are normalized
+    to the nearest base tier so an unexpected label never silently grants access
+    (it falls back to CUI, never to UNCLASSIFIED). ``TOP SECRET//SCI`` and any
+    other ``TOP SECRET`` variant collapse to the highest tier.
+    """
+    c = (classification or "CUI").strip().upper()
+    for i, level in enumerate(CLASSIFICATION_LEVELS):
+        if c == level:
+            return i
+    if c.startswith("TOP SECRET"):
+        return len(CLASSIFICATION_LEVELS) - 1
+    if c in ("PUBLIC", "U", "UNCLASS", "UNCLASSIFIED//FOUO"):
+        return 0
+    return 1  # safe default: treat anything unrecognized as CUI, not open
 
 
 @dataclass
@@ -68,6 +88,40 @@ class DICAnswer:
             "citations": [c.to_dict() for c in self.citations],
             "result_count": self.result_count,
             "refusal_reason": self.refusal_reason,
+            "origin": self.origin,
+        }
+
+
+@dataclass
+class DICAccessExplanation:
+    """A grounded, LLM-composed explanation of access-controlled search results.
+
+    Mirrors the access-control layer of a permission-aware fulltext search:
+    results above the caller's ``clearance`` are withheld, and this object
+    explains *that* withholding in natural language WITHOUT leaking any protected
+    content. The LLM is given only the structured classification breakdown (level
+    names and counts) — never the document text — so the explanation can describe
+    what was withheld and why, but can never disclose it. ``message`` always
+    carries a usable explanation (a deterministic template is used whenever the
+    LLM is unavailable), and ``llm_used`` records whether the model produced it.
+    """
+
+    clearance: str = "CUI"
+    visible_count: int = 0
+    withheld_count: int = 0
+    withheld_by_level: dict[str, int] = field(default_factory=dict)
+    message: str = ""
+    llm_used: bool = False
+    origin: str = "ai_generated"
+
+    def to_dict(self) -> dict:
+        return {
+            "clearance": self.clearance,
+            "visible_count": self.visible_count,
+            "withheld_count": self.withheld_count,
+            "withheld_by_level": self.withheld_by_level,
+            "message": self.message,
+            "llm_used": self.llm_used,
             "origin": self.origin,
         }
 
@@ -190,6 +244,31 @@ _ANSWER_SYSTEM_PROMPT = (
 _ANSWER_REFUSAL_SENTINEL = "INSUFFICIENT_EVIDENCE"
 
 
+# --------------------------------------------------------------------------- #
+# Access-control explanation (aiify-opp-6045: fulltext_search_engine ->
+# llm_generation, modeled on a permission-aware fulltext search). When a query
+# matches documents above the caller's clearance, those results are withheld by
+# search() and this layer composes a short, grounded, NON-LEAKING explanation of
+# what was withheld and why. The LLM receives ONLY the structured classification
+# breakdown (level names + counts) and the caller's clearance — never any
+# document content, title, or the raw query — so it physically cannot disclose
+# protected material. A deterministic template is used whenever the LLM is
+# unavailable, so an explanation is always returned.
+# --------------------------------------------------------------------------- #
+
+_ACCESS_SYSTEM_PROMPT = (
+    "You are an access-control assistant for a classified document repository. "
+    "You will be told a user's clearance level and a count of search matches that "
+    "were withheld because they are classified above that clearance, broken down "
+    "by classification level. Write ONE short, professional sentence (two at most) "
+    "informing the user that results were withheld, how many, and at which "
+    "classification levels, and that they may request elevated access. Do NOT "
+    "speculate about the withheld content, do NOT invent document names, topics, "
+    "numbers, or any detail beyond the counts and levels given. Output only the "
+    "message text."
+)
+
+
 class DICSearchEngine:
     """Grounded search over DIC collections.
 
@@ -205,6 +284,7 @@ class DICSearchEngine:
         collection_id: str | None = None,
         top_k: int = 10,
         mode: str = "grounded",
+        clearance: str | None = None,
     ) -> list[DICSearchResult]:
         """Return cited search results. Empty list when no evidence found.
 
@@ -213,8 +293,15 @@ class DICSearchEngine:
             collection_id: Limit to a specific collection (None = all accessible).
             top_k: Maximum results to return.
             mode: "grounded" (BM25+KG, default) or "hybrid" (adds vector+rerank).
+            clearance: Caller's maximum classification (e.g. "CUI"). When set,
+                results whose document classification outranks the clearance are
+                dropped *before* the ``top_k`` cap, so the cap fills with
+                accessible results. When None (default), no access filtering is
+                applied — behavior is unchanged for existing callers.
         """
         from tools.db.storage import get_connection
+
+        max_rank = _clearance_rank(clearance) if clearance else None
 
         raw_results = self._rag_search(query, top_k=top_k * 2, mode=mode)
         if not raw_results:
@@ -234,6 +321,12 @@ class DICSearchEngine:
                     continue
 
                 doc_info = _doc_meta(conn, doc_id) if doc_id else {"title": doc_id, "classification": "CUI"}
+
+                # Access control: drop results above the caller's clearance before
+                # the top_k cap so accessible results are never starved by withheld
+                # ones. Skipped entirely when no clearance is supplied.
+                if max_rank is not None and _clearance_rank(doc_info["classification"]) > max_rank:
+                    continue
 
                 matched = [t for t in terms if t in (r.content or "").lower()]
 
@@ -397,4 +490,104 @@ class DICSearchEngine:
             grounded=True,
             citations=[r.citation for r in used],
             result_count=len(results),
+        )
+
+    def access_explanation(
+        self,
+        query: str,
+        clearance: str = "CUI",
+        collection_id: str | None = None,
+        top_k: int = 10,
+        mode: str = "grounded",
+    ) -> DICAccessExplanation:
+        """Explain, in grounded natural language, which matches were withheld.
+
+        Runs the search WITHOUT clearance filtering to see the full candidate
+        set, partitions it by the caller's ``clearance``, and — when anything is
+        above clearance — asks the LLM to compose a short, non-leaking notice of
+        what was withheld and why. The model is fed only the per-level counts and
+        the clearance, never document content or the query, so it cannot disclose
+        protected material. Falls back to a deterministic template when the LLM is
+        unavailable, so ``message`` is always populated.
+
+        Args:
+            query: Natural language query.
+            clearance: Caller's maximum classification (defaults to "CUI").
+            collection_id: Restrict to a specific collection (None = all).
+            top_k: How many candidate results to consider.
+            mode: "grounded" (BM25+KG, default) or "hybrid".
+
+        Returns:
+            A :class:`DICAccessExplanation`. ``withheld_count`` is 0 and
+            ``message`` confirms full visibility when nothing is restricted.
+        """
+        max_rank = _clearance_rank(clearance)
+        candidates = self.search(query, collection_id=collection_id, top_k=top_k, mode=mode)
+
+        visible: list[DICSearchResult] = []
+        withheld_by_level: dict[str, int] = {}
+        for r in candidates:
+            cls = r.citation.classification or "CUI"
+            if _clearance_rank(cls) > max_rank:
+                withheld_by_level[cls] = withheld_by_level.get(cls, 0) + 1
+            else:
+                visible.append(r)
+
+        withheld_count = sum(withheld_by_level.values())
+        if withheld_count == 0:
+            return DICAccessExplanation(
+                clearance=clearance,
+                visible_count=len(visible),
+                withheld_count=0,
+                withheld_by_level={},
+                message="All matching results are within your access level.",
+                llm_used=False,
+            )
+
+        # Deterministic, leak-free fallback message (also used to ground the LLM).
+        breakdown = ", ".join(
+            f"{count} at {level}" for level, count in sorted(withheld_by_level.items())
+        )
+        fallback = (
+            f"{withheld_count} matching result(s) were withheld because they are "
+            f"classified above your {clearance} clearance ({breakdown}). "
+            "Request elevated access to view them."
+        )
+
+        message, llm_used = fallback, False
+        try:
+            from tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+
+            req = LLMRequest(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"User clearance: {clearance}\n"
+                            f"Withheld matches by classification level: {breakdown}\n"
+                            f"Total withheld: {withheld_count}\n\n"
+                            "Write the access-control notice."
+                        ),
+                    }
+                ],
+                system_prompt=_ACCESS_SYSTEM_PROMPT,
+                max_tokens=160,
+                temperature=0.1,
+                classification="CUI",
+            )
+            resp = LLMRouter().invoke("summarization", req)
+            if resp and resp.content and resp.content.strip():
+                message, llm_used = resp.content.strip(), True
+        except Exception:
+            # Keep the deterministic fallback; never fail the access notice.
+            pass
+
+        return DICAccessExplanation(
+            clearance=clearance,
+            visible_count=len(visible),
+            withheld_count=withheld_count,
+            withheld_by_level=withheld_by_level,
+            message=message,
+            llm_used=llm_used,
         )

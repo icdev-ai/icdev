@@ -817,13 +817,24 @@ def api_search():
     collection_id = data.get("collection_id")
     mode = data.get("mode", "grounded")
     top_k = min(int(data.get("top_k", 10)), 50)
-    tenant_id, _ = _security_context()
+    explain_access = bool(data.get("explain_access"))
+    tenant_id, clearance = _security_context()
 
     try:
         from tools.document_intelligence.search_engine import DICSearchEngine
         engine = DICSearchEngine(tenant_id=tenant_id)
-        results = engine.search(query, collection_id=collection_id, top_k=top_k, mode=mode)
-        return jsonify({"results": [r.to_dict() for r in results], "count": len(results)})
+        # Enforce the caller's clearance: results above it are never returned.
+        results = engine.search(
+            query, collection_id=collection_id, top_k=top_k, mode=mode, clearance=clearance,
+        )
+        payload = {"results": [r.to_dict() for r in results], "count": len(results)}
+        # Opt-in: explain (without leaking) what was withheld above clearance.
+        if explain_access:
+            expl = engine.access_explanation(
+                query, clearance=clearance, collection_id=collection_id, top_k=top_k, mode=mode,
+            )
+            payload["access"] = expl.to_dict()
+        return jsonify(payload)
     except Exception as exc:
         logger.warning("dic: search error: %s", exc)
         return jsonify({"results": [], "error": str(exc)}), 500
