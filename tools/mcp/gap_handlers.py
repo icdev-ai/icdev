@@ -1986,3 +1986,83 @@ def handle_cod_invoke(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_cod_invoke: %s", exc)
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# SIPA — Software Integrity & Provenance Assessor (sipa-mcp-01)
+# ---------------------------------------------------------------------------
+
+
+def handle_integrity_assess(args: dict) -> dict:
+    """Run a static SIPA integrity assessment of a source artifact.
+
+    Pattern A (direct import) wrapper around tools.integrity.engine.assess.
+    Deterministic, JSON in/out, never executes the target (static-only:
+    quarantine copy/clone, isolated scanner subprocesses, AST parsing).
+    """
+    source = args.get("source")
+    if not source:
+        return {"error": "integrity_assess: 'source' is required"}
+    try:
+        from tools.integrity import engine
+
+        return engine.assess(
+            str(source),
+            mode=str(args.get("mode", "auto")),
+            project_id=args.get("project_id"),
+            session_id=args.get("session_id"),
+            declared_purpose=args.get("declared_purpose"),
+        )
+    except Exception as exc:
+        logger.warning("handle_integrity_assess: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_integrity_list_assessments(args: dict) -> dict:
+    """List SIPA assessments (id, source, mode, status, verdict, risk_score).
+
+    Read-only RLS-aware query against integrity_assessments with optional
+    status / verdict filters (mirrors the dashboard list view).
+    """
+    status = args.get("status")
+    verdict = args.get("verdict")
+    try:
+        limit = int(args.get("limit", 50))
+    except (TypeError, ValueError):
+        limit = 50
+    try:
+        conn = get_connection()
+        try:
+            sql = (
+                "SELECT id, source_type, source_ref, mode, project_id, session_id, "
+                "status, verdict, risk_score, created_at, updated_at "
+                "FROM integrity_assessments"
+            )
+            where, params = [], []
+            if status:
+                where.append("status = ?")
+                params.append(status)
+            if verdict:
+                where.append("verdict = ?")
+                params.append(verdict)
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            sql += " ORDER BY id DESC LIMIT ?"
+            params.append(limit)
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        finally:
+            conn.close()
+        cols = (
+            "id", "source_type", "source_ref", "mode", "project_id", "session_id",
+            "status", "verdict", "risk_score", "created_at", "updated_at",
+        )
+        assessments = []
+        for r in rows:
+            try:
+                assessments.append({c: r[c] for c in cols})
+            except (TypeError, KeyError, IndexError):
+                assessments.append({c: r[i] for i, c in enumerate(cols)})
+        return {"assessments": assessments, "count": len(assessments)}
+    except Exception as exc:
+        logger.warning("handle_integrity_list_assessments: %s", exc)
+        return {"error": str(exc), "assessments": []}
