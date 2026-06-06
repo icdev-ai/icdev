@@ -484,6 +484,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "integrity_authorizations",
         # ACF Autonomous Capability Foundry (acf-, append-only signal/concept/spec ledger)
         "foundry_signals",
+        # EQO Centralized Logging (eqo-log-01, migration 181) — log rows are immutable evidence (NIST AU)
+        "centralized_logs",
     ]
 
     if tool_name == "Bash":

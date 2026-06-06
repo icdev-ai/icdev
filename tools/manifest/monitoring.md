@@ -18,3 +18,9 @@
 | WATCHCON Tiers | tools/monitor/watchcon.py | Three-tier alert classification: WATCHCON 4 (routine/info), WATCHCON 3 (elevated/warning), WATCHCON 2 (high/critical); insert, query, backfill, summarize | --tier, --json | Alert tier records + summary |
 | Monitor Constants | tools/monitor/constants.py | WATCHCON tier constants, severity↔tier mappings | (import only) | Module-level constants |
 
+## EQO Centralized Logging (eqo-log)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Log Query | tools/logging/log_query.py | Query the append-only centralized_logs sink (RLS via get_connection) across ALL components | --component, --level, --since, --contains, --limit, --json | Log rows (newest first) |
+| Logging Constants | tools/logging/constants.py | LOG_LEVELS, LEVEL_RANK, DEFAULT/MAX_LIMIT, LOGS_TABLE, FEATURE_FLAG | (import only) | Module-level constants |
+| Log-Triage Reflex (autofix bridge) | tools/genesis/reflexes/log_triage.py | Genesis reflex (every 30m). Path 1: build log .logs/build.ndjson -> task_type='bug' cards. Path 2 (eqo-log-05): reads ERROR/CRITICAL from centralized_logs across ALL components via query_logs, scores+dedups by (component, message_hash[:8]), opens one task_type='fix' card per NEW signature with component + log excerpt + reproduce query. run_centralized() is independently callable; separate seen-store per path | run(config, trust) / run_centralized(config, ...) | {tasks_created, fix_cards_created, centralized:{...}} |
