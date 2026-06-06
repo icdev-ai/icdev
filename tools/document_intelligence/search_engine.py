@@ -193,8 +193,63 @@ class DICSearchResult:
         }
 
 
+@dataclass
+class DICKeywordSearchResult:
+    """Results of an embedding-based keyword-list search over DIC.
+
+    Models the upgrade of a literal keyword-list filter (a document matches only
+    when it contains one of an exact list of keywords) to semantic embedding
+    search (a document matches when it is *semantically* similar to the keywords,
+    even when it never uses the literal term — e.g. the keyword ``vehicle``
+    surfaces a document that only says ``automobile``).
+
+    ``embedding_used`` records whether embedding/vector retrieval was actually
+    attempted. When it is False the engine fell back to literal keyword matching
+    (no embedding provider / air-gap), so results are never *worse* than the
+    keyword-list baseline. Every result in ``results`` still carries a full
+    citation pack, and access control is applied exactly as in :meth:`search`.
+    """
+
+    keywords: list[str] = field(default_factory=list)
+    results: list["DICSearchResult"] = field(default_factory=list)
+    embedding_used: bool = False
+    result_count: int = 0
+    refusal_reason: str = ""
+    origin: str = "ai_retrieved"
+
+    def to_dict(self) -> dict:
+        return {
+            "keywords": self.keywords,
+            "results": [r.to_dict() for r in self.results],
+            "embedding_used": self.embedding_used,
+            "result_count": self.result_count,
+            "refusal_reason": self.refusal_reason,
+            "origin": self.origin,
+        }
+
+
 def _extract_terms(query: str) -> list[str]:
     return [t.lower() for t in re.findall(r"\b\w{3,}\b", query)]
+
+
+def _normalize_keywords(keywords: list[str] | None) -> list[str]:
+    """Trim, drop blanks, and de-duplicate (case-insensitively) a keyword list.
+
+    Order is preserved and the original casing of the first occurrence is kept,
+    so the returned list reads back the way the caller supplied it.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for kw in keywords or []:
+        term = (kw or "").strip()
+        if not term:
+            continue
+        low = term.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        out.append(term)
+    return out
 
 
 def _doc_meta(conn, doc_id: str) -> dict[str, Any]:
@@ -464,6 +519,83 @@ class DICSearchEngine:
             return []
         finally:
             conn.close()
+
+    def _embeddings_available(self) -> bool:
+        """Report whether an embedding provider is configured for vector search.
+
+        Used by :meth:`keyword_search` to decide between true embedding search and
+        the literal keyword fallback, and to set ``embedding_used`` honestly. Any
+        failure to resolve the provider is treated as "unavailable" so callers
+        degrade gracefully (air-gap safe) rather than erroring.
+        """
+        try:
+            from tools.rag.retriever import _get_embedding_provider
+
+            return _get_embedding_provider() is not None
+        except Exception:
+            return False
+
+    def keyword_search(
+        self,
+        keywords: list[str],
+        collection_id: str | None = None,
+        top_k: int = 10,
+        clearance: str | None = None,
+    ) -> DICKeywordSearchResult:
+        """Embedding-based search over a literal list of keywords.
+
+        This upgrades a classic keyword-list filter — where a document matches
+        only if it contains one of an exact set of keywords — to semantic
+        embedding search: the keywords are embedded as a single query and matched
+        against chunk embeddings, so a document is retrieved when it is
+        *semantically* related to the keywords even if it never uses the literal
+        terms. Results carry full citations and honor the caller's ``clearance``
+        exactly as :meth:`search` does.
+
+        When no embedding provider is available (air-gap / no vector store), the
+        method degrades to literal keyword matching via the BM25 fallback path,
+        so it is never worse than the keyword-list baseline. ``embedding_used`` on
+        the returned object records which path actually ran.
+
+        Args:
+            keywords: Literal keywords to search for. Trimmed, de-duplicated
+                (case-insensitively), and order-preserved before use.
+            collection_id: Restrict to a specific collection (None = all).
+            top_k: Maximum results to return.
+            clearance: Caller's maximum classification; results above it are
+                dropped before the ``top_k`` cap (see :meth:`search`).
+
+        Returns:
+            A :class:`DICKeywordSearchResult`. ``refusal_reason`` is
+            ``"no_keywords"`` when the list is empty/blank (no search is run) and
+            ``"no_matches"`` when the search found nothing; it is empty on success.
+        """
+        norm = _normalize_keywords(keywords)
+        if not norm:
+            return DICKeywordSearchResult(
+                keywords=[], embedding_used=False, refusal_reason="no_keywords",
+            )
+
+        embedding_used = self._embeddings_available()
+        # "hybrid" engages the vector+rerank path when embeddings are present;
+        # "grounded" still falls back to literal keyword matching when they are
+        # not, so the keyword list always yields the baseline behavior at worst.
+        mode = "hybrid" if embedding_used else "grounded"
+        query = " ".join(norm)
+        results = self.search(
+            query, collection_id=collection_id, top_k=top_k, mode=mode, clearance=clearance,
+        )
+        if not results:
+            return DICKeywordSearchResult(
+                keywords=norm, embedding_used=embedding_used, refusal_reason="no_matches",
+            )
+
+        return DICKeywordSearchResult(
+            keywords=norm,
+            results=results,
+            embedding_used=embedding_used,
+            result_count=len(results),
+        )
 
     def answer(
         self,
