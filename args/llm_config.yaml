@@ -531,6 +531,16 @@ routing:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
 
+  # DIC duplicate-content anomaly severity grading (aiify-opp-5984:
+  # hardcoded_threshold -> anomaly_detection). Grades how concerning the
+  # content blocks (paragraphs/pages) that recur within a single document are —
+  # a scanner double-feed or duplicated insert; the deterministic offline
+  # block-repetition detector is authoritative, this layer is best-effort
+  # severity enrichment.
+  dic_duplicate_block_assessment:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
   # DIC search-relevance anomaly severity grading (aiify-opp-6052:
   # hardcoded_threshold -> anomaly_detection). Grades a query's result set for a
   # relevance cliff / low-confidence retrieval (results whose score is a low
