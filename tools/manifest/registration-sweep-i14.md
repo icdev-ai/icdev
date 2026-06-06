@@ -120,7 +120,6 @@ module's docstring.
 | Validation Runner | tools/studio/executors/validation_runner.py | Validation Runner — Shared Workflow Step. | `--json` / (library) | JSON / objects |
 | Ndc Topology | tools/studio/sim/ndc_topology.py | NDC topology builder — reuses live GNS3 projects from NDC discovery. | `--json` / (library) | JSON / objects |
 | Ohc Topology | tools/studio/sim/ohc_topology.py | OHC topology builder — ops runbook automation and incident response nodes. | `--json` / (library) | JSON / objects |
-| Studio | tools/studio/studio.py | ICDEV™ Studio — WNE (Workflow Narrative Engine) Blueprint. | `--json` / (library) | JSON / objects |
 | Context Builder | tools/studio/wne/context_builder.py | ICDEV™ Studio — Workflow Narrative Engine (WNE) Context Builder. | `--json` / (library) | JSON / objects |
 | Narrative Generator | tools/studio/wne/narrative_generator.py | ICDEV™ Studio — Workflow Narrative Engine (WNE) Narrative Generator. | `--json` / (library) | JSON / objects |
 | Blueprint | tools/supply_chain/blueprint.py | ICDEV™ Supply Chain Intelligence — Flask Blueprint. | `--json` / (library) | JSON / objects |
