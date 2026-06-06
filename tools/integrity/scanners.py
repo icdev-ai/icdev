@@ -763,7 +763,11 @@ def _detect_signatures(staged: Path) -> Optional[list[dict]]:
     """
     from tools.aiify.pattern_classifier import run_semgrep
 
-    raw = run_semgrep(str(staged), _SIGNATURE_RULES_DIR)
+    # ``no_git_ignore=True`` is mandatory here: the quarantine tree lives under a
+    # gitignored path (``.tmp/integrity_quarantine``). Without it Semgrep honors
+    # .gitignore, scans zero files, and returns ``[]`` — a *clean* result that
+    # silently masks real malware (eqo-sipa-s1).
+    raw = run_semgrep(str(staged), _SIGNATURE_RULES_DIR, no_git_ignore=True)
     if raw is None:
         return None
     hits: list[dict] = []
