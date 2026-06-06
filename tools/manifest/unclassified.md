@@ -73,3 +73,7 @@
 | Auto-added init_db.py | tools/zta/db/init_db.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added lac_scenarios.py | tools/zta/lac_scenarios.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added lac_simulator.py | tools/zta/lac_simulator.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added up.py | tools/db/migrations/012_kanban_id_text_pk/up.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added cpmp_monitor.py | tools/genesis/reflexes/cpmp_monitor.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added pmo_option_tracker.py | tools/genesis/reflexes/pmo_option_tracker.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added nl_to_iqe.py | tools/iqe/nl_to_iqe.py | (auto-added by remediation; update description) | --json | stdout |
