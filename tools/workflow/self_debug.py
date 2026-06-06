@@ -267,6 +267,113 @@ def diagnose(snap: Dict[str, Any], chain_mode: str = "") -> Dict[str, Any]:
         return _heuristic_diagnosis(snap)
 
 
+# Exception class → (recommendation, confidence). Confidence is deliberately
+# kept in the 0.55–0.65 band: high enough to beat the conf-0.30 "manual review"
+# floor and route the failure to a real card, but well below the 0.85 auto-apply
+# bar so the patch is never applied without human/LLM review.
+_PATCH_EXCEPTIONS = {
+    "AssertionError", "ImportError", "ModuleNotFoundError", "NameError",
+    "AttributeError", "TypeError", "ValueError", "KeyError", "IndexError",
+    "SyntaxError", "IndentationError", "TabError", "RuntimeError",
+    "UnboundLocalError", "NotImplementedError", "ZeroDivisionError",
+    "FileNotFoundError", "LookupError", "ArithmeticError",
+}
+# Environmental / flaky failures — patching the suspect line rarely helps; the
+# right move is to quarantine and let a human decide (raise budget, retry, etc).
+_QUARANTINE_EXCEPTIONS = {
+    "TimeoutError", "ConnectionError", "ConnectionRefusedError",
+    "ConnectionResetError", "BrokenPipeError", "OSError", "IOError",
+    "MemoryError", "socket.timeout", "concurrent.futures.TimeoutError",
+}
+
+
+def _classify_exception(exc_type: str) -> tuple:
+    """Map an exception class to (recommendation, confidence).
+
+    Patchable in-repo exceptions → patch @0.62; environmental/flaky →
+    quarantine @0.58; anything else → patch @0.55 (an in-repo suspect frame is
+    still the best deterministic lead, just less certain).
+    """
+    if exc_type in _QUARANTINE_EXCEPTIONS:
+        return "quarantine", 0.58
+    if exc_type in _PATCH_EXCEPTIONS:
+        return "patch", 0.62
+    return "patch", 0.55
+
+
+def _patch_hint_for_exception(exc_type: str, suspect: str) -> str:
+    """One-sentence, exception-aware remediation hint pointing at the suspect."""
+    if exc_type in ("ImportError", "ModuleNotFoundError"):
+        return (f"Fix the failing import at {suspect} — correct the module path "
+                f"or add the missing dependency to requirements.txt.")
+    if exc_type in _QUARANTINE_EXCEPTIONS:
+        return (f"{exc_type} at {suspect} looks environmental/flaky — quarantine "
+                f"for human review (raise the budget or retry) rather than patch.")
+    if exc_type == "AssertionError":
+        return (f"An assertion failed at {suspect} — reconcile expected vs actual; "
+                f"fix the implementation or the test.")
+    if exc_type in ("SyntaxError", "IndentationError", "TabError"):
+        return f"Syntax/indentation error at {suspect} — fix the offending line."
+    return (f"Inspect {suspect} where {exc_type} was raised and correct the "
+            f"offending code.")
+
+
+def _traceback_diagnosis(snap: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Deterministic diagnosis from a parsed traceback, or None.
+
+    Fires only when ``traceback_analyzer`` extracts BOTH an exception class and
+    a primary *in-repo* suspect frame. Produces a real root_cause naming the
+    exception + frame, suspect_files=[primary suspect], an exception-class-based
+    recommendation, and a calibrated confidence (0.55–0.65). Returns None when
+    there is no exception or no first-party suspect, so the generic fallback
+    still applies.
+    """
+    try:
+        from tools.workflow.traceback_analyzer import parse_traceback
+    except Exception as exc:  # analyzer optional — never break the fallback
+        logger.debug("self_debug: traceback_analyzer import failed: %s", exc)
+        return None
+
+    parts: List[str] = []
+    raw_reason = snap.get("reason")
+    if raw_reason:
+        parts.append(str(raw_reason))
+    log_tail = snap.get("log_tail")
+    if isinstance(log_tail, list) and log_tail:
+        parts.append("\n".join(str(x) for x in log_tail))
+    text = "\n".join(parts)
+    if not text.strip():
+        return None
+
+    tb = parse_traceback(text)
+    if not tb.exception_type:
+        return None
+    # Deepest in-repo frame is the primary suspect; require a first-party frame.
+    suspect_frame = next((fr for fr in reversed(tb.frames) if fr.in_repo), None)
+    if suspect_frame is None:
+        return None
+
+    suspect = f"{suspect_frame.file}:{suspect_frame.line}"
+    exc_type = tb.exception_type
+    recommendation, confidence = _classify_exception(exc_type)
+    func = (suspect_frame.function or "").strip()
+    msg = (tb.exception_message or "").strip()
+    root_cause = (
+        f"{exc_type} raised at {suspect}"
+        + (f" (in {func})" if func else "")
+        + (f": {msg[:160]}" if msg else "")
+        + " — deterministic traceback localization."
+    )
+    return {
+        "root_cause": root_cause,
+        "suspect_files": [suspect],
+        "recommendation": recommendation,
+        "patch_hint": _patch_hint_for_exception(exc_type, suspect),
+        "confidence": confidence,
+        "_source": "heuristic_traceback",
+    }
+
+
 def _heuristic_diagnosis(snap: Dict[str, Any]) -> Dict[str, Any]:
     """Rule-based fallback when no LLM is available."""
     # cwd_exists=false fires before any reason-string parsing — the directory
@@ -332,6 +439,13 @@ def _heuristic_diagnosis(snap: Dict[str, Any]) -> Dict[str, Any]:
             "confidence": 0.60,
             "_source": "heuristic",
         }
+    # Generic deterministic localization: when a Python traceback is present and
+    # points at a first-party file, return a real diagnosis instead of the
+    # conf-0.30 "manual review" floor. Runs AFTER the 5 infra rules above.
+    tb_diag = _traceback_diagnosis(snap)
+    if tb_diag is not None:
+        return tb_diag
+
     return {
         "root_cause": "Unknown recurring failure; manual review required.",
         "suspect_files": [],
