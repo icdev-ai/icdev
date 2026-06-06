@@ -4,6 +4,183 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: arc
+  name: Autonomous Recovery v2 (ARC)
+  description: 'Deepens the Genesis failure_triage/self_debug autonomous-recovery loop
+    from shallow infra-pattern RCA into a genuine code-logic debugger, and wires it
+    into the existing logging + observability + visibility stack. Root cause of the
+    shallowness is evidence starvation: the diagnoser reads only the truncated
+    last_failure_reason while the platform already captures build.ndjson, the
+    kanban_verifications gate matrix, centralized_logs, otel_spans, and code_lens it
+    never consumes. ARC adds a deep evidence collector, traceback localization, an
+    iterative hypothesis->repro debugger loop, self-consistency + expanded
+    verification, recovery tracing/structured-events/panel enrichment, and a
+    calibration feedback loop (triage_outcomes precision) that EARNS
+    calibration-gated ff-only auto-merge for low-risk task types — permanent ceilings
+    on deploy/migrations/security/hooks/config retained. Design doc:
+    docs/features/autonomous-recovery-v2-design.md.'
+  task_prefix: arc-
+  default_open: true
+  briefs:
+  - 'ev: deep evidence collector — traceback_analyzer + evidence_collector joining
+    build.ndjson/kanban_verifications/centralized_logs/otel_spans/diff, wired into
+    self_debug + heuristic upgrade — arc-ev-01..05'
+  - 'obs: observability of recovery — @traced spans + structured NDJSON events +
+    enriched /api/autonomy/status panel with root_cause/diff/trace links — arc-obs-01..04'
+  - 'dbg: deep code-logic debugger — static-on-diff (code_lens) + bounded iterative
+    hypothesis->repro loop + opt-in post-mortem locals — arc-dbg-01..04'
+  - 'dec: harden the decision — N-sample self-consistency confidence + verification
+    beyond the LLM''s own command (orig test + ruff + coherence) — arc-dec-01..03'
+  - 'cal: calibration feedback loop — triage_runs/triage_outcomes append-only tables
+    + patch-held resolution + rolling per-cohort precision — arc-cal-01..03'
+  - 'am: calibration-gated autonomy — should_auto_merge cohort gate (precision +
+    min-samples, ff-only) + adaptive revocation + revert watch + dashboard — arc-am-01..04'
+  - 'vv: end-to-end V&V — ruff + pytest + coherence + live recovery trace/panel/outcome
+    check — arc-vv-01'
+  epics:
+  - key: am
+    title: AM
+    priority: medium
+  - key: cal
+    title: CAL
+    priority: medium
+  - key: dbg
+    title: DBG
+    priority: medium
+  - key: dec
+    title: DEC
+    priority: medium
+  - key: ev
+    title: EV
+    priority: medium
+  - key: obs
+    title: OBS
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+- key: cwk
+  name: AI Co-Workers (every domain)
+  description: 'Persistent domain-expert co-workers (Strategos-style chat persona
+    + RAG) that can also spin up ACE multi-role teams to do real work. A unified /coworkers
+    canvas where each co-worker is one args/coworkers/<domain>.yaml row; 5 reference
+    co-workers hand-built, then the ACF foundry autonomously fills the remaining ~50
+    domains under a CoD + SIPA + HITL merge gate. Rooted on acf-vv-04 (foundry must
+    be genuinely operational first). Plan: i-want-to-shift-federated-bunny.'
+  task_prefix: cwk-
+  default_open: true
+  briefs: []
+  epics:
+  - key: auto
+    title: AUTO
+    priority: medium
+  - key: canvas
+    title: CANVAS
+    priority: medium
+  - key: ctx
+    title: CTX
+    priority: medium
+  - key: db
+    title: DB
+    priority: medium
+  - key: exec
+    title: EXEC
+    priority: medium
+  - key: iqe
+    title: IQE
+    priority: medium
+  - key: loader
+    title: LOADER
+    priority: medium
+  - key: rag
+    title: RAG
+    priority: medium
+  - key: ref
+    title: REF
+    priority: medium
+  - key: roles
+    title: ROLES
+    priority: medium
+  - key: trigger
+    title: TRIGGER
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+- key: tch
+  name: True Completion Hardening (TCH)
+  description: 'Closes the systemic "true completion" hole that let ACE ship with
+    gaps: the completeness gate check_new_page_completeness only inspected files named
+    page.html, leaving ~44 of ~56 registered canvases unchecked. Drives the gate off
+    the _CANVAS_DEFS registry (any entry-template name), resolves IQE adapters via
+    the canvas key->_CANVAS_MAP (no false negatives), adds full icdev/ mirror parity,
+    remediates the slides/mfa/zta mirror gaps + IQE triage, then adds blocking CI
+    enforcement, a continuous Genesis audit reflex, and a visible scorecard. SIPA
+    was verified genuinely complete and is out of scope.'
+  task_prefix: tch-
+  default_open: true
+  briefs:
+  - 'gate: drive new_page_completeness off _CANVAS_DEFS + key->_CANVAS_MAP adapter
+    resolution + full icdev mirror parity + tests — tch-gate-01..04'
+  - 'audit: completion_auditor.py per-canvas scorecard (--json/--md) + manifest/commands
+    + tests — tch-audit-01..03'
+  - 'fix: slides/mfa/zta icdev mirrors + IQE triage (exemption whitelist) + IQE backfill
+    — tch-fix-01..05'
+  - 'ci: wire new_page_completeness into the merge/Launch blocking gate + fixture
+    proof — tch-ci-01..02'
+  - 'reflex: Genesis completion-audit reflex -> suggested cards + tests — tch-reflex-01..02'
+  - 'dash: scorecard view on an existing route + icdev mirror + nav — tch-dash-01..02'
+  - 'vv: ruff + full pytest + coherence gate + 0-incomplete auditor — tch-vv-01'
+  epics:
+  - key: gate
+    title: Harden completeness checker — drive off _CANVAS_DEFS (root cause)
+    priority: critical
+  - key: audit
+    title: Completion auditor + per-canvas scorecard
+    priority: high
+  - key: fix
+    title: Remediate gaps — slides/mfa/zta mirrors + IQE triage/backfill
+    priority: high
+  - key: ci
+    title: Blocking enforcement — merge/Launch gate + CI + PR runner
+    priority: high
+  - key: reflex
+    title: Continuous autonomous completion-audit reflex
+    priority: medium
+  - key: dash
+    title: Completion scorecard visibility
+    priority: medium
+  - key: vv
+    title: V&V — ruff + pytest + coherence gate + 0-incomplete
+    priority: critical
+- key: uclb
+  name: UI to CLI LLM Bridge
+  description: Routes the dashboard's LLM calls through a local Claude CLI when the
+    environment is air-gapped or has no cloud API key (env + BYOK). Router-level cli
+    provider, unified job store with auto-selected subprocess/mailbox backends, no
+    request timeouts, and live in-browser progress.
+  task_prefix: uclb-
+  default_open: true
+  briefs: []
+  epics:
+  - key: prov
+    title: Provider & Router Integration
+    priority: critical
+  - key: job
+    title: Job Store & CLI Backends
+    priority: critical
+  - key: async
+    title: Chat No-Timeout / Background Posting
+    priority: high
+  - key: ui
+    title: Progress UI
+    priority: high
+  - key: test
+    title: Docs & Registration
+    priority: medium
+  - key: vv
+    title: V&V Gate
+    priority: medium
 - key: eqo
   name: Eqo Project
   description: Auto-registered project for tasks with prefix 'eqo-'. Update name and
