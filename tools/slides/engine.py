@@ -64,6 +64,12 @@ class DeckEngine:
             # Phase 1: Gather
             raw = self._gather(req)
 
+            # Data-story fast path: an uploaded CSV/JSON dataset becomes an
+            # interactive dashboard + auto Story-Point deck (no LLM narrative).
+            dataset = raw.get("__dataset__")
+            if dataset:
+                return self._run_dataset_story(deck_id, req, dataset)
+
             # Phase 2: Plan outline
             from tools.slides import orchestrator
             outline = orchestrator.plan_outline(
@@ -77,6 +83,15 @@ class DeckEngine:
             # Phase 3: Generate content (parallel)
             from tools.slides import content_agent
             slides = content_agent.generate_all(outline, raw)
+
+            # Phase 3.5: deterministic data-driven viz slides (real numbers, no LLM)
+            from tools.slides import viz_mapper
+            data_slides = viz_mapper.build_data_slides(raw)
+            if data_slides:
+                if slides and slides[-1].get("slide_type") == "outro":
+                    slides = slides[:-1] + data_slides + [slides[-1]]
+                else:
+                    slides = slides + data_slides
 
             # Phase 4: Graphics (parallel, optional)
             if req.enable_graphics and os.environ.get("SLIDES_IMAGE_ENABLED", "true").lower() in ("true", "1", "yes"):
@@ -114,6 +129,30 @@ class DeckEngine:
                 error=str(exc),
             )
 
+    def _run_dataset_story(self, deck_id, req: "DeckRequest", dataset: dict) -> "DeckResult":
+        """Build an interactive dashboard + auto Story-Point deck from a dataset."""
+        from tools.viz.story_builder import build_dataset_slides
+        from tools.slides import pptx_builder
+
+        slides = (
+            [{"slide_type": "title", "title": req.title, "bullets": [],
+              "speaker_notes": f"Data story over {dataset.get('name', 'the dataset')}."}]
+            + build_dataset_slides(dataset)
+            + [{"slide_type": "outro", "title": "Explore the Data",
+                "bullets": ["Open the live dashboard", "Filter and drill down"],
+                "speaker_notes": "The dashboard is fully interactive in the presenter."}]
+        )
+        try:
+            pptx_path = pptx_builder.build(slides, theme=req.theme, title=req.title)
+        except Exception:
+            pptx_path = ""
+        self._update_deck_record(deck_id, slides, pptx_path, "completed")
+        self._audit(deck_id, "completed", {"slide_count": len(slides), "mode": "dataset_story"})
+        return DeckResult(
+            deck_id=deck_id, title=req.title, pptx_path=pptx_path, slides=slides,
+            theme=req.theme, source_types=["dataset"], status="completed",
+        )
+
     def run_demo(self) -> DeckResult:
         """Demo run using kanban + canvases sources and matplotlib graphics."""
         return self.run(DeckRequest(
@@ -136,6 +175,19 @@ class DeckEngine:
         if req.upload_file_path:
             from tools.slides import input_parser
             raw["upload"] = input_parser.parse_file(req.upload_file_path)
+
+        # Detect a tabular dataset upload (CSV/JSON) → data-story path.
+        if req.upload_text or req.upload_file_path:
+            try:
+                from tools.viz.dataset import parse_dataset
+                ds = parse_dataset(text=req.upload_text or None,
+                                   path=req.upload_file_path or None,
+                                   name=(req.title or "Dataset"))
+                # Only treat as a dataset when it's genuinely tabular.
+                if ds and len(ds["columns"]) >= 2 and len(ds["rows"]) >= 2:
+                    raw["__dataset__"] = ds
+            except Exception:
+                pass
 
         # Gather ICDEV native sources in parallel
         source_map: dict[str, Any] = {
@@ -171,6 +223,9 @@ class DeckEngine:
         def _gen_one(slide_data: dict) -> dict:
             slide_type = slide_data.get("slide_type", "content")
             if slide_type in ("title", "outro"):
+                return slide_data
+            # Data-driven viz slides render their own chart/table/diagram — no image.
+            if any(slide_data.get(k) for k in ("chart", "table", "diagram", "kpis", "dashboard")):
                 return slide_data
             title = slide_data.get("title", "")
             bullets = slide_data.get("bullets", [])
@@ -224,12 +279,17 @@ class DeckEngine:
                     "error_message=?, completed_at=? WHERE deck_id=?",
                     (status, len(slides), pptx_path, error, now, deck_id),
                 )
-                # Persist slides
+                # Persist slides (incl. viz payloads — VIZ Epic B)
+                def _vz(sd, key):
+                    val = sd.get(key)
+                    return json.dumps(val) if val else None
+
                 for i, slide_data in enumerate(slides):
                     conn.execute(
                         "INSERT INTO slides_slides "
-                        "(deck_id, position, slide_type, title, bullets, speaker_notes, image_path, image_prompt) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        "(deck_id, position, slide_type, title, bullets, speaker_notes, "
+                        "image_path, image_prompt, chart_json, table_json, diagram_json, kpis_json, dashboard_json) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             deck_id, i + 1,
                             slide_data.get("slide_type", "content"),
@@ -238,6 +298,11 @@ class DeckEngine:
                             slide_data.get("speaker_notes", ""),
                             slide_data.get("image_path"),
                             slide_data.get("image_prompt"),
+                            _vz(slide_data, "chart"),
+                            _vz(slide_data, "table"),
+                            _vz(slide_data, "diagram"),
+                            _vz(slide_data, "kpis"),
+                            _vz(slide_data, "dashboard"),
                         ),
                     )
                 conn.commit()

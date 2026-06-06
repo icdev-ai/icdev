@@ -442,8 +442,11 @@ task_categories:
     description: "Long-form prose, narrative, documentation"
 
   vision:
-    preferred: [gemma3-local, gemma4-local, llava-local, claude-sonnet, gpt-4o]
-    description: "Image analysis, screenshots, UI understanding"
+    # Local vision models first (air-gap), then Ollama.com cloud multimodal
+    # (minimax-m3: 1M context + native vision), then cloud API vision models.
+    # The router auto-selects from here when a request carries images.
+    preferred: [gemma3-local, gemma4-local, llava-local, minimax-m3, claude-sonnet, gpt-4o]
+    description: "Image analysis, screenshots, UI understanding (incl. Ollama.com multimodal)"
 
   summarization:
     preferred: [qwen3-local, claude-haiku, gpt-4o-mini, llama-local]

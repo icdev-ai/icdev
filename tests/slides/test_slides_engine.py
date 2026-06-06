@@ -219,5 +219,9 @@ class TestDeckEngine:
             result = engine.run(req)
 
         assert result.status == "completed"
-        assert len(result.slides) == 3
+        # Deterministic data-driven viz slides (VIZ Epic B) may be inserted
+        # before the outro, so the count is >= the LLM-written narrative length.
+        assert len(result.slides) >= 3
+        assert result.slides[0]["slide_type"] == "title"
+        assert result.slides[-1]["slide_type"] == "outro"
         assert result.pptx_path.endswith(".pptx")

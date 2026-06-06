@@ -206,7 +206,32 @@ def _get_module_budget_config(module_name: str) -> Dict:
 
 
 def _get_conn():
-    return get_connection()
+    conn = get_connection()
+    _set_budget_timeouts(conn)
+    return conn
+
+
+def _set_budget_timeouts(conn) -> None:
+    """Apply a short DB timeout so a locked/slow budget row can never hang the
+    LLM critical path (``check_module_budget`` runs on every ``router.invoke``).
+
+    Best-effort and backend-agnostic: a contended row raises quickly instead of
+    blocking forever, and callers fail open. See the lock-storm hardening notes.
+    """
+    # PostgreSQL: bound statement + lock acquisition (ms).
+    try:
+        conn.execute("SET statement_timeout = 4000")
+        conn.execute("SET lock_timeout = 4000")
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    # SQLite: bound busy-wait on a locked database (ms).
+    try:
+        conn.execute("PRAGMA busy_timeout = 4000")
+    except Exception:
+        pass
 
 
 def _get_or_create_period(conn, module_name: str, month: str) -> Dict:
@@ -336,13 +361,31 @@ def check_module_budget(
         }
 
     month = _current_month()
-    conn = _get_conn()
-    _ensure_tables(conn)
-
-    # Sync to ensure period table reflects latest usage
-    _sync_period_spent(conn, module_name, month)
-    period = _get_or_create_period(conn, module_name, month)
-    conn.close()
+    # Budget bookkeeping is best-effort: a locked/slow/unavailable budget DB
+    # must NEVER block or crash an LLM invocation. Fail open ("allow") on any
+    # DB error (incl. a lock/statement timeout from _set_budget_timeouts).
+    conn = None
+    try:
+        conn = _get_conn()
+        _ensure_tables(conn)
+        # Sync to ensure period table reflects latest usage
+        _sync_period_spent(conn, module_name, month)
+        period = _get_or_create_period(conn, module_name, month)
+    except Exception as exc:
+        logger.debug("module budget check degraded to allow (%s): %s", module_name, exc)
+        return {
+            "action": "allow",
+            "module_name": module_name,
+            "month": month,
+            "function": function,
+            "message": "Budget check unavailable — failing open",
+        }
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     budget_usd = float(period.get("budget_usd", 0.0))
     budget_tokens = int(period.get("budget_tokens", 0))
@@ -459,36 +502,55 @@ def record_module_usage(
         logger.debug("Skipping module usage for unknown module: %s", module_name)
         return ""
 
-    conn = _get_conn()
-    _ensure_tables(conn)
-
+    # Best-effort: never let usage bookkeeping block or crash the caller.
     record_id = _gen_id("mbu-")
-    conn.execute(
-        """INSERT INTO module_budget_usage
-           (id, module_name, function_name, resource_type, amount, tokens, operations,
-            project_id, model_id, details_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            record_id,
-            module_name,
-            function,
-            "usd" if cost_usd > 0 else ("tokens" if tokens > 0 else "operations"),
-            cost_usd,
-            tokens,
-            operations,
-            project_id,
-            model_id,
-            json.dumps(details) if details else None,
-            _now_iso(),
-        ),
-    )
-    conn.commit()
-    conn.close()
+    conn = None
+    try:
+        conn = _get_conn()
+        _ensure_tables(conn)
+        conn.execute(
+            """INSERT INTO module_budget_usage
+               (id, module_name, function_name, resource_type, amount, tokens, operations,
+                project_id, model_id, details_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                record_id,
+                module_name,
+                function,
+                "usd" if cost_usd > 0 else ("tokens" if tokens > 0 else "operations"),
+                cost_usd,
+                tokens,
+                operations,
+                project_id,
+                model_id,
+                json.dumps(details) if details else None,
+                _now_iso(),
+            ),
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.debug("module usage record skipped (%s): %s", module_name, exc)
+        return record_id
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
-    # Update period aggregate
-    conn = _get_conn()
-    _sync_period_spent(conn, module_name, _current_month())
-    conn.close()
+    # Update period aggregate (best-effort; independent connection)
+    conn = None
+    try:
+        conn = _get_conn()
+        _sync_period_spent(conn, module_name, _current_month())
+    except Exception as exc:
+        logger.debug("period sync skipped (%s): %s", module_name, exc)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     return record_id
 

@@ -1541,6 +1541,68 @@ class LLMRouter:
 
         return 0.0
 
+    # ── Multimodal / vision routing (Ollama.com & other vision models) ────────
+
+    def _materialize_request_images(self, request: LLMRequest) -> None:
+        """Fold ``request.images`` into the message list as image blocks (once)."""
+        images = getattr(request, "images", None)
+        if not images:
+            return
+        try:
+            from tools.llm.provider import attach_images_to_messages
+            request.messages = attach_images_to_messages(request.messages, images)
+        except Exception as exc:
+            logger.debug("image materialization failed (non-fatal): %s", exc)
+        finally:
+            request.images = None  # avoid double-attach on retries
+
+    def _request_has_images(self, request: LLMRequest) -> bool:
+        if getattr(request, "images", None):
+            return True
+        try:
+            from tools.llm.provider import messages_have_images
+            return messages_have_images(request.messages)
+        except Exception:
+            return False
+
+    def _vision_fallback_chain(self) -> list:
+        """Models from the 'vision' task category, cloud-first."""
+        try:
+            cats = self._config.get("task_categories", {})
+            preferred = list(cats.get("vision", {}).get("preferred", []))
+        except Exception:
+            preferred = []
+        return preferred
+
+    def _apply_vision_routing(self, chain: list, request: LLMRequest) -> list:
+        """Reorder a chain so vision-capable models lead when images are present.
+
+        Keeps vision-capable models from the original chain (order preserved),
+        appends the configured 'vision' fallback chain, then the remaining
+        non-vision models last (so a text-only model is still a final resort).
+        Ollama.com cloud multimodal models (supports_vision: true) are first-
+        class citizens here.
+        """
+        if not self._request_has_images(request):
+            return chain
+
+        def _is_vision(model_name: str) -> bool:
+            cfg = self._get_model_config(model_name) or {}
+            return bool(cfg.get("supports_vision"))
+
+        vision_in_chain = [m for m in chain if _is_vision(m)]
+        non_vision = [m for m in chain if not _is_vision(m)]
+        fallback = [m for m in self._vision_fallback_chain()
+                    if _is_vision(m) and m not in vision_in_chain]
+
+        reordered = vision_in_chain + fallback + non_vision
+        # de-dup preserving order
+        seen: set = set()
+        result = [m for m in reordered if not (m in seen or seen.add(m))]
+        if result and result != chain:
+            logger.debug("vision routing: %s -> %s (images present)", chain, result)
+        return result or chain
+
     def invoke(self, function: str, request: LLMRequest) -> LLMResponse:
         """Resolve provider for function and invoke with fallback.
 
@@ -1573,6 +1635,10 @@ class LLMRouter:
                 chain=self._get_chain_for_function(function),
                 no_llm_mode=True,
             )
+
+        # Multimodal: fold request.images into messages as image blocks so
+        # vision-capable models (incl. Ollama.com cloud multimodal) receive them.
+        self._materialize_request_images(request)
 
         # Token budget enforcement (D-BUD-1: Paperclip-inspired per-agent hard-stops)
         if request.agent_id:
@@ -1680,6 +1746,8 @@ class LLMRouter:
         chain = self._get_chain_for_function(function)
         # RL routing: reorder chain by learned Q-values (epsilon-greedy)
         chain = self._get_rl_router().rank_models(function, chain)
+        # Multimodal: prefer vision-capable models when the request has images.
+        chain = self._apply_vision_routing(chain, request)
         last_error = None
 
         # D286: Create trace span for LLM invocation

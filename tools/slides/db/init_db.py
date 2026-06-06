@@ -72,6 +72,11 @@ CREATE TABLE IF NOT EXISTS slides_slides (
     speaker_notes  TEXT,
     image_path     TEXT,
     image_prompt   TEXT,
+    chart_json     JSONB,
+    table_json     JSONB,
+    diagram_json   JSONB,
+    kpis_json      JSONB,
+    dashboard_json JSONB,
     created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -113,6 +118,11 @@ CREATE TABLE IF NOT EXISTS slides_slides (
     speaker_notes TEXT,
     image_path    TEXT,
     image_prompt  TEXT,
+    chart_json    TEXT,
+    table_json    TEXT,
+    diagram_json  TEXT,
+    kpis_json     TEXT,
+    dashboard_json TEXT,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -131,6 +141,25 @@ CREATE INDEX IF NOT EXISTS idx_slides_audit_deck_id ON slides_audit(deck_id);
 
 _INIT_DONE = False
 
+# Additive viz columns (VIZ Epic B). Applied idempotently so already-created
+# slides_slides tables gain them without a separate migration runner.
+_VIZ_COLUMNS = ("chart_json", "table_json", "diagram_json", "kpis_json", "dashboard_json")
+
+
+def _migrate_viz_columns(conn) -> None:
+    """Add chart/table/diagram/kpis JSON columns if missing (graceful)."""
+    col_type = "JSONB" if _SLIDES_BACKEND == "postgresql" else "TEXT"
+    for col in _VIZ_COLUMNS:
+        try:
+            conn.execute(f"ALTER TABLE slides_slides ADD COLUMN {col} {col_type}")
+            conn.commit()
+        except Exception:
+            # Column already exists (or backend rejects IF NOT EXISTS) — fine.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
 
 def init_db() -> None:
     global _INIT_DONE
@@ -144,6 +173,7 @@ def init_db() -> None:
             if stmt:
                 conn.execute(stmt)
         conn.commit()
+        _migrate_viz_columns(conn)
     finally:
         conn.close()
     _INIT_DONE = True

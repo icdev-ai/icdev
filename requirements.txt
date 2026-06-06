@@ -29,6 +29,12 @@ rank_bm25>=0.2           # BM25 keyword search
 # === IQE: Intent Query Engine ===
 lark>=1.2                # PEG/EBNF parser for IQE intent grammar (tools/iqe/)
 
+# === Visualization Kernel (tools/viz/) — presentations, charts, diagrams ===
+# Previously imported but undeclared; pinned here to close an install-time gap.
+python-pptx>=0.6.23      # Native editable PPTX charts/tables (air-gap safe, no C)
+matplotlib>=3.8          # Server-side chart/diagram PNG rendering (Agg backend)
+reportlab>=4.0           # Rich PDF reports w/ embedded viz (agentic_ai_canvas/export_pdf.py)
+
 # === Network Design Canvas ===
 defusedxml>=0.7          # Safe XML parsing for STIG import (XXE protection)
 networkx>=3.2            # Graph analysis for topology NL query engine

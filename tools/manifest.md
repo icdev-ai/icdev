@@ -174,6 +174,7 @@
 - [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
 - [AI-ify Canvas (AI-ify)](manifest/ai-ify-canvas.md)
 - [Document Intelligence Canvas (DIC)](manifest/document-intelligence-canvas.md)
+- [Visualization Kernel (tools/viz/)](manifest/visualization.md) — shared charts/tables/diagrams → PPTX/PNG/SVG/HTML + draw.io/Excalidraw; multimodal AI assist
 
 
 ## Auto-Registered (Coherence Fix)

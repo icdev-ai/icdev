@@ -152,6 +152,20 @@ These 6 paths adopted `SandboxExecutor` in Phase 72 (D-SEC-11):
   - `guard_result()` never returns row data to callers — only `{derived, action, throttled, events_written}`.
 - **Revisit if:** a future rule type adds a `custom_expr` field that evaluates arbitrary expressions, or if result rows are ever rendered as HTML without escaping.
 
+### Gap 15 — Visualization Kernel (`tools/viz/`)
+
+**Module:** `tools/viz/` (spec, palette, render_pptx/png/svg/html, diagram, render_diagram_export) + `tools/slides/viz_mapper.py`
+
+**Ingress path:** Renderers receive `VizSpec` dataclasses (chart/table/diagram/KPI) populated from first-party sources — `tools/slides/sources/*` (kanban, canvases, genesis), canvas graph_json, and PDF-report row dicts. Spec fields are structured data (strings/numbers/lists); they are never `eval()`-ed or `exec()`-ed. Output is PPTX/PNG/SVG/HTML/JSON artifacts written under `tools/presentations/slides/` or returned as strings.
+
+- **Decision:** **trusted-first-party**
+- **Rationale:** Specs carry only data (labels, numeric series, node/edge ids). matplotlib/python-pptx/reportlab render deterministically with no code execution of spec content. SVG/HTML emitters HTML-escape all text (`_esc`/`_xml_escape`) before embedding, preventing markup injection into the web presenter. The deck presenter (`/slides/<id>/present`) renders server-built fragments; the `GET /slides/api/image` route is path-traversal guarded (`relative_to` the slides output dir, extension allowlist).
+- **Guardrails:**
+  - All user-visible text in `render_svg`/`render_html` is escaped before output.
+  - `/slides/api/image` serves only `.png/.jpg/.jpeg` inside `pptx_builder._OUTPUT_DIR`; traversal attempts return 403.
+  - `viz_mapper` reads numbers from real source connectors only — never fabricates or executes content.
+- **Revisit if:** a spec field is ever rendered as raw (unescaped) HTML, or a renderer begins importing/`exec`-ing spec-provided strings (e.g. user-supplied chart formulas).
+
 ## Coherence rule
 
 The `sandbox_coverage` rule in `tools/workflow/coherence_checker.py` enforces:

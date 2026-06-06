@@ -44,6 +44,11 @@ class LLMRequest:
     model: str = ""  # logical name from config
     max_tokens: int = 4096
     temperature: float = 1.0
+    # Multimodal: base64-encoded images (PNG/JPEG) for vision-capable models.
+    # The router materializes these into the last user message as image blocks
+    # and prefers a vision-capable model (e.g. Ollama.com multimodal). Plain
+    # data URIs ("data:image/png;base64,...") or bare base64 are both accepted.
+    images: Optional[List[str]] = None
     tools: Optional[List[Dict]] = None  # OpenAI function-calling format
     output_schema: Optional[Dict] = None
     stop_sequences: Optional[List[str]] = None
@@ -229,6 +234,58 @@ def _has_image_blocks(content: list) -> bool:
             if btype in ("image", "image_url"):
                 return True
     return False
+
+
+def messages_have_images(messages: List[Dict]) -> bool:
+    """True if any message carries an image block (multimodal request)."""
+    for msg in messages or []:
+        content = msg.get("content")
+        if isinstance(content, list) and _has_image_blocks(content):
+            return True
+    return False
+
+
+def _image_to_block(image: str) -> dict:
+    """Normalize a base64 string or data URI into an Anthropic image block."""
+    media_type = "image/png"
+    data = image
+    if isinstance(image, str) and image.startswith("data:"):
+        # data:image/png;base64,DATA
+        try:
+            header, data = image.split(",", 1)
+            media_type = header.split(":")[1].split(";")[0]
+        except (IndexError, ValueError):
+            data = image
+    return {"type": "image",
+            "source": {"type": "base64", "media_type": media_type, "data": data}}
+
+
+def attach_images_to_messages(messages: List[Dict], images: List[str]) -> List[Dict]:
+    """Append image blocks to the last user message (Anthropic block format).
+
+    Creates a user message if none exists. Returns a new messages list; the
+    input is not mutated. Provider adapters already translate image blocks into
+    each backend's native shape (e.g. Ollama's ``images: [base64]``).
+    """
+    if not images:
+        return messages
+    blocks = [_image_to_block(im) for im in images if im]
+    out = [dict(m) for m in (messages or [])]
+    # find last user message
+    idx = next((i for i in range(len(out) - 1, -1, -1)
+                if out[i].get("role") == "user"), None)
+    if idx is None:
+        out.append({"role": "user", "content": list(blocks)})
+        return out
+    content = out[idx].get("content", "")
+    if isinstance(content, str):
+        new_content = ([{"type": "text", "text": content}] if content else []) + blocks
+    elif isinstance(content, list):
+        new_content = list(content) + blocks
+    else:
+        new_content = blocks
+    out[idx] = dict(out[idx], content=new_content)
+    return out
 
 
 def messages_to_anthropic(messages: List[Dict]):

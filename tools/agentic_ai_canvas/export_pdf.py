@@ -22,6 +22,7 @@ from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
     HRFlowable,
+    Image,
     PageBreak,
     PageTemplate,
     Paragraph,
@@ -166,6 +167,15 @@ def generate_pdf(
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
     story.append(meta_table)
+
+    # ── Topology diagram (Viz Kernel — air-gap PNG) ───────────────────────────
+    diagram_img = _render_topology_image(nodes, edges)
+    if diagram_img is not None:
+        story.append(Paragraph("Topology", h2_s))
+        story.append(HRFlowable(width="100%", thickness=1,
+                                color=colors.HexColor("#1e3a6e"), spaceAfter=8))
+        story.append(diagram_img)
+
     story.append(PageBreak())
 
     # ── Page 2: Nodes Table ───────────────────────────────────────────────────
@@ -223,6 +233,45 @@ def generate_pdf(
 
     doc.build(story)
     return buf.getvalue()
+
+
+def _render_topology_image(nodes: list, edges: list, max_nodes: int = 24):
+    """Render a topology diagram via the Viz Kernel and wrap as a reportlab Image.
+
+    Best-effort: returns None if there are no nodes, the graph is too large to
+    read, or matplotlib is unavailable (e.g. minimal install) — the PDF then
+    simply omits the diagram rather than failing.
+    """
+    if not nodes or len(nodes) > max_nodes:
+        return None
+    try:
+        from tools.viz.spec import DiagramSpec
+        from tools.viz.render_png import diagram_to_png
+
+        spec = DiagramSpec(
+            title="",
+            nodes=[{"id": str(n.get("id", n.get("label", i))),
+                    "label": str(n.get("label", n.get("id", i))),
+                    "type": str(n.get("type", "default"))}
+                   for i, n in enumerate(nodes)],
+            edges=[{"source": str(e.get("source", "")), "target": str(e.get("target", "")),
+                    "label": str(e.get("label", e.get("relationship", "")))}
+                   for e in edges],
+            layout="spring",
+        )
+        png_path = diagram_to_png(spec, theme="midnight_executive")
+        if not png_path:
+            return None
+        img = Image(png_path)
+        # Fit within the page content width (~6.5in), preserving aspect ratio.
+        max_w = _PAGE_W - 2 * _MARGIN
+        if img.imageWidth and img.imageWidth > max_w:
+            scale = max_w / float(img.imageWidth)
+            img.drawWidth = max_w
+            img.drawHeight = img.imageHeight * scale
+        return img
+    except Exception:
+        return None
 
 
 def _apply_data_style(table: Table) -> None:

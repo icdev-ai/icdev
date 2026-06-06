@@ -285,6 +285,35 @@ def export_drawio(name: str, graph_json, canvas_key: str) -> str:
     return ET.tostring(root, encoding="unicode", xml_declaration=True)
 
 
+def export_excalidraw(name: str, graph_json, canvas_key: str) -> str:
+    """Excalidraw scene JSON (.excalidraw) — editable in excalidraw.com / VS Code.
+
+    Delegates to the shared Viz Kernel so canvas exports and slide diagrams
+    share one Excalidraw emitter. Falls back to an empty scene on any error.
+    """
+    nodes, edges = _parse_graph(graph_json)
+    try:
+        from tools.viz.spec import DiagramSpec
+        from tools.viz.render_diagram_export import to_excalidraw
+
+        spec = DiagramSpec(
+            title=f"{canvas_key.upper()} — {name}",
+            nodes=[{"id": str(_node_attr(n, "id", f"n{i}")),
+                    "label": _node_attr(n, "label") or _node_attr(n, "name", f"n{i}"),
+                    "type": str(_node_attr(n, "type", "default"))}
+                   for i, n in enumerate(nodes)],
+            edges=[{"source": str(_node_attr(e, "source", "")),
+                    "target": str(_node_attr(e, "target", "")),
+                    "label": _node_attr(e, "label") or _node_attr(e, "type", "")}
+                   for e in edges],
+        )
+        return to_excalidraw(spec)
+    except Exception as exc:
+        logger.warning("excalidraw export failed: %s", exc)
+        return json.dumps({"type": "excalidraw", "version": 2,
+                           "source": "ICDEV™", "elements": [], "appState": {}, "files": {}})
+
+
 def export_svg(name: str, graph_json, canvas_key: str) -> str:
     """Simple SVG with rectangles for nodes and lines for edges."""
     nodes, edges = _parse_graph(graph_json)

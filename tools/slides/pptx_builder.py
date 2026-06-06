@@ -19,6 +19,8 @@ from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 
 from tools.slides.constants import THEME_PALETTES, DEFAULT_THEME
+from tools.viz import render_pptx, render_png
+from tools.viz.spec import ChartSpec, TableSpec, DiagramSpec, KpiSpec, DashboardSpec
 
 # ── Canvas dimensions (16:9 widescreen) ──────────────────────────────────────
 W  = Inches(13.33)
@@ -229,6 +231,194 @@ def _build_outro_slide(prs: Presentation, slide_data: dict, n: int, palette: dic
         _notes(s, notes_text)
 
 
+# ── Viz Slide Builders (VIZ Epic B) ───────────────────────────────────────────
+
+def _title_bar(s, title: str, palette: dict) -> None:
+    """Standard left-stripe + dark title bar used by all content-class slides."""
+    accent = _rgb(palette, "accent")
+    dark = _rgb(palette, "dark")
+    _rect(s, 0, 0, Inches(0.12), H, accent)
+    _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
+    _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
+         (title or "")[:80], size=22, bold=True, color=accent)
+    _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
+
+
+def _new_content_slide(prs, title: str, palette: dict, n: int, notes: str = ""):
+    s = _blank(prs)
+    _bg(s, _rgb(palette, "bg"))
+    _title_bar(s, title, palette)
+    _footer(s, n, palette)
+    if notes:
+        _notes(s, notes)
+    return s
+
+
+def _build_kpi_slide(prs, slide_data, n, palette, theme) -> None:
+    """KPI tiles laid out as cards (the metrics/'data' slide)."""
+    s = _new_content_slide(prs, slide_data.get("title", "Key Metrics"), palette, n,
+                           slide_data.get("speaker_notes", ""))
+    spec = KpiSpec.from_dict(slide_data["kpis"])
+    tiles = spec.tiles[:4]
+    if not tiles:
+        return
+    gap = Inches(0.3)
+    total_w = CW - gap * (len(tiles) - 1)
+    tile_w = total_w / len(tiles)
+    top = Inches(2.3)
+    tile_h = Inches(2.6)
+    accent = _rgb(palette, "accent")
+    subtext = _rgb(palette, "subtext")
+    for i, t in enumerate(tiles):
+        left = LM + (tile_w + gap) * i
+        _rect(s, left, top, tile_w, tile_h, _rgb(palette, "dark"), accent)
+        _rect(s, left, top, Inches(0.06), tile_h, accent)
+        _box(s, left + Inches(0.2), top + Inches(0.25), tile_w - Inches(0.4), Inches(0.5),
+             t.label.upper(), size=12, color=subtext)
+        _box(s, left + Inches(0.2), top + Inches(0.8), tile_w - Inches(0.4), Inches(1.0),
+             f"{t.value}{t.unit}", size=40, bold=True, color=accent)
+        if t.delta:
+            _box(s, left + Inches(0.2), top + Inches(1.9), tile_w - Inches(0.4), Inches(0.5),
+                 t.delta, size=14, color=subtext)
+
+
+def _build_chart_slide(prs, slide_data, n, palette, theme) -> None:
+    s = _new_content_slide(prs, slide_data.get("title", "Chart"), palette, n,
+                           slide_data.get("speaker_notes", ""))
+    spec = ChartSpec.from_dict(slide_data["chart"])
+    render_pptx.add_chart(s, spec, LM, Inches(1.0), CW, Inches(5.8), theme)
+
+
+def _build_table_slide(prs, slide_data, n, palette, theme) -> None:
+    s = _new_content_slide(prs, slide_data.get("title", "Table"), palette, n,
+                           slide_data.get("speaker_notes", ""))
+    spec = TableSpec.from_dict(slide_data["table"])
+    rows = max(len(spec.rows) + (1 if spec.headers else 0), 1)
+    height = min(Inches(5.6), Inches(0.5) * rows + Inches(0.5))
+    render_pptx.add_table(s, spec, LM, Inches(1.1), CW, height, theme)
+
+
+def _build_diagram_slide(prs, slide_data, n, palette, theme) -> None:
+    s = _new_content_slide(prs, slide_data.get("title", "Diagram"), palette, n,
+                           slide_data.get("speaker_notes", ""))
+    spec = DiagramSpec.from_dict(slide_data["diagram"])
+    try:
+        png = render_png.diagram_to_png(spec, theme=theme)
+        if png and Path(png).exists():
+            s.shapes.add_picture(png, LM, Inches(1.0), CW, Inches(5.7))
+    except Exception:
+        pass
+
+
+def _build_agenda_slide(prs, slide_data, n, palette, theme) -> None:
+    s = _new_content_slide(prs, slide_data.get("title", "Agenda"), palette, n,
+                           slide_data.get("speaker_notes", ""))
+    accent = _rgb(palette, "accent")
+    text_c = _rgb(palette, "text")
+    items = slide_data.get("bullets", [])[:8]
+    for i, item in enumerate(items):
+        top = Inches(1.2) + Inches(0.62) * i
+        _box(s, LM, top, Inches(0.6), Inches(0.5), f"{i + 1:02d}", size=20,
+             bold=True, color=accent)
+        _box(s, LM + Inches(0.8), top, CW - Inches(0.8), Inches(0.5), item,
+             size=18, color=text_c)
+
+
+def _build_dashboard_slide(prs, slide_data, n, palette, theme) -> None:
+    """Static PPTX snapshot of a dashboard: KPI tiles row + up to two charts.
+
+    The interactive dashboard (filters/drill-down) lives in the web presenter;
+    PPTX gets a clean static composition of the same tiles.
+    """
+    spec = DashboardSpec.from_dict(slide_data["dashboard"])
+    s = _new_content_slide(prs, slide_data.get("title", "Dashboard"), palette, n,
+                           slide_data.get("speaker_notes", ""))
+
+    kpi_specs = [t["spec"] for t in spec.tiles
+                 if isinstance(t.get("spec"), dict) and t["spec"].get("kind") == "kpis"]
+    chart_specs = [t["spec"] for t in spec.tiles
+                   if isinstance(t.get("spec"), dict) and t["spec"].get("kind") == "chart"]
+
+    top = Inches(1.0)
+    # KPI strip
+    if kpi_specs:
+        tiles = KpiSpec.from_dict(kpi_specs[0]).tiles[:4]
+        if tiles:
+            gap = Inches(0.25)
+            tw = (CW - gap * (len(tiles) - 1)) / len(tiles)
+            accent = _rgb(palette, "accent")
+            subtext = _rgb(palette, "subtext")
+            for i, t in enumerate(tiles):
+                left = LM + (tw + gap) * i
+                _rect(s, left, top, tw, Inches(1.3), _rgb(palette, "dark"), accent)
+                _box(s, left + Inches(0.15), top + Inches(0.12), tw - Inches(0.3), Inches(0.35),
+                     t.label.upper(), size=10, color=subtext)
+                _box(s, left + Inches(0.15), top + Inches(0.5), tw - Inches(0.3), Inches(0.7),
+                     f"{t.value}{t.unit}", size=26, bold=True, color=accent)
+        top = top + Inches(1.55)
+
+    # Up to two charts side by side
+    charts = chart_specs[:2]
+    if charts:
+        gap = Inches(0.3)
+        cw = (CW - gap) / len(charts) if len(charts) > 1 else CW
+        ch = H - top - Inches(0.5)
+        for i, c in enumerate(charts):
+            left = LM + (cw + gap) * i
+            try:
+                render_pptx.add_chart(s, ChartSpec.from_dict(c), left, top, cw, ch, theme)
+            except Exception:
+                pass
+
+
+def _build_quote_slide(prs, slide_data, n, palette, theme) -> None:
+    s = _blank(prs)
+    _bg(s, _rgb(palette, "bg"))
+    accent = _rgb(palette, "accent")
+    text_c = _rgb(palette, "text")
+    _rect(s, 0, 0, W, Inches(0.1), accent)
+    _rect(s, 0, H - Inches(0.1), W, Inches(0.1), accent)
+    quote = (slide_data.get("bullets") or [slide_data.get("title", "")])[0]
+    _box(s, Inches(1.5), Inches(2.4), W - Inches(3.0), Inches(2.7),
+         f"“{quote}”", size=30, italic=True, bold=True,
+         color=text_c, align=PP_ALIGN.CENTER)
+    _footer(s, n, palette)
+    if slide_data.get("speaker_notes"):
+        _notes(s, slide_data["speaker_notes"])
+
+
+def _render_slide(prs, slide_data, i, total, palette, theme) -> None:
+    """Dispatch a single slide to the right builder.
+
+    Order matters: explicit viz payloads win over generic slide_type so a
+    data-driven slide always renders its chart/table/diagram/KPIs.
+    """
+    n = i + 1
+    stype = slide_data.get("slide_type", "content")
+    image_path = slide_data.get("image_path")
+
+    if stype == "title" or i == 0:
+        _build_title_slide(prs, slide_data, n, palette)
+    elif stype == "outro" or i == total - 1:
+        _build_outro_slide(prs, slide_data, n, palette)
+    elif slide_data.get("dashboard"):
+        _build_dashboard_slide(prs, slide_data, n, palette, theme)
+    elif slide_data.get("kpis"):
+        _build_kpi_slide(prs, slide_data, n, palette, theme)
+    elif slide_data.get("chart"):
+        _build_chart_slide(prs, slide_data, n, palette, theme)
+    elif slide_data.get("table"):
+        _build_table_slide(prs, slide_data, n, palette, theme)
+    elif slide_data.get("diagram"):
+        _build_diagram_slide(prs, slide_data, n, palette, theme)
+    elif stype == "agenda":
+        _build_agenda_slide(prs, slide_data, n, palette, theme)
+    elif stype == "quote":
+        _build_quote_slide(prs, slide_data, n, palette, theme)
+    else:
+        _build_content_slide(prs, slide_data, n, palette, image_path)
+
+
 # ── Main Builder ──────────────────────────────────────────────────────────────
 
 def build(
@@ -242,17 +432,9 @@ def build(
 
     _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    total = len(slides)
     for i, slide_data in enumerate(slides):
-        n = i + 1
-        slide_type = slide_data.get("slide_type", "content")
-        image_path = slide_data.get("image_path")
-
-        if slide_type == "title" or i == 0:
-            _build_title_slide(prs, slide_data, n, palette)
-        elif slide_type == "outro" or i == len(slides) - 1:
-            _build_outro_slide(prs, slide_data, n, palette)
-        else:
-            _build_content_slide(prs, slide_data, n, palette, image_path)
+        _render_slide(prs, slide_data, i, total, palette, theme)
 
     # Generate filename with timestamp
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

@@ -94,6 +94,23 @@ def new_deck():
     )
 
 
+def _parse_slide_viz(s: dict) -> dict:
+    """Deserialize viz JSON columns into chart/table/diagram/kpis keys."""
+    for col, key in (("chart_json", "chart"), ("table_json", "table"),
+                     ("diagram_json", "diagram"), ("kpis_json", "kpis"),
+                     ("dashboard_json", "dashboard")):
+        raw = s.get(col)
+        if raw:
+            if isinstance(raw, str):
+                try:
+                    s[key] = json.loads(raw)
+                except Exception:
+                    s[key] = None
+            elif isinstance(raw, dict):
+                s[key] = raw
+    return s
+
+
 @slides_bp.route("/<int:deck_id>")
 def detail(deck_id: int):
     conn = _conn()
@@ -118,11 +135,49 @@ def detail(deck_id: int):
                     s["bullets"] = json.loads(s["bullets"])
                 except Exception:
                     s["bullets"] = []
+            _parse_slide_viz(s)
             slides.append(s)
     finally:
         conn.close()
 
     return render_template("slides/detail.html", deck=deck, slides=slides)
+
+
+@slides_bp.route("/<int:deck_id>/present")
+def present(deck_id: int):
+    """Full-screen, in-browser presenter view (air-gap; charts inline, diagrams via mermaid)."""
+    conn = _conn()
+    try:
+        deck = conn.execute(
+            "SELECT * FROM slides_decks WHERE deck_id = ?", (deck_id,)
+        ).fetchone()
+        if not deck:
+            return render_template("slides/index.html", decks=[], error="Deck not found"), 404
+        deck = dict(deck)
+        slides_rows = conn.execute(
+            "SELECT * FROM slides_slides WHERE deck_id = ? ORDER BY position", (deck_id,)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    theme = deck.get("theme", DEFAULT_THEME)
+    slides = []
+    for row in slides_rows:
+        s = dict(row)
+        if isinstance(s.get("bullets"), str):
+            try:
+                s["bullets"] = json.loads(s["bullets"])
+            except Exception:
+                s["bullets"] = []
+        _parse_slide_viz(s)
+        slides.append(s)
+
+    # Build the interactive deck model (rendered client-side by viz_story.js).
+    from tools.viz.deck_model import build_deck_model
+    model = build_deck_model(deck, slides, theme)
+    deck_json = json.dumps(model).replace("</", "<\\/")  # safe inline <script> embed
+    colors = model["colors"]
+    return render_template("slides/present.html", deck=deck, deck_json=deck_json, colors=colors)
 
 
 # ── API Routes ───────────────────────────────────────────────────────────────
@@ -235,6 +290,33 @@ def api_download(deck_id: int):
         download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
     )
+
+
+@slides_bp.route("/api/image")
+def api_image():
+    """Serve a generated slide image (PNG) from the slides output dir.
+
+    Fixes the dangling reference in detail.html. Hardened against path
+    traversal — only files inside tools/presentations/slides/ are served.
+    """
+    from tools.slides import pptx_builder
+
+    raw = request.args.get("path", "")
+    if not raw:
+        return jsonify({"error": "path required"}), 400
+
+    base = Path(pptx_builder._OUTPUT_DIR).resolve()
+    try:
+        target = Path(raw).resolve()
+        target.relative_to(base)  # raises ValueError if outside base
+    except (ValueError, OSError):
+        return jsonify({"error": "forbidden"}), 403
+
+    if not target.exists() or target.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+        return jsonify({"error": "not found"}), 404
+
+    mime = "image/png" if target.suffix.lower() == ".png" else "image/jpeg"
+    return send_file(str(target), mimetype=mime)
 
 
 @slides_bp.route("/api/iqe-query", methods=["POST"])
