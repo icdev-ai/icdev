@@ -477,6 +477,30 @@ def _el_kpis(s, el, palette) -> None:
         rv.font.color.rgb = accent
 
 
+def _el_shape(s, el) -> None:
+    """Render a shape element (rectangle/ellipse/line/arrow) natively in PPTX."""
+    from pptx.enum.shapes import MSO_SHAPE
+    left, top, w, h = _el_box(el)
+    st = el.style or {}
+    kind = (el.payload or {}).get("shape", "rectangle")
+    fill = _hex_rgb(st.get("fill", "#C8A951"))
+    if kind in ("line", "arrow"):
+        thick = Inches(max(0.02, (st.get("strokeWidth", 3) or 3) * 0.02))
+        _rect(s, left, top + h // 2 - thick // 2, w, thick, fill)
+        return
+    mso = (MSO_SHAPE.OVAL if kind == "ellipse"
+           else (MSO_SHAPE.ROUNDED_RECTANGLE if st.get("cornerRadius") else MSO_SHAPE.RECTANGLE))
+    shp = s.shapes.add_shape(mso, left, top, w, h)
+    shp.fill.solid()
+    shp.fill.fore_color.rgb = fill
+    sw = int(st.get("strokeWidth", 0) or 0)
+    if sw > 0 and st.get("stroke") and st["stroke"] != "transparent":
+        shp.line.color.rgb = _hex_rgb(st["stroke"])
+        shp.line.width = Pt(sw)
+    else:
+        shp.line.fill.background()
+
+
 def _build_element_slide(prs, slide_data, n, palette, theme) -> None:
     """Render a freeform positioned-element slide (WYSIWYG with the web editor)."""
     s = _blank(prs)
@@ -497,6 +521,8 @@ def _build_element_slide(prs, slide_data, n, palette, theme) -> None:
                 render_pptx.add_table(s, TableSpec.from_dict(el.payload), left, top, w, h, theme)
             elif el.type == "kpis":
                 _el_kpis(s, el, palette)
+            elif el.type == "shape":
+                _el_shape(s, el)
             elif el.type in ("diagram", "dashboard"):
                 # Render to PNG and place (dashboards: first chart tile if present).
                 spec_dict = el.payload

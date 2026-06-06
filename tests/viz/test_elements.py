@@ -80,6 +80,19 @@ def test_pptx_element_slide_wysiwyg(tmp_path):
     assert abs(chart_shape.left - int(0.05 * 13.33 * 914400)) < 914400  # within 1 inch
 
 
+def test_pptx_shape_element(tmp_path):
+    slides = [{"slide_type": "content", "elements": [
+        Element("shape", 0.2, 0.2, 0.3, 0.3, payload={"shape": "ellipse"},
+                style={"fill": "#C8A951", "stroke": "#FFFFFF", "strokeWidth": 2, "opacity": 1}).to_dict(),
+        Element("shape", 0.2, 0.6, 0.5, 0.1, payload={"shape": "rectangle"},
+                style={"fill": "#4A90D9", "cornerRadius": 8}).to_dict(),
+    ]}]
+    prs = Presentation(pptx_builder.build(slides, title="Shapes"))
+    # auto-shapes present (shape_type AUTO_SHAPE == 1)
+    autoshapes = [sh for sh in prs.slides[0].shapes if getattr(sh, "shape_type", None) == 1]
+    assert len(autoshapes) >= 2
+
+
 def test_pptx_text_element_honors_style(tmp_path):
     slides = [{"slide_type": "content", "elements": [
         Element("text", 0.1, 0.1, 0.8, 0.2, payload={"text": "Big Gold"},
