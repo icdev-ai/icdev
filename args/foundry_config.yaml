@@ -1,25 +1,128 @@
 # CUI // SP-CTI
 # args/foundry_config.yaml — ACF (Autonomous Capability Foundry) configuration.
 #
-# The Genesis `foundry_cycle` reflex reads this file to decide its cadence and the
-# per-cycle rate limits it passes through to `tools.foundry.engine.run_cycle()`.
-# Behaviour can be tuned here WITHOUT editing the reflex (FORGE: args over code).
+# Two readers consume this file (FORGE: tune behaviour here, never edit code):
+#   1. tools.foundry.engine.run_cycle() — reads the engine skeleton sections
+#      below (sources / synthesis / novelty / scoring / rate_limits / circuit /
+#      self_vet / deliberation) to drive one harvest→synth→novelty-gate→score→
+#      CoD go/no-go→SIPA self-vet→seed cycle.
+#   2. tools/genesis/reflexes/foundry_cycle.py — reads ONLY the `foundry_cycle`
+#      block at the bottom (cadence + per-cycle concept cap + dry_run mirror).
 #
-# The canvas itself is gated by the ICDEV_FOUNDRY_ENABLED feature flag (.env), NOT
-# by this file — when the flag is off the reflex is a clean no-op regardless of
-# what is configured below.
+# The canvas itself is gated by the ICDEV_FOUNDRY_ENABLED feature flag (.env),
+# NOT by this file — when the flag is off the reflex is a clean no-op regardless
+# of what is configured here.
 
+# ── Cadence ────────────────────────────────────────────────────────────────
+# Target run interval. A full cycle (harvest→synth→novelty→score→CoD→SIPA) is
+# expensive, so it runs a couple of times a day. Mirrored in genesis_config.yaml
+# reflexes.foundry_cycle.interval_seconds and in foundry_cycle.cadence_hours.
+cadence_hours: 12
+
+# ── Sources ────────────────────────────────────────────────────────────────
+# Where the harvester pulls raw signals from. Each source can be toggled
+# independently and capped so one noisy store can't dominate a cycle. Reads are
+# best-effort: a disabled or empty source contributes zero signals, never an error.
+sources:
+  innovation:
+    enabled: true
+    max_signals: 50        # cap from innovation_signals / innovation_triage_log
+  creative:
+    enabled: true
+    max_signals: 50        # cap from creative_signals / pain_points / feature_gaps
+  research:
+    enabled: true
+    max_signals: 50        # cap from research_signals / challenges / trends
+  genesis:
+    enabled: true
+    max_signals: 50        # cap from genesis predictions / oracle_predictions
+  telemetry:
+    enabled: true
+    max_signals: 50        # cap from introspective awareness / gap_detector output
+
+# ── Synthesis ──────────────────────────────────────────────────────────────
+# Cluster harvested signals into candidate capability concepts.
+synthesis:
+  # Minimum signals that must cluster together before a concept is proposed —
+  # filters one-off noise; a lone signal is not a capability.
+  min_cluster_size: 3
+  llm_assist:
+    # When false, synthesis is purely deterministic (clustering only). Flip to
+    # true to let the LLM Router name / describe clusters. Default OFF — keeps
+    # the cycle deterministic and air-gap safe until explicitly enabled.
+    enabled: false
+
+# ── Novelty gate ───────────────────────────────────────────────────────────
+# Reject concepts that duplicate something ICDEV already has. The gate compares
+# each concept against a catalog assembled from these sources.
+novelty:
+  catalog_sources:
+    - canvas_registry      # existing canvases / blueprints
+    - manifests            # tools/manifest/ shards
+    - goals                # goals/ workflow definitions
+  # Minimum novelty score [0..1] a concept must clear to survive the gate.
+  min_novelty: 0.6
+
+# ── Scoring ────────────────────────────────────────────────────────────────
+# Composite score that ranks surviving concepts. Weights map to the
+# foundry_concepts score columns (novelty_score, market_score, fit_score,
+# effort_estimate, compliance_risk). effort + compliance_risk are cost factors
+# (higher = worse) and are subtracted by the scorer; weights here are magnitudes.
+scoring:
+  weights:
+    novelty: 0.25
+    market: 0.25
+    fit: 0.25
+    effort: 0.15
+    compliance_risk: 0.10
+  # Minimum composite score [0..1] required to advance a concept to the CoD gate.
+  min_composite: 0.6
+
+# ── Rate limits ────────────────────────────────────────────────────────────
+# Hard caps so a noisy harvest can't flood the board with autonomous work.
+rate_limits:
+  max_concepts_per_cycle: 5    # concepts proposed per cycle (mirrored below)
+  max_active_projects: 3       # ACF-owned projects allowed in-flight at once
+
+# ── Circuit breaker ────────────────────────────────────────────────────────
+# Engine-level breaker: if ACF-seeded work keeps failing V&V, stop proposing
+# more until a human intervenes. (Distinct from the Genesis daemon's OUTER
+# per-reflex breaker.)
+circuit:
+  # Open the breaker when the V&V failure rate over the window exceeds this.
+  vv_fail_rate: 0.5
+  # Number of recent ACF outcomes (foundry_outcomes) the rate is computed over.
+  window: 10
+
+# ── Self-vet ───────────────────────────────────────────────────────────────
+# ACF must vet its own output before seeding it — no unreviewed autonomous code.
+self_vet:
+  require_integrity_gate: true   # SIPA (tools/integrity/) must pass on emitted specs
+  require_security_gate: true    # security_gates must pass before seeding tasks
+
+# ── Deliberation (CoD go/no-go approval gate) ──────────────────────────────
+# Chain-of-Debate decides build / no-build per scored concept. The
+# 'capability_deliberation' function + cod.per_function route are ALREADY wired
+# in args/llm_config.yaml (cloud-only debaters; do not re-add).
+deliberation:
+  enabled: true
+  approval_mode: cod                       # Chain-of-Debate go/no-go
+  synthesis_mode: cot                       # Chain-of-Thought to synthesize the verdict
+  function: capability_deliberation         # LLM Router function name (llm_config.yaml)
+  min_confidence: 0.7                        # debate confidence required to APPROVE
+  # On LLM/cloud unavailability (air-gap / no key), fall back to the deterministic
+  # score gate (min_composite) instead of failing the cycle.
+  defer_to_score_on_fallback: true
+
+# ── Reflex-facing mirror ───────────────────────────────────────────────────
+# tools/genesis/reflexes/foundry_cycle.py reads ONLY this block. Keep
+# cadence_hours and max_concepts_per_cycle in sync with the engine sections
+# above (cadence_hours / rate_limits.max_concepts_per_cycle).
 foundry_cycle:
-  # Target run interval for the Genesis daemon (advisory; mirrored in
-  # genesis_config.yaml reflexes.foundry_cycle.interval_seconds and in
-  # tools/genesis/reflex_registry.py). 12h — a full harvest→synth→novelty-gate→
-  # score→CoD→SIPA cycle is expensive, so it runs a couple of times a day.
   cadence_hours: 12
-
-  # Rate limit: hard cap on concepts proposed in a single cycle, passed straight
-  # to the engine so a noisy harvest can't flood the board with kanban tasks.
+  # Hard cap on concepts proposed in a single cycle, passed straight to the
+  # engine so a noisy harvest can't flood the board with kanban tasks.
   max_concepts_per_cycle: 5
-
   # When true the reflex asks the engine to compute a cycle WITHOUT persisting
   # concepts or seeding kanban tasks (useful for smoke tests / dry runs).
   dry_run: false
