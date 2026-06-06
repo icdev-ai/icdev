@@ -524,6 +524,15 @@ class LLMRouter:
                     url=url,
                 )
 
+            elif ptype == "cli":
+                from tools.llm.cli_bridge.cli_provider import CLILLMProvider
+
+                instance = CLILLMProvider(
+                    cli_binary=_expand_env(provider_cfg.get("cli_binary", "claude")),
+                    backend=provider_cfg.get("backend", "auto"),
+                    soft_wait_seconds=int(provider_cfg.get("soft_wait_seconds", 60)),
+                )
+
             else:
                 logger.warning("Unknown provider type: %s", ptype)
                 return None
