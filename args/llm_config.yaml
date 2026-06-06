@@ -522,6 +522,15 @@ routing:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
 
+  # DIC document date-parsing anomaly severity grading (aiify-opp-6048:
+  # hardcoded_threshold -> anomaly_detection). Grades dates parsed from a single
+  # document that are future-dated, implausibly old, or cluster outliers; the
+  # deterministic offline detector is authoritative, this layer is best-effort
+  # severity enrichment.
+  dic_date_anomaly_assessment:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
   oracle_triage_nlp_extract:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
