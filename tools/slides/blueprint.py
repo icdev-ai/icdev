@@ -161,7 +161,11 @@ def present(deck_id: int):
     finally:
         conn.close()
 
-    theme = deck.get("theme", DEFAULT_THEME)
+    return _render_present(deck, slides_rows)
+
+
+def _slides_models(slides_rows) -> list:
+    """Parse DB slide rows into model dicts (bullets + viz payloads)."""
     slides = []
     for row in slides_rows:
         s = dict(row)
@@ -172,13 +176,81 @@ def present(deck_id: int):
                 s["bullets"] = []
         _parse_slide_viz(s)
         slides.append(s)
+    return slides
 
-    # Build the interactive deck model (rendered client-side by viz_story.js).
+
+def _render_present(deck: dict, slides_rows, readonly: bool = False):
+    """Render the interactive presenter view for a deck (shared by /present + /share)."""
+    theme = deck.get("theme", DEFAULT_THEME)
+    slides = _slides_models(slides_rows)
     from tools.viz.deck_model import build_deck_model
     model = build_deck_model(deck, slides, theme)
     deck_json = json.dumps(model).replace("</", "<\\/")  # safe inline <script> embed
-    colors = model["colors"]
-    return render_template("slides/present.html", deck=deck, deck_json=deck_json, colors=colors)
+    return render_template("slides/present.html", deck=deck, deck_json=deck_json,
+                           colors=model["colors"], readonly=readonly)
+
+
+@slides_bp.route("/share/<token>")
+def share_view(token: str):
+    """Public read-only presenter view via share token."""
+    if not token or len(token) < 8:
+        return "Invalid share link", 404
+    conn = _conn()
+    try:
+        deck = conn.execute("SELECT * FROM slides_decks WHERE share_token = ?", (token,)).fetchone()
+        if not deck:
+            return "Share link not found", 404
+        deck = dict(deck)
+        rows = conn.execute(
+            "SELECT * FROM slides_slides WHERE deck_id = ? ORDER BY position", (deck["deck_id"],)
+        ).fetchall()
+    finally:
+        conn.close()
+    return _render_present(deck, rows, readonly=True)
+
+
+@slides_bp.route("/api/<int:deck_id>/share", methods=["POST"])
+def api_share(deck_id: int):
+    """Create (or return existing) a read-only share token for a deck."""
+    import secrets
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT share_token FROM slides_decks WHERE deck_id = ?", (deck_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "deck not found"}), 404
+        token = (dict(row).get("share_token") or "").strip()
+        if not token:
+            token = secrets.token_urlsafe(16)
+            conn.execute("UPDATE slides_decks SET share_token = ? WHERE deck_id = ?", (token, deck_id))
+            conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "token": token, "url": f"/slides/share/{token}"})
+
+
+@slides_bp.route("/api/<int:deck_id>/download.pdf")
+def api_download_pdf(deck_id: int):
+    """Export the deck as a landscape PDF (WYSIWYG with the editor/presenter)."""
+    conn = _conn()
+    try:
+        deck = conn.execute("SELECT * FROM slides_decks WHERE deck_id = ?", (deck_id,)).fetchone()
+        if not deck:
+            return jsonify({"error": "deck not found"}), 404
+        deck = dict(deck)
+        rows = conn.execute(
+            "SELECT * FROM slides_slides WHERE deck_id = ? ORDER BY position", (deck_id,)
+        ).fetchall()
+    finally:
+        conn.close()
+    from tools.viz.deck_model import build_deck_model
+    from tools.slides.pdf_export import build_pdf
+    theme = deck.get("theme", DEFAULT_THEME)
+    model = build_deck_model(deck, _slides_models(rows), theme)
+    pdf_bytes = build_pdf(model["slides"], title=deck.get("title", "Deck"), theme=theme)
+    safe = "".join(ch for ch in str(deck.get("title", "deck")) if ch.isalnum() or ch in " -_").strip() or "deck"
+    from flask import Response
+    return Response(pdf_bytes, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{safe}.pdf"'})
 
 
 # ── API Routes ───────────────────────────────────────────────────────────────

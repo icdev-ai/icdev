@@ -90,6 +90,9 @@
                     <td style="white-space:nowrap;">
                         {% if deck.status in ('completed', 'auto') %}
                         <a href="/slides/{{ deck.deck_id }}/edit" class="btn btn-sm btn-secondary" title="Edit">✎</a>
+                        <a href="/slides/api/{{ deck.deck_id }}/download" class="btn btn-sm btn-secondary" title="Download PPTX">PPTX</a>
+                        <a href="/slides/api/{{ deck.deck_id }}/download.pdf" class="btn btn-sm btn-secondary" title="Download PDF">PDF</a>
+                        <button class="btn btn-sm btn-secondary act-share" title="Copy share link">🔗</button>
                         {% endif %}
                         <button class="btn btn-sm btn-secondary act-rename" title="Rename / tags">✏️</button>
                         <button class="btn btn-sm btn-secondary act-dup" title="Duplicate">⧉</button>
@@ -146,6 +149,17 @@ document.querySelectorAll('.act-del').forEach(function (b) {
         if (!confirm('Delete this deck and all its slides? This cannot be undone.')) return;
         fetch('/slides/api/' + deckId(b), { method: 'DELETE' })
             .then(function (r) { return r.json(); }).then(function (d) { if (d.ok) b.closest('tr').remove(); });
+    });
+});
+document.querySelectorAll('.act-share').forEach(function (b) {
+    b.addEventListener('click', function () {
+        fetch('/slides/api/' + deckId(b) + '/share', { method: 'POST' })
+            .then(function (r) { return r.json(); }).then(function (d) {
+                if (!d.ok) { alert('Could not create share link'); return; }
+                var url = window.location.origin + d.url;
+                if (navigator.clipboard) { navigator.clipboard.writeText(url); }
+                window.prompt('Read-only share link (copied):', url);
+            });
     });
 });
 </script>
