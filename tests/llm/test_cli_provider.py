@@ -1,26 +1,30 @@
 # CUI // SP-CTI
 """Unit tests for tools/llm/cli_bridge/cli_provider.py (CLILLMProvider).
 
-All tests are offline — ``subprocess.run`` is replaced with a fake so the
-real ``claude`` CLI is never spawned. Per the shim-aware monkeypatch rule
-(tools.* vs icdev.tools.* are distinct module objects), the fake is installed
-by importing the module under test with ``importlib.import_module`` and
-``setattr``-ing its ``subprocess`` reference — NOT via pytest's string-form
-``monkeypatch.setattr("tools...")`` which can patch the wrong object and let a
-real subprocess through.
+The provider no longer shells out inline (uclb-job-03): ``invoke`` now
+``create_job`` → ``_dispatch`` → ``wait_for_job`` and branches on the terminal
+status. These tests exercise that orchestration against the *real* job store
+(``tools.llm.cli_bridge.job_store``) backed by a throwaway SQLite ``cli_llm_jobs``
+table, so the migration/schema is validated end-to-end — no real ``claude`` CLI
+or background thread is ever spawned.
 
-Covers (uclb-prov-06):
-  - invoke() returns an LLMResponse whose content is the fake claude stdout
-  - a subprocess failure (non-zero exit, missing binary, timeout) raises
-    LLMUnavailableError rather than crashing
+Per the shim-aware monkeypatch rule (tools.* vs icdev.tools.* are distinct module
+objects), ``get_connection`` is rebound on the imported ``job_store`` module via
+``setattr`` rather than pytest's string-form ``monkeypatch.setattr("tools...")``.
+
+Covers (uclb-job-03):
+  - 'done'  → invoke returns an LLMResponse carrying the job result
+  - 'error' → invoke raises LLMUnavailableError (router falls through)
+  - still running at soft-wait → invoke raises CLIJobDeferred(job_id=...)
+  - CLIJobDeferred subclasses LLMUnavailableError (non-chat callers fall back)
+  - no backend wired (default dispatch) → job left pending → deferred
 """
 from __future__ import annotations
 
 import importlib
 import pathlib
-import subprocess
+import sqlite3
 import sys
-import types
 
 import pytest
 
@@ -29,42 +33,63 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# Module under test + the contracts it returns/raises.
+# Modules under test + the contracts they return/raise.
 cli_provider = importlib.import_module("tools.llm.cli_bridge.cli_provider")
+job_store = importlib.import_module("tools.llm.cli_bridge.job_store")
 from tools.llm.provider import LLMRequest, LLMResponse  # noqa: E402
 from tools.llm.router import LLMUnavailableError  # noqa: E402
 
+CLIJobDeferred = cli_provider.CLIJobDeferred
+
+
+# The cli_llm_jobs DDL mirrors migration 183 / conftest MINIMAL schema.
+_CLI_LLM_JOBS_DDL = """
+CREATE TABLE cli_llm_jobs (
+    id             TEXT PRIMARY KEY,
+    function       TEXT NOT NULL DEFAULT '',
+    prompt         TEXT NOT NULL DEFAULT '',
+    system_prompt  TEXT DEFAULT '',
+    model_id       TEXT,
+    backend        TEXT DEFAULT 'auto',
+    status         TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending', 'running', 'done', 'error')),
+    result         TEXT,
+    error          TEXT,
+    context_id     TEXT,
+    input_tokens   INTEGER DEFAULT 0,
+    output_tokens  INTEGER DEFAULT 0,
+    tenant_id      TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at     TEXT,
+    updated_at     TEXT,
+    claimed_at     TEXT,
+    completed_at   TEXT
+);
+"""
+
 
 # ────────────────────────────────────────────────────────────────────────────
-# Helpers
+# Fixtures
 # ────────────────────────────────────────────────────────────────────────────
-
-
-def _fake_completed(stdout="", stderr="", returncode=0):
-    """Mimic subprocess.CompletedProcess just enough for the provider."""
-    return types.SimpleNamespace(stdout=stdout, stderr=stderr, returncode=returncode)
-
-
-def _install_fake_subprocess(run_impl):
-    """Shim-aware: replace the cli_provider module's ``subprocess`` reference.
-
-    Returns a teardown callable that restores the real module. We swap a
-    SimpleNamespace that exposes ``run`` plus the exception types the provider
-    references, so ``subprocess.TimeoutExpired`` keeps working inside invoke().
-    """
-    real = cli_provider.subprocess
-    fake = types.SimpleNamespace(
-        run=run_impl,
-        TimeoutExpired=subprocess.TimeoutExpired,
-        CalledProcessError=subprocess.CalledProcessError,
-    )
-    setattr(cli_provider, "subprocess", fake)
-    return lambda: setattr(cli_provider, "subprocess", real)
 
 
 @pytest.fixture
-def provider():
-    return cli_provider.CLILLMProvider(cli_binary="claude", soft_wait_seconds=5)
+def job_db(tmp_path, monkeypatch):
+    """Throwaway SQLite cli_llm_jobs table wired into job_store.get_connection."""
+    db_path = tmp_path / "cli_jobs.db"
+    seed = sqlite3.connect(str(db_path))
+    seed.executescript(_CLI_LLM_JOBS_DDL)
+    seed.commit()
+    seed.close()
+
+    def fake_get_connection():
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    # Shim-aware: rebind the name on the imported module object directly.
+    monkeypatch.setattr(job_store, "get_connection", fake_get_connection)
+    return db_path
 
 
 @pytest.fixture
@@ -72,98 +97,125 @@ def request_obj():
     return LLMRequest(messages=[{"role": "user", "content": "ping"}], system_prompt="be terse")
 
 
+def _provider(dispatcher=None, soft_wait_seconds=5):
+    return cli_provider.CLILLMProvider(
+        cli_binary="claude",
+        soft_wait_seconds=soft_wait_seconds,
+        dispatcher=dispatcher,
+        poll_interval=0.02,
+    )
+
+
 # ────────────────────────────────────────────────────────────────────────────
-# invoke() — happy path
+# invoke() — 'done' → LLMResponse
 # ────────────────────────────────────────────────────────────────────────────
 
 
-def test_invoke_returns_llmresponse_with_cli_stdout(provider, request_obj):
-    captured = {}
+def test_invoke_done_returns_llmresponse(job_db, request_obj):
+    def completing_dispatcher(job_id, backend):
+        # A real backend would run the CLI; here we just complete the row.
+        job_store.complete_job(job_id, "real answer\n", input_tokens=3, output_tokens=5)
 
-    def fake_run(cmd, **kwargs):
-        captured["cmd"] = cmd
-        captured["kwargs"] = kwargs
-        return _fake_completed(stdout="hello from fake claude\n", returncode=0)
-
-    restore = _install_fake_subprocess(fake_run)
-    try:
-        resp = provider.invoke(request_obj, model_id="claude-cli", model_config={})
-    finally:
-        restore()
+    provider = _provider(dispatcher=completing_dispatcher)
+    resp = provider.invoke(request_obj, model_id="claude-cli", model_config={})
 
     assert isinstance(resp, LLMResponse)
-    assert resp.content == "hello from fake claude"  # stdout, stripped
+    assert resp.content == "real answer"  # result, stripped
     assert resp.provider == "cli"
     assert resp.model_id == "claude-cli"
+    assert resp.input_tokens == 3
+    assert resp.output_tokens == 5
     assert resp.stop_reason == "stop"
-    # The flattened prompt (system + user text) is passed to the CLI argv.
-    assert provider._cli_binary in captured["cmd"]
-    joined = " ".join(captured["cmd"])
-    assert "ping" in joined and "be terse" in joined
 
 
-def test_invoke_defaults_model_id_when_blank(provider, request_obj):
-    restore = _install_fake_subprocess(lambda cmd, **kw: _fake_completed(stdout="ok", returncode=0))
-    try:
-        resp = provider.invoke(request_obj, model_id="", model_config={})
-    finally:
-        restore()
+def test_invoke_creates_job_with_flattened_prompt(job_db, request_obj):
+    captured = {}
+
+    def completing_dispatcher(job_id, backend):
+        captured["job"] = job_store.get_job(job_id)
+        captured["backend"] = backend
+        job_store.complete_job(job_id, "ok")
+
+    provider = _provider(dispatcher=completing_dispatcher)
+    provider.invoke(request_obj, model_id="claude-cli", model_config={})
+
+    job = captured["job"]
+    assert job is not None
+    # The flattened prompt carries both system and user text.
+    assert "ping" in job["prompt"] and "be terse" in job["prompt"]
+    assert job["model_id"] == "claude-cli"
+    assert captured["backend"] == "auto"
+
+
+def test_invoke_defaults_model_id_when_blank(job_db, request_obj):
+    def completing_dispatcher(job_id, backend):
+        job_store.complete_job(job_id, "ok")
+
+    provider = _provider(dispatcher=completing_dispatcher)
+    resp = provider.invoke(request_obj, model_id="", model_config={})
     assert resp.model_id == cli_provider.DEFAULT_MODEL_ID
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# invoke() — failure modes all raise LLMUnavailableError (no crash)
+# invoke() — 'error' → LLMUnavailableError
 # ────────────────────────────────────────────────────────────────────────────
 
 
-def test_invoke_nonzero_exit_raises_unavailable(provider, request_obj):
-    def fake_run(cmd, **kwargs):
-        return _fake_completed(stdout="", stderr="boom", returncode=1)
+def test_invoke_error_raises_unavailable(job_db, request_obj):
+    def failing_dispatcher(job_id, backend):
+        job_store.fail_job(job_id, "Claude CLI exited 1: boom")
 
-    restore = _install_fake_subprocess(fake_run)
-    try:
-        with pytest.raises(LLMUnavailableError) as excinfo:
-            provider.invoke(request_obj, model_id="claude-cli", model_config={})
-    finally:
-        restore()
+    provider = _provider(dispatcher=failing_dispatcher)
+    with pytest.raises(LLMUnavailableError) as excinfo:
+        provider.invoke(request_obj, model_id="claude-cli", model_config={})
+    # The underlying CLI error is surfaced in the message.
     assert "exited 1" in str(excinfo.value)
+    # An error is NOT a deferral.
+    assert not isinstance(excinfo.value, CLIJobDeferred)
 
 
-def test_invoke_missing_binary_raises_unavailable(provider, request_obj):
-    def fake_run(cmd, **kwargs):
-        raise FileNotFoundError("no such file: claude")
-
-    restore = _install_fake_subprocess(fake_run)
-    try:
-        with pytest.raises(LLMUnavailableError):
-            provider.invoke(request_obj, model_id="claude-cli", model_config={})
-    finally:
-        restore()
+# ────────────────────────────────────────────────────────────────────────────
+# invoke() — still running at soft-wait → CLIJobDeferred
+# ────────────────────────────────────────────────────────────────────────────
 
 
-def test_invoke_timeout_raises_unavailable(provider, request_obj):
-    def fake_run(cmd, **kwargs):
-        raise subprocess.TimeoutExpired(cmd=cmd, timeout=5)
+def test_invoke_still_running_raises_deferred(job_db, request_obj):
+    # Dispatcher kicks off "work" but never completes the row within the wait.
+    def slow_dispatcher(job_id, backend):
+        return  # leaves the job pending
 
-    restore = _install_fake_subprocess(fake_run)
-    try:
-        with pytest.raises(LLMUnavailableError) as excinfo:
-            provider.invoke(request_obj, model_id="claude-cli", model_config={})
-    finally:
-        restore()
-    assert "timed out" in str(excinfo.value)
+    provider = _provider(dispatcher=slow_dispatcher, soft_wait_seconds=0.2)
+    with pytest.raises(CLIJobDeferred) as excinfo:
+        provider.invoke(request_obj, model_id="claude-cli", model_config={})
+
+    deferred = excinfo.value
+    assert deferred.job_id
+    # The job is still in the store for a background worker to finish + cache.
+    row = job_store.get_job(deferred.job_id)
+    assert row is not None
+    assert row["status"] in ("pending", "running")
 
 
-def test_invoke_unexpected_error_raises_unavailable(provider, request_obj):
-    def fake_run(cmd, **kwargs):
-        raise OSError("pipe exploded")
+def test_invoke_no_backend_wired_defers(job_db, request_obj, monkeypatch):
+    # No injected dispatcher AND no backends module → graceful no-op → deferred.
+    monkeypatch.setattr(cli_provider, "_resolve_backend_dispatcher", lambda: None)
+    provider = _provider(dispatcher=None, soft_wait_seconds=0.2)
+    with pytest.raises(CLIJobDeferred):
+        provider.invoke(request_obj, model_id="claude-cli", model_config={})
 
-    restore = _install_fake_subprocess(fake_run)
-    try:
-        with pytest.raises(LLMUnavailableError):
-            provider.invoke(request_obj, model_id="claude-cli", model_config={})
-    finally:
-        restore()
+
+# ────────────────────────────────────────────────────────────────────────────
+# CLIJobDeferred contract
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def test_cli_job_deferred_is_llm_unavailable_subclass():
+    # Non-chat callers that only catch LLMUnavailableError still degrade cleanly.
+    assert issubclass(CLIJobDeferred, LLMUnavailableError)
+    exc = CLIJobDeferred("still working", job_id="abc123", chain=["claude-cli"])
+    assert isinstance(exc, LLMUnavailableError)
+    assert exc.job_id == "abc123"
+    assert exc.chain == ["claude-cli"]
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -171,11 +223,19 @@ def test_invoke_unexpected_error_raises_unavailable(provider, request_obj):
 # ────────────────────────────────────────────────────────────────────────────
 
 
-def test_provider_name_is_cli(provider):
-    assert provider.provider_name == "cli"
+def test_flatten_messages_combines_system_and_user():
+    flat = cli_provider._flatten_messages(
+        [{"role": "user", "content": "hello"}], system_prompt="sys"
+    )
+    assert "sys" in flat and "hello" in flat
 
 
-def test_check_availability_reflects_path_resolution(provider):
+def test_provider_name_is_cli():
+    assert _provider().provider_name == "cli"
+
+
+def test_check_availability_reflects_path_resolution():
+    provider = _provider()
     real_which = cli_provider.shutil.which
     try:
         cli_provider.shutil.which = lambda name: "/usr/bin/claude"
@@ -189,3 +249,8 @@ def test_check_availability_reflects_path_resolution(provider):
 def test_constructor_coerces_bad_soft_wait():
     p = cli_provider.CLILLMProvider(soft_wait_seconds="not-an-int")
     assert p._soft_wait_seconds == 60
+
+
+def test_constructor_coerces_bad_poll_interval():
+    p = cli_provider.CLILLMProvider(poll_interval="nope")
+    assert p._poll_interval == cli_provider.DEFAULT_POLL_INTERVAL

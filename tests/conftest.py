@@ -1158,6 +1158,29 @@ CREATE TABLE IF NOT EXISTS centralized_logs (
 CREATE INDEX IF NOT EXISTS idx_centralized_logs_component ON centralized_logs(component);
 CREATE INDEX IF NOT EXISTS idx_centralized_logs_ts        ON centralized_logs(ts);
 CREATE INDEX IF NOT EXISTS idx_centralized_logs_level     ON centralized_logs(level);
+CREATE TABLE IF NOT EXISTS cli_llm_jobs (
+    id             TEXT PRIMARY KEY,
+    function       TEXT NOT NULL DEFAULT '',
+    prompt         TEXT NOT NULL DEFAULT '',
+    system_prompt  TEXT DEFAULT '',
+    model_id       TEXT,
+    backend        TEXT DEFAULT 'auto',
+    status         TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending', 'running', 'done', 'error')),
+    result         TEXT,
+    error          TEXT,
+    context_id     TEXT,
+    input_tokens   INTEGER DEFAULT 0,
+    output_tokens  INTEGER DEFAULT 0,
+    tenant_id      TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at     TEXT,
+    updated_at     TEXT,
+    claimed_at     TEXT,
+    completed_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cli_llm_jobs_claim   ON cli_llm_jobs (status, backend, created_at);
+CREATE INDEX IF NOT EXISTS idx_cli_llm_jobs_context ON cli_llm_jobs (context_id);
 """
 
 
