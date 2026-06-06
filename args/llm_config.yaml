@@ -267,6 +267,72 @@ models:
     supports_vision: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
+  # ── Ollama-cloud diverse debater models (ACF CoD pool) ──────────────────
+  # Distinct model FAMILIES so get_diverse_models() yields genuinely different
+  # perspectives in a Chain-of-Debate. Discovered via /api/tags on ollama.com.
+  glm5-cloud:
+    provider: ollama_cloud
+    model_id: "glm-5"
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  qwen3next-cloud:
+    provider: ollama_cloud
+    model_id: "qwen3-next:80b"
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  deepseek-cloud:
+    provider: ollama_cloud
+    model_id: "deepseek-v3.2"
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  mistral-large-cloud:
+    provider: ollama_cloud
+    model_id: "mistral-large-3:675b"
+    max_output_tokens: 32768
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  nemotron-cloud:
+    provider: ollama_cloud
+    model_id: "nemotron-3-super"
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  gemini3-cloud:
+    provider: ollama_cloud
+    model_id: "gemini-3-flash-preview"
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  cogito-cloud:
+    provider: ollama_cloud
+    model_id: "cogito-2.1:671b"
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
   # Dual-model optimized: text-only Qwen3 1.7B for simultaneous VRAM residency
   # alongside Gemma3 (multimodal). Total VRAM: ~6.5GB / 8GB RTX 4060 Ti.
   # Use this as tier1_model when OLLAMA_MAX_LOADED_MODELS=2.
@@ -729,6 +795,24 @@ routing:
     chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro]
     effort: high
 
+  # ── ACF (Autonomous Capability Foundry) deliberation — Ollama-cloud-diverse ──
+  # All entries are provider 'ollama_cloud' (distinct model families). Because every
+  # entry shares the provider family, get_diverse_models() pass-1 picks one then pass-2
+  # fills remaining slots with other DISTINCT cloud models — so an N-debater run uses N
+  # different Ollama-cloud models. Local qwen3 tail = air-gap / no-key fallback.
+  acf_deliberation_debaters:
+    chain: [glm5-cloud, qwen3next-cloud, deepseek-cloud, kimi-cloud, minimax-m3, mistral-large-cloud, nemotron-cloud, gemini3-cloud, gpt-oss-cloud, cogito-cloud, qwen3-local]
+    effort: medium
+
+  acf_deliberation_judge:
+    chain: [glm5-cloud, kimi-cloud, deepseek-cloud, claude-sonnet, qwen3-local]
+    effort: high
+
+  # Plain router.invoke() fallback for the deliberation function (non-chain path)
+  capability_deliberation:
+    chain: [glm5-cloud, kimi-cloud, deepseek-cloud, qwen3-local]
+    effort: medium
+
   default:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
@@ -1062,6 +1146,13 @@ chain_orchestration:
         reasoner_model: qwen3-local
         critic_model: qwen3-local
         synthesizer_model: qwen3-local
+      # ACF concept synthesis — Ollama-cloud-diverse CoT (reasoner cloud, judge synthesizes)
+      capability_deliberation:
+        max_rounds: 2
+        self_consistency_runs: 1
+        reasoner_role: capability_deliberation
+        critic_role: acf_deliberation_judge
+        synthesizer_role: acf_deliberation_judge
   cod:
     enabled: true
     num_debaters: 3
