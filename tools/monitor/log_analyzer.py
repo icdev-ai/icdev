@@ -12,9 +12,29 @@ counts occurrences, and records findings in the metric_snapshots table.
 Functions:
     analyze_logs(source, query, time_range, db_path)  -> analysis results dict
     search_patterns(log_data, patterns)                -> matched patterns list
+    _ai_extract_log_patterns(messages)                 -> emergent NLP categories | None
+    _detect_frequency_anomalies(buckets, cfg)          -> frequency anomaly list
+    _detect_silence_gaps(buckets, cfg)                 -> ingestion-silence run list
+
+The regex catalog (DEFAULT_PATTERNS) only catches known error families; novel
+or free-text failures fall into an "unknown" bucket. An optional NLP extractor
+(nlp_extractor paradigm) clusters those unmatched lines into emergent error
+categories. It is opt-in (use_ai_extraction / --ai-extract) and degrades
+gracefully — the deterministic regex result is always authoritative.
+
+Frequency-spike and error-rate detection (anomaly_detection paradigm) previously
+used thresholds hardcoded inline (z-score > 2.0; error_rate > 0.10). Those now
+load from args/monitoring_config.yaml (anomaly_detection block) and default to
+the legacy values when unset. A robust median-based method ("mad") is available
+that is not skewed by the very spike it is detecting. The same paradigm also
+covers the inverse failure mode — ingestion-silence gaps (contiguous empty/near-
+zero buckets between periods of activity, i.e. a "missing partition"), surfaced
+under ``silence_gaps`` when ``anomaly_detection.gaps.enabled`` is set.
 
 CLI:
     python tools/monitor/log_analyzer.py --source elk|splunk --query "error" --time-range 24h
+    python tools/monitor/log_analyzer.py --source elk --ai-extract           # add NLP extraction
+    python tools/monitor/log_analyzer.py --source elk --anomaly-method mad    # robust detection
 """
 
 import argparse
@@ -35,6 +55,30 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # Default endpoints — override via CLI args or environment
 DEFAULT_ELK_URL = "http://localhost:9200"
 DEFAULT_SPLUNK_URL = "https://localhost:8089"
+
+# ---------------------------------------------------------------------------
+# AI pattern extraction (nlp_extractor paradigm) — tuning knobs
+# ---------------------------------------------------------------------------
+# The regex catalog below only catches *known* error families. Novel or
+# free-text failures land in the "unknown" bucket and stay invisible. The
+# optional NLP extractor (``_ai_extract_log_patterns``) clusters those
+# unmatched messages into named, emergent categories. It degrades to ``None``
+# whenever the LLM is unavailable, so the deterministic regex result is always
+# authoritative and shipped unchanged.
+_AI_EXTRACT_SYSTEM_PROMPT = (
+    "You are a site-reliability log triage assistant. You are given log lines "
+    "that did NOT match any known error-pattern regex. Cluster them into a small "
+    "set of emergent error categories (at most 8). Respond with ONLY a JSON array; "
+    "each element is an object with keys: name (short PascalCase label), "
+    "description (one sentence), count (integer, how many of the provided lines "
+    "fall in this category), sample_messages (array of up to 3 representative "
+    "lines, each truncated to 200 chars). Do not invent categories for lines that "
+    "are plainly informational; omit them. Return [] if nothing is noteworthy."
+)
+_AI_EXTRACT_MAX_TOKENS = 1024
+_AI_EXTRACT_TEMPERATURE = 0.0
+# Bound the prompt so a noisy log window can't blow up cost / context.
+_AI_EXTRACT_MAX_SAMPLES = 60
 
 # Common error patterns for automatic detection
 DEFAULT_PATTERNS = [
@@ -250,6 +294,376 @@ def search_patterns(log_data: list, patterns: list = None) -> list:
     return results
 
 
+def _unmatched_messages(log_data: list, patterns: list = None) -> list:
+    """Return log messages that matched none of the regex patterns.
+
+    These are the candidates the NLP extractor reasons over — the "unknown"
+    bucket that the deterministic regex catalog leaves uncategorized.
+
+    Args:
+        log_data: List of log entry dicts.
+        patterns: Pattern dicts (defaults to DEFAULT_PATTERNS).
+
+    Returns:
+        List of message strings (deduplicated, order-preserving) that no
+        pattern's regex matched.
+    """
+    if patterns is None:
+        patterns = DEFAULT_PATTERNS
+
+    compiled = [re.compile(p["regex"], re.IGNORECASE) for p in patterns if p.get("regex")]
+    seen = set()
+    unmatched = []
+    for entry in log_data:
+        msg = entry.get("message") or entry.get("msg") or entry.get("_raw") or ""
+        if not msg or msg in seen:
+            continue
+        if not any(c.search(msg) for c in compiled):
+            seen.add(msg)
+            unmatched.append(msg[:200])
+    return unmatched
+
+
+def _ai_extract_log_patterns(messages: list) -> list | None:
+    """Cluster unmatched log messages into emergent error categories via NLP.
+
+    This is the ``nlp_extractor`` augmentation of the regex-only
+    ``search_patterns`` path: it surfaces failure families the static regex
+    catalog cannot anticipate (novel stack traces, free-text operator notes,
+    third-party error strings).
+
+    Args:
+        messages: Free-text log lines that matched no known regex pattern.
+            Only the first ``_AI_EXTRACT_MAX_SAMPLES`` are sent to bound cost.
+
+    Returns:
+        A list of ``{name, description, count, sample_messages, source}`` dicts
+        sorted by count descending, or ``None`` if extraction is unavailable or
+        fails for any reason. Callers MUST treat ``None`` as "no AI patterns"
+        and ship the deterministic regex result unchanged.
+    """
+    if not messages:
+        return None
+
+    sample = messages[:_AI_EXTRACT_MAX_SAMPLES]
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        numbered = "\n".join(f"{i + 1}. {m}" for i, m in enumerate(sample))
+        req = LLMRequest(
+            messages=[{"role": "user", "content": f"Unmatched log lines:\n{numbered}"}],
+            system_prompt=_AI_EXTRACT_SYSTEM_PROMPT,
+            max_tokens=_AI_EXTRACT_MAX_TOKENS,
+            temperature=_AI_EXTRACT_TEMPERATURE,
+            skip_injection_scan=False,  # log lines are untrusted content — keep the scanner on
+            classification="CUI",
+        )
+        # Reuse the structured-extraction route; the router falls back to the
+        # default provider when this logical function is unconfigured.
+        resp = LLMRouter().invoke("requirement_extraction", req)
+        if not resp or not resp.content:
+            return None
+        parsed = _parse_ai_patterns(resp.content)
+    except Exception:
+        return None  # Graceful degradation — deterministic regex result is authoritative.
+
+    if not parsed:
+        return None
+    parsed.sort(key=lambda r: r.get("count", 0), reverse=True)
+    return parsed
+
+
+def _parse_ai_patterns(raw: str) -> list:
+    """Parse and sanitize the LLM's JSON pattern array.
+
+    Tolerates markdown code fences and stray prose around the JSON. Drops any
+    element that lacks a usable name. Returns ``[]`` on any parse failure so the
+    caller can degrade cleanly.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        # Strip a leading ```json / ``` fence and trailing fence.
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text).strip()
+    # Isolate the outermost JSON array if the model added prose.
+    start, end = text.find("["), text.rfind("]")
+    if start == -1 or end == -1 or end < start:
+        return []
+    try:
+        items = json.loads(text[start : end + 1])
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(items, list):
+        return []
+
+    cleaned = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        samples = item.get("sample_messages") or []
+        if not isinstance(samples, list):
+            samples = []
+        try:
+            count = int(item.get("count", 0))
+        except (TypeError, ValueError):
+            count = 0
+        cleaned.append(
+            {
+                "name": name,
+                "description": str(item.get("description", "")).strip(),
+                "count": count,
+                "sample_messages": [str(s)[:200] for s in samples[:3]],
+                "source": "ai",
+            }
+        )
+    return cleaned
+
+
+# ---------------------------------------------------------------------------
+# Anomaly detection (anomaly_detection paradigm) — config-driven thresholds
+# ---------------------------------------------------------------------------
+# Frequency-spike and error-rate detection previously used thresholds hardcoded
+# inline (z-score > 2.0; error_rate > 0.10). Those constants now live in
+# ``args/monitoring_config.yaml`` under ``anomaly_detection`` and degrade to the
+# original values whenever the file, PyYAML, or a key is missing — so default
+# behavior is unchanged. The robust ``mad`` method (median absolute deviation)
+# is offered as an alternative that is not skewed by the very spike it detects.
+# ``_detect_silence_gaps`` adds the inverse: contiguous empty/near-zero buckets
+# between activity (an ingestion outage / missing partition), opt-in via the
+# ``gaps`` sub-block (off by default so output is unchanged).
+_ANOMALY_CONFIG_PATH = BASE_DIR / "args" / "monitoring_config.yaml"
+_DEFAULT_ANOMALY_CFG = {
+    "frequency": {
+        "method": "zscore",
+        "z_threshold": 2.0,
+        "mad_threshold": 3.5,
+        "min_buckets": 2,
+        "bucket_window_minutes": 5,
+    },
+    "error_rate": {"spike_threshold": 0.10},
+    "gaps": {"enabled": False, "min_active_buckets": 3, "drop_ratio": 0.2},
+}
+
+
+def _median(values: list) -> float:
+    """Return the median of a non-empty numeric list (0.0 for an empty list)."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    return float(s[mid]) if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
+def _floor_to_window(dt: datetime, window_minutes: int) -> datetime:
+    """Floor a datetime to the start of its ``window_minutes`` time bucket.
+
+    Buckets are anchored at midnight by minutes-since-midnight, so a window that
+    divides evenly into 60 (1/5/15/30) keeps the legacy within-the-hour
+    alignment, while larger or non-dividing windows floor correctly and recompute
+    the hour. The window is clamped to ``>= 1`` minute; the default 5 preserves
+    the historical 5-minute bucketing exactly.
+    """
+    window = window_minutes if isinstance(window_minutes, int) and window_minutes >= 1 else 5
+    minutes_since_midnight = dt.hour * 60 + dt.minute
+    floored = (minutes_since_midnight // window) * window
+    return dt.replace(hour=floored // 60, minute=floored % 60, second=0, microsecond=0)
+
+
+def _load_anomaly_cfg(config_path: Path = None) -> dict:
+    """Load the ``anomaly_detection`` tuning block from monitoring_config.yaml.
+
+    Returns defaults deep-merged with any configured overrides, so a missing
+    file, absent PyYAML, or absent key always yields the legacy hardcoded
+    behavior (z-score > 2.0, error-rate spike at 0.10). Any failure degrades to
+    defaults rather than raising — log analysis must never break on config.
+    """
+    cfg = {
+        "frequency": dict(_DEFAULT_ANOMALY_CFG["frequency"]),
+        "error_rate": dict(_DEFAULT_ANOMALY_CFG["error_rate"]),
+        "gaps": dict(_DEFAULT_ANOMALY_CFG["gaps"]),
+    }
+    path = config_path or _ANOMALY_CONFIG_PATH
+    try:
+        import yaml
+
+        with open(path, encoding="utf-8") as fh:
+            loaded = yaml.safe_load(fh) or {}
+        section = loaded.get("anomaly_detection") or {}
+        for group in ("frequency", "error_rate", "gaps"):
+            overrides = section.get(group) or {}
+            for key in cfg[group]:
+                if overrides.get(key) is not None:
+                    cfg[group][key] = overrides[key]
+    except Exception:
+        pass  # Any failure → legacy defaults.
+
+    # bucket_window_minutes must be a positive int; a non-int / non-positive
+    # override falls back to the legacy 5-minute window rather than raising.
+    try:
+        bw = int(cfg["frequency"].get("bucket_window_minutes", 5))
+        cfg["frequency"]["bucket_window_minutes"] = bw if bw >= 1 else 5
+    except (TypeError, ValueError):
+        cfg["frequency"]["bucket_window_minutes"] = 5
+    return cfg
+
+
+def _detect_frequency_anomalies(buckets: dict, cfg: dict) -> list:
+    """Flag time-buckets whose event count is anomalously high.
+
+    Args:
+        buckets: Mapping of bucket-start datetime -> event count.
+        cfg: Anomaly config (see ``_load_anomaly_cfg``); ``cfg["frequency"]``
+            selects the method and threshold.
+
+    Methods (``frequency.method``):
+        * ``zscore`` — classic mean/std-dev z-score: flag where
+          (count - mean) / std > ``z_threshold``. Simple, but the spike itself
+          inflates std-dev and can mask smaller co-occurring anomalies.
+        * ``mad`` — robust modified z-score (Iglewicz-Hoaglin):
+          0.6745 * (count - median) / MAD > ``mad_threshold``, where MAD is the
+          median absolute deviation. Resistant to the outliers being detected.
+
+    Returns:
+        Anomaly dicts ordered by bucket time; empty when there are too few
+        buckets (``min_buckets``) or none clears the threshold.
+    """
+    freq = cfg.get("frequency", {})
+    method = str(freq.get("method", "zscore")).lower()
+    min_buckets = int(freq.get("min_buckets", 2) or 2)
+    if len(buckets) < max(2, min_buckets):
+        return []
+
+    items = sorted(buckets.items())  # deterministic order by bucket time
+    counts = [c for _, c in items]
+    anomalies = []
+
+    if method == "mad":
+        med = _median(counts)
+        mad = _median([abs(c - med) for c in counts])
+        threshold = float(freq.get("mad_threshold", 3.5))
+        for bucket_time, count in items:
+            if mad > 0:
+                mod_z = 0.6745 * (count - med) / mad
+            else:
+                # Degenerate spread (≥ half the buckets identical): flag only
+                # buckets strictly above the median.
+                mod_z = float("inf") if count > med else 0.0
+            if mod_z > threshold:
+                anomalies.append(
+                    {
+                        "bucket": bucket_time.isoformat(),
+                        "count": count,
+                        "median": round(med, 1),
+                        "mod_z_score": None if mod_z == float("inf") else round(mod_z, 2),
+                        "method": "mad",
+                    }
+                )
+    else:  # zscore (default / legacy)
+        mean = sum(counts) / len(counts)
+        variance = sum((c - mean) ** 2 for c in counts) / len(counts)
+        std_dev = variance**0.5
+        threshold = float(freq.get("z_threshold", 2.0))
+        for bucket_time, count in items:
+            if std_dev > 0 and (count - mean) / std_dev > threshold:
+                anomalies.append(
+                    {
+                        "bucket": bucket_time.isoformat(),
+                        "count": count,
+                        "mean": round(mean, 1),
+                        "z_score": round((count - mean) / std_dev, 2),
+                        "method": "zscore",
+                    }
+                )
+    return anomalies
+
+
+def _detect_silence_gaps(buckets: dict, cfg: dict) -> list:
+    """Flag contiguous interior time-buckets that fall (near-)silent.
+
+    This is the data-presence ("missing partition") counterpart to
+    ``_detect_frequency_anomalies``: where that flags buckets that are
+    anomalously *high*, this flags runs of buckets that are anomalously *low* or
+    empty **between** periods of normal activity — the signature of an ingestion
+    outage or a log pipeline that silently stopped writing (e.g. a date
+    partition that never received data). One-sided spike detection cannot see
+    this, because an absent bucket simply isn't in the ``buckets`` mapping.
+
+    The full bucket grid is reconstructed at the frequency
+    ``bucket_window_minutes`` cadence so absent buckets count as 0. A bucket is
+    "silent" when its count is below ``median(active) * drop_ratio``. Only runs
+    bounded by activity on BOTH sides are reported (a trailing quiet tail at the
+    edge of the query window is the window ending, not an outage).
+
+    Args:
+        buckets: Mapping of bucket-start datetime -> event count (only populated
+            buckets are present; reconstructed gaps are treated as count 0).
+        cfg: Anomaly config (see ``_load_anomaly_cfg``); ``cfg["gaps"]`` selects
+            the enable flag and thresholds, ``cfg["frequency"]`` the cadence.
+
+    Returns:
+        Run dicts ordered by start time, each describing one contiguous silence
+        interval; empty when gap detection is disabled (default), the active
+        baseline is too thin (``min_active_buckets``), or nothing drops below
+        the silence floor.
+    """
+    gaps = cfg.get("gaps", {})
+    if not gaps.get("enabled") or not buckets:
+        return []
+
+    min_active = int(gaps.get("min_active_buckets", 3) or 3)
+    drop_ratio = float(gaps.get("drop_ratio", 0.2))
+    window = int(cfg.get("frequency", {}).get("bucket_window_minutes", 5) or 5)
+
+    active_counts = [c for c in buckets.values() if c > 0]
+    if len(active_counts) < max(2, min_active):
+        return []
+    baseline = _median(active_counts)
+    if baseline <= 0:
+        return []
+    floor = baseline * drop_ratio
+
+    times = sorted(buckets)
+    step = timedelta(minutes=window)
+    grid = []
+    t = times[0]
+    end = times[-1]
+    while t <= end:
+        grid.append((t, buckets.get(t, 0)))
+        t += step
+
+    runs = []
+    i, n = 0, len(grid)
+    while i < n:
+        if grid[i][1] < floor:
+            j = i
+            while j < n and grid[j][1] < floor:
+                j += 1
+            # Interior only: real activity must bound the run on both sides.
+            # grid[0] is always a populated bucket, so i > 0 ⇒ a leading active
+            # bucket exists; j < n ⇒ a trailing active bucket exists.
+            if i > 0 and j < n:
+                run = grid[i:j]
+                runs.append(
+                    {
+                        "start": run[0][0].isoformat(),
+                        "end": run[-1][0].isoformat(),
+                        "buckets": len(run),
+                        "max_count": max(c for _, c in run),
+                        "baseline": round(baseline, 1),
+                        "method": "silence_gap",
+                    }
+                )
+            i = j + 1
+        else:
+            i += 1
+    return runs
+
+
 # ---------------------------------------------------------------------------
 # Core analysis
 # ---------------------------------------------------------------------------
@@ -262,6 +676,8 @@ def analyze_logs(
     elk_url: str = None,
     splunk_url: str = None,
     splunk_token: str = None,
+    use_ai_extraction: bool = False,
+    anomaly_config: dict = None,
 ) -> dict:
     """Analyze logs from ELK or Splunk.
 
@@ -277,6 +693,15 @@ def analyze_logs(
         elk_url: Elasticsearch URL override.
         splunk_url: Splunk URL override.
         splunk_token: Splunk authentication token.
+        use_ai_extraction: When True, run the optional NLP extractor over log
+            lines that matched no known regex pattern and add the resulting
+            emergent categories under ``ai_extracted_patterns``. Off by default
+            so behavior stays fully deterministic unless explicitly requested;
+            degrades silently to ``[]`` if the LLM is unavailable.
+        anomaly_config: Optional pre-loaded anomaly-detection config (see
+            ``_load_anomaly_cfg``). Defaults to loading
+            ``args/monitoring_config.yaml``; pass a dict to override the
+            frequency method / thresholds without touching the config file.
 
     Returns:
         Dict with analysis results including error patterns, severity counts,
@@ -327,6 +752,14 @@ def analyze_logs(
     # ---------- Detect error patterns ----------
     matched_patterns = search_patterns(all_logs)
 
+    # ---------- NLP extraction over the unmatched "unknown" bucket ----------
+    ai_extracted_patterns = []
+    if use_ai_extraction:
+        unmatched = _unmatched_messages(all_logs)
+        ai_result = _ai_extract_log_patterns(unmatched)
+        if ai_result:
+            ai_extracted_patterns = ai_result
+
     # ---------- Top repeated messages ----------
     message_counter = Counter()
     for entry in all_logs:
@@ -337,8 +770,14 @@ def analyze_logs(
 
     top_messages = [{"message": msg, "count": count} for msg, count in message_counter.most_common(10) if count > 1]
 
-    # ---------- Time-bucket anomaly detection (5-minute buckets) ----------
+    # ---------- Time-bucket anomaly detection (config-driven window) ----------
+    # The bucket window (default 5 minutes) is the time-partition granularity for
+    # frequency-spike detection — too wide masks short spikes, too narrow adds
+    # noise — so it loads from anomaly_detection.frequency.bucket_window_minutes.
+    anomaly_cfg = anomaly_config if anomaly_config is not None else _load_anomaly_cfg()
+    bucket_window = int(anomaly_cfg.get("frequency", {}).get("bucket_window_minutes", 5) or 5)
     frequency_anomalies = []
+    silence_gaps = []
     timestamps = []
     for entry in all_logs:
         ts = entry.get("@timestamp") or entry.get("timestamp") or entry.get("_time")
@@ -350,34 +789,19 @@ def analyze_logs(
                 pass
 
     if timestamps:
-        timestamps.sort()
         buckets = defaultdict(int)
         for ts_val in timestamps:
-            bucket_key = ts_val.replace(minute=(ts_val.minute // 5) * 5, second=0, microsecond=0)
+            bucket_key = _floor_to_window(ts_val, bucket_window)
             buckets[bucket_key] += 1
-
-        if len(buckets) >= 2:
-            counts = list(buckets.values())
-            mean = sum(counts) / len(counts)
-            variance = sum((c - mean) ** 2 for c in counts) / len(counts)
-            std_dev = variance**0.5
-
-            for bucket_time, count in buckets.items():
-                if std_dev > 0 and (count - mean) / std_dev > 2.0:
-                    frequency_anomalies.append(
-                        {
-                            "bucket": bucket_time.isoformat(),
-                            "count": count,
-                            "mean": round(mean, 1),
-                            "z_score": round((count - mean) / std_dev, 2),
-                        }
-                    )
+        frequency_anomalies = _detect_frequency_anomalies(buckets, anomaly_cfg)
+        silence_gaps = _detect_silence_gaps(buckets, anomaly_cfg)
 
     # ---------- Error rate ----------
     total = len(all_logs)
     errors = severity_counts.get("error", 0)
     error_rate = round(errors / total, 4) if total > 0 else 0.0
-    is_spike = error_rate > 0.10
+    spike_threshold = float(anomaly_cfg.get("error_rate", {}).get("spike_threshold", 0.10))
+    is_spike = error_rate > spike_threshold
 
     # ---------- Build result ----------
     result = {
@@ -391,8 +815,10 @@ def analyze_logs(
         "error_rate": error_rate,
         "error_rate_is_spike": is_spike,
         "matched_patterns": matched_patterns,
+        "ai_extracted_patterns": ai_extracted_patterns,
         "top_messages": top_messages,
         "frequency_anomalies": frequency_anomalies,
+        "silence_gaps": silence_gaps,
         "source_results": source_results,
     }
 
@@ -416,6 +842,7 @@ def _record_findings(project_id: str, analysis: dict, db_path: Path = None) -> N
             "log_total_count": float(analysis.get("total_logs", 0)),
             "log_pattern_match_count": float(sum(p.get("count", 0) for p in analysis.get("matched_patterns", []))),
             "log_anomaly_count": float(len(analysis.get("frequency_anomalies", []))),
+            "log_silence_gap_count": float(len(analysis.get("silence_gaps", []))),
         }
 
         for metric_name, metric_value in metrics.items():
@@ -459,11 +886,28 @@ def main():
     parser.add_argument("--splunk-url", default=DEFAULT_SPLUNK_URL, help="Splunk URL")
     parser.add_argument("--splunk-token", help="Splunk authentication token")
     parser.add_argument("--db-path", help="Override database path")
+    parser.add_argument(
+        "--ai-extract",
+        action="store_true",
+        dest="use_ai_extraction",
+        help="Run the NLP extractor over unmatched log lines to surface emergent error categories",
+    )
+    parser.add_argument(
+        "--anomaly-method",
+        choices=["zscore", "mad"],
+        help="Override the frequency anomaly method from monitoring_config.yaml "
+        "(zscore=mean/std-dev, mad=robust median-based)",
+    )
     parser.add_argument("--format", choices=["json", "text"], default="text", help="Output format (default: text)")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     db_path = Path(args.db_path) if args.db_path else None
+
+    anomaly_config = None
+    if args.anomaly_method:
+        anomaly_config = _load_anomaly_cfg()
+        anomaly_config["frequency"]["method"] = args.anomaly_method
 
     result = analyze_logs(
         source=args.source,
@@ -474,6 +918,8 @@ def main():
         elk_url=args.elk_url,
         splunk_url=args.splunk_url,
         splunk_token=args.splunk_token,
+        use_ai_extraction=args.use_ai_extraction,
+        anomaly_config=anomaly_config,
     )
 
     if args.format == "json":
@@ -504,12 +950,31 @@ def main():
                 for sample in p.get("sample_messages", [])[:2]:
                     print(f"           {sample[:80]}")
 
+        # AI-extracted (emergent) patterns
+        ai_patterns = result.get("ai_extracted_patterns", [])
+        if ai_patterns:
+            print(f"\n  AI-EXTRACTED PATTERNS ({len(ai_patterns)} emergent):")
+            for p in ai_patterns[:10]:
+                print(f"    [{p.get('count', 0):>4d}x] {p['name']}")
+                if p.get("description"):
+                    print(f"           {p['description'][:80]}")
+
         # Frequency anomalies
         anomalies = result.get("frequency_anomalies", [])
         if anomalies:
             print(f"\n  FREQUENCY ANOMALIES ({len(anomalies)} detected):")
             for a in anomalies[:5]:
                 print(f"    {a['bucket']}: {a['count']} events (z-score: {a['z_score']})")
+
+        # Silence gaps (ingestion outages / missing partitions)
+        gaps = result.get("silence_gaps", [])
+        if gaps:
+            print(f"\n  SILENCE GAPS ({len(gaps)} detected):")
+            for g in gaps[:5]:
+                print(
+                    f"    {g['start']} -> {g['end']}: {g['buckets']} quiet bucket(s) "
+                    f"(baseline {g['baseline']}/bucket)"
+                )
 
         # Top messages
         top = result.get("top_messages", [])

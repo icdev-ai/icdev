@@ -392,6 +392,228 @@ def store_snapshot(
 
 
 # ---------------------------------------------------------------------------
+# Metric anomaly detection (anomaly_detection paradigm)
+# ---------------------------------------------------------------------------
+# The SLA check above compares each metric to a hardcoded threshold — it cannot
+# catch a metric drifting badly while still inside its SLA, nor adapt to a
+# service whose normal baseline differs from the global default. This section
+# scores each current value against its own historical metric_snapshots using a
+# configurable z-score or robust MAD (median absolute deviation) method. The
+# tuning block lives in args/monitoring_config.yaml under ``metric_anomaly`` and
+# degrades to these defaults whenever the file, PyYAML, or a key is missing.
+_METRIC_ANOMALY_CONFIG_PATH = BASE_DIR / "args" / "monitoring_config.yaml"
+_DEFAULT_METRIC_ANOMALY_CFG = {
+    "method": "zscore",
+    "z_threshold": 3.0,
+    "mad_threshold": 3.5,
+    "min_samples": 5,
+    "direction": "both",
+    "history_limit": 200,
+}
+
+
+def _median(values: list) -> float:
+    """Return the median of a numeric list (0.0 for an empty list)."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    return float(s[mid]) if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
+def _load_metric_anomaly_cfg(config_path: Path = None) -> dict:
+    """Load the ``metric_anomaly`` tuning block from monitoring_config.yaml.
+
+    Returns defaults merged with any configured overrides. A missing file,
+    absent PyYAML, or absent key always yields the documented defaults — anomaly
+    detection must never break on configuration.
+    """
+    cfg = dict(_DEFAULT_METRIC_ANOMALY_CFG)
+    path = config_path or _METRIC_ANOMALY_CONFIG_PATH
+    try:
+        import yaml
+
+        with open(path, encoding="utf-8") as fh:
+            loaded = yaml.safe_load(fh) or {}
+        section = loaded.get("metric_anomaly") or {}
+        for key in cfg:
+            if section.get(key) is not None:
+                cfg[key] = section[key]
+    except Exception:
+        pass  # Any failure → defaults.
+    return cfg
+
+
+def _detect_value_anomaly(current: float, history: list, cfg: dict) -> dict:
+    """Score a single current value against its historical baseline.
+
+    Args:
+        current: The newly observed metric value.
+        history: Prior numeric values for the same metric (any order).
+        cfg: A ``metric_anomaly`` config (see ``_load_metric_anomaly_cfg``).
+
+    Methods (``cfg["method"]``):
+        * ``zscore`` — classic mean/std-dev z-score: flag where
+          |current - mean| / std exceeds ``z_threshold``.
+        * ``mad`` — robust modified z-score (Iglewicz-Hoaglin):
+          0.6745 * (current - median) / MAD, flagged at ``mad_threshold``. MAD
+          is the median absolute deviation; resistant to outliers in history.
+
+    ``direction`` restricts flagging to ``high`` (spikes only), ``low`` (drops
+    only), or ``both``. Returns ``None`` when there is too little history
+    (``min_samples``) or the value is within normal range.
+    """
+    samples = [float(v) for v in history if v is not None]
+    min_samples = int(cfg.get("min_samples", 5) or 5)
+    if len(samples) < max(2, min_samples):
+        return None
+
+    method = str(cfg.get("method", "zscore")).lower()
+    direction = str(cfg.get("direction", "both")).lower()
+
+    if method == "mad":
+        med = _median(samples)
+        mad = _median([abs(v - med) for v in samples])
+        threshold = float(cfg.get("mad_threshold", 3.5))
+        if mad > 0:
+            score = 0.6745 * (current - med) / mad
+        else:
+            # Degenerate spread (≥ half the samples identical): any departure
+            # from the median is anomalous; preserve sign for direction checks.
+            if current == med:
+                return None
+            score = float("inf") if current > med else float("-inf")
+        baseline, score_key = med, "mod_z_score"
+    else:  # zscore (default)
+        mean = sum(samples) / len(samples)
+        variance = sum((v - mean) ** 2 for v in samples) / len(samples)
+        std_dev = variance**0.5
+        threshold = float(cfg.get("z_threshold", 3.0))
+        if std_dev == 0:
+            if current == mean:
+                return None
+            score = float("inf") if current > mean else float("-inf")
+        else:
+            score = (current - mean) / std_dev
+        baseline, score_key = mean, "z_score"
+
+    high = score > threshold
+    low = score < -threshold
+    if direction == "high" and not high:
+        return None
+    if direction == "low" and not low:
+        return None
+    if direction == "both" and not (high or low):
+        return None
+
+    finite = score not in (float("inf"), float("-inf"))
+    return {
+        "current": round(current, 4),
+        "baseline": round(baseline, 4),
+        score_key: round(score, 2) if finite else None,
+        "direction": "high" if score > 0 else "low",
+        "method": method if method == "mad" else "zscore",
+        "samples": len(samples),
+    }
+
+
+def _metric_history(
+    project_id: str,
+    metric_name: str,
+    exclude_value: float = None,
+    limit: int = 200,
+    db_path: Path = None,
+) -> list:
+    """Return recent historical values for a metric from metric_snapshots,
+    most-recent first, excluding an optional just-collected value."""
+    conn = _get_db(db_path)
+    try:
+        rows = conn.execute(
+            """SELECT metric_value FROM metric_snapshots
+               WHERE project_id = ? AND metric_name = ?
+               ORDER BY collected_at DESC, id DESC
+               LIMIT ?""",
+            (project_id, metric_name, int(limit)),
+        ).fetchall()
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+    values = []
+    for r in rows:
+        try:
+            values.append(float(r[0]))
+        except (ValueError, TypeError, IndexError):
+            continue
+    if exclude_value is not None and values and values[0] == exclude_value:
+        values = values[1:]  # drop the snapshot we just stored, if present
+    return values
+
+
+def detect_metric_anomalies(
+    project_id: str,
+    current_metrics: dict = None,
+    prom_url: str = None,
+    namespace: str = None,
+    config_path: Path = None,
+    db_path: Path = None,
+    method: str = None,
+) -> dict:
+    """Flag current metrics that deviate anomalously from their own history.
+
+    Complements ``check_sla``: rather than a fixed threshold, each metric is
+    scored against its prior values in metric_snapshots. Collects current
+    metrics from Prometheus when ``current_metrics`` is not supplied.
+
+    Args:
+        project_id: Project identifier.
+        current_metrics: Pre-collected ``{name: value}`` map; collected via
+            ``get_application_metrics`` when omitted.
+        prom_url, namespace: Forwarded to collection when needed.
+        config_path: Override path to monitoring_config.yaml.
+        db_path: Override database path (history source).
+        method: Optional ``"zscore"``/``"mad"`` override of the configured method.
+
+    Returns:
+        A result dict with the list of ``anomalies`` and the config used.
+    """
+    cfg = _load_metric_anomaly_cfg(config_path)
+    if method:
+        cfg["method"] = method
+
+    if current_metrics is None:
+        collected = get_application_metrics(project_id, prom_url, namespace)
+        current_metrics = collected.get("metrics", {})
+
+    limit = int(cfg.get("history_limit", 200) or 200)
+    anomalies = []
+    evaluated = 0
+    for name, value in current_metrics.items():
+        if value is None:
+            continue
+        try:
+            current = float(value)
+        except (ValueError, TypeError):
+            continue
+        history = _metric_history(project_id, name, exclude_value=current, limit=limit, db_path=db_path)
+        evaluated += 1
+        result = _detect_value_anomaly(current, history, cfg)
+        if result:
+            anomalies.append({"metric": name, **result})
+
+    return {
+        "project_id": project_id,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "method": cfg.get("method"),
+        "metrics_evaluated": evaluated,
+        "anomaly_count": len(anomalies),
+        "anomalies": anomalies,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main():
@@ -400,6 +622,16 @@ def main():
     parser.add_argument("--prom-url", default=DEFAULT_PROMETHEUS_URL, help="Prometheus URL")
     parser.add_argument("--namespace", help="Kubernetes namespace")
     parser.add_argument("--check-sla", action="store_true", help="Check metrics against SLA")
+    parser.add_argument(
+        "--detect-anomalies",
+        action="store_true",
+        help="Score current metrics against their historical baseline (anomaly_detection)",
+    )
+    parser.add_argument(
+        "--anomaly-method",
+        choices=["zscore", "mad"],
+        help="Override anomaly detection method (zscore=mean/std-dev, mad=robust median-based)",
+    )
     parser.add_argument("--query", help="Custom PromQL query")
     parser.add_argument("--range-query", help="Custom PromQL range query")
     parser.add_argument("--start", help="Range query start time")
@@ -423,6 +655,36 @@ def main():
     if args.range_query:
         result = query_range(args.range_query, args.start, args.end, args.step, args.prom_url)
         print(json.dumps(result, indent=2))
+        return
+
+    # Anomaly detection against historical baseline
+    if args.detect_anomalies:
+        collected = get_application_metrics(args.project_id, args.prom_url, args.namespace)
+        result = detect_metric_anomalies(
+            args.project_id,
+            current_metrics=collected.get("metrics", {}),
+            config_path=None,
+            db_path=db_path,
+            method=args.anomaly_method,
+        )
+
+        if args.format == "json" or args.json_output:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"\n{'=' * 60}")
+            print(f"  METRIC ANOMALY SCAN — {result['project_id']}")
+            print(f"  Method: {result.get('method')}  |  Evaluated: {result['metrics_evaluated']}")
+            print(f"{'=' * 60}")
+            if not result["anomalies"]:
+                print("  No anomalies detected.")
+            for a in result["anomalies"]:
+                score = a.get("z_score", a.get("mod_z_score"))
+                print(
+                    f"  [{a['direction'].upper():>4s}] {a['metric']}: "
+                    f"current={a['current']} baseline={a['baseline']} "
+                    f"score={score} (n={a['samples']})"
+                )
+            print(f"\n{'=' * 60}")
         return
 
     # SLA check
