@@ -27,6 +27,7 @@ while every other caller transparently hits its existing rule-based fallback —
 and the job keeps running, caching its result in ``cli_llm_jobs`` for reuse.
 """
 
+import os
 import shutil
 import time
 from typing import Any, Callable, Dict, List, Optional
@@ -42,6 +43,59 @@ DEFAULT_MODEL_ID = "claude-cli"
 
 # Default poll cadence for the soft-wait; small so a quick job returns promptly.
 DEFAULT_POLL_INTERVAL = 0.25
+
+# Backend labels. ``auto`` is resolved at dispatch time to one of the concrete
+# backends; the concrete labels are what get recorded on the job row so the
+# backend worker's ``claim_job(backend)`` filter matches.
+BACKEND_AUTO = "auto"
+BACKEND_SUBPROCESS = "subprocess"
+BACKEND_MAILBOX = "mailbox"
+CONCRETE_BACKENDS = (BACKEND_SUBPROCESS, BACKEND_MAILBOX)
+
+# Env override for the backend selection (highest precedence). Accepts
+# ``auto`` / ``subprocess`` / ``mailbox``; anything else is ignored.
+BACKEND_ENV = "ICDEV_CLI_BRIDGE_BACKEND"
+
+# Resolved-backend → dotted module exposing ``dispatch(job_id, backend)``.
+_BACKEND_MODULES = {
+    BACKEND_SUBPROCESS: "tools.llm.cli_bridge.subprocess_backend",
+    BACKEND_MAILBOX: "tools.llm.cli_bridge.mailbox_backend",
+}
+
+
+def resolve_backend(configured: str) -> str:
+    """Resolve a configured backend to a concrete ``subprocess``/``mailbox`` label.
+
+    Precedence:
+
+    1. ``ICDEV_CLI_BRIDGE_BACKEND`` env override (``subprocess``/``mailbox``/``auto``).
+    2. The ``configured`` value passed in (the provider's ``backend`` setting).
+    3. If the effective value is ``auto``, pick ``subprocess`` when the host is
+       headless-capable (:func:`capability.is_cli_headless_capable`), else
+       ``mailbox``.
+
+    Any unrecognized value degrades to ``auto`` resolution rather than being
+    written verbatim to the job row.
+    """
+    env = (os.environ.get(BACKEND_ENV) or "").strip().lower()
+    if env in CONCRETE_BACKENDS:
+        return env
+    if env == BACKEND_AUTO:
+        effective = BACKEND_AUTO
+    else:
+        effective = (configured or BACKEND_AUTO).strip().lower()
+
+    if effective in CONCRETE_BACKENDS:
+        return effective
+
+    # auto (or anything unrecognized) → capability-driven choice
+    try:
+        from tools.llm.cli_bridge import capability
+
+        return BACKEND_SUBPROCESS if capability.is_cli_headless_capable() else BACKEND_MAILBOX
+    except Exception as exc:  # pragma: no cover - defensive; default to subprocess
+        logger.debug("backend capability probe failed (%s); defaulting to subprocess", exc)
+        return BACKEND_SUBPROCESS
 
 
 class CLIJobDeferred(LLMUnavailableError):
@@ -100,19 +154,26 @@ def _flatten_messages(messages: List[Dict[str, Any]], system_prompt: str = "") -
     return "\n\n".join(parts)
 
 
-def _resolve_backend_dispatcher() -> Optional[Callable[[str, str], None]]:
-    """Return the backend dispatch entry point, or ``None`` if none is wired.
+def _resolve_backend_dispatcher(backend: str) -> Optional[Callable[[str, str], None]]:
+    """Return the ``dispatch`` entry point for ``backend``, or ``None`` if unwired.
 
-    The subprocess / mailbox workers (uclb-job-04/05/06) will expose
-    ``tools.llm.cli_bridge.backends.dispatch(job_id, backend)``. Until that
-    module lands this returns ``None`` and jobs are left pending — the soft-wait
-    then elapses and the caller is deferred (chat) or falls back (non-chat).
+    Each concrete backend exposes ``dispatch(job_id, backend)`` in its own module
+    (``subprocess_backend`` from uclb-job-04, ``mailbox_backend`` from
+    uclb-job-05). When the selected backend's module is absent — e.g. the mailbox
+    worker has not landed yet — this returns ``None`` and the job is left pending:
+    the soft-wait elapses and the caller is deferred (chat) or falls back
+    (non-chat), while the row stays enqueued for a worker to claim later.
     """
+    module_path = _BACKEND_MODULES.get(backend)
+    if not module_path:
+        return None
     try:
-        from tools.llm.cli_bridge.backends import dispatch
+        import importlib
+
+        module = importlib.import_module(module_path)
     except Exception:
         return None
-    return dispatch
+    return getattr(module, "dispatch", None)
 
 
 class CLILLMProvider(LLMProvider):
@@ -158,10 +219,12 @@ class CLILLMProvider(LLMProvider):
         Never raises: a missing/failing backend just leaves the job pending so
         the soft-wait can elapse and the caller degrade gracefully.
         """
-        dispatcher = self._dispatcher or _resolve_backend_dispatcher()
+        dispatcher = self._dispatcher or _resolve_backend_dispatcher(backend)
         if dispatcher is None:
             logger.debug(
-                "no CLI backend worker wired; job %s left pending for soft-wait", job_id
+                "no '%s' CLI backend worker wired; job %s left pending for soft-wait",
+                backend,
+                job_id,
             )
             return
         try:
@@ -196,9 +259,25 @@ class CLILLMProvider(LLMProvider):
 
         start = time.time()
         prompt = _flatten_messages(request.messages, request.system_prompt)
-        backend = self._backend
+        # Resolve 'auto' to a concrete backend now, at dispatch time, so the
+        # chosen value is recorded on the row (claim_job filters by backend).
+        backend = resolve_backend(self._backend)
         classification = getattr(request, "classification", "CUI") or "CUI"
         function = getattr(request, "model", "") or model_id or DEFAULT_MODEL_ID
+
+        # Mailbox jobs are served by an external worker; if none is heartbeating
+        # we still enqueue and let the soft-wait/deferred path carry the request.
+        if backend == BACKEND_MAILBOX:
+            try:
+                from tools.llm.cli_bridge import capability
+
+                if not capability.mailbox_worker_alive():
+                    logger.info(
+                        "mailbox backend selected but no live worker heartbeat; "
+                        "enqueueing job for an external worker and deferring"
+                    )
+            except Exception:  # pragma: no cover - advisory log only
+                pass
 
         job_id = job_store.create_job(
             function=function,

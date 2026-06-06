@@ -128,7 +128,8 @@ def test_invoke_done_returns_llmresponse(job_db, request_obj):
     assert resp.stop_reason == "stop"
 
 
-def test_invoke_creates_job_with_flattened_prompt(job_db, request_obj):
+def test_invoke_creates_job_with_flattened_prompt(job_db, request_obj, monkeypatch):
+    monkeypatch.setenv("ICDEV_CLI_BRIDGE_BACKEND", "subprocess")
     captured = {}
 
     def completing_dispatcher(job_id, backend):
@@ -144,7 +145,9 @@ def test_invoke_creates_job_with_flattened_prompt(job_db, request_obj):
     # The flattened prompt carries both system and user text.
     assert "ping" in job["prompt"] and "be terse" in job["prompt"]
     assert job["model_id"] == "claude-cli"
-    assert captured["backend"] == "auto"
+    # 'auto' was resolved to a concrete backend and recorded on the row.
+    assert captured["backend"] == "subprocess"
+    assert job["backend"] == "subprocess"
 
 
 def test_invoke_defaults_model_id_when_blank(job_db, request_obj):
@@ -197,11 +200,114 @@ def test_invoke_still_running_raises_deferred(job_db, request_obj):
 
 
 def test_invoke_no_backend_wired_defers(job_db, request_obj, monkeypatch):
-    # No injected dispatcher AND no backends module → graceful no-op → deferred.
-    monkeypatch.setattr(cli_provider, "_resolve_backend_dispatcher", lambda: None)
+    # No injected dispatcher AND no backend module → graceful no-op → deferred.
+    monkeypatch.setattr(cli_provider, "_resolve_backend_dispatcher", lambda backend: None)
     provider = _provider(dispatcher=None, soft_wait_seconds=0.2)
     with pytest.raises(CLIJobDeferred):
         provider.invoke(request_obj, model_id="claude-cli", model_config={})
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# resolve_backend() — dynamic subprocess-else-mailbox selection (uclb-job-06)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def test_resolve_backend_auto_headless_picks_subprocess(monkeypatch):
+    monkeypatch.delenv("ICDEV_CLI_BRIDGE_BACKEND", raising=False)
+    from tools.llm.cli_bridge import capability
+
+    monkeypatch.setattr(capability, "is_cli_headless_capable", lambda *a, **k: True)
+    assert cli_provider.resolve_backend("auto") == "subprocess"
+
+
+def test_resolve_backend_auto_not_headless_picks_mailbox(monkeypatch):
+    monkeypatch.delenv("ICDEV_CLI_BRIDGE_BACKEND", raising=False)
+    from tools.llm.cli_bridge import capability
+
+    monkeypatch.setattr(capability, "is_cli_headless_capable", lambda *a, **k: False)
+    assert cli_provider.resolve_backend("auto") == "mailbox"
+
+
+def test_resolve_backend_explicit_override_wins(monkeypatch):
+    monkeypatch.delenv("ICDEV_CLI_BRIDGE_BACKEND", raising=False)
+    from tools.llm.cli_bridge import capability
+
+    # Configured explicitly as mailbox even though the host IS headless-capable.
+    monkeypatch.setattr(capability, "is_cli_headless_capable", lambda *a, **k: True)
+    assert cli_provider.resolve_backend("mailbox") == "mailbox"
+    assert cli_provider.resolve_backend("subprocess") == "subprocess"
+
+
+def test_resolve_backend_env_overrides_config(monkeypatch):
+    monkeypatch.setenv("ICDEV_CLI_BRIDGE_BACKEND", "mailbox")
+    # Config says subprocess, but the env var takes precedence.
+    assert cli_provider.resolve_backend("subprocess") == "mailbox"
+
+
+def test_resolve_backend_env_auto_falls_through_to_capability(monkeypatch):
+    monkeypatch.setenv("ICDEV_CLI_BRIDGE_BACKEND", "auto")
+    from tools.llm.cli_bridge import capability
+
+    monkeypatch.setattr(capability, "is_cli_headless_capable", lambda *a, **k: False)
+    assert cli_provider.resolve_backend("subprocess") == "mailbox"
+
+
+def test_resolve_backend_unknown_value_resolves_via_capability(monkeypatch):
+    monkeypatch.delenv("ICDEV_CLI_BRIDGE_BACKEND", raising=False)
+    from tools.llm.cli_bridge import capability
+
+    monkeypatch.setattr(capability, "is_cli_headless_capable", lambda *a, **k: True)
+    assert cli_provider.resolve_backend("garbage") == "subprocess"
+
+
+def test_invoke_records_resolved_backend_on_row(job_db, request_obj, monkeypatch):
+    monkeypatch.delenv("ICDEV_CLI_BRIDGE_BACKEND", raising=False)
+    from tools.llm.cli_bridge import capability
+
+    monkeypatch.setattr(capability, "is_cli_headless_capable", lambda *a, **k: False)
+
+    captured = {}
+
+    def completing_dispatcher(job_id, backend):
+        captured["job"] = job_store.get_job(job_id)
+        job_store.complete_job(job_id, "ok")
+
+    # Provider configured 'auto'; host not headless → mailbox recorded on the row.
+    provider = cli_provider.CLILLMProvider(
+        backend="auto", soft_wait_seconds=5, dispatcher=completing_dispatcher, poll_interval=0.02
+    )
+    provider.invoke(request_obj, model_id="claude-cli", model_config={})
+    assert captured["job"]["backend"] == "mailbox"
+
+
+def test_invoke_mailbox_no_worker_still_enqueues_and_defers(job_db, request_obj, monkeypatch):
+    # Mailbox selected, no worker module wired, no heartbeat → job enqueued + deferred.
+    monkeypatch.setenv("ICDEV_CLI_BRIDGE_BACKEND", "mailbox")
+    monkeypatch.delenv("ICDEV_CLI_MAILBOX_HEARTBEAT", raising=False)
+    monkeypatch.setattr(cli_provider, "_resolve_backend_dispatcher", lambda backend: None)
+
+    provider = _provider(dispatcher=None, soft_wait_seconds=0.2)
+    with pytest.raises(CLIJobDeferred) as excinfo:
+        provider.invoke(request_obj, model_id="claude-cli", model_config={})
+
+    # The row was still written (enqueued) for an external worker to claim.
+    row = job_store.get_job(excinfo.value.job_id)
+    assert row is not None
+    assert row["backend"] == "mailbox"
+    assert row["status"] in ("pending", "running")
+
+
+def test_resolve_backend_dispatcher_routes_to_subprocess_module():
+    dispatch = cli_provider._resolve_backend_dispatcher("subprocess")
+    from tools.llm.cli_bridge import subprocess_backend
+
+    assert dispatch is subprocess_backend.dispatch
+
+
+def test_resolve_backend_dispatcher_none_for_unwired_mailbox():
+    # mailbox_backend module doesn't exist yet (uclb-job-05) → None, no raise.
+    assert cli_provider._resolve_backend_dispatcher("mailbox") is None
+    assert cli_provider._resolve_backend_dispatcher("bogus") is None
 
 
 # ────────────────────────────────────────────────────────────────────────────
