@@ -8,8 +8,17 @@ poll_interval_seconds: 30
 max_resume_cycles_per_task: 5
 
 # Auto-merge squash on CI green + review approved
-auto_merge_enabled: false
+auto_merge_enabled: true
 auto_merge_require_approval: true
+
+# Hybrid policy by task type: ONLY these task_types are eligible for auto-merge.
+# Low-risk types merge autonomously on green; everything else (feature, bug,
+# research, ...) is left for a human via the "Review - PR open" lane.
+# Set to [] (empty) to allow auto-merge for ALL task types.
+auto_merge_task_types:
+  - chore
+  - test
+  - fix
 
 # Truncate CI log excerpts before injecting as resume context
 ci_log_max_chars: 4000

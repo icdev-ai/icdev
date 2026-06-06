@@ -313,6 +313,32 @@ def run_auto_commit(message: Optional[str] = None) -> Dict[str, Any]:
         return {"committed": False, "message": "ICDEV_AUTO_COMMIT not enabled"}
 
     try:
+        # Branch-safety guard: never auto-commit onto a protected/shared branch.
+        # BASE_DIR is the main checkout; committing here onto main/irad/feature
+        # dumps work onto the working branch and bypasses branch->V&V->MR.
+        # Override with ICDEV_AUTO_COMMIT_ALLOW_PROTECTED=true.
+        _branch_proc = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, cwd=str(BASE_DIR), timeout=10,
+        )
+        _branch = (_branch_proc.stdout or "").strip()
+        _protected = {
+            b.strip() for b in os.environ.get(
+                "ICDEV_PROTECTED_BRANCHES", "main,master,irad/feature"
+            ).split(",") if b.strip()
+        }
+        _allow = os.environ.get(
+            "ICDEV_AUTO_COMMIT_ALLOW_PROTECTED", ""
+        ).lower() in ("true", "1", "yes")
+        if _branch and _branch in _protected and not _allow:
+            return {
+                "committed": False,
+                "message": (
+                    f"protected branch '{_branch}' - auto-commit skipped "
+                    f"(set ICDEV_AUTO_COMMIT_ALLOW_PROTECTED=true to override)"
+                ),
+            }
+
         # Check if there are changes to commit
         result = subprocess.run(
             ["git", "status", "--porcelain"],

@@ -320,6 +320,68 @@ def test_watcher_auto_merge_disabled_by_default():
     assert report.actions[0].action == "wait"
 
 
+def test_watcher_auto_merge_gated_out_by_task_type():
+    # Hybrid policy: a green+approved feature PR is NOT auto-merged when the
+    # allowlist only permits chore/test/fix — it waits for a human.
+    tasks = [_FakeRow(
+        id="task-feat", title="T", description="",
+        status="in_progress", task_type="feature",
+        executor_url="https://github.com/o/r/pull/4",
+    )]
+    pr_states = {
+        "https://github.com/o/r/pull/4": {
+            "state": "OPEN",
+            "mergeable": "MERGEABLE",
+            "reviews": [{"state": "APPROVED", "author": "b"}],
+            "statusCheckRollup": [{"conclusion": "SUCCESS", "name": "tests"}],
+        }
+    }
+    queue_log = []
+    w = _build_watcher(
+        tasks, pr_states, queue_log,
+        config={
+            "auto_merge_enabled": True,
+            "auto_merge_require_approval": True,
+            "auto_merge_task_types": ["chore", "test", "fix"],
+            "max_resume_cycles_per_task": 5,
+        },
+    )
+    report = w.poll_once()
+    assert report.actions[0].classification == "done"
+    assert report.actions[0].action == "wait"
+    assert "human merge" in report.actions[0].reason
+
+
+def test_watcher_auto_merge_allowed_for_listed_task_type():
+    # A green+approved chore PR IS auto-merged when chore is in the allowlist.
+    tasks = [_FakeRow(
+        id="task-chore", title="T", description="",
+        status="in_progress", task_type="chore",
+        executor_url="https://github.com/o/r/pull/6",
+    )]
+    pr_states = {
+        "https://github.com/o/r/pull/6": {
+            "state": "OPEN",
+            "mergeable": "MERGEABLE",
+            "reviews": [{"state": "APPROVED", "author": "b"}],
+            "statusCheckRollup": [{"conclusion": "SUCCESS", "name": "tests"}],
+        }
+    }
+    queue_log = []
+    w = _build_watcher(
+        tasks, pr_states, queue_log,
+        config={
+            "auto_merge_enabled": True,
+            "auto_merge_require_approval": True,
+            "auto_merge_task_types": ["chore", "test", "fix"],
+            "max_resume_cycles_per_task": 5,
+        },
+    )
+    report = w.poll_once()
+    assert report.actions[0].classification == "done"
+    assert report.actions[0].action == "merge"
+
+
 def test_watcher_fails_gracefully_on_fetch_exception():
     tasks = [_FakeRow(
         id="task-err", title="T", description="",

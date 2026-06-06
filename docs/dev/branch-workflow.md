@@ -81,6 +81,19 @@ Run in this order; **lint and coherence first** because they catch cheap failure
 
 ---
 
+## Automated path — Kanban executors (branch→V&V→MR, hands-off)
+
+The same discipline runs autonomously for Kanban tasks. Set `ICDEV_KANBAN_PR_FLOW=true` to enable the PR flow.
+
+1. **Dispatch.** The scheduler picks a task and routes it by `executor_type` — `github_actions` (GitHub runner) or `claude_cli` (local worktree).
+2. **Branch + PR.** On success the GitHub runner (`icdev-kanban-runner.yml`) commits the agent's changes to `kanban/<task_id>`, pushes, and opens a PR → `main` (draft for `feature`/`bug`, ready for `chore`/`test`/`fix`). The scheduler links the PR URL onto the task (`_ga_link_pr_and_handoff`).
+3. **V&V = the PR's own CI.** `icdev-ci.yml` runs on the PR (lint → tests → security). `pr_watcher` (OPT-70, a Genesis reflex polling every ~5 min) reads the result.
+4. **Autofix loop.** On CI-fail / changes-requested / merge-conflict, `pr_watcher` injects a resume-context message so the agent fixes the PR (capped at `MAX_RESUME_CYCLES`).
+5. **Hybrid merge** (`args/pr_watcher_config.yaml`): green **and approved** `chore`/`test`/`fix` PRs auto-merge → task `done`; `feature`/`bug` wait in the review lane for a human merge.
+6. **Resilience.** A failing run increments `failure_count`; after 3 the task → `needs_decomposition` → `_auto_decompose_stalled_tasks` splits it (parity with the pure-Kanban path).
+
+> **Auto-commit safety:** `ICDEV_AUTO_COMMIT` no longer commits onto a protected branch (`main`, `irad/feature`) from an interactive session — set `ICDEV_AUTO_COMMIT_ALLOW_PROTECTED=true` to override, or just work on a feature branch.
+
 ## Windows / gotchas
 
 - **CI-fix tasks:** run the **exact CI ruff command**, not bare `ruff check .` — the fast Ruff Lint job gates E2E, and "fix CI run X" tasks often point at a stale commit already fixed in HEAD.
