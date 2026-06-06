@@ -1143,6 +1143,21 @@ CREATE TABLE IF NOT EXISTS integrity_authorizations (
     classification  TEXT NOT NULL DEFAULT 'CUI',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS centralized_logs (
+    id              TEXT PRIMARY KEY,
+    ts              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    component       TEXT NOT NULL,
+    level           TEXT NOT NULL DEFAULT 'INFO',
+    message         TEXT NOT NULL DEFAULT '',
+    trace_id        TEXT,
+    session_id      TEXT,
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    extra_json      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_component ON centralized_logs(component);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_ts        ON centralized_logs(ts);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_level     ON centralized_logs(level);
 """
 
 

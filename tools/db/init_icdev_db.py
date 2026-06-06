@@ -10725,6 +10725,31 @@ CREATE TABLE IF NOT EXISTS integrity_authorizations (
 CREATE INDEX IF NOT EXISTS idx_integrity_authorizations_assessment ON integrity_authorizations(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_integrity_authorizations_tenant     ON integrity_authorizations(tenant_id);
 
+-- ============================================================
+-- EQO — Centralized logging (eqo-log-01)
+-- Global append-only log sink (NOT a canvas table): carries tenant_id +
+-- classification so the RLS-aware get_connection() applies the standard
+-- row-level predicate. Append-only (NIST AU) — log rows are immutable evidence;
+-- retention is enforced by bulk time-window pruning, never row mutation.
+-- Registered in APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py.
+-- Mirror of migration 181_centralized_logs — keep the two in lock-step.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS centralized_logs (
+    id              TEXT PRIMARY KEY,
+    ts              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    component       TEXT NOT NULL,
+    level           TEXT NOT NULL DEFAULT 'INFO',
+    message         TEXT NOT NULL DEFAULT '',
+    trace_id        TEXT,
+    session_id      TEXT,
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    extra_json      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_component ON centralized_logs(component);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_ts        ON centralized_logs(ts);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_level     ON centralized_logs(level);
+
 """
 
 
