@@ -174,6 +174,32 @@ if is_airgap():
     activate_airgap()
 ```
 
+### 8a. Local Claude CLI bridge (no cloud key, no Ollama)
+
+When neither cloud API keys nor a local Ollama server are available, route every
+LLM call through the locally-installed **`claude` CLI** (Claude Code, print mode):
+
+```bash
+# .env
+ICDEV_CLI_BRIDGE=true                      # prepend the CLI to every routing chain
+CLAUDE_CLI_PATH=claude                     # optional — path to the claude binary (default: on PATH)
+ICDEV_CLI_BRIDGE_MODEL=claude-opus-4-8     # optional — model passed to `claude --model`
+```
+
+When `ICDEV_CLI_BRIDGE` is truthy the router prepends the `claude-cli` model to
+**every** chain and skips two-tier + RL reordering, so the CLI fronts all routing
+(`tools/llm/cli_provider.py` shells `claude -p` with the prompt on stdin). It falls
+through to the configured cloud/local models if the CLI errors or is absent. Restart
+the dashboard after changing this flag. Leave it **unset** to use the cloud/local
+chain as normal — the bridge routes *everything* through the local CLI when on.
+
+Verify:
+```bash
+ICDEV_CLI_BRIDGE=1 python -c "from tools.llm.router import LLMRouter; from tools.llm.provider import LLMRequest; \
+r=LLMRouter(); resp=r.invoke('slides_outline_planning', LLMRequest(messages=[{'role':'user','content':'List 3 slide titles about coffee as a JSON array.'}], skip_injection_scan=True)); \
+print(resp.provider, resp.model_id)"   # -> cli claude-opus-4-8
+```
+
 ---
 
 ## 9. GitLab CI gate (example)
