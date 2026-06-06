@@ -1,0 +1,50 @@
+# CUI // SP-CTI
+# ACE AI-Developer review gate — HITL policy template (task ace-qa-02).
+#
+# Registered with the WorkflowEngine HITL template manager and referenced by
+# the ai_developer role's `hitl_review` step
+# (args/ace/roles/ai_developer.yaml -> steps[].template_id = ace_developer_review).
+# Authored 2026-06-06: this artifact was flagged "done" in Kanban but existed on
+# no branch; reconstructed here from the ace-qa-02 specification.
+template_id: ace_developer_review
+name: ACE AI-Developer Review Gate
+description: >
+  Human-in-the-loop approval gate for an ACE AI-Developer co-worker before its
+  generated build is handed to the QA Manager co-worker for verification.
+version: "1.0"
+classification: CUI
+
+# any_one: a single approval at the approve stage releases the gate.
+approval_policy: any_one
+# Number of times a reviewer may kick the work back to the developer co-worker
+# before the instance escalates to ace_team_monitor.
+kickback_limit: 3
+
+stages:
+  - id: build
+    name: Automated Build
+    type: automated
+    description: Builder agent produces the implementation; no human action.
+
+  - id: review
+    name: Developer Review
+    type: manual
+    role: developer
+    description: >
+      A human developer reviews the RICOAS analysis, the chosen interpretation,
+      and the generated diff before approval.
+    required_docs:
+      - ricoas_analysis_checklist
+    on_reject: kickback   # returns to build with reviewer notes
+
+  - id: approve
+    name: Tenant Approval
+    type: manual
+    role: tenant_admin
+    description: Final authorization to release the build to QA verification.
+    on_reject: kickback
+
+# Escalation when the gate stalls — consumed by the ace_team_monitor reflex.
+escalation:
+  stale_after_hours: 24
+  action: escalate

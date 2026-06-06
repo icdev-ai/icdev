@@ -1143,6 +1143,73 @@ CREATE TABLE IF NOT EXISTS integrity_authorizations (
     classification  TEXT NOT NULL DEFAULT 'CUI',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ACE (ANVIL Co-Worker Engine) canvas tables. Schema MUST mirror
+-- icdev/tools/ace/db/init_db.py exactly (id/state/trust_tier, not
+-- instance_id/status). See lesson learned: a divergent conftest schema
+-- silently passed wrong-shape tests against the real engine.
+CREATE TABLE IF NOT EXISTS ace_instances (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL DEFAULT '',
+    role_id         TEXT NOT NULL DEFAULT '',
+    state           TEXT NOT NULL DEFAULT 'pending',
+    trust_tier      TEXT NOT NULL DEFAULT 'yellow',
+    config_json     TEXT NOT NULL DEFAULT '{}',
+    result_json     TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS ace_coworkers (
+    id              TEXT PRIMARY KEY,
+    instance_id     TEXT NOT NULL,
+    role_id         TEXT NOT NULL,
+    display_name    TEXT NOT NULL DEFAULT '',
+    state           TEXT NOT NULL DEFAULT 'idle',
+    trust_tier      TEXT NOT NULL DEFAULT 'yellow',
+    assigned_step   TEXT DEFAULT '',
+    last_active_at  TEXT,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ace_messages (
+    id              TEXT PRIMARY KEY,
+    instance_id     TEXT NOT NULL,
+    coworker_id     TEXT,
+    message_type    TEXT NOT NULL DEFAULT 'info',
+    role            TEXT NOT NULL DEFAULT 'user',
+    content         TEXT NOT NULL DEFAULT '',
+    metadata_json   TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ace_artifacts (
+    id              TEXT PRIMARY KEY,
+    instance_id     TEXT NOT NULL,
+    coworker_id     TEXT,
+    artifact_type   TEXT NOT NULL DEFAULT 'document',
+    title           TEXT NOT NULL DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    content_json    TEXT NOT NULL DEFAULT '{}',
+    content_md      TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ace_agent_workflows (
+    id              TEXT PRIMARY KEY,
+    instance_id     TEXT NOT NULL,
+    name            TEXT NOT NULL DEFAULT '',
+    state           TEXT NOT NULL DEFAULT 'pending',
+    config_json     TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ace_audit_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id     TEXT,
+    coworker_id     TEXT,
+    action          TEXT NOT NULL,
+    detail          TEXT NOT NULL DEFAULT '',
+    actor           TEXT NOT NULL DEFAULT 'system',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 

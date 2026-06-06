@@ -6,6 +6,7 @@
 ## Index
 
 - [LLM Chain Orchestration (CoT / CoD)](manifest/llm-chain-orchestration.md)
+- [ANVIL Co-Worker Engine (ACE)](manifest/ace-coworker-engine.md)
 - [Codegen Guardrails (AI Code Optimization)](manifest/codegen-guardrails.md)
 - [AIS Vessel Data Importer](manifest/ais-importer.md)
 - [Network Design Canvas + IQE (ICDEV Query Engine)](manifest/network-iqe.md)

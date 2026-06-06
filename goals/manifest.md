@@ -5,6 +5,7 @@
 | Goal | File | Description |
 |------|------|-------------|
 | ANVIL Workflow | goals/build_app.md | 5-step process for building full-stack apps: Architect, Navigate, Verify, Integrate, Launch |
+| ACE Co-Worker | goals/ace_coworker.md | Dynamic agentic co-worker teams: delegation, creator-verifier, negotiation, broadcast |
 | Project Init | goals/init_project.md | Initialize new ICDEV™ project with full compliance scaffolding |
 | TDD Workflow | goals/tdd_workflow.md | True TDD: Gherkin feature first, step definitions, then implementation |
 | Compliance Workflow | goals/compliance_workflow.md | Generate all ATO + CSSP artifacts (SSP, POAM, STIG, SBOM, CUI, CSSP assessment, IR plan, SIEM, evidence, Xacta sync) |
