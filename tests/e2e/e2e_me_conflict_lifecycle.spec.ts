@@ -52,24 +52,20 @@ test.describe('E2E Lifecycle: Middle East Conflict Intelligence (7-fix validatio
   test.use({ viewport: { width: 1920, height: 1080 } });
 
   // These tests validate behaviour against a specific pre-seeded chat session
-  // (Middle East conflict requirements). That session only exists in a developer's
-  // local DB — a fresh CI database loaded from the consolidated schema snapshot has
-  // no chat-session data. Skip the whole suite when the seed session is absent so
-  // CI stays green while the tests still run locally where the fixture exists.
+  // (Middle East conflict requirements). The *full* fixture — requirements,
+  // readiness data, conversation — only exists in a developer's local DB. CI seeds
+  // the same session id as a bare stub (no requirements), so a PRD probe gives a
+  // false positive (generate_prd renders even an empty session). Gate on the
+  // readiness endpoint's requirement_count instead: it is >0 only when the real
+  // fixture is present. This keeps CI green while the suite still runs locally.
   test.beforeEach(async ({ request }) => {
-    const r = await request.get(`${BASE_URL}/api/intake/prd/${SEED_SESSION_ID}`);
     let fixturePresent = false;
+    const r = await request.get(`${BASE_URL}/api/intake/readiness/${SEED_SESSION_ID}`);
     if (r.ok()) {
       const d = await r.json().catch(() => ({}));
-      // CI seeds a bare placeholder session row (see app.py "E2E demo session
-      // seed"), so /prd returns a PRD shell with zero requirements. The real
-      // local fixture carries the Middle East conflict requirements. Only run
-      // when the full fixture is present — a non-empty PRD AND requirements —
-      // otherwise these tests time out on UI elements the empty session never
-      // renders. The placeholder alone must still skip the suite.
-      fixturePresent = !!d.prd_markdown && (d.total_requirements || 0) > 0;
+      fixturePresent = (d.requirement_count || 0) > 0;
     }
-    test.skip(!fixturePresent, `Seed fixture for ${SEED_SESSION_ID} not present in this environment`);
+    test.skip(!fixturePresent, `Seed session ${SEED_SESSION_ID} fixture (requirements) not present in this environment`);
   });
 
   test('FIX 1 + FIX 2 + FIX 4: Traceability, AI Boost speed, button states', async ({ page }) => {

@@ -41,6 +41,23 @@ class TestInjectRowPredicate:
         assert "LIMIT" in sql
         assert "tenant_id = ?" in sql
 
+    def test_no_where_trailing_limit_param_offset(self):
+        # Regression: a no-WHERE SELECT with a trailing "LIMIT ?" injects the
+        # predicate BEFORE the LIMIT, so n_before must be 0 (the LIMIT param
+        # comes AFTER). Previously n_before counted ALL params, binding the
+        # LIMIT value into the injected predicate. Classification set → IN(...).
+        sql, extra, n_before = inject_row_predicate(
+            "SELECT * FROM gd_ai_tournaments ORDER BY created_at DESC LIMIT ?",
+            "tenant_a",
+            classifications={"CUI", "PUBLIC"},
+        )
+        # The injected WHERE precedes ORDER BY / LIMIT, and no placeholder
+        # precedes that injection point, so the extra params insert at index 0.
+        assert n_before == 0
+        assert "WHERE" in sql and sql.index("WHERE") < sql.index("LIMIT")
+        # extra params are only the classification labels (no LIMIT value)
+        assert all(isinstance(p, str) for p in extra)
+
     def test_classification_predicate(self):
         sql, params = inject_row_predicate(
             "SELECT * FROM docs", "tenant_a", classification="CUI"

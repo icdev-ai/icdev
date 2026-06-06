@@ -80,9 +80,15 @@ def list_predictions(
     severity: str | None = None,
     outcome: str | None = None,
     limit: int = 100,
+    conn=None,
 ) -> list[dict]:
-    """Return recent predictions, optionally filtered."""
-    conn = get_connection()
+    """Return recent predictions, optionally filtered.
+
+    Accepts an optional ``conn`` so a caller can share one connection across
+    several reads.  Each ``get_canvas_connection()`` costs ~2s in the dashboard
+    (new PG connection), so the page handler reuses a single connection.
+    """
+    conn = conn or get_connection()
     clauses: list[str] = []
     params: list[Any] = []
     if lens_id:
@@ -109,9 +115,12 @@ def update_prediction_outcome(pred_id: str, outcome: str) -> None:
     conn.commit()
 
 
-def summary_stats() -> dict:
-    """Return aggregate counts for the Oracle summary bar."""
-    conn = get_connection()
+def summary_stats(conn=None) -> dict:
+    """Return aggregate counts for the Oracle summary bar.
+
+    Accepts an optional shared ``conn`` (see ``list_predictions``).
+    """
+    conn = conn or get_connection()
     total = conn.execute(
         "SELECT COUNT(*) FROM fa_oracle_predictions WHERE outcome='pending'"
     ).fetchone()[0]
@@ -133,6 +142,22 @@ def summary_stats() -> dict:
         "warning": warning,
         "convergence_events": convergence,
         "last_run_at": last_row[0] if last_row else None,
+    }
+
+
+def page_payload(prediction_limit: int = 200, convergence_limit: int = 20) -> dict:
+    """Fetch all Oracle page data over a single shared connection.
+
+    Latency fix: ``oracle_page`` previously opened three separate canvas
+    connections (one per read).  In the dashboard each new connection costs
+    ~2s, so the page took ~6s of pure connection overhead.  Acquiring one
+    connection and reusing it for all three reads cuts that to ~2s.
+    """
+    conn = get_connection()
+    return {
+        "stats": summary_stats(conn=conn),
+        "predictions": list_predictions(limit=prediction_limit, conn=conn),
+        "convergence": list_convergence_events(limit=convergence_limit, conn=conn),
     }
 
 
@@ -162,8 +187,8 @@ def insert_convergence(
     return row_id
 
 
-def list_convergence_events(limit: int = 20) -> list[dict]:
-    conn = get_connection()
+def list_convergence_events(limit: int = 20, conn=None) -> list[dict]:
+    conn = conn or get_connection()
     rows = conn.execute(
         "SELECT * FROM fa_oracle_convergence_events WHERE resolved_at IS NULL "
         "ORDER BY created_at DESC LIMIT ?",
