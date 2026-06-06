@@ -80,6 +80,13 @@ class DICAnswer:
     result_count: int = 0
     refusal_reason: str = ""
     origin: str = "ai_generated"
+    # Deterministic anomaly assessment of the evidence the answer was built on
+    # (aiify-opp-6123: hardcoded_threshold -> anomaly_detection). Empty when no
+    # evidence was retrieved. ``weak_grounding`` is the actionable flag that
+    # replaces an implicit "trust the top-k" assumption: True when the retrieved
+    # excerpts show a relevance cliff or a weak-best-hit (see _assess_grounding).
+    grounding_quality: dict = field(default_factory=dict)
+    weak_grounding: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -89,6 +96,8 @@ class DICAnswer:
             "result_count": self.result_count,
             "refusal_reason": self.refusal_reason,
             "origin": self.origin,
+            "grounding_quality": self.grounding_quality,
+            "weak_grounding": self.weak_grounding,
         }
 
 
@@ -923,6 +932,7 @@ class DICSearchEngine:
             return DICAnswer(grounded=False, refusal_reason="no_evidence", result_count=0)
 
         used = results[:_ANSWER_MAX_RESULTS]
+        grounding, weak = self._assess_grounding(query, used)
         context = "\n\n".join(
             f"[{i}] (source: {r.doc_title or r.doc_id or 'unknown'})\n"
             f"{(r.content or '').strip()[:_ANSWER_CHARS_PER_RESULT]}"
@@ -958,6 +968,8 @@ class DICSearchEngine:
                 refusal_reason="llm_unavailable",
                 citations=[r.citation for r in used],
                 result_count=len(results),
+                grounding_quality=grounding,
+                weak_grounding=weak,
             )
 
         if not resp or not resp.content or not resp.content.strip():
@@ -966,6 +978,8 @@ class DICSearchEngine:
                 refusal_reason="llm_unavailable",
                 citations=[r.citation for r in used],
                 result_count=len(results),
+                grounding_quality=grounding,
+                weak_grounding=weak,
             )
 
         text = resp.content.strip()
@@ -975,6 +989,8 @@ class DICSearchEngine:
                 refusal_reason="insufficient_evidence",
                 citations=[r.citation for r in used],
                 result_count=len(results),
+                grounding_quality=grounding,
+                weak_grounding=weak,
             )
 
         return DICAnswer(
@@ -982,7 +998,41 @@ class DICSearchEngine:
             grounded=True,
             citations=[r.citation for r in used],
             result_count=len(results),
+            grounding_quality=grounding,
+            weak_grounding=weak,
         )
+
+    @staticmethod
+    def _assess_grounding(query: str, used: list["DICSearchResult"]) -> tuple[dict, bool]:
+        """Anomaly-assess the evidence a grounded answer is about to be built on.
+
+        aiify-opp-6123 (hardcoded_threshold -> anomaly_detection). The chat /
+        answer path used to feed the top-k retrieved excerpts to the LLM
+        unconditionally, implicitly trusting that "top-k" means "good enough."
+        This reuses the deterministic search-relevance anomaly detector
+        (:func:`detect_search_anomalies`, built for opp 6052) to score the
+        ACTUAL excerpts used, so callers learn when an answer rests on a
+        relevance cliff or a weak best hit. Runs with ``use_llm=False`` — no
+        extra model cost, air-gap safe, never raises into the answer path.
+
+        Returns a ``(grounding_quality, weak_grounding)`` tuple: a compact
+        summary dict and the derived actionable flag (True when the deterministic
+        severity is medium/high or the best hit is itself weak).
+        """
+        try:
+            report = detect_search_anomalies(query, used, use_llm=False)
+        except Exception:
+            return {}, False
+        summary = {
+            "severity": report.get("severity", "low"),
+            "low_confidence": bool(report.get("low_confidence", False)),
+            "weak_count": int(report.get("weak_count", 0)),
+            "anomaly_count": int(report.get("anomaly_count", 0)),
+            "mean": report.get("mean", 0.0),
+            "top_score": report.get("top_score", 0.0),
+        }
+        weak = summary["severity"] in ("medium", "high") or summary["low_confidence"]
+        return summary, weak
 
     def expand_query(self, query: str, max_terms: int = _EXPANSION_MAX_TERMS) -> DICQueryExpansion:
         """Suggest extra search keywords to broaden fulltext match recall.
