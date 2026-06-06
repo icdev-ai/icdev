@@ -390,7 +390,7 @@ reflexes:
     risk_tier: green
     schedule: "every 30m"
     interval_seconds: 1800
-    description: "Read .logs/build.ndjson tail, score events with LLM anomaly detection (haiku), deduplicate signatures, create Kanban tasks for unseen anomalies."
+    description: "Two ingestion paths: (1) build log .logs/build.ndjson -> task_type='bug' cards; (2) centralized_logs autofix bridge (eqo-log-05) -> reads ERROR/CRITICAL events across ALL components via query_logs and opens task_type='fix' cards with component + log excerpt + reproduce query. Shared LLM anomaly scorer (haiku) + (component, message_hash) dedup; each path keeps its own seen-signature store."
     success_metric:
       name: tasks_created
       threshold: 0
@@ -400,6 +400,10 @@ reflexes:
     # Anomaly detection — replaces hardcoded level/failed/returncode thresholds
     anomaly_threshold: 0.4    # [0,1] minimum LLM score to classify an event as a failure
     score_batch_size: 20      # events per LLM call (haiku stays cheap at this size)
+    # centralized_logs autofix bridge (eqo-log-05)
+    centralized_enabled: true # also triage ERROR/CRITICAL rows from centralized_logs
+    centralized_limit: 500    # max centralized_logs rows pulled per level per cycle
+    # centralized_since: "2026-06-06T00:00:00Z"  # optional ISO lower bound on ts
 
   failure_triage:
     enabled: true
