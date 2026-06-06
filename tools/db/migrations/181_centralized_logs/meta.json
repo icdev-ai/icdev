@@ -1,0 +1,10 @@
+{
+  "description": "EQO — append-only centralized_logs table (RLS-aware global log sink)",
+  "date": "2026-06-06",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "append_only": true,
+  "notes": "Global table (get_connection, not get_canvas_connection); tenant_id + classification for RLS. Registered in APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py. For existing databases: python tools/db/migrate.py --mark-applied 181"
+}

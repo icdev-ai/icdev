@@ -482,6 +482,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "integrity_findings",
         "integrity_verdicts",
         "integrity_authorizations",
+        # EQO Centralized Logging (eqo-log-01, NIST AU — log rows are immutable
+        # evidence; retention via bulk time-window pruning, never row mutation)
+        "centralized_logs",
     ]
 
     if tool_name == "Bash":
