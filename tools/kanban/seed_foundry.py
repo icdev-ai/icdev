@@ -12,7 +12,9 @@ signal engines and the Kanban autonomous build dispatcher.
 Locked design (2026-06-05): layer on existing engines (no new scanners) | FULLY AUTONOMOUS
 (no human concept gate -> automated novelty/score/rate/circuit-breaker gates are load-bearing)
 | continuous Genesis reflex cadence | full-Canvas output (8-component completeness gate) |
-self-vetting (SIPA integrity + security/coherence gate on ACF-generated code before merge).
+self-vetting (SIPA integrity + security/coherence gate on ACF-generated code before merge) |
+**CoT/CoD-assisted decisions** (multi-LLM Chain-of-Debate go/no-go approval gate +
+Chain-of-Thought synthesis assist via tools/llm/chain_orchestrator, deterministic-first fallback).
 
 Task IDs follow the <prefix><epic>-<N> convention (acf-<epic>-NN) so
 tools/project/kanban_project_sync.py auto-populates args/projects.yaml.
@@ -64,11 +66,16 @@ TASKS = [
             "(min_novelty, min_composite). Add RATE_LIMITS (max_concepts_per_cycle=1, "
             "max_active_projects=2) and CIRCUIT (vv_fail_rate, window). Add FEATURE_FLAG = "
             "'ICDEV_FOUNDRY_ENABLED'. Derive CHECK_* helper strings (e.g. CHECK_CONCEPT_STATUS = "
-            "\"','\".join(...)) for db/init_db.py to consume. Pure-stdlib, no side effects on import."
+            "\"','\".join(...)) for db/init_db.py to consume. Pure-stdlib, no side effects on import. "
+            "NOTE: this ACF root is gated on SIPA's final gate (sipa-vv-04) because ACF self-vets its "
+            "autonomously-generated code via SIPA (tools/integrity/engine.py) at acf-engine-03 — SIPA "
+            "must exist first."
         ),
         "task_type": "build",
         "priority": "critical",
-        "depends_on_task_id": None,
+        # Cross-project dependency: ACF builds after SIPA (its self-vet engine). sipa-vv-04 is SIPA's
+        # final V&V gate; the dispatcher gates on parent done/decomposed regardless of project.
+        "depends_on_task_id": "sipa-vv-04",
     },
     {
         "id": "acf-db-02",
@@ -128,7 +135,9 @@ TASKS = [
             "signal caps), synthesis (min_cluster_size, llm_assist.enabled:false), novelty "
             "(catalog_sources: canvas_registry/manifests/goals, min_novelty), scoring (weights + "
             "min_composite), rate_limits (max_concepts_per_cycle, max_active_projects), circuit "
-            "(vv_fail_rate, window), self_vet (require_integrity_gate:true, require_security_gate:true). "
+            "(vv_fail_rate, window), self_vet (require_integrity_gate:true, require_security_gate:true), "
+            "deliberation (enabled:true, approval_mode:'cod', synthesis_mode:'cot', "
+            "function:'capability_deliberation', min_confidence, defer_to_score_on_fallback:true). "
             "Requires acf-db-03."
         ),
         "task_type": "chore",
@@ -185,11 +194,13 @@ TASKS = [
             "run's foundry_signals into candidate product concepts using DETERMINISTIC keyword "
             "co-occurrence (reuse the trend_detector co-occurrence idea), min_cluster_size from config. "
             "For each cluster emit a concept draft {name, slug, problem_statement, proposed_capability, "
-            "target_users, cluster_signal_ids}. OPTIONAL LLM-assist (tools/llm/router.LLMRouter, "
-            "function 'capability_synthesis') refines the prose when enabled, with the deterministic "
-            "cluster summary as the ALWAYS-present fallback (air-gap safe). Persist concepts "
-            "status='proposed'. Tests: N clustered signals about one theme produce exactly one concept; "
-            "LLM-disabled path still yields a concept. Requires acf-harvest-02."
+            "target_users, cluster_signal_ids}. OPTIONAL Chain-of-Thought synthesis assist (delegated to "
+            "tools/foundry/deliberator.reason_concept in acf-deliberate-01, which wraps "
+            "tools/llm/chain_orchestrator CoT reasoner->critic->synthesizer) refines the prose when "
+            "config.deliberation.enabled, with the deterministic cluster summary as the ALWAYS-present "
+            "fallback (air-gap safe). Persist concepts status='proposed'. Tests: N clustered signals "
+            "about one theme produce exactly one concept; LLM-disabled path still yields a concept. "
+            "Requires acf-harvest-02."
         ),
         "task_type": "build",
         "priority": "critical",
@@ -234,6 +245,41 @@ TASKS = [
     },
 
     # =========================================================================
+    # EPIC deliberate — CoT/CoD multi-LLM decision layer (the autonomous arbiter)
+    # =========================================================================
+    {
+        "id": "acf-deliberate-01",
+        "title": "deliberator.py — CoD go/no-go approval gate + CoT synthesis assist (deterministic fallback)",
+        "description": (
+            "Create tools/foundry/deliberator.py wrapping tools/llm/chain_orchestrator.ChainOrchestrator. "
+            "Two public functions, both deterministic-first / air-gap-safe: "
+            "(1) reason_concept(cluster, draft) -> {concept, rationale, trace_id}: optional Chain-of-"
+            "Thought (invoke_chain_of_thought, function from config.deliberation.function) that refines a "
+            "deterministic concept draft (reasoner->critic->synthesizer); returns the input draft "
+            "unchanged when deliberation disabled or no provider. "
+            "(2) deliberate_concept(concept, signals, scores) -> {decision in (build,reject,defer), "
+            "confidence 0..1, rationale, trace_id}: the GO/NO-GO APPROVAL GATE via Chain-of-Debate "
+            "(invoke_chain_of_debate) — distinct debater lenses (market advocate, technical-feasibility "
+            "skeptic, compliance/risk officer, novelty/differentiation critic) -> neutral judge verdict. "
+            "It runs ONLY on concepts that already PASSED the deterministic novelty+score thresholds "
+            "(acf-synth-02/03), so it is the final qualitative gate before autonomous build and never "
+            "burns debate cost on obvious rejects. Persist the judge verdict + cot_trace_id on "
+            "foundry_concepts; chain telemetry lands in llm_chain_telemetry automatically. FALLBACK: when "
+            "chain_orchestration disabled / LLM unavailable / cost-cap hit, and "
+            "config.deliberation.defer_to_score_on_fallback, return decision='build' iff the deterministic "
+            "composite passed (i.e. the score gate stands alone) — ACF NEVER blocks on LLM availability. "
+            "Register a 'capability_deliberation' function route + a CoD per_function override "
+            "(num_debaters, debate_rounds) in args/llm_config.yaml. Tests (no real LLM — monkeypatch the "
+            "orchestrator per the shim-aware pattern): a mocked judge 'reject' blocks a score-passing "
+            "concept; deliberation-disabled defers to the score gate; a mocked debate records cot_trace_id. "
+            "Requires acf-synth-03."
+        ),
+        "task_type": "build",
+        "priority": "critical",
+        "depends_on_task_id": "acf-synth-03",
+    },
+
+    # =========================================================================
     # EPIC design — spec + canonical task-graph templater + emitter
     # =========================================================================
     {
@@ -271,7 +317,7 @@ TASKS = [
             "constants-derived CHECKs, append-only registration, 8-component gate) AND set an "
             "integrity_gate marker so the dispatcher self-vets via SIPA. Tests: a contract with 2 modules "
             "+ mcp + reflex yields a valid chained graph whose every depends_on_task_id resolves. "
-            "Requires acf-design-01."
+            "Requires acf-design-01 (and acf-deliberate-01 must have approved the concept first)."
         ),
         "task_type": "build",
         "priority": "critical",
@@ -306,11 +352,14 @@ TASKS = [
             "Create tools/foundry/engine.py. run_cycle(dry_run=False) -> {run_id, harvested, "
             "concepts_proposed, concepts_approved, tasks_emitted, status}. Open a foundry_runs row, then "
             "orchestrate harvester.harvest -> synthesizer.synthesize -> novelty_gate.score_novelty -> "
-            "scorer.score -> (for scored survivors) spec_generator.generate_spec -> "
-            "task_graph.build_task_graph -> seeder.emit, persisting at each step and finalizing the "
-            "foundry_runs row. All DB access via get_connection with tenant_id/classification. Tests: a "
-            "seeded signal set drives a full cycle that emits a concept's tasks; a duplicate-only signal "
-            "set emits zero (all rejected). Requires acf-design-03."
+            "scorer.score -> (for deterministic survivors only) deliberator.deliberate_concept CoD "
+            "GO/NO-GO gate -> (for decision=='build') spec_generator.generate_spec -> "
+            "task_graph.build_task_graph -> seeder.emit, persisting at each step (including the judge "
+            "verdict + cot_trace_id) and finalizing the foundry_runs row. synthesizer.synthesize is "
+            "CoT-assisted via deliberator.reason_concept. All DB access via get_connection with tenant_id/"
+            "classification. Tests: a seeded signal set drives a full cycle that emits a concept's tasks "
+            "(deliberator mocked 'build'); a duplicate-only set emits zero; a mocked 'reject' verdict "
+            "blocks a score-passing concept. Requires acf-design-03; secondary acf-deliberate-01."
         ),
         "task_type": "build",
         "priority": "critical",
@@ -512,8 +561,9 @@ TASKS = [
         "title": "Comprehensive CodeLens — every tools/foundry/ module PASSes the quality gate",
         "description": (
             "Run tools/analysis/code_lens.py --file <m> --json on EVERY module under tools/foundry/ "
-            "(constants, db/init_db, harvester, synthesizer, novelty_gate, scorer, spec_generator, "
-            "task_graph, seeder, engine, learner, blueprint) and on tools/iqe/adapters/foundry.py and "
+            "(constants, db/init_db, harvester, synthesizer, novelty_gate, scorer, deliberator, "
+            "spec_generator, task_graph, seeder, engine, learner, blueprint) and on "
+            "tools/iqe/adapters/foundry.py and "
             "tools/genesis/reflexes/foundry_cycle.py. Refactor any module that does not PASS "
             "(maintainability >= 0.6, zero critical smells, no high cyclomatic complexity) without "
             "changing behavior (tests stay green). Record before/after gate results in the completion "

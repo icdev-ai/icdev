@@ -441,6 +441,13 @@ routing:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
 
+  # DIC knowledge-graph anomaly severity grading (aiify-opp-6090:
+  # hardcoded_threshold -> anomaly_detection). Cheap, bounded judgement layered
+  # on top of the deterministic threshold baseline; falls back to heuristics.
+  dic_anomaly_severity:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
   oracle_triage_nlp_extract:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
