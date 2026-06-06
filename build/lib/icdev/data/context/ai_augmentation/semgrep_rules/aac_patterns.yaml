@@ -1,0 +1,324 @@
+# CUI // SP-CTI
+# AAC Semgrep rules — each rule maps to one of the 8 AI-augmentable code patterns.
+# metadata.aac_pattern must match an entry in PATTERN_TYPES (constants.py).
+# metadata.ai_paradigm must match an entry in AI_PARADIGMS (constants.py).
+
+rules:
+  # ── Pattern 1: nested_conditionals ──────────────────────────────────────────
+  - id: aac-nested-conditionals-py
+    patterns:
+      - pattern: |
+          if ...:
+            if ...:
+              if ...:
+                ...
+    message: "Nested conditionals (depth ≥ 3) — replace with ML classifier"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aac_pattern: nested_conditionals
+      ai_paradigm: ml_classifier
+
+  - id: aac-nested-conditionals-java
+    patterns:
+      - pattern: |
+          if (...) {
+            if (...) {
+              if (...) {
+                ...
+              }
+            }
+          }
+    message: "Nested conditionals (depth ≥ 3) — replace with ML classifier"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: nested_conditionals
+      ai_paradigm: ml_classifier
+
+  - id: aac-nested-conditionals-go
+    patterns:
+      - pattern: |
+          if ... {
+            if ... {
+              if ... {
+                ...
+              }
+            }
+          }
+    message: "Nested conditionals (depth ≥ 3) — replace with ML classifier"
+    languages: [go]
+    severity: INFO
+    metadata:
+      aac_pattern: nested_conditionals
+      ai_paradigm: ml_classifier
+
+  # ── Pattern 2: regex_user_input ──────────────────────────────────────────────
+  - id: aac-regex-user-input-py
+    patterns:
+      - pattern: re.$FUNC($PATTERN, $INPUT)
+    message: "Regex-based user input parsing — replace with NLP/NLU extractor"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aac_pattern: regex_user_input
+      ai_paradigm: nlp_extractor
+
+  - id: aac-regex-user-input-java
+    patterns:
+      - pattern: Pattern.compile($X).matcher($Y)
+    message: "Regex-based user input parsing — replace with NLP/NLU extractor"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: regex_user_input
+      ai_paradigm: nlp_extractor
+
+  # ── Pattern 3: string_template_rendering ─────────────────────────────────────
+  - id: aac-string-template-rendering-py
+    pattern-either:
+      - pattern: render_template($TEMPLATE, ...)
+      - pattern: $ENV.get_template($X).render(...)
+      - pattern: Template($X).render(...)
+    message: "Static template rendering — replace with LLM generation"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aac_pattern: string_template_rendering
+      ai_paradigm: llm_generation
+
+  - id: aac-string-template-rendering-java
+    pattern-either:
+      - pattern: $TEMPLATE.process($WRITER, $MODEL)
+      - pattern: $ENGINE.getTemplate($X).process(...)
+    message: "Static template rendering — replace with LLM generation"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: string_template_rendering
+      ai_paradigm: llm_generation
+
+  # ── Pattern 4: scheduled_cron ────────────────────────────────────────────────
+  - id: aac-scheduled-cron-py-apscheduler
+    patterns:
+      - pattern: $SCHEDULER.add_job(...)
+    message: "APScheduler job — replace with agentic trigger"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aac_pattern: scheduled_cron
+      ai_paradigm: agentic_trigger
+
+  - id: aac-scheduled-cron-py-celery
+    patterns:
+      - pattern: |
+          @$APP.task(...)
+          def $FUNC(...):
+              ...
+    message: "Celery periodic task — replace with agentic trigger"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aac_pattern: scheduled_cron
+      ai_paradigm: agentic_trigger
+
+  - id: aac-scheduled-cron-java
+    patterns:
+      - pattern: |
+          @Scheduled(...)
+          public $RET $FUNC(...) { ... }
+    message: "Spring @Scheduled — replace with agentic trigger"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: scheduled_cron
+      ai_paradigm: agentic_trigger
+
+  # ── Pattern 5: hardcoded_threshold ───────────────────────────────────────────
+  - id: aac-hardcoded-threshold-py
+    pattern-either:
+      - pattern: $X > $LITERAL
+      - pattern: $X < $LITERAL
+      - pattern: $X >= $LITERAL
+      - pattern: $X <= $LITERAL
+    pattern-where-python: "isinstance($LITERAL, (int, float)) and $LITERAL not in (0, 1)"
+    message: "Hardcoded numeric threshold — replace with ML anomaly detection"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aac_pattern: hardcoded_threshold
+      ai_paradigm: anomaly_detection
+
+  # ── Pattern 6: db_render_notify_chain ────────────────────────────────────────
+  - id: aac-db-render-notify-chain-py
+    patterns:
+      - pattern: |
+          def $FUNC(...):
+            ...
+            $RESULT = $DB.$QUERY(...)
+            ...
+            $MSG = render_template(...)
+            ...
+            $NOTIFIER.send(...)
+            ...
+    message: "DB→render→notify pipeline — replace with LLM synthesis"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aac_pattern: db_render_notify_chain
+      ai_paradigm: llm_generation
+
+  # ── Pattern 7: keyword_list_search ───────────────────────────────────────────
+  - id: aac-keyword-list-search-py
+    patterns:
+      - pattern: $X in [$A, $B, $C, ...]
+    message: "Keyword list membership check — replace with vector semantic search"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aac_pattern: keyword_list_search
+      ai_paradigm: embedding_retrieval
+
+  - id: aac-keyword-list-search-java
+    patterns:
+      - pattern: $LIST.contains($X)
+    message: "List contains check — replace with vector semantic search"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: keyword_list_search
+      ai_paradigm: embedding_retrieval
+
+  # ── Pattern 8: large_rule_table ──────────────────────────────────────────────
+  - id: aac-large-rule-table-py
+    patterns:
+      - pattern: |
+          {$K1: $V1, $K2: $V2, $K3: $V3, $K4: $V4, $K5: $V5,
+           $K6: $V6, $K7: $V7, $K8: $V8, $K9: $V9, $K10: $V10, ...}
+    message: "Large rule/dispatch table — replace with ML/RL decision agent"
+    languages: [python]
+    severity: INFO
+    metadata:
+      aac_pattern: large_rule_table
+      ai_paradigm: decision_agent
+
+  - id: aac-large-rule-table-java
+    patterns:
+      - pattern: |
+          Map<$K, $V> $MAP = new HashMap<>();
+          $MAP.put(...);
+          $MAP.put(...);
+          $MAP.put(...);
+          $MAP.put(...);
+          $MAP.put(...);
+          $MAP.put(...);
+          $MAP.put(...);
+          $MAP.put(...);
+          $MAP.put(...);
+          $MAP.put(...);
+    message: "Large rule table (HashMap) — replace with ML/RL decision agent"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: large_rule_table
+      ai_paradigm: decision_agent
+
+  # ── Spring Boot / JVM supplemental rules ─────────────────────────────────────
+
+  # Spring @Pattern annotation — regex constraint on a field
+  - id: aac-spring-pattern-annotation-java
+    pattern-either:
+      - pattern: |
+          @Pattern(regexp = $X)
+          private $TYPE $FIELD;
+      - pattern: |
+          @Pattern(regexp = $X, message = $MSG)
+          private $TYPE $FIELD;
+    message: "Spring @Pattern regexp constraint — replace with NLP-based phone/address normalizer"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: regex_user_input
+      ai_paradigm: nlp_extractor
+
+  # Spring Data derived query: findBy…StartingWith / Containing / Like
+  - id: aac-spring-data-keyword-query-java
+    pattern-either:
+      - pattern: $REPO.findBy$X($QUERY, ...)
+    message: "Spring Data keyword query — replace with embedding-based semantic search"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: keyword_list_search
+      ai_paradigm: embedding_search
+
+  # PageRequest with a numeric literal page size
+  - id: aac-pagerequest-literal-java
+    patterns:
+      - pattern: PageRequest.of($PAGE, $N)
+      - metavariable-regex:
+          metavariable: $N
+          regex: '^\d+$'
+    message: "Hardcoded page size in PageRequest.of — replace with adaptive pagination"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: hardcoded_threshold
+      ai_paradigm: anomaly_detection
+
+  # Spring @Scheduled — move to agentic workflow trigger
+  - id: aac-spring-scheduled-java
+    pattern: |
+      @Scheduled(...)
+      $MODS $RETURN $METHOD(...) {
+        ...
+      }
+    message: "@Scheduled annotation — replace with agentic workflow trigger"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: scheduled_cron
+      ai_paradigm: agentic_trigger
+
+  # @ModelAttribute returning a static collection from a repository
+  - id: aac-modelattribute-static-collection-java
+    pattern: |
+      @ModelAttribute($X)
+      public $COLLECTION $METHOD() {
+        return $REPO.$FIND(...);
+      }
+    message: "@ModelAttribute static collection — replace with ML-assisted suggestion/autocomplete"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: large_rule_table
+      ai_paradigm: decision_agent
+
+  # Spring MVC controller returning a Thymeleaf/JSP view name
+  - id: aac-spring-mvc-view-return-java
+    patterns:
+      - pattern: return "$VIEW";
+      - pattern-not: return "redirect:$X";
+      - pattern-not: return "forward:$X";
+    message: "Static MVC view-name return — consider LLM-augmented content generation"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: string_template_rendering
+      ai_paradigm: llm_generation
+
+  # Nested if depth ≥ 2 (Spring validation chains)
+  - id: aac-nested-conditionals-java-depth2
+    patterns:
+      - pattern: |
+          if (...) {
+            if (...) {
+              ...
+            }
+          }
+    message: "Nested conditionals (depth ≥ 2) in Java — replace with ML classifier"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: nested_conditionals
+      ai_paradigm: ml_classifier

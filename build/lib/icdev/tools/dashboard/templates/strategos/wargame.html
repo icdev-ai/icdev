@@ -1,0 +1,1315 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Wargame Dashboard — Strategos{% endblock %}
+
+{% block content %}
+<style>
+  .wg-grid { display:grid; grid-template-columns:260px 1fr; gap:1rem; align-items:start; }
+  .wg-sidebar { display:flex; flex-direction:column; gap:.75rem; }
+  .wg-main    { display:flex; flex-direction:column; gap:1rem; }
+  .tab-bar    { display:flex; gap:.5rem; border-bottom:1px solid var(--border-color); margin-bottom:1rem; }
+  .tab-btn    { padding:.45rem .9rem; background:none; border:none; color:var(--text-secondary);
+                font-size:.85rem; cursor:pointer; border-bottom:2px solid transparent; transition:.15s; }
+  .tab-btn.active { color:var(--text-primary); border-bottom-color:var(--accent-color,#3b82f6); }
+  .tab-panel  { display:none; }
+  .tab-panel.active { display:block; }
+
+  /* Metric row */
+  .metric-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:.5rem; margin-bottom:1rem; }
+  .metric-box { background:var(--bg-secondary); border:1px solid var(--border-color);
+                border-radius:6px; padding:.6rem .75rem; }
+  .metric-box .val { font-size:1.35rem; font-weight:700; }
+  .metric-box .lbl { font-size:.75rem; color:var(--text-muted); margin-top:.1rem; }
+  .blue { color:#3b82f6; } .red { color:#ef4444; } .parity { color:#f59e0b; }
+
+  /* OODA table */
+  .ooda-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+  .ooda-table th { background:var(--bg-secondary); padding:.4rem .6rem; text-align:left;
+                   border:1px solid var(--border-color); color:var(--text-secondary); font-weight:600; }
+  .ooda-table td { padding:.35rem .6rem; border:1px solid var(--border-color); }
+  .adv-badge { display:inline-block; padding:.1rem .4rem; border-radius:3px; font-size:.7rem; font-weight:700; }
+  .adv-blue   { background:rgba(59,130,246,.15); color:#3b82f6; }
+  .adv-red    { background:rgba(239,68,68,.15);  color:#ef4444; }
+  .adv-parity { background:rgba(245,158,11,.15); color:#f59e0b; }
+
+  /* Lanchester */
+  .lch-controls { display:flex; gap:.75rem; flex-wrap:wrap; margin-bottom:.75rem; align-items:flex-end; }
+  .lch-controls label { display:flex; flex-direction:column; font-size:.78rem; color:var(--text-secondary); gap:.2rem; }
+  .lch-controls input, .lch-controls select {
+    padding:.3rem .5rem; background:var(--bg-secondary); border:1px solid var(--border-color);
+    color:var(--text-primary); border-radius:4px; width:90px; }
+
+  /* Blotto */
+  .blotto-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:.5rem; }
+  .blotto-field { background:var(--bg-secondary); border:1px solid var(--border-color);
+                  border-radius:6px; padding:.5rem; text-align:center; font-size:.8rem; }
+  .blotto-field .bf-label { color:var(--text-muted); font-size:.7rem; margin-bottom:.25rem; }
+  .blotto-field .bf-blue  { color:#3b82f6; font-weight:700; }
+  .blotto-field .bf-red   { color:#ef4444; font-weight:700; }
+  .blotto-field .bf-win   { font-size:.65rem; margin-top:.2rem; font-weight:600; }
+
+  /* Nash */
+  .nash-matrix { border-collapse:collapse; font-size:.82rem; }
+  .nash-matrix th, .nash-matrix td { border:1px solid var(--border-color); padding:.45rem .65rem; text-align:center; }
+  .nash-matrix th { background:var(--bg-secondary); color:var(--text-secondary); }
+  .nash-eq { outline:2px solid #f59e0b; background:rgba(245,158,11,.08); }
+
+  /* COA */
+  .coa-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+  .coa-table th { background:var(--bg-secondary); padding:.4rem .6rem; text-align:left;
+                  border:1px solid var(--border-color); font-weight:600; color:var(--text-secondary); }
+  .coa-table td { padding:.35rem .6rem; border:1px solid var(--border-color); }
+  .score-bar { height:6px; background:var(--border-color); border-radius:3px; overflow:hidden; }
+  .score-bar-fill { height:100%; border-radius:3px; background:#3b82f6; }
+
+  /* Radar container */
+  .radar-wrap { position:relative; max-width:380px; margin:0 auto; }
+
+  /* Scenario sidebar list */
+  .sc-item { padding:.5rem .7rem; border-radius:5px; cursor:pointer; font-size:.85rem;
+             border:1px solid transparent; transition:.1s; }
+  .sc-item:hover { background:var(--bg-secondary); }
+  .sc-item.selected { border-color:var(--accent-color,#3b82f6); background:rgba(59,130,246,.08); }
+  .sc-item .sc-name { font-weight:600; }
+  .sc-item .sc-meta { font-size:.72rem; color:var(--text-muted); margin-top:.1rem; }
+
+  @media(max-width:800px) { .wg-grid { grid-template-columns:1fr; } }
+
+  /* Turn log */
+  .turn-log-scroll { max-height:280px; overflow-y:auto; }
+  .turn-log-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+  .turn-log-table th { background:var(--bg-secondary); padding:.4rem .6rem; text-align:right;
+                       border:1px solid var(--border-color); color:var(--text-secondary); font-weight:600; }
+  .turn-log-table th:first-child { text-align:center; }
+  .turn-log-table td { padding:.35rem .6rem; border:1px solid var(--border-color); text-align:right; }
+  .turn-log-table td:first-child { text-align:center; font-weight:700; }
+  .turn-row-blue { background:rgba(16,185,129,.08); }
+  .turn-row-red  { background:rgba(239,68,68,.07); }
+
+  /* AI Assessment */
+  @keyframes wg-spin { to { transform: rotate(360deg); } }
+  .wg-spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--border-color);
+                border-top-color:var(--accent-color,#3b82f6); border-radius:50%;
+                animation:wg-spin .7s linear infinite; vertical-align:middle; }
+  .risk-chip  { display:inline-block; padding:.22rem .6rem; border-radius:4px; font-size:.78rem; font-weight:700; }
+  .risk-low      { background:rgba(16,185,129,.15);  color:#10b981; }
+  .risk-med,
+  .risk-medium   { background:rgba(245,158,11,.15);  color:#f59e0b; }
+  .risk-high     { background:rgba(239,68,68,.15);   color:#ef4444; }
+  .risk-critical { background:rgba(220,38,38,.2);    color:#dc2626; }
+</style>
+
+<div class="page-header page-header--compact">
+  <h1>Wargame Dashboard</h1>
+  <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Strategos</a>
+</div>
+
+<div class="wg-grid">
+  <!-- ── Sidebar: scenario list ── -->
+  <div class="wg-sidebar">
+    <div class="card" style="padding:.75rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+        <span style="font-weight:600;font-size:.9rem">Scenarios</span>
+        <button onclick="openNewScenarioModal()"
+          style="padding:.25rem .6rem;background:var(--accent-color,#3b82f6);color:#fff;
+                 border:none;border-radius:4px;font-size:.75rem;cursor:pointer">+ New</button>
+      </div>
+      {% if wargames %}
+      {% for g in wargames %}
+      {% set is_active = active_game and active_game.id == g.id %}
+      <div class="sc-item {% if is_active %}selected{% endif %}"
+           onclick="location.href='/strategos/wargame?id={{ g.id }}'"
+           data-unit-id="{{ g.id }}"
+           data-unit-name="{{ g.name }}"
+           data-side="{{ g.state or 'pending' }}"
+           data-strength="{{ g.blue_strength|default(0) }}v{{ g.red_strength|default(0) }}">
+        <div class="sc-name">{{ g.name }}</div>
+        <div class="sc-meta">
+          <span style="color:{% if g.state=='active' %}#10b981{% elif g.state=='complete' %}#3b82f6{% elif g.state=='paused' %}#f59e0b{% else %}var(--text-muted){% endif %}">{{ (g.state or 'pending')|title }}</span>
+          · {{ (g.created_at or '')[:10] }}
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <p style="font-size:.82rem;color:var(--text-muted);text-align:center;padding:.5rem">No scenarios yet.</p>
+      {% endif %}
+    </div>
+
+    <!-- OODA summary mini -->
+    {% if ooda %}
+    <div class="card" style="padding:.75rem">
+      <div style="font-weight:600;font-size:.85rem;margin-bottom:.5rem">OODA Advantage</div>
+      {% for domain in domains %}
+      {% set adv = ooda.advantage.get(domain, 'parity') %}
+      <div style="display:flex;justify-content:space-between;align-items:center;
+                  padding:.2rem 0;border-bottom:1px solid var(--border-color);font-size:.78rem">
+        <span style="color:var(--text-secondary)">{{ domain|upper }}</span>
+        <span class="adv-badge adv-{{ adv }}">{{ adv|upper }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Main panel ── -->
+  <div class="wg-main">
+    {% if active_game %}
+    <div class="card" style="padding:.75rem">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <h2 style="margin:0;font-size:1.1rem">{{ active_game.name }}</h2>
+          {% if active_game.scenario %}
+          <p style="font-size:.85rem;color:var(--text-secondary);margin:.25rem 0 0">{{ active_game.scenario }}</p>
+          {% endif %}
+        </div>
+        <span style="padding:.2rem .6rem;border-radius:4px;font-size:.78rem;font-weight:700;
+          background:{% if (active_game.state or 'pending')=='active' %}rgba(16,185,129,.15){% elif (active_game.state or 'pending')=='complete' %}rgba(59,130,246,.15){% else %}var(--bg-secondary){% endif %};
+          color:{% if (active_game.state or 'pending')=='active' %}#10b981{% elif (active_game.state or 'pending')=='complete' %}#3b82f6{% else %}var(--text-muted){% endif %}">
+          {{ (active_game.state or 'pending')|title }}
+        </span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-top:.6rem;font-size:.82rem">
+        <div><span style="color:var(--text-muted)">Blue Force:</span>
+          <span class="blue">{{ active_game.blue_force or '—' }}</span></div>
+        <div><span style="color:var(--text-muted)">Red Force:</span>
+          <span class="red">{{ active_game.red_force or '—' }}</span></div>
+        {% if active_game.outcome %}
+        <div style="grid-column:1/-1"><span style="color:var(--text-muted)">Outcome:</span> {{ active_game.outcome }}</div>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <div class="card" style="padding:2rem;text-align:center;color:var(--text-muted)">
+      No scenario selected. Create one or click a scenario on the left.
+    </div>
+    {% endif %}
+
+    <!-- AI Assessment -->
+    {% if active_game %}
+    <div class="card" style="padding:.75rem">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:600;font-size:.9rem">AI Assessment</span>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <button id="ai-collapse-btn" onclick="toggleAiPanel()"
+            style="display:none;padding:.2rem .55rem;background:none;border:1px solid var(--border-color);
+                   color:var(--text-secondary);border-radius:4px;font-size:.75rem;cursor:pointer">
+            ▲ Collapse
+          </button>
+          <button id="ai-assess-btn" onclick="getAiAssessment()"
+            style="padding:.3rem .75rem;background:var(--accent-color,#3b82f6);color:#fff;
+                   border:none;border-radius:4px;font-size:.8rem;cursor:pointer;
+                   display:flex;align-items:center;gap:.35rem">
+            ⚡ Get AI Assessment
+          </button>
+        </div>
+      </div>
+
+      <div id="ai-spinner" style="display:none;padding:.65rem 0;font-size:.85rem;color:var(--text-secondary)">
+        <span class="wg-spinner" style="margin-right:.4rem"></span>
+        Generating strategic assessment&hellip;
+      </div>
+
+      <div id="ai-result" style="display:none;margin-top:.75rem;
+           border-top:1px solid var(--border-color);padding-top:.75rem"></div>
+    </div>
+    {% endif %}
+
+    <!-- Tabs -->
+    <div class="card" style="padding:.75rem">
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('ooda',this)">OODA Tempo</button>
+        <button class="tab-btn" onclick="switchTab('lanchester',this)">Lanchester</button>
+        <button class="tab-btn" onclick="switchTab('blotto',this)">Blotto</button>
+        <button class="tab-btn" onclick="switchTab('nash',this)">Nash Matrix</button>
+        <button class="tab-btn" onclick="switchTab('coa',this)">COA</button>
+      </div>
+
+      <!-- ── OODA Tab ── -->
+      <div id="tab-ooda" class="tab-panel active">
+        {% if ooda %}
+        <div style="display:grid;grid-template-columns:1fr 380px;gap:1rem;align-items:start">
+          <div>
+            <table class="ooda-table">
+              <thead>
+                <tr>
+                  <th>Domain</th>
+                  <th>Phase</th>
+                  <th class="blue">Blue (s)</th>
+                  <th class="red">Red (s)</th>
+                  <th>Advantage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for domain in domains %}
+                {% set bd = ooda.blue.get(domain, {}) %}
+                {% set rd = ooda.red.get(domain, {}) %}
+                {% set adv = ooda.advantage.get(domain, 'parity') %}
+                {% for phase in ['observe','orient','decide','act'] %}
+                <tr {% if loop.first %}style="border-top:2px solid var(--border-color)"{% endif %}>
+                  {% if loop.first %}
+                  <td rowspan="4" style="font-weight:700;vertical-align:middle;color:var(--text-secondary)">{{ domain|upper }}</td>
+                  {% endif %}
+                  <td style="color:var(--text-muted);font-size:.78rem">{{ phase|title }}</td>
+                  <td class="blue">{{ bd.get(phase ~ '_latency_s', '—') }}</td>
+                  <td class="red">{{ rd.get(phase ~ '_latency_s', '—') }}</td>
+                  {% if loop.first %}
+                  <td rowspan="4" style="vertical-align:middle;text-align:center">
+                    <span class="adv-badge adv-{{ adv }}">{{ adv|upper }}</span>
+                    <div style="font-size:.7rem;color:var(--text-muted);margin-top:.3rem">
+                      B {{ (bd.get('tempo_score',0)*100)|round(0)|int }}% / R {{ (rd.get('tempo_score',0)*100)|round(0)|int }}%
+                    </div>
+                    <div style="font-size:.7rem;color:var(--text-muted)">
+                      Cycle: <span class="blue">{{ bd.get('cycle_time_s','—') }}s</span> / <span class="red">{{ rd.get('cycle_time_s','—') }}s</span>
+                    </div>
+                  </td>
+                  {% endif %}
+                </tr>
+                {% endfor %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Radar chart -->
+          <div>
+            <div style="font-weight:600;font-size:.85rem;margin-bottom:.5rem;text-align:center">Tempo Advantage by Domain</div>
+            <div class="radar-wrap">
+              <canvas id="ooda-radar" height="320"></canvas>
+            </div>
+            <div style="display:flex;gap:1rem;justify-content:center;font-size:.75rem;margin-top:.5rem">
+              <span><span style="display:inline-block;width:10px;height:10px;background:rgba(59,130,246,.7);border-radius:2px;margin-right:4px"></span>Blue Force</span>
+              <span><span style="display:inline-block;width:10px;height:10px;background:rgba(239,68,68,.7);border-radius:2px;margin-right:4px"></span>Red Force</span>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <p style="color:var(--text-muted)">No OODA data available.</p>
+        {% endif %}
+      </div>
+
+      <!-- ── Lanchester Tab ── -->
+      <div id="tab-lanchester" class="tab-panel">
+        <!-- Mode toggle -->
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+          <span style="font-size:.8rem;color:var(--text-secondary)">Mode:</span>
+          <div style="display:flex;border:1px solid var(--border-color,#4b5563);border-radius:5px;overflow:hidden">
+            <button id="lch-mode-det" onclick="setLchMode('det')"
+              style="padding:.25rem .7rem;font-size:.78rem;cursor:pointer;border:none;
+                     background:var(--accent-color,#3b82f6);color:#fff;transition:.15s">Deterministic</button>
+            <button id="lch-mode-mc" onclick="setLchMode('mc')"
+              style="padding:.25rem .7rem;font-size:.78rem;cursor:pointer;border:none;
+                     background:var(--bg-tertiary,#374151);color:var(--text-secondary,#9ca3af);transition:.15s">Monte Carlo</button>
+          </div>
+          <!-- Iterations slider — shown only in MC mode -->
+          <div id="lch-mc-opts" style="display:none;align-items:center;gap:.4rem">
+            <label style="font-size:.78rem;color:var(--text-secondary)">Iterations:
+              <input type="range" id="lch-iterations" min="100" max="2000" step="100" value="500"
+                oninput="document.getElementById('lch-iter-val').textContent=this.value"
+                style="vertical-align:middle;width:100px">
+              <span id="lch-iter-val" style="font-size:.78rem;color:var(--text-primary,#fff);min-width:2.5rem;display:inline-block">500</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="lch-controls">
+          <label>Model
+            <select id="lch-model">
+              <option value="square">Square Law</option>
+              <option value="linear">Linear Law</option>
+            </select>
+          </label>
+          <label>Blue Strength
+            <input type="number" id="lch-b0" value="{{ (lanchester_data.b0 if lanchester_data else 1000)|int }}" min="1" max="100000">
+          </label>
+          <label>Red Strength
+            <input type="number" id="lch-r0" value="{{ (lanchester_data.r0 if lanchester_data else 800)|int }}" min="1" max="100000">
+          </label>
+          <label>β (Blue loss rate)
+            <input type="number" id="lch-beta" value="{{ (lanchester_data.beta if lanchester_data else 0.01) }}" step="0.001" min="0.001" max="0.5">
+          </label>
+          <label>ρ (Red loss rate)
+            <input type="number" id="lch-rho" value="{{ (lanchester_data.rho if lanchester_data else 0.01) }}" step="0.001" min="0.001" max="0.5">
+          </label>
+          <button onclick="loadFromOrbat()"
+            style="padding:.3rem .8rem;background:var(--bg-tertiary,#374151);color:var(--text-primary,#fff);
+                   border:1px solid var(--border-color,#4b5563);border-radius:4px;font-size:.8rem;cursor:pointer;height:32px">Load from ORBAT</button>
+          <button onclick="runLanchester()"
+            style="padding:.3rem .8rem;background:var(--accent-color,#3b82f6);color:#fff;
+                   border:none;border-radius:4px;font-size:.8rem;cursor:pointer;height:32px">Run Simulation</button>
+        </div>
+        <div id="lch-orbat-status" style="margin-bottom:.5rem;font-size:.8rem"></div>
+
+        <div id="lch-result" style="margin-bottom:.75rem;font-size:.85rem"></div>
+        <!-- Victory probability badge (Monte Carlo only) -->
+        <div id="lch-mc-badge" style="display:none;margin-bottom:.6rem"></div>
+        <div style="position:relative;height:260px">
+          <canvas id="lch-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- ── Blotto Tab ── -->
+      <div id="tab-blotto" class="tab-panel">
+        <div style="display:flex;gap:.75rem;align-items:flex-end;margin-bottom:.75rem;flex-wrap:wrap">
+          <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.2rem;color:var(--text-secondary)">
+            Battlefields
+            <input type="number" id="blotto-k" value="5" min="2" max="10"
+              style="padding:.3rem;width:70px;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+          </label>
+          <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.2rem;color:var(--text-secondary)">
+            Blue Total
+            <input type="number" id="blotto-btotal" value="100" min="10"
+              style="padding:.3rem;width:80px;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+          </label>
+          <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.2rem;color:var(--text-secondary)">
+            Red Total
+            <input type="number" id="blotto-rtotal" value="80" min="10"
+              style="padding:.3rem;width:80px;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+          </label>
+          <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.2rem;color:var(--text-secondary)">
+            Blue Strategy
+            <select id="blotto-bstrat"
+              style="padding:.3rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+              <option value="uniform">Uniform</option>
+              <option value="concentrated">Concentrated</option>
+              <option value="optimal">Optimal (bleed-off)</option>
+            </select>
+          </label>
+          <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.2rem;color:var(--text-secondary)">
+            Red Strategy
+            <select id="blotto-rstrat"
+              style="padding:.3rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+              <option value="uniform">Uniform</option>
+              <option value="concentrated">Concentrated</option>
+              <option value="optimal">Optimal (bleed-off)</option>
+            </select>
+          </label>
+          <button onclick="runBlotto()"
+            style="padding:.3rem .8rem;background:var(--accent-color,#3b82f6);color:#fff;
+                   border:none;border-radius:4px;font-size:.8rem;cursor:pointer">Run</button>
+        </div>
+        <div id="blotto-result" style="margin-bottom:.5rem;font-size:.85rem"></div>
+        <div id="blotto-fields" class="blotto-grid"></div>
+        <div style="position:relative;height:220px;margin-top:.75rem">
+          <canvas id="blotto-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- ── Nash Tab ── -->
+      <div id="tab-nash" class="tab-panel">
+        <div style="margin-bottom:.75rem">
+          <p style="font-size:.82rem;color:var(--text-secondary);margin:0 0 .5rem">
+            Enter a 2×2 payoff matrix. Each cell shows (Blue payoff, Red payoff).
+            Nash equilibria are highlighted in amber.
+          </p>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;max-width:400px;margin-bottom:.75rem">
+            <div></div>
+            <div style="font-size:.78rem;color:var(--text-secondary);text-align:center;padding:.3rem">Red: A</div>
+            <div style="font-size:.78rem;color:var(--text-secondary);text-align:center;padding:.3rem">Red: B</div>
+            <div></div>
+            <div style="font-size:.78rem;color:var(--text-secondary);display:flex;align-items:center">Blue: X</div>
+            <input id="nash-bx-ra" type="number" value="3" step="0.5"
+              style="padding:.3rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;text-align:center">
+            <input id="nash-bx-rb" type="number" value="0" step="0.5"
+              style="padding:.3rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;text-align:center">
+            <div></div>
+            <div style="font-size:.78rem;color:var(--text-secondary);display:flex;align-items:center">Blue: Y</div>
+            <input id="nash-by-ra" type="number" value="5" step="0.5"
+              style="padding:.3rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;text-align:center">
+            <input id="nash-by-rb" type="number" value="1" step="0.5"
+              style="padding:.3rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;text-align:center">
+            <div></div>
+          </div>
+          <button onclick="runNash()"
+            style="padding:.3rem .8rem;background:var(--accent-color,#3b82f6);color:#fff;
+                   border:none;border-radius:4px;font-size:.8rem;cursor:pointer">Solve</button>
+        </div>
+        <div id="nash-result"></div>
+      </div>
+
+      <!-- ── COA Tab ── -->
+      <div id="tab-coa" class="tab-panel">
+        <div style="display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:220px">
+            <label style="font-size:.78rem;color:var(--text-secondary);display:block;margin-bottom:.25rem">Add COA</label>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+              <input id="coa-name" placeholder="COA Name"
+                style="padding:.35rem .6rem;background:var(--bg-secondary);border:1px solid var(--border-color);
+                       color:var(--text-primary);border-radius:4px;flex:1;min-width:140px">
+              <select id="coa-side"
+                style="padding:.35rem .6rem;background:var(--bg-secondary);border:1px solid var(--border-color);
+                       color:var(--text-primary);border-radius:4px">
+                <option value="blue">Blue</option>
+                <option value="red">Red</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.4rem;flex:2;min-width:280px">
+            {% for c in coa_criteria %}
+            <label style="font-size:.72rem;color:var(--text-secondary);display:flex;flex-direction:column;gap:.1rem">
+              {{ c|replace('_',' ')|title }}
+              <input type="range" min="0" max="1" step="0.05" value="0.5"
+                id="coa-{{ c }}" style="width:100%">
+              <span id="coa-{{ c }}-val" style="font-size:.68rem;color:var(--text-muted)">0.50</span>
+            </label>
+            {% endfor %}
+          </div>
+          <button onclick="addCOA()"
+            style="padding:.35rem .8rem;background:var(--accent-color,#3b82f6);color:#fff;
+                   border:none;border-radius:4px;font-size:.8rem;cursor:pointer;align-self:flex-end">Add</button>
+        </div>
+
+        <!-- COA table -->
+        <div id="coa-table-wrap">
+          {% if coa_rows %}
+          <table class="coa-table">
+            <thead>
+              <tr>
+                <th>Side</th><th>Name</th>
+                {% for c in coa_criteria %}<th>{{ c|replace('_',' ')|title }}</th>{% endfor %}
+                <th>Score</th><th>Rank</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in coa_rows %}
+              <tr>
+                <td><span class="adv-badge adv-{{ row.side }}">{{ (row.side or 'blue')|upper }}</span></td>
+                <td style="font-weight:600">{{ row.name }}</td>
+                {% for c in coa_criteria %}
+                <td>
+                  <div style="display:flex;align-items:center;gap:.35rem">
+                    <div class="score-bar" style="width:48px">
+                      <div class="score-bar-fill" style="width:{{ (row.get(c, 0.5) * 100)|round(0)|int }}%;
+                        background:{% if row.side=='blue' %}#3b82f6{% else %}#ef4444{% endif %}"></div>
+                    </div>
+                    <span style="font-size:.75rem">{{ row.get(c, 0.5) }}</span>
+                  </div>
+                </td>
+                {% endfor %}
+                <td style="font-weight:700;color:{% if row.side=='blue' %}#3b82f6{% else %}#ef4444{% endif %}">
+                  {{ row.get('composite_score', 0)|round(3) }}</td>
+                <td style="text-align:center">#{{ loop.index }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p style="color:var(--text-muted);font-size:.85rem">No COA entries yet. Add one above.</p>
+          {% endif %}
+        </div>
+
+        <!-- COA radar -->
+        {% if coa_rows %}
+        <div style="margin-top:1rem;max-width:380px">
+          <div style="font-weight:600;font-size:.85rem;margin-bottom:.5rem">COA Criteria Comparison</div>
+          <canvas id="coa-radar" height="300"></canvas>
+        </div>
+        {% endif %}
+      </div>
+    </div><!-- /card -->
+
+    <!-- ── Turn Controls ── -->
+    {% if active_game %}
+    <div class="card" style="padding:.75rem">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:600;font-size:.9rem">Turn Controls</span>
+        <div style="display:flex;gap:.6rem;align-items:center">
+          <span id="turn-status" style="font-size:.8rem;color:var(--text-muted)"></span>
+          <button id="advance-btn" onclick="advanceTurn()"
+            style="padding:.3rem .75rem;background:var(--accent-color,#3b82f6);color:#fff;
+                   border:none;border-radius:4px;font-size:.8rem;cursor:pointer;
+                   display:flex;align-items:center;gap:.3rem">
+            &#9654; Advance Turn
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Turn Log ── -->
+    <div class="card" style="padding:.75rem">
+      <div style="font-weight:600;font-size:.9rem;margin-bottom:.6rem">Turn Log</div>
+      <div class="turn-log-scroll">
+        <table class="turn-log-table">
+          <thead>
+            <tr>
+              <th>Turn</th>
+              <th class="blue">Blue Strength</th>
+              <th class="red">Red Losses</th>
+              <th class="red">Red Strength</th>
+              <th class="blue">Blue Losses</th>
+              <th>Tempo &Delta;</th>
+            </tr>
+          </thead>
+          <tbody id="turn-log-body">
+            <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:.75rem">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+  </div><!-- /wg-main -->
+</div><!-- /wg-grid -->
+
+<!-- New Scenario Modal -->
+<div id="new-sc-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:8px;padding:1.5rem;width:420px;max-width:95vw">
+    <h3 style="margin:0 0 1rem">New Wargame Scenario</h3>
+    <div style="display:flex;flex-direction:column;gap:.6rem">
+      <input id="sc-name" placeholder="Scenario name" style="padding:.4rem .6rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+      <input id="sc-scenario" placeholder="Scenario description" style="padding:.4rem .6rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+      <input id="sc-blue" placeholder="Blue Force label" style="padding:.4rem .6rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+      <input id="sc-red"  placeholder="Red Force label"  style="padding:.4rem .6rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+        <input id="sc-b0" type="number" placeholder="Blue strength" value="1000" style="padding:.4rem .6rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+        <input id="sc-r0" type="number" placeholder="Red strength"  value="800"  style="padding:.4rem .6rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+      </div>
+    </div>
+    <div style="display:flex;gap:.5rem;margin-top:1rem;justify-content:flex-end">
+      <button onclick="closeNewScenarioModal()"
+        style="padding:.4rem .9rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;cursor:pointer">Cancel</button>
+      <button onclick="createScenario()"
+        style="padding:.4rem .9rem;background:var(--accent-color,#3b82f6);color:#fff;border:none;border-radius:4px;cursor:pointer">Create</button>
+    </div>
+  </div>
+</div>
+
+<script src="/strategos/static/js/chart.min.js"></script>
+<script>
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
+  if (id === 'lanchester') initLanchester();
+  if (id === 'blotto') initBlotto();
+}
+
+// ── OODA Radar ────────────────────────────────────────────────────────────
+{% if ooda and ooda.radar_data %}
+(function() {
+  const ctx = document.getElementById('ooda-radar');
+  if (!ctx) return;
+  new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: {{ ooda.radar_data.labels | tojson }},
+      datasets: [
+        {
+          label: 'Blue Force',
+          data: {{ ooda.radar_data.blue | tojson }},
+          backgroundColor: 'rgba(59,130,246,.15)',
+          borderColor: 'rgba(59,130,246,.8)',
+          borderWidth: 2,
+          pointBackgroundColor: 'rgba(59,130,246,.9)',
+          pointRadius: 4,
+        },
+        {
+          label: 'Red Force',
+          data: {{ ooda.radar_data.red | tojson }},
+          backgroundColor: 'rgba(239,68,68,.12)',
+          borderColor: 'rgba(239,68,68,.8)',
+          borderWidth: 2,
+          pointBackgroundColor: 'rgba(239,68,68,.9)',
+          pointRadius: 4,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      scales: {
+        r: {
+          min: 0, max: 100,
+          ticks: { stepSize: 20, font: { size: 10 }, color: 'rgba(150,150,160,.7)' },
+          grid:  { color: 'rgba(150,150,160,.2)' },
+          angleLines: { color: 'rgba(150,150,160,.2)' },
+          pointLabels: { font: { size: 11, weight: '600' } },
+        }
+      },
+      plugins: { legend: { display: false } },
+    }
+  });
+})();
+{% endif %}
+
+// ── Lanchester ────────────────────────────────────────────────────────────
+let lchChart = null;
+{% if lanchester_data %}
+const _initLchData = {{ lanchester_data | tojson }};
+{% else %}
+const _initLchData = null;
+{% endif %}
+const _wargameId = {{ (active_game.id if active_game else 'null') | tojson }};
+
+function initLanchester() {
+  if (_initLchData) renderLanchester(_initLchData);
+}
+
+function loadFromOrbat() {
+  const wid = _wargameId || 'default';
+  const statusEl = document.getElementById('lch-orbat-status');
+  statusEl.textContent = 'Loading…';
+  statusEl.style.color = 'var(--text-muted,#9ca3af)';
+  fetch(`/wargame/${wid}/orbat-seed`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        statusEl.textContent = data.error;
+        statusEl.style.color = 'var(--danger-color,#ef4444)';
+        return;
+      }
+      if (data.unit_count === 0) {
+        statusEl.innerHTML = '<span style="color:var(--warning-color,#f59e0b)">⚠ No ORBAT data for this conflict</span>';
+        return;
+      }
+      document.getElementById('lch-b0').value = data.blue_strength;
+      document.getElementById('lch-r0').value = data.red_strength;
+      statusEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.35rem;padding:.15rem .5rem;background:var(--bg-tertiary,#374151);border-radius:4px;color:var(--text-secondary,#d1d5db)">Loaded from ${data.unit_count} ORBAT units</span>`;
+    })
+    .catch(() => {
+      statusEl.textContent = 'Failed to load ORBAT data';
+      statusEl.style.color = 'var(--danger-color,#ef4444)';
+    });
+}
+
+let _lchMode = 'det';
+
+function setLchMode(mode) {
+  _lchMode = mode;
+  const detBtn = document.getElementById('lch-mode-det');
+  const mcBtn  = document.getElementById('lch-mode-mc');
+  const mcOpts = document.getElementById('lch-mc-opts');
+  if (mode === 'mc') {
+    detBtn.style.background = 'var(--bg-tertiary,#374151)';
+    detBtn.style.color = 'var(--text-secondary,#9ca3af)';
+    mcBtn.style.background  = 'var(--accent-color,#3b82f6)';
+    mcBtn.style.color = '#fff';
+    mcOpts.style.display = 'flex';
+  } else {
+    detBtn.style.background = 'var(--accent-color,#3b82f6)';
+    detBtn.style.color = '#fff';
+    mcBtn.style.background  = 'var(--bg-tertiary,#374151)';
+    mcBtn.style.color = 'var(--text-secondary,#9ca3af)';
+    mcOpts.style.display = 'none';
+    document.getElementById('lch-mc-badge').style.display = 'none';
+  }
+}
+
+function runLanchester() {
+  const model = document.getElementById('lch-model').value;
+  const b0    = parseFloat(document.getElementById('lch-b0').value) || 1000;
+  const r0    = parseFloat(document.getElementById('lch-r0').value) || 800;
+  const beta  = parseFloat(document.getElementById('lch-beta').value) || 0.01;
+  const rho   = parseFloat(document.getElementById('lch-rho').value) || 0.01;
+  const wid   = _wargameId || 'default';
+  const resultEl = document.getElementById('lch-result');
+
+  if (_lchMode === 'mc') {
+    const iters = parseInt(document.getElementById('lch-iterations').value) || 500;
+    resultEl.innerHTML = '<span style="color:var(--text-muted)">Running Monte Carlo…</span>';
+    fetch(`/wargame/${wid}/lanchester/monte-carlo?b0=${b0}&r0=${r0}&beta=${beta}&rho=${rho}&iterations=${iters}`)
+      .then(r => r.json())
+      .then(renderLanchesterMC)
+      .catch(e => { resultEl.textContent = 'Error: ' + e; });
+  } else {
+    fetch(`/api/strategos/wargame/${wid}/lanchester?model=${model}&b0=${b0}&r0=${r0}&beta=${beta}&rho=${rho}`)
+      .then(r => r.json())
+      .then(renderLanchester)
+      .catch(e => { resultEl.textContent = 'Error: ' + e; });
+  }
+}
+
+function renderLanchester(d) {
+  document.getElementById('lch-mc-badge').style.display = 'none';
+  const resultEl = document.getElementById('lch-result');
+  if (d.error) { resultEl.textContent = 'Error: ' + d.error; return; }
+  const wc = d.winner === 'blue' ? '#3b82f6' : d.winner === 'red' ? '#ef4444' : '#f59e0b';
+  resultEl.innerHTML = `<span style="font-weight:700;color:${wc}">Winner: ${d.winner.toUpperCase()}</span>`
+    + ` &nbsp;|&nbsp; Margin: ${d.margin_pct}%`
+    + ` &nbsp;|&nbsp; Final Blue: ${d.final_b} / Red: ${d.final_r}`
+    + ` &nbsp;|&nbsp; <span style="color:var(--text-muted);font-size:.78rem">${d.model}</span>`;
+
+  const ctx = document.getElementById('lch-chart').getContext('2d');
+  if (lchChart) lchChart.destroy();
+  lchChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: d.t_series,
+      datasets: [
+        {
+          label: `Blue (β=${d.beta})`,
+          data: d.b_series,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,.08)',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: true,
+        },
+        {
+          label: `Red (ρ=${d.rho})`,
+          data: d.r_series,
+          borderColor: '#ef4444',
+          backgroundColor: 'rgba(239,68,68,.06)',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: true,
+        },
+      ]
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { title: { display: true, text: 'Time Steps' }, ticks: { maxTicksLimit: 10 } },
+        y: { title: { display: true, text: 'Force Strength' }, min: 0 },
+      },
+      plugins: { legend: { position: 'top' } },
+    }
+  });
+}
+
+function renderLanchesterMC(d) {
+  const resultEl = document.getElementById('lch-result');
+  const badgeEl  = document.getElementById('lch-mc-badge');
+  if (d.error) { resultEl.textContent = 'Error: ' + d.error; badgeEl.style.display = 'none'; return; }
+
+  resultEl.innerHTML =
+    `<span style="color:var(--text-secondary);font-size:.8rem">`
+    + `Monte Carlo &nbsp;·&nbsp; ${d.iterations} iterations &nbsp;·&nbsp; σ=${d.sigma}`
+    + ` &nbsp;·&nbsp; Final p50 Blue: ${d.p50_blue} / Red: ${d.p50_red}</span>`;
+
+  const pct = Math.round(d.victory_prob_blue * 100);
+  const badgeColor = pct >= 60 ? '#3b82f6' : pct <= 40 ? '#ef4444' : '#f59e0b';
+  badgeEl.style.display = 'block';
+  badgeEl.innerHTML =
+    `<span style="display:inline-flex;align-items:center;gap:.45rem;padding:.3rem .75rem;`
+    + `border-radius:6px;background:${badgeColor}22;border:1px solid ${badgeColor}55;font-size:.85rem;font-weight:600;color:${badgeColor}">`
+    + `Blue wins ${pct}% of simulations`
+    + `</span>`;
+
+  const ctx = document.getElementById('lch-chart').getContext('2d');
+  if (lchChart) lchChart.destroy();
+  lchChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: d.t_series,
+      datasets: [
+        // Blue band: p95 fills down to p5
+        {
+          label: 'Blue p95',
+          data: d.p95_blue_series,
+          borderColor: 'transparent',
+          backgroundColor: 'rgba(59,130,246,0.18)',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: '+1',
+        },
+        {
+          label: 'Blue p5',
+          data: d.p5_blue_series,
+          borderColor: 'transparent',
+          backgroundColor: 'transparent',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: false,
+        },
+        {
+          label: `Blue p50 (β=${d.beta})`,
+          data: d.p50_blue_series,
+          borderColor: '#3b82f6',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+        },
+        // Red band: p95 fills down to p5
+        {
+          label: 'Red p95',
+          data: d.p95_red_series,
+          borderColor: 'transparent',
+          backgroundColor: 'rgba(239,68,68,0.15)',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: '+1',
+        },
+        {
+          label: 'Red p5',
+          data: d.p5_red_series,
+          borderColor: 'transparent',
+          backgroundColor: 'transparent',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: false,
+        },
+        {
+          label: `Red p50 (ρ=${d.rho})`,
+          data: d.p50_red_series,
+          borderColor: '#ef4444',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+        },
+      ]
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { title: { display: true, text: 'Time Steps' }, ticks: { maxTicksLimit: 10 } },
+        y: { title: { display: true, text: 'Force Strength' }, min: 0 },
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            filter: item => item.text.includes('p50'),
+          },
+        },
+      },
+    }
+  });
+}
+
+// ── Blotto ────────────────────────────────────────────────────────────────
+let blottoChart = null;
+
+function _allocate(total, k, strategy) {
+  let alloc = Array(k).fill(0);
+  if (strategy === 'uniform') {
+    const each = total / k;
+    alloc = alloc.map(() => Math.round(each));
+  } else if (strategy === 'concentrated') {
+    const primary = Math.round(total * 0.6);
+    const secondary = Math.round(total * 0.4 / (k - 1));
+    alloc[0] = primary;
+    for (let i = 1; i < k; i++) alloc[i] = secondary;
+  } else {
+    // optimal: descending weighted
+    let remaining = total;
+    for (let i = 0; i < k; i++) {
+      const w = (k - i) / ((k * (k + 1)) / 2);
+      alloc[i] = i < k - 1 ? Math.round(total * w) : remaining;
+      remaining -= alloc[i];
+    }
+  }
+  return alloc;
+}
+
+function initBlotto() { runBlotto(); }
+
+function runBlotto() {
+  const k       = parseInt(document.getElementById('blotto-k').value) || 5;
+  const btotal  = parseFloat(document.getElementById('blotto-btotal').value) || 100;
+  const rtotal  = parseFloat(document.getElementById('blotto-rtotal').value) || 80;
+  const bstrat  = document.getElementById('blotto-bstrat').value;
+  const rstrat  = document.getElementById('blotto-rstrat').value;
+
+  const bforces = _allocate(btotal, k, bstrat);
+  const rforces = _allocate(rtotal, k, rstrat);
+
+  const wid = _wargameId || 'default';
+  fetch(`/api/strategos/wargame/${wid}/blotto`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ blue_forces: bforces, red_forces: rforces }),
+  })
+    .then(r => r.json())
+    .then(d => renderBlotto(d, bforces, rforces))
+    .catch(e => { document.getElementById('blotto-result').textContent = 'Error: ' + e; });
+}
+
+function renderBlotto(d, bforces, rforces) {
+  const resultEl = document.getElementById('blotto-result');
+  const wc = d.overall_winner === 'blue' ? '#3b82f6' : d.overall_winner === 'red' ? '#ef4444' : '#f59e0b';
+  resultEl.innerHTML = `<span style="font-weight:700;color:${wc}">Winner: ${(d.overall_winner||'parity').toUpperCase()}</span>`
+    + ` &nbsp;|&nbsp; Blue wins: <span style="color:#3b82f6;font-weight:600">${d.blue_wins}</span>`
+    + ` / Red wins: <span style="color:#ef4444;font-weight:600">${d.red_wins}</span>`
+    + ` / Ties: ${d.ties}`
+    + ` &nbsp;|&nbsp; Score: <span class="blue">${d.blue_score}%</span> vs <span class="red">${d.red_score}%</span>`;
+
+  const fieldsEl = document.getElementById('blotto-fields');
+  fieldsEl.innerHTML = (d.battlefields || []).map((f, i) => {
+    const wColor = f.winner === 'blue' ? '#3b82f6' : f.winner === 'red' ? '#ef4444' : '#f59e0b';
+    return `<div class="blotto-field">
+      <div class="bf-label">BF ${f.battlefield}</div>
+      <div class="bf-blue">${bforces[i]||0}</div>
+      <div style="font-size:.65rem;color:var(--text-muted)">vs</div>
+      <div class="bf-red">${rforces[i]||0}</div>
+      <div class="bf-win" style="color:${wColor}">${f.winner.toUpperCase()}</div>
+    </div>`;
+  }).join('');
+
+  const ctx = document.getElementById('blotto-chart').getContext('2d');
+  if (blottoChart) blottoChart.destroy();
+  blottoChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: (d.battlefields || []).map(f => `BF${f.battlefield}`),
+      datasets: [
+        { label: 'Blue', data: bforces, backgroundColor: 'rgba(59,130,246,.7)', borderRadius: 3 },
+        { label: 'Red',  data: rforces, backgroundColor: 'rgba(239,68,68,.65)', borderRadius: 3 },
+      ]
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: { y: { title: { display: true, text: 'Troops' } } },
+      plugins: { legend: { position: 'top' } },
+    }
+  });
+}
+
+// ── Nash ──────────────────────────────────────────────────────────────────
+function runNash() {
+  const bxra = parseFloat(document.getElementById('nash-bx-ra').value) || 0;
+  const bxrb = parseFloat(document.getElementById('nash-bx-rb').value) || 0;
+  const byra = parseFloat(document.getElementById('nash-by-ra').value) || 0;
+  const byrb = parseFloat(document.getElementById('nash-by-rb').value) || 0;
+
+  // Symmetric zero-sum: Red payoff = negative of Blue payoff
+  const payoffBlue = [[bxra, bxrb], [byra, byrb]];
+  const payoffRed  = [[-bxra, -bxrb], [-byra, -byrb]];
+
+  const wid = _wargameId || 'default';
+  fetch(`/api/strategos/wargame/${wid}/nash`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      payoff_blue: payoffBlue,
+      payoff_red:  payoffRed,
+      strategy_names: [['Attack (X)','Defend (Y)'],['Advance (A)','Hold (B)']],
+      name: 'User matrix',
+    }),
+  })
+    .then(r => r.json())
+    .then(renderNash)
+    .catch(e => { document.getElementById('nash-result').textContent = 'Error: ' + e; });
+}
+
+function renderNash(d) {
+  const el = document.getElementById('nash-result');
+  if (d.error) { el.innerHTML = `<p style="color:#ef4444">${d.error}</p>`; return; }
+
+  const bStrats = (d.payoff_blue || []).map((_, i) => `Blue-${i+1}`);
+  const rStrats = (d.payoff_blue[0] || []).map((_, j) => `Red-${j+1}`);
+  const eqSet = new Set((d.pure_equilibria || []).map(e => `${e.row},${e.col}`));
+
+  let html = `<table class="nash-matrix"><thead><tr><th></th>`;
+  rStrats.forEach(r => { html += `<th class="red">${r}</th>`; });
+  html += `</tr></thead><tbody>`;
+
+  (d.payoff_blue || []).forEach((row, ri) => {
+    html += `<tr><th class="blue">${bStrats[ri]}</th>`;
+    row.forEach((bv, ci) => {
+      const rv = (d.payoff_red[ri] || [])[ci] ?? '—';
+      const isEq = eqSet.has(`${ri},${ci}`);
+      html += `<td ${isEq ? 'class="nash-eq"' : ''}>`;
+      html += `<span style="color:#3b82f6">${bv}</span>,<span style="color:#ef4444">${rv}</span>`;
+      if (isEq) html += ` <span style="font-size:.65rem;color:#f59e0b">★NE</span>`;
+      html += `</td>`;
+    });
+    html += `</tr>`;
+  });
+  html += `</tbody></table>`;
+
+  if (d.pure_equilibria && d.pure_equilibria.length) {
+    html += `<p style="font-size:.82rem;margin-top:.5rem">
+      <strong>Pure Nash:</strong> `;
+    html += d.pure_equilibria.map(e =>
+      `(${e.blue_strategy} vs ${e.red_strategy}) → Blue: ${e.blue_payoff}, Red: ${e.red_payoff}`
+    ).join('; ');
+    html += `</p>`;
+  } else {
+    html += `<p style="font-size:.82rem;margin-top:.5rem;color:var(--text-muted)">No pure-strategy Nash equilibrium.</p>`;
+  }
+
+  if (d.mixed_equilibrium) {
+    const m = d.mixed_equilibrium;
+    html += `<p style="font-size:.82rem">
+      <strong>Mixed NE:</strong>
+      Blue plays X with p=${m.blue_mix_p0}, Y with p=${m.blue_mix_p1} ·
+      Red plays A with p=${m.red_mix_p0}, B with p=${m.red_mix_p1}
+    </p>`;
+  }
+
+  el.innerHTML = html;
+}
+
+// ── COA slider labels ─────────────────────────────────────────────────────
+{% for c in coa_criteria %}
+(function() {
+  const sl = document.getElementById('coa-{{ c }}');
+  const vl = document.getElementById('coa-{{ c }}-val');
+  if (sl && vl) sl.addEventListener('input', () => { vl.textContent = parseFloat(sl.value).toFixed(2); });
+})();
+{% endfor %}
+
+function addCOA() {
+  const wid = _wargameId;
+  if (!wid) { alert('Select a scenario first.'); return; }
+  const name = document.getElementById('coa-name').value.trim();
+  if (!name) { alert('Enter a COA name.'); return; }
+  const side = document.getElementById('coa-side').value;
+  const body = { name, side };
+  {% for c in coa_criteria %}
+  body['{{ c }}'] = parseFloat(document.getElementById('coa-{{ c }}').value);
+  {% endfor %}
+
+  fetch(`/api/strategos/wargame/${wid}/coa`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { alert('Error: ' + d.error); return; }
+      location.reload();
+    })
+    .catch(e => alert('Error: ' + e));
+}
+
+// ── COA Radar ─────────────────────────────────────────────────────────────
+{% if coa_rows %}
+(function() {
+  const ctx = document.getElementById('coa-radar');
+  if (!ctx) return;
+  const criteria = {{ coa_criteria | tojson }};
+  const rows = {{ coa_rows | tojson }};
+  const datasets = rows.slice(0, 6).map((r, i) => {
+    const colors = ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#ec4899'];
+    const c = colors[i % colors.length];
+    return {
+      label: r.name + ' (' + r.side + ')',
+      data: criteria.map(cr => parseFloat(r[cr] || 0.5) * 100),
+      backgroundColor: c.replace('#','rgba(') + ',.12)',
+      borderColor: c,
+      borderWidth: 1.5,
+      pointRadius: 3,
+    };
+  });
+  new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: criteria.map(c => c.replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase())),
+      datasets,
+    },
+    options: {
+      responsive: true,
+      scales: {
+        r: {
+          min: 0, max: 100,
+          ticks: { stepSize: 25, font: { size: 9 }, color: 'rgba(150,150,160,.6)' },
+          grid: { color: 'rgba(150,150,160,.2)' },
+          angleLines: { color: 'rgba(150,150,160,.2)' },
+          pointLabels: { font: { size: 10 } },
+        }
+      },
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, boxWidth: 12 } } },
+    }
+  });
+})();
+{% endif %}
+
+// ── Scenario modal ────────────────────────────────────────────────────────
+function openNewScenarioModal() {
+  document.getElementById('new-sc-modal').style.display = 'flex';
+}
+function closeNewScenarioModal() {
+  document.getElementById('new-sc-modal').style.display = 'none';
+}
+function createScenario() {
+  const name = document.getElementById('sc-name').value.trim();
+  if (!name) { alert('Name required.'); return; }
+  fetch('/api/strategos/wargame', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name,
+      scenario:    document.getElementById('sc-scenario').value.trim(),
+      blue_force:  document.getElementById('sc-blue').value.trim(),
+      red_force:   document.getElementById('sc-red').value.trim(),
+      blue_strength: parseFloat(document.getElementById('sc-b0').value) || 1000,
+      red_strength:  parseFloat(document.getElementById('sc-r0').value) || 800,
+      state: 'pending',
+    }),
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { alert('Error: ' + d.error); return; }
+      location.href = '/strategos/wargame?id=' + d.id;
+    })
+    .catch(e => alert('Error: ' + e));
+}
+
+// ── AI Assessment ─────────────────────────────────────────────────────────
+function _escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleAiPanel() {
+  const result = document.getElementById('ai-result');
+  const btn    = document.getElementById('ai-collapse-btn');
+  const hidden = result.style.display === 'none';
+  result.style.display = hidden ? 'block' : 'none';
+  btn.textContent = hidden ? '▲ Collapse' : '▼ Expand';
+}
+
+function getAiAssessment() {
+  const wid = _wargameId;
+  if (!wid) { alert('Select a scenario first.'); return; }
+
+  const assessBtn   = document.getElementById('ai-assess-btn');
+  const spinner     = document.getElementById('ai-spinner');
+  const resultEl    = document.getElementById('ai-result');
+  const collapseBtn = document.getElementById('ai-collapse-btn');
+
+  assessBtn.disabled = true;
+  spinner.style.display = 'block';
+  resultEl.style.display = 'none';
+
+  fetch(`/api/strategos/wargame/${wid}/assess`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      spinner.style.display = 'none';
+      assessBtn.disabled = false;
+      resultEl.style.display = 'block';
+      collapseBtn.style.display = 'inline-block';
+      collapseBtn.textContent = '▲ Collapse';
+      _renderAiAssessment(d, resultEl);
+    })
+    .catch(e => {
+      spinner.style.display = 'none';
+      assessBtn.disabled = false;
+      resultEl.style.display = 'block';
+      collapseBtn.style.display = 'inline-block';
+      resultEl.innerHTML = `<p style="color:#ef4444;font-size:.85rem">LLM unavailable — ${_escHtml(e.message)}</p>`;
+    });
+}
+
+function _renderAiAssessment(d, el) {
+  if (d.error && !d.summary) {
+    el.innerHTML = `<p style="color:#ef4444;font-size:.85rem">LLM unavailable — ${_escHtml(d.error)}</p>`;
+    return;
+  }
+
+  const riskMap = {
+    LOW:      'risk-low',
+    MEDIUM:   'risk-med',
+    MED:      'risk-med',
+    HIGH:     'risk-high',
+    CRITICAL: 'risk-critical',
+  };
+  const risk      = (d.risk_level || 'MEDIUM').toUpperCase();
+  const riskClass = riskMap[risk] || 'risk-med';
+
+  const llmBadge = d.llm_active
+    ? `<span style="font-size:.7rem;padding:.1rem .4rem;border-radius:3px;
+                    background:rgba(59,130,246,.1);color:#3b82f6">LLM ON</span>`
+    : `<span style="font-size:.7rem;padding:.1rem .4rem;border-radius:3px;
+                    background:rgba(245,158,11,.1);color:#f59e0b">STUB</span>`;
+
+  let html = `
+    <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.6rem">
+      <span class="risk-chip ${riskClass}">RISK: ${risk}</span>
+      <span style="padding:.22rem .6rem;border-radius:4px;font-size:.78rem;font-weight:600;
+                   background:var(--bg-secondary);border:1px solid var(--border-color)">
+        Rec COA: ${_escHtml(d.recommended_coa || '—')}
+      </span>
+      ${llmBadge}
+    </div>
+    <p style="font-size:.85rem;margin:0 0 .45rem;color:var(--text-primary)">${_escHtml(d.summary || '')}</p>
+    <p style="font-size:.8rem;color:var(--text-secondary);margin:0;font-style:italic">${_escHtml(d.rationale || '')}</p>`;
+
+  if (d.error) {
+    html += `<p style="font-size:.72rem;color:var(--text-muted);margin-top:.35rem">Note: ${_escHtml(d.error)}</p>`;
+  }
+
+  el.innerHTML = html;
+}
+
+// ── Turn Controls & Turn Log ──────────────────────────────────────────────
+function advanceTurn() {
+  const wid = _wargameId;
+  if (!wid) { alert('Select a scenario first.'); return; }
+  const btn      = document.getElementById('advance-btn');
+  const statusEl = document.getElementById('turn-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Advancing…';
+  fetch(`/wargame/${wid}/turn/advance`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false;
+      if (d.error) { statusEl.textContent = d.error; return; }
+      statusEl.textContent = 'Turn ' + (d.turn_number || '') + ' complete';
+      loadTurnLog();
+    })
+    .catch(e => {
+      btn.disabled = false;
+      statusEl.textContent = 'Error: ' + e.message;
+    });
+}
+
+function loadTurnLog() {
+  const wid = _wargameId;
+  if (!wid) return;
+  fetch(`/wargame/${wid}/turns`)
+    .then(r => r.json())
+    .then(renderTurnLog)
+    .catch(() => {
+      const body = document.getElementById('turn-log-body');
+      if (body) body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ef4444">Failed to load turns.</td></tr>';
+    });
+}
+
+function renderTurnLog(data) {
+  const body = document.getElementById('turn-log-body');
+  if (!body) return;
+  const turns = data.turns || [];
+  if (!turns.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:.75rem">No turns recorded yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = turns.map(t => {
+    const blueStr = t.blue_remaining != null ? t.blue_remaining : 0;
+    const redStr  = t.red_remaining  != null ? t.red_remaining  : 0;
+    const rowClass = blueStr >= redStr ? 'turn-row-blue' : 'turn-row-red';
+    const td = t.tempo_delta;
+    const tdStr = td != null ? (td > 0 ? '+' : '') + td : '—';
+    const tdColor = td > 0 ? '#3b82f6' : td < 0 ? '#ef4444' : 'var(--text-muted)';
+    return `<tr class="${rowClass}">
+      <td>${t.turn_number}</td>
+      <td style="color:#3b82f6">${blueStr}</td>
+      <td style="color:#ef4444">${t.red_losses ?? '—'}</td>
+      <td style="color:#ef4444">${redStr}</td>
+      <td style="color:#3b82f6">${t.blue_losses ?? '—'}</td>
+      <td style="color:${tdColor}">${tdStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+if (_wargameId) loadTurnLog();
+
+// Init charts that need the tab to be visible on load
+initLanchester();
+
+// Right-click scenario cards → Ask STRATEGOS
+document.querySelectorAll('.sc-item[data-unit-id]').forEach(function(el) {
+  el.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    if (typeof window.sgChat === 'undefined') return;
+    window.sgChat.showMenu(e.clientX, e.clientY, {
+      type: 'orbat_unit',
+      unit_id: el.dataset.unitId,
+      label: el.dataset.unitName,
+      side: 'Wargame Scenario — ' + (el.dataset.side || 'pending'),
+      strength: el.dataset.strength || 'N/A',
+    });
+  });
+});
+</script>
+{% endblock %}

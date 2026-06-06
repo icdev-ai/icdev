@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}AADC Templates — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;">📋 Agentic AI Templates</h2>
+    <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">Ready-made agentic AI system architectures — click Apply to load into a new canvas</p>
+  </div>
+  <a href="/agentic-ai/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Back to AADC</a>
+</div>
+
+<!-- Solution Packs callout -->
+<div style="background:linear-gradient(135deg,#1e1b4b 0%,#0f1e3d 100%);border:1px solid #4338ca;border-radius:10px;padding:20px 24px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
+  <div>
+    <div style="color:#eaeaea;font-size:15px;font-weight:600;margin-bottom:4px;">🚀 New: Agentic AI Solution Packs</div>
+    <div style="color:#94a3b8;font-size:12px;">7 industry-ready packs — pre-placed nodes, pre-seeded risk register, compliance baseline &amp; MITRE ATLAS scenarios. Open and deploy.</div>
+  </div>
+  <div style="display:flex;gap:8px;flex-shrink:0;">
+    <a href="/agentic-ai/quick-start" style="background:#6366f1;color:#fff;padding:8px 18px;border-radius:5px;text-decoration:none;font-size:13px;font-weight:600;white-space:nowrap;">⚡ Quick Start</a>
+    <a href="/agentic-ai/solutions" style="background:#4338ca;color:#c7d2fe;padding:8px 18px;border-radius:5px;text-decoration:none;font-size:13px;white-space:nowrap;">Browse Packs →</a>
+  </div>
+</div>
+
+<!-- Category filter -->
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;" id="category-filters">
+  <button onclick="filterCategory('all')" class="cat-btn active" data-cat="all"
+    style="background:#6366f1;color:#fff;padding:5px 14px;border:none;border-radius:20px;cursor:pointer;font-size:12px;">All</button>
+  {% set cats = templates|map(attribute='category')|unique|list %}
+  {% for cat in cats %}
+  <button onclick="filterCategory('{{ cat }}')" class="cat-btn" data-cat="{{ cat }}"
+    style="background:#1e3a6e;color:#7ab3f0;padding:5px 14px;border:none;border-radius:20px;cursor:pointer;font-size:12px;">{{ cat|title|replace('-',' ') }}</button>
+  {% endfor %}
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;" id="template-grid">
+  {% for t in templates %}
+  <div class="template-card" data-category="{{ t.category }}"
+    style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:18px;display:flex;flex-direction:column;">
+
+    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+      <h3 style="margin:0;color:#eaeaea;font-size:14px;flex:1;">{{ t.name }}</h3>
+      <span style="background:#0f3460;color:#7a8cb0;padding:2px 7px;border-radius:3px;font-size:10px;margin-left:8px;white-space:nowrap;">{{ t.node_count }} nodes</span>
+    </div>
+
+    <p style="color:#7a8cb0;font-size:12px;margin:0 0 12px;flex:1;">{{ t.description }}</p>
+
+    <!-- Compliance badges -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+      {% for fw, val in t.badges.items() %}
+      <span style="background:{% if val == 'compliant' or (val is number and val >= 80) %}#052e16{% elif val is number and val >= 60 %}#431407{% else %}#1e1b4b{% endif %};
+            color:{% if val == 'compliant' or (val is number and val >= 80) %}#4ade80{% elif val is number and val >= 60 %}#fb923c{% else %}#a5b4fc{% endif %};
+            border:1px solid {% if val == 'compliant' or (val is number and val >= 80) %}#166534{% elif val is number and val >= 60 %}#7c2d12{% else %}#3730a3{% endif %};
+            padding:2px 6px;border-radius:3px;font-size:10px;">
+        {{ fw|upper|replace('_',' ') }}: {% if val is number %}{{ val }}%{% else %}{{ val|title }}{% endif %}
+      </span>
+      {% endfor %}
+      {% if t.autonomy_max >= 4 %}
+      <span style="background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;padding:2px 6px;border-radius:3px;font-size:10px;">L{{ t.autonomy_max }} Auto</span>
+      {% elif t.autonomy_max >= 2 %}
+      <span style="background:#431407;color:#fdba74;border:1px solid #7c2d12;padding:2px 6px;border-radius:3px;font-size:10px;">L{{ t.autonomy_max }} Auto</span>
+      {% endif %}
+    </div>
+
+    <!-- Tags -->
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;">
+      {% for tag in t.tag_list %}
+      <span style="background:#1e293b;color:#94a3b8;padding:1px 5px;border-radius:2px;font-size:10px;">{{ tag }}</span>
+      {% endfor %}
+    </div>
+
+    <button onclick="applyTemplate('{{ t.id }}')"
+      style="background:#6366f1;color:#fff;padding:8px;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600;width:100%;">
+      Apply to New Canvas →
+    </button>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+function filterCategory(cat) {
+  document.querySelectorAll('.cat-btn').forEach(b => {
+    b.style.background = b.dataset.cat === cat ? '#6366f1' : '#1e3a6e';
+    b.style.color = b.dataset.cat === cat ? '#fff' : '#7ab3f0';
+  });
+  document.querySelectorAll('.template-card').forEach(c => {
+    c.style.display = (cat === 'all' || c.dataset.category === cat) ? 'flex' : 'none';
+  });
+}
+
+function applyTemplate(templateId) {
+  const designId = 'aadc-' + Math.random().toString(36).substr(2, 10);
+  fetch('/agentic-ai/api/templates/' + templateId + '/apply/' + designId, {method:'POST'})
+    .then(r => r.json())
+    .then(d => { if (d.status === 'applied') window.location.href = '/agentic-ai/canvas/' + designId; });
+}
+</script>
+{% endblock %}

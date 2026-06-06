@@ -1,0 +1,37 @@
+# CUI // SP-CTI
+# ICDEV™ Capability Domain: Knowledge Graph & RAG
+# Auto-generated from icdev_capability_catalog.json + CLAUDE.md
+# Last refreshed: 2026-03-13
+
+domain: knowledge
+description: "GraphRAG retrieval, knowledge graph analysis, and hybrid search with scoring profiles"
+capabilities:
+  - slug: graph-rag
+    name: "GraphRAG Multi-Strategy Retrieval"
+    description: "Per-query-type scoring profiles (compliance, exploratory, entity_search, synthesis), self-directed context compression, parallel multi-strategy retrieval (GraphRAG + corrective RAG + source registry)"
+    cli_examples:
+      - "python tools/knowledge_graph/graph_rag.py --query 'zero trust' --project-id sparkpilot --json"
+      - "python tools/knowledge_graph/graph_rag.py --query 'AC-2 compliance' --profile compliance --json"
+      - "python tools/rag/corrective_rag.py --parallel --query 'NIST compliance gaps' --json"
+    related_controls: ["AU-6", "AU-7"]
+    article_hooks:
+      - "4 scoring profiles auto-detect query intent: compliance queries weight controls, exploratory queries weight novelty"
+      - "Parallel multi-strategy retrieval: GraphRAG + corrective RAG + source registry fused by scanner-tier LLM"
+      - "Self-directed context compression reduces verbose neighborhood context before downstream consumption -- zero Claude tokens"
+    frameworks: []
+    keywords: ["GraphRAG", "knowledge graph", "RAG", "hybrid search", "semantic search", "context compression"]
+    source_catalog_id: "cap-knowledge"
+
+  - slug: knowledge-graph
+    name: "Knowledge Graph & Insight Generation"
+    description: "Text-to-graph extraction, entity-relationship mapping, bridge gap detection, and scanner-tier insight generation (zero Claude tokens)"
+    cli_examples:
+      - "python tools/knowledge_graph/text_network.py --text 'input text' --project-id sparkpilot --json"
+      - "python tools/knowledge_graph/insight_generator.py --graph-id '<id>' --bridge-gaps --json"
+    related_controls: ["AU-6"]
+    article_hooks:
+      - "Knowledge graph bridge gap detection finds missing connections between concepts -- revealing hidden relationships"
+      - "Scanner-tier insight generation asks the right questions about your knowledge graph without spending Claude tokens"
+    frameworks: []
+    keywords: ["knowledge graph", "entity extraction", "insight generation", "bridge gaps", "text network"]
+    source_catalog_id: "cap-knowledge"

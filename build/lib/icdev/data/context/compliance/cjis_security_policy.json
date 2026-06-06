@@ -1,0 +1,522 @@
+{
+  "metadata": {
+    "title": "FBI CJIS Security Policy v5.9.4",
+    "source": "FBI Criminal Justice Information Services Division, CJIS Security Policy v5.9.4 (October 2024)",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-18",
+    "description": "FBI CJIS Security Policy requirements catalog covering 13 policy areas for criminal justice information (CJI) protection. Systems accessing NCIC, III, NLETS, or state CJIS systems must comply with all applicable requirements. Each requirement maps to NIST 800-53 Rev 5 controls via crosswalk."
+  },
+  "policy_areas": [
+    {
+      "code": "5.1",
+      "name": "Information Exchange Agreements",
+      "requirement_count": 4,
+      "description": "Agreements governing the sharing of CJI between agencies and with authorized entities"
+    },
+    {
+      "code": "5.2",
+      "name": "Security Awareness Training",
+      "requirement_count": 3,
+      "description": "Training requirements for all personnel with access to CJI"
+    },
+    {
+      "code": "5.3",
+      "name": "Incident Response",
+      "requirement_count": 3,
+      "description": "Incident reporting, response, and handling procedures for CJI-related security events"
+    },
+    {
+      "code": "5.4",
+      "name": "Auditing and Accountability",
+      "requirement_count": 4,
+      "description": "Audit logging, monitoring, and accountability mechanisms for CJI access and transactions"
+    },
+    {
+      "code": "5.5",
+      "name": "Access Control",
+      "requirement_count": 4,
+      "description": "Logical and physical access control mechanisms for CJI systems and data"
+    },
+    {
+      "code": "5.6",
+      "name": "Identification and Authentication",
+      "requirement_count": 4,
+      "description": "Identity verification and authentication mechanisms for CJI access"
+    },
+    {
+      "code": "5.7",
+      "name": "Configuration Management",
+      "requirement_count": 3,
+      "description": "Baseline configurations and change control for CJI systems"
+    },
+    {
+      "code": "5.8",
+      "name": "Media Protection",
+      "requirement_count": 3,
+      "description": "Protection, transport, sanitization, and disposal of media containing CJI"
+    },
+    {
+      "code": "5.9",
+      "name": "Physical Protection",
+      "requirement_count": 3,
+      "description": "Physical security controls for facilities and areas housing CJI systems"
+    },
+    {
+      "code": "5.10",
+      "name": "Systems and Communications Protection and Information Integrity",
+      "requirement_count": 4,
+      "description": "Encryption, boundary protection, and data integrity for CJI in transit and at rest"
+    },
+    {
+      "code": "5.11",
+      "name": "Formal Audits",
+      "requirement_count": 2,
+      "description": "Triennial compliance audits of agencies and systems accessing CJI"
+    },
+    {
+      "code": "5.12",
+      "name": "Personnel Security",
+      "requirement_count": 3,
+      "description": "Background screening, personnel termination, and transfer procedures for CJI access"
+    },
+    {
+      "code": "5.13",
+      "name": "Mobile Devices",
+      "requirement_count": 3,
+      "description": "Security requirements for mobile devices accessing or storing CJI"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "CJIS-5.1.1",
+      "policy_area": "Information Exchange Agreements",
+      "policy_area_code": "5.1",
+      "title": "Information Exchange Agreement Requirements",
+      "description": "Agencies sharing CJI must execute a written agreement (Information Exchange Agreement, Management Control Agreement, or Memorandum of Understanding) that specifies security requirements, authorized purposes, data handling obligations, breach notification procedures, and compliance responsibilities. The agreement must document the type of CJI exchanged, authorized users, dissemination restrictions, and audit requirements.",
+      "evidence_required": "Signed Information Exchange Agreement or MOU, documented authorized purposes and data types, and evidence of periodic review.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["CA-3", "SA-9", "PS-7"]
+    },
+    {
+      "id": "CJIS-5.1.2",
+      "policy_area": "Information Exchange Agreements",
+      "policy_area_code": "5.1",
+      "title": "Secondary Dissemination Restrictions",
+      "description": "CJI obtained from CJIS systems shall not be disseminated to unauthorized individuals or agencies. Secondary dissemination of CJI data is restricted to authorized criminal justice and noncriminal justice purposes as defined by federal regulation and state statute. Agencies must document and enforce dissemination controls, including logging of all CJI disclosures to non-originating agencies.",
+      "evidence_required": "Dissemination policy document, CJI disclosure logs, and evidence of dissemination restriction enforcement in application logic.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["AC-4", "AC-21", "MP-5"]
+    },
+    {
+      "id": "CJIS-5.1.3",
+      "policy_area": "Information Exchange Agreements",
+      "policy_area_code": "5.1",
+      "title": "Cloud Computing Service Provider Agreements",
+      "description": "Agencies utilizing cloud computing services for CJI storage, processing, or transmission must ensure the cloud service provider (CSP) meets all CJIS Security Policy requirements. A CJIS Security Addendum must be executed with the CSP. The CSP must allow CJIS audits, implement encryption per Section 5.10.1.2, enforce personnel screening per Section 5.12, and provide data location and jurisdiction transparency.",
+      "evidence_required": "Signed CJIS Security Addendum with CSP, CSP compliance attestation, encryption implementation documentation, and evidence of audit access provisions.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SA-9", "SA-9(2)", "SC-28"]
+    },
+    {
+      "id": "CJIS-5.1.4",
+      "policy_area": "Information Exchange Agreements",
+      "policy_area_code": "5.1",
+      "title": "Private Contractor Access",
+      "description": "Private contractors and vendors accessing CJI must sign the CJIS Security Addendum, undergo state and national fingerprint-based background checks, complete Security Awareness Training within six months of assignment and biennially thereafter, and comply with all applicable CJIS Security Policy requirements. Contractor access must be monitored and logged.",
+      "evidence_required": "Signed CJIS Security Addendum for each contractor, fingerprint-based background check records, training completion certificates, and access monitoring logs.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PS-7", "PS-3", "AT-2"]
+    },
+    {
+      "id": "CJIS-5.2.1",
+      "policy_area": "Security Awareness Training",
+      "policy_area_code": "5.2",
+      "title": "Security Awareness Training Program",
+      "description": "All personnel with access to CJI must complete CJIS Security Awareness Training within six months of initial assignment and biennially thereafter. Training must cover the CJIS Security Policy requirements, acceptable use of CJI systems, incident reporting procedures, social engineering threats, password management, physical security responsibilities, and consequences of policy violations. Training records must be maintained for audit purposes.",
+      "evidence_required": "Training curriculum aligned with CJIS requirements, training completion records with dates for all personnel, and biennial recertification documentation.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["AT-2", "AT-3", "AT-4"]
+    },
+    {
+      "id": "CJIS-5.2.2",
+      "policy_area": "Security Awareness Training",
+      "policy_area_code": "5.2",
+      "title": "Security Training for IT Personnel",
+      "description": "Personnel responsible for the administration, development, or security of CJI systems must receive additional role-based security training covering system hardening, patch management, access control administration, log review, incident handling, and encryption key management. Role-based training must be completed within six months of role assignment and refreshed biennially.",
+      "evidence_required": "Role-based training curriculum, IT personnel training completion records, and evidence of role-specific content coverage.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["AT-3", "AT-3(3)", "AT-4"]
+    },
+    {
+      "id": "CJIS-5.2.3",
+      "policy_area": "Security Awareness Training",
+      "policy_area_code": "5.2",
+      "title": "Security Awareness Training Records",
+      "description": "Agencies must maintain documentation of all Security Awareness Training activities, including attendance records, training dates, content covered, and assessment results. Records must be retained for a minimum of three years and made available during CJIS audits. Automated training management systems are recommended for tracking compliance.",
+      "evidence_required": "Training management system records or manual logs, retention documentation showing 3-year minimum, and audit-ready training reports.",
+      "priority": "P3",
+      "nist_800_53_crosswalk": ["AT-4", "AU-11"]
+    },
+    {
+      "id": "CJIS-5.3.1",
+      "policy_area": "Incident Response",
+      "policy_area_code": "5.3",
+      "title": "Incident Response Plan",
+      "description": "Agencies must develop, implement, and maintain a security incident response plan that addresses preparation, detection and analysis, containment, eradication, recovery, and post-incident activities. The plan must identify incident response team members, escalation procedures, and communication protocols. CJI-related incidents must be reported to the CJIS Systems Officer (CSO), FBI CJIS Division, and the CJIS Systems Agency (CSA) within the timeframes specified by the CSA.",
+      "evidence_required": "Documented incident response plan, identified response team roster, escalation and notification procedures, and evidence of plan testing.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["IR-1", "IR-4", "IR-5", "IR-6", "IR-8"]
+    },
+    {
+      "id": "CJIS-5.3.2",
+      "policy_area": "Incident Response",
+      "policy_area_code": "5.3",
+      "title": "Incident Handling and Reporting",
+      "description": "Security incidents involving CJI must be handled following the documented incident response plan. All incidents must be documented with a description of the incident, affected systems and data, response actions taken, and lessons learned. CJI security incidents must be reported to the CJIS ISO and CSO as soon as feasible. Major incidents must be reported to the FBI CJIS Division. Incident reports must be retained for a minimum of three years.",
+      "evidence_required": "Incident reports with required fields, evidence of timely notification to CSO/CSA, lessons learned documentation, and incident log retention records.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["IR-4", "IR-5", "IR-6", "IR-6(1)"]
+    },
+    {
+      "id": "CJIS-5.3.3",
+      "policy_area": "Incident Response",
+      "policy_area_code": "5.3",
+      "title": "Incident Response Testing",
+      "description": "The incident response plan must be tested at least annually through tabletop exercises, simulations, or operational exercises. Testing must validate notification procedures, escalation paths, containment procedures, and recovery capabilities. Results of incident response tests must be documented and used to update the incident response plan.",
+      "evidence_required": "Annual incident response test records, exercise after-action reports, and evidence of plan updates based on test results.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["IR-3", "IR-3(2)", "IR-8"]
+    },
+    {
+      "id": "CJIS-5.4.1",
+      "policy_area": "Auditing and Accountability",
+      "policy_area_code": "5.4",
+      "title": "Auditable Events and Content",
+      "description": "Information systems processing, storing, or transmitting CJI must generate audit records for the following events at a minimum: successful and unsuccessful login attempts, changes to user accounts and access privileges, successful and unsuccessful access to CJI records, changes to system configuration, changes to audit policy, printing of CJI, and export/download of CJI. Audit records must include date/time, user identity, event type, event outcome (success/fail), and affected data or component.",
+      "evidence_required": "Audit logging configuration showing all required event types, sample audit log entries demonstrating required content fields, and evidence of CJI access logging.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AU-2", "AU-3", "AU-3(1)", "AU-12"]
+    },
+    {
+      "id": "CJIS-5.4.2",
+      "policy_area": "Auditing and Accountability",
+      "policy_area_code": "5.4",
+      "title": "Audit Log Retention and Protection",
+      "description": "Audit logs must be retained for a minimum of one year. Audit logs must be protected from unauthorized access, modification, and deletion. Audit log storage must be sufficient to retain the required log data without overwriting. Agencies must implement mechanisms to alert administrators when audit log storage reaches a defined threshold. Audit logs must be backed up to a separate system or media.",
+      "evidence_required": "Audit log retention policy, evidence of 1-year minimum retention, log protection mechanisms (file permissions, integrity checks), and backup procedures.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AU-4", "AU-5", "AU-9", "AU-11"]
+    },
+    {
+      "id": "CJIS-5.4.3",
+      "policy_area": "Auditing and Accountability",
+      "policy_area_code": "5.4",
+      "title": "Audit Monitoring, Analysis, and Reporting",
+      "description": "Agencies must regularly review and analyze audit logs for indications of unauthorized or inappropriate activity. Log review must occur at a frequency appropriate to the risk level but no less than weekly for systems directly accessing CJI. Automated tools such as SIEM systems are recommended for real-time analysis and alerting. Suspicious activity must be investigated and documented.",
+      "evidence_required": "Audit log review procedures, evidence of weekly or more frequent reviews, SIEM configuration or manual review logs, and investigation records for flagged events.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["AU-6", "AU-6(1)", "SI-4"]
+    },
+    {
+      "id": "CJIS-5.4.4",
+      "policy_area": "Auditing and Accountability",
+      "policy_area_code": "5.4",
+      "title": "Time Synchronization",
+      "description": "All information systems processing CJI must synchronize system clocks with an authoritative time source (e.g., NIST, USNO, or GPS-based time) with a granularity of one second or better. Time synchronization ensures accurate correlation of audit events across systems and supports forensic analysis. NTP or PTP must be configured and validated on all CJI systems.",
+      "evidence_required": "NTP/PTP configuration files showing authoritative time sources, evidence of time synchronization accuracy, and log entries demonstrating synchronized timestamps.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["AU-8", "AU-8(1)"]
+    },
+    {
+      "id": "CJIS-5.5.1",
+      "policy_area": "Access Control",
+      "policy_area_code": "5.5",
+      "title": "Least Privilege and Need-to-Know",
+      "description": "Access to CJI must be restricted to authorized personnel with a valid need and right to know in the performance of their official duties. Agencies must implement the principle of least privilege, granting only the minimum access necessary for each user to perform assigned functions. Role-based access control (RBAC) must be implemented to manage access authorizations. Access must be reviewed at least annually and adjusted based on changes in duties or employment status.",
+      "evidence_required": "RBAC configuration, user access authorization records, annual access review documentation, and evidence of least privilege enforcement.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-1", "AC-2", "AC-3", "AC-5", "AC-6"]
+    },
+    {
+      "id": "CJIS-5.5.2",
+      "policy_area": "Access Control",
+      "policy_area_code": "5.5",
+      "title": "Account Management",
+      "description": "Agencies must establish formal account management procedures including account creation, modification, disabling, and removal. Accounts must be authorized by an appropriate official before creation. Inactive accounts must be disabled after a maximum of 90 days of inactivity. Temporary and emergency accounts must have defined expiration dates. Shared accounts are prohibited for CJI access. Account management activities must be logged.",
+      "evidence_required": "Account management procedures, account authorization records, inactive account audit reports, and evidence of shared account prohibition enforcement.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-2", "AC-2(1)", "AC-2(2)", "AC-2(3)"]
+    },
+    {
+      "id": "CJIS-5.5.3",
+      "policy_area": "Access Control",
+      "policy_area_code": "5.5",
+      "title": "Session Lock and Termination",
+      "description": "Information systems must initiate a session lock after a maximum of 30 minutes of inactivity. Session locks must require re-authentication to unlock. Sessions must be terminated after conditions warranting termination, such as organization-defined time periods, security policy violations, or at user request. Remote sessions must be terminated after a defined inactivity period not to exceed 30 minutes.",
+      "evidence_required": "Session lock configuration showing 30-minute maximum inactivity threshold, re-authentication enforcement on unlock, and session termination policy documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-11", "AC-11(1)", "AC-12", "SC-10"]
+    },
+    {
+      "id": "CJIS-5.5.4",
+      "policy_area": "Access Control",
+      "policy_area_code": "5.5",
+      "title": "Remote Access Controls",
+      "description": "Remote access to CJI must be authorized, monitored, and controlled. Remote access sessions must be encrypted using FIPS 140-2 validated cryptographic modules. Multi-factor authentication is required for all remote access to CJI systems. VPN or equivalent encrypted tunnels must be used for remote connectivity. Agencies must maintain logs of all remote access sessions including user identity, connection time, duration, and source address.",
+      "evidence_required": "Remote access policy, VPN configuration with FIPS 140-2 validated encryption, MFA enforcement for remote sessions, and remote access session logs.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-17", "AC-17(1)", "AC-17(2)", "IA-2(1)"]
+    },
+    {
+      "id": "CJIS-5.6.1",
+      "policy_area": "Identification and Authentication",
+      "policy_area_code": "5.6",
+      "title": "Unique Identification",
+      "description": "Each individual accessing CJI must be uniquely identified. Shared or group accounts are prohibited for CJI access. System accounts used for automated processes must be uniquely identified and their use limited to authorized processes. User identifiers must not be reused for a minimum of two years after account deletion. Identification must be verified before authentication credentials are issued or reset.",
+      "evidence_required": "User account registry demonstrating unique identification, policy prohibiting shared accounts, evidence of identifier reuse prevention, and identity verification procedures.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IA-2", "IA-4", "IA-4(4)", "IA-8"]
+    },
+    {
+      "id": "CJIS-5.6.2",
+      "policy_area": "Identification and Authentication",
+      "policy_area_code": "5.6",
+      "title": "Advanced Authentication",
+      "description": "Advanced authentication (multi-factor authentication) is required when CJI is accessed from outside physically secure locations or when accessing CJI via remote methods. Advanced authentication must use at least two of the following factors: something you know (password/PIN), something you have (token, smart card, certificate), or something you are (biometric). The authentication mechanism must be FIPS 140-2 compliant. For local access within a physically secure location, standard authentication (password only) is acceptable.",
+      "evidence_required": "MFA configuration and enforcement evidence, FIPS 140-2 validation certificates for authentication modules, and documentation distinguishing local vs. remote access authentication requirements.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IA-2(1)", "IA-2(2)", "IA-2(6)", "IA-2(12)"]
+    },
+    {
+      "id": "CJIS-5.6.3",
+      "policy_area": "Identification and Authentication",
+      "policy_area_code": "5.6",
+      "title": "Password Management",
+      "description": "Passwords for CJI system access must meet the following minimum requirements: minimum length of 8 characters, must not be a dictionary word or proper name, must not be the same as the user identifier, must expire within a maximum of 90 calendar days, must not be identical to the previous 10 passwords, must not be transmitted in the clear outside the secure domain, and must not be displayed when entered. Agencies may implement stronger requirements per organizational policy.",
+      "evidence_required": "Password policy configuration demonstrating all minimum requirements, password complexity enforcement mechanisms, and password history settings.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IA-5", "IA-5(1)", "IA-5(2)"]
+    },
+    {
+      "id": "CJIS-5.6.4",
+      "policy_area": "Identification and Authentication",
+      "policy_area_code": "5.6",
+      "title": "Authentication Feedback and Lockout",
+      "description": "Authentication mechanisms must obscure feedback of authentication information during the authentication process to protect it from exploitation. Systems must enforce a limit of no more than 5 consecutive invalid access attempts by a user. After the maximum number of unsuccessful attempts, the system must lock the account for a minimum of 10 minutes or until released by an administrator. Failed authentication attempts must be logged.",
+      "evidence_required": "Account lockout policy configuration (5 attempts max, 10-minute lockout minimum), evidence of password masking during entry, and failed authentication attempt logs.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-7", "IA-6"]
+    },
+    {
+      "id": "CJIS-5.7.1",
+      "policy_area": "Configuration Management",
+      "policy_area_code": "5.7",
+      "title": "Baseline Configuration and Hardening",
+      "description": "Agencies must establish and maintain baseline configurations for all information systems processing CJI. Baselines must include operating system hardening, disabling unnecessary services and ports, applying current security patches, configuring security settings per vendor guidance and DISA STIGs where applicable, and documenting deviations. Baseline configurations must be reviewed and updated at least annually or when significant changes occur.",
+      "evidence_required": "Documented baseline configurations, system hardening checklists or STIG compliance reports, patch management records, and annual baseline review documentation.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["CM-2", "CM-6", "CM-7", "SA-22"]
+    },
+    {
+      "id": "CJIS-5.7.2",
+      "policy_area": "Configuration Management",
+      "policy_area_code": "5.7",
+      "title": "Change Management",
+      "description": "Changes to CJI systems must be documented, tested, and approved before implementation through a formal change management process. Change requests must describe the change, reason, risk assessment, rollback plan, and required approvals. Emergency changes must be documented retroactively. All changes must be logged with the identity of the person making the change, date/time, and description of the change.",
+      "evidence_required": "Change management policy and procedures, change request records, testing documentation, approval records, and change audit logs.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["CM-3", "CM-3(2)", "CM-5"]
+    },
+    {
+      "id": "CJIS-5.7.3",
+      "policy_area": "Configuration Management",
+      "policy_area_code": "5.7",
+      "title": "Patch Management",
+      "description": "Agencies must implement a patch management program to ensure security-relevant software updates are applied in a timely manner. Critical security patches must be applied within 30 days of release or have a documented mitigation plan. Patch compliance must be monitored and reported. Systems that cannot be patched must have documented compensating controls and a plan of action.",
+      "evidence_required": "Patch management policy with defined timelines, patch compliance reports, compensating control documentation for unpatched systems, and evidence of timely patch application.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SI-2", "SI-2(2)", "CM-3"]
+    },
+    {
+      "id": "CJIS-5.8.1",
+      "policy_area": "Media Protection",
+      "policy_area_code": "5.8",
+      "title": "Media Storage and Access",
+      "description": "Physical and digital media containing CJI must be stored in a secure area with access restricted to authorized personnel. Digital media includes hard drives, USB devices, backup tapes, optical discs, and removable storage. Media must be labeled to indicate the presence of CJI. Access to media containing CJI must be logged. Removable media must be controlled and tracked.",
+      "evidence_required": "Media storage procedures, secure storage area documentation, media inventory and labeling records, and media access logs.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["MP-2", "MP-3", "MP-4"]
+    },
+    {
+      "id": "CJIS-5.8.2",
+      "policy_area": "Media Protection",
+      "policy_area_code": "5.8",
+      "title": "Media Transport",
+      "description": "Media containing CJI must be protected during transport outside physically secure areas. Digital media must be encrypted using FIPS 140-2 validated cryptographic modules during transport. Physical media must be transported using authorized personnel or bonded courier services. An accountability chain of custody must be maintained during transport documenting sender, recipient, content description, and transfer dates.",
+      "evidence_required": "Media transport procedures, encryption configuration for digital media in transit, courier service agreements, and chain of custody records.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["MP-5", "MP-5(4)", "SC-28"]
+    },
+    {
+      "id": "CJIS-5.8.3",
+      "policy_area": "Media Protection",
+      "policy_area_code": "5.8",
+      "title": "Media Sanitization and Disposal",
+      "description": "Media containing CJI must be sanitized or destroyed before disposal or reuse using methods consistent with NIST SP 800-88 Guidelines for Media Sanitization. Electronic media must be cleared, purged, or destroyed based on the security categorization. Physical documents must be cross-cut shredded or incinerated. Sanitization and destruction activities must be documented with date, method, personnel performing the action, and media description.",
+      "evidence_required": "Media sanitization procedures aligned with NIST SP 800-88, sanitization/destruction records, and evidence of method selection based on media type and classification.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["MP-6", "MP-6(2)"]
+    },
+    {
+      "id": "CJIS-5.9.1",
+      "policy_area": "Physical Protection",
+      "policy_area_code": "5.9",
+      "title": "Physically Secure Location",
+      "description": "CJI systems and terminals must be located in a physically secure location. A physically secure location is defined as a facility or area, room, or group of rooms within a facility with physical access controls through the use of one or more of the following: security personnel (guard), locked facility with key or combination access, proximity cards, biometric readers, or cipher locks. Visitors must be escorted and visitor logs maintained. Physical access controls must be monitored.",
+      "evidence_required": "Physical security assessment, access control mechanism documentation (locks, badges, biometrics), visitor escort procedures, visitor logs, and physical access monitoring evidence.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PE-2", "PE-3", "PE-6", "PE-8"]
+    },
+    {
+      "id": "CJIS-5.9.2",
+      "policy_area": "Physical Protection",
+      "policy_area_code": "5.9",
+      "title": "Physical Access Authorization and Monitoring",
+      "description": "Agencies must maintain a list of authorized individuals who have physical access to CJI systems and the facility or area in which they are located. Physical access authorization lists must be reviewed at least annually and updated when changes occur. Physical access attempts must be monitored via security cameras, alarm systems, or security guards. Physical access logs must be reviewed regularly for unauthorized access attempts.",
+      "evidence_required": "Physical access authorization list, annual review records, physical access monitoring system documentation (cameras, alarms), and access log review records.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["PE-2", "PE-6", "PE-6(1)", "PE-8"]
+    },
+    {
+      "id": "CJIS-5.9.3",
+      "policy_area": "Physical Protection",
+      "policy_area_code": "5.9",
+      "title": "Environmental Controls",
+      "description": "Facilities housing CJI systems must implement environmental controls including fire suppression, temperature and humidity controls, water damage protection, and emergency power (UPS and/or generator). Environmental monitoring must be in place to detect and alert on conditions that could damage equipment or data. Emergency shutdown procedures must be documented and tested.",
+      "evidence_required": "Environmental control documentation (HVAC, fire suppression, UPS), environmental monitoring configuration, emergency shutdown procedures, and testing records.",
+      "priority": "P3",
+      "nist_800_53_crosswalk": ["PE-9", "PE-10", "PE-11", "PE-13", "PE-14", "PE-15"]
+    },
+    {
+      "id": "CJIS-5.10.1",
+      "policy_area": "Systems and Communications Protection and Information Integrity",
+      "policy_area_code": "5.10",
+      "title": "Encryption in Transit",
+      "description": "CJI transmitted across public networks or outside physically secure locations must be encrypted using a FIPS 140-2 certified encryption algorithm with a minimum of 128-bit key strength. Acceptable algorithms include AES (128, 192, or 256-bit), and TLS 1.2 or higher for session-based encryption. Agencies must ensure that encryption modules have current FIPS 140-2 validation certificates. Encryption must be applied at the transport layer or above; link-layer encryption alone is not sufficient for CJI traversing public networks.",
+      "evidence_required": "Encryption configuration documentation, FIPS 140-2 validation certificates, TLS configuration showing minimum TLS 1.2, and network architecture showing encryption points.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SC-8", "SC-8(1)", "SC-13"]
+    },
+    {
+      "id": "CJIS-5.10.2",
+      "policy_area": "Systems and Communications Protection and Information Integrity",
+      "policy_area_code": "5.10",
+      "title": "Encryption at Rest",
+      "description": "CJI stored on electronic media (databases, file systems, backup media, mobile devices) outside a physically secure location must be encrypted using a FIPS 140-2 certified encryption algorithm. Full-disk encryption or file-level encryption is acceptable. Encryption key management must ensure keys are protected, rotated per policy, and stored separately from encrypted data. Cloud storage of CJI must use encryption at rest with the agency maintaining control of encryption keys.",
+      "evidence_required": "Encryption at rest configuration, FIPS 140-2 validation certificates, encryption key management procedures, and evidence of key separation from encrypted data.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SC-28", "SC-28(1)", "SC-13"]
+    },
+    {
+      "id": "CJIS-5.10.3",
+      "policy_area": "Systems and Communications Protection and Information Integrity",
+      "policy_area_code": "5.10",
+      "title": "Boundary Protection and Network Segmentation",
+      "description": "Information systems processing CJI must implement boundary protection mechanisms including firewalls, intrusion detection/prevention systems (IDS/IPS), and network segmentation. CJI systems must be segmented from general-purpose networks. Network architecture must enforce that CJI traffic flows only through authorized and monitored paths. Boundary devices must deny all traffic by default and allow only traffic explicitly permitted by policy.",
+      "evidence_required": "Network architecture diagram showing segmentation, firewall rule sets, IDS/IPS configuration, and evidence of default-deny policy enforcement.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SC-7", "SC-7(5)", "SC-7(8)", "SI-4"]
+    },
+    {
+      "id": "CJIS-5.10.4",
+      "policy_area": "Systems and Communications Protection and Information Integrity",
+      "policy_area_code": "5.10",
+      "title": "Information Integrity and Malicious Code Protection",
+      "description": "Systems processing CJI must implement malicious code protection mechanisms (antivirus, anti-malware, endpoint detection and response) that are updated regularly. Flaw remediation must be applied in a timely manner per Section 5.7.3. Input validation must be implemented on all external inputs to prevent injection attacks. Information integrity mechanisms must detect unauthorized changes to software, firmware, and information. Spam protection must be implemented at system entry points.",
+      "evidence_required": "Anti-malware configuration and update evidence, input validation implementation, integrity monitoring tool configuration, and spam protection configuration.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-3", "SI-7", "SI-8", "SI-10"]
+    },
+    {
+      "id": "CJIS-5.11.1",
+      "policy_area": "Formal Audits",
+      "policy_area_code": "5.11",
+      "title": "Triennial Compliance Audit",
+      "description": "The CJIS Audit Unit shall conduct a triennial audit of each CSA for compliance with the CJIS Security Policy. CSAs must facilitate audits by providing access to systems, documentation, personnel, and facilities. Audit scope includes all 13 policy areas and may include technical testing of security controls. Findings must be documented in an audit report and agencies must develop a corrective action plan for any deficiencies identified. CSAs are responsible for conducting similar audits of their user agencies.",
+      "evidence_required": "Previous audit reports, corrective action plans with completion evidence, audit facilitation procedures, and evidence of CSA-to-agency audit program.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["CA-2", "CA-2(1)", "CA-7"]
+    },
+    {
+      "id": "CJIS-5.11.2",
+      "policy_area": "Formal Audits",
+      "policy_area_code": "5.11",
+      "title": "Audit Findings Remediation",
+      "description": "Agencies receiving audit findings must develop and implement a corrective action plan (CAP) within the timeframe specified by the auditing authority. Critical findings must be remediated within 90 days. High findings must be remediated within 180 days. Moderate findings must be remediated within one year. The CAP must include the finding description, responsible party, remediation actions, milestones, and target completion dates. Progress on CAP items must be reported as requested by the CSA.",
+      "evidence_required": "Corrective action plans with timelines, remediation progress reports, evidence of finding closure, and CAP tracking documentation.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["CA-5", "PM-4"]
+    },
+    {
+      "id": "CJIS-5.12.1",
+      "policy_area": "Personnel Security",
+      "policy_area_code": "5.12",
+      "title": "Fingerprint-Based Background Check",
+      "description": "All personnel with unescorted access to unencrypted CJI or unescorted access to physically secure locations housing CJI must undergo a state and national fingerprint-based background check. The background check must include a search of the state criminal history repository and the FBI national criminal history database (Interstate Identification Index). Background checks must be completed and adjudicated before granting access. Disqualifying offenses include any felony conviction.",
+      "evidence_required": "Fingerprint-based background check records for all CJI-access personnel, adjudication documentation, and evidence that checks were completed prior to access being granted.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PS-3", "PS-3(3)", "PS-7"]
+    },
+    {
+      "id": "CJIS-5.12.2",
+      "policy_area": "Personnel Security",
+      "policy_area_code": "5.12",
+      "title": "Personnel Termination and Transfer",
+      "description": "Upon termination of employment or change in duties that no longer require CJI access, agencies must promptly disable the individual's access to CJI systems, retrieve all CJI-related materials and property (keys, badges, tokens, devices), and conduct an exit interview reminding the individual of continuing obligations regarding CJI confidentiality. For transfers, access must be modified to reflect new duty requirements within 24 hours of the effective date.",
+      "evidence_required": "Termination and transfer checklists, evidence of timely account disabling, property retrieval records, exit interview documentation, and access modification logs.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PS-4", "PS-5", "PS-4(2)"]
+    },
+    {
+      "id": "CJIS-5.12.3",
+      "policy_area": "Personnel Security",
+      "policy_area_code": "5.12",
+      "title": "Personnel Sanctions",
+      "description": "Agencies must implement a formal sanctions process for personnel failing to comply with CJIS Security Policy requirements. Sanctions must be proportional to the severity of the violation and may include verbal warning, written reprimand, suspension of CJI access, termination, or criminal prosecution. Sanctions must be documented and applied consistently. Repeated or egregious violations must result in permanent revocation of CJI access.",
+      "evidence_required": "Sanctions policy document, evidence of consistent application, documentation of sanctions imposed, and appeal process documentation.",
+      "priority": "P3",
+      "nist_800_53_crosswalk": ["PS-8", "PL-4"]
+    },
+    {
+      "id": "CJIS-5.13.1",
+      "policy_area": "Mobile Devices",
+      "policy_area_code": "5.13",
+      "title": "Mobile Device Management",
+      "description": "Agencies allowing CJI access from mobile devices must implement a Mobile Device Management (MDM) solution or equivalent controls. MDM must enforce device encryption (FIPS 140-2 validated), remote wipe capability, screen lock after maximum 5 minutes of inactivity, malware protection, OS and application patching, and disabling of unauthorized applications. Mobile devices must be agency-controlled or subject to a BYOD policy that enforces equivalent security controls through containerization or virtualization.",
+      "evidence_required": "MDM policy and configuration, device encryption evidence, remote wipe capability documentation, screen lock configuration, and BYOD policy if applicable.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-19", "AC-19(5)", "SC-28", "MP-7"]
+    },
+    {
+      "id": "CJIS-5.13.2",
+      "policy_area": "Mobile Devices",
+      "policy_area_code": "5.13",
+      "title": "Wireless Access Controls",
+      "description": "Wireless networks used to access CJI must implement WPA2-Enterprise or WPA3 with 802.1X authentication. The use of WEP, WPA-Personal, or open wireless networks for CJI access is prohibited. Wireless access points must be configured with strong encryption, SSID broadcast must be limited to authorized areas, and rogue access point detection must be implemented. Wireless IDS/IPS is recommended. Bluetooth must be disabled on mobile devices when not in active use for CJI functions.",
+      "evidence_required": "Wireless network configuration showing WPA2-Enterprise or WPA3, 802.1X authentication configuration, rogue AP detection configuration, and wireless security assessment results.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-18", "AC-18(1)", "AC-18(3)", "SC-40"]
+    },
+    {
+      "id": "CJIS-5.13.3",
+      "policy_area": "Mobile Devices",
+      "policy_area_code": "5.13",
+      "title": "Mobile Device Incident Response",
+      "description": "Agencies must include mobile device loss, theft, and compromise scenarios in their incident response plans. Procedures must address immediate remote wipe initiation, notification of the CJIS ISO and CSO, assessment of CJI exposure, documentation of the incident, and replacement device provisioning. Lost or stolen devices with CJI access capability must be reported within 24 hours. Devices that cannot be remotely wiped must be assumed compromised.",
+      "evidence_required": "Mobile-specific incident response procedures, evidence of remote wipe testing, 24-hour reporting process documentation, and records of mobile device incidents.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["IR-6", "AC-19", "MP-6"]
+    }
+  ]
+}

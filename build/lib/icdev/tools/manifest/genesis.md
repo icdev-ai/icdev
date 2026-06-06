@@ -1,0 +1,18 @@
+# Genesis (Additional)
+
+> Shard of `tools/manifest.md`. See index at `tools/manifest.md`.
+
+## Genesis (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Goal Template Generator | tools/genesis/goal_template_generator.py | Generate goal templates from GKP artifacts | --json | Goal templates |
+| Goal Learner | tools/genesis/goal_learner.py | Detect novel problem-solving not covered by existing goals, auto-generate FORGE goal files with version history and quality scoring | --scan --json | Generated goal markdown files + DB records |
+| Synthesize Reflex | tools/genesis/reflexes/synthesize.py | Synthesize reflex: tool-chain pattern detection | --json | Pattern results |
+| cATO Monitor Reflex | tools/genesis/reflexes/cato_monitor.py | 6-hour continuous compliance monitoring reflex — discovers *.iqe queries under context/iqe/queries/compliance/, executes them via IQE Executor, and triggers POAM generation for new violations; scanner-tier, air-gap safe | IQE query files (auto-discovered) | Compliance violations + triggered POAM records |
+| Canvas Indexer Reflex | tools/genesis/reflexes/canvas_indexer.py | Genesis daemon reflex that indexes 5 canvases (PDC/BDC/DDC/ODC/IDC) from SQLite sidecars into kg_nodes/kg_edges every 6 hours; exports success metrics as JSON | `run(config, trust)` called by Genesis daemon | JSON metrics dict {indexed_count, duration_ms} |
+| Oracle Triage Reflex | tools/genesis/reflexes/oracle_triage.py | Deterministically promote/dismiss Oracle-suggested kanban tasks using file-exists (tool_not_in_manifest), Flask-route grep (route_not_listed), and migration-check (orphan_db_table) verifiers; no-lens heuristics for RCA/V&V/FR cards; runs every 3h after awareness cycle | `--run [--dry-run] [--json]` / `run(config, trust)` | JSON summary {promoted, dismissed, skipped, errors} |
+| AADC Reflex | tools/genesis/reflexes/aadc_reflex.py | Genesis daemon reflex that scores the latest AADC design against 5 compliance frameworks (NIST AI RMF, OWASP LLM Top 10, OMB M-25-21, MITRE ATLAS, autonomy level), writes an assessment to aadc_assessments, emits a memory insight on regression, and creates a Kanban suggestion when gaps are found | `run(payload, ctx)` called by Genesis daemon | JSON result {design_id, scored, gaps, kanban_task_id} |
+| Freshness Guardian Reflex | tools/genesis/reflexes/freshness_guardian.py | Hourly reflex (`FreshnessGuardianReflex`, `CADENCE_HOURS=1`) — evaluates all enabled `freshness` quality rules across all data designs; writes alert rows to `dd_freshness_alerts` (INSERT OR REPLACE per rule), appends run rows to `dd_quality_runs` (with `reflex_run` tag), and logs breach events to `genesis_audit`; skips rules with no stored `db_conn_json` | `run(context, db_conn)` called by Genesis daemon; `--dry-run --json` CLI | JSON `{checked, passed, failed, breaches}` |
+| AIMC Orphan Refs Reflex | tools/genesis/reflexes/aimc_orphan_refs.py | 4h Genesis reflex — scans `aiml_nodes` for foundation-model nodes whose `model_id` is not present in the `FOUNDATION_MODELS` catalog constant; reports orphans and creates a Kanban chore suggestion when any are found (skipped in dry_run mode) | `run(payload, ctx)` called by Genesis daemon; `dry_run=True` in payload for read-only scan | JSON `{status, orphans_found, orphans, suggestion_id, catalog_size}` |
+| DAT Refresh Reflex | tools/genesis/reflexes/dat_refresh.py | 6-hour reflex that recomputes the Diplomatic Tension Index (DTI) snapshots for all registered theaters plus the global aggregate; cooldown prevents double-firing within same cadence window | `run(config, trust)` called by Genesis daemon | JSON `{refreshed, skipped, duration_ms}` |
+

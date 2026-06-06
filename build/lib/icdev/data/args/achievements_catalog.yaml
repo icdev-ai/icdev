@@ -1,0 +1,197 @@
+# CUI // SP-CTI
+# FathomDesk achievements catalog — Phase 6.2.
+#
+# Each entry defines a badge the user can earn. Catalog is operator-
+# curated; new achievements land by editing this file (hot-reloaded).
+#
+# Shape:
+#   id:                   # unique slug — also the DB row key in ad_user_achievements
+#     name:               # short display title
+#     description:        # one-line flavor text
+#     icon:               # emoji shown in the badge grid
+#     tier:               # visual grouping: bronze | silver | gold | platinum
+#     xp_bonus:           # bonus XP awarded when first earned (integer)
+#     progress_hint:      # text shown while not-yet-earned (optional)
+#     predicate:
+#       type:             # see tools/trading/progression/achievements.py for registry
+#       params:           # shape depends on type
+#
+# Predicate types available:
+#   - xp_event_count:       params: reason, threshold  (sum of events with reason >= threshold)
+#   - xp_total_threshold:   params: threshold          (ad_user_progression.xp >= threshold)
+#   - order_count:          params: threshold          (rows in ad_orders for user >= threshold)
+#   - distinct_sectors:     params: threshold          (distinct sectors in current ad_positions >= threshold)
+#   - portfolio_value:      params: threshold_usd      (ad_portfolios.cash + positions market_value >= threshold)
+#   - lesson_track_complete: params: level             (all lessons at given level completed)
+#   - level_reached:        params: level              (ad_user_progression.level order >= target)
+#
+# Deterministic only — no LLM calls. Predicates run inline in the
+# evaluator; each must be fast (single-query where possible).
+
+_schema_version: 1
+
+achievements:
+  first_signal_approved:
+    name: "First Step"
+    description: "Approved your first trading signal."
+    icon: "👣"
+    tier: bronze
+    xp_bonus: 10
+    progress_hint: "Head to /signals and approve your first one."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: signal_approved
+        threshold: 1
+
+  first_10_trades:
+    name: "Getting the Hang of It"
+    description: "Completed 10 paper trades."
+    icon: "🎯"
+    tier: bronze
+    xp_bonus: 25
+    progress_hint: "Approve signals and let trades run — 10 to unlock."
+    predicate:
+      type: order_count
+      params:
+        threshold: 10
+
+  diversified:
+    name: "Diversified"
+    description: "Held positions in 5+ sectors simultaneously."
+    icon: "🧩"
+    tier: silver
+    xp_bonus: 30
+    progress_hint: "Open positions across 5 different sectors at once."
+    predicate:
+      type: distinct_sectors
+      params:
+        threshold: 5
+
+  scenario_explorer:
+    name: "Scenario Explorer"
+    description: "Ran 10 what-if scenarios."
+    icon: "🔍"
+    tier: silver
+    xp_bonus: 20
+    progress_hint: "Open /scenarios and try a few historical replays."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: scenario_run
+        threshold: 10
+
+  regime_aware:
+    name: "Regime Aware"
+    description: "Made 5 trading decisions aligned with the current macro regime."
+    icon: "🧭"
+    tier: silver
+    xp_bonus: 40
+    progress_hint: "Act on signals that agree with the macro regime shown on /market."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: regime_aware_decision
+        threshold: 5
+
+  beginner_curriculum:
+    name: "Beginner Graduate"
+    description: "Completed all Beginner lessons."
+    icon: "🎓"
+    tier: silver
+    xp_bonus: 50
+    progress_hint: "Visit /lessons — finish the Beginner level."
+    predicate:
+      type: lesson_track_complete
+      params:
+        level: beginner
+
+  intermediate_level:
+    name: "Intermediate Unlocked"
+    description: "Reached Intermediate level (100 XP)."
+    icon: "🥈"
+    tier: silver
+    xp_bonus: 0
+    progress_hint: "Earn 100 XP to unlock Intermediate."
+    predicate:
+      type: level_reached
+      params:
+        level: intermediate
+
+  paper_millionaire:
+    name: "Paper Millionaire"
+    description: "Paper portfolio reached $1,000,000."
+    icon: "💎"
+    tier: gold
+    xp_bonus: 100
+    progress_hint: "Grow your paper portfolio to $1M."
+    predicate:
+      type: portfolio_value
+      params:
+        threshold_usd: 1000000
+
+  # ─── Options achievements (Phase 7+ complex options + progression) ──
+  first_options_trade:
+    name: "Option Curious"
+    description: "Executed your first paper option trade."
+    icon: "📈"
+    tier: bronze
+    xp_bonus: 25
+    progress_hint: "Visit /options, pick a contract, place a trade."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: option_filled
+        threshold: 1
+
+  first_multileg:
+    name: "Strategist"
+    description: "Executed your first multi-leg option strategy."
+    icon: "🎲"
+    tier: silver
+    xp_bonus: 50
+    progress_hint: "Open a vertical spread or condor from the Strategy Builder."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: option_multileg_executed
+        threshold: 1
+
+  five_multilegs:
+    name: "Spread Specialist"
+    description: "Executed 5 multi-leg option strategies."
+    icon: "🃏"
+    tier: silver
+    xp_bonus: 75
+    progress_hint: "5 strategies through the Strategy Builder."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: option_multileg_executed
+        threshold: 5
+
+  options_profit_hunter:
+    name: "Profit Hunter"
+    description: "Closed 3 option positions profitably."
+    icon: "🎯"
+    tier: silver
+    xp_bonus: 60
+    progress_hint: "Sell_to_close a long option for a gain, 3 times."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: option_profitable_close
+        threshold: 3
+
+  premium_collector:
+    name: "Premium Collector"
+    description: "3 short options expired worthless (you kept the premium)."
+    icon: "💰"
+    tier: gold
+    xp_bonus: 80
+    progress_hint: "Sell_to_open options that expire OTM — the time-decay trade."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: option_expired_worthless_short
+        threshold: 3

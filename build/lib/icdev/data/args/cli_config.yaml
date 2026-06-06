@@ -1,0 +1,154 @@
+# CLI Capabilities Configuration — Optional Claude CLI Features
+# Used by: tools/ci/workflows/*, tools/agent/agent_executor.py, intake_engine.py
+# ADR D132: CLI capabilities are optional per-project toggles; tenant sets ceiling, project opts in
+#
+# These 4 capabilities require Claude Code CLI (terminal-based) and may not be available
+# in all environments. The VSCode extension provides identical core functionality —
+# these are add-ons for environments that support headless/terminal execution.
+#
+# Decision guide: goals/cli_capabilities.md
+
+# =============================================================================
+# Tenant-Level Ceiling (set by tenant admin in SaaS platform settings)
+# Projects CANNOT enable capabilities beyond what their tenant allows.
+# For standalone (non-SaaS) deployments, tenant_ceiling is ignored — all
+# capabilities default to project-level settings.
+# =============================================================================
+tenant_ceiling:
+  cicd_automation: true       # Tenant allows projects to use CLI in CI/CD pipelines
+  parallel_agents: true       # Tenant allows parallel CLI agent execution
+  container_execution: true   # Tenant allows CLI inside K8s/Docker containers
+  scripted_intake: true       # Tenant allows batch/scripted requirements intake
+
+# =============================================================================
+# Project-Level Toggles (set per project, must be within tenant ceiling)
+# =============================================================================
+project:
+  # -------------------------------------------------------------------------
+  # 1. CI/CD Pipeline Automation
+  # Run Claude CLI headless in GitLab/GitHub runners for automated SDLC phases.
+  # Example: GitLab runner calls `claude -p "/icdev-build"` in pipeline stage
+  #
+  # Prerequisites:
+  #   - Claude CLI installed on runner (npm install -g @anthropic-ai/claude-code)
+  #   - ANTHROPIC_API_KEY or AWS Bedrock credentials available to runner
+  #   - Runner has network access to LLM endpoint (Bedrock in GovCloud, or Anthropic API)
+  #
+  # When disabled: CI/CD workflows call Python tools directly (no LLM reasoning step)
+  # When enabled:  CI/CD workflows can invoke Claude CLI for AI-assisted build/test/review
+  # -------------------------------------------------------------------------
+  cicd_automation:
+    enabled: false
+    runner_type: gitlab          # gitlab | github | jenkins | generic
+    cli_binary: "claude"         # Path to claude CLI binary on runner
+    cli_flags: "--no-interactive --output-format json"
+    max_tokens_per_run: 100000   # Cost control: max tokens per pipeline invocation
+    timeout_seconds: 600         # 10-minute timeout per CLI invocation
+    allowed_commands:             # Whitelist of /icdev-* commands allowed in CI
+      - "/icdev-build"
+      - "/icdev-test"
+      - "/icdev-review"
+      - "/icdev-secure"
+      - "/icdev-comply"
+    audit_all_invocations: true  # Log every CLI call to audit trail (NIST AU)
+
+  # -------------------------------------------------------------------------
+  # 2. Parallel Agent Execution
+  # Run multiple Claude CLI instances concurrently for independent SDLC phases.
+  # Example: Plan in one terminal, build in another, compliance scan in a third
+  #
+  # Prerequisites:
+  #   - Sufficient API rate limits for concurrent requests
+  #   - Enough compute resources (each CLI instance uses ~200MB RAM)
+  #   - Git worktree support for parallel file isolation (see args/worktree_config.yaml)
+  #
+  # When disabled: Phases run sequentially (plan → build → test → review)
+  # When enabled:  Independent phases can run in parallel (e.g., security + compliance)
+  # -------------------------------------------------------------------------
+  parallel_agents:
+    enabled: false
+    max_concurrent: 3            # Max simultaneous CLI instances per project
+    isolation_method: worktree   # worktree | directory | container
+    coordination: file_lock      # file_lock | database | none
+    shared_context_path: ".tmp/parallel_context/"  # Shared state between instances
+    phase_parallelism:           # Which phase combinations can run in parallel
+      - ["security_scan", "compliance_check"]     # Independent — safe to parallelize
+      - ["unit_test", "bdd_test"]                  # Independent test suites
+      - ["terraform_plan", "ansible_lint"]         # Independent IaC validation
+    serial_phases:               # Phases that MUST run sequentially
+      - "plan"                   # Must complete before build
+      - "build"                  # Must complete before test
+      - "deploy"                 # Must complete after all gates pass
+
+  # -------------------------------------------------------------------------
+  # 3. Container-Based Execution
+  # Run Claude CLI inside STIG-hardened Docker/K8s containers for agent execution.
+  # Example: K8s pod runs Claude CLI as builder-agent in STIG-hardened container
+  #
+  # Prerequisites:
+  #   - Container runtime (Docker, containerd, CRI-O)
+  #   - STIG-hardened base image (docker/Dockerfile.agent-base)
+  #   - Secrets mounted via K8s secrets or AWS Secrets Manager (never baked into image)
+  #   - Network policy allowing egress to LLM endpoint
+  #
+  # When disabled: Agents run as Python processes (existing A2A pattern)
+  # When enabled:  Agents can run as containerized Claude CLI instances
+  # -------------------------------------------------------------------------
+  container_execution:
+    enabled: false
+    base_image: "icdev/agent-base:latest"   # STIG-hardened base
+    registry: ""                             # Container registry URL (empty = local)
+    resource_limits:
+      cpu: "1000m"                           # 1 CPU core
+      memory: "512Mi"                        # 512MB RAM
+    security_context:
+      run_as_non_root: true
+      read_only_root_fs: true
+      drop_all_capabilities: true
+    mount_secrets_from: "k8s-secrets"        # k8s-secrets | aws-secrets-manager | env-file
+    network_policy: "default-deny-egress"    # Only allow LLM endpoint + internal A2A
+
+  # -------------------------------------------------------------------------
+  # 4. Scripted / Batch Intake
+  # Pipe requirements documents or batch commands into Claude CLI for automated
+  # processing without interactive Q&A.
+  #
+  # Example: claude -p "/icdev-intake" < requirements.txt
+  # Example: cat sow.pdf | claude -p "extract requirements and score readiness"
+  #
+  # Prerequisites:
+  #   - Input documents in supported format (txt, md, pdf, docx)
+  #   - Pre-configured intake session (project-id, customer info, impact level)
+  #
+  # When disabled: Intake is interactive only (conversational Q&A via extension or dashboard)
+  # When enabled:  Intake can accept piped input for batch processing
+  # -------------------------------------------------------------------------
+  scripted_intake:
+    enabled: false
+    input_formats: [txt, md, pdf, csv, json, yaml]  # Accepted batch input formats
+    auto_gap_detection: true     # Run gap detection after batch import
+    auto_readiness_score: true   # Compute readiness score after batch import
+    auto_decompose: false        # Auto-decompose to SAFe (requires readiness >= 0.7)
+    output_format: json          # json | markdown | both
+    max_documents_per_batch: 20  # Limit batch size for cost control
+    require_session_id: true     # Must pre-create session before batch intake
+
+# =============================================================================
+# Environment Detection — Auto-detect CLI availability
+# =============================================================================
+detection:
+  # Auto-check if Claude CLI is installed and accessible
+  auto_detect: true
+  cli_check_command: "claude --version"
+  fallback_on_missing: "extension"   # extension | error | warn
+  log_detection_result: true          # Record CLI availability in audit trail
+
+# =============================================================================
+# Cost Controls — Prevent runaway CLI usage
+# =============================================================================
+cost_controls:
+  max_tokens_per_day: 1000000        # Daily token budget across all CLI invocations
+  max_invocations_per_hour: 50       # Rate limit on CLI calls
+  alert_at_percent: 80               # Alert when 80% of daily budget consumed
+  hard_stop_at_percent: 100          # Stop CLI invocations at 100% of budget
+  track_in_db: true                  # Store usage in agent_token_usage table

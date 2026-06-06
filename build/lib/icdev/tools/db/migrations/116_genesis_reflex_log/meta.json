@@ -1,0 +1,11 @@
+{
+  "id": "116",
+  "name": "genesis_reflex_log",
+  "description": "Create genesis_reflex_log append-only reflex run audit table used by cyber_feed_refresh and cooldown tracking.",
+  "created_at": "2026-05-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "notes": "Append-only NIST AU table. Safe to re-run (CREATE TABLE IF NOT EXISTS)."
+}

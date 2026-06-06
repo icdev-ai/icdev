@@ -1,0 +1,82 @@
+# CUI // SP-CTI
+# ICDEV™ File Sync Configuration
+# Controls file/folder synchronization behavior (D26 declarative pattern)
+
+filesync:
+  enabled: false
+  env_override: ICDEV_FILESYNC_ENABLED
+
+  # Default settings for new sync jobs
+  defaults:
+    sync_mode: push                      # push, pull, bidirectional
+    conflict_strategy: last_write_wins   # last_write_wins, rename_both, source_wins, skip
+    max_workers: 4                       # ThreadPoolExecutor parallelism
+    bandwidth_limit_kbps: 0              # 0 = unlimited
+    schedule_interval_seconds: 0         # 0 = one-shot (no daemon)
+    ignore_file: .syncignore
+    delete_orphans: false                # Delete dest files not in source (push mode)
+
+  # Change detection (D-SYNC-2)
+  detection:
+    method: hash                         # hash (SHA-256), mtime, both
+    fast_skip_mtime: true                # Skip hash if mtime+size unchanged
+    hash_algorithm: sha256               # sha256, sha384, sha512, sha3_256 (FIPS 140-2 toggle)
+    fips_mode: false                     # When true, only FIPS 140-2 approved algorithms
+    block_size_bytes: 131072             # 128 KiB blocks for chunked hashing
+    large_file_threshold_bytes: 4194304  # 4 MiB: above this, use block-level hashing
+
+  # File watching (D-SYNC-8, optional, requires watchdog)
+  watcher:
+    enabled: true
+    debounce_seconds: 2.0                # Wait for rapid changes to settle
+    recursive: true
+    fallback_scan_interval_seconds: 60   # Periodic scan when watchdog unavailable
+
+  # Transfer settings
+  transfer:
+    chunk_size_bytes: 1048576            # 1 MiB read/write chunks
+    retry_max: 3
+    retry_delay_seconds: 5
+    verify_after_transfer: true          # Re-hash dest after copy
+    compression: none                    # none, zlib, gzip (pre-transfer compression)
+    compression_level: 6                 # 1-9 (1=fast, 9=best ratio)
+
+  # Progress reporting
+  progress:
+    enabled: true                        # Enable per-file progress tracking
+    log_interval_files: 10               # Log progress every N files
+
+  # File Integrity Monitoring (FIM)
+  fim:
+    enabled: false                       # Enable FIM baseline checking between syncs
+    alert_on_mismatch: true              # Log audit event on unexpected file change
+    baseline_refresh_after_sync: true    # Update FIM baseline after successful sync
+
+  # File version control (D-SYNC-16)
+  versioning:
+    enabled: true                        # Snapshot files before overwrite
+    max_versions_per_file: 10            # Keep last N versions (0 = unlimited)
+    versions_dir: .versions              # Directory name for versioned copies
+
+  # SFTP settings
+  sftp:
+    timeout_seconds: 30
+    known_hosts_check: true
+    key_file: ""                         # Path to SSH private key
+    # Env vars: ICDEV_SFTP_HOST, ICDEV_SFTP_PORT, ICDEV_SFTP_USER, ICDEV_SFTP_KEY
+
+  # Cloud provider settings (wraps existing StorageProvider)
+  providers:
+    s3:
+      reuse_storage_provider: true
+      multipart_threshold_bytes: 8388608 # 8 MiB
+
+  # Scheduling (daemon mode, D-SYNC-9)
+  scheduling:
+    quiet_hours:
+      start: "23:00"
+      end: "08:00"
+      timezone: "America/New_York"
+
+  # CUI compliance (D-SYNC-12)
+  classification: "CUI // SP-CTI"

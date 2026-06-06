@@ -1,0 +1,3393 @@
+{% extends "network/base.html" %}
+{% block title %}{{ topology_name }} — Canvas Editor{% endblock %}
+{% block global_banner %}{% endblock %}
+{% block head %}
+<!-- JointJS + dependencies -->
+<!-- Vendored locally for air-gap / IL5-IL6 environments -->
+<link rel="stylesheet" href="{{ url_for('static', filename='js/vendor/joint.css') }}"/>
+<script src="{{ url_for('static', filename='js/vendor/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/lodash.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/backbone.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/joint.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/dagre.min.js') }}"></script>
+<style>
+  body { overflow: hidden; }
+  .main-content { padding: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
+<!-- Project Context Bar -->
+{% if topo_projects %}
+<div class="project-context-bar">
+  <span class="pcb-label">Project:</span>
+  {% for pp in topo_projects %}
+  <a href="/network/projects/{{ pp.id }}" class="pcb-project">{{ pp.name }}</a>
+  {% endfor %}
+  <span style="margin-left:auto;">Quick switch:</span>
+  <select onchange="if(this.value) window.location.href='/network/?project='+this.value">
+    <option value="">—</option>
+    {% for ap in all_projects %}
+    <option value="{{ ap.id }}">{{ ap.name }} ({{ ap.status }})</option>
+    {% endfor %}
+  </select>
+</div>
+{% endif %}
+
+<div class="canvas-layout">
+
+  <!-- Toolbar -->
+  <div class="canvas-toolbar">
+    <div class="tb-group">
+      <button class="tb-btn" onclick="newCanvas()" title="New">⊞ New</button>
+      <button class="tb-btn" onclick="saveTopology()" title="Save (Ctrl+S)">💾 Save</button>
+      <button class="tb-btn" onclick="saveAsTopology()" title="Save As (new copy)">💾 Save As</button>
+      <button class="tb-btn" onclick="saveAsTemplate()" title="Save as reusable template">⊡ Save Template</button>
+      <button class="tb-btn" onclick="createLabTopology()" title="Create Lab — AI-reduced representative version with 10.99.x.x IPs, 1 node per cluster, L1 media stripped" style="color:#00c896;">&#x1f9ea; Create Lab</button>
+      <button class="tb-btn" onclick="undoAction()" title="Undo">↩ Undo</button>
+      <button class="tb-btn" onclick="redoAction()" title="Redo">↪ Redo</button>
+    </div>
+    <div class="tb-group">
+      <button class="tb-btn" onclick="openTemplatesPanel()" title="Templates">⊡ Templates</button>
+      <button class="tb-btn tb-btn-snippets" onclick="openSnippetsPanel()" title="Enclave-in-a-Box — drop pre-built compliance-validated sub-topologies onto canvas" style="color:#a29bfe;">&#x229e; Snippets</button>
+      <button class="tb-btn" onclick="openSimPanel()" title="Simulate">▶ Simulate</button>
+      <button class="tb-btn tb-btn-danger" onclick="runOutageSimulation()" title="Simulate link outage">✕ Cut Link</button>
+    </div>
+    <div class="tb-group">
+      <button class="tb-btn" onclick="zoomIn()" title="Zoom In">+ Zoom</button>
+      <button class="tb-btn" onclick="zoomOut()" title="Zoom Out">- Zoom</button>
+      <button class="tb-btn" onclick="zoomFit()" title="Fit All">⊞ Fit</button>
+      <button class="tb-btn" onclick="zoomReset()" title="Reset Zoom">1:1</button>
+    </div>
+    <div class="tb-group" title="Layer visibility — click to hide/show device classes">
+      <button class="tb-btn tb-layer-btn tb-layer-active" id="tb-layer-L1" onclick="toggleLayerFilter('L1')" title="Toggle Layer 1 (physical media: SFP, fiber, patch panels)">L1</button>
+      <button class="tb-btn tb-layer-btn tb-layer-active" id="tb-layer-L2" onclick="toggleLayerFilter('L2')" title="Toggle Layer 2 (switches, WAP, WLC)">L2</button>
+      <button class="tb-btn tb-layer-btn tb-layer-active" id="tb-layer-L3" onclick="toggleLayerFilter('L3')" title="Toggle Layer 3 (routers, firewalls, L3 switches)">L3</button>
+      <button class="tb-btn tb-layer-btn" id="tb-layer-all" onclick="toggleLayerFilter('all')" title="Restore all layers">All</button>
+    </div>
+    <div class="tb-group">
+      <div class="tb-export-wrap" id="export-dropdown-wrap">
+        <button class="tb-btn" onclick="this.parentElement.classList.toggle('open')" title="Export topology in various formats">⬇ Export ▾</button>
+        <div class="tb-export-menu">
+          <button onclick="exportAs('drawio');this.closest('.tb-export-wrap').classList.remove('open')" title="Export draw.io XML">📐 draw.io</button>
+          <button onclick="exportAs('svg');this.closest('.tb-export-wrap').classList.remove('open')" title="Export SVG">🖼 SVG</button>
+          <button onclick="exportAs('vsdx');this.closest('.tb-export-wrap').classList.remove('open')" title="Export Visio (.vsdx)">📊 Visio</button>
+          <button onclick="exportAs('csv');this.closest('.tb-export-wrap').classList.remove('open')" title="Export Ops CSVs">📋 Ops CSV</button>
+          <button onclick="exportInventory('ansible');this.closest('.tb-export-wrap').classList.remove('open')" title="Export Ansible Inventory" style="color:#ff6b35;">⚙ Ansible</button>
+          <button onclick="exportInventory('terraform');this.closest('.tb-export-wrap').classList.remove('open')" title="Export Terraform HCL" style="color:#7b42bc;">⚙ Terraform</button>
+          <button onclick="showDeviceConfigModal();this.closest('.tb-export-wrap').classList.remove('open')" title="Device configs (IOS/EOS/JunOS)" style="color:#00c896;">⚙ Dev Configs</button>
+          <button onclick="exportCablePlantReport();this.closest('.tb-export-wrap').classList.remove('open')" title="Cable plant report CSV" style="color:#a29bfe;">🔌 Cable Plant</button>
+          <button onclick="generateExecutiveBriefing();this.closest('.tb-export-wrap').classList.remove('open')" title="AI Executive Briefing — plain-English summary for CISO/PM" style="color:#00d4ff;">📋 Exec Briefing</button>
+          <button onclick="generateRunbook();this.closest('.tb-export-wrap').classList.remove('open')" title="Network Operations Runbook — device inventory, IP table, link matrix, troubleshooting procedures" style="color:#27ae60;">📔 Runbook</button>
+        </div>
+      </div>
+    </div>
+    <div class="tb-group">
+      <a class="tb-btn" id="tb-versions-link" href="#" title="Phase diagram / version history">Phases</a>
+      <a class="tb-btn" id="tb-mc-link" href="#" title="Monte Carlo cascading simulation">Simulate MC</a>
+      <a class="tb-btn" id="tb-compliance-link" href="#" title="Compliance audit (FISMA/STIG/ZTA)" style="color:#f39c12;">Compliance</a>
+      <a class="tb-btn" id="tb-migration-link" href="#" title="View migration phases and linked SOPs for this topology" style="color:#a29bfe;">Migration</a>
+      <button class="tb-btn" id="tb-stig-import-btn" onclick="openStigImportDialog()" title="Import STIG Viewer .ckl or XCCDF results — match hostnames to canvas devices and color by compliance status" style="color:#e74c3c;">&#x1f6e1; STIG</button>
+      <button class="tb-btn" id="tb-ato-btn" onclick="generateAtoPackage()" title="Generate ATO package (boundary diagram, data flow, PPS matrix, STIG checklist)" style="color:#e74c3c;">&#x1f4cb; ATO Package</button>
+      <button class="tb-btn" id="tb-pps-btn" onclick="openPpsPanel()" title="PPS Matrix Generator — select enclave or device pair, auto-generate ports/protocols/services matrix" style="color:#00d4ff;">&#x1f4ca; PPS Matrix</button>
+      <button class="tb-btn" onclick="openScorecard()" title="Design Scorecard — check design completeness (routing, redundancy, security)" style="color:#27ae60;">&#x2705; Scorecard</button>
+      <button class="tb-btn" id="tb-board-ready-btn" onclick="openBoardReadyCheck()" title="Board Ready? — pre-flight check before ERB/CCB: conflicts, IP completeness, naming, save status" style="color:#a29bfe;">&#x1f4cb; Board Ready?</button>
+      <button class="tb-btn" id="tb-to-logical-btn" onclick="toLogicalUI()" title="To Logical — collapse physical nodes to logical overlays (VRF/VLAN/Zone) and open as new topology" style="color:#00d4ff;" disabled>&#x2b21; To Logical</button>
+      <button class="tb-btn" onclick="openTechDebt()" title="Tech Debt — EOL/EOS analysis + lifecycle risk" style="color:#e67e22;">&#x23f3; Tech Debt</button>
+      <button class="tb-btn" onclick="openIpv6Readiness()" title="IPv6 Readiness — device capability + migration plan" style="color:#3498db;">v6 IPv6</button>
+      <button class="tb-btn" id="tb-ip-plan-btn" onclick="openIpPlanModal()" title="Plan IPs — AI-assisted subnet allocation from supernet (CIDR → segment mapping)" style="color:#00d4ff;">&#x1f5c4; Plan IPs</button>
+    </div>
+    <div class="tb-group">
+      <button class="tb-btn tb-btn-fence" id="tb-fence-btn" onclick="toggleFenceMode()" title="Security Boundary Auto-Fencing — click to toggle, then click-drag a rectangle around devices to create enclave boundary">⬡ Fence <span id="fence-indicator" style="font-size:9px;opacity:0.6;">OFF</span></button>
+      <div class="tb-dropdown-wrap">
+        <button class="tb-btn tb-btn-heatmap" id="tb-heatmap-btn" onclick="document.getElementById('heatmap-dropdown').classList.toggle('hidden')" title="Heatmap Overlay — click to select metric, colors nodes/links by value">🌡 Heatmap ▾</button>
+        <div class="tb-dropdown hidden" id="heatmap-dropdown">
+          <button class="tb-dropdown-item" id="hm-opt-bandwidth" onclick="toggleHeatmap('bandwidth');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x1f4ca; Bandwidth Utilization</button>
+          <button class="tb-dropdown-item" id="hm-opt-vuln" onclick="toggleHeatmap('vuln');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x26a0; Vulnerability Severity</button>
+          <button class="tb-dropdown-item" id="hm-opt-stig" onclick="toggleHeatmap('stig');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x1f6e1; STIG Compliance %</button>
+          <button class="tb-dropdown-item" id="hm-opt-age" onclick="toggleHeatmap('age');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x23f3; Equipment Age</button>
+          <button class="tb-dropdown-item" id="hm-opt-clear" onclick="clearHeatmap();document.getElementById('heatmap-dropdown').classList.add('hidden')" style="color:#e74c3c;">✕ Clear Heatmap</button>
+        </div>
+      </div>
+      <button class="tb-btn" onclick="toggleTopologyLegend()" title="Topology Legend — show/hide legend of all node types and protocols on the canvas">&#x1f5fa; Legend</button>
+      <button class="tb-btn" onclick="toggleAnnotationLegend()" title="Annotation Legend — numbered callout bubbles with explanations for traffic walkthrough" style="color:#f1c40f;">&#x1f3f7; Ann. Legend</button>
+      <button class="tb-btn" onclick="exportCanvasPDF()" title="Export PDF — opens print-ready canvas in new tab for Print to PDF">&#x1f4c4; Export PDF</button>
+      <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — toggle to highlight protected (green) vs unprotected (red dashed) links">🔒 FIPS <span id="fips-indicator" style="font-size:9px;opacity:0.6;">OFF</span></button>
+      <button class="tb-btn" id="tb-fips-report-btn" onclick="exportFipsReport()" title="Export FIPS 140 Encryption Coverage Report for ISSM" style="color:#00d4ff;">📄 FIPS Report</button>
+      <button class="tb-btn" style="background:#d5f0e0;color:#1e7e34;border:1px solid #1e7e34;font-weight:600;" onclick="validateNetworkIaC()" title="Validate IaC — check generated Terraform for this topology">✓ Validate IaC</button>
+      <button class="tb-btn" style="background:#d6eaf8;color:#1a5276;border:1px solid #1a5276;font-weight:600;" onclick="deployNetworkIaC()" title="Generate Terraform deployment bundle for this network topology">🚀 Deploy IaC</button>
+      <button class="tb-btn tb-btn-ai" onclick="ncChatToggle()" title="Network Assistant — chat to generate topologies">✦ Chat</button>
+      <button class="tb-btn" onclick="toggleRackView()" title="Rack Elevation View — shows rack layout for selected device">&#x229e; Rack</button>
+      <button class="tb-btn" id="tb-netbox-btn" onclick="netboxToggle()" title="NetBox IPAM — pull devices, IPs, VLANs, racks, circuits from NetBox source of truth" style="color:#9b59b6;">⬡ NetBox</button>
+      <button class="tb-btn" id="tb-ai-review-btn" onclick="openAiReviewPanel()" title="AI Topology Reviewer — LLM analysis of SPOF, redundancy gaps, STIG violations, and suggestions" style="color:#00d4ff;">&#x1f50d; AI Review</button>
+      <button class="tb-btn" id="tb-cr-btn" onclick="toggleCrMarkupMode()" title="Change Request Markup Mode — mark proposed adds (green), removes (red), and modifies (yellow) for CAB review" style="color:#8e44ad;">&#x270f; CR Markup</button>
+    </div>
+    <div class="tb-group">
+      {% set wf_canvas_id = "ndc" %}
+      {% set wf_context_label = topology_name %}
+      {% set wf_design_id = topology_id %}
+      {% include 'includes/workflow_trigger_btn.html' %}
+    </div>
+    <div class="tb-group tb-banner-group">
+      <input type="text" id="banner-text-input" class="tb-banner-input" placeholder="Classification banner..." oninput="onBannerTextChange()" title="Classification banner text (e.g., CUI // SP-CTI, SECRET // NOFORN)"/>
+    </div>
+    <div class="tb-group tb-search-group">
+      <input type="text" id="canvas-search" class="tb-search-input" placeholder="&#128269; Find node..." oninput="_canvasSearch(this.value)" title="Find nodes by label, IP, hostname, or device type (Ctrl+F)"/>
+      <button class="tb-btn" id="canvas-search-clear" onclick="_clearCanvasSearch()" title="Clear search" style="display:none;padding:3px 6px;">&#215;</button>
+    </div>
+    <div class="tb-center">
+      <span class="topology-name-display" id="topo-name-display">{{ topology_name }}</span>
+    </div>
+    <div class="tb-status" id="tb-status">Ready</div>
+  </div>
+
+  <!-- Phase Nav Strip (populated by renderPhaseStrip() when _phases is non-empty) -->
+  <div id="phase-nav-strip" class="phase-nav-strip"></div>
+
+  <!-- Pattern Advisor chip strip (populated by PatternAdvisor.renderChips()) -->
+  <div id="pattern-chips" class="pattern-chips-strip" role="region" aria-label="Pattern advisories"></div>
+
+  <!-- Body -->
+  <div class="canvas-body">
+
+    <!-- Left Palette -->
+    <div class="palette" id="palette">
+      <div class="palette-header">Object Library
+        <button class="palette-add-btn" onclick="openCustomDeviceDialog()" title="Create custom device type">+</button>
+      </div>
+      <div style="padding:4px 8px;">
+        <input type="text" id="palette-search" placeholder="Filter objects..." style="width:100%;padding:4px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);outline:none;"/>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Physical</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="router" ondragstart="onDragStart(event)" title="Layer 3 router — IP routing, BGP/OSPF/EIGRP">
+            <div class="pi-icon router-icon">R</div><span>Router</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="switch-l2" ondragstart="onDragStart(event)" title="Layer 2 switch — VLANs, STP, MAC forwarding">
+            <div class="pi-icon switch-icon">S2</div><span>Switch L2</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="switch-l3" ondragstart="onDragStart(event)" title="Layer 3 switch — routing + switching, inter-VLAN">
+            <div class="pi-icon switch-icon">S3</div><span>Switch L3</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="firewall" ondragstart="onDragStart(event)" title="Firewall — stateful packet inspection, ACLs, NAT">
+            <div class="pi-icon fw-icon">FW</div><span>Firewall</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="load-balancer" ondragstart="onDragStart(event)" title="Load Balancer — traffic distribution, VIPs, health checks">
+            <div class="pi-icon lb-icon">LB</div><span>Load Balancer</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="wap" ondragstart="onDragStart(event)" title="Wireless Access Point — 802.11ax/be, PoE powered">
+            <div class="pi-icon wap-icon">AP</div><span>WAP</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="server" ondragstart="onDragStart(event)" title="Server — compute, storage, application host">
+            <div class="pi-icon srv-icon">SRV</div><span>Server</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="patch-panel" ondragstart="onDragStart(event)" title="Copper patch panel — structured cabling termination">
+            <div class="pi-icon pp-icon">PP</div><span>Patch Panel</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Cisco Physical Objects ────────────────────────────────────────── -->
+      <div class="palette-section">
+        <div class="palette-cat"><span class="vendor-chip cisco-chip">C</span> Cisco Physical</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="cisco-router" ondragstart="onDragStart(event)" title="Cisco Router — ISR 4000/ASR 9000/Catalyst 8000 series, BGP/OSPF/EIGRP">
+            <div class="pi-icon cisco-icon">
+              <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" width="26" height="20">
+                <path d="M24,6 a18,18 0 1,0 0.01,0 Z" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="2"/>
+                <path d="M24,6 v8 M20,10 l4,-4 l4,4 M24,42 v-8 M20,38 l4,4 l4,-4 M6,24 h8 M10,20 l-4,4 l4,4 M42,24 h-8 M38,20 l4,4 l-4,4 M24,18 v12 M18,24 h12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <span>Cisco Router</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="cisco-switch-l2" ondragstart="onDragStart(event)" title="Cisco Switch L2 — Catalyst 9000/Nexus 9000 series, VLANs, STP, 802.1Q">
+            <div class="pi-icon cisco-icon">
+              <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" width="26" height="20">
+                <path d="M10,16 h28 v16 h-28 Z" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="2"/>
+                <path d="M10,21 l-6,-3 v6 Z M10,30 l-6,-3 v6 Z M38,21 l6,-3 v6 Z M38,30 l6,-3 v6 Z M16,22 h16 M16,26 h16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <span>Cisco Switch L2</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="cisco-switch-l3" ondragstart="onDragStart(event)" title="Cisco Switch L3 — Catalyst 9000/Nexus series, inter-VLAN routing, OSPF/BGP">
+            <div class="pi-icon cisco-icon">
+              <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" width="26" height="20">
+                <path d="M10,20 h28 v16 h-28 Z M24,8 a10,10 0 1,0 0.01,0 Z" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="2"/>
+                <path d="M10,25 l-6,-3 v6 Z M10,34 l-6,-3 v6 Z M38,25 l6,-3 v6 Z M38,34 l6,-3 v6 Z M16,26 h16 M16,30 h16 M20,8 l4,-4 l4,4 M24,4 v6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <span>Cisco Switch L3</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="cisco-firewall" ondragstart="onDragStart(event)" title="Cisco Secure Firewall — ASA 5500-X / FTD 1200/6100 series, stateful inspection, NAT">
+            <div class="pi-icon cisco-fw-icon">
+              <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" width="26" height="20">
+                <path d="M12,6 h24 v36 h-24 Z" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="2"/>
+                <path d="M12,12 h24 M12,18 h24 M12,24 h24 M12,30 h24 M12,36 h24 M24,6 v6 M20,12 v6 M28,12 v6 M24,18 v6 M20,24 v6 M28,24 v6 M24,30 v6 M20,36 v6 M28,36 v6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <span>Cisco Firewall</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="cisco-lb" ondragstart="onDragStart(event)" title="Cisco Load Balancer — ACE/ACI, F5 BIG-IP, traffic distribution, VIPs, health checks">
+            <div class="pi-icon cisco-icon">
+              <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" width="26" height="20">
+                <path d="M8,12 h18 l14,12 l-14,12 h-18 Z" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="2"/>
+                <path d="M14,20 h10 M14,24 h10 M14,28 h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <span>Cisco LB</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Juniper Physical Objects ──────────────────────────────────────── -->
+      <div class="palette-section">
+        <div class="palette-cat"><span class="vendor-chip juniper-chip">J</span> Juniper Physical</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="juniper-ptx10003" ondragstart="onDragStart(event)" title="Juniper PTX 10003 — Packet Transport Router, 3.6 Tbps, JunOS, IS-IS/BGP">
+            <div class="pi-icon juniper-icon">
+              <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" width="26" height="20">
+                <path d="M24,6 a18,18 0 1,0 0.01,0 Z" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="2"/>
+                <path d="M24,6 v8 M20,10 l4,-4 l4,4 M24,42 v-8 M20,38 l4,4 l4,-4 M6,24 h8 M10,20 l-4,4 l4,4 M42,24 h-8 M38,20 l4,4 l-4,4 M24,18 v12 M18,24 h12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <span>PTX 10003</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="juniper-mx304" ondragstart="onDragStart(event)" title="Juniper MX 304 — Universal Edge Router, 4.8 Tbps, JunOS, MPLS/BGP/EVPN">
+            <div class="pi-icon juniper-icon">
+              <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" width="26" height="20">
+                <path d="M24,6 a18,18 0 1,0 0.01,0 Z" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="2"/>
+                <path d="M24,6 v8 M20,10 l4,-4 l4,4 M24,42 v-8 M20,38 l4,4 l4,-4 M6,24 h8 M10,20 l-4,4 l4,4 M42,24 h-8 M38,20 l4,4 l-4,4 M24,18 v12 M18,24 h12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M18,24 l3,-6 l3,6 l3,-6 l3,6" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <span>MX 304</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Physical Media</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="media-ge" ondragstart="onDragStart(event)" title="1 Gigabit Ethernet — 802.3ab copper / 802.3z fiber">
+            <div class="pi-icon ge-icon">GE</div><span>GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-10ge" ondragstart="onDragStart(event)" title="10 Gigabit Ethernet — 802.3ae, SFP+ or XFP">
+            <div class="pi-icon ge-icon">10G</div><span>10GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-25ge" ondragstart="onDragStart(event)" title="25 Gigabit Ethernet — 802.3by, SFP28">
+            <div class="pi-icon bw-icon">25G</div><span>25GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-40ge" ondragstart="onDragStart(event)" title="40 Gigabit Ethernet — 802.3ba, QSFP+">
+            <div class="pi-icon bw-icon">40G</div><span>40GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-100ge" ondragstart="onDragStart(event)" title="100 Gigabit Ethernet — 802.3bm, QSFP28">
+            <div class="pi-icon bw100-icon">100G</div><span>100GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-400ge" ondragstart="onDragStart(event)" title="400 Gigabit Ethernet — 802.3bs, QSFP-DD or OSFP">
+            <div class="pi-icon bw400-icon">400G</div><span>400GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="sfp" ondragstart="onDragStart(event)" title="Small Form-factor Pluggable — 1GbE, 850nm/1310nm">
+            <div class="pi-icon sfp-icon">SFP</div><span>SFP</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="sfp-plus" ondragstart="onDragStart(event)" title="Enhanced SFP — 10GbE, SR/LR/ER">
+            <div class="pi-icon sfp-icon">SF+</div><span>SFP+</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="qsfp" ondragstart="onDragStart(event)" title="Quad SFP — 100GbE, SR4/LR4/CWDM4">
+            <div class="pi-icon qsfp-icon">QSF</div><span>QSFP28</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="qsfp-dd" ondragstart="onDragStart(event)" title="QSFP Double Density — 400GbE, DR4/FR4">
+            <div class="pi-icon qsfp-icon">QDD</div><span>QSFP-DD</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-fiber" ondragstart="onDragStart(event)" title="Single-mode or multi-mode fiber optic cable">
+            <div class="pi-icon fiber-icon">FO</div><span>Fiber</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-optical" ondragstart="onDragStart(event)" title="Dense Wavelength Division Multiplexing transport">
+            <div class="pi-icon optical-icon">OPT</div><span>Optical/DWDM</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-converter" ondragstart="onDragStart(event)" title="Copper to fiber media converter">
+            <div class="pi-icon mc-icon">MC</div><span>Media Conv.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Encryption</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="macsec" ondragstart="onDragStart(event)">
+            <div class="pi-icon macsec-icon">MAC</div><span>MACsec</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="qkd-device" ondragstart="onDragStart(event)">
+            <div class="pi-icon qkd-icon">QKD</div><span>QKD Device</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="tls-terminator" ondragstart="onDragStart(event)">
+            <div class="pi-icon tls-icon">TLS</div><span>TLS Offload</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="fips-140-l1" ondragstart="onDragStart(event)">
+            <div class="pi-icon fips1-icon">F1</div><span>FIPS 140 L1</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="fips-140-l2" ondragstart="onDragStart(event)">
+            <div class="pi-icon fips2-icon">F2</div><span>FIPS 140 L2</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="fips-140-l3" ondragstart="onDragStart(event)">
+            <div class="pi-icon fips3-icon">F3</div><span>FIPS 140 L3</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="fips-140-l4" ondragstart="onDragStart(event)">
+            <div class="pi-icon fips4-icon">F4</div><span>FIPS 140 L4</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="hsm" ondragstart="onDragStart(event)">
+            <div class="pi-icon hsm-icon">HSM</div><span>HSM</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="type1-encryptor" ondragstart="onDragStart(event)" title="NSA Type 1 encryptor — generic HAIPE device">
+            <div class="pi-icon type1-icon">T1</div><span>Type 1 (NSA)</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-175d" ondragstart="onDragStart(event)" title="TACLANE-Micro — 2 Mbps to 2 Gbps HAIPE, most deployed NSA encryptor">
+            <div class="pi-icon kg-icon">175D</div><span>KG-175D</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-175g" ondragstart="onDragStart(event)" title="TACLANE-Flex — up to 10 Gbps, next-gen multi-mode tactical HAIPE">
+            <div class="pi-icon kg-icon">175G</div><span>KG-175G</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-250" ondragstart="onDragStart(event)" title="TACLANE-100G — 100 Gbps HAIPE for data center and backbone">
+            <div class="pi-icon kg-icon">250</div><span>KG-250</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-340" ondragstart="onDragStart(event)" title="KG-340 — 10 Gbps high-assurance IP network encryptor">
+            <div class="pi-icon kg-icon">340</div><span>KG-340</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-245x" ondragstart="onDragStart(event)" title="TACLANE-FLEX ECO — 1 Gbps low-SWaP tactical encryptor">
+            <div class="pi-icon kg-icon">245X</div><span>KG-245X</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-255" ondragstart="onDragStart(event)" title="KG-255 — 400 Gbps optical backbone encryptor (emerging)">
+            <div class="pi-icon kg-icon">255</div><span>KG-255</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Endpoints</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="endpoint-pc" ondragstart="onDragStart(event)">
+            <div class="pi-icon pc-icon">PC</div><span>Workstation</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="endpoint-phone" ondragstart="onDragStart(event)">
+            <div class="pi-icon phone-icon">PH</div><span>IP Phone</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="endpoint-iot" ondragstart="onDragStart(event)">
+            <div class="pi-icon iot-icon">IoT</div><span>IoT Device</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="endpoint-camera" ondragstart="onDragStart(event)">
+            <div class="pi-icon cam-icon">CAM</div><span>IP Camera</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Controllers</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="wlc" ondragstart="onDragStart(event)">
+            <div class="pi-icon wlc-icon">WLC</div><span>WLC</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="sdwan-edge" ondragstart="onDragStart(event)">
+            <div class="pi-icon sdw-icon">SDW</div><span>SD-WAN Edge</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="network-tap" ondragstart="onDragStart(event)">
+            <div class="pi-icon tap-icon">TAP</div><span>Network TAP</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="siem" ondragstart="onDragStart(event)">
+            <div class="pi-icon siem-icon">SIM</div><span>SIEM</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Optical / DWDM</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="roadm" ondragstart="onDragStart(event)">
+            <div class="pi-icon roadm-icon">RDM</div><span>ROADM</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="oadm" ondragstart="onDragStart(event)">
+            <div class="pi-icon oadm-icon">OAD</div><span>OADM</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="edfa" ondragstart="onDragStart(event)">
+            <div class="pi-icon edfa-icon">AMP</div><span>EDFA Amp</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="transponder" ondragstart="onDragStart(event)">
+            <div class="pi-icon txp-icon">TXP</div><span>Transponder</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="olt" ondragstart="onDragStart(event)">
+            <div class="pi-icon olt-icon">OLT</div><span>OLT</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="odf" ondragstart="onDragStart(event)">
+            <div class="pi-icon odf-icon">ODF</div><span>ODF</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="patch-panel-fiber" ondragstart="onDragStart(event)">
+            <div class="pi-icon fpp-icon">FPP</div><span>Fiber Patch</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Carrier / SP</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="pop" ondragstart="onDragStart(event)">
+            <div class="pi-icon pop-icon">POP</div><span>POP</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="mpls-pe" ondragstart="onDragStart(event)">
+            <div class="pi-icon pe-icon">PE</div><span>MPLS PE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="mpls-p" ondragstart="onDragStart(event)">
+            <div class="pi-icon p-icon">P</div><span>MPLS P</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="route-reflector" ondragstart="onDragStart(event)">
+            <div class="pi-icon rr-icon">RR</div><span>Route Reflector</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="sonet-adm" ondragstart="onDragStart(event)">
+            <div class="pi-icon adm-icon">ADM</div><span>SONET ADM</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Colocation / Facility</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="meet-me-room" ondragstart="onDragStart(event)" title="Carrier-neutral meet-me room — physical handoff between customer and CSP/carrier">
+            <div class="pi-icon mmr-icon">MMR</div><span>Meet-Me Room</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="cross-connect" ondragstart="onDragStart(event)" title="Physical cross-connect cable between racks/cages in a colocation facility">
+            <div class="pi-icon xx-icon">XX</div><span>Cross-Connect</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="demarc" ondragstart="onDragStart(event)" title="Demarcation point — boundary between carrier and customer responsibility">
+            <div class="pi-icon dm-icon">DM</div><span>Demarc</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="cage" ondragstart="onDragStart(event)" title="Colocation cage or private suite">
+            <div class="pi-icon cage-icon">CGE</div><span>Cage/Suite</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="cabinet" ondragstart="onDragStart(event)" title="Equipment cabinet/rack in colocation facility">
+            <div class="pi-icon cab-icon">CAB</div><span>Cabinet</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Drawing Shapes</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="draw-rect" ondragstart="onDragStart(event)" title="Rectangle — basic box shape">
+            <div class="pi-icon draw-rect-icon">▬</div><span>Rectangle</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-rounded-rect" ondragstart="onDragStart(event)" title="Rounded rectangle — soft corners">
+            <div class="pi-icon draw-rrect-icon">▢</div><span>Rounded Rect</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-circle" ondragstart="onDragStart(event)" title="Circle">
+            <div class="pi-icon draw-circle-icon">●</div><span>Circle</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-ellipse" ondragstart="onDragStart(event)" title="Ellipse — oval shape">
+            <div class="pi-icon draw-ellipse-icon">⬭</div><span>Ellipse</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-diamond" ondragstart="onDragStart(event)" title="Diamond — decision/zone marker">
+            <div class="pi-icon draw-diamond-icon">◆</div><span>Diamond</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-triangle" ondragstart="onDragStart(event)" title="Triangle">
+            <div class="pi-icon draw-tri-icon">▲</div><span>Triangle</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-hexagon" ondragstart="onDragStart(event)" title="Hexagon — zone boundary">
+            <div class="pi-icon draw-hex-icon">⬡</div><span>Hexagon</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-star" ondragstart="onDragStart(event)" title="Star — highlight / key point">
+            <div class="pi-icon draw-star-icon">★</div><span>Star</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-line-h" ondragstart="onDragStart(event)" title="Horizontal line divider">
+            <div class="pi-icon draw-line-icon">―</div><span>H-Line</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-line-v" ondragstart="onDragStart(event)" title="Vertical line divider">
+            <div class="pi-icon draw-line-icon">│</div><span>V-Line</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-arrow" ondragstart="onDragStart(event)" title="Arrow — directional indicator">
+            <div class="pi-icon draw-arrow-icon">→</div><span>Arrow</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Connectors</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="conn-straight" ondragstart="onDragStart(event)" title="Straight connector — drag endpoints freely, add labels at start/mid/end">
+            <div class="pi-icon conn-straight-icon">—→</div><span>Straight</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="conn-curved" ondragstart="onDragStart(event)" title="Curved connector — smooth arc between two points">
+            <div class="pi-icon conn-curved-icon">⌒→</div><span>Curved</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="conn-dashed" ondragstart="onDragStart(event)" title="Dashed connector — for logical or decommissioned paths">
+            <div class="pi-icon conn-dashed-icon">--→</div><span>Dashed</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Annotation / Text</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="annotation" ondragstart="onDragStart(event)">
+            <div class="pi-icon note-icon">...</div><span>Note</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="group-site" ondragstart="onDragStart(event)">
+            <div class="pi-icon group-icon">GRP</div><span>Site Group</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="text-label" ondragstart="onDragStart(event)" title="Free text label — double-click to edit">
+            <div class="pi-icon text-label-icon">T</div><span>Text Label</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="text-heading" ondragstart="onDragStart(event)" title="Large heading text — section title">
+            <div class="pi-icon text-heading-icon">H</div><span>Heading</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="text-badge" ondragstart="onDragStart(event)" title="Badge label — pill-shaped tag">
+            <div class="pi-icon text-badge-icon">B</div><span>Badge</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="callout-bubble" ondragstart="onDragStart(event)" title="Numbered callout bubble — references annotation legend">
+            <div class="callout-icon">1</div><span>Callout</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Logical</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="vrf" ondragstart="onDragStart(event)">
+            <div class="pi-icon vrf-icon">VRF</div><span>VRF</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="vlan" ondragstart="onDragStart(event)">
+            <div class="pi-icon vlan-icon">VLAN</div><span>VLAN</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="subnet" ondragstart="onDragStart(event)">
+            <div class="pi-icon sub-icon">⊂</div><span>Subnet</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="security-zone" ondragstart="onDragStart(event)">
+            <div class="pi-icon zone-icon">Z</div><span>Sec Zone</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="gre-tunnel" ondragstart="onDragStart(event)">
+            <div class="pi-icon tun-icon">GRE</div><span>GRE Tunnel</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="ipsec-tunnel" ondragstart="onDragStart(event)">
+            <div class="pi-icon tun-icon">IPS</div><span>IPSec</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="mpls-lsp" ondragstart="onDragStart(event)">
+            <div class="pi-icon mpls-icon">LSP</div><span>MPLS LSP</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Layout Tools</div>
+        <div class="palette-items">
+          <div class="palette-item layout-item" draggable="false" onclick="autoLayout('TB')" style="cursor:pointer;" title="Auto-layout: top-to-bottom (dagre) — click to rearrange all nodes vertically">
+            <div class="pi-icon" style="background:var(--accent);color:#f39c12;">⇩</div><span>Layout TB</span>
+          </div>
+          <div class="palette-item layout-item" draggable="false" onclick="autoLayout('LR')" style="cursor:pointer;" title="Auto-layout: left-to-right (dagre) — click to rearrange all nodes horizontally">
+            <div class="pi-icon" style="background:var(--accent);color:#f39c12;">⇨</div><span>Layout LR</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cloud Networking — dynamically loaded from /api/cloud-objects -->
+      <div id="cloud-palette-container"></div>
+      <div class="palette-section">
+        <div class="palette-cat">Generic Cloud</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="cloud" ondragstart="onDragStart(event)">
+            <div class="pi-icon cloud-icon">☁</div><span>Cloud</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vendor Stencils — loaded from nc_stencil_shapes -->
+      <div class="palette-section" id="stencil-palette-section">
+        <div class="palette-cat" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Vendor Stencils</span>
+          <a href="/network/stencils" target="_blank" title="Manage stencil libraries"
+             style="font-size:9px;color:var(--primary);text-decoration:none;opacity:0.8;">Manage ↗</a>
+        </div>
+        <div class="palette-items" id="stencil-palette-items">
+          <div style="font-size:10px;color:var(--text-muted,#888);padding:4px 6px;line-height:1.4;">
+            Loading…
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Canvas Area -->
+    <div class="canvas-area" id="canvas-drop-zone"
+         ondragover="event.preventDefault()"
+         ondrop="onDrop(event)">
+      <div id="canvas-container"></div>
+
+      <!-- Heatmap Legend (floating, shown when overlay active) -->
+      <div class="heatmap-legend" id="heatmap-legend">
+        <span class="heatmap-legend-title" id="heatmap-legend-title">Bandwidth</span>
+        <div class="heatmap-legend-bar">
+          <span class="heatmap-legend-label" id="heatmap-legend-lo">Low</span>
+          <div class="heatmap-legend-gradient"></div>
+          <span class="heatmap-legend-label" id="heatmap-legend-hi">High</span>
+        </div>
+        <button class="heatmap-legend-close" onclick="clearHeatmapOverlay()" title="Clear overlay">&times;</button>
+      </div>
+
+      <!-- Heatmap Tooltip (follows cursor on hover) -->
+      <div id="heatmap-tooltip" style="display:none;position:fixed;z-index:300;pointer-events:none;
+           background:rgba(22,33,62,0.95);border:1px solid #e67e22;border-radius:6px;padding:6px 10px;
+           font-size:11px;color:#ecf0f1;box-shadow:0 4px 12px rgba(0,0,0,0.5);white-space:nowrap;"></div>
+    </div>
+
+    <!-- Config Panel Toggle Tab (always visible, 22px handle) -->
+    <div id="config-panel-tab" class="config-panel-tab" onclick="_toggleConfigPanel()" title="Toggle Properties panel">
+      <span class="cpt-arrow" id="cpt-arrow">&#x276F;</span>
+      <span class="cpt-label">Props</span>
+    </div>
+
+    <!-- Right Config Panel (auto-hides when nothing selected) -->
+    <div class="config-panel" id="config-panel">
+      <div class="config-header">
+        <span id="config-header-title">Properties</span>
+        <button class="config-header-close" onclick="_closeConfigPanel()" title="Close panel">&times;</button>
+      </div>
+      <div id="config-empty" class="config-empty">
+        <div class="empty-icon">⬡</div>
+        <p>Select an object to configure</p>
+      </div>
+      <div id="config-form" class="hidden">
+        <div class="form-group">
+          <label>Type</label>
+          <input type="text" id="cfg-type" class="form-control" readonly/>
+        </div>
+        <div class="form-group">
+          <label>Label</label>
+          <input type="text" id="cfg-label" class="form-control" oninput="updateSelectedLabel(this.value)"/>
+        </div>
+        <div class="form-group cfg-section-header">Appearance</div>
+        <div class="form-group">
+          <label>Fill Color</label>
+          <div class="color-row">
+            <input type="color" id="cfg-fill-color" class="color-input" oninput="applyNodeColor('fill', this.value)"/>
+            <div class="color-swatches">
+              <span class="clr-swatch" style="background:#1a2a3a;" onclick="setNodeColor('fill','#1a2a3a')" title="Default dark"></span>
+              <span class="clr-swatch" style="background:#eaeaea;" onclick="setNodeColor('fill','#eaeaea')" title="White"></span>
+              <span class="clr-swatch" style="background:#f1c40f;" onclick="setNodeColor('fill','#f1c40f')" title="Yellow — As-Is / Future"></span>
+              <span class="clr-swatch" style="background:#e74c3c;" onclick="setNodeColor('fill','#e74c3c')" title="Red — Decommission"></span>
+              <span class="clr-swatch" style="background:#2ecc71;" onclick="setNodeColor('fill','#2ecc71')" title="Green — New / In-Service"></span>
+              <span class="clr-swatch" style="background:#3498db;" onclick="setNodeColor('fill','#3498db')" title="Blue"></span>
+              <span class="clr-swatch" style="background:#9b59b6;" onclick="setNodeColor('fill','#9b59b6')" title="Purple"></span>
+              <span class="clr-swatch" style="background:#e67e22;" onclick="setNodeColor('fill','#e67e22')" title="Orange"></span>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Text Color</label>
+          <div class="color-row">
+            <input type="color" id="cfg-text-color" class="color-input" oninput="applyNodeColor('text', this.value)"/>
+            <div class="color-swatches">
+              <span class="clr-swatch" style="background:#eaeaea;" onclick="setNodeColor('text','#eaeaea')" title="White"></span>
+              <span class="clr-swatch" style="background:#f1c40f;" onclick="setNodeColor('text','#f1c40f')" title="Yellow"></span>
+              <span class="clr-swatch" style="background:#e74c3c;" onclick="setNodeColor('text','#e74c3c')" title="Red"></span>
+              <span class="clr-swatch" style="background:#2ecc71;" onclick="setNodeColor('text','#2ecc71')" title="Green"></span>
+              <span class="clr-swatch" style="background:#1a1a2e;" onclick="setNodeColor('text','#1a1a2e')" title="Dark"></span>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>IPv4 Address</label>
+          <input type="text" id="cfg-ip" class="form-control" placeholder="e.g. 10.0.0.1/24" oninput="updateConfig('ip', this.value); updateSubnetBadge('cfg-ip-subnet-info', this.value)"/>
+          <div id="cfg-ip-subnet-info"></div>
+        </div>
+        <div class="form-group">
+          <label>IPv6 Address</label>
+          <input type="text" id="cfg-ipv6" class="form-control" placeholder="e.g. 2001:db8::1/64" oninput="updateConfig('ipv6', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>IPv6 Link-Local</label>
+          <input type="text" id="cfg-ipv6-ll" class="form-control" placeholder="e.g. fe80::1" oninput="updateConfig('ipv6_link_local', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Address Family</label>
+          <select id="cfg-addr-family" class="form-control" onchange="updateConfig('address_family', this.value)">
+            <option value="">— Not Set —</option>
+            <option value="ipv4">IPv4 Only</option>
+            <option value="ipv6">IPv6 Only</option>
+            <option value="dual-stack">Dual-Stack (IPv4 + IPv6)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>IPv6 Capable</label>
+          <select id="cfg-ipv6-capable" class="form-control" onchange="updateConfig('ipv6_capable', this.value)">
+            <option value="">— Unknown —</option>
+            <option value="yes">Yes — Hardware/software supports IPv6</option>
+            <option value="no">No — Requires upgrade for IPv6</option>
+            <option value="partial">Partial — Limited IPv6 support</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Protocol</label>
+          <select id="cfg-protocol" class="form-control" onchange="updateConfig('protocol', this.value)">
+            <option value="">— None —</option>
+            <option value="OSPF">OSPF</option>
+            <option value="BGP">BGP</option>
+            <option value="EIGRP">EIGRP</option>
+            <option value="IS-IS">IS-IS</option>
+            <option value="RIP">RIP</option>
+            <option value="HSRP">HSRP</option>
+            <option value="VRRP">VRRP</option>
+            <option value="GLBP">GLBP</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>MTU</label>
+          <input type="number" id="cfg-mtu" class="form-control" placeholder="1500" oninput="updateConfig('mtu', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>VLAN ID</label>
+          <input type="number" id="cfg-vlan" class="form-control" placeholder="e.g. 100" oninput="updateConfig('vlan', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>VRF</label>
+          <input type="text" id="cfg-vrf" class="form-control" placeholder="e.g. MGMT" oninput="updateConfig('vrf', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>ASN</label>
+          <input type="number" id="cfg-asn" class="form-control" placeholder="e.g. 65001" oninput="updateConfig('asn', this.value)"/>
+        </div>
+        <!-- BGP Attributes -->
+        <div class="form-group cfg-section-header">BGP Attributes</div>
+        <div class="form-group">
+          <label>LOCAL_PREF</label>
+          <input type="number" id="cfg-local-pref" class="form-control" placeholder="100 (default)" oninput="updateConfig('local_pref', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>MED</label>
+          <input type="number" id="cfg-med" class="form-control" placeholder="0" oninput="updateConfig('med', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Weight</label>
+          <input type="number" id="cfg-weight" class="form-control" placeholder="0 (Cisco)" oninput="updateConfig('weight', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Community</label>
+          <input type="text" id="cfg-community" class="form-control" placeholder="e.g. 65001:100" oninput="updateConfig('community', this.value)"/>
+        </div>
+        <!-- OSPF Attributes -->
+        <div class="form-group cfg-section-header">OSPF Attributes</div>
+        <div class="form-group">
+          <label>OSPF Area</label>
+          <input type="text" id="cfg-ospf-area" class="form-control" placeholder="0 (backbone)" oninput="updateConfig('ospf_area', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>OSPF Cost</label>
+          <input type="number" id="cfg-ospf-cost" class="form-control" placeholder="auto (ref_bw/bw)" oninput="updateConfig('ospf_cost', this.value)"/>
+        </div>
+        <!-- Device Info -->
+        <div class="form-group cfg-section-header">Device Info</div>
+        <div class="form-group">
+          <label>Hostname</label>
+          <input type="text" id="cfg-hostname" class="form-control" placeholder="e.g. rtr-core-01" oninput="updateConfig('hostname', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>OS / Config Template</label>
+          <select id="cfg-os" class="form-control" onchange="updateConfig('os', this.value)">
+            <option value="">— Auto (by device type) —</option>
+            <option value="ios_router">Cisco IOS (Router / Firewall)</option>
+            <option value="ios_switch">Cisco IOS (Switch)</option>
+            <option value="eos">Arista EOS</option>
+            <option value="junos">Juniper JunOS</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Vendor / Model</label>
+          <input type="text" id="cfg-model" class="form-control" placeholder="e.g. Cisco C9300-48T" oninput="updateConfig('model', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Serial Number</label>
+          <input type="text" id="cfg-serial" class="form-control" placeholder="e.g. FOC2334N1AB" oninput="updateConfig('serial', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Asset Tag</label>
+          <input type="text" id="cfg-asset-tag" class="form-control" placeholder="e.g. IT-NET-0042" oninput="updateConfig('asset_tag', this.value)"/>
+        </div>
+        <!-- Lifecycle & Tech Debt -->
+        <div class="form-group cfg-section-header">Lifecycle &amp; Tech Debt</div>
+        <div class="form-group">
+          <label>Install Date</label>
+          <input type="date" id="cfg-install-date" class="form-control" oninput="updateConfig('install_date', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>End of Sale (EOS)</label>
+          <input type="date" id="cfg-eos-date" class="form-control" oninput="updateConfig('eos_date', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>End of Life (EOL)</label>
+          <input type="date" id="cfg-eol-date" class="form-control" oninput="updateConfig('eol_date', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>End of Support (EoSup)</label>
+          <input type="date" id="cfg-eosup-date" class="form-control" oninput="updateConfig('eosup_date', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Software / Firmware Version</label>
+          <input type="text" id="cfg-sw-version" class="form-control" placeholder="e.g. IOS-XE 17.9.4a" oninput="updateConfig('sw_version', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Hardware Revision</label>
+          <input type="text" id="cfg-hw-revision" class="form-control" placeholder="e.g. V02" oninput="updateConfig('hw_revision', this.value)"/>
+        </div>
+        <!-- Slot / Port -->
+        <div class="form-group cfg-section-header">Slot / Port</div>
+        <div class="form-group">
+          <label>Slot</label>
+          <input type="text" id="cfg-slot" class="form-control" placeholder="e.g. 0, 1/0" oninput="updateConfig('slot', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Port</label>
+          <input type="text" id="cfg-port" class="form-control" placeholder="e.g. Gi0/0/1, Te1/1" oninput="updateConfig('port', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Port Type</label>
+          <select id="cfg-port-type" class="form-control" onchange="updateConfig('port_type', this.value)">
+            <option value="">— Select —</option>
+            <option value="GE">GbE (1G)</option>
+            <option value="10GE">10GbE</option>
+            <option value="25GE">25GbE</option>
+            <option value="40GE">40GbE</option>
+            <option value="100GE">100GbE</option>
+            <option value="400GE">400GbE</option>
+            <option value="SM-Fiber">SM Fiber</option>
+            <option value="MM-Fiber">MM Fiber</option>
+            <option value="Cat6A">Cat6A Copper</option>
+            <option value="Coax">Coaxial</option>
+            <option value="Console">Console</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Bandwidth</label>
+          <input type="text" id="cfg-bandwidth" class="form-control" placeholder="e.g. 10Gbps" oninput="updateConfig('bandwidth', this.value)"/>
+        </div>
+        <!-- Location -->
+        <div class="form-group cfg-section-header">Location</div>
+        <div class="form-group">
+          <label>Site</label>
+          <input type="text" id="cfg-site" class="form-control" placeholder="e.g. DC-East-1" oninput="updateConfig('site', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Building / Floor / Room</label>
+          <input type="text" id="cfg-location" class="form-control" placeholder="e.g. Bldg-A / Floor-2 / MDF" oninput="updateConfig('location', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Rack / U-Position</label>
+          <input type="text" id="cfg-rack" class="form-control" placeholder="e.g. Rack-12 / U22-U24" oninput="updateConfig('rack', this.value)"/>
+        </div>
+        <!-- Peering -->
+        <div class="form-group cfg-section-header">Peering</div>
+        <div class="form-group">
+          <label>Peer ASN</label>
+          <input type="number" id="cfg-peer-asn" class="form-control" placeholder="e.g. 15169" oninput="updateConfig('peer_asn', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Peer IP</label>
+          <input type="text" id="cfg-peer-ip" class="form-control" placeholder="e.g. 2001:db8::1" oninput="updateConfig('peer_ip', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Peering Type</label>
+          <select id="cfg-peering-type" class="form-control" onchange="updateConfig('peering_type', this.value)">
+            <option value="">— None —</option>
+            <option value="transit">Transit</option>
+            <option value="peer">Peer (Settlement-Free)</option>
+            <option value="customer">Customer</option>
+            <option value="private">Private Peering</option>
+            <option value="ixp">IXP / Public Peering</option>
+          </select>
+        </div>
+        <!-- Linked Records -->
+        <div class="form-group cfg-section-header">Linked Records</div>
+        <div class="form-group">
+          <label>Project</label>
+          <select id="cfg-project-id" class="form-control" onchange="updateConfig('project_id', this.value)">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Circuit</label>
+          <select id="cfg-circuit-id" class="form-control" onchange="updateConfig('circuit_id', this.value)">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Customer</label>
+          <select id="cfg-customer-id" class="form-control" onchange="updateConfig('customer_id', this.value)">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>IPAM Block</label>
+          <select id="cfg-ipam-id" class="form-control" onchange="updateConfig('ipam_block_id', this.value)">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Cable</label>
+          <select id="cfg-cable-id" class="form-control" onchange="updateConfig('cable_id', this.value)">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Cross-Connect</label>
+          <select id="cfg-xconn-id" class="form-control" onchange="updateConfig('xconn_id', this.value)">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Label Rotation</label>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="range" id="cfg-rotation" min="-90" max="90" step="15" value="0" style="flex:1;" oninput="applyRotation(this.value)"/>
+            <span id="cfg-rotation-val" style="font-size:11px;color:var(--text-dim);min-width:30px;">0°</span>
+          </div>
+          <div style="display:flex;gap:4px;margin-top:4px;">
+            <button class="nc-chat-btn-sm" onclick="applyRotation(0)">0°</button>
+            <button class="nc-chat-btn-sm" onclick="applyRotation(-45)">-45°</button>
+            <button class="nc-chat-btn-sm" onclick="applyRotation(-90)">-90°</button>
+            <button class="nc-chat-btn-sm" onclick="applyRotation(45)">45°</button>
+            <button class="nc-chat-btn-sm" onclick="applyRotation(90)">90°</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="cfg-notes" class="form-control" rows="3" oninput="updateConfig('notes', this.value)"></textarea>
+        </div>
+        <!-- Color Palette -->
+        <div class="form-group cfg-section-header">Colors</div>
+        <div class="form-group">
+          <label>Fill Color</label>
+          <div class="color-swatches" id="fill-colors"></div>
+        </div>
+        <div class="form-group">
+          <label>Border Color</label>
+          <div class="color-swatches" id="stroke-colors"></div>
+        </div>
+        <div class="form-group">
+          <label>Text Color</label>
+          <div class="color-swatches" id="text-colors"></div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-danger-sm" onclick="deleteSelected()">Delete Object</button>
+        </div>
+      </div>
+      <!-- Link Config Panel (shown when a link/edge is selected) -->
+      <div id="link-config-form" class="hidden">
+        <div class="config-header">Link Properties</div>
+        <div class="form-group cfg-section-header">Labels</div>
+        <div class="form-group">
+          <label>Label — Start (A end)</label>
+          <input type="text" id="lcfg-label-start" class="form-control" placeholder="e.g. eth0/0" oninput="updateLinkConfig('labelStart', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Label — Middle</label>
+          <input type="text" id="lcfg-label-mid" class="form-control" placeholder="e.g. 1 Gbps" oninput="updateLinkConfig('labelMid', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Label — End (B end)</label>
+          <input type="text" id="lcfg-label-end" class="form-control" placeholder="e.g. Gi1/0/1" oninput="updateLinkConfig('labelEnd', this.value)"/>
+        </div>
+        <div class="form-group cfg-section-header">Style</div>
+        <div class="form-group">
+          <label>Line Color</label>
+          <div class="color-row">
+            <input type="color" id="lcfg-color" class="color-input" oninput="updateLinkConfig('color', this.value)"/>
+            <div class="color-swatches">
+              <span class="clr-swatch" style="background:#e94560;" onclick="setLinkColor('#e94560')" title="Default red"></span>
+              <span class="clr-swatch" style="background:#f1c40f;" onclick="setLinkColor('#f1c40f')" title="Yellow — As-Is/Future"></span>
+              <span class="clr-swatch" style="background:#e74c3c;" onclick="setLinkColor('#e74c3c')" title="Red — Decommission"></span>
+              <span class="clr-swatch" style="background:#2ecc71;" onclick="setLinkColor('#2ecc71')" title="Green — New"></span>
+              <span class="clr-swatch" style="background:#3498db;" onclick="setLinkColor('#3498db')" title="Blue"></span>
+              <span class="clr-swatch" style="background:#7a8cb0;" onclick="setLinkColor('#7a8cb0')" title="Gray"></span>
+            </div>
+          </div>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="lcfg-curved" onchange="updateLinkConfig('curved', this.checked)" style="width:16px;height:16px;"/>
+          <label for="lcfg-curved" style="margin:0;cursor:pointer;">Curved connector</label>
+        </div>
+        <div class="form-group cfg-section-header">Routing</div>
+        <div class="form-group">
+          <label>Protocol</label>
+          <select id="lcfg-protocol" class="form-control" onchange="updateLinkConfig('protocol', this.value)">
+            <option value="">— None —</option>
+            <option value="OSPF">OSPF</option>
+            <option value="BGP">BGP</option>
+            <option value="EIGRP">EIGRP</option>
+            <option value="IS-IS">IS-IS</option>
+            <option value="RIP">RIP</option>
+            <option value="HSRP">HSRP</option>
+            <option value="VRRP">VRRP</option>
+            <option value="GLBP">GLBP</option>
+            <option value="static">Static</option>
+          </select>
+        </div>
+        <div class="form-group cfg-section-header">Interface</div>
+        <div class="form-group">
+          <label>Link IP (CIDR)</label>
+          <input type="text" id="lcfg-ip" class="form-control" placeholder="e.g. 10.0.0.0/30" oninput="updateLinkConfig('ip', this.value); updateSubnetBadge('lcfg-ip-subnet-info', this.value)"/>
+          <div id="lcfg-ip-subnet-info"></div>
+        </div>
+        <div class="form-group">
+          <label>VLAN ID</label>
+          <input type="number" id="lcfg-vlan" class="form-control" placeholder="e.g. 100" oninput="updateLinkConfig('vlan', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>VRF</label>
+          <input type="text" id="lcfg-vrf" class="form-control" placeholder="e.g. MGMT" oninput="updateLinkConfig('vrf', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>MTU</label>
+          <input type="number" id="lcfg-mtu" class="form-control" placeholder="1500" oninput="updateLinkConfig('mtu', this.value)"/>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="lcfg-trunk" onchange="updateLinkConfig('trunk', this.checked)" style="width:16px;height:16px;"/>
+          <label for="lcfg-trunk" style="margin:0;cursor:pointer;">Trunk (802.1Q)</label>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-danger-sm" onclick="deleteSelected()">Delete Link</button>
+        </div>
+      </div>
+      <!-- Security Boundaries panel -->
+      <div class="boundary-panel">
+        <div class="boundary-panel-header">Security Boundaries</div>
+        <div id="boundary-list">
+          <div class="boundary-empty">No boundaries defined. Use fence tool to create.</div>
+        </div>
+      </div>
+
+      <!-- Bulk Edit Panel (shown when 2+ nodes selected via Shift+Click) -->
+      <div id="bulk-edit-panel" class="hidden">
+        <div class="bulk-summary-bar">
+          <span id="bulk-summary-text">0 selected</span>
+          <span id="bulk-summary-missing" class="bulk-summary-missing"></span>
+        </div>
+        <div class="form-group">
+          <label>Set VLAN (all selected)</label>
+          <input type="number" id="bulk-vlan" class="form-control" placeholder="e.g. 100" oninput="_bulkUpdate('vlan', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Classification (all selected)</label>
+          <select id="bulk-classification" class="form-control" onchange="_bulkUpdate('classification', this.value)">
+            <option value="">— No Change —</option>
+            <option value="IL2">IL2 — Public</option>
+            <option value="IL4">IL4 — CUI</option>
+            <option value="IL5">IL5 — CUI/DoD</option>
+            <option value="IL6">IL6 — SECRET</option>
+            <option value="SIPR">SIPR — SECRET</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>IP Prefix (first 3 octets)</label>
+          <input type="text" id="bulk-ip-prefix" class="form-control" placeholder="e.g. 10.1.0." title="Replaces first three octets, keeps host + CIDR"/>
+          <button class="tb-btn" style="width:100%;margin-top:4px;" onclick="_bulkApplyIpPrefix()">Apply Prefix to All</button>
+        </div>
+        <div class="form-group">
+          <label>Fill Color (all selected)</label>
+          <input type="color" id="bulk-fill-color" class="color-input" oninput="_bulkApplyColor(this.value)"/>
+        </div>
+        <div class="bulk-action-row">
+          <button class="tb-btn" onclick="_clearMultiSelect()">Clear</button>
+          <button class="tb-btn tb-btn-danger" onclick="_deleteMultiSelected()">Delete All</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end canvas-body -->
+
+  <!-- Annotation Legend Panel -->
+  <div id="ann-legend-panel" class="ann-legend">
+    <div class="ann-legend-title">
+      Annotation Legend
+      <button class="ann-legend-close" onclick="toggleAnnotationLegend()">&times;</button>
+    </div>
+    <div id="ann-legend-entries"></div>
+    <button class="ann-add-btn" onclick="addAnnotLegendEntry()">+ Add Entry</button>
+  </div>
+
+  <!-- Conflict Scanner Panel (ndc-ux-02) -->
+  <div id="conflict-panel" class="conflict-panel hidden">
+    <div class="conflict-panel-header">
+      <span>&#9888; Conflicts <span id="conflict-count-badge" class="conflict-count-badge">0</span></span>
+      <button class="conflict-panel-close" onclick="document.getElementById('conflict-panel').classList.add('hidden')" title="Dismiss">&times;</button>
+    </div>
+    <div id="conflict-panel-list" class="conflict-panel-list"></div>
+  </div>
+
+  <!-- Status Bar -->
+  <div class="canvas-statusbar">
+    <span id="sb-objects">Objects: 0</span>
+    <span id="sb-links">Links: 0</span>
+    <span id="sb-saved">Not saved</span>
+    <span id="sb-zoom">Zoom: 100%</span>
+    <span id="sb-conflicts" class="sb-conflict-warn" style="display:none;" title="Click to view/hide conflict panel" onclick="document.getElementById('conflict-panel').classList.toggle('hidden')">&#9888; 0 conflicts</span>
+  </div>
+
+</div><!-- end canvas-layout -->
+
+<!-- Conflict Export Warning Modal -->
+<div id="conflict-export-modal" class="cex-overlay hidden">
+  <div class="cex-box">
+    <div class="cex-header">&#9888; Export with Conflicts?</div>
+    <p class="cex-sub" id="cex-sub">Your design has conflicts that will be present in the export.</p>
+    <div class="cex-list" id="cex-list"></div>
+    <div class="cex-actions">
+      <button class="cex-btn-fix" onclick="document.getElementById('conflict-export-modal').classList.add('hidden')">&#10007; Fix First</button>
+      <button class="cex-btn-proceed" id="cex-proceed-btn">Export Anyway &#8594;</button>
+    </div>
+  </div>
+</div>
+
+<!-- Executive Briefing Modal -->
+<div id="briefing-modal" class="brf-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="brf-box">
+    <div class="brf-titlebar">
+      <span class="brf-title" id="brf-title">Executive Briefing</span>
+      <span class="brf-badge">AI · CISO/PM</span>
+      <button class="brf-close" onclick="document.getElementById('briefing-modal').classList.add('hidden')">&times;</button>
+    </div>
+    <div class="brf-body" id="brf-body">
+      <div class="brf-loading">
+        <div class="brf-spinner"></div>
+        Generating executive briefing&hellip;
+      </div>
+    </div>
+    <div class="brf-actions">
+      <button class="brf-btn-copy" id="brf-copy-btn" onclick="briefingCopyToClipboard()" style="display:none;">&#x1f4cb; Copy Markdown</button>
+      <button class="brf-btn-pdf" id="brf-pdf-btn" onclick="briefingPrintPDF()" style="display:none;">&#x1f5a8; Print / Export PDF</button>
+      <button class="brf-btn-copy" onclick="document.getElementById('briefing-modal').classList.add('hidden')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Runbook Modal -->
+<div id="runbook-modal" class="brf-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="brf-box">
+    <div class="brf-titlebar">
+      <span class="brf-title" id="rb-modal-title">Network Operations Runbook</span>
+      <span class="brf-badge" style="background:rgba(39,174,96,.18);color:#27ae60;">NDC · NetOps</span>
+      <button class="brf-close" onclick="document.getElementById('runbook-modal').classList.add('hidden')">&times;</button>
+    </div>
+    <div class="brf-body" id="rb-modal-body">
+      <div class="brf-loading">
+        <div class="brf-spinner"></div>
+        Generating runbook&hellip;
+      </div>
+    </div>
+    <div class="brf-actions">
+      <button class="brf-btn-copy" id="rb-download-btn" onclick="runbookDownload()" style="display:none;">&#x2b07; Download .md</button>
+      <button class="brf-btn-copy" id="rb-copy-btn" onclick="runbookCopy()" style="display:none;">&#x1f4cb; Copy Markdown</button>
+      <button class="brf-btn-copy" onclick="document.getElementById('runbook-modal').classList.add('hidden')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Board Ready Modal -->
+<div id="board-ready-modal" class="brm-overlay hidden">
+  <div class="brm-box">
+    <div class="brm-titlebar">
+      <span id="brm-headline" class="brm-headline">Board Ready Check</span>
+      <button class="brm-close" onclick="document.getElementById('board-ready-modal').classList.add('hidden')">&times;</button>
+    </div>
+    <div class="brm-list" id="brm-list"></div>
+    <div class="brm-actions">
+      <button class="brm-btn-close" onclick="document.getElementById('board-ready-modal').classList.add('hidden')">Close</button>
+      <button class="brm-btn-ato" id="brm-ato-btn" style="display:none;" onclick="document.getElementById('board-ready-modal').classList.add('hidden'); generateAtoPackage();">&#x1f4cb; Generate ATO Package</button>
+    </div>
+  </div>
+</div>
+
+<!-- Security Boundary Fence Dialog -->
+<div id="fence-overlay" class="fence-overlay hidden">
+  <div class="fence-dialog">
+    <h3>⬡ Create Security Boundary</h3>
+    <label>Selected Devices (<span id="fence-node-count">0</span>)</label>
+    <div id="fence-node-list" class="fence-node-list"></div>
+    <label>Classification Level</label>
+    <select id="fence-classification">
+      <option value="CUI" selected>CUI — Controlled Unclassified</option>
+      <option value="SECRET">SECRET</option>
+      <option value="TOP SECRET">TOP SECRET</option>
+      <option value="PUBLIC">PUBLIC</option>
+    </select>
+    <label>Boundary Label (optional)</label>
+    <input type="text" id="fence-label" placeholder="e.g., CUI Enclave, SECRET VLAN, Server Farm"/>
+    <label>Notes</label>
+    <textarea id="fence-notes" placeholder="Boundary justification or description..."></textarea>
+    <div class="fence-actions">
+      <button class="fence-btn-cancel" onclick="closeFenceDialog()">Cancel</button>
+      <button class="fence-btn-create" onclick="createBoundaryFromFence()">Create Boundary</button>
+    </div>
+  </div>
+</div>
+
+<!-- Simulation Overlay -->
+<div id="sim-overlay" class="sim-overlay hidden">
+  <div class="sim-panel">
+    <div class="sim-panel-header">
+      <h3>Simulation</h3>
+      <button class="close-btn" onclick="closeSimPanel()">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Type</label>
+      <select id="sp-sim-type" class="form-control" onchange="onSimTypeChange(this.value)">
+        <option value="ping">Ping</option>
+        <option value="traceroute">Traceroute</option>
+        <option value="spof">SPOF Analysis</option>
+        <option value="failover">Failover / Resilience</option>
+        <option value="load">Load Heatmap</option>
+        <option value="bgp_bestpath">BGP Best Path Selection</option>
+        <option value="bgp_propagation">BGP Route Propagation</option>
+        <option value="ospf_spf">OSPF SPF (Shortest Path First)</option>
+        <option value="ospf_cost">OSPF Cost Analysis</option>
+        <option value="jumbo_mtu">Jumbo Frame / MTU Path Check</option>
+        <option value="dwdm_optical">DWDM / Optical Quality</option>
+        <option value="fiber_budget">Fiber Power Budget</option>
+        <option value="blast_radius">Blast Radius (Zero Trust)</option>
+      </select>
+      <!-- Extra params for routing sims -->
+      <div id="sim-extra-params" class="hidden" style="margin-top:8px;">
+        <div class="form-group" id="sim-prefix-group" style="display:none;">
+          <label>Prefix / Destination</label>
+          <input type="text" id="sp-prefix" class="form-control" placeholder="10.0.0.0/24"/>
+        </div>
+        <div class="form-group" id="sim-mtu-group" style="display:none;">
+          <label>Desired MTU</label>
+          <input type="number" id="sp-mtu-size" class="form-control" value="9000" placeholder="9000 (jumbo)"/>
+        </div>
+        <div class="form-group" id="sim-blast-group" style="display:none;">
+          <label>Max Hops</label>
+          <input type="number" id="sp-max-hops" class="form-control" value="3" min="1" max="10" placeholder="3"/>
+          <small style="color:#888;">Click a device first, then Run to simulate compromise</small>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="runSimulation()">Run</button>
+    <div id="sim-output" class="sim-output"></div>
+  </div>
+</div>
+
+<!-- Blast Radius Context Menu -->
+<div id="blast-ctx-menu" style="
+  display:none;position:fixed;z-index:9999;
+  background:#1a1a2e;border:1px solid #e94560;border-radius:6px;
+  box-shadow:0 4px 20px rgba(233,69,96,0.4);min-width:240px;overflow:hidden;">
+  <div style="padding:8px 14px;background:#12122a;border-bottom:1px solid #2a2a4a;
+    font-size:11px;color:#7a8cb0;text-transform:uppercase;letter-spacing:1px;">Simulation</div>
+  <div id="blast-ctx-device-name" style="padding:8px 14px 4px;font-size:12px;color:#e94560;font-weight:600;"></div>
+  <button onclick="triggerBlastRadiusFromContext()" class="ctx-menu-btn">
+    &#x1F4A5; What if compromised?
+    <span class="ctx-menu-sub">Blast radius — animated hop-by-hop propagation</span>
+  </button>
+  <button onclick="triggerBlastRadiusFromContext(5)" class="ctx-menu-btn">
+    &#x1F6E1; Deep blast (5 hops)
+    <span class="ctx-menu-sub">Extended reachability analysis</span>
+  </button>
+  <div style="border-top:1px solid #2a2a4a;margin:0;"></div>
+  <button onclick="triggerFailoverFromContext()" class="ctx-menu-btn">
+    &#x26A0; What if this device fails?
+    <span class="ctx-menu-sub">Failover — shows redundant paths and impact</span>
+  </button>
+  <button onclick="triggerSpofFromContext()" class="ctx-menu-btn">
+    &#x1F50D; SPOF analysis
+    <span class="ctx-menu-sub">Single points of failure in the topology</span>
+  </button>
+  <div style="padding:8px 14px;background:#12122a;border-top:1px solid #2a2a4a;border-bottom:1px solid #2a2a4a;
+    font-size:11px;color:#7a8cb0;text-transform:uppercase;letter-spacing:1px;">Policy</div>
+  <button onclick="openPolicyPanel()" class="ctx-menu-btn">
+    &#x1F4CB; Define Policy Intent
+    <span class="ctx-menu-sub">Set access control and segmentation rules</span>
+  </button>
+  <button onclick="openAuditPanel()" class="ctx-menu-btn">
+    &#x26A0; View Violations
+    <span class="ctx-menu-sub">Audit policy breaches on this element</span>
+  </button>
+</div>
+
+<!-- Link Capture Context Menu -->
+<div id="link-ctx-menu" style="
+  display:none;position:fixed;z-index:9999;
+  background:#1a1a2e;border:1px solid #2ecc71;border-radius:6px;
+  box-shadow:0 4px 20px rgba(46,204,113,0.35);min-width:220px;overflow:hidden;">
+  <div style="padding:8px 14px;background:#12122a;border-bottom:1px solid #2a2a4a;
+    font-size:11px;color:#7a8cb0;text-transform:uppercase;letter-spacing:1px;">Link Capture</div>
+  <div id="link-ctx-link-label" style="padding:8px 14px 4px;font-size:12px;color:#2ecc71;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;"></div>
+  <button onclick="openLinkPolicyPanel()" class="ctx-menu-btn">
+    &#x1F512; Link Policy
+    <span class="ctx-menu-sub">Classification, encryption &amp; protocol intent</span>
+  </button>
+  <button onclick="startLinkCapture()" class="ctx-menu-btn" id="link-ctx-start-btn">
+    &#x1F4E1; Start Capture
+    <span class="ctx-menu-sub">Stream packets to PCAP viewer</span>
+  </button>
+  <button onclick="showCaptures()" class="ctx-menu-btn">
+    &#x1F4C2; View Captures
+    <span class="ctx-menu-sub">List past captures on this link</span>
+  </button>
+</div>
+
+<!-- Packet Capture Viewer Modal -->
+<div id="capture-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:560px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="sim-panel-header">
+      <h3>&#x1F4E1; Packet Capture</h3>
+      <button class="close-btn" onclick="closeCapturePanel()">&#x2715;</button>
+    </div>
+
+    <!-- Active capture status -->
+    <div id="cap-status-section" style="padding:12px 16px;border-bottom:1px solid #2a2a4a;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span id="cap-status-badge" style="font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;"></span>
+        <span id="cap-link-label" style="font-size:13px;color:#cdd6f4;"></span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#7a8cb0;">
+        <div>Size: <span id="cap-size" style="color:#cdd6f4;">—</span></div>
+        <div>SHA256: <span id="cap-sha" style="color:#cdd6f4;font-family:monospace;font-size:10px;" title=""></span></div>
+        <div>Expires: <span id="cap-expiry" style="color:#cdd6f4;">—</span></div>
+        <div>ID: <span id="cap-id-display" style="color:#cdd6f4;font-family:monospace;font-size:10px;"></span></div>
+      </div>
+      <div id="cap-spinner" style="display:none;margin-top:8px;font-size:12px;color:#f39c12;">
+        &#x23F3; Capturing packets… <span id="cap-elapsed">0</span>s
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid #2a2a4a;">
+      <button id="cap-stop-btn" onclick="stopCurrentCapture()" style="
+        display:none;padding:6px 14px;background:#e74c3c;border:none;border-radius:4px;
+        color:#fff;font-size:12px;cursor:pointer;">&#x23F9; Stop Capture</button>
+      <button id="cap-download-btn" onclick="downloadCurrentCapture()" style="
+        display:none;padding:6px 14px;background:#2ecc71;border:none;border-radius:4px;
+        color:#1a1a2e;font-size:12px;font-weight:600;cursor:pointer;">&#x2B07; Download .pcap</button>
+      <button onclick="startLinkCaptureFromPanel()" id="cap-new-btn" style="
+        padding:6px 14px;background:#3498db;border:none;border-radius:4px;
+        color:#fff;font-size:12px;cursor:pointer;">&#x25B6; New Capture</button>
+    </div>
+
+    <!-- Capture history for this link -->
+    <div style="padding:8px 16px 4px;font-size:11px;color:#7a8cb0;text-transform:uppercase;letter-spacing:1px;">
+      Link Capture History</div>
+    <div id="cap-history-list" style="overflow-y:auto;flex:1;padding:0 8px 8px;">
+      <div style="color:#7a8cb0;font-size:12px;text-align:center;padding:16px;">No captures yet.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Templates Overlay -->
+<div id="tpl-overlay" class="sim-overlay hidden">
+  <div class="sim-panel tpl-panel">
+    <div class="sim-panel-header">
+      <h3>Load Template</h3>
+      <button class="close-btn" onclick="closeTplPanel()">✕</button>
+    </div>
+    <div id="tpl-list" class="tpl-list-panel"></div>
+  </div>
+</div>
+<!-- Enclave-in-a-Box Snippets Overlay -->
+<div id="snippets-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:640px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="sim-panel-header">
+      <h3>&#x229e; Enclave-in-a-Box Snippets</h3>
+      <button class="close-btn" onclick="closeSnippetsPanel()">&#x2715;</button>
+    </div>
+    <p style="font-size:11px;color:var(--text-dim);margin:0 0 10px 0;padding:0 4px;">
+      Pre-built compliance-validated sub-topologies. All STIG baselines, FIPS mode, and
+      NIST controls are pre-populated. Click <strong>Insert onto Canvas</strong> to place
+      at the current canvas center.
+    </p>
+    <div id="snippets-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px;padding:4px;">
+      <div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px;">Loading snippets…</div>
+    </div>
+  </div>
+</div>
+
+<!-- Snippet Integration Guide Overlay -->
+<div id="integration-guide-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:480px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="sim-panel-header">
+      <h3>&#x1f517; Integration Guide</h3>
+      <button class="close-btn" onclick="closeIntegrationGuide()">&#x2715;</button>
+    </div>
+    <div id="integration-guide-content" style="overflow-y:auto;flex:1;padding:4px;display:flex;flex-direction:column;gap:10px;">
+    </div>
+    <div style="padding:8px 4px 0;border-top:1px solid var(--border,#2a3a5e);margin-top:8px;">
+      <button class="btn btn-sm" style="width:100%;background:transparent;border:1px solid var(--border,#2a3a5e);color:var(--text-dim,#7a8cb0);"
+        onclick="closeIntegrationGuide()">Done — I'll connect manually</button>
+    </div>
+  </div>
+</div>
+
+<!-- Custom Device Dialog -->
+<div id="custom-device-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:380px;">
+    <div class="sim-panel-header">
+      <h3>Create Custom Device</h3>
+      <button class="close-btn" onclick="closeCustomDeviceDialog()">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Type ID</label>
+      <input type="text" id="cd-type-id" class="form-control" placeholder="e.g. my-device (lowercase, hyphens)"/>
+    </div>
+    <div class="form-group">
+      <label>Display Name</label>
+      <input type="text" id="cd-label" class="form-control" placeholder="e.g. My Custom Device"/>
+    </div>
+    <div class="form-group">
+      <label>Symbol (2-3 chars)</label>
+      <input type="text" id="cd-symbol" class="form-control" placeholder="e.g. MCD" maxlength="4"/>
+    </div>
+    <div class="form-group">
+      <label>Fill Color</label>
+      <input type="color" id="cd-fill" class="form-control" value="#1a1a2e" style="height:32px;padding:2px;"/>
+    </div>
+    <div class="form-group">
+      <label>Border Color</label>
+      <input type="color" id="cd-stroke" class="form-control" value="#7a8cb0" style="height:32px;padding:2px;"/>
+    </div>
+    <div class="form-group">
+      <label>Bandwidth (optional)</label>
+      <input type="text" id="cd-bandwidth" class="form-control" placeholder="e.g. 800GbE, 1.6TbE"/>
+    </div>
+    <div class="form-group">
+      <label>Preview</label>
+      <div id="cd-preview" style="background:#12122a;border-radius:6px;padding:10px;text-align:center;min-height:60px;display:flex;align-items:center;justify-content:center;"></div>
+    </div>
+    <button class="btn btn-primary" onclick="createCustomDevice()" style="width:100%;">Add to Palette</button>
+  </div>
+</div>
+<!-- AI Topology Generator Dialog (legacy — still works) -->
+<div id="ai-generate-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:520px;">
+    <div class="sim-panel-header">
+      <h3>AI Topology Generator</h3>
+      <button class="close-btn" onclick="closeAiGenerateDialog()">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Describe your network</label>
+      <textarea id="ai-gen-description" class="form-control" rows="5" placeholder="Example: A 3-tier campus network with redundant core switches, distribution layer per building, access switches with PoE WAPs, a DMZ with dual firewalls, and a data center spine-leaf fabric connected via 10GbE"></textarea>
+    </div>
+    <div class="form-group" style="display:flex;gap:8px;">
+      <button class="btn btn-primary" id="ai-gen-btn" onclick="runAiGenerate()" style="flex:1;">Generate Topology</button>
+      <button class="btn btn-secondary" onclick="closeAiGenerateDialog()">Cancel</button>
+    </div>
+    <div id="ai-gen-status" class="sim-output" style="display:none;"></div>
+  </div>
+</div>
+<!-- Policy Intent Panel -->
+<div id="policy-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:440px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="sim-panel-header">
+      <h3>&#x1F4CB; Policy Intent</h3>
+      <button class="close-btn" onclick="closePolicyPanel()">&#x2715;</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;padding:16px;">
+      <div id="policy-node-title" style="font-size:13px;font-weight:600;color:#e94560;margin-bottom:14px;"></div>
+      <div class="form-group">
+        <label>Classification</label>
+        <select id="pol-classification" class="form-control" onchange="onPolicyClassificationChange(this.value)">
+          <option value="">— Select —</option>
+          <option value="PUBLIC">PUBLIC (IL2)</option>
+          <option value="CUI">CUI (IL4)</option>
+          <option value="SECRET">SECRET (IL5/IL6)</option>
+          <option value="TOP SECRET">TOP SECRET</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Security Zone</label>
+        <select id="pol-zone" class="form-control" onchange="onPolicyFieldChange('zone', this.value)">
+          <option value="">— Select —</option>
+          <option value="trusted">Trusted</option>
+          <option value="untrusted">Untrusted</option>
+          <option value="dmz">DMZ</option>
+          <option value="management">Management</option>
+          <option value="restricted">Restricted</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Segmentation</label>
+        <select id="pol-segmentation" class="form-control" onchange="onPolicyFieldChange('segmentation', this.value)">
+          <option value="">— Select —</option>
+          <option value="vlan">VLAN-based</option>
+          <option value="vxlan">VXLAN / Overlay</option>
+          <option value="microseg">Micro-segmentation</option>
+          <option value="host">Host-based Firewall</option>
+          <option value="none">None</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Inbound ACL Rules</label>
+        <textarea id="pol-acl-inbound" class="form-control" rows="3"
+          placeholder="permit tcp 10.0.0.0/8 any eq 443&#10;deny any any"
+          oninput="onPolicyFieldChange('acl_inbound', this.value)"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Outbound ACL Rules</label>
+        <textarea id="pol-acl-outbound" class="form-control" rows="3"
+          placeholder="permit tcp any any eq 80&#10;deny any any"
+          oninput="onPolicyFieldChange('acl_outbound', this.value)"></textarea>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+        <input type="checkbox" id="pol-encryption" onchange="onPolicyFieldChange('encryption_required', this.checked)"/>
+        <label for="pol-encryption" style="margin:0;cursor:pointer;">Encryption Required</label>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+        <input type="checkbox" id="pol-requires-kg" onchange="onPolicyFieldChange('requiresKG', this.checked)"/>
+        <label for="pol-requires-kg" style="margin:0;cursor:pointer;">Requires Knowledge Graph (KG)</label>
+        <span id="pol-kg-auto-badge" style="display:none;font-size:10px;padding:1px 6px;border-radius:8px;background:#f39c12;color:#000;font-weight:700;">AUTO</span>
+      </div>
+      <div class="form-group">
+        <label>Policy Notes</label>
+        <textarea id="pol-notes" class="form-control" rows="3"
+          placeholder="Access control justification, compliance notes, waivers..."
+          oninput="onPolicyFieldChange('notes', this.value)"></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Link Policy Panel -->
+<div id="link-policy-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:400px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="sim-panel-header">
+      <h3>&#x1F512; Link Policy Intent</h3>
+      <button class="close-btn" onclick="closeLinkPolicyPanel()">&#x2715;</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;padding:16px;">
+      <div id="lp-link-title" style="font-size:13px;font-weight:600;color:#2ecc71;margin-bottom:4px;"></div>
+      <div id="lp-inherited-badge" style="display:none;font-size:10px;padding:2px 8px;border-radius:8px;background:#2a2a4a;color:#7a8cb0;margin-bottom:14px;"></div>
+      <div class="form-group">
+        <label>Classification</label>
+        <select id="lp-classification" class="form-control" onchange="onLinkPolicyClassificationChange(this.value)">
+          <option value="">— Select —</option>
+          <option value="PUBLIC">PUBLIC (IL2)</option>
+          <option value="CUI">CUI (IL4)</option>
+          <option value="SECRET">SECRET (IL5/IL6)</option>
+          <option value="TOP SECRET">TOP SECRET</option>
+        </select>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+        <input type="checkbox" id="lp-encryption" onchange="onLinkPolicyFieldChange('encryption_required', this.checked)"/>
+        <label for="lp-encryption" style="margin:0;cursor:pointer;">Encryption Required</label>
+        <span id="lp-enc-auto-badge" style="display:none;font-size:10px;padding:1px 6px;border-radius:8px;background:#e74c3c;color:#fff;font-weight:700;">AUTO</span>
+      </div>
+      <div class="form-group">
+        <label>Protocol Allowed</label>
+        <select id="lp-protocol" class="form-control" onchange="onLinkPolicyProtocolChange(this.value)">
+          <option value="">— Any —</option>
+          <option value="TLS">TLS</option>
+          <option value="IPsec">IPsec</option>
+          <option value="MACsec">MACsec</option>
+          <option value="HTTPS">HTTPS</option>
+          <option value="SSH">SSH</option>
+          <option value="OSPF">OSPF</option>
+          <option value="BGP">BGP</option>
+          <option value="EIGRP">EIGRP</option>
+          <option value="IS-IS">IS-IS</option>
+          <option value="custom">Custom…</option>
+        </select>
+      </div>
+      <div class="form-group" id="lp-protocol-custom-group" style="display:none;">
+        <label>Custom Protocol</label>
+        <input type="text" id="lp-protocol-custom" class="form-control"
+          placeholder="e.g. GRE, MPLS, WireGuard"
+          oninput="onLinkPolicyFieldChange('protocol_allowed', this.value)"/>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Policy Audit Panel (R-NAME and other policy rules) -->
+<div id="audit-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:480px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="sim-panel-header">
+      <h3>&#x26A0; Policy Audit &mdash; Violations</h3>
+      <button class="close-btn" onclick="closeAuditPanel()">&#x2715;</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;padding:16px;">
+      <div id="audit-node-title" style="font-size:13px;font-weight:600;color:#e94560;margin-bottom:14px;"></div>
+      <div id="audit-violations-list"></div>
+    </div>
+    <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,0.08);text-align:right;">
+      <button onclick="autoFixAll()" style="font-size:12px;padding:6px 16px;background:#2ecc71;color:#000;border:none;border-radius:4px;cursor:pointer;font-weight:700;">&#x26A1; Auto-Fix All</button>
+    </div>
+  </div>
+</div>
+
+<!-- CR Markup Mode Panel (slide-out left) -->
+<div id="nc-cr-panel" class="nc-cr-panel hidden">
+  <div class="nc-cr-header">
+    <span class="nc-cr-title">Change Request Markup</span>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <a id="cr-full-page-link" href="#" target="_blank" style="font-size:11px;color:var(--text-dim);text-decoration:none;" title="Open full CR editor">Full Editor</a>
+      <button class="close-btn" onclick="toggleCrMarkupMode()" title="Close">&#x2715;</button>
+    </div>
+  </div>
+  <div class="nc-cr-body">
+    <!-- CR selector -->
+    <div class="cr-select-row">
+      <select id="cr-select" onchange="crSelectChanged()">
+        <option value="">— Select Change Request —</option>
+      </select>
+      <button onclick="crCreateNew()" title="Create new CR">+ New</button>
+    </div>
+
+    <!-- Active CR info -->
+    <div id="cr-active-info" class="hidden" style="margin-bottom:10px;padding:8px;background:var(--bg3);border-radius:6px;font-size:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <strong id="cr-active-title"></strong>
+        <span id="cr-active-status" class="cr-status-badge cr-status-draft"></span>
+      </div>
+      <div id="cr-active-desc" style="color:var(--text-dim);margin-top:4px;font-size:11px;"></div>
+    </div>
+
+    <!-- Action mode selector -->
+    <div id="cr-action-section" class="hidden">
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Click an element on the canvas to mark it:</div>
+      <div class="cr-action-bar">
+        <button class="cr-action-btn cr-add" id="cr-btn-add" onclick="crSetAction('add')" title="Mark element for addition (green)">&#x2795; Add</button>
+        <button class="cr-action-btn cr-remove" id="cr-btn-remove" onclick="crSetAction('remove')" title="Mark element for removal (red)">&#x2796; Remove</button>
+        <button class="cr-action-btn cr-modify" id="cr-btn-modify" onclick="crSetAction('modify')" title="Mark element for modification (yellow)">&#x270f; Modify</button>
+        <button class="cr-action-btn cr-clear" onclick="crSetAction(null)" title="Exit markup selection">&#x2715; Clear</button>
+      </div>
+    </div>
+
+    <!-- Markup items list -->
+    <div id="cr-items-section" class="cr-items-section hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h4>Marked Changes (<span id="cr-items-count">0</span>)</h4>
+      </div>
+      <div id="cr-items-list"></div>
+      <button class="cr-gen-btn" id="cr-gen-btn" onclick="crGenerateDocument()" title="Generate CAB review document with diffs">Generate CAB Document</button>
+    </div>
+
+    <!-- Document preview (inline) -->
+    <div id="cr-doc-preview" class="hidden" style="margin-top:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <h4 style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-dim);">CAB Document Preview</h4>
+        <button style="font-size:11px;padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--text-dim);border-radius:4px;cursor:pointer;" onclick="crCopyDocument()" title="Copy document markdown">Copy</button>
+      </div>
+      <div id="cr-doc-body" style="font-family:var(--font-mono);font-size:11px;line-height:1.5;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:var(--text);"></div>
+    </div>
+  </div>
+  <div class="nc-cr-footer">
+    <span id="cr-footer-status">Select or create a Change Request to begin markup.</span>
+  </div>
+</div>
+
+<!-- Justification dialog (floating, shown when marking an element) -->
+<div id="cr-just-dialog" class="cr-just-dialog hidden" style="top:50%;left:50%;transform:translate(-50%,-50%);">
+  <h4 id="cr-just-title">Mark Element</h4>
+  <div id="cr-just-entity" style="font-size:12px;color:var(--text-dim);margin-bottom:8px;"></div>
+  <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">Justification (optional):</label>
+  <textarea id="cr-just-text" placeholder="Why is this change needed?"></textarea>
+  <div id="cr-just-modify-fields" class="hidden" style="margin-top:8px;">
+    <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">After-state JSON (proposed changes):</label>
+    <textarea id="cr-just-after" style="height:50px;" placeholder='e.g. {"ip":"10.0.0.2/24","protocol":"BGP"}'></textarea>
+  </div>
+  <div class="cj-actions">
+    <button class="cj-btn" onclick="crJustCancel()">Cancel</button>
+    <button class="cj-btn cj-btn-primary" onclick="crJustConfirm()">Mark</button>
+  </div>
+</div>
+
+<!-- Embedded Chat Panel (slide-out) -->
+<div id="nc-chat-panel" class="nc-chat-panel hidden">
+  <div class="nc-chat-header">
+    <span class="nc-chat-title">Network Assistant</span>
+    <div class="nc-chat-header-actions">
+      <button class="nc-chat-btn-sm" id="nc-chat-history-btn" onclick="ncChatToggleHistory()" title="Prompt history">History</button>
+      <button class="nc-chat-btn-sm" onclick="ncChatClear()" title="Clear chat">Clear</button>
+      <button class="close-btn" onclick="ncChatClose()">✕</button>
+    </div>
+  </div>
+  <!-- History panel (overlays messages area) -->
+  <div id="nc-chat-history-panel" style="display:none;flex:1;overflow-y:auto;flex-direction:column;">
+    <div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;">Past Generations</span>
+      <button class="nc-chat-btn-sm" onclick="ncChatClearAllHistory()" title="Clear all history" style="color:var(--danger,#e74c3c);font-size:10px;">Clear all</button>
+    </div>
+    <div id="nc-chat-history-list" style="flex:1;overflow-y:auto;padding:4px 0;"></div>
+  </div>
+  <div class="nc-chat-messages" id="nc-chat-messages">
+    <div class="nc-chat-welcome">
+      <div style="font-size:20px;margin-bottom:6px;">✦</div>
+      <p>Describe a network topology and I'll generate it on the canvas.</p>
+      <p style="color:var(--text-dim);font-size:11px;">Try: "3-tier campus with DMZ" or "MPLS L3VPN with dual PE routers"</p>
+      <p style="color:var(--text-dim);font-size:11px;">📎 Attach a device config or diagram file for richer context.</p>
+    </div>
+  </div>
+  <!-- Attach indicator (shown when a file is attached) -->
+  <div id="nc-chat-attach-bar" style="display:none;padding:4px 10px;background:var(--bg-card);border-top:1px solid var(--border);font-size:11px;color:var(--accent);display:flex;align-items:center;gap:6px;">
+    <span>📎</span><span id="nc-chat-attach-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+    <button onclick="ncChatClearAttach()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:12px;padding:0;">✕</button>
+  </div>
+  <input type="file" id="nc-chat-file-input" accept=".txt,.log,.conf,.cfg,.json,.yaml,.yml,.xml,.csv,.md,.ios,.junos,.iosxr" style="display:none" onchange="ncChatHandleFile(this)">
+  <div class="nc-chat-input-area" style="flex-direction:column;gap:4px;">
+    <div style="display:flex;gap:4px;align-items:flex-end;">
+      <textarea id="nc-chat-input" class="nc-chat-input" rows="2" placeholder="Describe your network..." onkeydown="ncChatKeydown(event)" style="flex:1;"></textarea>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <button class="nc-chat-send-btn" id="nc-chat-send-btn" onclick="ncChatSend()" style="padding:6px 12px;">Send</button>
+        <button class="nc-chat-btn-sm" title="Attach device config or diagram" onclick="document.getElementById('nc-chat-file-input').click()" style="padding:5px 8px;font-size:13px;">📎</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Rack Elevation View Panel -->
+<div id="nc-rack-panel" class="nc-rack-panel hidden">
+  <div class="nc-rack-header">
+    <span class="nc-rack-title">Rack Elevation</span>
+    <div class="nc-rack-header-actions">
+      <select id="rack-u-size" class="nc-rack-select" onchange="renderRackView()">
+        <option value="48">48U</option>
+        <option value="42" selected>42U</option>
+        <option value="40">40U</option>
+        <option value="24">24U</option>
+        <option value="12">12U</option>
+      </select>
+      <button class="nc-chat-btn-sm" onclick="exportRackSVG()" title="Export rack as SVG">Export</button>
+      <button class="close-btn" onclick="closeRackView()">&#x2715;</button>
+    </div>
+  </div>
+  <div class="nc-rack-info" id="rack-info">
+    <span id="rack-site-label">No rack selected</span>
+  </div>
+  <div class="nc-rack-body" id="nc-rack-body">
+    <svg id="rack-svg" width="300" height="900"></svg>
+  </div>
+  <div class="nc-rack-stats" id="rack-stats">
+    <span id="rack-stat-used">Used: 0U</span>
+    <span id="rack-stat-free">Free: 42U</span>
+    <span id="rack-stat-power">Devices: 0</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const TOPOLOGY_ID = "{{ topology_id }}";
+  const TOPOLOGY_NAME = "{{ topology_name }}";
+
+  // Set links based on topology ID
+  if (TOPOLOGY_ID && TOPOLOGY_ID !== 'new') {
+    document.getElementById('tb-versions-link').href = NC_BASE + '/versions/' + TOPOLOGY_ID;
+    document.getElementById('tb-mc-link').href = NC_BASE + '/montecarlo/' + TOPOLOGY_ID;
+    document.getElementById('tb-compliance-link').href = NC_BASE + '/compliance/' + TOPOLOGY_ID;
+    document.getElementById('tb-migration-link').href = NC_BASE + '/migration-phases/' + TOPOLOGY_ID;
+  } else {
+    document.getElementById('tb-migration-link').style.display = 'none';
+  }
+
+  function saveAsTopology() {
+    const name = prompt('Save as new topology name:', TOPOLOGY_NAME + ' (copy)');
+    if (!name) return;
+    fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/save-as', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name})
+    }).then(r => r.json()).then(d => {
+      if (d.redirect) { alert('Saved as: ' + d.name); window.location = d.redirect; }
+      else alert('Error: ' + (d.error || 'Unknown'));
+    });
+  }
+
+  function saveAsTemplate() {
+    const name = prompt('Template name:', TOPOLOGY_NAME);
+    if (!name) return;
+    const category = prompt('Category (e.g. Custom, Campus LAN, Data Center):', 'Custom');
+    if (category === null) return;
+    fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/save-as-template', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name, category: category})
+    }).then(r => r.json()).then(d => {
+      if (d.id) alert('Saved as template: ' + d.name + ' (ID: ' + d.id + ')');
+      else alert('Error: ' + (d.error || 'Unknown'));
+    });
+  }
+
+  function createLabTopology() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    if (!confirm('Create a lab version of "' + TOPOLOGY_NAME + '"?\n\nThe lab topology will:\n• Keep 1 representative node per cluster/group\n• Replace IPs with 10.99.x.x range\n• Strip L1 physical media (SFP, fiber, patch panels)\n• Prefix all labels with LAB-\n• Preserve security zones, VRFs, and roles\n\nThe new topology opens in a new tab.')) return;
+    fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/create-lab', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    }).then(r => r.json()).then(d => {
+      if (d.redirect) {
+        window.open(d.redirect, '_blank');
+        alert('Lab topology created: ' + d.name + '\n' + d.nodes + ' nodes, ' + d.edges + ' edges.\nOpened in new tab.');
+      } else {
+        alert('Error: ' + (d.error || 'Unknown'));
+      }
+    }).catch(() => alert('Request failed — check server logs.'));
+  }
+
+  // ── ATO Package Auto-Generator ─────────────────────────────────────────
+  // ── Scorecard / Tech Debt / IPv6 Readiness overlays ──────────────────────
+  async function openScorecard() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    const d = await fetch(NC_BASE + '/api/design-scorecard/' + TOPOLOGY_ID).then(r => r.json());
+    if (d.error) { alert(d.error); return; }
+    let html = '<h3 style="color:#27ae60;">Design Scorecard — ' + d.overall_score + '%</h3>';
+    html += '<div style="display:flex;gap:8px;margin-bottom:12px;">';
+    Object.entries(d.categories || {}).forEach(([cat, v]) => {
+      const color = v.pct >= 80 ? '#27ae60' : v.pct >= 50 ? '#f39c12' : '#e74c3c';
+      html += '<div style="flex:1;text-align:center;padding:8px;background:#0f2040;border-radius:6px;border-top:3px solid ' + color + ';"><div style="font-size:20px;font-weight:700;color:' + color + ';">' + v.pct + '%</div><div style="font-size:10px;color:#7a8cb0;text-transform:capitalize;">' + cat.replace(/_/g,' ') + '</div></div>';
+    });
+    html += '</div><table style="width:100%;font-size:11px;color:#eaeaea;border-collapse:collapse;"><thead><tr><th style="text-align:left;padding:4px;border-bottom:1px solid #1e3a6e;">Check</th><th style="padding:4px;border-bottom:1px solid #1e3a6e;">Status</th><th style="text-align:left;padding:4px;border-bottom:1px solid #1e3a6e;">Detail</th></tr></thead><tbody>';
+    (d.checks || []).forEach(c => {
+      html += '<tr><td style="padding:3px 4px;">' + c.name + '</td><td style="padding:3px 4px;text-align:center;">' + (c.passed ? '<span style="color:#27ae60;">PASS</span>' : '<span style="color:#e74c3c;">FAIL</span>') + '</td><td style="padding:3px 4px;color:#7a8cb0;">' + (c.detail || '') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    _showInfoOverlay(html);
+  }
+
+  async function openTechDebt() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    const d = await fetch(NC_BASE + '/api/tech-debt/' + TOPOLOGY_ID).then(r => r.json());
+    if (d.error) { alert(d.error); return; }
+    const s = d.summary || {};
+    let html = '<h3 style="color:#e67e22;">Tech Debt Analysis — Score: ' + s.tech_debt_score + '</h3>';
+    html += '<div style="display:flex;gap:12px;margin-bottom:12px;font-size:12px;">';
+    html += '<span style="color:#e74c3c;">Past EOL: ' + s.past_eol + '</span>';
+    html += '<span style="color:#f39c12;">Past EOS: ' + s.past_eos + '</span>';
+    html += '<span style="color:#3498db;">Approaching: ' + s.approaching_eol_12mo + '</span>';
+    html += '<span style="color:#7a8cb0;">No data: ' + s.no_lifecycle_data + '</span>';
+    html += '</div>';
+    (d.devices || []).forEach(dev => {
+      if (dev.issues.length === 0) return;
+      const color = dev.risk_level === 'critical' ? '#e74c3c' : dev.risk_level === 'high' ? '#f39c12' : '#7a8cb0';
+      html += '<div style="padding:4px 0;border-bottom:1px solid #1e3a6e;font-size:11px;"><strong style="color:' + color + ';">' + dev.label + '</strong> (' + dev.type + ') — ' + dev.issues.join('; ') + '</div>';
+    });
+    if (d.devices.every(dev => dev.issues.length === 0)) html += '<div style="color:#27ae60;font-size:12px;">No tech debt issues detected. Configure EOL/EOS dates in device properties for tracking.</div>';
+    _showInfoOverlay(html);
+  }
+
+  async function openIpv6Readiness() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    const d = await fetch(NC_BASE + '/api/ipv6-readiness/' + TOPOLOGY_ID).then(r => r.json());
+    if (d.error) { alert(d.error); return; }
+    const s = d.summary || {};
+    let html = '<h3 style="color:#3498db;">IPv6 Readiness — ' + s.readiness_pct + '% Ready</h3>';
+    html += '<div style="display:flex;gap:12px;margin-bottom:12px;font-size:12px;">';
+    html += '<span style="color:#27ae60;">Capable: ' + s.capable_yes + '</span>';
+    html += '<span style="color:#e74c3c;">Not capable: ' + s.capable_no + '</span>';
+    html += '<span style="color:#f39c12;">Partial: ' + s.capable_partial + '</span>';
+    html += '<span style="color:#7a8cb0;">Unknown: ' + s.capable_unknown + '</span>';
+    html += '<span style="color:#3498db;">Dual-stack: ' + s.dual_stack_count + '</span>';
+    html += '</div>';
+    html += '<div style="padding:8px;background:#0f2040;border-radius:6px;font-size:12px;margin-bottom:12px;"><strong>Recommendation:</strong> ' + (d.recommendation || 'N/A') + '</div>';
+    (d.devices || []).forEach(dev => {
+      if (dev.issues.length === 0) return;
+      html += '<div style="padding:3px 0;border-bottom:1px solid #1e3a6e;font-size:11px;"><strong>' + dev.label + '</strong> — ' + dev.issues.join('; ') + '</div>';
+    });
+    _showInfoOverlay(html);
+  }
+
+  function _showInfoOverlay(html) {
+    let overlay = document.getElementById('info-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'info-overlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = '<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:10px;padding:20px;max-width:800px;width:90%;max-height:80vh;overflow-y:auto;">' + html + '<div style="text-align:right;margin-top:12px;"><button onclick="document.getElementById(\'info-overlay\').remove()" style="background:#e94560;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;">Close</button></div></div>';
+  }
+
+  function generateAtoPackage() {
+    if (!_conflictExportBypassed && Object.keys(_conflicts || {}).length > 0) {
+      _guardExport('ATO Package', generateAtoPackage); return;
+    }
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    // Check if canvas has nodes
+    const elements = graph.getElements();
+    const nodeCount = elements.filter(el => el.get('nodeType')).length;
+    if (nodeCount === 0) {
+      alert('The canvas is empty. Add network devices (routers, switches, firewalls, etc.) to the topology before generating an ATO package.\n\nTip: Drag devices from the palette on the left, or load a template from the Templates panel.');
+      return;
+    }
+    document.getElementById('ato-overlay').classList.remove('hidden');
+  }
+  function closeAtoDialog() { document.getElementById('ato-overlay').classList.add('hidden'); }
+
+  async function exportInventory(fmt) {
+    if (!_conflictExportBypassed && Object.keys(_conflicts || {}).length > 0) {
+      _guardExport((fmt === 'ansible' ? 'Ansible' : 'Terraform') + ' export', () => exportInventory(fmt)); return;
+    }
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    const endpoint = NC_BASE + '/api/export/' + TOPOLOGY_ID + '/' + fmt;
+    try {
+      const r = await fetch(endpoint, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+      const data = await r.json();
+      if (data.error) { alert('Export failed: ' + data.error); return; }
+      const blob = new Blob([data.content], {type: 'text/plain'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = data.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setStatus((fmt === 'ansible' ? 'Ansible inventory' : 'Terraform HCL') + ' exported: ' + data.filename);
+    } catch (e) {
+      alert('Export error: ' + e.message);
+    }
+  }
+
+  async function exportDeviceConfigs() {
+    if (!_conflictExportBypassed && Object.keys(_conflicts || {}).length > 0) {
+      _guardExport('Device Configs export', exportDeviceConfigs); return;
+    }
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    setStatus('Generating device configs…');
+    try {
+      const r = await fetch(NC_BASE + '/api/export/' + TOPOLOGY_ID + '/device-configs', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({format: 'zip'}),
+      });
+      const data = await r.json();
+      if (data.error) { alert('Export failed: ' + data.error); return; }
+      if (data.device_count === 0) {
+        alert('No configurable devices found (add routers, switches, or firewalls to the canvas).');
+        setStatus('No configurable devices.');
+        return;
+      }
+      // Decode base64 ZIP and trigger download
+      const raw = atob(data.content_b64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      const blob = new Blob([bytes], {type: 'application/zip'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = data.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setStatus('Device configs exported: ' + data.filename + ' (' + data.device_count + ' devices)');
+    } catch (e) {
+      alert('Export error: ' + e.message);
+      setStatus('Device config export failed.');
+    }
+  }
+
+  function exportFipsReport() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    const btn = document.getElementById('tb-fips-report-btn');
+    const origText = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Generating...';
+    fetch(NC_BASE + '/api/compliance/' + TOPOLOGY_ID + '/fips-report', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({format: 'html'})
+    }).then(r => {
+      if (!r.ok) throw new Error('Failed to generate FIPS report');
+      return r.blob();
+    }).then(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = TOPOLOGY_NAME.replace(/[^a-zA-Z0-9_-]/g, '_') + '_fips_report.html';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setStatus('FIPS 140 Encryption Coverage Report exported');
+      btn.disabled = false; btn.textContent = origText;
+    }).catch(err => {
+      alert('Error: ' + err.message);
+      btn.disabled = false; btn.textContent = origText;
+    });
+  }
+
+  function runAtoGenerate() {
+    const btn = document.getElementById('ato-gen-btn');
+    const output = document.getElementById('ato-gen-output');
+    btn.disabled = true; btn.textContent = 'Generating...';
+    output.style.display = 'block'; output.innerHTML = '<p style="color:#f39c12;">Generating ATO package...</p>';
+    const regionId = document.getElementById('ato-region-select').value || null;
+    const sysName = document.getElementById('ato-system-name').value || TOPOLOGY_NAME;
+    fetch(NC_BASE + '/api/ato/' + TOPOLOGY_ID + '/generate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({region_id: regionId, system_name: sysName})
+    }).then(r => r.json()).then(pkg => {
+      btn.disabled = false; btn.textContent = 'Generate ATO Package';
+      if (pkg.error) { output.innerHTML = '<p style="color:#e74c3c;">Error: ' + pkg.error + '</p>'; return; }
+      const s = pkg.summary || {};
+      const readinessColor = s.overall_readiness === 'GREEN' ? '#2ecc71' : s.overall_readiness === 'YELLOW' ? '#f1c40f' : '#e74c3c';
+      let html = '<div style="margin-bottom:12px;">';
+      html += '<h4 style="color:#ecf0f1;margin:0 0 8px;">ATO Package Generated</h4>';
+      html += '<table style="width:100%;font-size:12px;color:#bdc3c7;border-collapse:collapse;">';
+      html += '<tr><td style="padding:3px 6px;">Readiness</td><td style="padding:3px 6px;color:' + readinessColor + ';font-weight:bold;">' + (s.overall_readiness||'?') + '</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">STIG Pass Rate</td><td style="padding:3px 6px;">' + (s.stig_pass_rate||0) + '%' + (s.stig_gate_passed ? ' ✓' : ' ✗ CAT1 OPEN') + '</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Compliance Score</td><td style="padding:3px 6px;">' + (s.compliance_score||0) + '%</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Encryption Coverage</td><td style="padding:3px 6px;">' + (s.encryption_coverage_pct||0) + '%</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Security Zones</td><td style="padding:3px 6px;">' + (s.zone_count||0) + '</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Data Flows</td><td style="padding:3px 6px;">' + (s.total_flows||0) + '</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Protocols</td><td style="padding:3px 6px;">' + (s.total_protocols||0) + (s.insecure_protocols ? ' (' + s.insecure_protocols + ' insecure!)' : '') + '</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Findings</td><td style="padding:3px 6px;">CAT1:' + (s.cat1_findings||0) + ' CAT2:' + (s.cat2_findings||0) + ' CAT3:' + (s.cat3_findings||0) + '</td></tr>';
+      html += '</table></div>';
+      // Boundary diagram SVG preview
+      if (pkg.artifacts && pkg.artifacts.system_boundary_diagram && pkg.artifacts.system_boundary_diagram.svg) {
+        html += '<details style="margin-bottom:8px;"><summary style="color:#3498db;cursor:pointer;font-size:12px;">System Boundary Diagram (SVG)</summary>';
+        html += '<div style="overflow:auto;max-height:300px;margin-top:4px;background:#111;border-radius:4px;padding:4px;">' + pkg.artifacts.system_boundary_diagram.svg + '</div></details>';
+      }
+      // PPS Matrix preview
+      if (pkg.artifacts && pkg.artifacts.ports_protocols_services && pkg.artifacts.ports_protocols_services.matrix) {
+        const m = pkg.artifacts.ports_protocols_services.matrix;
+        html += '<details style="margin-bottom:8px;"><summary style="color:#3498db;cursor:pointer;font-size:12px;">Ports/Protocols/Services (' + m.length + ')</summary>';
+        html += '<table style="width:100%;font-size:10px;color:#bdc3c7;border-collapse:collapse;margin-top:4px;">';
+        html += '<tr style="color:#f39c12;"><th style="padding:2px 4px;text-align:left;">Protocol</th><th style="padding:2px 4px;text-align:left;">Port</th><th style="padding:2px 4px;text-align:left;">Service</th><th style="padding:2px 4px;">Encrypted</th></tr>';
+        m.forEach(function(r) {
+          html += '<tr><td style="padding:2px 4px;">' + r.protocol + '</td><td style="padding:2px 4px;">' + r.port + '</td><td style="padding:2px 4px;">' + r.service + '</td><td style="padding:2px 4px;text-align:center;">' + (r.encrypted ? '🔒' : '⚠') + '</td></tr>';
+        });
+        html += '</table></details>';
+      }
+      // STIG Checklist preview
+      if (pkg.artifacts && pkg.artifacts.stig_checklist && pkg.artifacts.stig_checklist.checklist) {
+        const cl = pkg.artifacts.stig_checklist.checklist;
+        html += '<details style="margin-bottom:8px;"><summary style="color:#3498db;cursor:pointer;font-size:12px;">STIG Checklist (' + cl.length + ' checks)</summary>';
+        html += '<table style="width:100%;font-size:10px;color:#bdc3c7;border-collapse:collapse;margin-top:4px;">';
+        html += '<tr style="color:#f39c12;"><th style="padding:2px 4px;text-align:left;">STIG ID</th><th style="padding:2px 4px;text-align:left;">Severity</th><th style="padding:2px 4px;text-align:left;">Title</th><th style="padding:2px 4px;">Status</th></tr>';
+        cl.forEach(function(c) {
+          var sc = c.status === 'NotAFinding' ? '#2ecc71' : c.status === 'Open' ? '#e74c3c' : '#7f8c8d';
+          html += '<tr><td style="padding:2px 4px;">' + c.stig_id + '</td><td style="padding:2px 4px;">' + c.severity + '</td><td style="padding:2px 4px;">' + c.title.substring(0,50) + '</td><td style="padding:2px 4px;color:' + sc + ';">' + c.status + '</td></tr>';
+        });
+        html += '</table></details>';
+      }
+      html += '<p style="color:#7f8c8d;font-size:10px;">Package ID: ' + (pkg.package_id||'').substring(0,8) + ' | Generated: ' + (pkg.generated_at||'').substring(0,19) + '</p>';
+      output.innerHTML = html;
+    }).catch(err => {
+      btn.disabled = false; btn.textContent = 'Generate ATO Package';
+      output.innerHTML = '<p style="color:#e74c3c;">Request failed: ' + err + '</p>';
+    });
+  }
+  // Load groups for region selector
+  function loadAtoRegions() {
+    if (TOPOLOGY_ID === 'new') return;
+    fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID).then(r=>r.json()).then(function(){
+      return fetch(NC_BASE + '/api/groups?topology_id=' + TOPOLOGY_ID);
+    }).then(r=>r.ok ? r.json() : []).then(function(groups){
+      const sel = document.getElementById('ato-region-select');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">-- Full Topology --</option>';
+      (groups || []).forEach(function(g) { sel.innerHTML += '<option value="' + g.id + '">' + g.label + (g.csp ? ' (' + g.csp.toUpperCase() + ')' : '') + '</option>'; });
+    }).catch(function(){});
+  }
+
+  // ── NetBox IPAM ────────────────────────────────────────────────────────────
+
+  function netboxToggle() {
+    const panel = document.getElementById('netbox-panel');
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) {
+      netboxLoadConfig();
+      netboxLoadSyncLog();
+    }
+  }
+
+  function netboxLoadConfig() {
+    fetch(NC_BASE + '/api/netbox/config').then(r => r.ok ? r.json() : {}).then(cfg => {
+      if (cfg.configured) {
+        document.getElementById('nb-url-input').value = cfg.url || '';
+        document.getElementById('nb-site-input').value = cfg.site_filter || '';
+        const line = document.getElementById('nb-status-line');
+        line.textContent = cfg.last_tested ? 'Last tested: ' + cfg.last_tested.substring(0,19) : 'Config loaded. Click Test to verify.';
+        line.style.color = '#2ecc71';
+      }
+    }).catch(function(){});
+  }
+
+  function netboxSaveConfig() {
+    const url = document.getElementById('nb-url-input').value.trim();
+    const token = document.getElementById('nb-token-input').value.trim();
+    const site = document.getElementById('nb-site-input').value.trim();
+    if (!url || !token) {
+      document.getElementById('nb-status-line').textContent = 'URL and token required.';
+      document.getElementById('nb-status-line').style.color = '#e74c3c';
+      return;
+    }
+    document.getElementById('nb-status-line').textContent = 'Saving...';
+    fetch(NC_BASE + '/api/netbox/configure', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({url, token, site_filter: site})
+    }).then(r => r.json()).then(d => {
+      const line = document.getElementById('nb-status-line');
+      if (d.ok) {
+        line.textContent = 'Saved: ' + d.url;
+        line.style.color = '#2ecc71';
+      } else {
+        line.textContent = 'Error: ' + (d.error || 'unknown');
+        line.style.color = '#e74c3c';
+      }
+    }).catch(err => {
+      document.getElementById('nb-status-line').textContent = 'Request failed: ' + err;
+      document.getElementById('nb-status-line').style.color = '#e74c3c';
+    });
+  }
+
+  function netboxTestConnection() {
+    const line = document.getElementById('nb-status-line');
+    line.textContent = 'Testing...';
+    line.style.color = '#f39c12';
+    fetch(NC_BASE + '/api/netbox/status').then(r => r.json()).then(d => {
+      if (d.ok) {
+        line.textContent = 'Connected — NetBox ' + (d.netbox_version || '');
+        line.style.color = '#2ecc71';
+      } else {
+        line.textContent = 'Failed: ' + (d.error || 'unknown');
+        line.style.color = '#e74c3c';
+      }
+    }).catch(err => {
+      line.textContent = 'Error: ' + err;
+      line.style.color = '#e74c3c';
+    });
+  }
+
+  function netboxPull(resource) {
+    const out = document.getElementById('nb-pull-results');
+    out.textContent = 'Pulling ' + resource + '...';
+    const endpointMap = {
+      devices: 'devices', ips: 'ips', vlans: 'vlans',
+      prefixes: 'prefixes', racks: 'racks', circuits: 'circuits'
+    };
+    fetch(NC_BASE + '/api/netbox/pull/' + (endpointMap[resource] || resource))
+      .then(r => r.json()).then(d => {
+        if (d.error) {
+          out.innerHTML = '<span style="color:#e74c3c;">Error: ' + d.error + '</span>';
+          return;
+        }
+        const key = Object.keys(d).find(k => k !== 'count') || resource;
+        const items = d[key] || [];
+        let html = '<strong style="color:#2ecc71;">' + d.count + ' ' + resource + ' pulled</strong><br/>';
+        items.slice(0,5).forEach(item => {
+          const label = item.label || item.name || item.address || item.circuit_id || item.prefix || ('ID '+item.netbox_id);
+          html += '<span style="color:#7f8c8d;">• ' + label + '</span><br/>';
+        });
+        if (items.length > 5) html += '<span style="color:#7f8c8d;">…and ' + (items.length-5) + ' more</span>';
+        out.innerHTML = html;
+      }).catch(err => {
+        out.innerHTML = '<span style="color:#e74c3c;">Request failed: ' + err + '</span>';
+      });
+  }
+
+  function netboxImport(resource, merge) {
+    if (TOPOLOGY_ID === 'new') {
+      alert('Save the topology first before importing from NetBox.');
+      return;
+    }
+    const out = document.getElementById('nb-pull-results');
+    out.textContent = 'Importing ' + resource + ' into canvas...';
+    fetch(NC_BASE + '/api/netbox/import/' + TOPOLOGY_ID, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({resource: resource, merge: !!merge})
+    }).then(r => r.json()).then(d => {
+      if (d.error) {
+        out.innerHTML = '<span style="color:#e74c3c;">Error: ' + d.error + '</span>';
+        return;
+      }
+      out.innerHTML = '<strong style="color:#2ecc71;">Import complete</strong><br/>' +
+        '<span style="color:#7f8c8d;">Nodes added: ' + d.nodes_added + '</span><br/>' +
+        '<span style="color:#7f8c8d;">IPAM blocks: ' + d.ipam_blocks + '</span><br/>' +
+        '<span style="color:#7f8c8d;">Circuits: ' + d.circuits + '</span>';
+      // Reload canvas graph so imported nodes appear
+      if (typeof loadGraph === 'function') {
+        loadGraph(d.graph);
+      } else if (typeof renderGraph === 'function') {
+        renderGraph(d.graph);
+      }
+      netboxLoadSyncLog();
+    }).catch(err => {
+      out.innerHTML = '<span style="color:#e74c3c;">Request failed: ' + err + '</span>';
+    });
+  }
+
+  function netboxPush(pushAll) {
+    if (TOPOLOGY_ID === 'new') {
+      alert('Save the topology first before pushing to NetBox.');
+      return;
+    }
+    const siteId = document.getElementById('nb-site-id-input').value.trim();
+    const out = document.getElementById('nb-pull-results');
+    out.textContent = 'Pushing canvas to NetBox...';
+    fetch(NC_BASE + '/api/netbox/push/' + TOPOLOGY_ID, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({push_all: !!pushAll, site_id: siteId ? parseInt(siteId) : null})
+    }).then(r => r.json()).then(d => {
+      if (!d.ok && !d.pushed) {
+        out.innerHTML = '<span style="color:#e74c3c;">Error: ' + (d.errors||[]).map(e=>e.error).join(', ') + '</span>';
+        return;
+      }
+      out.innerHTML = '<strong style="color:#2ecc71;">Pushed ' + d.pushed.length + ' device(s)</strong>' +
+        (d.errors.length ? '<br/><span style="color:#f39c12;">' + d.errors.length + ' error(s)</span>' : '');
+      netboxLoadSyncLog();
+    }).catch(err => {
+      out.innerHTML = '<span style="color:#e74c3c;">Request failed: ' + err + '</span>';
+    });
+  }
+
+  function netboxLoadSyncLog() {
+    fetch(NC_BASE + '/api/netbox/sync-log?limit=10').then(r => r.json()).then(d => {
+      const el = document.getElementById('nb-sync-log');
+      if (!el) return;
+      const log = d.log || [];
+      if (!log.length) { el.textContent = 'No sync history yet.'; return; }
+      el.innerHTML = log.map(row => {
+        const color = row.status === 'ok' ? '#2ecc71' : '#e74c3c';
+        const ts = (row.ran_at || '').substring(0, 16);
+        const dir = row.direction === 'pull' ? '⬇' : '⬆';
+        return '<div style="border-bottom:1px solid #1a1a2e;padding:3px 0;">' +
+          '<span style="color:' + color + ';">' + dir + ' ' + row.resource + '</span> ' +
+          '<span style="color:#7f8c8d;">' + row.records_out + ' records · ' + ts + '</span>' +
+          (row.error_msg ? '<br/><span style="color:#e74c3c;">' + row.error_msg.substring(0,60) + '</span>' : '') +
+          '</div>';
+      }).join('');
+    }).catch(function(){});
+  }
+
+  // ── AI Topology Reviewer ──────────────────────────────────────────────────
+
+  const _AI_REVIEW_SEV_COLORS = {
+    HIGH: '#e74c3c', MEDIUM: '#f39c12', LOW: '#3498db', INFO: '#7f8c8d'
+  };
+  const _AI_REVIEW_CAT_ICONS = {
+    SPOF: '⚠', REDUNDANCY: '⛓', STIG: '🛡', ENCRYPTION: '🔒',
+    SEGMENTATION: '🔀', ROUTING: '🔁', SUGGESTION: '💡'
+  };
+  let _aiReviewFindings = [];
+
+  function openAiReviewPanel() {
+    document.getElementById('ai-review-panel').classList.remove('hidden');
+    // Close other slide panels to avoid overlap
+    document.getElementById('nc-chat-panel').classList.add('hidden');
+    document.getElementById('netbox-panel').classList.add('hidden');
+  }
+
+  function closeAiReviewPanel() {
+    document.getElementById('ai-review-panel').classList.add('hidden');
+    clearAiReviewAnnotations();
+  }
+
+  function clearAiReviewAnnotations() {
+    document.getElementById('ai-annotation-layer').innerHTML = '';
+    // Remove canvas highlight class
+    if (typeof graph !== 'undefined' && graph) {
+      graph.getCells().forEach(function(cell) {
+        if (typeof paper !== 'undefined') {
+          const view = paper.findViewByModel(cell);
+          if (view && view.el) {
+            view.el.style.filter = '';
+            view.el.style.outline = '';
+          }
+        }
+      });
+    }
+  }
+
+  async function runAiReview() {
+    if (TOPOLOGY_ID === 'new') {
+      alert('Save the topology first.');
+      return;
+    }
+    const btn = document.getElementById('ai-review-run-btn');
+    const statusEl = document.getElementById('ai-review-status');
+    const bodyEl = document.getElementById('ai-review-body');
+    const emptyEl = document.getElementById('ai-review-empty');
+    const summaryEl = document.getElementById('ai-review-summary');
+    const findingsEl = document.getElementById('ai-review-findings');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Analyzing…';
+    statusEl.textContent = 'Sending topology to AI…';
+    clearAiReviewAnnotations();
+    emptyEl.style.display = 'none';
+    summaryEl.style.display = 'none';
+    findingsEl.innerHTML = '';
+
+    try {
+      const r = await fetch(NC_BASE + '/api/ai-review/' + TOPOLOGY_ID, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: '{}',
+      });
+      const data = await r.json();
+
+      btn.disabled = false;
+      btn.textContent = '▶ Analyze Topology';
+
+      if (data.error) {
+        statusEl.style.color = '#e74c3c';
+        statusEl.textContent = 'Error: ' + data.error;
+        emptyEl.style.display = '';
+        return;
+      }
+
+      _aiReviewFindings = data.findings || [];
+      const cnt = _aiReviewFindings.length;
+      const high = _aiReviewFindings.filter(f => f.severity === 'HIGH').length;
+      const med = _aiReviewFindings.filter(f => f.severity === 'MEDIUM').length;
+      statusEl.style.color = high > 0 ? '#e74c3c' : med > 0 ? '#f39c12' : '#2ecc71';
+      statusEl.textContent = cnt + ' finding' + (cnt !== 1 ? 's' : '') +
+        (high ? ' — ' + high + ' HIGH' : '') +
+        (med ? ' · ' + med + ' MEDIUM' : '') +
+        ' via ' + (data.provider || 'AI');
+
+      // Summary
+      if (data.summary) {
+        summaryEl.textContent = data.summary;
+        summaryEl.style.display = '';
+      }
+
+      // Render findings list
+      if (!cnt) {
+        findingsEl.innerHTML = '<div style="text-align:center;padding:20px;color:#2ecc71;font-size:13px;">✓ No issues found — topology looks healthy.</div>';
+      } else {
+        findingsEl.innerHTML = _aiReviewFindings.map(function(f, i) {
+          const sevColor = _AI_REVIEW_SEV_COLORS[f.severity] || '#7f8c8d';
+          const catIcon = _AI_REVIEW_CAT_ICONS[f.category] || '•';
+          const hasNodes = f.node_ids && f.node_ids.length > 0;
+          return '<div class="ai-review-finding" data-finding-idx="' + i + '" '
+            + 'style="background:#0d1a2e;border-radius:6px;padding:10px 12px;margin-bottom:8px;border-left:3px solid ' + sevColor + ';cursor:pointer;" '
+            + 'onmouseenter="highlightFindingNodes(' + i + ',true)" '
+            + 'onmouseleave="highlightFindingNodes(' + i + ',false)" '
+            + 'onclick="zoomToFindingNodes(' + i + ')">'
+            + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+            + '<span style="background:' + sevColor + ';color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;min-width:20px;text-align:center;">' + f.id + '</span>'
+            + '<span style="font-size:10px;color:' + sevColor + ';font-weight:600;">' + f.severity + '</span>'
+            + '<span style="font-size:10px;color:#7f8c8d;">' + catIcon + ' ' + (f.category || '') + '</span>'
+            + (hasNodes ? '<span style="margin-left:auto;font-size:10px;color:#4a5568;">' + f.node_ids.length + ' device' + (f.node_ids.length > 1 ? 's' : '') + '</span>' : '')
+            + '</div>'
+            + '<div style="font-size:12px;color:#ecf0f1;font-weight:600;margin-bottom:4px;">' + escHtml(f.title || '') + '</div>'
+            + '<div style="font-size:11px;color:#95a5a6;line-height:1.45;margin-bottom:6px;">' + escHtml(f.description || '') + '</div>'
+            + '<details style="margin:0;"><summary style="font-size:10px;color:#00d4ff;cursor:pointer;user-select:none;">Suggestion</summary>'
+            + '<div style="font-size:11px;color:#b0c4d8;margin-top:4px;padding:6px 8px;background:#111827;border-radius:4px;">' + escHtml(f.suggestion || '') + '</div>'
+            + '</details>'
+            + '</div>';
+        }).join('');
+      }
+
+      // Pin annotation badges on canvas nodes
+      _pinAiReviewAnnotations(_aiReviewFindings);
+
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '▶ Analyze Topology';
+      statusEl.style.color = '#e74c3c';
+      statusEl.textContent = 'Request failed: ' + err.message;
+      emptyEl.style.display = '';
+    }
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function _getNodeCanvasRect(nodeId) {
+    if (typeof graph === 'undefined' || !graph) return null;
+    const cell = graph.getCell(nodeId);
+    if (!cell || cell.isLink()) return null;
+    if (typeof paper === 'undefined' || !paper) return null;
+    const view = paper.findViewByModel(cell);
+    if (!view) return null;
+    try {
+      const bbox = cell.getBBox();
+      const cx = bbox.x + bbox.width / 2;
+      const cy = bbox.y + bbox.height / 2;
+      const clientPt = paper.localToClientPoint(cx, cy);
+      return { x: clientPt.x, y: clientPt.y };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function _pinAiReviewAnnotations(findings) {
+    const layer = document.getElementById('ai-annotation-layer');
+    layer.innerHTML = '';
+    // Build map: nodeId -> [finding numbers]
+    const nodeMap = {};
+    findings.forEach(function(f) {
+      (f.node_ids || []).forEach(function(nid) {
+        if (!nodeMap[nid]) nodeMap[nid] = [];
+        nodeMap[nid].push(f.id);
+      });
+    });
+    Object.keys(nodeMap).forEach(function(nid) {
+      const pt = _getNodeCanvasRect(nid);
+      if (!pt) return;
+      const ids = nodeMap[nid];
+      // Show first finding ID as badge; if multiple, show count
+      const sevs = ids.map(function(fid) {
+        const f = findings.find(function(x) { return x.id === fid; });
+        return f ? f.severity : 'LOW';
+      });
+      const topSev = ['HIGH','MEDIUM','LOW','INFO'].find(function(s) { return sevs.includes(s); }) || 'INFO';
+      const color = _AI_REVIEW_SEV_COLORS[topSev] || '#7f8c8d';
+      const badge = document.createElement('div');
+      badge.style.cssText = [
+        'position:fixed',
+        'left:' + (pt.x - 10) + 'px',
+        'top:' + (pt.y - 28) + 'px',
+        'background:' + color,
+        'color:#fff',
+        'font-size:10px',
+        'font-weight:700',
+        'padding:2px 5px',
+        'border-radius:10px',
+        'box-shadow:0 2px 6px rgba(0,0,0,0.6)',
+        'pointer-events:none',
+        'white-space:nowrap',
+        'z-index:901',
+        'border:1px solid rgba(255,255,255,0.25)',
+        'font-family:monospace',
+      ].join(';');
+      badge.textContent = ids.length === 1 ? '#' + ids[0] : ids.length + ' issues';
+      badge.setAttribute('data-node-id', nid);
+      layer.appendChild(badge);
+    });
+  }
+
+  function highlightFindingNodes(idx, on) {
+    const f = _aiReviewFindings[idx];
+    if (!f || typeof graph === 'undefined' || !graph) return;
+    const nids = new Set(f.node_ids || []);
+    if (!nids.size) return;
+    const sevColor = _AI_REVIEW_SEV_COLORS[f.severity] || '#7f8c8d';
+    graph.getCells().forEach(function(cell) {
+      if (cell.isLink()) return;
+      const view = typeof paper !== 'undefined' ? paper.findViewByModel(cell) : null;
+      if (!view || !view.el) return;
+      if (nids.has(cell.id)) {
+        view.el.style.filter = on ? 'drop-shadow(0 0 8px ' + sevColor + ')' : '';
+        view.el.style.outline = on ? '2px solid ' + sevColor : '';
+      }
+    });
+  }
+
+  function zoomToFindingNodes(idx) {
+    const f = _aiReviewFindings[idx];
+    if (!f || !f.node_ids || !f.node_ids.length) return;
+    if (typeof graph === 'undefined' || !graph || typeof paper === 'undefined' || !paper) return;
+    // Collect bboxes of all affected nodes
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    f.node_ids.forEach(function(nid) {
+      const cell = graph.getCell(nid);
+      if (!cell || cell.isLink()) return;
+      const bb = cell.getBBox();
+      minX = Math.min(minX, bb.x);
+      minY = Math.min(minY, bb.y);
+      maxX = Math.max(maxX, bb.x + bb.width);
+      maxY = Math.max(maxY, bb.y + bb.height);
+    });
+    if (!isFinite(minX)) return;
+    const pad = 80;
+    const W = paper.el.clientWidth || 800;
+    const H = paper.el.clientHeight || 600;
+    const fw = maxX - minX + pad * 2;
+    const fh = maxY - minY + pad * 2;
+    const scale = Math.min(W / fw, H / fh, 1.5);
+    const tx = W / 2 - (minX + (maxX - minX) / 2) * scale;
+    const ty = H / 2 - (minY + (maxY - minY) / 2) * scale;
+    paper.scale(scale);
+    paper.translate(tx, ty);
+    // Re-pin badges after pan/zoom
+    _pinAiReviewAnnotations(_aiReviewFindings);
+    highlightFindingNodes(idx, true);
+  }
+
+  /* ── IP Address Planning Assistant ──────────────────────────────────────── */
+  let _ipPlanAssignments = [];
+
+  function openIpPlanModal() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    document.getElementById('ip-plan-overlay').classList.remove('hidden');
+    document.getElementById('ip-plan-results').style.display = 'none';
+    document.getElementById('ip-plan-loading').style.display = 'none';
+  }
+
+  function closeIpPlanModal() {
+    document.getElementById('ip-plan-overlay').classList.add('hidden');
+  }
+
+  async function runIpPlan() {
+    const supernet = document.getElementById('ip-plan-supernet').value.trim();
+    const strategy = document.getElementById('ip-plan-strategy').value;
+    if (!supernet) { alert('Enter a supernet (e.g. 10.100.0.0/16)'); return; }
+    document.getElementById('ip-plan-results').style.display = 'none';
+    document.getElementById('ip-plan-loading').style.display = 'block';
+    const btn = document.getElementById('ip-plan-gen-btn');
+    btn.disabled = true;
+    try {
+      const r = await fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/plan-ips', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({supernet, strategy}),
+      });
+      const data = await r.json();
+      if (data.error) { alert('IP planning failed: ' + data.error); return; }
+      _ipPlanAssignments = data.assignments || [];
+      const tbody = document.getElementById('ip-plan-tbody');
+      tbody.innerHTML = '';
+      _ipPlanAssignments.forEach(a => {
+        const tr = document.createElement('tr');
+        tr.style.cssText = 'border-bottom:1px solid #1e2d45;';
+        tr.innerHTML =
+          '<td style="padding:6px 8px;color:#eaeaea;">' + (a.label || a.node_id) + '</td>' +
+          '<td style="padding:6px 8px;color:#95a5a6;">' + (a.type || '') + '</td>' +
+          '<td style="padding:6px 8px;color:#00d4ff;font-family:monospace;">' + (a.cidr || '') + '</td>' +
+          '<td style="padding:6px 8px;color:#27ae60;font-family:monospace;">' + (a.gateway || '') + '</td>' +
+          '<td style="padding:6px 8px;color:#f39c12;">' + (a.vlan != null ? a.vlan : '') + '</td>';
+        tbody.appendChild(tr);
+      });
+      document.getElementById('ip-plan-results').style.display = 'block';
+    } catch (e) {
+      alert('IP plan request failed: ' + e.message);
+    } finally {
+      document.getElementById('ip-plan-loading').style.display = 'none';
+      btn.disabled = false;
+    }
+  }
+
+  function _applyIpPlan(assignments) {
+    let applied = 0;
+    graph.getElements().forEach(cell => {
+      if (!cell.get('nodeType')) return;
+      const nodeId = cell.id;
+      const label = cell.attr('label/text') || '';
+      const match = assignments.find(a => a.node_id === nodeId || a.label === label);
+      if (!match) return;
+      const config = cell.get('configData') || {};
+      if (match.cidr) config.ip = match.cidr;
+      if (match.vlan != null) config.vlan = match.vlan;
+      cell.set('configData', config);
+      if (config.ip) cell.attr('iplabel/text', config.ip);
+      applied++;
+    });
+    markDirty();
+    return applied;
+  }
+
+  function applyIpPlan() {
+    if (!_ipPlanAssignments.length) return;
+    const applied = _applyIpPlan(_ipPlanAssignments);
+    closeIpPlanModal();
+    setStatus('IP plan applied — ' + applied + ' node(s) updated.');
+    if (typeof autoSave === 'function') autoSave();
+  }
+</script>
+<!-- ATO Package Generator Dialog -->
+<div id="ato-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:640px;">
+    <div class="sim-panel-header">
+      <h3>ATO Package Auto-Generator</h3>
+      <button class="close-btn" onclick="closeAtoDialog()">&#x2715;</button>
+    </div>
+    <p style="color:#95a5a6;font-size:12px;margin:0 0 12px;">Generate partial ATO package: system boundary diagram (RMF Step 1), data flow diagram, ports/protocols/services matrix, and pre-populated STIG checklist.</p>
+    <div class="form-group">
+      <label>System Name</label>
+      <input type="text" id="ato-system-name" class="form-control" placeholder="Information System name for ATO documentation"/>
+    </div>
+    <div class="form-group">
+      <label>Topology Region (optional)</label>
+      <select id="ato-region-select" class="form-control" onfocus="loadAtoRegions()">
+        <option value="">-- Full Topology --</option>
+      </select>
+    </div>
+    <div class="form-group" style="display:flex;gap:8px;">
+      <button class="btn btn-primary" id="ato-gen-btn" onclick="runAtoGenerate()" style="flex:1;background:#e74c3c;border-color:#c0392b;">Generate ATO Package</button>
+      <button class="btn btn-secondary" onclick="closeAtoDialog()">Cancel</button>
+    </div>
+    <div id="ato-gen-output" class="sim-output" style="display:none;max-height:450px;overflow-y:auto;"></div>
+  </div>
+</div>
+<!-- IP Address Planning Assistant Modal -->
+<div id="ip-plan-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:700px;">
+    <div class="sim-panel-header">
+      <h3>&#x1f5c4; IP Address Planning Assistant</h3>
+      <button class="close-btn" onclick="closeIpPlanModal()">&#x2715;</button>
+    </div>
+    <p style="color:#95a5a6;font-size:12px;margin:0 0 14px;">Enter a supernet and strategy — the AI will propose CIDR allocations for each segment and device in the topology.</p>
+    <div style="display:flex;gap:12px;margin-bottom:12px;">
+      <div class="form-group" style="flex:2;margin-bottom:0;">
+        <label>Supernet</label>
+        <input type="text" id="ip-plan-supernet" class="form-control" placeholder="e.g. 10.100.0.0/16" value="10.100.0.0/16"/>
+      </div>
+      <div class="form-group" style="flex:1;margin-bottom:0;">
+        <label>Strategy</label>
+        <select id="ip-plan-strategy" class="form-control">
+          <option value="balanced">Balanced</option>
+          <option value="power-of-2">Power-of-2</option>
+          <option value="flat">Flat /24s</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <button class="btn btn-primary" id="ip-plan-gen-btn" onclick="runIpPlan()" style="flex:1;background:#0099bb;border-color:#007a99;">Generate Plan</button>
+      <button class="btn btn-secondary" onclick="closeIpPlanModal()">Cancel</button>
+    </div>
+    <div id="ip-plan-loading" style="display:none;text-align:center;padding:24px;color:#95a5a6;font-size:13px;">&#x25cc; Planning IP allocations&#x2026;</div>
+    <div id="ip-plan-results" style="display:none;">
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="color:#7f8c8d;border-bottom:1px solid #2d3a56;">
+              <th style="text-align:left;padding:6px 8px;">Segment / Device</th>
+              <th style="text-align:left;padding:6px 8px;">Type</th>
+              <th style="text-align:left;padding:6px 8px;">CIDR</th>
+              <th style="text-align:left;padding:6px 8px;">Gateway</th>
+              <th style="text-align:left;padding:6px 8px;">VLAN</th>
+            </tr>
+          </thead>
+          <tbody id="ip-plan-tbody"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="applyIpPlan()" style="flex:1;background:#27ae60;border-color:#219a52;">&#x2714; Apply to Diagram</button>
+        <button class="btn btn-secondary" onclick="closeIpPlanModal()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- STIG XCCDF/CKL Import Dialog -->
+<div id="stig-import-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:580px;max-height:85vh;overflow-y:auto;">
+    <div class="sim-panel-header">
+      <h3>&#x1f6e1; STIG XCCDF/CKL Import</h3>
+      <button class="close-btn" onclick="closeStigImportDialog()">&#x2715;</button>
+    </div>
+    <p style="color:#95a5a6;font-size:12px;margin:0 0 12px;">Upload a DISA STIG Viewer <strong>.ckl</strong> file or SCAP <strong>XCCDF</strong> results XML. Hostnames are matched to canvas devices and colored by compliance status.</p>
+
+    <!-- File chooser -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:12px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#7f8c8d;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Upload File</div>
+      <input type="file" id="stig-file-input" accept=".ckl,.xml,.xccdf" style="display:none;" onchange="handleStigFileChange(this)"/>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" onclick="document.getElementById('stig-file-input').click()" style="font-size:12px;padding:6px 12px;">Choose File</button>
+        <span id="stig-file-name" style="font-size:12px;color:#95a5a6;">No file selected</span>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button class="btn btn-primary" id="stig-upload-btn" onclick="uploadStigFile()" disabled style="flex:1;background:#e74c3c;border-color:#c0392b;">Import &amp; Apply Overlay</button>
+        <button class="btn btn-secondary" onclick="closeStigImportDialog()">Close</button>
+      </div>
+    </div>
+
+    <!-- Status / results -->
+    <div id="stig-upload-status"></div>
+
+    <!-- Color legend -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#7f8c8d;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Color Legend</div>
+      <div style="display:flex;gap:20px;font-size:11px;color:#bdc3c7;flex-wrap:wrap;">
+        <span><span style="color:#e74c3c;font-size:14px;">&#9679;</span> Red &mdash; CAT I open findings</span>
+        <span><span style="color:#f39c12;font-size:14px;">&#9679;</span> Yellow &mdash; CAT II/III open findings</span>
+        <span><span style="color:#2ecc71;font-size:14px;">&#9679;</span> Green &mdash; all checks passed</span>
+      </div>
+    </div>
+
+    <!-- Import history -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;">
+      <div style="font-size:11px;color:#7f8c8d;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Import History</div>
+      <div id="stig-history-list" style="max-height:180px;overflow-y:auto;"></div>
+    </div>
+  </div>
+</div>
+<!-- AI Topology Reviewer Panel -->
+<div id="ai-review-panel" class="nc-chat-panel hidden" style="right:0;left:auto;width:420px;display:flex;flex-direction:column;max-height:80vh;">
+  <div class="nc-chat-header" style="background:#0d1a2e;border-bottom:1px solid #1e3a5f;">
+    <span class="nc-chat-title" style="color:#00d4ff;">&#x1f50d; AI Topology Reviewer</span>
+    <div class="nc-chat-header-actions">
+      <button class="nc-chat-btn-sm" onclick="clearAiReviewAnnotations()" title="Clear annotations from canvas">Clear</button>
+      <button class="close-btn" onclick="closeAiReviewPanel()">&#x2715;</button>
+    </div>
+  </div>
+  <div style="padding:10px 14px;border-bottom:1px solid #1e3a5f;">
+    <button class="btn btn-primary" id="ai-review-run-btn" onclick="runAiReview()" style="width:100%;background:#00d4ff;border-color:#00b8d9;color:#0d1a2e;font-weight:600;">
+      &#x25b6; Analyze Topology
+    </button>
+    <div id="ai-review-status" style="margin-top:6px;font-size:11px;color:#7f8c8d;min-height:14px;"></div>
+  </div>
+  <div id="ai-review-body" style="flex:1;overflow-y:auto;padding:12px 14px;">
+    <div id="ai-review-empty" style="text-align:center;padding:32px 16px;color:#4a5568;">
+      <div style="font-size:28px;margin-bottom:8px;">&#x1f50d;</div>
+      <p style="font-size:12px;margin:0 0 4px;">Feed your diagram to the AI for analysis.</p>
+      <p style="font-size:11px;color:#2d3748;">Detects: SPOFs &bull; Redundancy gaps &bull; STIG violations &bull; Encryption issues &bull; Segmentation risks</p>
+    </div>
+    <div id="ai-review-summary" style="display:none;background:#0d1a2e;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#b0c4d8;line-height:1.5;border-left:3px solid #00d4ff;"></div>
+    <div id="ai-review-findings"></div>
+  </div>
+</div>
+<!-- Annotation badge container (absolutely positioned over canvas) -->
+<div id="ai-annotation-layer" style="position:fixed;top:0;left:0;pointer-events:none;z-index:900;"></div>
+
+<!-- NetBox IPAM Integration Panel -->
+<div id="netbox-panel" class="nc-chat-panel hidden" style="right:0;left:auto;width:380px;display:flex;flex-direction:column;">
+  <div class="sim-panel-header" style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
+    <h3 style="margin:0;font-size:14px;color:#9b59b6;">⬡ NetBox IPAM</h3>
+    <button class="close-btn" onclick="netboxToggle()">&#x2715;</button>
+  </div>
+  <div style="padding:12px 16px;overflow-y:auto;flex:1;">
+    <!-- Connection config -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#9b59b6;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Connection</div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:11px;color:#95a5a6;">NetBox URL</label>
+        <input type="text" id="nb-url-input" class="form-control" style="font-size:12px;" placeholder="http://netbox:8000"/>
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:11px;color:#95a5a6;">API Token</label>
+        <input type="password" id="nb-token-input" class="form-control" style="font-size:12px;" placeholder="Token abc123..."/>
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:11px;color:#95a5a6;">Site Filter (optional)</label>
+        <input type="text" id="nb-site-input" class="form-control" style="font-size:12px;" placeholder="site-slug"/>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-secondary" style="flex:1;font-size:11px;padding:5px 8px;" onclick="netboxSaveConfig()">Save Config</button>
+        <button class="btn btn-secondary" style="flex:1;font-size:11px;padding:5px 8px;" onclick="netboxTestConnection()">Test</button>
+      </div>
+      <div id="nb-status-line" style="margin-top:8px;font-size:11px;color:#95a5a6;min-height:16px;"></div>
+    </div>
+
+    <!-- Pull resources -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#9b59b6;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Pull from NetBox</div>
+      <div id="nb-pull-results" style="font-size:11px;color:#95a5a6;margin-bottom:8px;min-height:20px;"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('devices')">Devices</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('ips')">IP Addresses</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('vlans')">VLANs</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('prefixes')">Prefixes</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('racks')">Racks</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('circuits')">Circuits</button>
+      </div>
+      <button class="btn btn-primary" style="width:100%;font-size:12px;margin-top:8px;background:#9b59b6;border-color:#8e44ad;" onclick="netboxImport('all', true)">⬇ Import All into Canvas</button>
+    </div>
+
+    <!-- Import options -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#9b59b6;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Import Options</div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:#95a5a6;cursor:pointer;margin-bottom:8px;">
+        <input type="checkbox" id="nb-merge-chk" checked style="accent-color:#9b59b6;"/> Merge (keep existing nodes)
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxImport('devices', document.getElementById('nb-merge-chk').checked)">Import Devices</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxImport('circuits', document.getElementById('nb-merge-chk').checked)">Import Circuits</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxImport('prefixes', document.getElementById('nb-merge-chk').checked)">Import Prefixes</button>
+      </div>
+    </div>
+
+    <!-- Push to NetBox -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#9b59b6;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Push to NetBox</div>
+      <div style="font-size:11px;color:#95a5a6;margin-bottom:8px;">Push canvas nodes (new devices only) back to NetBox as device records.</div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:11px;color:#95a5a6;">NetBox Site ID (optional)</label>
+        <input type="number" id="nb-site-id-input" class="form-control" style="font-size:12px;" placeholder="e.g. 3"/>
+      </div>
+      <button class="btn btn-secondary" style="width:100%;font-size:12px;" onclick="netboxPush(false)">⬆ Push New Nodes</button>
+    </div>
+
+    <!-- Sync log -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;">
+      <div style="font-size:11px;color:#9b59b6;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">
+        Sync Log
+        <button onclick="netboxLoadSyncLog()" style="background:none;border:none;color:#9b59b6;cursor:pointer;font-size:11px;float:right;padding:0;">↺ Refresh</button>
+      </div>
+      <div id="nb-sync-log" style="font-size:10px;color:#95a5a6;max-height:120px;overflow-y:auto;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PPS Matrix Generator Overlay -->
+<div id="pps-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:900px;max-height:90vh;overflow-y:auto;">
+    <div class="sim-panel-header">
+      <h3>Ports / Protocols / Services Matrix</h3>
+      <button class="close-btn" onclick="closePpsPanel()">&#x2715;</button>
+    </div>
+    <p style="color:#95a5a6;font-size:12px;margin:0 0 12px;">Select two enclaves or a device pair. Auto-generates PPS matrix by inspecting firewall rules and link annotations. Exportable as SSP table.</p>
+
+    <!-- Mode toggle -->
+    <div style="display:flex;gap:12px;margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#dfe6e9;font-size:13px;">
+        <input type="radio" name="pps-sel-mode" value="zone" checked onchange="ppsOnModeChange('zone')">
+        Enclave / Zone pair
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#dfe6e9;font-size:13px;">
+        <input type="radio" name="pps-sel-mode" value="node" onchange="ppsOnModeChange('node')">
+        Device pair
+      </label>
+    </div>
+
+    <!-- Zone selectors -->
+    <div id="pps-zone-selectors" style="display:flex;gap:12px;margin-bottom:12px;">
+      <div style="flex:1;">
+        <label style="font-size:12px;color:#95a5a6;display:block;margin-bottom:4px;">Source Enclave</label>
+        <select id="pps-src-zone" class="form-control" style="width:100%;"></select>
+      </div>
+      <div style="flex:1;">
+        <label style="font-size:12px;color:#95a5a6;display:block;margin-bottom:4px;">Destination Enclave</label>
+        <select id="pps-dst-zone" class="form-control" style="width:100%;"></select>
+      </div>
+    </div>
+
+    <!-- Node selectors (hidden by default) -->
+    <div id="pps-node-selectors" style="display:none;gap:12px;margin-bottom:12px;">
+      <div style="flex:1;">
+        <label style="font-size:12px;color:#95a5a6;display:block;margin-bottom:4px;">Source Device</label>
+        <select id="pps-src-node" class="form-control" style="width:100%;"></select>
+      </div>
+      <div style="flex:1;">
+        <label style="font-size:12px;color:#95a5a6;display:block;margin-bottom:4px;">Destination Device</label>
+        <select id="pps-dst-node" class="form-control" style="width:100%;"></select>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button class="btn btn-primary" onclick="ppsGenerate()">Generate PPS Matrix</button>
+      <button class="btn btn-secondary" id="pps-export-csv-btn" onclick="ppsExport('csv')" style="display:none;">Export CSV</button>
+      <button class="btn btn-secondary" id="pps-export-md-btn" onclick="ppsExport('markdown')" style="display:none;">Export Markdown</button>
+    </div>
+
+    <!-- Summary stats -->
+    <div id="pps-stats-bar" style="display:none;display:none;gap:12px;margin-bottom:16px;flex-wrap:wrap;"></div>
+
+    <!-- PPS matrix table -->
+    <div id="pps-matrix-section" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <h4 id="pps-matrix-title" style="margin:0;color:#dfe6e9;font-size:14px;">PPS Matrix</h4>
+        <input type="text" id="pps-filter" placeholder="Filter protocols..." oninput="ppsFilterTable()"
+               style="padding:4px 8px;font-size:12px;background:#1e2a3a;border:1px solid #334;color:#dfe6e9;border-radius:4px;width:200px;">
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;color:#dfe6e9;">
+          <thead>
+            <tr style="background:#1a2332;border-bottom:2px solid #334;">
+              <th style="padding:6px 8px;text-align:left;">#</th>
+              <th style="padding:6px 8px;text-align:left;">Protocol</th>
+              <th style="padding:6px 8px;text-align:left;">Port</th>
+              <th style="padding:6px 8px;text-align:left;">Service</th>
+              <th style="padding:6px 8px;text-align:left;">Direction</th>
+              <th style="padding:6px 8px;text-align:center;">Encrypted</th>
+              <th style="padding:6px 8px;text-align:center;">FIPS</th>
+              <th style="padding:6px 8px;text-align:left;">Risk</th>
+              <th style="padding:6px 8px;text-align:left;">Justification</th>
+              <th style="padding:6px 8px;text-align:left;">Endpoints</th>
+            </tr>
+          </thead>
+          <tbody id="pps-matrix-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Firewall rules section -->
+    <div id="pps-fw-section" style="display:none;margin-top:16px;">
+      <h4 style="margin:0 0 8px;color:#dfe6e9;font-size:14px;">Firewall Rules (at boundary)</h4>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;color:#dfe6e9;">
+          <thead>
+            <tr style="background:#1a2332;border-bottom:2px solid #334;">
+              <th style="padding:6px 8px;text-align:left;">#</th>
+              <th style="padding:6px 8px;text-align:left;">Protocol</th>
+              <th style="padding:6px 8px;text-align:left;">Port</th>
+              <th style="padding:6px 8px;text-align:left;">Service</th>
+              <th style="padding:6px 8px;text-align:left;">Direction (src&#x2192;dst)</th>
+              <th style="padding:6px 8px;text-align:center;">Encrypted</th>
+              <th style="padding:6px 8px;text-align:left;">Risk</th>
+              <th style="padding:6px 8px;text-align:left;">Justification</th>
+            </tr>
+          </thead>
+          <tbody id="pps-fw-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="pps-empty" style="display:none;text-align:center;padding:2rem;color:#95a5a6;">
+      <div style="font-size:2rem;margin-bottom:0.5rem;">&#x2298;</div>
+      <p>No cross-boundary traffic found between the selected pair.</p>
+      <p style="font-size:11px;">Ensure the topology has links annotated with protocols between these enclaves.</p>
+    </div>
+
+    <!-- Loading -->
+    <div id="pps-loading" style="display:none;text-align:center;padding:1.5rem;color:#95a5a6;">
+      Generating PPS matrix...
+    </div>
+  </div>
+</div>
+
+<!-- ── Device Config Preview Modal ─────────────────────────────────────────── -->
+<div id="cfg-preview-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:3000;display:flex;align-items:center;justify-content:center;">
+  <div style="background:#0d1117;border:1px solid #2a3a50;border-radius:10px;width:880px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1e2d3d;">
+      <h3 style="margin:0;font-size:14px;color:#00c896;font-weight:600;letter-spacing:0.04em;">&#x2699; Device Config Generator</h3>
+      <button onclick="cfgPreviewClose()" style="background:none;border:none;color:#7a8a99;font-size:18px;cursor:pointer;padding:2px 6px;border-radius:4px;" title="Close">&#x2715;</button>
+    </div>
+    <!-- Body: left list + right preview -->
+    <div style="display:flex;flex:1;overflow:hidden;min-height:0;">
+      <!-- Device list -->
+      <div style="width:260px;min-width:200px;border-right:1px solid #1e2d3d;overflow-y:auto;padding:10px 8px;">
+        <div style="font-size:10px;color:#4a5a6a;text-transform:uppercase;letter-spacing:0.06em;padding:4px 6px 8px;">Configurable Devices</div>
+        <div id="cfg-device-list" style="display:flex;flex-direction:column;gap:4px;"></div>
+        <div id="cfg-no-devices" class="hidden" style="padding:20px 8px;text-align:center;color:#4a5a6a;font-size:12px;">
+          No routers, switches, or firewalls on canvas.<br><br>Add devices and assign IPs/VLANs in the Properties panel.
+        </div>
+      </div>
+      <!-- Config preview -->
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+        <div id="cfg-preview-header" style="padding:10px 14px;border-bottom:1px solid #1a2535;font-size:12px;color:#7a8a99;display:flex;align-items:center;gap:10px;">
+          <span id="cfg-preview-device-name" style="color:#e8eaf0;font-weight:600;">Select a device →</span>
+          <span id="cfg-preview-os-badge" style="background:#1a2d40;color:#00c896;font-size:10px;padding:2px 7px;border-radius:10px;display:none;"></span>
+          <button id="cfg-dl-single-btn" onclick="cfgDownloadSingle()" class="hidden" style="margin-left:auto;background:#1a3a2a;color:#00c896;border:1px solid #1e5a3a;font-size:11px;padding:4px 10px;border-radius:5px;cursor:pointer;" title="Download this config as .txt">&#x2193; Download</button>
+        </div>
+        <div style="flex:1;overflow:auto;padding:12px 14px;">
+          <div id="cfg-preview-empty" style="text-align:center;padding:48px 20px;color:#2a3a50;">
+            <div style="font-size:32px;margin-bottom:8px;">&#x1f4bb;</div>
+            <p style="font-size:12px;margin:0;">Click a device on the left to preview its generated configuration.</p>
+          </div>
+          <pre id="cfg-preview-code" class="hidden" style="margin:0;font-family:'Courier New',Courier,monospace;font-size:11px;color:#c8d8e8;line-height:1.55;white-space:pre;background:none;border:none;padding:0;"></pre>
+        </div>
+      </div>
+    </div>
+    <!-- Footer -->
+    <div style="padding:10px 16px;border-top:1px solid #1e2d3d;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <div id="cfg-preview-summary" style="font-size:11px;color:#4a6a8a;"></div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="cfgPreviewClose()" style="background:none;border:1px solid #2a3a50;color:#7a8a99;font-size:12px;padding:6px 14px;border-radius:5px;cursor:pointer;">Cancel</button>
+        <button id="cfg-dl-all-btn" onclick="cfgDownloadAll()" style="background:#0a2a1a;border:1px solid #00c896;color:#00c896;font-size:12px;padding:6px 16px;border-radius:5px;cursor:pointer;font-weight:600;" title="Download all configs as ZIP">&#x2193; Download All (ZIP)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/canvas-tooltips.js') }}"></script>
+<script>
+// Build NODE_DESCS from palette item title attributes (already have descriptions)
+window.NODE_DESCS = {};
+document.querySelectorAll('.palette-item[data-type]').forEach(function(el) {
+  var t = el.getAttribute('data-type');
+  var d = el.getAttribute('title');
+  if (t && d) window.NODE_DESCS[t] = d;
+});
+// Also fetch cloud object descriptions from API
+fetch('/api/network/cloud-objects').then(function(r) { return r.json(); }).then(function(data) {
+  Object.values(data).forEach(function(group) {
+    (Array.isArray(group) ? group : Object.values(group).flat()).forEach(function(obj) {
+      if (obj && obj.type && obj.desc) window.NODE_DESCS[obj.type] = obj.desc;
+    });
+  });
+}).catch(function() {});
+</script>
+<script src="{{ url_for('static', filename='js/network-canvas.js') }}"></script>
+<script src="{{ url_for('static', filename='js/network-simulation.js') }}"></script>
+<script>
+// ── Device Config Preview Modal ──────────────────────────────────────────────
+let _cfgConfigs = {};   // filename -> config text
+let _cfgActive  = null; // currently selected filename
+
+async function showDeviceConfigModal() {
+  if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+  const overlay = document.getElementById('cfg-preview-overlay');
+  const listEl  = document.getElementById('cfg-device-list');
+  const noDevEl = document.getElementById('cfg-no-devices');
+  const summEl  = document.getElementById('cfg-preview-summary');
+  const dlAll   = document.getElementById('cfg-dl-all-btn');
+
+  // Reset state
+  listEl.innerHTML = '';
+  document.getElementById('cfg-preview-code').classList.add('hidden');
+  document.getElementById('cfg-preview-empty').classList.remove('hidden');
+  document.getElementById('cfg-preview-device-name').textContent = 'Loading…';
+  document.getElementById('cfg-preview-os-badge').style.display = 'none';
+  document.getElementById('cfg-dl-single-btn').classList.add('hidden');
+  summEl.textContent = 'Loading configs…';
+  dlAll.disabled = true;
+  _cfgConfigs = {};
+  _cfgActive = null;
+  overlay.classList.remove('hidden');
+
+  try {
+    const r = await fetch(NC_BASE + '/api/export/' + TOPOLOGY_ID + '/device-configs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({format: 'json'}),
+    });
+    const data = await r.json();
+    if (data.error) { summEl.textContent = 'Error: ' + data.error; return; }
+
+    _cfgConfigs = data.configs || {};
+    const count = Object.keys(_cfgConfigs).length;
+
+    if (count === 0) {
+      noDevEl.classList.remove('hidden');
+      listEl.classList.add('hidden');
+      summEl.textContent = 'No configurable devices on this topology.';
+      document.getElementById('cfg-preview-device-name').textContent = 'No devices';
+      dlAll.disabled = true;
+      return;
+    }
+
+    noDevEl.classList.add('hidden');
+    listEl.classList.remove('hidden');
+    dlAll.disabled = false;
+    summEl.textContent = count + ' device' + (count !== 1 ? 's' : '') + ' · ' + (data.topo_name || '');
+
+    // Build device list from filename
+    Object.keys(_cfgConfigs).forEach(filename => {
+      const osMatch = filename.match(/_(ios|eos|junos)(_\d+)?\.txt$/i);
+      const osLabel = osMatch ? {ios:'Cisco IOS', eos:'Arista EOS', junos:'JunOS'}[osMatch[1].toLowerCase()] || osMatch[1] : 'IOS';
+      const hostname = filename.replace(/_ios(_\d+)?\.txt$|_eos(_\d+)?\.txt$|_junos(_\d+)?\.txt$/i, '').replace(/_/g, '-');
+
+      const btn = document.createElement('button');
+      btn.dataset.filename = filename;
+      btn.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;background:#0a1520;border:1px solid #1e2d3d;border-radius:6px;padding:7px 9px;cursor:pointer;transition:border-color 0.15s;';
+      btn.innerHTML = `<span style="font-size:12px;color:#c8d8e8;font-weight:600;">${hostname}</span><span style="font-size:10px;color:#00c896;background:#0a2a1a;padding:1px 6px;border-radius:8px;">${osLabel}</span>`;
+      btn.addEventListener('click', () => cfgSelectDevice(filename, hostname, osLabel));
+      btn.addEventListener('mouseover', () => { if (btn.dataset.filename !== _cfgActive) btn.style.borderColor = '#2a4a60'; });
+      btn.addEventListener('mouseout', () => { if (btn.dataset.filename !== _cfgActive) btn.style.borderColor = '#1e2d3d'; });
+      listEl.appendChild(btn);
+    });
+
+    // Auto-select first
+    const firstFile = Object.keys(_cfgConfigs)[0];
+    if (firstFile) {
+      const osMatch = firstFile.match(/_(ios|eos|junos)(_\d+)?\.txt$/i);
+      const osLabel = osMatch ? {ios:'Cisco IOS', eos:'Arista EOS', junos:'JunOS'}[osMatch[1].toLowerCase()] || osMatch[1] : 'IOS';
+      const hostname = firstFile.replace(/_ios(_\d+)?\.txt$|_eos(_\d+)?\.txt$|_junos(_\d+)?\.txt$/i, '').replace(/_/g, '-');
+      cfgSelectDevice(firstFile, hostname, osLabel);
+    }
+  } catch (e) {
+    summEl.textContent = 'Error loading configs: ' + e.message;
+  }
+}
+
+function cfgSelectDevice(filename, hostname, osLabel) {
+  _cfgActive = filename;
+
+  // Highlight active button
+  document.querySelectorAll('#cfg-device-list button').forEach(b => {
+    const active = b.dataset.filename === filename;
+    b.style.borderColor = active ? '#00c896' : '#1e2d3d';
+    b.style.background  = active ? '#0a2520' : '#0a1520';
+  });
+
+  document.getElementById('cfg-preview-device-name').textContent = hostname;
+  const badge = document.getElementById('cfg-preview-os-badge');
+  badge.textContent = osLabel;
+  badge.style.display = 'inline';
+  document.getElementById('cfg-dl-single-btn').classList.remove('hidden');
+
+  const code = document.getElementById('cfg-preview-code');
+  code.textContent = _cfgConfigs[filename] || '';
+  code.classList.remove('hidden');
+  document.getElementById('cfg-preview-empty').classList.add('hidden');
+}
+
+function cfgPreviewClose() {
+  document.getElementById('cfg-preview-overlay').classList.add('hidden');
+  _cfgConfigs = {};
+  _cfgActive = null;
+}
+
+function cfgDownloadSingle() {
+  if (!_cfgActive || !_cfgConfigs[_cfgActive]) return;
+  const blob = new Blob([_cfgConfigs[_cfgActive]], {type: 'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = _cfgActive;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function cfgDownloadAll() {
+  cfgPreviewClose();
+  await exportDeviceConfigs();
+}
+
+// ── Load Cloud Networking palette from API ──────────────────────────────────
+(function(){
+  const CSP_ICONS = {aws:'aws-icon',azure:'azure-icon',gcp:'gcp-icon',oci:'oci-icon',ibm:'ibm-icon',multi_cloud:'multi-icon',dod:'dod-icon'};
+  const CSP_LABELS = {aws:'AWS',azure:'Azure',gcp:'GCP',oci:'OCI',ibm:'IBM Cloud',multi_cloud:'Multi-Cloud',dod:'DoD/SCCA'};
+  fetch(NC_BASE + '/api/cloud-objects').then(r=>r.json()).then(data=>{
+    const container = document.getElementById('cloud-palette-container');
+    if(!container) return;
+    for(const [csp, objects] of Object.entries(data)){
+      const section = document.createElement('div');
+      section.className = `palette-section cloud-section csp-${csp}`;
+      const iconClass = CSP_ICONS[csp]||'cloud-icon';
+      section.innerHTML = `<div class="palette-cat">${CSP_LABELS[csp]||csp}</div><div class="palette-items">${
+        objects.map(o=>`<div class="palette-item" draggable="true" data-type="${o.type}" ondragstart="onDragStart(event)" title="${o.desc}"><div class="pi-icon ${iconClass}">${o.icon}</div><span>${o.label}</span></div>`).join('')
+      }</div>`;
+      section.querySelector('.palette-cat').addEventListener('click', () => section.classList.toggle('open'));
+      container.appendChild(section);
+    }
+  }).catch(()=>{});
+})();
+
+// ── Load Vendor Stencil palette from API ────────────────────────────────────
+(function(){
+  const VENDOR_COLORS = {cisco:'#049fd9',juniper:'#84b135',aws:'#ff9900',azure:'#0078d4',custom:'#8e44ad'};
+  const container = document.getElementById('stencil-palette-items');
+  if (!container) return;
+
+  fetch(NC_BASE + '/api/stencils/shapes?limit=200').then(r=>r.json()).then(data=>{
+    const shapes = data.shapes || [];
+    if (!shapes.length) {
+      container.innerHTML = '<div style="font-size:10px;color:var(--text-muted,#888);padding:4px 6px;line-height:1.5;">No stencils imported.<br><a href="/network/stencils" target="_blank" style="color:var(--primary);">Import now ↗</a></div>';
+      return;
+    }
+    // Group by vendor
+    const byVendor = {};
+    shapes.forEach(s => {
+      (byVendor[s.vendor] = byVendor[s.vendor] || []).push(s);
+    });
+    let html = '';
+    for (const [vendor, items] of Object.entries(byVendor)) {
+      const color = VENDOR_COLORS[vendor] || '#555';
+      items.slice(0, 50).forEach(s => {
+        const imgSrc = NC_BASE + '/api/stencils/shapes/' + s.id + '/icon';
+        const initials = (s.name||'?').slice(0,2).toUpperCase();
+        html += `<div class="palette-item stencil-palette-item" draggable="true"
+          data-type="stencil:${s.id}"
+          data-stencil-id="${s.id}"
+          data-stencil-name="${(s.name||'').replace(/"/g,'&quot;')}"
+          data-vendor="${vendor}"
+          ondragstart="onStencilDragStart(event)"
+          title="${(s.name||'').replace(/"/g,'&quot;')} [${vendor.toUpperCase()}]">
+          <div class="pi-icon stencil-pi-icon" style="background:transparent;padding:1px;">
+            <img src="${imgSrc}" alt="${initials}"
+                 style="width:28px;height:28px;object-fit:contain;"
+                 onerror="this.parentElement.innerHTML='<div style=width:28px;height:28px;border-radius:4px;background:${color};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;>${initials}</div>'"/>
+          </div>
+          <span>${(s.name||'').length > 12 ? (s.name||'').slice(0,12)+'…' : (s.name||'')}</span>
+        </div>`;
+      });
+    }
+    if (shapes.length > 50) {
+      html += `<div style="font-size:10px;color:var(--text-muted,#888);padding:4px 6px;">+${shapes.length-50} more — <a href="/network/stencils" target="_blank" style="color:var(--primary);">view all ↗</a></div>`;
+    }
+    container.innerHTML = html;
+  }).catch(() => {
+    container.innerHTML = '<div style="font-size:10px;color:var(--text-muted,#888);padding:4px 6px;"><a href="/network/stencils" target="_blank" style="color:var(--primary);">Import stencils ↗</a></div>';
+  });
+})();
+
+function onStencilDragStart(e) {
+  const el = e.currentTarget;
+  e.dataTransfer.setData('text/plain', JSON.stringify({
+    type: el.dataset.type,
+    label: el.dataset.stencilName || el.dataset.type,
+    vendor: el.dataset.vendor,
+    shape_id: el.dataset.stencilId,
+    is_stencil: true,
+  }));
+  e.dataTransfer.effectAllowed = 'copy';
+}
+
+// ── Collapsible palette sections ─────────────────────────────────────────
+(function(){
+  document.querySelectorAll('.palette-section').forEach((sec, i) => {
+    if (i === 0) sec.classList.add('open');
+    const cat = sec.querySelector('.palette-cat');
+    if (cat) cat.addEventListener('click', () => sec.classList.toggle('open'));
+  });
+  // Search filter
+  const searchBox = document.getElementById('palette-search');
+  if (searchBox) {
+    searchBox.addEventListener('input', function() {
+      const q = this.value.toLowerCase().trim();
+      document.querySelectorAll('.palette-section').forEach(sec => {
+        const items = sec.querySelectorAll('.palette-item');
+        let anyVisible = false;
+        items.forEach(item => {
+          const text = (item.textContent + ' ' + (item.getAttribute('title')||'') + ' ' + (item.dataset.type||'')).toLowerCase();
+          const match = !q || text.includes(q);
+          item.style.display = match ? '' : 'none';
+          if (match) anyVisible = true;
+        });
+        sec.style.display = anyVisible || !q ? '' : 'none';
+        if (q && anyVisible) sec.classList.add('open');
+        if (!q) { /* restore default collapsed state except first */ }
+      });
+    });
+  }
+})();
+
+// ── Executive Briefing Generator ─────────────────────────────────────────────
+var _briefingMarkdown = '';
+
+function _mdToHtml(md) {
+  // Minimal markdown → HTML converter for the briefing output subset
+  var html = md
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>[\s\S]*?<\/li>)/g, function(m) { return '<ul>' + m + '</ul>'; })
+    // Collapse adjacent </ul><ul> from multi-bullet groups
+    .replace(/<\/ul>\s*<ul>/g, '')
+    .replace(/\n{2,}/g, '</p><p>')
+    .replace(/^(?!<[hup])/gm, '');
+  // Wrap bare text blocks in <p>
+  html = html.split(/\n/).map(function(line) {
+    if (!line.trim()) return '';
+    if (/^<[hpu]/.test(line)) return line;
+    return '<p>' + line + '</p>';
+  }).join('\n');
+  return html;
+}
+
+async function generateExecutiveBriefing() {
+  if (!TOPOLOGY_ID) { alert('Save the topology first.'); return; }
+  var modal = document.getElementById('briefing-modal');
+  var body  = document.getElementById('brf-body');
+  var title = document.getElementById('brf-title');
+  var copyBtn = document.getElementById('brf-copy-btn');
+  var pdfBtn  = document.getElementById('brf-pdf-btn');
+
+  _briefingMarkdown = '';
+  copyBtn.style.display = 'none';
+  pdfBtn.style.display  = 'none';
+  body.innerHTML = '<div class="brf-loading"><div class="brf-spinner"></div>Generating executive briefing&hellip;<br><span style="font-size:11px;opacity:0.6;margin-top:6px;display:block;">This may take up to 30 seconds</span></div>';
+  modal.classList.remove('hidden');
+
+  try {
+    var r = await fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/briefing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    var data = await r.json();
+    if (!r.ok || data.error) {
+      body.innerHTML = '<div class="brf-error">&#9888; ' + (data.error || 'Briefing generation failed.') + '</div>';
+      return;
+    }
+    _briefingMarkdown = data.markdown || '';
+    title.textContent = 'Executive Briefing — ' + (data.topo_name || 'Topology');
+    body.innerHTML = _mdToHtml(_briefingMarkdown);
+    copyBtn.style.display = '';
+    pdfBtn.style.display  = '';
+  } catch (e) {
+    body.innerHTML = '<div class="brf-error">&#9888; Request failed: ' + e.message + '</div>';
+  }
+}
+
+function briefingCopyToClipboard() {
+  if (!_briefingMarkdown) return;
+  navigator.clipboard.writeText(_briefingMarkdown).then(function() {
+    var btn = document.getElementById('brf-copy-btn');
+    var orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(function() { btn.textContent = orig; }, 1800);
+  }).catch(function() {
+    // Fallback for older browsers
+    var ta = document.createElement('textarea');
+    ta.value = _briefingMarkdown;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+}
+
+function briefingPrintPDF() {
+  if (!_briefingMarkdown) return;
+  var title = document.getElementById('brf-title').textContent;
+  var bodyHtml = _mdToHtml(_briefingMarkdown);
+  var win = window.open('', '_blank');
+  win.document.write(
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title>' +
+    '<style>body{font-family:Georgia,serif;max-width:740px;margin:40px auto;color:#111;line-height:1.7}' +
+    'h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #ccc;padding-bottom:4px;margin-top:28px}' +
+    'ul{padding-left:20px}li{margin-bottom:4px}p{margin:0 0 10px}' +
+    '@media print{body{margin:20px}}</style></head><body>' +
+    '<h1 style="font-size:18px;margin-bottom:4px">' + title + '</h1>' +
+    '<p style="color:#666;font-size:12px;margin-bottom:24px">Generated ' + new Date().toLocaleString() + '</p>' +
+    bodyHtml + '</body></html>'
+  );
+  win.document.close();
+  win.focus();
+  setTimeout(function() { win.print(); }, 400);
+}
+
+// ── Network Operations Runbook Generator ────────────────────────────────
+var _runbookMarkdown = '';
+var _runbookFilename = 'runbook.md';
+
+async function generateRunbook() {
+  if (!TOPOLOGY_ID) { alert('Save the topology first.'); return; }
+  var modal   = document.getElementById('runbook-modal');
+  var body    = document.getElementById('rb-modal-body');
+  var title   = document.getElementById('rb-modal-title');
+  var dlBtn   = document.getElementById('rb-download-btn');
+  var copyBtn = document.getElementById('rb-copy-btn');
+
+  _runbookMarkdown = '';
+  dlBtn.style.display   = 'none';
+  copyBtn.style.display = 'none';
+  body.innerHTML = '<div class="brf-loading"><div class="brf-spinner"></div>Generating runbook&hellip;<br>'
+    + '<span style="font-size:11px;opacity:0.6;margin-top:6px;display:block;">'
+    + 'Building device inventory, IP table, link matrix and troubleshooting procedures&hellip;</span></div>';
+  modal.classList.remove('hidden');
+
+  try {
+    var r = await fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/runbook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    var data = await r.json();
+    if (!r.ok || data.error) {
+      body.innerHTML = '<div class="brf-error">&#9888; ' + (data.error || 'Runbook generation failed.') + '</div>';
+      return;
+    }
+    _runbookMarkdown = data.markdown || '';
+    _runbookFilename = data.filename  || 'runbook.md';
+    title.textContent = 'Runbook — ' + (data.topo_name || 'Topology');
+    body.innerHTML = _mdToHtml(_runbookMarkdown);
+    dlBtn.style.display   = '';
+    copyBtn.style.display = '';
+  } catch (e) {
+    body.innerHTML = '<div class="brf-error">&#9888; Request failed: ' + e.message + '</div>';
+  }
+}
+
+function runbookDownload() {
+  if (!_runbookMarkdown) return;
+  var blob = new Blob([_runbookMarkdown], { type: 'text/markdown' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = _runbookFilename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function runbookCopy() {
+  if (!_runbookMarkdown) return;
+  navigator.clipboard.writeText(_runbookMarkdown).then(function() {
+    var btn = document.getElementById('rb-copy-btn');
+    var orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(function() { btn.textContent = orig; }, 1800);
+  }).catch(function() {
+    var ta = document.createElement('textarea');
+    ta.value = _runbookMarkdown;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+}
+
+// ── Close export dropdown on outside click ──────────────────────────────
+document.addEventListener('click', function(e) {
+  var wrap = document.getElementById('export-dropdown-wrap');
+  if (wrap && !wrap.contains(e.target)) wrap.classList.remove('open');
+});
+</script>
+{% endblock %}

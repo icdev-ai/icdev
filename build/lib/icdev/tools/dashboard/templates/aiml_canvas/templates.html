@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}AIMC Templates{% endblock %}
+{% block extra_css %}
+<style>
+.tpl-card { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:20px; transition:border-color .15s; }
+.tpl-card:hover { border-color:#6366f1; }
+.tpl-card h3 { margin:0 0 6px; font-size:.95rem; color:#e2e8f0; }
+.tpl-card .desc { font-size:.78rem; color:#94a3b8; margin:6px 0 12px; }
+.tpl-card .meta { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+.tag { background:#334155; color:#94a3b8; border-radius:4px; padding:2px 7px; font-size:.68rem; }
+.il-badge { padding:2px 8px; border-radius:10px; font-size:.68rem; font-weight:600; }
+.il-IL2 { background:#d1fae5;color:#065f46; } .il-IL4 { background:#fef3c7;color:#92400e; }
+.il-IL5 { background:#fed7aa;color:#7c2d12; } .il-IL6 { background:#fee2e2;color:#7f1d1d; }
+.btn-sm { padding:5px 12px; border-radius:6px; font-size:.78rem; font-weight:600; cursor:pointer; border:none; text-decoration:none; }
+.btn-primary { background:#6366f1; color:#fff; }
+.btn-secondary { background:#334155; color:#94a3b8; }
+</style>
+{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
+  <div>
+    <h1 style="margin:0;font-size:1.4rem;color:#e0e7ff;">AIMC Template Gallery</h1>
+    <p style="margin:4px 0 0;color:#64748b;font-size:.85rem;">Start from a proven foundation model pipeline pattern.</p>
+  </div>
+  <a href="/ai-ml/canvas/new" class="btn-sm btn-primary" style="text-decoration:none;">+ New Blank Design</a>
+</div>
+
+{% set categories = templates | groupby('category') %}
+{% for cat, tpls in categories %}
+<h3 style="color:#6366f1;font-size:.8rem;text-transform:uppercase;letter-spacing:.8px;margin:24px 0 12px;">{{ cat | title }}</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:8px;">
+{% for tpl in tpls %}
+<div class="tpl-card">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px;">
+    <h3>{{ tpl.name }}</h3>
+    <span class="il-badge il-{{ tpl.il_level }}">{{ tpl.il_level }}</span>
+  </div>
+  <p class="desc">{{ tpl.description }}</p>
+  <div class="meta">
+    {% for tag in tpl.tags %}
+    <span class="tag">{{ tag }}</span>
+    {% endfor %}
+  </div>
+  <div style="display:flex;gap:8px;">
+    <button class="btn-sm btn-primary" onclick="useTemplate('{{ tpl.id }}')">Use Template</button>
+    <button class="btn-sm btn-secondary" onclick="previewTemplate('{{ tpl.id }}', '{{ tpl.name }}')">Preview</button>
+  </div>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<p style="color:#64748b;">No templates available.</p>
+{% endfor %}
+
+<script>
+function useTemplate(tplId) {
+  fetch('/ai-ml/api/designs', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ name: 'New Design from Template', template_id: tplId })
+  }).then(r => r.json()).then(d => {
+    window.location.href = '/ai-ml/canvas/' + d.id;
+  });
+}
+function previewTemplate(tplId, name) {
+  fetch('/ai-ml/api/templates').then(r => r.json()).then(tpls => {
+    var tpl = tpls.find(t => t.id === tplId);
+    if (!tpl) return;
+    var graph = tpl.graph || {};
+    alert('Template: ' + name + '\nNodes: ' + (graph.nodes || []).length + '\nEdges: ' + (graph.edges || []).length + '\n\nClick "Use Template" to open in the canvas editor.');
+  });
+}
+</script>
+{% endblock %}

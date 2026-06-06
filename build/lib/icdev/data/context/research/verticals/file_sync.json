@@ -1,0 +1,193 @@
+{
+  "id": "vert-file-sync",
+  "name": "File Synchronization & Data Management",
+  "slug": "file_sync",
+  "description": "Secure file and folder synchronization, change detection, conflict resolution, cloud storage integration, and air-gapped file transfer. Covers enterprise sync engines, cross-domain solutions, file integrity monitoring, deduplication, and bandwidth-efficient transfer protocols for government and commercial environments.",
+  "keywords": [
+    "file synchronization",
+    "content hashing",
+    "SHA-256",
+    "change detection",
+    "conflict resolution",
+    "bidirectional sync",
+    "delta sync",
+    "SFTP",
+    "S3",
+    "Azure Blob Storage",
+    "Google Cloud Storage",
+    "cloud storage",
+    "air-gapped file transfer",
+    "cross-domain solutions",
+    "file integrity monitoring",
+    "FIM",
+    "tamper detection",
+    "rsync",
+    "rclone",
+    "Syncthing",
+    "syncignore",
+    "gitignore",
+    "watchdog",
+    "inotify",
+    "filesystem events",
+    "bandwidth throttling",
+    "deduplication",
+    "compression",
+    "content-addressable storage",
+    "merkle tree",
+    "block-level sync",
+    "chunked transfer",
+    "file locking",
+    "distributed file systems",
+    "object storage",
+    "eventual consistency",
+    "data replication",
+    "backup and restore",
+    "disaster recovery",
+    "data at rest encryption",
+    "data in transit encryption"
+  ],
+  "regulatory_bodies": [
+    "CISA",
+    "NIST",
+    "DoD_CIO",
+    "NSA",
+    "FedRAMP"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.DC",
+      "cs.CR",
+      "cs.NI",
+      "cs.OS"
+    ],
+    "ieee": [
+      "distributed systems",
+      "file synchronization",
+      "data replication",
+      "cloud storage"
+    ],
+    "acm": [
+      "distributed file systems",
+      "data management",
+      "storage systems"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/selfhosted",
+      "r/DataHoarder",
+      "r/sysadmin",
+      "r/homelab",
+      "r/Syncthing"
+    ],
+    "stackexchange": [
+      "serverfault.com",
+      "superuser.com"
+    ],
+    "discord": [],
+    "forums": [
+      "forum.syncthing.net",
+      "forum.rclone.org"
+    ]
+  },
+  "review_sites": {
+    "g2": [
+      "file-sync-software",
+      "cloud-storage",
+      "enterprise-file-sync-and-share",
+      "backup-software"
+    ],
+    "capterra": [
+      "file-sync-software",
+      "cloud-storage-software",
+      "backup-software"
+    ],
+    "trustpilot": []
+  },
+  "open_source": {
+    "github_topics": [
+      "file-sync",
+      "file-synchronization",
+      "rsync",
+      "rclone",
+      "syncthing",
+      "backup",
+      "deduplication",
+      "content-addressable-storage"
+    ],
+    "awesome_lists": [
+      "awesome-selfhosted",
+      "awesome-sysadmin"
+    ],
+    "package_registries": {
+      "pypi": [
+        "watchdog",
+        "paramiko",
+        "boto3",
+        "azure-storage-blob",
+        "google-cloud-storage",
+        "rclone-python"
+      ],
+      "npm": [
+        "chokidar",
+        "fs-extra"
+      ],
+      "crates": [
+        "notify",
+        "tokio"
+      ]
+    }
+  },
+  "news_sources": {
+    "rss_feeds": [],
+    "keywords": [
+      "file sync security vulnerability",
+      "cross-domain transfer regulation",
+      "NIST data integrity guidance",
+      "air-gapped data transfer",
+      "FedRAMP cloud storage authorization",
+      "STIG file services"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "G06F16/178",
+      "G06F16/17",
+      "G06F11/14",
+      "H04L67/1095"
+    ],
+    "keywords": [
+      "file synchronization method",
+      "distributed data replication",
+      "content-addressable storage",
+      "conflict resolution algorithm"
+    ]
+  },
+  "compliance_frameworks": [
+    "NIST_800_53_AU",
+    "NIST_800_53_SC",
+    "NIST_800_53_SI",
+    "NIST_800_53_MP",
+    "FedRAMP",
+    "DISA_STIG",
+    "FIPS_140_2"
+  ],
+  "video_sources": {
+    "youtube_channels": [],
+    "youtube_search_queries": [
+      "file synchronization architecture",
+      "secure file transfer government",
+      "air-gapped data transfer",
+      "rsync alternatives"
+    ],
+    "manual_urls": []
+  },
+  "scoring_weight_overrides": {
+    "regulatory_pressure": 0.25,
+    "technical_complexity": 0.20,
+    "market_demand": 0.20,
+    "competitive_saturation": 0.15,
+    "icdev_readiness": 0.10,
+    "compliance_alignment": 0.10
+  }
+}

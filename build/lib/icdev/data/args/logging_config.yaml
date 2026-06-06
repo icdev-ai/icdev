@@ -1,0 +1,28 @@
+# CUI // SP-CTI
+# ICDEV™ Structured Logging Configuration (LOG-02)
+#
+# All components must obtain loggers via tools.logging.icdev_logger.get_logger().
+# Change behavior here without editing any tool module.
+#
+# Override via environment variable: ICDEV_LOG_LEVEL=DEBUG
+# Classification: CUI // SP-CTI
+
+global_level: INFO   # DEBUG | INFO | WARNING | ERROR | CRITICAL
+
+log_dir: .logs       # Relative to project root; created automatically
+
+rotation:
+  when: midnight          # TimedRotatingFileHandler interval (midnight = daily)
+  retention_days: 30      # Number of daily backup files to keep
+  max_bytes: 10485760     # 10 MB — triggers RotatingFileHandler rollover
+  # Each component gets two files:
+  #   .logs/<component>.ndjson        (time-rotated)
+  #   .logs/<component>_size.ndjson   (size-rotated)
+
+# Per-component level overrides (inherits global_level if omitted)
+component_overrides:
+  genesis_daemon:     {level: DEBUG}
+  kanban_scheduler:   {level: DEBUG}
+  build_logger:       {level: INFO}
+  log_triage:         {level: INFO}
+  coherence_checker:  {level: WARNING}

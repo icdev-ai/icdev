@@ -1,0 +1,44 @@
+# CUI // SP-CTI
+# WriteGuard Central Glossary — acronyms, corporate terms, forbidden terms
+# Referenced by tools/writing/glossary_engine.py
+
+acronyms:
+  ICDEV: "Intelligent Certified Development"
+  ATO: "Authority to Operate"
+  FedRAMP: "Federal Risk and Authorization Management Program"
+  CMMC: "Cybersecurity Maturity Model Certification"
+  NIST: "National Institute of Standards and Technology"
+  RMF: "Risk Management Framework"
+  SSP: "System Security Plan"
+  POAM: "Plan of Action and Milestones"
+  STIG: "Security Technical Implementation Guide"
+  SBOM: "Software Bill of Materials"
+  CUI: "Controlled Unclassified Information"
+  FIPS: "Federal Information Processing Standards"
+  IL4: "Impact Level 4"
+  IL5: "Impact Level 5"
+  IL6: "Impact Level 6"
+  PIV: "Personal Identity Verification"
+  MFA: "Multi-Factor Authentication"
+  HSPD: "Homeland Security Presidential Directive"
+  DoD: "Department of Defense"
+  eMASS: "Enterprise Mission Assurance Support Service"
+  cATO: "Continuous Authority to Operate"
+  OSCAL: "Open Security Controls Assessment Language"
+  OWASP: "Open Web Application Security Project"
+  ZTA: "Zero Trust Architecture"
+  MOSA: "Modular Open Systems Approach"
+  MBSE: "Model-Based Systems Engineering"
+  SysML: "Systems Modeling Language"
+  SAFe: "Scaled Agile Framework"
+
+corporate_terms:
+  FORGE: "Framework for Orchestrated, Reliable, Goal-driven Execution"
+  ANVIL: "Architect, Navigate, Verify, Integrate, Launch"
+  ATLAS: "AI Threat Landscape Assessment System"
+  WriteGuard: "Content quality analysis engine"
+  FathomDesk: "Market intelligence trading platform"
+
+forbidden_terms:
+  - "cyber"  # use "cybersecurity" (full word)
+  - "govt"   # use "government"

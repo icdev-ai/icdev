@@ -1,0 +1,77 @@
+{% set sidx = loop.index0 %}
+{% set schema = step.config_schema | default({}) %}
+<div class="fa-guided-step">
+  {% if step.content_md %}
+  <div class="fa-step-content">{{ step.content_md | safe }}</div>
+  {% endif %}
+
+  <div style="background:var(--fa-card);border:1px solid var(--fa-border);border-radius:10px;padding:1.5rem;margin-bottom:1rem;text-align:center;">
+    <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--fa-orange);margin-bottom:1rem;">⚡ Deploy Agent</div>
+
+    <div style="font-size:4rem;margin-bottom:1rem;">🚀</div>
+    <p style="font-size:.9rem;margin:0 0 1.5rem;color:var(--text-secondary);max-width:400px;margin-left:auto;margin-right:auto;">
+      {{ schema.deploy_description | default('You are about to deploy a live AI agent to your ICDEV environment. This action is real.') }}
+    </p>
+
+    {% if schema.pattern_id %}
+    <div style="background:#060910;border:1px solid var(--fa-border);border-radius:6px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.78rem;text-align:left;font-family:monospace;color:var(--fa-cyan);">
+      Pattern: {{ schema.pattern_id }}<br>
+      Target: {{ schema.target | default('./deployments/') }}<br>
+      Trust tier: {{ schema.trust_tier | default('suggest') }}
+    </div>
+    {% endif %}
+
+    <button id="deploy-btn-{{ sidx }}" onclick="runDeploy({{ sidx }})"
+            style="background:linear-gradient(135deg,var(--fa-orange),#e05a2b);color:#fff;border:none;border-radius:8px;padding:.75rem 2.5rem;font-size:.95rem;font-weight:800;cursor:pointer;letter-spacing:.05em;text-transform:uppercase;transition:opacity .15s;">
+      ⚡ Deploy Now
+    </button>
+
+    <div id="deploy-result-{{ sidx }}"
+         style="display:none;margin-top:1.2rem;padding:1rem;border-radius:8px;font-size:.82rem;"></div>
+  </div>
+
+  <div class="fa-controls">
+    <button class="fa-btn-next" id="next-btn-{{ sidx }}" onclick="nextStep({{ sidx }})" style="display:none;">✓ Deployed → Finish Mission</button>
+  </div>
+</div>
+
+<script>
+async function runDeploy(idx) {
+  const btn = document.getElementById('deploy-btn-' + idx);
+  const panel = document.getElementById('deploy-result-' + idx);
+  btn.disabled = true;
+  btn.textContent = '⚙ Deploying...';
+  const step = STEPS[idx];
+  const config = step.config_schema || {};
+  try {
+    const resp = await fetch('/api/academy/step/configure', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action: 'deploy_pattern', config: {pattern_id: config.pattern_id || ''}})
+    });
+    const d = await resp.json();
+    panel.style.display = 'block';
+    if (d.status === 'ok' || d.status === 'partial') {
+      panel.style.background = 'rgba(0,255,136,.08)';
+      panel.style.border = '1px solid rgba(0,255,136,.3)';
+      panel.style.color = 'var(--fa-green)';
+      panel.innerHTML = '<strong>🚀 Agent Deployed</strong><br><br>Your AI agent is live in the ICDEV environment.<br>Pattern: ' + (config.pattern_id || 'custom');
+      await submitStep(idx, JSON.stringify(d), true);
+      document.getElementById('next-btn-' + idx).style.display = 'inline-block';
+    } else {
+      panel.style.background = 'rgba(255,45,85,.06)';
+      panel.style.border = '1px solid rgba(255,45,85,.2)';
+      panel.style.color = '#ff9090';
+      panel.textContent = 'Deploy note: ' + (d.message || 'Check system configuration');
+      // Still allow advance
+      await submitStep(idx, 'deploy-attempted', true);
+      document.getElementById('next-btn-' + idx).style.display = 'inline-block';
+    }
+  } catch(e) {
+    panel.style.display = 'block';
+    panel.style.color = '#ff9090';
+    panel.textContent = 'Deploy error: ' + e.message;
+  }
+  btn.disabled = false;
+  btn.textContent = '⚡ Deploy Now';
+}
+</script>

@@ -1,0 +1,10 @@
+{
+  "id": "026",
+  "name": "kanban_dispatch_attempt",
+  "description": "Add dispatch_attempt_id TEXT column + index to kanban_tasks for idempotent restart semantics (Batch 4 V&V hardening).",
+  "created_at": "2026-04-15",
+  "author": "icdev-vv-hardening",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false
+}

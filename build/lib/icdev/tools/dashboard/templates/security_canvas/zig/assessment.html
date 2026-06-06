@@ -1,0 +1,99 @@
+{% extends "security_canvas/base.html" %}
+{% block title %}ZIG Assessment — NSA Zero Trust{% endblock %}
+{% block head %}
+<style>
+.assess-card{background:#1a1a2e;border-radius:10px;padding:24px;border:1px solid #2a2a4a;margin-bottom:20px;}
+.gap-item{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #2a2a3a;}
+.gap-item:last-child{border-bottom:none;}
+.gap-priority{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;flex-shrink:0;}
+.prio-1{background:#e94560;color:#fff;}
+.prio-2{background:#f59e0b;color:#000;}
+.prio-3{background:#4ade80;color:#000;}
+.score-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;}
+.score-box{background:#2a2a4a;border-radius:8px;padding:14px;text-align:center;}
+.score-val{font-size:1.6rem;font-weight:700;color:#e94560;}
+.score-lbl{font-size:0.75rem;color:#aaa;margin-top:4px;}
+</style>
+{% endblock %}
+{% block content %}
+<div style="padding:24px;max-width:1100px;margin:0 auto;">
+
+  <div style="font-size:0.8rem;color:#666;margin-bottom:16px;">
+    <a href="/security/zig/" style="color:#60a5fa;">ZIG Overview</a> &rsaquo; Assessment
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+    <h1 style="color:#fff;margin:0;font-size:1.5rem;">ZIG Gap Assessment</h1>
+    <button id="runAssessBtn" style="background:#e94560;color:#fff;border:none;border-radius:8px;padding:10px 24px;cursor:pointer;font-size:0.9rem;font-weight:600;">
+      &#x25b6; Run Assessment
+    </button>
+  </div>
+
+  <div id="assessResults" style="display:none;">
+    <!-- Results populated by JS after run -->
+  </div>
+
+  {% if latest %}
+  <div class="assess-card">
+    <h3 style="color:#fff;margin:0 0 16px;">Latest Assessment Results</h3>
+    <div class="score-grid">
+      {% for ps in latest.pillar_scores %}
+      <div class="score-box">
+        <div class="score-val" style="font-size:1.1rem;">{{ (ps.score * 100)|round(1) }}%</div>
+        <div class="score-lbl">{{ ps.pillar_slug|title }}</div>
+        <div style="font-size:0.7rem;color:#555;">{{ ps.maturity_level }}</div>
+      </div>
+      {% endfor %}
+      <div class="score-box" style="border:1px solid #e94560;">
+        <div class="score-val">{{ (latest.aggregate.score * 100)|round(1) }}%</div>
+        <div class="score-lbl">Overall ZIG Score</div>
+        <div style="font-size:0.7rem;color:#aaa;">{{ latest.aggregate.maturity_level }}</div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="assess-card" style="text-align:center;padding:40px;">
+    <div style="color:#aaa;font-size:1rem;">No assessment results yet.</div>
+    <div style="color:#666;font-size:0.85rem;margin-top:8px;">Click "Run Assessment" to score your ZIG maturity.</div>
+  </div>
+  {% endif %}
+
+  <div class="assess-card">
+    <h3 style="color:#fff;margin:0 0 16px;">What Gets Assessed</h3>
+    <ul style="color:#aaa;line-height:1.8;font-size:0.85rem;margin:0;padding-left:20px;">
+      <li>Activity completion rate across all 91 target-level activities</li>
+      <li>Capability implementation status across all 42 target-level capabilities</li>
+      <li>Per-pillar weighted maturity score (7 pillars × individual weights)</li>
+      <li>FY2027 readiness percentage (Discovery + Phase 1 + Phase 2)</li>
+      <li>ZTA posture bridge from existing <code>zta_maturity_scorer.py</code> signals</li>
+    </ul>
+  </div>
+
+  <div style="text-align:center;margin-top:16px;">
+    <a href="/security/api/zig/artifact" style="color:#60a5fa;font-size:0.85rem;">&#x2913; Download ZIG Assessment Report (Markdown)</a>
+  </div>
+
+</div>
+
+<script>
+document.getElementById('runAssessBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('runAssessBtn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  try {
+    const resp = await fetch('/security/api/zig/assess', {method: 'POST'});
+    const data = await resp.json();
+    if (data.ok) {
+      location.reload();
+    } else {
+      alert('Assessment failed: ' + data.error);
+    }
+  } catch(e) {
+    alert('Network error: ' + e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Run Assessment';
+  }
+});
+</script>
+{% endblock %}

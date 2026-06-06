@@ -1,0 +1,103 @@
+# CUI // SP-CTI
+# ICDEV™ Migration Intelligence Engine Configuration
+# Autonomous migration opportunity discovery, goal alignment, and roadmap generation
+
+# =========================================================================
+# Air-Gap Mode
+# =========================================================================
+# When ICDEV_AIRGAP=true, all external HTTP calls are suppressed.
+# Local scanning (canvas DBs, hardware profiles) still runs.
+airgap:
+  skip_external_sources: true         # no GitHub, NVD, vendor EOL feeds
+  local_only_scoring: true            # composite score from local data only
+  llm_goal_parse: false               # NL chat goal parsing requires LLM
+
+# =========================================================================
+# Scheduling
+# =========================================================================
+scheduling:
+  default_scan_interval_hours: 24     # full pipeline interval
+  eol_scan_interval_hours: 6          # hardware EOL sub-scan
+  goal_alignment_interval_hours: 12   # re-align after new goals added
+  quiet_hours:
+    start: "02:00"
+    end: "05:00"
+    timezone: "UTC"
+
+# =========================================================================
+# Scanning — Canvas Sources
+# =========================================================================
+scan:
+  canvases:
+    - ndc       # Network Design Canvas — topology, hardware profiles, EOL
+    - mdc       # Migration Design Canvas — existing designs
+    - sdc       # Security Design Canvas — compliance gaps
+    - pdc       # Platform Design Canvas — platform refresh opportunities
+    - bdc       # Business Design Canvas — budget alignment
+  eol_horizon_days: 730               # flag assets EOL within 2 years
+  min_composite_score: 0.30           # minimum score to persist as opportunity
+  max_opportunities_per_scan: 100
+
+# =========================================================================
+# Scoring Weights (must sum to 1.0)
+# =========================================================================
+scoring:
+  weights:
+    eol_urgency:     0.25
+    goal_alignment:  0.25
+    business_value:  0.20
+    risk:            0.10
+    effort:          0.10
+    compliance:      0.10
+  eol_thresholds:
+    immediate: 90      # days — score 1.0
+    urgent:    365     # days — score 0.75
+    planned:   730     # days — score 0.50
+    future:    1825    # days — score 0.25
+
+# =========================================================================
+# Strategy Generation
+# =========================================================================
+strategy:
+  default_strategies:               # generated for every opportunity
+    - rehost
+    - replatform
+    - replace
+  network_extra_strategies:         # added for network_redesign / eol_replacement
+    - rip_and_replace
+    - phased_cutover
+    - parallel_run
+  min_strategies_per_opportunity: 2
+  max_strategies_per_opportunity: 4
+
+# =========================================================================
+# Roadmap
+# =========================================================================
+roadmap:
+  default_horizon_years: 5
+  wave_size_max: 8                   # max opportunities per wave
+  critical_priority_wave: 1          # critical ops always in wave 1
+  high_priority_wave: 2
+
+# =========================================================================
+# Wishlist / Budget
+# =========================================================================
+wishlist:
+  default_fiscal_year_offset: 0      # 0 = current FY, 1 = next FY
+  auto_link_to_opportunities: true   # auto-link wishlist items to matched opps
+
+# =========================================================================
+# External Sources (air-gap gated)
+# =========================================================================
+external:
+  vendor_eol_feeds:
+    - name: juniper_eol
+      url: https://www.juniper.net/support/eol/
+      enabled: false          # parse manually; no structured API
+    - name: cisco_eol
+      url: https://api.cisco.com/supporttools/eox/rest/5/EOXByProductID/1
+      enabled: false          # requires Cisco API key
+  nvd_cve:
+    enabled: true
+    url: https://services.nvd.nist.gov/rest/json/cves/2.0
+    severity_filter: [CRITICAL, HIGH]

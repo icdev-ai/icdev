@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Leaderboard — FORGE Academy{% endblock %}
+
+{% block extra_css %}
+<style>
+:root { --fa-orange:#FF6B35; --fa-cyan:#00D4FF; --fa-green:#00FF88; --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25); }
+.fa-lb-header { background:linear-gradient(135deg,#0a0a14,#12192b); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
+.fa-lb-header h1 { font-size:1.6rem; font-weight:900; background:linear-gradient(135deg,var(--fa-gold),var(--fa-orange)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin:0; }
+.fa-lb-controls { display:flex; gap:.6rem; flex-wrap:wrap; padding:1rem 2rem; border-bottom:1px solid var(--fa-border); }
+.fa-lb-btn { background:transparent; border:1px solid var(--fa-border); color:var(--text-secondary); border-radius:6px; padding:.3rem .9rem; font-size:.72rem; text-transform:uppercase; letter-spacing:.1em; cursor:pointer; text-decoration:none; transition:all .15s; }
+.fa-lb-btn.active, .fa-lb-btn:hover { border-color:var(--fa-gold); color:var(--fa-gold); background:rgba(255,184,0,.08); }
+.fa-lb-table { width:100%; border-collapse:collapse; }
+.fa-lb-table th { font-size:.65rem; text-transform:uppercase; letter-spacing:.15em; color:var(--text-secondary); padding:.6rem 1rem; text-align:left; border-bottom:1px solid var(--fa-border); }
+.fa-lb-table td { padding:.7rem 1rem; border-bottom:1px solid rgba(255,255,255,.04); font-size:.85rem; vertical-align:middle; }
+.fa-lb-table tr:hover td { background:rgba(255,255,255,.02); }
+.fa-rank-cell { font-weight:800; font-size:1rem; width:48px; }
+.fa-rank-1 { color:var(--fa-gold); }
+.fa-rank-2 { color:#b0b0c8; }
+.fa-rank-3 { color:#cd7f32; }
+.fa-xp-cell { font-weight:700; color:var(--fa-gold); }
+.fa-level-cell { font-size:.75rem; }
+.fa-lb-empty { text-align:center; padding:3rem; color:var(--text-secondary); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div>
+  <div class="fa-lb-header">
+    <h1>⚡ Leaderboard</h1>
+    <p style="color:var(--text-secondary);margin:.3rem 0 0;font-size:.82rem;">Top operatives by XP earned</p>
+    <a href="/academy" class="btn" style="font-size:.75rem;margin-top:.6rem;">← Hub</a>
+  </div>
+
+  <div class="fa-lb-controls">
+    <a href="/academy/leaderboard?period=weekly" class="fa-lb-btn {% if period=='weekly' %}active{% endif %}">Weekly</a>
+    <a href="/academy/leaderboard?period=alltime" class="fa-lb-btn {% if period=='alltime' %}active{% endif %}">All-Time</a>
+    <span style="margin:0 .4rem;color:var(--fa-border);">|</span>
+    <a href="/academy/leaderboard?period={{ period }}" class="fa-lb-btn {% if not role_filter %}active{% endif %}">All Roles</a>
+    {% for rid, rcfg in roles.items() %}
+    <a href="/academy/leaderboard?period={{ period }}&role={{ rid }}"
+       class="fa-lb-btn {% if role_filter==rid %}active{% endif %}">{{ rcfg.label }}</a>
+    {% endfor %}
+  </div>
+
+  <div style="padding:1.5rem 2rem;">
+    {% if rows %}
+    <table class="fa-lb-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Operative</th>
+          <th>Rank</th>
+          <th>Role</th>
+          <th>XP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="fa-rank-cell {% if loop.index==1 %}fa-rank-1{% elif loop.index==2 %}fa-rank-2{% elif loop.index==3 %}fa-rank-3{% endif %}">
+            {% if loop.index==1 %}🥇{% elif loop.index==2 %}🥈{% elif loop.index==3 %}🥉{% else %}{{ loop.index }}{% endif %}
+          </td>
+          <td style="font-weight:600;">{{ row.display_name | default(row.username) }}</td>
+          <td class="fa-level-cell" style="color:{{ row.level_color | default('#6c6c80') }}">
+            {{ row.level_label | default('Recruit') }}
+          </td>
+          <td style="font-size:.75rem;color:var(--text-secondary);">{{ row.role | default('') | title }}</td>
+          <td class="fa-xp-cell">{{ row.score | default(0) | int }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="fa-lb-empty">
+      No rankings yet. Complete missions to appear here.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

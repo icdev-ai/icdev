@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Deploy Gate — {{ gate.design_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <a href="/agentic-ai/canvas/{{ gate.design_id }}" class="btn btn-sm btn-outline-secondary">← Canvas</a>
+    <div>
+      <h4 class="mb-0">🚦 Deployment Gate</h4>
+      <small class="text-muted">{{ gate.design_name }}</small>
+    </div>
+    <div class="ms-auto">
+      <span class="badge fs-5 px-4 py-2
+        {% if gate.verdict == 'APPROVED' %}bg-success
+        {% elif gate.verdict == 'CONDITIONAL' %}bg-warning text-dark
+        {% else %}bg-danger{% endif %}">
+        {{ gate.verdict }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Verdict banner -->
+  {% if gate.verdict == 'BLOCKED' %}
+  <div class="alert alert-danger mb-3">
+    <strong>🔴 Deployment BLOCKED</strong> — {{ gate.blockers | length }} hard blocker(s) must be resolved before this design can be deployed.
+  </div>
+  {% elif gate.verdict == 'CONDITIONAL' %}
+  <div class="alert alert-warning mb-3">
+    <strong>🟡 Conditional Approval</strong> — No hard blockers, but {{ gate.warnings | length }} warning(s) should be addressed.
+  </div>
+  {% else %}
+  <div class="alert alert-success mb-3">
+    <strong>🟢 Deployment APPROVED</strong> — All gate checks pass. Design is ready for deployment.
+  </div>
+  {% endif %}
+
+  <!-- Blockers -->
+  {% if gate.blockers %}
+  <div class="card border-danger mb-3">
+    <div class="card-header fw-semibold py-2 text-danger">🚫 Hard Blockers ({{ gate.blockers | length }})</div>
+    <div class="card-body p-0">
+      <table class="table table-sm mb-0">
+        <thead class="table-danger"><tr><th>Check</th><th>Value</th><th>Threshold</th></tr></thead>
+        <tbody>
+          {% for b in gate.blockers %}
+          <tr>
+            <td>{{ b.check }}</td>
+            <td class="text-danger fw-semibold">{{ b.value }}</td>
+            <td class="text-muted">≥ {{ b.threshold }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Warnings -->
+  {% if gate.warnings %}
+  <div class="card border-warning mb-3">
+    <div class="card-header fw-semibold py-2 text-warning-emphasis">⚠ Warnings ({{ gate.warnings | length }})</div>
+    <div class="card-body p-0">
+      <table class="table table-sm mb-0">
+        <thead class="table-warning"><tr><th>Check</th><th>Value</th><th>Target</th></tr></thead>
+        <tbody>
+          {% for w in gate.warnings %}
+          <tr>
+            <td>{{ w.check }}</td>
+            <td class="text-warning fw-semibold">{{ w.value }}</td>
+            <td class="text-muted">≥ {{ w.threshold }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Gate check details -->
+  <div class="card mb-3">
+    <div class="card-header fw-semibold py-2">Gate Checks</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light"><tr><th>Check</th><th>Score</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for c in gate.gate_checks %}
+          <tr>
+            <td>{{ c.label }}</td>
+            <td>
+              {% if c.score is not none %}
+              <div class="d-flex align-items-center gap-2">
+                <div class="progress flex-grow-1" style="height:6px; width:120px">
+                  <div class="progress-bar
+                    {% if c.status == 'pass' %}bg-success
+                    {% elif c.status == 'warning' %}bg-warning
+                    {% else %}bg-danger{% endif %}"
+                    style="width:{{ [c.score, 100] | min }}%"></div>
+                </div>
+                <small class="text-muted">{{ c.score }}%</small>
+              </div>
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if c.status == 'pass' %}
+              <span class="badge bg-success">✓ PASS</span>
+              {% elif c.status == 'warning' %}
+              <span class="badge bg-warning text-dark">⚠ WARN</span>
+              {% else %}
+              <span class="badge bg-danger">✗ BLOCK</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Download gate YAML -->
+  <div class="card">
+    <div class="card-header fw-semibold py-2">CI/CD Integration</div>
+    <div class="card-body">
+      <p class="text-muted small mb-2">Download the gate check file to integrate with your GitLab CI / GitHub Actions pipeline:</p>
+      <a href="/agentic-ai/api/designs/{{ gate.design_id }}/deploy-gate/download" class="btn btn-sm btn-outline-primary">⬇ Download gate-check.yaml</a>
+      <hr class="my-3">
+      <pre class="bg-dark text-light p-3 rounded small" style="max-height:300px;overflow-y:auto">{{ gate.gate_yaml }}</pre>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

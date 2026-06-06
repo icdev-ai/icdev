@@ -1,0 +1,411 @@
+{
+  "metadata": {
+    "title": "DoDI 5000.87 Digital Engineering Strategy Requirements Catalog",
+    "source": "DoDI 5000.87 (Oct 2023), DoD Digital Engineering Strategy (Jun 2018), DoD Digital Engineering Fundamentals (2024)",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-15",
+    "description": "Requirements catalog derived from the DoD Digital Engineering Strategy five strategic goals and DoDI 5000.87 mandates. Used to assess project compliance with digital engineering directives and generate ATO-ready evidence."
+  },
+  "categories": {
+    "model_authority": "Digital System Model (DSM) as authoritative source of truth",
+    "data_management": "Data standards, exchange formats, and repositories",
+    "infrastructure": "Digital engineering environment, tools, and platforms",
+    "workforce": "Training, competency, and organizational adoption",
+    "policy": "Governance, standards compliance, and IP management",
+    "lifecycle": "Integration across acquisition lifecycle phases"
+  },
+  "requirements": [
+    {
+      "id": "DES-1.1",
+      "category": "model_authority",
+      "title": "Authoritative Source of Truth",
+      "description": "The Digital System Model (DSM) shall serve as the authoritative source of truth for all system design decisions, replacing document-centric artifacts with model-based representations. All stakeholders shall reference the model for current system state rather than static documents.",
+      "assessment_criteria": [
+        "DSM exists and is accessible to all authorized stakeholders",
+        "System design decisions are recorded in the model with decision rationale",
+        "Static design documents reference the model as the source of truth",
+        "Change history is maintained within the modeling environment"
+      ],
+      "automation_level": "semi_auto",
+      "priority": "critical",
+      "nist_controls": ["CM-3", "CM-6"],
+      "des_goal": 1
+    },
+    {
+      "id": "DES-1.2",
+      "category": "model_authority",
+      "title": "Model Completeness",
+      "description": "The DSM shall contain representations of all major system elements including structure, behavior, requirements, interfaces, and constraints. The model shall be sufficiently complete to enable automated generation of downstream artifacts such as interface specifications, test plans, and compliance matrices.",
+      "assessment_criteria": [
+        "Structural model covers all system-of-interest blocks and subsystems",
+        "Behavioral model covers all system functions and use cases",
+        "Requirements are captured and linked within the model",
+        "Interface definitions are formally specified in the model",
+        "Constraint and parametric models support trade studies"
+      ],
+      "automation_level": "semi_auto",
+      "priority": "critical",
+      "nist_controls": ["SA-3", "SA-8"],
+      "des_goal": 1
+    },
+    {
+      "id": "DES-1.3",
+      "category": "model_authority",
+      "title": "Model Configuration Management",
+      "description": "The DSM shall be placed under formal configuration management with versioning, baselining, and change control processes equivalent to those applied to critical system documentation. Model baselines shall be established at each lifecycle milestone.",
+      "assessment_criteria": [
+        "Model is stored in a version-controlled repository",
+        "Baseline versions are tagged at each lifecycle milestone",
+        "Change requests for model modifications are tracked",
+        "Model change history is auditable and traceable to authorizing decisions"
+      ],
+      "automation_level": "auto",
+      "priority": "high",
+      "nist_controls": ["CM-2", "CM-3", "CM-5"],
+      "des_goal": 1
+    },
+    {
+      "id": "DES-1.4",
+      "category": "model_authority",
+      "title": "Model Validation",
+      "description": "The DSM shall be validated against system requirements and stakeholder needs through formal review and automated model checking. Model validation results shall be documented and deficiencies tracked to resolution.",
+      "assessment_criteria": [
+        "Automated model validation rules are defined and executed",
+        "Model validation results are recorded with timestamps",
+        "Identified model deficiencies are tracked to resolution",
+        "Stakeholder review of model accuracy is documented"
+      ],
+      "automation_level": "semi_auto",
+      "priority": "high",
+      "nist_controls": ["SA-11"],
+      "des_goal": 1
+    },
+    {
+      "id": "DES-2.1",
+      "category": "data_management",
+      "title": "Data Exchange Standards",
+      "description": "All model data exchange shall use open, non-proprietary standards including XMI for SysML model exchange, ReqIF for requirements interchange, and OSLC for lifecycle data integration. Proprietary formats shall not be used as the sole storage or exchange format for any authoritative model data.",
+      "assessment_criteria": [
+        "XMI export is available and validated for SysML model data",
+        "ReqIF import/export is configured for requirements interchange",
+        "OSLC adapters are available for cross-tool integration",
+        "Data exchange format compliance is verified through round-trip testing"
+      ],
+      "automation_level": "auto",
+      "priority": "critical",
+      "nist_controls": ["SA-9"],
+      "des_goal": 2
+    },
+    {
+      "id": "DES-2.2",
+      "category": "data_management",
+      "title": "Data Repository and Access",
+      "description": "A centralized or federated data repository shall store all digital engineering artifacts with appropriate access controls, search capability, and versioning. The repository shall support concurrent multi-user access and conflict resolution.",
+      "assessment_criteria": [
+        "Central repository stores all DE artifacts with version control",
+        "Role-based access controls are enforced on repository content",
+        "Full-text and metadata search is available across repository",
+        "Concurrent access with conflict resolution is supported"
+      ],
+      "automation_level": "auto",
+      "priority": "high",
+      "nist_controls": ["AC-3", "AC-6", "CM-2"],
+      "des_goal": 2
+    },
+    {
+      "id": "DES-2.3",
+      "category": "data_management",
+      "title": "Data Provenance and Lineage",
+      "description": "All digital engineering data shall maintain provenance metadata including creator, creation date, modification history, and source authority. Data lineage shall be traceable from originating requirement through design, implementation, test, and deployment.",
+      "assessment_criteria": [
+        "All model elements include creator and modification metadata",
+        "Data lineage is traceable across lifecycle phases",
+        "Provenance metadata is preserved during data exchange",
+        "Audit log captures all data modifications with actor and timestamp"
+      ],
+      "automation_level": "auto",
+      "priority": "high",
+      "nist_controls": ["AU-3", "AU-10"],
+      "des_goal": 2
+    },
+    {
+      "id": "DES-2.4",
+      "category": "data_management",
+      "title": "MBSE-to-Code Traceability",
+      "description": "Bidirectional traceability shall be maintained between model elements and their implementations in source code. Every SysML block, activity, and requirement shall be linked to corresponding code modules, functions, and test cases through the digital thread.",
+      "assessment_criteria": [
+        "Every SysML block is linked to at least one code module",
+        "Every SysML activity is linked to at least one function implementation",
+        "Every requirement has a satisfy link to a design element and a verify link to a test",
+        "Traceability links are validated by automated tooling",
+        "Orphan analysis identifies unlinked elements in both directions"
+      ],
+      "automation_level": "auto",
+      "priority": "critical",
+      "nist_controls": ["SA-3", "SA-15"],
+      "des_goal": 2
+    },
+    {
+      "id": "DES-3.1",
+      "category": "infrastructure",
+      "title": "Integrated Digital Engineering Environment",
+      "description": "An integrated digital engineering environment shall be established providing modeling, simulation, analysis, requirements management, configuration management, and collaboration capabilities. The environment shall support the full acquisition lifecycle from concept through sustainment.",
+      "assessment_criteria": [
+        "Modeling tool is deployed and accessible (Cameo Systems Modeler or equivalent)",
+        "Requirements management tool is integrated (DOORS NG or equivalent)",
+        "Tools are connected via standard protocols (OSLC, ReqIF, XMI)",
+        "Environment supports all acquisition lifecycle phases",
+        "Collaboration features enable concurrent multi-user work"
+      ],
+      "automation_level": "semi_auto",
+      "priority": "critical",
+      "nist_controls": ["SA-3", "SA-9"],
+      "des_goal": 3
+    },
+    {
+      "id": "DES-3.2",
+      "category": "infrastructure",
+      "title": "Tool Interoperability",
+      "description": "All digital engineering tools shall demonstrate interoperability through validated data exchange. Tool integration shall be verified through end-to-end round-trip testing ensuring data fidelity across tool boundaries.",
+      "assessment_criteria": [
+        "Tool integration architecture is documented",
+        "Data exchange between tools is validated via round-trip testing",
+        "No data loss occurs during import/export operations",
+        "Integration error handling and logging is implemented"
+      ],
+      "automation_level": "semi_auto",
+      "priority": "high",
+      "nist_controls": ["SA-9"],
+      "des_goal": 3
+    },
+    {
+      "id": "DES-3.3",
+      "category": "infrastructure",
+      "title": "Cloud and Air-Gap Compatibility",
+      "description": "The digital engineering environment shall operate within the designated cloud infrastructure (AWS GovCloud) and support air-gapped deployment for classified environments. All tool dependencies shall be available from approved repositories without requiring public internet access.",
+      "assessment_criteria": [
+        "All tools deploy to AWS GovCloud (us-gov-west-1)",
+        "No tool requires public internet access for operation",
+        "Dependencies are sourced from approved registries (PyPI mirror, AWS)",
+        "Air-gapped deployment procedure is documented and tested",
+        "LLM inference uses Amazon Bedrock exclusively"
+      ],
+      "automation_level": "auto",
+      "priority": "critical",
+      "nist_controls": ["SC-7", "SI-4"],
+      "des_goal": 3
+    },
+    {
+      "id": "DES-3.4",
+      "category": "infrastructure",
+      "title": "Automation Pipeline Integration",
+      "description": "Digital engineering artifacts shall be integrated into CI/CD pipelines enabling automated validation, compliance checking, and artifact generation from model data. Model changes shall trigger downstream pipeline activities.",
+      "assessment_criteria": [
+        "Model export is integrated into CI/CD pipeline",
+        "Model validation runs automatically on model changes",
+        "Compliance artifacts are generated automatically from model data",
+        "Pipeline failures from model issues are reported and tracked"
+      ],
+      "automation_level": "auto",
+      "priority": "high",
+      "nist_controls": ["SA-11", "SA-15"],
+      "des_goal": 3
+    },
+    {
+      "id": "DES-4.1",
+      "category": "workforce",
+      "title": "Digital Engineering Competency",
+      "description": "Project personnel shall demonstrate competency in digital engineering practices including MBSE methodology, SysML modeling, requirements management, and digital thread concepts. Training records shall document competency levels and currency.",
+      "assessment_criteria": [
+        "MBSE training curriculum is defined and available",
+        "Personnel training records are maintained and current",
+        "SysML modeling proficiency is demonstrated through practical assessment",
+        "Annual refresher training or continuing education is completed"
+      ],
+      "automation_level": "manual",
+      "priority": "medium",
+      "nist_controls": ["AT-2", "AT-3"],
+      "des_goal": 4
+    },
+    {
+      "id": "DES-4.2",
+      "category": "workforce",
+      "title": "Organizational Adoption Metrics",
+      "description": "Organizational adoption of digital engineering shall be measured through quantitative metrics including model usage statistics, stakeholder engagement rates, and reduction in document-centric artifacts. Metrics shall be reported quarterly.",
+      "assessment_criteria": [
+        "Model access and usage metrics are collected",
+        "Stakeholder engagement with model artifacts is tracked",
+        "Reduction in redundant document-centric artifacts is measured",
+        "Quarterly adoption metrics report is produced"
+      ],
+      "automation_level": "semi_auto",
+      "priority": "medium",
+      "nist_controls": [],
+      "des_goal": 4
+    },
+    {
+      "id": "DES-4.3",
+      "category": "workforce",
+      "title": "Role-Based Modeling Guidance",
+      "description": "Role-specific guidance shall be provided for all digital engineering stakeholders including systems engineers, software developers, testers, compliance officers, and program managers. Each role shall have defined responsibilities and standard operating procedures for interacting with the DSM.",
+      "assessment_criteria": [
+        "Role definitions for DE stakeholders are documented",
+        "SOPs exist for each role's interaction with the model",
+        "Quick-reference guides are available for common modeling tasks",
+        "Help desk or support channel is available for modeling questions"
+      ],
+      "automation_level": "manual",
+      "priority": "low",
+      "nist_controls": ["AT-3"],
+      "des_goal": 4
+    },
+    {
+      "id": "DES-5.1",
+      "category": "policy",
+      "title": "Digital Engineering Governance Board",
+      "description": "A governance board or equivalent authority shall be established to oversee digital engineering practices, approve modeling standards, adjudicate tool selections, and resolve interoperability issues. The board shall meet at least quarterly.",
+      "assessment_criteria": [
+        "Governance board charter defines authority and responsibilities",
+        "Board membership includes representation from all stakeholder organizations",
+        "Meeting cadence is at least quarterly with documented minutes",
+        "Decision authority for DE standards and tools is defined"
+      ],
+      "automation_level": "manual",
+      "priority": "medium",
+      "nist_controls": ["PL-1", "PM-1"],
+      "des_goal": 5
+    },
+    {
+      "id": "DES-5.2",
+      "category": "policy",
+      "title": "Modeling Standards and Conventions",
+      "description": "Documented modeling standards and conventions shall govern how model elements are named, structured, stereotyped, and organized. Standards shall ensure consistency across modeling teams and enable tool interoperability.",
+      "assessment_criteria": [
+        "Naming conventions are documented for all element types",
+        "Package structure standards define model organization",
+        "Stereotype usage guidelines are defined and enforced",
+        "Model review checklist includes standards compliance verification"
+      ],
+      "automation_level": "semi_auto",
+      "priority": "high",
+      "nist_controls": ["CM-1", "CM-6"],
+      "des_goal": 5
+    },
+    {
+      "id": "DES-5.3",
+      "category": "policy",
+      "title": "Intellectual Property Protection",
+      "description": "Model data and digital engineering artifacts shall be protected consistent with intellectual property rights, classification markings, and data rights provisions. CUI markings shall be applied to all model exports and generated artifacts.",
+      "assessment_criteria": [
+        "CUI markings are present on all model exports and artifacts",
+        "Data rights provisions are documented for model content",
+        "Access controls enforce need-to-know for sensitive model data",
+        "IP classification is maintained during data exchange"
+      ],
+      "automation_level": "auto",
+      "priority": "critical",
+      "nist_controls": ["AC-16", "MP-3", "MP-4"],
+      "des_goal": 5
+    },
+    {
+      "id": "DES-5.4",
+      "category": "policy",
+      "title": "Model Quality Assurance",
+      "description": "A model quality assurance process shall verify that model content meets accuracy, completeness, consistency, and traceability standards. Model quality reviews shall be conducted at lifecycle milestones and before model data is used for decision-making.",
+      "assessment_criteria": [
+        "Model quality criteria are defined (accuracy, completeness, consistency)",
+        "Automated model quality checks are implemented",
+        "Quality review is required at lifecycle milestones",
+        "Quality deficiencies are tracked and remediated before model use"
+      ],
+      "automation_level": "semi_auto",
+      "priority": "high",
+      "nist_controls": ["SA-11", "SA-15"],
+      "des_goal": 5
+    },
+    {
+      "id": "DES-6.1",
+      "category": "lifecycle",
+      "title": "Concept Phase Model Integration",
+      "description": "Digital engineering models shall be initiated during the concept phase with stakeholder needs, concept of operations, and high-level requirements captured in the DSM. The model shall support analysis of alternatives and trade studies.",
+      "assessment_criteria": [
+        "Stakeholder needs are captured as model requirements",
+        "Concept of operations is modeled using activity or use case diagrams",
+        "High-level system architecture is represented in block definition diagrams",
+        "Trade study parameters are modeled using parametric diagrams"
+      ],
+      "automation_level": "manual",
+      "priority": "medium",
+      "nist_controls": ["SA-3"],
+      "des_goal": 5
+    },
+    {
+      "id": "DES-6.2",
+      "category": "lifecycle",
+      "title": "Engineering and Manufacturing Phase Model",
+      "description": "During engineering and manufacturing, the DSM shall be elaborated with detailed design, interface specifications, behavioral models, and verification plans. The model shall drive code generation, test case derivation, and compliance artifact production.",
+      "assessment_criteria": [
+        "Detailed design is captured in block definition and internal block diagrams",
+        "Interface specifications are formally modeled with ports and flows",
+        "Behavioral models are complete for all system functions",
+        "Verification plans are linked to requirements via verify relationships",
+        "Model-driven code generation is operational"
+      ],
+      "automation_level": "semi_auto",
+      "priority": "high",
+      "nist_controls": ["SA-3", "SA-8"],
+      "des_goal": 5
+    },
+    {
+      "id": "DES-6.3",
+      "category": "lifecycle",
+      "title": "Operations and Sustainment Model",
+      "description": "The DSM shall be maintained during operations and sustainment to reflect as-built configuration, support change impact analysis, and enable rapid assessment of proposed modifications. Model currency shall be verified against deployed system configuration.",
+      "assessment_criteria": [
+        "Model reflects current as-built system configuration",
+        "Change impact analysis uses the model to assess modification scope",
+        "Model is updated within 30 days of fielded system changes",
+        "Model-to-deployed configuration delta reports are generated"
+      ],
+      "automation_level": "semi_auto",
+      "priority": "medium",
+      "nist_controls": ["CM-2", "CM-3"],
+      "des_goal": 5
+    },
+    {
+      "id": "DES-6.4",
+      "category": "lifecycle",
+      "title": "Cross-Lifecycle Traceability",
+      "description": "End-to-end traceability shall be maintained across all lifecycle phases from stakeholder needs through concept, design, implementation, test, deployment, and sustainment. The digital thread shall connect every lifecycle artifact to its originating requirement.",
+      "assessment_criteria": [
+        "Traceability matrix spans all lifecycle phases",
+        "Every requirement traces forward to design, code, test, and deployment",
+        "Backward traceability from any artifact reaches originating requirements",
+        "Traceability completeness metrics are computed and reported",
+        "Orphan detection identifies elements lacking traceability links"
+      ],
+      "automation_level": "auto",
+      "priority": "critical",
+      "nist_controls": ["SA-3", "SA-15", "CM-3"],
+      "des_goal": 5
+    },
+    {
+      "id": "DES-6.5",
+      "category": "lifecycle",
+      "title": "Digital Twin Readiness",
+      "description": "The DSM shall be structured to support evolution into a digital twin by including operational parameters, performance metrics, and environmental constraints that can be bound to real-time data sources during operations.",
+      "assessment_criteria": [
+        "Operational parameters are modeled as value properties with units",
+        "Performance metrics are defined in parametric diagrams",
+        "Environmental constraints are captured as constraint blocks",
+        "Data binding interfaces are specified for real-time data integration",
+        "Digital twin evolution roadmap is documented"
+      ],
+      "automation_level": "manual",
+      "priority": "low",
+      "nist_controls": [],
+      "des_goal": 5
+    }
+  ]
+}

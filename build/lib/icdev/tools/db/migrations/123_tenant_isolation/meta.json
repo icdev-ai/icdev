@@ -1,0 +1,11 @@
+{
+  "id": "123",
+  "name": "tenant_isolation",
+  "description": "Add tenant_id column to FORGE Academy, AI GameDay (TTX), Strategos, and dashboard_users tables to enable per-tenant data isolation. All columns are nullable; existing rows default to NULL (treated as system/demo tenant). Indexes added for tenant-scoped queries.",
+  "created_at": "2026-05-09",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false,
+  "requires_downtime": false,
+  "notes": "Idempotent ALTER TABLE — silently skips if column already exists (SQLite duplicate column error caught). Composite unique index on ttx_teams(join_code, tenant_id) prevents cross-tenant join-code collisions."
+}

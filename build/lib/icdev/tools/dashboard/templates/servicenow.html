@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}ServiceNow Changes - ICDEV™{% endblock %}
+{% block content %}
+<div class="container">
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">ServiceNow Changes</span>
+    </nav>
+
+    <h1>ServiceNow Change Management</h1>
+    <p class="text-muted">Sync, track, and manage ServiceNow change_request tickets linked to migration plans.</p>
+
+    <!-- Stats Row -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-total" style="font-size:2rem;font-weight:bold;">—</div>
+            <div style="color:#666;font-size:0.85rem;">Total Changes</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-pending" style="font-size:2rem;font-weight:bold;color:#ff9800;">—</div>
+            <div style="color:#666;font-size:0.85rem;">Approval Pending</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-high-risk" style="font-size:2rem;font-weight:bold;color:#d32f2f;">—</div>
+            <div style="color:#666;font-size:0.85rem;">High+ Risk</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-connections" style="font-size:2rem;font-weight:bold;color:#1976d2;">—</div>
+            <div style="color:#666;font-size:0.85rem;">Connections</div>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <div style="display:flex;gap:0.75rem;margin:1.5rem 0;align-items:center;flex-wrap:wrap;">
+        <button onclick="syncChanges()" style="padding:0.6rem 1.2rem;background:#1976d2;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">Sync from ServiceNow</button>
+        <select id="filter-state" onchange="loadChanges()" style="padding:0.5rem;border:1px solid #ddd;border-radius:6px;">
+            <option value="">All States</option>
+            <option value="new">New</option>
+            <option value="assess">Assess</option>
+            <option value="authorize">Authorize</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="implement">Implement</option>
+            <option value="review">Review</option>
+            <option value="closed">Closed</option>
+            <option value="canceled">Canceled</option>
+        </select>
+        <select id="filter-priority" onchange="loadChanges()" style="padding:0.5rem;border:1px solid #ddd;border-radius:6px;">
+            <option value="">All Priorities</option>
+            <option value="1">Critical (1)</option>
+            <option value="2">High (2)</option>
+            <option value="3">Moderate (3)</option>
+            <option value="4">Low (4)</option>
+            <option value="5">Planning (5)</option>
+        </select>
+        <span id="sync-status" style="font-size:0.9rem;color:#666;"></span>
+    </div>
+
+    <!-- Changes Table -->
+    <div style="margin:1.5rem 0;">
+        <h2 style="font-size:1.15rem;">Change Tickets</h2>
+        <div style="overflow-x:auto;">
+            <table id="changes-table" style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+                <thead>
+                    <tr style="background:#f5f5f5;border-bottom:2px solid #ddd;">
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Number</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Description</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Type</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">State</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:center;">Priority</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Risk</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Approval</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Assigned</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Start</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">End</th>
+                    </tr>
+                </thead>
+                <tbody id="changes-body"></tbody>
+            </table>
+        </div>
+        <div id="changes-empty" style="display:none;padding:2rem;text-align:center;color:#999;">No change tickets found. Click "Sync from ServiceNow" to pull data.</div>
+    </div>
+
+    <!-- Connections Panel -->
+    <div style="margin:1.5rem 0;padding:1.25rem;border:1px solid #ddd;border-radius:8px;">
+        <h2 style="margin:0 0 1rem;font-size:1.15rem;">ServiceNow Connections</h2>
+        <div id="connections-list" style="font-size:0.9rem;"></div>
+    </div>
+</div>
+
+<script>
+const STATE_COLORS = {
+    'new': '#9e9e9e',
+    'assess': '#ff9800',
+    'authorize': '#1976d2',
+    'scheduled': '#66bb6a',
+    'implement': '#ab47bc',
+    'review': '#42a5f5',
+    'closed': '#4caf50',
+    'canceled': '#d32f2f'
+};
+const RISK_COLORS = {
+    'low': '#4caf50',
+    'moderate': '#ff9800',
+    'high': '#f44336',
+    'very_high': '#b71c1c'
+};
+const APPROVAL_COLORS = {
+    'not requested': '#9e9e9e',
+    'requested': '#ff9800',
+    'approved': '#4caf50',
+    'rejected': '#d32f2f'
+};
+
+async function loadStats() {
+    try {
+        const [statsResp, connResp] = await Promise.all([
+            fetch('/api/servicenow/changes/stats'),
+            fetch('/api/servicenow/connections')
+        ]);
+        const stats = await statsResp.json();
+        const conns = await connResp.json();
+        const s = stats.data || stats;
+        document.getElementById('stat-total').textContent = s.total ?? 0;
+        document.getElementById('stat-pending').textContent = s.approval_pending ?? 0;
+        const highRisk = (s.by_risk ? (s.by_risk.high || 0) + (s.by_risk.very_high || 0) : 0);
+        document.getElementById('stat-high-risk').textContent = highRisk;
+        const connections = conns.data || conns.connections || [];
+        document.getElementById('stat-connections').textContent = connections.length;
+        renderConnections(connections);
+    } catch (e) { console.warn('Stats load error:', e); }
+}
+
+async function loadChanges() {
+    try {
+        const state = document.getElementById('filter-state').value;
+        const priority = document.getElementById('filter-priority').value;
+        let url = '/api/servicenow/changes';
+        const params = [];
+        if (state) params.push(`state=${encodeURIComponent(state)}`);
+        if (priority) params.push(`priority=${encodeURIComponent(priority)}`);
+        if (params.length) url += '?' + params.join('&');
+
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('Changes fetch failed');
+        const d = await resp.json();
+        const tickets = (d.data || d).tickets || [];
+        renderChanges(tickets);
+    } catch (e) { console.warn('Changes load error:', e); document.getElementById('changes-empty').style.display = 'block'; }
+}
+
+function renderChanges(tickets) {
+    const tbody = document.getElementById('changes-body');
+    const empty = document.getElementById('changes-empty');
+    if (!tickets || !tickets.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    tbody.innerHTML = tickets.map(t => {
+        const sc = STATE_COLORS[t.state] || '#999';
+        const rc = RISK_COLORS[t.risk] || '#999';
+        const ac = APPROVAL_COLORS[t.approval] || '#999';
+        return `<tr style="border-bottom:1px solid #eee;">
+            <td style="padding:0.5rem 0.75rem;font-weight:600;font-family:monospace;">${esc(t.number || '—')}</td>
+            <td style="padding:0.5rem 0.75rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(t.short_description || '')}">${esc(t.short_description || '—')}</td>
+            <td style="padding:0.5rem 0.75rem;text-transform:capitalize;">${esc(t.type || '—')}</td>
+            <td style="padding:0.5rem 0.75rem;"><span style="display:inline-block;padding:0.15rem 0.6rem;border-radius:12px;font-size:0.75rem;font-weight:600;color:#fff;background:${sc};text-transform:capitalize;">${esc(t.state || '—')}</span></td>
+            <td style="padding:0.5rem 0.75rem;text-align:center;font-weight:600;">${esc(t.priority || '—')}</td>
+            <td style="padding:0.5rem 0.75rem;"><span style="display:inline-block;padding:0.15rem 0.6rem;border-radius:12px;font-size:0.75rem;font-weight:600;color:#fff;background:${rc};text-transform:capitalize;">${esc(t.risk || '—')}</span></td>
+            <td style="padding:0.5rem 0.75rem;"><span style="display:inline-block;padding:0.15rem 0.6rem;border-radius:12px;font-size:0.75rem;font-weight:600;color:#fff;background:${ac};">${esc(t.approval || '—')}</span></td>
+            <td style="padding:0.5rem 0.75rem;">${esc(t.assigned_to || '—')}</td>
+            <td style="padding:0.5rem 0.75rem;font-size:0.8rem;">${esc(t.start_date ? t.start_date.slice(0,10) : '—')}</td>
+            <td style="padding:0.5rem 0.75rem;font-size:0.8rem;">${esc(t.end_date ? t.end_date.slice(0,10) : '—')}</td>
+        </tr>`;
+    }).join('');
+}
+
+function renderConnections(connections) {
+    const container = document.getElementById('connections-list');
+    if (!connections.length) { container.innerHTML = '<p style="color:#999;">No ServiceNow connections configured.</p>'; return; }
+    container.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+        <thead><tr style="background:#f5f5f5;border-bottom:1px solid #ddd;">
+            <th style="padding:0.4rem 0.6rem;text-align:left;">Instance</th>
+            <th style="padding:0.4rem 0.6rem;text-align:left;">Project</th>
+            <th style="padding:0.4rem 0.6rem;text-align:left;">Status</th>
+            <th style="padding:0.4rem 0.6rem;text-align:left;">Last Sync</th>
+        </tr></thead>
+        <tbody>${connections.map(c => `<tr style="border-bottom:1px solid #eee;">
+            <td style="padding:0.4rem 0.6rem;"><a href="${esc(c.instance_url || '#')}" target="_blank" style="color:#1976d2;">${esc(c.instance_url || '—')}</a></td>
+            <td style="padding:0.4rem 0.6rem;font-family:monospace;">${esc(c.project_id || '—')}</td>
+            <td style="padding:0.4rem 0.6rem;">${esc(c.sync_status || '—')}</td>
+            <td style="padding:0.4rem 0.6rem;font-size:0.8rem;">${esc(c.last_sync ? c.last_sync.slice(0,16).replace('T',' ') : 'Never')}</td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+}
+
+async function syncChanges() {
+    const statusEl = document.getElementById('sync-status');
+    statusEl.textContent = 'Syncing...';
+    statusEl.style.color = '#1976d2';
+    try {
+        const resp = await fetch('/api/servicenow/changes/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) });
+        const d = await resp.json();
+        if (resp.ok) {
+            statusEl.textContent = `Synced! ${d.created || 0} created, ${d.existing || 0} existing.`;
+            statusEl.style.color = '#4caf50';
+            await Promise.all([loadStats(), loadChanges()]);
+        } else {
+            statusEl.textContent = 'Error: ' + (d.error || 'Sync failed');
+            statusEl.style.color = '#d32f2f';
+        }
+    } catch (e) {
+        statusEl.textContent = 'Error: ' + e.message;
+        statusEl.style.color = '#d32f2f';
+    }
+}
+
+function esc(s) { if (s == null) return ''; const el = document.createElement('span'); el.textContent = String(s); return el.innerHTML; }
+
+async function init() { await Promise.all([loadStats(), loadChanges()]); }
+init();
+</script>
+{% endblock %}

@@ -1,0 +1,62 @@
+# CUI // SP-CTI
+# ICDEV™ Capability Domain: DevSecOps Pipeline & Policy
+# Auto-generated from icdev_capability_catalog.json + CLAUDE.md
+# Last refreshed: 2026-03-13
+
+domain: devsecops
+description: "Automated DevSecOps pipeline security, policy-as-code, and CI/CD integration"
+capabilities:
+  - slug: devsecops-pipeline
+    name: "DevSecOps CI/CD Pipeline"
+    description: "Automated 9-step DevSecOps pipeline with syntax validation, linting, unit tests, BDD, SAST, E2E testing, vision validation, acceptance gates, and security/compliance gates. 5 maturity levels."
+    cli_examples:
+      - "python tools/devsecops/pipeline_security_generator.py --project-id sparkpilot --json"
+      - "python tools/devsecops/profile_manager.py --project-id sparkpilot --assess --json"
+    related_controls: ["SA-11", "SA-15", "SI-7", "CM-3", "RA-5"]
+    article_hooks:
+      - "9-step pipeline: py_compile -> Ruff -> pytest -> behave -> Bandit -> Playwright -> vision -> acceptance -> gates"
+      - "5 maturity levels (Initial to Optimizing) with automated assessment and promotion criteria"
+    frameworks: ["NIST 800-53", "DoD DevSecOps Reference Design"]
+    keywords: ["CI/CD", "pipeline", "DevSecOps", "SAST", "continuous integration", "automated testing", "build automation"]
+    source_catalog_id: "cap-devsecops-pipeline"
+
+  - slug: policy-as-code
+    name: "Policy-as-Code (Kyverno/OPA)"
+    description: "Policy generation for Kyverno and OPA, image signing and attestation, pipeline security hardening"
+    cli_examples:
+      - "python tools/devsecops/policy_generator.py --project-id sparkpilot --engine kyverno --json"
+    related_controls: ["CM-6", "SI-7", "SA-10"]
+    article_hooks:
+      - "Policy-as-code with Kyverno and OPA -- enforce security policies at the Kubernetes admission controller level"
+      - "Image attestation ensures only verified, signed container images reach production"
+    frameworks: ["NIST 800-53", "DoD DevSecOps"]
+    keywords: ["policy-as-code", "Kyverno", "OPA", "admission controller", "image signing", "attestation"]
+    source_catalog_id: "cap-devsecops-pipeline"
+
+  - slug: tdd-bdd
+    name: "Test-Driven Development & BDD"
+    description: "True RED->GREEN->REFACTOR TDD cycle with BDD/Gherkin scenario generation across 6 first-class languages (Python, Java, JavaScript/TypeScript, Go, Rust, C#)"
+    cli_examples:
+      - "python tools/testing/e2e_runner.py --discover"
+      - "python tools/testing/e2e_runner.py --run-all"
+    related_controls: ["SA-11", "SA-15", "SI-7", "CM-3"]
+    article_hooks:
+      - "True TDD/BDD across 6 languages -- tests are written before code, not bolted on after"
+      - "Gherkin scenario generation bridges the gap between business requirements and automated tests"
+    frameworks: ["IEEE 829", "ISO 29119"]
+    keywords: ["TDD", "BDD", "Gherkin", "Cucumber", "unit test", "pytest", "behave", "RED GREEN REFACTOR"]
+    source_catalog_id: "cap-tdd-bdd"
+
+  - slug: code-intelligence
+    name: "Code Quality Intelligence"
+    description: "AST-based code analysis: cyclomatic/cognitive complexity, 5 smell detectors, deterministic maintainability scoring, runtime feedback"
+    cli_examples:
+      - "python tools/analysis/code_analyzer.py --project-dir tools/ --json"
+      - "python tools/analysis/code_analyzer.py --project-dir tools/ --trend --json"
+    related_controls: ["SA-11", "SA-15", "SI-7"]
+    article_hooks:
+      - "AST-based metrics -- no heuristics, no guessing. Cyclomatic and cognitive complexity measured from the actual code structure"
+      - "5 smell detectors: long function, deep nesting, high complexity, too many params, god class"
+    frameworks: ["ISO 25010"]
+    keywords: ["code quality", "cyclomatic complexity", "cognitive complexity", "code smell", "maintainability", "AST", "static analysis"]
+    source_catalog_id: "cap-code-intelligence"

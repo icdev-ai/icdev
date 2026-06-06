@@ -1,0 +1,109 @@
+{% extends "network/base.html" %}
+{% block title %}Capacity Planning — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Capacity Planning</h1>
+    <p class="page-subtitle">Port inventory, fiber strands, DWDM lambdas, carrier availability</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" onclick="document.getElementById('port-modal').style.display='flex'">+ Port Inventory</button>
+    <button class="btn btn-secondary" onclick="document.getElementById('fiber-modal').style.display='flex'">+ Fiber Path</button>
+    <button class="btn btn-secondary" onclick="document.getElementById('carrier-modal').style.display='flex'">+ Carrier Circuit</button>
+  </div>
+</div>
+<div id="cap-content"></div>
+
+<div id="port-modal" class="modal" style="display:none;"><div class="modal-content"><h3>Add Port Inventory</h3><form onsubmit="return addPort(event)"><div class="form-grid">
+  <label>Device Label <input name="device_label" required placeholder="e.g., Core-R1"></label>
+  <label>Total Ports <input name="total_ports" type="number" value="48"></label>
+  <label>Used Ports <input name="used_ports" type="number" value="0"></label>
+</div><div class="form-actions"><button type="submit" class="btn btn-primary">Add</button><button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button></div></form></div></div>
+
+<div id="fiber-modal" class="modal" style="display:none;"><div class="modal-content"><h3>Add Fiber Path</h3><form onsubmit="return addFiber(event)"><div class="form-grid">
+  <label>Path Name <input name="path_name" required placeholder="DC-East to DC-West"></label>
+  <label>Site A <input name="path_a" placeholder="DC-East"></label>
+  <label>Site Z <input name="path_z" placeholder="DC-West"></label>
+  <label>Fiber Type <select name="fiber_type"><option>SMF</option><option>MMF</option></select></label>
+  <label>Total Strands <input name="total_strands" type="number" value="0"></label>
+  <label>Lit Strands <input name="lit_strands" type="number" value="0"></label>
+  <label>Total Lambdas (DWDM) <input name="total_lambdas" type="number" value="0"></label>
+  <label>Active Lambdas <input name="active_lambdas" type="number" value="0"></label>
+  <label>Conduit Ducts <input name="conduit_ducts" type="number" value="0"></label>
+  <label>Conduit Used <input name="conduit_used" type="number" value="0"></label>
+</div><div class="form-actions"><button type="submit" class="btn btn-primary">Add</button><button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button></div></form></div></div>
+
+<div id="carrier-modal" class="modal" style="display:none;"><div class="modal-content"><h3>Add Carrier Availability</h3><form onsubmit="return addCarrier(event)"><div class="form-grid">
+  <label>Carrier <input name="carrier" required placeholder="AT&T, Lumen, Zayo"></label>
+  <label>Path <input name="path_name" placeholder="DC-East to DC-West"></label>
+  <label>Service Type <select name="service_type"><option>DIA</option><option>MPLS</option><option>wavelength</option><option>dark_fiber</option><option>Ethernet</option></select></label>
+  <label>Available BW <input name="available_bandwidth" placeholder="up to 100G"></label>
+  <label>Lead Time (days) <input name="lead_time_days" type="number" value="30"></label>
+  <label>Est. Cost/mo ($) <input name="monthly_cost_est" type="number" value="0"></label>
+</div><div class="form-actions"><button type="submit" class="btn btn-primary">Add</button><button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button></div></form></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function load() {
+  const [ports, fiber, carriers] = await Promise.all([
+    fetch(NC_BASE + '/api/port-inventory').then(r => r.json()),
+    fetch(NC_BASE + '/api/fiber-inventory').then(r => r.json()),
+    fetch(NC_BASE + '/api/carrier-availability').then(r => r.json()),
+  ]);
+  let html = '<div class="stats-bar">';
+  const totalPorts = ports.reduce((s,p) => s + (p.total_ports||0), 0);
+  const usedPorts = ports.reduce((s,p) => s + (p.used_ports||0), 0);
+  const totalStrands = fiber.reduce((s,f) => s + (f.total_strands||0), 0);
+  const availStrands = fiber.reduce((s,f) => s + (f.available_strands||0), 0);
+  html += `<div class="stat-card"><div class="stat-value">${totalPorts - usedPorts}</div><div class="stat-label">Available Ports</div></div>`;
+  html += `<div class="stat-card"><div class="stat-value">${availStrands}</div><div class="stat-label">Available Fiber Strands</div></div>`;
+  html += `<div class="stat-card"><div class="stat-value">${carriers.length}</div><div class="stat-label">Carrier Options</div></div>`;
+  html += '</div>';
+
+  // Ports
+  html += '<section class="panel panel-wide" style="margin-top:16px;"><div class="panel-header"><h2 class="panel-title">Port Inventory (' + ports.length + ' devices)</h2></div>';
+  if (ports.length) {
+    html += '<table class="data-table"><thead><tr><th>Device</th><th>Total</th><th>Used</th><th>Available</th><th>Utilization</th></tr></thead><tbody>';
+    ports.forEach(p => {
+      const avail = (p.total_ports||0) - (p.used_ports||0);
+      const pct = p.total_ports ? Math.round(p.used_ports / p.total_ports * 100) : 0;
+      html += `<tr><td><strong>${p.device_label}</strong></td><td>${p.total_ports}</td><td>${p.used_ports}</td><td>${avail}</td><td><div class="compare-bar"><div class="compare-fill ${pct>=80?'fill-red':pct>=50?'fill-yellow':'fill-green'}" style="width:${pct}%"></div><span class="compare-label">${pct}%</span></div></td></tr>`;
+    });
+    html += '</tbody></table>';
+  } else html += '<div style="padding:12px;color:var(--text-dim);">No port inventory data.</div>';
+  html += '</section>';
+
+  // Fiber
+  html += '<section class="panel panel-wide" style="margin-top:16px;"><div class="panel-header"><h2 class="panel-title">Fiber Inventory (' + fiber.length + ' paths)</h2></div>';
+  if (fiber.length) {
+    html += '<table class="data-table"><thead><tr><th>Path</th><th>Type</th><th>Strands (total/lit/avail)</th><th>Lambdas (total/active/avail)</th><th>Conduit</th><th>Diverse</th></tr></thead><tbody>';
+    fiber.forEach(f => {
+      html += `<tr><td><strong>${f.path_name}</strong><div class="table-sub">${f.path_a||''} → ${f.path_z||''}</div></td><td>${f.fiber_type}</td><td>${f.total_strands}/${f.lit_strands}/<strong>${f.available_strands}</strong></td><td>${f.total_lambdas}/${f.active_lambdas}/<strong>${f.available_lambdas}</strong></td><td>${f.conduit_used||0}/${f.conduit_ducts||0}</td><td>${f.diverse_path?'Yes':'No'}</td></tr>`;
+    });
+    html += '</tbody></table>';
+  } else html += '<div style="padding:12px;color:var(--text-dim);">No fiber inventory data.</div>';
+  html += '</section>';
+
+  // Carriers
+  html += '<section class="panel panel-wide" style="margin-top:16px;"><div class="panel-header"><h2 class="panel-title">Carrier Availability (' + carriers.length + ')</h2></div>';
+  if (carriers.length) {
+    html += '<table class="data-table"><thead><tr><th>Carrier</th><th>Path</th><th>Service</th><th>Available BW</th><th>Lead Time</th><th>Est. Cost/mo</th></tr></thead><tbody>';
+    carriers.forEach(c => {
+      html += `<tr><td><strong>${c.carrier}</strong></td><td>${c.path_name||''}</td><td>${c.service_type||''}</td><td>${c.available_bandwidth||''}</td><td>${c.lead_time_days} days</td><td>$${(c.monthly_cost_est||0).toLocaleString()}</td></tr>`;
+    });
+    html += '</tbody></table>';
+  } else html += '<div style="padding:12px;color:var(--text-dim);">No carrier data.</div>';
+  html += '</section>';
+
+  document.getElementById('cap-content').innerHTML = html;
+}
+function addPort(e) { e.preventDefault(); const fd=new FormData(e.target),d={}; fd.forEach((v,k)=>d[k]=v);
+  d.total_ports=parseInt(d.total_ports)||0; d.used_ports=parseInt(d.used_ports)||0;
+  fetch(NC_BASE+'/api/port-inventory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(()=>location.reload()); return false; }
+function addFiber(e) { e.preventDefault(); const fd=new FormData(e.target),d={}; fd.forEach((v,k)=>d[k]=v);
+  fetch(NC_BASE+'/api/fiber-inventory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(()=>location.reload()); return false; }
+function addCarrier(e) { e.preventDefault(); const fd=new FormData(e.target),d={}; fd.forEach((v,k)=>d[k]=v);
+  fetch(NC_BASE+'/api/carrier-availability',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(()=>location.reload()); return false; }
+load();
+</script>
+{% endblock %}

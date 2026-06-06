@@ -1,0 +1,32 @@
+{
+  "workflow_types": {
+    "requirements_package": {
+      "name": "Requirements Package Approval",
+      "required_roles": ["isso", "project_manager"],
+      "minimum_approvers": 1,
+      "auto_escalate_after_days": 5,
+      "conditions": ["readiness_score >= 0.7", "no_critical_gaps"]
+    },
+    "coa_selection": {
+      "name": "COA Selection Approval",
+      "required_roles": ["project_manager", "customer_lead"],
+      "minimum_approvers": 1,
+      "auto_escalate_after_days": 3,
+      "conditions": ["simulation_completed", "coas_compared"]
+    },
+    "boundary_acceptance": {
+      "name": "Boundary Impact Acceptance",
+      "required_roles": ["isso", "ao", "security_engineer"],
+      "minimum_approvers": 2,
+      "auto_escalate_after_days": 7,
+      "conditions": ["boundary_assessment_completed", "no_red_without_alternative"]
+    },
+    "deployment_gate": {
+      "name": "Deployment Gate Approval",
+      "required_roles": ["isso", "project_manager", "test_lead"],
+      "minimum_approvers": 2,
+      "auto_escalate_after_days": 3,
+      "conditions": ["all_tests_pass", "compliance_artifacts_current", "rtm_coverage >= 0.9"]
+    }
+  }
+}

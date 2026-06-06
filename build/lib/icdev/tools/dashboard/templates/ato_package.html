@@ -1,0 +1,514 @@
+{% extends "base.html" %}
+{% block title %}ATO Package Builder - ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">ATO Package Builder</span>
+    </nav>
+
+    <h1>ATO Package Builder</h1>
+    <p class="text-muted">Assemble, validate, and generate Authorization to Operate packages with full NIST 800-53 compliance tracking.</p>
+
+    <!-- Project Selector -->
+    <div style="display:flex;align-items:center;gap:1rem;margin:1.5rem 0;padding:1rem;background:#f8f9fa;border-radius:8px;border:1px solid #ddd;">
+        <label for="project-id-input" style="font-weight:600;white-space:nowrap;">Project ID:</label>
+        <input type="text" id="project-id-input" placeholder="Enter project ID (e.g., proj-001)" style="flex:1;padding:8px 12px;border:1px solid #ccc;border-radius:4px;font-size:0.95rem;">
+        <button onclick="loadAllData()" style="padding:8px 20px;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Load</button>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- 1. Wizard Header — Step Indicators                                  -->
+    <!-- ================================================================== -->
+    <div style="margin:1.5rem 0;">
+        <h2 style="margin-bottom:1rem;">Package Steps</h2>
+        <div id="step-indicators" style="display:flex;align-items:center;gap:0;overflow-x:auto;padding:0.5rem 0;">
+            <!-- Populated by JS -->
+            <div style="color:#999;text-align:center;width:100%;">Enter a project ID and click Load</div>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- 2. Readiness Score — Circular Gauge                                 -->
+    <!-- ================================================================== -->
+    <div style="display:flex;justify-content:center;margin:2rem 0;">
+        <div style="text-align:center;">
+            <div style="position:relative;width:180px;height:180px;margin:0 auto;">
+                <div id="readiness-gauge" style="width:180px;height:180px;border-radius:50%;background:conic-gradient(#9e9e9e 0deg, #9e9e9e 360deg);display:flex;align-items:center;justify-content:center;">
+                    <div style="width:130px;height:130px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+                        <span id="readiness-score" style="font-size:2.5rem;font-weight:bold;color:#333;">--</span>
+                        <span style="font-size:0.8rem;color:#666;">Readiness</span>
+                    </div>
+                </div>
+            </div>
+            <div id="readiness-detail" style="margin-top:0.5rem;color:#666;font-size:0.9rem;">-- of -- required items complete</div>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- 3. Package Components Grid                                          -->
+    <!-- ================================================================== -->
+    <h2 style="margin-top:2rem;">Package Components</h2>
+    <div id="components-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;margin:1rem 0;">
+        <div style="padding:1.5rem;border:1px solid #eee;border-radius:8px;text-align:center;color:#999;">Load a project to see components</div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- 4. Pre-Submission Checklist                                          -->
+    <!-- ================================================================== -->
+    <h2 style="margin-top:2rem;">Pre-Submission Checklist</h2>
+    <div style="overflow-x:auto;">
+        <table id="checklist-table" style="width:100%;border-collapse:collapse;margin:1rem 0;">
+            <thead>
+                <tr style="background:#f5f5f5;">
+                    <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #ddd;">Check</th>
+                    <th style="padding:10px 12px;text-align:center;border-bottom:2px solid #ddd;width:100px;">Status</th>
+                    <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #ddd;">Detail</th>
+                </tr>
+            </thead>
+            <tbody id="checklist-body">
+                <tr><td colspan="3" style="padding:12px;color:#999;text-align:center;">Load a project to see checklist</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- 5. SSP Section                                                       -->
+    <!-- ================================================================== -->
+    <h2 style="margin-top:2rem;">System Security Plan (SSP)</h2>
+    <div id="ssp-section" style="padding:1rem;border:1px solid #eee;border-radius:8px;margin:1rem 0;">
+        <div style="color:#999;text-align:center;">Load a project to see SSP details</div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- 6. Controls Summary                                                  -->
+    <!-- ================================================================== -->
+    <h2 style="margin-top:2rem;">Controls Summary</h2>
+    <div id="controls-summary" style="margin:1rem 0;">
+        <div style="padding:1rem;border:1px solid #eee;border-radius:8px;text-align:center;color:#999;">Load a project to see controls</div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- 7. POAM Summary                                                      -->
+    <!-- ================================================================== -->
+    <h2 style="margin-top:2rem;">Plan of Action & Milestones (POAM)</h2>
+    <div id="poam-summary" style="margin:1rem 0;">
+        <div style="padding:1rem;border:1px solid #eee;border-radius:8px;text-align:center;color:#999;">Load a project to see POAM</div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- 8. Generate Package                                                  -->
+    <!-- ================================================================== -->
+    <h2 style="margin-top:2rem;">Generate Package</h2>
+    <div style="padding:1.5rem;border:1px solid #eee;border-radius:8px;margin:1rem 0;">
+        <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+            <label for="package-type-select" style="font-weight:600;">Package Type:</label>
+            <select id="package-type-select" style="padding:8px 12px;border:1px solid #ccc;border-radius:4px;font-size:0.95rem;">
+                <option value="initial">Initial ATO</option>
+                <option value="renewal">Renewal</option>
+                <option value="cato">Continuous ATO (cATO)</option>
+            </select>
+            <button id="generate-btn" onclick="generatePackage()" disabled style="padding:8px 20px;background:#9e9e9e;color:#fff;border:none;border-radius:4px;cursor:not-allowed;font-weight:600;">Generate Package</button>
+            <span id="generate-gate-msg" style="color:#999;font-size:0.85rem;">Readiness must be >= 80% to generate</span>
+        </div>
+        <div id="generate-result" style="margin-top:1rem;display:none;padding:1rem;border-radius:4px;"></div>
+    </div>
+</div>
+
+<script>
+(function() {
+    let currentStatus = null;
+
+    function getProjectId() {
+        return (document.getElementById('project-id-input').value || '').trim();
+    }
+
+    function statusColor(status) {
+        if (status === 'complete' || status === 'PASS') return '#4caf50';
+        if (status === 'warning' || status === 'WARN') return '#ff9800';
+        return '#9e9e9e';
+    }
+
+    function statusIcon(status) {
+        if (status === 'complete' || status === 'PASS') return '\u2713';
+        if (status === 'warning' || status === 'WARN') return '\u26A0';
+        if (status === 'FAIL') return '\u2717';
+        return '\u25CB';
+    }
+
+    function gaugeColor(pct) {
+        if (pct >= 80) return '#4caf50';
+        if (pct >= 50) return '#ff9800';
+        return '#f44336';
+    }
+
+    // --- Load All Data ---
+    window.loadAllData = async function() {
+        var pid = getProjectId();
+        var qs = pid ? '?project_id=' + encodeURIComponent(pid) : '';
+        await Promise.all([
+            loadStatus(qs),
+            loadChecklist(qs),
+            loadSSP(qs),
+            loadControls(qs),
+            loadPOAM(qs),
+        ]);
+    };
+
+    // --- 1 & 2 & 3: Status / Steps / Readiness / Components ---
+    async function loadStatus(qs) {
+        try {
+            var resp = await fetch('/api/ato-package/status' + qs);
+            var data = await resp.json();
+            currentStatus = data;
+            renderStepIndicators(data.steps);
+            renderReadiness(data);
+            renderComponentsGrid(data.steps);
+            updateGenerateButton(data.readiness_pct);
+        } catch(e) {
+            console.error('Failed to load status:', e);
+        }
+    }
+
+    function renderStepIndicators(steps) {
+        var container = document.getElementById('step-indicators');
+        var html = '';
+        for (var i = 0; i < steps.length; i++) {
+            var s = steps[i];
+            var color = statusColor(s.status);
+            var icon = statusIcon(s.status);
+            html += '<div style="display:flex;flex-direction:column;align-items:center;min-width:80px;flex:1;">';
+            html += '<div style="width:36px;height:36px;border-radius:50%;background:' + color + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:bold;">' + icon + '</div>';
+            html += '<div style="font-size:0.7rem;text-align:center;margin-top:4px;color:#555;line-height:1.2;">' + s.name + '</div>';
+            if (s.required) {
+                html += '<span style="font-size:0.6rem;color:#d32f2f;font-weight:600;">REQUIRED</span>';
+            }
+            html += '</div>';
+            if (i < steps.length - 1) {
+                html += '<div style="flex:0 0 20px;height:2px;background:#ddd;margin-top:18px;"></div>';
+            }
+        }
+        container.innerHTML = html;
+    }
+
+    function renderReadiness(data) {
+        var pct = data.readiness_pct || 0;
+        var color = gaugeColor(pct);
+        var deg = (pct / 100) * 360;
+        var gauge = document.getElementById('readiness-gauge');
+        gauge.style.background = 'conic-gradient(' + color + ' 0deg, ' + color + ' ' + deg + 'deg, #e0e0e0 ' + deg + 'deg, #e0e0e0 360deg)';
+        document.getElementById('readiness-score').textContent = Math.round(pct) + '%';
+        document.getElementById('readiness-score').style.color = color;
+        document.getElementById('readiness-detail').textContent = data.required_complete + ' of ' + data.required_total + ' required items complete';
+    }
+
+    function renderComponentsGrid(steps) {
+        var container = document.getElementById('components-grid');
+        var html = '';
+        for (var i = 0; i < steps.length; i++) {
+            var s = steps[i];
+            var color = statusColor(s.status);
+            var icon = statusIcon(s.status);
+            var borderColor = s.status === 'complete' ? '#4caf50' : (s.status === 'warning' ? '#ff9800' : '#e0e0e0');
+            var actionLabel = s.status === 'complete' ? 'View' : 'Generate';
+            var actionBg = s.status === 'complete' ? '#e8f5e9' : '#fff3e0';
+            var actionColor = s.status === 'complete' ? '#2e7d32' : '#e65100';
+
+            html += '<div style="padding:1.2rem;border:2px solid ' + borderColor + ';border-radius:8px;position:relative;">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">';
+            html += '<span style="font-weight:600;font-size:0.95rem;">' + s.name + '</span>';
+            if (s.required) {
+                html += '<span style="font-size:0.65rem;background:#ffebee;color:#c62828;padding:2px 6px;border-radius:3px;font-weight:600;">REQUIRED</span>';
+            } else {
+                html += '<span style="font-size:0.65rem;background:#e3f2fd;color:#1565c0;padding:2px 6px;border-radius:3px;">OPTIONAL</span>';
+            }
+            html += '</div>';
+            html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:0.5rem;">';
+            html += '<span style="font-size:1.2rem;color:' + color + ';">' + icon + '</span>';
+            html += '<span style="font-size:0.85rem;color:#555;">' + s.detail + '</span>';
+            html += '</div>';
+            html += '<button style="padding:4px 14px;background:' + actionBg + ';color:' + actionColor + ';border:1px solid ' + borderColor + ';border-radius:4px;cursor:pointer;font-size:0.8rem;">' + actionLabel + '</button>';
+            html += '</div>';
+        }
+        container.innerHTML = html;
+    }
+
+    // --- 4: Pre-Submission Checklist ---
+    async function loadChecklist(qs) {
+        try {
+            var resp = await fetch('/api/ato-package/checklist' + qs);
+            var data = await resp.json();
+            renderChecklist(data);
+        } catch(e) {
+            console.error('Failed to load checklist:', e);
+        }
+    }
+
+    function renderChecklist(data) {
+        var tbody = document.getElementById('checklist-body');
+        if (!data.checks || data.checks.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" style="padding:12px;color:#999;text-align:center;">No checklist data</td></tr>';
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < data.checks.length; i++) {
+            var c = data.checks[i];
+            var color = statusColor(c.status);
+            var bg = c.status === 'PASS' ? '#e8f5e9' : (c.status === 'FAIL' ? '#ffebee' : '#fff8e1');
+            html += '<tr>';
+            html += '<td style="padding:10px 12px;border-bottom:1px solid #eee;font-weight:500;">' + c.name + '</td>';
+            html += '<td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;">';
+            html += '<span style="display:inline-block;padding:3px 10px;border-radius:3px;background:' + bg + ';color:' + color + ';font-weight:700;font-size:0.8rem;">' + c.status + '</span>';
+            html += '</td>';
+            html += '<td style="padding:10px 12px;border-bottom:1px solid #eee;color:#555;font-size:0.9rem;">' + c.detail + '</td>';
+            html += '</tr>';
+        }
+        html += '<tr style="background:#f9f9f9;font-weight:600;">';
+        html += '<td style="padding:10px 12px;">Overall</td>';
+        html += '<td style="padding:10px 12px;text-align:center;">';
+        if (data.all_pass) {
+            html += '<span style="color:#4caf50;">ALL PASS</span>';
+        } else {
+            html += '<span style="color:#f44336;">' + data.pass_count + '/' + data.total_checks + ' PASS</span>';
+        }
+        html += '</td>';
+        html += '<td style="padding:10px 12px;">' + (data.all_pass ? 'Ready for submission' : 'Resolve failures before submission') + '</td>';
+        html += '</tr>';
+        tbody.innerHTML = html;
+    }
+
+    // --- 5: SSP Section ---
+    async function loadSSP(qs) {
+        try {
+            var resp = await fetch('/api/ato-package/ssp' + qs);
+            var data = await resp.json();
+            renderSSP(data);
+        } catch(e) {
+            console.error('Failed to load SSP:', e);
+        }
+    }
+
+    function renderSSP(data) {
+        var container = document.getElementById('ssp-section');
+        var docs = data.ssp_documents || [];
+        if (docs.length === 0) {
+            container.innerHTML = '<div style="color:#999;text-align:center;padding:1rem;">No SSP documents found for this project</div>';
+            return;
+        }
+        var html = '<table style="width:100%;border-collapse:collapse;">';
+        html += '<thead><tr style="background:#f5f5f5;">';
+        html += '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #ddd;">Version</th>';
+        html += '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #ddd;">System Name</th>';
+        html += '<th style="padding:8px 12px;text-align:center;border-bottom:2px solid #ddd;">Status</th>';
+        html += '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #ddd;">Approved By</th>';
+        html += '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #ddd;">Approved At</th>';
+        html += '</tr></thead><tbody>';
+        for (var i = 0; i < docs.length; i++) {
+            var d = docs[i];
+            var statusBg = d.status === 'approved' ? '#e8f5e9' : (d.status === 'review' ? '#fff8e1' : '#f5f5f5');
+            var statusColor = d.status === 'approved' ? '#2e7d32' : (d.status === 'review' ? '#f57f17' : '#555');
+            html += '<tr>';
+            html += '<td style="padding:8px 12px;border-bottom:1px solid #eee;">' + (d.version || '--') + '</td>';
+            html += '<td style="padding:8px 12px;border-bottom:1px solid #eee;">' + (d.system_name || '--') + '</td>';
+            html += '<td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:center;">';
+            html += '<span style="padding:2px 8px;border-radius:3px;background:' + statusBg + ';color:' + statusColor + ';font-size:0.8rem;font-weight:600;">' + (d.status || '--') + '</span>';
+            html += '</td>';
+            html += '<td style="padding:8px 12px;border-bottom:1px solid #eee;">' + (d.approved_by || '--') + '</td>';
+            html += '<td style="padding:8px 12px;border-bottom:1px solid #eee;">' + (d.approved_at || '--') + '</td>';
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    // --- 6: Controls Summary ---
+    async function loadControls(qs) {
+        try {
+            var resp = await fetch('/api/ato-package/controls-summary' + qs);
+            var data = await resp.json();
+            renderControls(data);
+        } catch(e) {
+            console.error('Failed to load controls:', e);
+        }
+    }
+
+    function renderControls(data) {
+        var container = document.getElementById('controls-summary');
+        var families = data.families || [];
+        var totals = data.totals || {};
+
+        if (families.length === 0) {
+            container.innerHTML = '<div style="padding:1rem;border:1px solid #eee;border-radius:8px;text-align:center;color:#999;">No controls data found</div>';
+            return;
+        }
+
+        var html = '';
+        // Totals bar
+        html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;">';
+        html += '<div style="padding:0.8rem;border:1px solid #ddd;border-radius:6px;text-align:center;"><div style="font-size:1.5rem;font-weight:bold;">' + (totals.total || 0) + '</div><div style="color:#666;font-size:0.8rem;">Total</div></div>';
+        html += '<div style="padding:0.8rem;border:1px solid #ddd;border-radius:6px;text-align:center;"><div style="font-size:1.5rem;font-weight:bold;color:#4caf50;">' + (totals.implemented || 0) + '</div><div style="color:#666;font-size:0.8rem;">Implemented</div></div>';
+        html += '<div style="padding:0.8rem;border:1px solid #ddd;border-radius:6px;text-align:center;"><div style="font-size:1.5rem;font-weight:bold;color:#ff9800;">' + (totals.partial || 0) + '</div><div style="color:#666;font-size:0.8rem;">Partial</div></div>';
+        html += '<div style="padding:0.8rem;border:1px solid #ddd;border-radius:6px;text-align:center;"><div style="font-size:1.5rem;font-weight:bold;color:#2196f3;">' + (totals.planned || 0) + '</div><div style="color:#666;font-size:0.8rem;">Planned</div></div>';
+        html += '</div>';
+
+        // Family bars
+        html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+        for (var i = 0; i < families.length; i++) {
+            var f = families[i];
+            var total = f.total || 1;
+            var implPct = (f.implemented / total * 100);
+            var partialPct = (f.partial / total * 100);
+            var plannedPct = (f.planned / total * 100);
+
+            html += '<div style="display:flex;align-items:center;gap:8px;">';
+            html += '<span style="min-width:36px;font-weight:600;font-size:0.85rem;">' + f.family + '</span>';
+            html += '<div style="flex:1;height:18px;background:#eee;border-radius:3px;overflow:hidden;display:flex;">';
+            if (implPct > 0) html += '<div style="width:' + implPct + '%;background:#4caf50;"></div>';
+            if (partialPct > 0) html += '<div style="width:' + partialPct + '%;background:#ff9800;"></div>';
+            if (plannedPct > 0) html += '<div style="width:' + plannedPct + '%;background:#2196f3;"></div>';
+            html += '</div>';
+            html += '<span style="min-width:40px;text-align:right;font-size:0.8rem;color:#555;">' + f.implemented + '/' + f.total + '</span>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Legend
+        html += '<div style="display:flex;gap:1.5rem;margin-top:0.8rem;font-size:0.75rem;color:#666;">';
+        html += '<span><span style="display:inline-block;width:10px;height:10px;background:#4caf50;border-radius:2px;margin-right:4px;"></span>Implemented</span>';
+        html += '<span><span style="display:inline-block;width:10px;height:10px;background:#ff9800;border-radius:2px;margin-right:4px;"></span>Partial</span>';
+        html += '<span><span style="display:inline-block;width:10px;height:10px;background:#2196f3;border-radius:2px;margin-right:4px;"></span>Planned</span>';
+        html += '</div>';
+
+        container.innerHTML = html;
+    }
+
+    // --- 7: POAM Summary ---
+    async function loadPOAM(qs) {
+        try {
+            var resp = await fetch('/api/ato-package/poam-summary' + qs);
+            var data = await resp.json();
+            renderPOAM(data);
+        } catch(e) {
+            console.error('Failed to load POAM:', e);
+        }
+    }
+
+    function renderPOAM(data) {
+        var container = document.getElementById('poam-summary');
+        if (data.total === 0) {
+            container.innerHTML = '<div style="padding:1rem;border:1px solid #eee;border-radius:8px;text-align:center;color:#999;">No POAM items found</div>';
+            return;
+        }
+
+        var sevOrder = ['critical', 'high', 'moderate', 'low'];
+        var sevColors = {critical: '#d32f2f', high: '#f44336', moderate: '#ff9800', low: '#ffc107'};
+        var bySev = data.by_severity || {};
+        var byStatus = data.by_status || {};
+
+        var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">';
+
+        // Severity distribution
+        html += '<div style="border:1px solid #eee;border-radius:8px;padding:1rem;">';
+        html += '<h3 style="margin:0 0 0.8rem 0;font-size:1rem;">By Severity</h3>';
+        for (var i = 0; i < sevOrder.length; i++) {
+            var sev = sevOrder[i];
+            var count = bySev[sev] || 0;
+            var barW = data.total > 0 ? (count / data.total * 100) : 0;
+            html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+            html += '<span style="min-width:70px;font-size:0.85rem;text-transform:capitalize;font-weight:500;">' + sev + '</span>';
+            html += '<div style="flex:1;height:16px;background:#f5f5f5;border-radius:3px;overflow:hidden;">';
+            html += '<div style="width:' + barW + '%;height:100%;background:' + (sevColors[sev] || '#999') + ';border-radius:3px;"></div>';
+            html += '</div>';
+            html += '<span style="min-width:30px;text-align:right;font-weight:600;font-size:0.85rem;">' + count + '</span>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Status breakdown
+        html += '<div style="border:1px solid #eee;border-radius:8px;padding:1rem;">';
+        html += '<h3 style="margin:0 0 0.8rem 0;font-size:1rem;">By Status</h3>';
+        var statuses = Object.keys(byStatus);
+        for (var j = 0; j < statuses.length; j++) {
+            var st = statuses[j];
+            var cnt = byStatus[st];
+            html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f5f5f5;">';
+            html += '<span style="text-transform:capitalize;font-size:0.85rem;">' + st + '</span>';
+            html += '<span style="font-weight:600;">' + cnt + '</span>';
+            html += '</div>';
+        }
+        html += '<div style="display:flex;justify-content:space-between;padding:6px 0;margin-top:6px;border-top:2px solid #ddd;">';
+        html += '<span style="font-weight:600;">Total</span>';
+        html += '<span style="font-weight:700;">' + data.total + '</span>';
+        html += '</div>';
+        if (data.overdue > 0) {
+            html += '<div style="margin-top:8px;padding:6px 10px;background:#ffebee;border-radius:4px;color:#c62828;font-weight:600;font-size:0.85rem;">' + data.overdue + ' overdue item(s)</div>';
+        }
+        html += '</div>';
+
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    // --- 8: Generate Package ---
+    function updateGenerateButton(pct) {
+        var btn = document.getElementById('generate-btn');
+        var msg = document.getElementById('generate-gate-msg');
+        if (pct >= 80) {
+            btn.disabled = false;
+            btn.style.background = '#1976d2';
+            btn.style.cursor = 'pointer';
+            msg.textContent = 'Ready to generate';
+            msg.style.color = '#4caf50';
+        } else {
+            btn.disabled = true;
+            btn.style.background = '#9e9e9e';
+            btn.style.cursor = 'not-allowed';
+            msg.textContent = 'Readiness must be >= 80% to generate (currently ' + Math.round(pct) + '%)';
+            msg.style.color = '#999';
+        }
+    }
+
+    window.generatePackage = async function() {
+        var pid = getProjectId();
+        if (!pid) { alert('Enter a project ID first.'); return; }
+        var packageType = document.getElementById('package-type-select').value;
+        var resultDiv = document.getElementById('generate-result');
+        resultDiv.style.display = 'block';
+        resultDiv.style.background = '#e3f2fd';
+        resultDiv.style.color = '#1565c0';
+        resultDiv.textContent = 'Generating ' + packageType + ' package...';
+
+        try {
+            var resp = await fetch('/api/ato-package/generate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({project_id: pid, package_type: packageType}),
+            });
+            var data = await resp.json();
+            if (resp.ok && data.status === 'success') {
+                resultDiv.style.background = '#e8f5e9';
+                resultDiv.style.color = '#2e7d32';
+                resultDiv.textContent = 'Package generated successfully.';
+                if (data.result) {
+                    resultDiv.textContent += ' ' + JSON.stringify(data.result);
+                }
+            } else if (resp.status === 501) {
+                resultDiv.style.background = '#fff8e1';
+                resultDiv.style.color = '#f57f17';
+                resultDiv.textContent = data.message || 'Package generator not yet implemented.';
+            } else {
+                resultDiv.style.background = '#ffebee';
+                resultDiv.style.color = '#c62828';
+                resultDiv.textContent = 'Error: ' + (data.error || 'Unknown error');
+            }
+        } catch(e) {
+            resultDiv.style.background = '#ffebee';
+            resultDiv.style.color = '#c62828';
+            resultDiv.textContent = 'Network error: ' + e.message;
+        }
+    };
+})();
+</script>
+{% endblock %}

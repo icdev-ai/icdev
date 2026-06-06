@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}ATO Readiness — {{ design.name }}{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;">🏛 ATO Readiness — {{ design.name }}</h2>
+    <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">Authority to Operate checklist · FedRAMP / CMMC L2 / OMB M-25-21 / DoD AI Ethics</p>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="/agentic-ai/canvas/{{ design.id }}" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Canvas</a>
+    <a href="/agentic-ai/exec-summary/{{ design.id }}" style="background:#4f46e5;color:#fff;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">📊 Exec Brief</a>
+  </div>
+</div>
+
+<!-- Summary cards -->
+{% set s = result.summary %}
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px;">
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:12px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:#eaeaea;">{{ s.total }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Checks</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:12px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:#4ade80;">{{ s.passed }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Passed</div>
+  </div>
+  <div style="background:#16213e;border:1px solid {% if s.failed > 0 %}#f97316{% else %}#1e3a6e{% endif %};border-radius:8px;padding:12px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{% if s.failed > 0 %}#fb923c{% else %}#4ade80{% endif %};">{{ s.failed }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Failed</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:12px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#60a5fa;">{{ s.score_pct }}%</div>
+    <div style="color:#7a8cb0;font-size:11px;">Score</div>
+  </div>
+  <div style="background:#16213e;border:1px solid {% if s.ato_ready %}#22c55e{% else %}#ef4444{% endif %};border-radius:8px;padding:12px;text-align:center;">
+    <div style="font-size:18px;font-weight:700;color:{% if s.ato_ready %}#4ade80{% else %}#f87171{% endif %};">
+      {% if s.ato_ready %}✓ READY{% else %}✗ NOT READY{% endif %}
+    </div>
+    <div style="color:#7a8cb0;font-size:11px;">ATO Status</div>
+  </div>
+</div>
+
+<!-- Framework scorecards -->
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
+  {% for fw, fw_data in result.by_framework.items() %}
+  {% set fw_pct = (fw_data.passed / fw_data.total * 100)|round(0)|int if fw_data.total else 0 %}
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:10px 16px;min-width:140px;">
+    <div style="color:#94a3b8;font-size:10px;margin-bottom:4px;">{{ fw }}</div>
+    <div style="font-size:20px;font-weight:700;color:{% if fw_pct >= 80 %}#4ade80{% elif fw_pct >= 60 %}#fbbf24{% else %}#f87171{% endif %};">{{ fw_pct }}%</div>
+    <div style="color:#475569;font-size:10px;">{{ fw_data.passed }}/{{ fw_data.total }} passed</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Checklist table grouped by framework -->
+{% for fw in frameworks %}
+<div style="margin-bottom:20px;">
+  <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">{{ fw }}</div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;overflow:hidden;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="background:#0f172a;">
+          <th style="padding:8px 12px;color:#7a8cb0;text-align:left;font-weight:500;width:80px;">Control</th>
+          <th style="padding:8px 12px;color:#7a8cb0;text-align:left;font-weight:500;">Check</th>
+          <th style="padding:8px 80px;color:#7a8cb0;text-align:left;font-weight:500;width:80px;">Severity</th>
+          <th style="padding:8px 12px;color:#7a8cb0;text-align:left;font-weight:500;width:80px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for item in result.items if item.framework == fw %}
+      <tr style="border-top:1px solid #1e3a6e;">
+        <td style="padding:8px 12px;color:#475569;font-size:10px;">{{ item.control }}</td>
+        <td style="padding:8px 12px;">
+          <div style="color:#eaeaea;font-weight:500;">{{ item.title }}</div>
+          <div style="color:#475569;font-size:10px;margin-top:2px;">{{ item.description }}</div>
+          {% if item.status == 'fail' and item.remediation %}
+          <div style="color:#fbbf24;font-size:10px;margin-top:3px;">⚡ {{ item.remediation }}</div>
+          {% endif %}
+        </td>
+        <td style="padding:8px 12px;">
+          <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;
+            background:{% if item.severity=='CRITICAL' %}#450a0a{% elif item.severity=='HIGH' %}#431407{% elif item.severity=='MEDIUM' %}#422006{% else %}#0f2721{% endif %};
+            color:{% if item.severity=='CRITICAL' %}#f87171{% elif item.severity=='HIGH' %}#fb923c{% elif item.severity=='MEDIUM' %}#fbbf24{% else %}#34d399{% endif %};">
+            {{ item.severity }}
+          </span>
+        </td>
+        <td style="padding:8px 12px;">
+          <span style="padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;
+            background:{% if item.status=='pass' %}#052e16{% else %}#450a0a{% endif %};
+            color:{% if item.status=='pass' %}#4ade80{% else %}#f87171{% endif %};">
+            {% if item.status == 'pass' %}✓ PASS{% else %}✗ FAIL{% endif %}
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

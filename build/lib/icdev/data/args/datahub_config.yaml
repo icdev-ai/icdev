@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+# DDC → DataHub Sync Adapter Configuration
+# Override any value with environment variables:
+#   ICDEV_DATAHUB_URL, ICDEV_DATAHUB_TOKEN, ICDEV_DATAHUB_ENV, ICDEV_DATAHUB_TIMEOUT
+
+datahub:
+  # DataHub GMS REST API base URL
+  url: "http://localhost:8080"
+
+  # Personal access token (leave empty for local / no-auth DataHub)
+  token: ""
+
+  # DataHub fabric environment label (DEV | TEST | STAGING | PROD | CORP)
+  env: "DEV"
+
+  # HTTP request timeout in seconds
+  timeout: 15
+
+  # Verify TLS certificate for HTTPS endpoints
+  verify_ssl: true

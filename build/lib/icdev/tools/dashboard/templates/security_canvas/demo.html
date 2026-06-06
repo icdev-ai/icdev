@@ -1,0 +1,295 @@
+{% extends "security_canvas/base.html" %}
+{% block title %}SDC Demo Runner — Security Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <div>
+    <h1>SDC Demo Runner</h1>
+    <p class="text-muted">Live executive demo — Red Team → SDC Workflow → Compliant in 15 minutes</p>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <select id="audience-select" class="form-control" style="width:140px;font-size:13px;">
+      <option value="exec">Executive</option>
+      <option value="tech">Technical</option>
+      <option value="engineer">Engineer</option>
+    </select>
+    <label style="font-size:13px;color:var(--text-dim);display:flex;align-items:center;gap:6px;cursor:pointer;">
+      <input type="checkbox" id="simulate-toggle"> Simulate ISSO
+    </label>
+  </div>
+</div>
+
+<div style="padding:0 16px 32px;">
+
+  <!-- Scenario selector -->
+  <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+    <button class="scenario-btn active" data-scenario="A"
+      style="flex:1;min-width:200px;padding:16px;border-radius:10px;border:2px solid #e74c3c;background:#1a0a0a;cursor:pointer;text-align:left;">
+      <div style="font-size:11px;color:#e74c3c;font-weight:700;letter-spacing:1px;margin-bottom:4px;">SCENARIO A</div>
+      <div style="font-size:15px;font-weight:600;color:#fff;">Red Team: Enumerate Vulnerabilities</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">47 findings → 15 CAT1 → 3 attack paths</div>
+    </button>
+    <button class="scenario-btn" data-scenario="B"
+      style="flex:1;min-width:200px;padding:16px;border-radius:10px;border:2px solid #3498db;background:#0a0f1a;cursor:pointer;text-align:left;opacity:0.6;">
+      <div style="font-size:11px;color:#3498db;font-weight:700;letter-spacing:1px;margin-bottom:4px;">SCENARIO B</div>
+      <div style="font-size:15px;font-weight:600;color:#fff;">12-Step Workflow + ISSO Gate</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Design → ISSO approval → IaC deployed</div>
+    </button>
+    <button class="scenario-btn" data-scenario="C"
+      style="flex:1;min-width:200px;padding:16px;border-radius:10px;border:2px solid #27ae60;background:#0a1a0a;cursor:pointer;text-align:left;opacity:0.6;">
+      <div style="font-size:11px;color:#27ae60;font-weight:700;letter-spacing:1px;margin-bottom:4px;">SCENARIO C</div>
+      <div style="font-size:15px;font-weight:600;color:#fff;">After State: Compliant + IaC</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">0 CAT1, posture A, $29K saved, cATO ready</div>
+    </button>
+    <button id="run-all-btn"
+      style="padding:16px 24px;border-radius:10px;border:2px solid #9b59b6;background:#13091a;cursor:pointer;font-weight:600;color:#9b59b6;white-space:nowrap;">
+      Run All
+    </button>
+  </div>
+
+  <!-- Loading bar -->
+  <div id="demo-loading" class="hidden" style="margin-bottom:20px;">
+    <div style="background:#1e1e2e;border-radius:6px;height:6px;overflow:hidden;">
+      <div id="loading-bar" style="height:100%;background:linear-gradient(90deg,#3498db,#27ae60);width:0%;transition:width 0.4s ease;border-radius:6px;"></div>
+    </div>
+    <div id="loading-label" style="font-size:12px;color:var(--text-dim);margin-top:6px;text-align:center;">Running scenario...</div>
+  </div>
+
+  <!-- Result panel -->
+  <div id="demo-result" class="hidden"></div>
+
+  <!-- Compliance timeline widget -->
+  <div id="timeline-widget" class="hidden" style="margin-top:24px;"></div>
+
+  <!-- 12-step progress bar (Scenario B) -->
+  <div id="workflow-panel" class="hidden" style="margin-top:24px;"></div>
+
+  <!-- Compliance timeline (always-visible before/after posture comparison) -->
+  <div style="margin-top:32px;">
+    <script>var timelineDesignId = 'demo-design-001';</script>
+    {% include "security_canvas/_compliance_timeline.html" %}
+  </div>
+
+  <!-- IQE query widget -->
+  <div style="margin-top:32px;">
+    {% include "includes/iqe_query_widget.html" %}
+  </div>
+
+</div>
+
+<style>
+.scenario-btn { transition: opacity 0.2s, border-color 0.2s; }
+.scenario-btn.active { opacity: 1 !important; }
+.scenario-btn:hover { opacity: 0.9 !important; }
+.stat-card { background:#1e1e2e; border-radius:8px; padding:14px 18px; flex:1; min-width:120px; }
+.stat-val { font-size:28px; font-weight:700; }
+.stat-lbl { font-size:11px; color:var(--text-dim); margin-top:2px; }
+.badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700; }
+.badge-f { background:#e74c3c22; color:#e74c3c; border:1px solid #e74c3c44; }
+.badge-a { background:#27ae6022; color:#27ae60; border:1px solid #27ae6044; }
+.step-row { display:flex; align-items:center; gap:10px; padding:8px 12px; border-radius:6px; background:#1e1e2e; margin-bottom:6px; }
+.step-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.step-dot-done { background:#27ae60; }
+.step-dot-human { background:#f39c12; }
+</style>
+
+<script>
+const API_URL = '/security/api/sdc-demo-run';
+let currentScenario = 'A';
+
+document.querySelectorAll('.scenario-btn[data-scenario]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentScenario = btn.dataset.scenario;
+    document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    runDemo([currentScenario]);
+  });
+});
+
+document.getElementById('run-all-btn').addEventListener('click', () => {
+  document.querySelectorAll('.scenario-btn').forEach(b => b.classList.add('active'));
+  currentScenario = null;
+  runDemo(null);
+});
+
+async function runDemo(scenarios) {
+  const audience = document.getElementById('audience-select').value;
+  const simulate = document.getElementById('simulate-toggle').checked;
+
+  document.getElementById('demo-loading').classList.remove('hidden');
+  document.getElementById('demo-result').classList.add('hidden');
+  document.getElementById('timeline-widget').classList.add('hidden');
+  document.getElementById('workflow-panel').classList.add('hidden');
+  animateBar(0, 70, 600);
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenarios, audience, simulate })
+    });
+    const d = await res.json();
+    animateBar(70, 100, 200);
+    setTimeout(() => {
+      document.getElementById('demo-loading').classList.add('hidden');
+      renderResult(d);
+    }, 300);
+  } catch (e) {
+    document.getElementById('demo-loading').classList.add('hidden');
+    document.getElementById('demo-result').innerHTML =
+      '<div style="color:#e74c3c;padding:16px;">Error: ' + e.message + '</div>';
+    document.getElementById('demo-result').classList.remove('hidden');
+  }
+}
+
+function animateBar(from, to, ms) {
+  const bar = document.getElementById('loading-bar');
+  bar.style.transition = 'width ' + ms + 'ms ease';
+  bar.style.width = to + '%';
+}
+
+function renderResult(d) {
+  const el = document.getElementById('demo-result');
+  const ok = d.status === 'pass';
+  let html = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">';
+
+  const sA = d.results && d.results.sA;
+  const sB = d.results && d.results.sB;
+  const sC = d.results && d.results.sC;
+
+  // ── Scenario A result ──
+  if (sA && sA.status === 'pass') {
+    html += scenarioCard('A', '#e74c3c', 'Red Team Findings', `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        <div class="stat-card"><div class="stat-val" style="color:#e74c3c;">${sA.cat1_open}</div><div class="stat-lbl">CAT1 Critical</div></div>
+        <div class="stat-card"><div class="stat-val" style="color:#f39c12;">${sA.cat2_open}</div><div class="stat-lbl">CAT2 Serious</div></div>
+        <div class="stat-card"><div class="stat-val" style="color:#e67e22;">${sA.cat3_open}</div><div class="stat-lbl">CAT3 Low</div></div>
+        <div class="stat-card"><div class="stat-val">${sA.attack_paths}</div><div class="stat-lbl">Attack Paths</div></div>
+        <div class="stat-card"><div class="stat-val" style="color:#e74c3c;">${sA.baseline_risk_score}</div><div class="stat-lbl">Risk Score</div></div>
+      </div>
+      <div style="margin-top:8px;">
+        <span class="badge badge-f">Posture: ${sA.posture_grade}</span>
+        <span style="margin-left:8px;font-size:12px;color:var(--text-dim);">${sA.remediation_hours_required}h manual remediation required</span>
+      </div>
+      ${sA.attack_path_details ? renderAttackPaths(sA.attack_path_details) : ''}
+    `);
+  }
+
+  // ── Scenario B result ──
+  if (sB && sB.status === 'pass') {
+    html += scenarioCard('B', '#3498db', '12-Step Workflow', `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        <div class="stat-card"><div class="stat-val">${sB.steps_completed}/${sB.steps_total}</div><div class="stat-lbl">Steps Completed</div></div>
+        <div class="stat-card"><div class="stat-val" style="color:#f39c12;">${sB.isso_gate_count}</div><div class="stat-lbl">ISSO Approvals</div></div>
+        <div class="stat-card"><div class="stat-val">${sB.total_workflow_hours}h</div><div class="stat-lbl">Total Time</div></div>
+        <div class="stat-card"><div class="stat-val" style="color:#27ae60;">${sB.automation_speedup}</div><div class="stat-lbl">Speedup</div></div>
+      </div>
+      ${renderWorkflowSteps(sB.workflow_steps)}
+    `);
+  }
+
+  // ── Scenario C result ──
+  if (sC && sC.status === 'pass') {
+    html += scenarioCard('C', '#27ae60', 'After State: Compliant', `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        <div class="stat-card"><div class="stat-val" style="color:${sC.cat1_after === 0 ? '#27ae60' : '#e74c3c'};">${sC.cat1_after}</div><div class="stat-lbl">CAT1 Remaining</div></div>
+        <div class="stat-card"><div class="stat-val" style="color:#27ae60;">${sC.posture_grade}</div><div class="stat-lbl">Posture Grade</div></div>
+        <div class="stat-card"><div class="stat-val">${sC.controls_implemented}/${sC.controls_total}</div><div class="stat-lbl">Controls</div></div>
+        <div class="stat-card"><div class="stat-val" style="color:#27ae60;">$${(sC.roi_cost_saved_usd||0).toLocaleString()}</div><div class="stat-lbl">Cost Saved</div></div>
+        <div class="stat-card"><div class="stat-val">${sC.roi_multiplier}x</div><div class="stat-lbl">ROI</div></div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <span class="badge badge-a">Posture: ${sC.posture_grade}</span>
+        ${sC.cato_ready ? '<span class="badge" style="background:#0d4a2622;color:#27ae60;border:1px solid #27ae6044;margin-left:6px;">cATO Ready</span>' : ''}
+        <span style="margin-left:8px;font-size:12px;color:var(--text-dim);">${sC.cat1_reduction || 15} CAT1 findings resolved · ${sC.attack_paths_blocked} attack paths blocked</span>
+      </div>
+      ${sC.crosswalk ? renderCrosswalk(sC.crosswalk) : ''}
+      ${sC.iac_snippet ? renderIaC(sC.iac_snippet) : ''}
+    `);
+  }
+
+  html += '</div>';
+
+  // Overall status bar
+  const statusColor = ok ? '#27ae60' : d.status === 'partial' ? '#f39c12' : '#e74c3c';
+  html = `<div style="background:${statusColor}22;border:1px solid ${statusColor}44;border-radius:8px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
+    <span style="color:${statusColor};font-weight:700;">${d.status.toUpperCase()}</span>
+    <span style="color:var(--text-dim);font-size:13px;">${d.scenarios_passed}/${d.scenarios_total} scenarios passed · ${d.elapsed_ms}ms · audience: ${d.audience}</span>
+  </div>` + html;
+
+  el.innerHTML = html;
+  el.classList.remove('hidden');
+}
+
+function scenarioCard(id, color, title, body) {
+  return `<div style="flex:1;min-width:280px;background:#1e1e2e;border-radius:10px;border:1px solid ${color}44;overflow:hidden;">
+    <div style="background:${color}22;padding:10px 16px;border-bottom:1px solid ${color}33;">
+      <span style="font-size:11px;color:${color};font-weight:700;letter-spacing:1px;">SCENARIO ${id}</span>
+      <span style="font-size:14px;font-weight:600;color:#fff;margin-left:10px;">${title}</span>
+    </div>
+    <div style="padding:14px 16px;">${body}</div>
+  </div>`;
+}
+
+function renderAttackPaths(paths) {
+  if (!paths || !paths.length) return '';
+  let h = '<div style="margin-top:10px;"><div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">ATTACK PATHS</div>';
+  paths.forEach((p, i) => {
+    h += `<div style="display:flex;gap:8px;align-items:center;padding:6px 8px;background:#2a0a0a;border-radius:4px;margin-bottom:4px;font-size:12px;">
+      <span style="color:#e74c3c;font-weight:700;">PATH ${i+1}</span>
+      <span style="color:var(--text-dim);">${p.hops} hops</span>
+      <span style="color:#e74c3c;">${p.unencrypted_edges} unencrypted</span>
+      <span style="color:#f39c12;">${p.unauthenticated_edges} unauthenticated</span>
+    </div>`;
+  });
+  return h + '</div>';
+}
+
+function renderWorkflowSteps(steps) {
+  if (!steps || !steps.length) return '';
+  let h = '<div style="max-height:240px;overflow-y:auto;">';
+  steps.forEach(s => {
+    const isHuman = s.approved_by != null;
+    const dotClass = isHuman ? 'step-dot-human' : 'step-dot-done';
+    h += `<div class="step-row">
+      <div class="step-dot ${dotClass}"></div>
+      <div style="flex:1;font-size:12px;color:#ccc;">${s.step_name}</div>
+      ${isHuman ? `<span class="badge" style="background:#f39c1222;color:#f39c12;border:1px solid #f39c1244;">ISSO</span>` : ''}
+      <span style="font-size:11px;color:var(--text-dim);">${s.status}</span>
+    </div>`;
+  });
+  return h + '</div>';
+}
+
+function renderCrosswalk(cw) {
+  const nist = cw.nist_800_53 || {};
+  const fedramp = cw.fedramp_moderate || {};
+  const cmmc = cw.cmmc_l2 || {};
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+    <div class="stat-card" style="min-width:100px;">
+      <div class="stat-val" style="color:#27ae60;font-size:20px;">${nist.coverage_pct || 0}%</div>
+      <div class="stat-lbl">NIST 800-53</div>
+    </div>
+    <div class="stat-card" style="min-width:100px;">
+      <div class="stat-val" style="color:#3498db;font-size:20px;">${fedramp.coverage_pct || 0}%</div>
+      <div class="stat-lbl">FedRAMP Mod</div>
+    </div>
+    <div class="stat-card" style="min-width:100px;">
+      <div class="stat-val" style="color:#9b59b6;font-size:20px;">${cmmc.coverage_pct || 0}%</div>
+      <div class="stat-lbl">CMMC L2</div>
+    </div>
+  </div>`;
+}
+
+function renderIaC(snippet) {
+  return `<details style="margin-top:12px;">
+    <summary style="font-size:12px;color:var(--text-dim);cursor:pointer;user-select:none;">
+      View generated Terraform IaC snippet
+    </summary>
+    <pre style="background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;font-size:11px;overflow-x:auto;margin-top:8px;max-height:200px;overflow-y:auto;">${snippet}</pre>
+  </details>`;
+}
+
+// Auto-run Scenario A on load
+runDemo(['A']);
+</script>
+{% endblock %}

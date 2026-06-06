@@ -1,0 +1,155 @@
+{% extends "network/base.html" %}
+{% block title %}Global Connectivity — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Global Connectivity Map</h1>
+    <p class="page-subtitle">Enterprise topology view — all approved/deployed projects stitched together</p>
+  </div>
+  <div class="page-actions">
+    <a href="/network/global/canvas" class="btn btn-secondary">Canvas View</a>
+    <button class="btn btn-secondary" onclick="checkConflicts()">Check Conflicts</button>
+    <button class="btn btn-primary" onclick="document.getElementById('ic-modal').style.display='flex'">+ Add Interconnect</button>
+  </div>
+</div>
+
+<div id="global-loading" style="color:var(--text-dim);padding:20px;">Loading global topology...</div>
+
+<!-- Project Nodes Grid -->
+<div id="global-grid" style="display:none;">
+  <div class="stats-bar" id="global-stats"></div>
+
+  <section class="panel panel-wide" id="global-projects-section">
+    <div class="panel-header"><h2 class="panel-title">Project Topology Groups</h2></div>
+    <div id="global-projects" class="global-projects-grid"></div>
+  </section>
+
+  <section class="panel panel-wide" style="margin-top:16px;" id="ic-section">
+    <div class="panel-header"><h2 class="panel-title">Interconnects</h2></div>
+    <table class="data-table" id="ic-table">
+      <thead><tr><th>Source Project</th><th>Dest Project</th><th>Circuit</th><th>Protocol</th><th>BW</th><th>Notes</th><th>Actions</th></tr></thead>
+      <tbody id="ic-tbody"></tbody>
+    </table>
+  </section>
+
+  <!-- Conflict Results -->
+  <section class="panel panel-wide" id="conflict-section" style="display:none;margin-top:16px;">
+    <div class="panel-header"><h2 class="panel-title">Conflict Detection Results</h2></div>
+    <div id="conflict-results"></div>
+  </section>
+</div>
+
+<!-- Add Interconnect Modal -->
+<div id="ic-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Add Interconnect</h3>
+    <form onsubmit="return addInterconnect(event)">
+      <div class="form-grid">
+        <label>Source Project <select name="src_project_id" id="ic-src-proj"></select></label>
+        <label>Dest Project <select name="dst_project_id" id="ic-dst-proj"></select></label>
+        <label>Circuit ID <input name="circuit_id" placeholder="MPLS-12345"></label>
+        <label>Protocol <input name="protocol" placeholder="BGP, OSPF, IPSec..."></label>
+        <label>Bandwidth <input name="bandwidth" placeholder="10G, 1G..."></label>
+        <label>Notes <input name="notes" placeholder="Cross-connect details"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadGlobal() {
+  const r = await fetch(NC_BASE + '/api/global-topology');
+  const d = await r.json();
+  document.getElementById('global-loading').style.display = 'none';
+  document.getElementById('global-grid').style.display = 'block';
+
+  // Stats
+  document.getElementById('global-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-value">${d.total_projects}</div><div class="stat-label">Projects</div></div>
+    <div class="stat-card"><div class="stat-value">${d.projects.reduce((s,p) => s + p.topologies.length, 0)}</div><div class="stat-label">Topologies</div></div>
+    <div class="stat-card"><div class="stat-value">${d.total_interconnects}</div><div class="stat-label">Interconnects</div></div>
+  `;
+
+  // Project groups
+  const pg = document.getElementById('global-projects');
+  if (d.projects.length === 0) {
+    pg.innerHTML = '<p style="padding:16px;color:var(--text-dim);">No approved/deployed projects. Approve projects to see them here.</p>';
+  } else {
+    pg.innerHTML = d.projects.map(p => `
+      <div class="global-project-card">
+        <div class="gpc-header">
+          <a href="${NC_BASE}/projects/${p.id}" class="gpc-name">${p.name}</a>
+          <span class="badge badge-public">${p.status}</span>
+        </div>
+        <div class="gpc-topos">
+          ${p.topologies.map(t => `<div class="gpc-topo"><a href="${NC_BASE}/canvas/${t.id}">${t.name}</a> <span style="color:var(--text-dim);font-size:10px;">${t.node_count}N/${t.edge_count}E</span></div>`).join('')}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Interconnects table
+  const tbody = document.getElementById('ic-tbody');
+  tbody.innerHTML = d.interconnects.map(ic => `
+    <tr>
+      <td>${ic.src_project_name || ic.src_project_id || '--'}</td>
+      <td>${ic.dst_project_name || ic.dst_project_id || '--'}</td>
+      <td>${ic.circuit_id || '--'}</td>
+      <td>${ic.protocol || '--'}</td>
+      <td>${ic.bandwidth || '--'}</td>
+      <td>${ic.notes || ''}</td>
+      <td class="actions"><button class="action-btn danger" onclick="deleteIC('${ic.id}')">&#x2715;</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="7" style="color:var(--text-dim);">No interconnects defined. Click "+ Add Interconnect" to link projects.</td></tr>';
+
+  // Populate modal dropdowns
+  const allProjects = await fetch(NC_BASE + '/api/projects').then(r => r.json());
+  const opts = allProjects.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  document.getElementById('ic-src-proj').innerHTML = opts;
+  document.getElementById('ic-dst-proj').innerHTML = opts;
+}
+loadGlobal();
+
+async function addInterconnect(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target), d = {};
+  fd.forEach((v, k) => d[k] = v);
+  await fetch(NC_BASE + '/api/interconnects', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(d)
+  });
+  location.reload();
+  return false;
+}
+
+async function deleteIC(id) {
+  if (!confirm('Delete this interconnect?')) return;
+  await fetch(NC_BASE + '/api/interconnects/' + id, {method: 'DELETE'});
+  location.reload();
+}
+
+async function checkConflicts() {
+  const section = document.getElementById('conflict-section');
+  const el = document.getElementById('conflict-results');
+  section.style.display = 'block';
+  el.innerHTML = 'Scanning...';
+  const r = await fetch(NC_BASE + '/api/conflicts');
+  const d = await r.json();
+  if (d.conflicts.length === 0) {
+    el.innerHTML = '<div style="padding:12px;color:var(--success);font-size:13px;">No conflicts detected across ' + d.checked.ipam_blocks + ' IPAM blocks and ' + d.checked.circuits + ' circuits.</div>';
+  } else {
+    el.innerHTML = d.conflicts.map(c => `
+      <div class="conflict-item ci-${c.severity}">
+        <span class="health-pill ${c.severity === 'high' ? 'pill-red' : 'pill-yellow'}">${c.type}</span>
+        <span>${c.detail}</span>
+      </div>
+    `).join('');
+  }
+}
+</script>
+{% endblock %}

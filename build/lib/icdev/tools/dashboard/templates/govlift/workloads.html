@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Workloads — GovLift{% endblock %}
+{% block extra_css %}
+<style>
+.gl-page-header{background:linear-gradient(135deg,#0f172a,#1a3a2a);padding:22px 28px;border-radius:10px;margin-bottom:24px;}
+.gl-page-header h1{margin:0;font-size:1.4rem;font-weight:700;color:#d1fae5;}
+.gl-page-header p{margin:4px 0 0;color:#6ee7b7;font-size:.85rem;}
+.classification-banner{background:#1e3a1a;border:1px solid #166534;color:#86efac;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-align:center;padding:6px 12px;border-radius:6px;margin-bottom:18px;}
+.stat-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px 22px;text-align:center;}
+.stat-card .val{font-size:1.8rem;font-weight:700;color:#d1fae5;}
+.stat-card .lbl{font-size:.75rem;color:#64748b;margin-top:2px;}
+.filter-bar{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:14px 18px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;}
+.filter-bar label{font-size:.75rem;color:#94a3b8;display:block;margin-bottom:4px;}
+.filter-bar select{background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:5px 10px;font-size:.8rem;}
+.filter-bar select:focus{outline:none;border-color:#10b981;}
+.filter-btn{background:#10b981;border:none;color:#fff;border-radius:6px;padding:6px 16px;font-size:.8rem;font-weight:600;cursor:pointer;}
+.filter-btn:hover{background:#059669;}
+.back-link{color:#6ee7b7;text-decoration:none;font-size:.85rem;}
+.back-link:hover{color:#34d399;}
+.gl-table{width:100%;border-collapse:collapse;}
+.gl-table thead th{background:#0f172a;color:#94a3b8;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid #334155;}
+.gl-table tbody tr{border-bottom:1px solid #1e293b;cursor:pointer;}
+.gl-table tbody tr:hover{background:#1a2540;}
+.gl-table tbody td{padding:10px 12px;font-size:.83rem;color:#e2e8f0;vertical-align:middle;}
+.gl-table-wrap{background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;}
+#workload-count{font-size:.8rem;color:#64748b;margin-left:8px;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="classification-banner">{{ classification }}</div>
+<a class="back-link" href="/govlift">← GovLift</a>
+
+<div class="gl-page-header mt-2">
+  <h1>Workload Inventory</h1>
+  <p>Discovered · Assessed · Wave-assigned DoD Workloads — {{ classification }}</p>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val">{{ data.summary.get('total_workloads', 0) }}</div>
+      <div class="lbl">Total</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val" style="color:#94a3b8;">{{ data.summary.get('discovered', 0) }}</div>
+      <div class="lbl">Discovered</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val" style="color:#60a5fa;">{{ data.summary.get('assessed', 0) }}</div>
+      <div class="lbl">Assessed</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val" style="color:#818cf8;">{{ data.summary.get('wave_assigned', 0) }}</div>
+      <div class="lbl">Wave Assigned</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val" style="color:#fbbf24;">{{ data.summary.get('in_migration', 0) }}</div>
+      <div class="lbl">In Migration</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val" style="color:#34d399;">{{ data.summary.get('migrated', 0) }}</div>
+      <div class="lbl">Migrated</div>
+    </div>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="filter-bar">
+  <div>
+    <label for="f-status">Status</label>
+    <select id="f-status">
+      <option value="">All Statuses</option>
+      <option value="discovered">Discovered</option>
+      <option value="assessed">Assessed</option>
+      <option value="wave_assigned">Wave Assigned</option>
+      <option value="in_migration">In Migration</option>
+      <option value="migrated">Migrated</option>
+      <option value="failed">Failed</option>
+    </select>
+  </div>
+  <div>
+    <label for="f-risk">Risk Level</label>
+    <select id="f-risk">
+      <option value="">All Risks</option>
+      <option value="critical">Critical</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+  </div>
+  <div>
+    <label for="f-env">Environment</label>
+    <select id="f-env">
+      <option value="">All Environments</option>
+      <option value="production">Production</option>
+      <option value="staging">Staging</option>
+      <option value="development">Development</option>
+    </select>
+  </div>
+  <div>
+    <label for="f-type">Type</label>
+    <select id="f-type">
+      <option value="">All Types</option>
+      <option value="vm">VM</option>
+      <option value="container">Container</option>
+      <option value="database">Database</option>
+      <option value="application">Application</option>
+    </select>
+  </div>
+  <div>
+    <button class="filter-btn" onclick="applyFilters()">Apply</button>
+  </div>
+  <span id="workload-count">{{ data.workloads|length if data.workloads else 0 }} workloads</span>
+</div>
+
+<!-- Workloads Table -->
+<div class="gl-table-wrap" id="workloads-table-wrap">
+  <table class="gl-table" id="workloads-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Type</th>
+        <th>OS</th>
+        <th>Environment</th>
+        <th>IP</th>
+        <th>CPU</th>
+        <th>Mem (GB)</th>
+        <th>Storage (TB)</th>
+        <th>Risk</th>
+        <th>Status</th>
+        <th>Wave</th>
+        <th>Last Scanned</th>
+      </tr>
+    </thead>
+    <tbody id="workloads-tbody">
+      {% if data.workloads %}
+        {% for w in data.workloads %}
+        <tr onclick="window.location='/govlift/workloads/{{ w.id }}'">
+          <td style="color:#64748b;font-size:.75rem;">{{ w.get('id', '') }}</td>
+          <td style="font-weight:600;">{{ w.get('name', '') }}</td>
+          <td>{{ w.get('workload_type', '') }}</td>
+          <td style="font-size:.78rem;">{{ w.get('os_name', '') }} {{ w.get('os_version', '') }}</td>
+          <td>{{ w.get('environment', '') }}</td>
+          <td style="font-family:monospace;font-size:.78rem;">{{ w.get('ip_address', '') }}</td>
+          <td>{{ w.get('cpu_cores', '') }}</td>
+          <td>{{ w.get('memory_gb', '') }}</td>
+          <td>{{ w.get('storage_tb', '') }}</td>
+          <td>
+            {% set risk = w.get('risk_level', 'low') %}
+            {% if risk == 'critical' %}
+              <span class="badge bg-danger">{{ risk }}</span>
+            {% elif risk == 'high' %}
+              <span class="badge bg-warning text-dark">{{ risk }}</span>
+            {% elif risk == 'medium' %}
+              <span class="badge bg-info">{{ risk }}</span>
+            {% else %}
+              <span class="badge bg-success">{{ risk }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% set ms = w.get('migration_status', 'discovered') %}
+            {% if ms == 'migrated' %}
+              <span class="badge bg-success">{{ ms }}</span>
+            {% elif ms == 'in_migration' %}
+              <span class="badge bg-warning text-dark">{{ ms }}</span>
+            {% elif ms == 'failed' %}
+              <span class="badge bg-danger">{{ ms }}</span>
+            {% elif ms == 'assessed' %}
+              <span class="badge bg-info">{{ ms }}</span>
+            {% elif ms == 'wave_assigned' %}
+              <span class="badge bg-primary">{{ ms }}</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ ms }}</span>
+            {% endif %}
+          </td>
+          <td style="font-size:.78rem;color:#94a3b8;">{{ w.get('wave_id', '—') }}</td>
+          <td style="font-size:.75rem;color:#64748b;">{{ w.get('last_scanned', '—') }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="13" style="text-align:center;padding:32px;color:#64748b;">No workloads found.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+function applyFilters() {
+  const status = document.getElementById('f-status').value;
+  const risk = document.getElementById('f-risk').value;
+  const env = document.getElementById('f-env').value;
+  const type = document.getElementById('f-type').value;
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (risk) params.set('risk_level', risk);
+  if (env) params.set('environment', env);
+  if (type) params.set('workload_type', type);
+  fetch('/api/govlift/workloads?' + params.toString())
+    .then(r => r.json())
+    .then(data => {
+      const workloads = data.workloads || data || [];
+      const tbody = document.getElementById('workloads-tbody');
+      document.getElementById('workload-count').textContent = workloads.length + ' workloads';
+      if (!workloads.length) {
+        tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:32px;color:#64748b;">No workloads match the selected filters.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = workloads.map(w => {
+        const riskMap = {critical:'bg-danger',high:'bg-warning text-dark',medium:'bg-info',low:'bg-success'};
+        const statusMap = {migrated:'bg-success',in_migration:'bg-warning text-dark',failed:'bg-danger',assessed:'bg-info',wave_assigned:'bg-primary',discovered:'bg-secondary'};
+        const rCls = riskMap[w.risk_level] || 'bg-secondary';
+        const sCls = statusMap[w.migration_status] || 'bg-secondary';
+        return `<tr onclick="window.location='/govlift/workloads/${w.id}'">
+          <td style="color:#64748b;font-size:.75rem;">${w.id||''}</td>
+          <td style="font-weight:600;">${w.name||''}</td>
+          <td>${w.workload_type||''}</td>
+          <td style="font-size:.78rem;">${w.os_name||''} ${w.os_version||''}</td>
+          <td>${w.environment||''}</td>
+          <td style="font-family:monospace;font-size:.78rem;">${w.ip_address||''}</td>
+          <td>${w.cpu_cores||''}</td>
+          <td>${w.memory_gb||''}</td>
+          <td>${w.storage_tb||''}</td>
+          <td><span class="badge ${rCls}">${w.risk_level||''}</span></td>
+          <td><span class="badge ${sCls}">${w.migration_status||''}</span></td>
+          <td style="font-size:.78rem;color:#94a3b8;">${w.wave_id||'—'}</td>
+          <td style="font-size:.75rem;color:#64748b;">${w.last_scanned||'—'}</td>
+        </tr>`;
+      }).join('');
+    })
+    .catch(e => console.error('Filter error:', e));
+}
+</script>
+{% endblock %}

@@ -1,0 +1,18 @@
+{
+  "system_name": "ICDEV Platform",
+  "assessed_date": "2026-05-16",
+  "assessor": "Automated Compliance Engine",
+  "baseline_ref": "FedRAMP Rev 5 Moderate",
+  "controls": [
+    {"id": "FRM-AC-1", "status": "implemented", "evidence": "AC policy doc v2.3 in SharePoint", "notes": "Reviewed annually"},
+    {"id": "FRM-AC-2", "status": "implemented", "evidence": "IAM automation via Terraform", "notes": ""},
+    {"id": "FRM-AU-1", "status": "partial",       "evidence": "CloudWatch enabled, retention TBD", "notes": "Needs 1-year retention policy"},
+    {"id": "FRM-AU-2", "status": "implemented",   "evidence": "Audit events logged to S3", "notes": ""},
+    {"id": "FRM-CM-1", "status": "not_implemented","evidence": "", "notes": "CM policy draft in progress"},
+    {"id": "FRM-CM-6", "status": "implemented",   "evidence": "Baseline configs in git", "notes": ""},
+    {"id": "FRM-IA-1", "status": "implemented",   "evidence": "IA policy approved 2026-01-10", "notes": ""},
+    {"id": "FRM-IA-2", "status": "implemented",   "evidence": "MFA enforced for all privileged accounts", "notes": ""},
+    {"id": "FRM-SC-1", "status": "partial",        "evidence": "TLS 1.2 enforced; TLS 1.3 pending", "notes": ""},
+    {"id": "FRM-SC-7", "status": "implemented",   "evidence": "WAF + network ACLs in place", "notes": ""}
+  ]
+}

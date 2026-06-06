@@ -1,0 +1,72 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "description": "SAFe Agile hierarchy templates for requirements decomposition",
+  "hierarchy": {
+    "epic": {
+      "description": "Program-level capability spanning multiple PIs",
+      "template": {
+        "title": "[Epic] {capability_name}",
+        "description": "As a {persona}, I need {capability} so that {business_value}.",
+        "acceptance_criteria_template": "The epic is complete when all child capabilities are delivered and validated.",
+        "fields": ["lean_business_case", "mvp_definition", "nfrs", "kpis"]
+      },
+      "decomposition_guidance": "Decompose into 2-5 Capabilities based on functional domains or user journeys.",
+      "typical_duration": "2-4 PIs"
+    },
+    "capability": {
+      "description": "ART-level capability deliverable within 1-2 PIs",
+      "template": {
+        "title": "[Capability] {name}",
+        "description": "Provide {functionality} for {user_group} enabling {outcome}.",
+        "acceptance_criteria_template": "All child features are delivered, integrated, and pass UAT.",
+        "fields": ["benefit_hypothesis", "acceptance_criteria", "enablers_needed"]
+      },
+      "decomposition_guidance": "Decompose into 3-8 Features, each deliverable within a single PI.",
+      "typical_duration": "1-2 PIs"
+    },
+    "feature": {
+      "description": "PI-level deliverable providing user-visible value",
+      "template": {
+        "title": "[Feature] {name}",
+        "description": "Enable {user_role} to {action} with {quality_attribute}.",
+        "acceptance_criteria_template": "Given {context}, When {action}, Then {expected_result}.",
+        "fields": ["benefit_hypothesis", "acceptance_criteria", "nfrs", "wsjf_inputs"]
+      },
+      "decomposition_guidance": "Decompose into 3-10 Stories + necessary Enablers. Each story fits in one sprint.",
+      "typical_duration": "1 PI (5 sprints)"
+    },
+    "story": {
+      "description": "Sprint-level user story with clear acceptance criteria",
+      "template": {
+        "title": "As a {role}, I want to {action} so that {benefit}",
+        "description": "Detailed description with context and constraints.",
+        "acceptance_criteria_template": "Given {precondition}\nWhen {action}\nThen {postcondition}",
+        "fields": ["story_points", "acceptance_criteria", "definition_of_done"]
+      },
+      "sizing_guidance": "Must be completable in one sprint. If >13 story points, split further.",
+      "typical_duration": "1 sprint (2 weeks)"
+    },
+    "enabler": {
+      "description": "Technical work enabling features — infrastructure, architecture, compliance",
+      "template": {
+        "title": "[Enabler] {name}",
+        "description": "Technical enablement: {what} to support {which_features}.",
+        "acceptance_criteria_template": "The enabler is complete when {technical_criteria} and {integration_test_passes}.",
+        "fields": ["enabler_type", "blocks", "acceptance_criteria"]
+      },
+      "types": ["infrastructure", "architecture", "exploration", "compliance"],
+      "typical_duration": "1-2 sprints"
+    }
+  },
+  "wsjf": {
+    "description": "Weighted Shortest Job First prioritization",
+    "formula": "WSJF = (Business Value + Time Criticality + Risk Reduction) / Job Size",
+    "scales": {
+      "business_value": {"1": "Minimal", "2": "Low", "3": "Moderate", "5": "Significant", "8": "High", "13": "Critical", "20": "Maximum"},
+      "time_criticality": {"1": "No deadline", "2": "Distant", "3": "Moderate", "5": "Near-term", "8": "Urgent", "13": "Critical", "20": "Immediate"},
+      "risk_reduction": {"1": "None", "2": "Minor", "3": "Moderate", "5": "Significant", "8": "Major", "13": "Critical", "20": "Existential"},
+      "job_size": {"1": "XS", "2": "S", "3": "M", "5": "L", "8": "XL", "13": "XXL"}
+    }
+  }
+}

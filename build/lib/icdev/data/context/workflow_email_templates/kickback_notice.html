@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>HITL Kickback — Revision Required</title>
+<style>
+body{font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto;padding:20px}
+.header{background:#c0392b;color:#fff;padding:20px;border-radius:4px 4px 0 0}
+.body{background:#fff8f8;padding:20px;border:1px solid #f5c6cb}
+.footer{background:#6c757d;color:#fff;padding:10px;font-size:12px;border-radius:0 0 4px 4px;text-align:center}
+.reason{background:#f8d7da;border:1px solid #f5c6cb;padding:12px;border-radius:4px;margin:15px 0}
+.btn{display:inline-block;background:#dc3545;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;margin-top:15px}
+table{width:100%;border-collapse:collapse}td{padding:8px;border-bottom:1px solid #dee2e6}
+</style>
+</head>
+<body>
+<div class="header">
+  <h2 style="margin:0">↩ Kickback — Revision Required</h2>
+  <p style="margin:5px 0 0">ICDEV Workflow Management</p>
+</div>
+<div class="body">
+  <p>A workflow has been kicked back for revision. Please address the feedback and re-submit.</p>
+  <table>
+    <tr><td><strong>Instance ID</strong></td><td><code>{{ step.instance_id }}</code></td></tr>
+    <tr><td><strong>Stage</strong></td><td>{{ step.stage_name }}</td></tr>
+    {% if payload.get('submitted_by') %}<tr><td><strong>Kicked Back By</strong></td><td>{{ payload.submitted_by }}</td></tr>{% endif %}
+    {% if payload.get('kickback_count') %}<tr><td><strong>Kickback Count</strong></td><td>{{ payload.kickback_count }}</td></tr>{% endif %}
+  </table>
+  {% if payload.get('reason') %}
+  <div class="reason">
+    <strong>Reason for Kickback:</strong><br>{{ payload.reason }}
+  </div>
+  {% endif %}
+  <a href="http://localhost:5050/workflow-hitl" class="btn">Open HITL Queue →</a>
+</div>
+<div class="footer">ICDEV™ — Intelligent Certified Development | CUI // SP-CTI</div>
+</body>
+</html>

@@ -1,0 +1,151 @@
+{% extends "network/base.html" %}
+{% block title %}Cloud Topology — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Multi-Cloud Topology Overlay</h1>
+    <p class="page-subtitle">Hybrid connectivity view: on-prem edge routers → cloud provider attachments</p>
+  </div>
+  <div class="page-actions">
+    <select id="topo-select" class="btn btn-secondary" onchange="loadTopology()">
+      <option value="">Select topology...</option>
+    </select>
+  </div>
+</div>
+
+<div id="cloud-content">
+  <div style="padding:24px;color:var(--text-dim);">Select a topology to view cloud connectivity overlay.</div>
+</div>
+
+<div id="cloud-tooltip" style="display:none;position:fixed;background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:8px 12px;font-size:11px;color:#eaeaea;z-index:1000;pointer-events:none;"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const TOOLTIP = document.getElementById('cloud-tooltip');
+function _showTooltip(el, html) {
+  const rect = el.getBoundingClientRect();
+  TOOLTIP.innerHTML = html;
+  TOOLTIP.style.display = 'block';
+  TOOLTIP.style.left = (rect.left + rect.width/2 - TOOLTIP.offsetWidth/2) + 'px';
+  TOOLTIP.style.top = (rect.top - TOOLTIP.offsetHeight - 6) + 'px';
+}
+function _hideTooltip() { TOOLTIP.style.display = 'none'; }
+
+async function loadTopologies() {
+  const d = await fetch(NC_BASE + '/api/topologies').then(r => r.json());
+  const sel = document.getElementById('topo-select');
+  const list = Array.isArray(d) ? d : (d.topologies || []);
+  list.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name;
+    sel.appendChild(opt);
+  });
+}
+
+async function loadTopology(topoId) {
+  if (!topoId) topoId = document.getElementById('topo-select').value;
+  if (!topoId) return;
+  const el = document.getElementById('cloud-content');
+  el.innerHTML = '<div style="padding:24px;color:var(--text-dim);">Loading cloud overlay...</div>';
+
+  const d = await fetch(NC_BASE + '/api/cloud-overlay/' + topoId).then(r => r.json());
+  if (d.error) {
+    el.innerHTML = '<div style="padding:24px;color:#e74c3c;">Error: ' + d.error + '</div>';
+    return;
+  }
+
+  const graph = d.graph || { nodes: [], edges: [] };
+  const nodes = graph.nodes || [];
+  const edges = graph.edges || [];
+
+  // Build lookup
+  const nodeMap = {};
+  nodes.forEach(n => nodeMap[n.id] = n);
+
+  // Identify on-prem vs cloud
+  const onPrem = nodes.filter(n => n.type !== 'cloud-gateway');
+  const cloud = nodes.filter(n => n.type === 'cloud-gateway');
+
+  let html = '';
+
+  // Summary bar
+  html += '<div class="stats-bar" style="margin-bottom:16px;">';
+  html += '<div class="stat-card"><div class="stat-value">' + onPrem.length + '</div><div class="stat-label">On-Prem Nodes</div></div>';
+  html += '<div class="stat-card"><div class="stat-value" style="color:#3498db;">' + cloud.length + '</div><div class="stat-label">Cloud Attachments</div></div>';
+  html += '<div class="stat-card"><div class="stat-value" style="color:#f39c12;">$' + (d.cloud_monthly_cost || 0).toLocaleString() + '</div><div class="stat-label">Monthly Cloud Cost</div></div>';
+  html += '</div>';
+
+  // Topology canvas (simple HTML/CSS layout)
+  html += '<section class="panel panel-wide"><div class="panel-header"><h2 class="panel-title">Topology View</h2></div>';
+  html += '<div style="padding:16px;overflow:auto;">';
+
+  // Render on-prem nodes in a grid
+  html += '<div style="display:flex;gap:24px;align-items:flex-start;">';
+
+  // On-prem column
+  html += '<div style="flex:1;">';
+  html += '<h3 style="font-size:13px;color:#8099b8;margin:0 0 12px;text-transform:uppercase;letter-spacing:1px;">On-Prem Infrastructure</h3>';
+  html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+  onPrem.forEach(n => {
+    const cfg = n.config || {};
+    const vendor = cfg.vendor || n.type || 'device';
+    const color = n.type === 'pe-router' ? '#e74c3c' : (n.type === 'firewall' ? '#f39c12' : (n.type === 'router' ? '#3498db' : '#27ae60'));
+    html += '<div class="cloud-node" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid #1e3a6e;background:#0d1b2e;cursor:default;" onmouseenter="_showTooltip(this, \'' + vendor + ' ' + (cfg.model || '') + '\')" onmouseleave="_hideTooltip()">';
+    html += '<span style="width:10px;height:10px;border-radius:50%;background:' + color + ';"></span>';
+    html += '<div style="flex:1;"><div style="font-size:12px;font-weight:700;color:#eaeaea;">' + (n.label || n.id) + '</div><div style="font-size:10px;color:#8099b8;">' + (n.type || '') + (cfg.asn ? ' · ASN ' + cfg.asn : '') + '</div></div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  html += '</div>';
+
+  // Cloud column
+  html += '<div style="flex:1;">';
+  html += '<h3 style="font-size:13px;color:#8099b8;margin:0 0 12px;text-transform:uppercase;letter-spacing:1px;">Cloud Provider Attachments</h3>';
+  html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+  cloud.forEach(n => {
+    const cfg = n.config || {};
+    const providerColors = { aws: '#ff9900', azure: '#0078d4', gcp: '#4285f4' };
+    const color = providerColors[n.provider] || '#999';
+    html += '<div class="cloud-node" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid #1e3a6e;background:#0d1b2e;cursor:default;" onmouseenter="_showTooltip(this, \'' + n.provider.toUpperCase() + ' ' + n.service + ' · ' + cfg.bandwidth + ' · ' + cfg.region + ' · IL' + cfg.il_level + '\')" onmouseleave="_hideTooltip()">';
+    html += '<span style="width:10px;height:10px;border-radius:50%;background:' + color + ';"></span>';
+    html += '<div style="flex:1;"><div style="font-size:12px;font-weight:700;color:#eaeaea;">' + (n.label || n.id) + '</div><div style="font-size:10px;color:#8099b8;">ASN ' + (cfg.asn || '—') + ' · ' + cfg.bandwidth + ' · $' + (cfg.monthly_cost || 0).toLocaleString() + '/mo</div></div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  html += '</div>';
+
+  // Connections column
+  html += '<div style="flex:1;">';
+  html += '<h3 style="font-size:13px;color:#8099b8;margin:0 0 12px;text-transform:uppercase;letter-spacing:1px;">Hybrid Connections</h3>';
+  html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+  edges.forEach(e => {
+    if (e.style !== 'dashed') return;
+    const cfg = e.config || {};
+    const src = nodeMap[e.source] || {};
+    const tgt = nodeMap[e.target] || {};
+    const ilColor = cfg.il_level === 'IL5' ? '#e74c3c' : '#27ae60';
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:4px;background:#081525;border:1px dashed #2d4a7a;">';
+    html += '<div style="font-size:10px;color:#8099b8;flex:1;">' + (src.label || e.source) + '</div>';
+    html += '<div style="font-size:10px;color:#b0c4dc;text-align:center;">' + (e.label || 'BGP') + '</div>';
+    html += '<div style="font-size:10px;color:#8099b8;flex:1;text-align:right;">' + (tgt.label || e.target) + '</div>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:6px;margin-bottom:4px;">';
+    html += '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:' + ilColor + '20;color:' + ilColor + ';">' + cfg.il_level + '</span>';
+    html += '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#2980b920;color:#2980b9;">' + (cfg.encrypted ? 'Encrypted' : 'Plain') + '</span>';
+    html += '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#8e44ad20;color:#8e44ad;">$' + (cfg.monthly_cost || 0).toLocaleString() + '/mo</span>';
+    html += '</div>';
+  });
+  html += '</div>';
+  html += '</div>';
+
+  html += '</div>'; // end flex
+  html += '</div>'; // end padding
+  html += '</section>';
+
+  el.innerHTML = html;
+}
+
+loadTopologies();
+</script>
+{% endblock %}

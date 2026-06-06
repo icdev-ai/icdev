@@ -1,0 +1,387 @@
+<!-- CUI // SP-CTI — Unified Project Dashboard -->
+{% extends "network/base.html" %}
+{% block title %}{{ project.name }} — Project Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.pd-shell { display: flex; flex-direction: column; height: calc(100vh - 56px); overflow: hidden; background: #070f1c; }
+.pd-header { display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: #0d1b2e; border-bottom: 1px solid #1e3a6e; flex-shrink: 0; }
+.pd-header h2 { margin: 0; font-size: 15px; color: #eaeaea; font-weight: 700; flex: 1; }
+.pd-header .pd-meta { font-size: 11px; color: #4a6080; }
+.pd-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; flex: 1; overflow: hidden; background: #1e3a6e; }
+.pd-panel { background: #0a1628; display: flex; flex-direction: column; overflow: hidden; }
+.pd-panel-header { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: #0d1b2e; border-bottom: 1px solid #1e3a6e; flex-shrink: 0; }
+.pd-panel-header h3 { margin: 0; font-size: 12px; color: #eaeaea; font-weight: 700; flex: 1; text-transform: uppercase; letter-spacing: 0.5px; }
+.pd-panel-body { flex: 1; overflow-y: auto; padding: 12px; }
+
+/* ── Phase Cards ─────────────────────────────────────────────────────────── */
+.phase-card { border: 1px solid #1e3a6e; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; background: #0d1b2e; cursor: pointer; transition: border-color 0.15s; }
+.phase-card:hover { border-color: #3d6ea0; }
+.phase-card.active { border-color: #3d8ef0; background: #0f203a; }
+.phase-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.phase-num { font-size: 18px; font-weight: 800; color: #3d8ef0; min-width: 28px; }
+.phase-title { font-size: 13px; color: #eaeaea; font-weight: 600; flex: 1; }
+.phase-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+.badge { font-size: 10px; padding: 1px 7px; border-radius: 10px; font-weight: 600; border: 1px solid; }
+.badge-planned    { color: #7a8cb0; border-color: #2d4a7a; background: #111f35; }
+.badge-in_progress{ color: #f39c12; border-color: #7d4e0a; background: #2d1e08; }
+.badge-completed  { color: #27ae60; border-color: #1a5e2d; background: #0f2e18; }
+.badge-rolled_back{ color: #e74c3c; border-color: #6e2d2d; background: #2d1010; }
+.badge-cui        { color: #f39c12; border-color: #7d4e0a; background: #2d1e08; }
+.badge-secret     { color: #e74c3c; border-color: #6e2d2d; background: #2d1010; }
+.badge-ts         { color: #9b59b6; border-color: #4a2d6e; background: #1a0f2e; }
+.badge-public     { color: #27ae60; border-color: #1a5e2d; background: #0f2e18; }
+.badge-il4        { color: #3d8ef0; border-color: #1e4a8e; background: #0f1e35; }
+.badge-il5        { color: #f39c12; border-color: #7d4e0a; background: #2d1e08; }
+.badge-il6        { color: #e74c3c; border-color: #6e2d2d; background: #2d1010; }
+.badge-il2        { color: #27ae60; border-color: #1a5e2d; background: #0f2e18; }
+.phase-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.pd-btn { font-size: 10px; padding: 3px 10px; border-radius: 4px; border: 1px solid #2d4a7a; background: #111f35; color: #7a8cb0; cursor: pointer; font-weight: 600; transition: all 0.15s; }
+.pd-btn:hover { background: #1e3a6e; color: #eaeaea; border-color: #4a6ea0; }
+.pd-btn-primary { border-color: #1e4a8e; color: #3d8ef0; }
+.pd-btn-primary:hover { background: #0f2040; color: #6ab0ff; }
+.pd-btn-success { border-color: #1a5e2d; color: #27ae60; }
+.pd-btn-success:hover { background: #0f2e18; color: #4ac080; }
+.pd-btn-ai { border-color: #4a2d6e; color: #a29bfe; }
+.pd-btn-ai:hover { background: #1a0f2e; color: #c0b8ff; }
+
+/* ── Canvas Panel ────────────────────────────────────────────────────────── */
+.pd-canvas-embed { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; padding: 20px; text-align: center; }
+.pd-canvas-embed a { display: inline-block; padding: 8px 20px; border-radius: 6px; border: 1px solid #2d4a7a; background: #111f35; color: #7a8cb0; font-size: 12px; font-weight: 600; text-decoration: none; transition: all 0.15s; }
+.pd-canvas-embed a:hover { background: #1e3a6e; color: #eaeaea; }
+.pd-canvas-name { font-size: 18px; color: #eaeaea; font-weight: 700; margin-bottom: 4px; }
+.pd-canvas-stats { font-size: 12px; color: #4a6080; }
+
+/* ── SOPs + Flows panels ─────────────────────────────────────────────────── */
+.pd-list-item { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 1px solid #1a2e4a; }
+.pd-list-item:last-child { border-bottom: none; }
+.pd-list-icon { font-size: 14px; min-width: 18px; margin-top: 1px; }
+.pd-list-title { font-size: 12px; color: #eaeaea; font-weight: 600; }
+.pd-list-sub { font-size: 11px; color: #4a6080; margin-top: 2px; }
+.pd-empty { font-size: 12px; color: #4a6080; font-style: italic; padding: 12px 0; }
+.pd-snapshot-badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; background: #1a5e2d; color: #27ae60; border: 1px solid #1a5e2d; margin-left: 6px; }
+
+/* ── AI Chat panel ───────────────────────────────────────────────────────── */
+#pd-chat-box { display: none; position: fixed; bottom: 20px; right: 20px; width: 360px; max-height: 480px; background: #0d1b2e; border: 1px solid #3d6ea0; border-radius: 10px; z-index: 9999; display: flex; flex-direction: column; box-shadow: 0 4px 32px rgba(0,0,0,0.6); }
+#pd-chat-box.hidden { display: none !important; }
+#pd-chat-header { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid #1e3a6e; background: #0d1b2e; border-radius: 10px 10px 0 0; }
+#pd-chat-header span { flex: 1; font-size: 13px; font-weight: 700; color: #a29bfe; }
+#pd-chat-msgs { flex: 1; overflow-y: auto; padding: 10px 12px; min-height: 100px; max-height: 280px; }
+.pd-msg { margin-bottom: 8px; font-size: 12px; line-height: 1.5; }
+.pd-msg.user { color: #3d8ef0; }
+.pd-msg.assistant { color: #eaeaea; }
+.pd-msg .pd-msg-label { font-size: 10px; font-weight: 700; color: #4a6080; margin-bottom: 2px; }
+#pd-chat-input-row { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #1e3a6e; }
+#pd-chat-input { flex: 1; background: #111f35; border: 1px solid #2d4a7a; border-radius: 4px; color: #eaeaea; padding: 6px 8px; font-size: 12px; }
+#pd-chat-send { padding: 6px 12px; background: #a29bfe; border: none; border-radius: 4px; color: #0d1b2e; font-size: 12px; font-weight: 700; cursor: pointer; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pd-shell">
+  <!-- Header -->
+  <div class="pd-header">
+    <h2>{{ project.name }}</h2>
+    <span class="pd-meta">{{ project.status | upper }} &nbsp;|&nbsp; {{ project.owner or 'Unassigned' }}</span>
+    <a href="/network/migration-hub" style="font-size:11px;color:#4a6080;text-decoration:none;padding:4px 10px;border:1px solid #1e3a6e;border-radius:4px;">← Hub</a>
+    {% if topo_id %}
+    <a href="/network/canvas/{{ topo_id }}" target="_blank" style="font-size:11px;color:#3d8ef0;text-decoration:none;padding:4px 10px;border:1px solid #1e4a8e;border-radius:4px;">✏ Open Canvas</a>
+    {% endif %}
+  </div>
+
+  <!-- 4-Panel Grid -->
+  <div class="pd-grid">
+
+    <!-- ── Panel 1: Phase Timeline ──────────────────────── -->
+    <div class="pd-panel">
+      <div class="pd-panel-header">
+        <h3>Phase Timeline</h3>
+        <button class="pd-btn pd-btn-ai" onclick="openAiPlanGenerator()" title="Generate phases from natural language">✦ AI Generate</button>
+      </div>
+      <div class="pd-panel-body" id="phase-panel-body">
+        {% if phases %}
+          {% for ph in phases %}
+          <div class="phase-card" id="phase-card-{{ ph.id }}" onclick="selectPhase('{{ ph.id }}','{{ ph.phase_num }}','{{ ph.title | replace("'","\\'")|e }}','{{ ph.classification }}','{{ ph.impact_level }}','{{ ph.status }}')">
+            <div class="phase-card-top">
+              <div class="phase-num">{{ ph.phase_num }}</div>
+              <div class="phase-title">{{ ph.title }}</div>
+            </div>
+            <div class="phase-badges">
+              <span class="badge badge-{{ ph.status | lower }}">{{ ph.status | replace('_',' ') | upper }}</span>
+              <span class="badge badge-{{ ph.classification | lower }}">{{ ph.classification }}</span>
+              <span class="badge badge-{{ ph.impact_level | lower }}">{{ ph.impact_level }}</span>
+              {% if ph.duration_days %}<span class="badge badge-planned">{{ ph.duration_days }}d</span>{% endif %}
+            </div>
+            <div class="phase-actions">
+              {% if ph.status != 'completed' %}
+              <button class="pd-btn pd-btn-success" onclick="event.stopPropagation();markPhaseComplete('{{ ph.id }}','{{ ph.phase_num }}')" title="Mark this phase as complete and snapshot topology">✓ Mark Complete</button>
+              {% else %}
+              <span class="pd-snapshot-badge">✓ Snapshotted</span>
+              {% endif %}
+              <button class="pd-btn pd-btn-ai" onclick="event.stopPropagation();openPhaseChat('{{ ph.id }}','{{ ph.phase_num }}','{{ ph.title | replace("'","\\'")|e }}','{{ ph.classification }}','{{ ph.impact_level }}','{{ ph.status }}')" title="Ask AI about this phase">✦ Ask AI</button>
+              {% if topo_id %}
+              <button class="pd-btn pd-btn-primary" onclick="event.stopPropagation();runWalkthrough('{{ ph.id }}')" title="Run traffic flow walkthrough projected to this phase">▶ Walkthrough</button>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="pd-empty">No phases yet. Use ✦ AI Generate or add phases in the Migration Hub.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── Panel 2: Topology Canvas ─────────────────────── -->
+    <div class="pd-panel">
+      <div class="pd-panel-header">
+        <h3>Topology Canvas</h3>
+        {% if snapshots %}<span style="font-size:11px;color:#27ae60;">{{ snapshots|length }} snapshot(s)</span>{% endif %}
+      </div>
+      <div class="pd-canvas-embed">
+        {% if topology %}
+          <div class="pd-canvas-name">{{ topology.name }}</div>
+          <div class="pd-canvas-stats" id="canvas-stats">Select a phase to see projected state</div>
+          <a href="/network/canvas/{{ topo_id }}" target="_blank">✏ Open in Canvas Editor</a>
+          <a href="/network/migration-phases/{{ topo_id }}" target="_blank">📋 Migration Phases View</a>
+          {% if snapshots %}
+          <div style="margin-top:10px;width:100%;text-align:left;">
+            <div style="font-size:11px;color:#4a6080;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Phase Snapshots</div>
+            {% for snap in snapshots %}
+            <div class="pd-list-item">
+              <span class="pd-list-icon">📸</span>
+              <div>
+                <div class="pd-list-title">{{ snap.label or 'Snapshot' }}</div>
+                <div class="pd-list-sub">{{ snap.created_at[:16] }}</div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        {% else %}
+          <div class="pd-canvas-name" style="color:#4a6080;">No topology linked</div>
+          <div class="pd-canvas-stats">Link a topology in the Migration Hub to see it here.</div>
+          <a href="/network/migration-hub">← Go to Migration Hub</a>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── Panel 3: SOPs for Selected Phase ─────────────── -->
+    <div class="pd-panel">
+      <div class="pd-panel-header">
+        <h3>SOPs</h3>
+        <span id="sops-phase-label" style="font-size:11px;color:#4a6080;">Select a phase</span>
+        <a href="/data/sops" target="_blank" style="font-size:10px;color:#4a6080;text-decoration:none;padding:2px 8px;border:1px solid #1e3a6e;border-radius:4px;margin-left:auto;">Full SOP Library →</a>
+      </div>
+      <div class="pd-panel-body" id="sops-body">
+        <div class="pd-empty">Click a phase card to see its linked SOPs.</div>
+      </div>
+    </div>
+
+    <!-- ── Panel 4: Traffic Flows + Impact ──────────────── -->
+    <div class="pd-panel">
+      <div class="pd-panel-header">
+        <h3>Traffic Flows</h3>
+        <span id="flows-phase-label" style="font-size:11px;color:#4a6080;">Select a phase</span>
+      </div>
+      <div class="pd-panel-body" id="flows-body">
+        <div class="pd-empty">Click a phase card to see traffic flows assigned to that phase.</div>
+      </div>
+    </div>
+
+  </div><!-- end pd-grid -->
+</div><!-- end pd-shell -->
+
+<!-- AI Chat Overlay -->
+<div id="pd-chat-box" class="hidden">
+  <div id="pd-chat-header">
+    <span id="pd-chat-title">✦ AI Assistant</span>
+    <button style="background:none;border:none;color:#4a6080;cursor:pointer;font-size:14px;" onclick="closePdChat()">✕</button>
+  </div>
+  <div id="pd-chat-msgs"></div>
+  <div id="pd-chat-input-row">
+    <input id="pd-chat-input" type="text" placeholder="Ask about this phase..." onkeydown="if(event.key==='Enter')sendPdChat()">
+    <button id="pd-chat-send" onclick="sendPdChat()">Send</button>
+  </div>
+</div>
+
+<script>
+// ── Data from server ─────────────────────────────────────────────────────
+const SOPS_BY_PHASE = {{ sops_by_phase | tojson }};
+const FLOWS_BY_PHASE = {{ flows_by_phase | tojson }};
+const TOPO_ID = "{{ topo_id or '' }}";
+const PROJECT_ID = "{{ project.id }}";
+
+let _activePhaseContext = null;
+
+// ── Phase selection ──────────────────────────────────────────────────────
+function selectPhase(phaseId, phaseNum, title, classification, impactLevel, status) {
+    // Highlight active card
+    document.querySelectorAll('.phase-card').forEach(c => c.classList.remove('active'));
+    const card = document.getElementById('phase-card-' + phaseId);
+    if (card) card.classList.add('active');
+
+    _activePhaseContext = { phase_id: phaseId, phase_num: phaseNum, title, classification, impact_level: impactLevel, status };
+
+    // Update SOPs panel
+    const sopLabel = document.getElementById('sops-phase-label');
+    const sopBody = document.getElementById('sops-body');
+    const sops = SOPS_BY_PHASE[phaseId] || [];
+    sopLabel.textContent = `Phase ${phaseNum}: ${title}`;
+    if (sops.length) {
+        sopBody.innerHTML = sops.map(s => `
+            <div class="pd-list-item">
+                <span class="pd-list-icon">📄</span>
+                <div>
+                    <a class="pd-list-title" href="/data/sops/${s.sop_id}" target="_blank" style="color:#eaeaea;text-decoration:none;">${esc(s.title)}</a>
+                    <div class="pd-list-sub">${esc(s.category || '')}${s.csp && s.csp !== 'multi' ? ' · ' + esc(s.csp) : ''}</div>
+                </div>
+            </div>`).join('');
+    } else {
+        sopBody.innerHTML = '<div class="pd-empty">No SOPs linked to this phase. Link SOPs via the Migration Hub.</div>';
+    }
+
+    // Update flows panel
+    const flowLabel = document.getElementById('flows-phase-label');
+    const flowBody = document.getElementById('flows-body');
+    const flows = FLOWS_BY_PHASE[phaseId] || [];
+    flowLabel.textContent = `Phase ${phaseNum}: ${title}`;
+    if (flows.length) {
+        flowBody.innerHTML = flows.map(f => `
+            <div class="pd-list-item">
+                <span class="pd-list-icon">🔀</span>
+                <div style="flex:1;">
+                    <div class="pd-list-title">${esc(f.name)}</div>
+                    <div class="pd-list-sub">${esc(f.source_zone)} → ${esc(f.destination_zone)} · ${esc(f.classification)}</div>
+                    <div style="margin-top:4px;">
+                        <button class="pd-btn pd-btn-primary" onclick="runFlowWalkthrough('${f.id}','${phaseId}')" style="font-size:10px;">▶ Walkthrough</button>
+                    </div>
+                </div>
+            </div>`).join('');
+    } else {
+        flowBody.innerHTML = '<div class="pd-empty">No traffic flows assigned to this phase. Assign flows via the Traffic Flows panel.</div>';
+    }
+
+    // Update canvas stats
+    const statsEl = document.getElementById('canvas-stats');
+    if (statsEl) statsEl.textContent = `Projected to Phase ${phaseNum}: ${title} (${status})`;
+}
+
+// ── Mark Phase Complete ──────────────────────────────────────────────────
+function markPhaseComplete(phaseId, phaseNum) {
+    if (!confirm(`Mark Phase ${phaseNum} as COMPLETED?\n\nThis will snapshot the topology at its post-phase state.`)) return;
+    fetch(`/network/api/migration-phases/${TOPO_ID}/${phaseId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.status === 'ok') {
+            alert(`Phase ${phaseNum} marked complete. Topology snapshot saved.`);
+            location.reload();
+        } else {
+            alert('Error: ' + (d.error || 'Unknown'));
+        }
+    })
+    .catch(err => alert('Request failed: ' + err));
+}
+
+// ── Walkthrough (phase-projected) ───────────────────────────────────────
+function runWalkthrough(phaseId) {
+    alert('Walkthrough will run projected to Phase ' + phaseId + '.\nOpen the Traffic Flows panel on the Migration Phases page for full results.');
+}
+
+function runFlowWalkthrough(flowId, phaseId) {
+    if (!TOPO_ID) { alert('No topology linked.'); return; }
+    fetch(`/network/api/twin/${TOPO_ID}/traffic-flows/${flowId}/walkthrough?phase_id=${phaseId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ use_llm: false })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.steps) {
+            const txt = d.steps.map(s => `Step ${s.step_number}: [${s.action_type}] ${s.node_label}`).join('\n');
+            alert(`Phase-Projected Walkthrough (${d.steps.length} steps):\n\n${txt}`);
+        } else {
+            alert('Error: ' + (d.error || 'Unknown'));
+        }
+    })
+    .catch(err => alert('Request failed: ' + err));
+}
+
+// ── AI Migration Plan Generator ──────────────────────────────────────────
+function openAiPlanGenerator() {
+    const desc = prompt('Describe the migration in plain English:\n(Example: "Migrate legacy NIPR-only datacenter to dual-stack NIPR+C2S IL4 with BCAP connectivity")');
+    if (!desc) return;
+    fetch('/network/api/migration-plan/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: desc, project_id: PROJECT_ID })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.phases_created) {
+            alert(`AI generated ${d.phases_created} phases. Reloading...`);
+            location.reload();
+        } else {
+            alert('Error: ' + (d.error || 'Unknown'));
+        }
+    })
+    .catch(err => alert('Request failed: ' + err));
+}
+
+// ── AI Chat (phase-aware) ────────────────────────────────────────────────
+function openPhaseChat(phaseId, phaseNum, title, classification, impactLevel, status) {
+    _activePhaseContext = { phase_id: phaseId, phase_num: phaseNum, title, classification, impact_level: impactLevel, status };
+    document.getElementById('pd-chat-title').textContent = `✦ AI — Phase ${phaseNum}: ${title}`;
+    document.getElementById('pd-chat-msgs').innerHTML = '';
+    document.getElementById('pd-chat-box').classList.remove('hidden');
+    document.getElementById('pd-chat-input').focus();
+}
+
+function closePdChat() {
+    document.getElementById('pd-chat-box').classList.add('hidden');
+}
+
+function sendPdChat() {
+    const input = document.getElementById('pd-chat-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+    appendMsg('user', msg);
+    const body = { message: msg };
+    if (_activePhaseContext) {
+        body.phase_context = {
+            phase_num: _activePhaseContext.phase_num,
+            title: _activePhaseContext.title,
+            classification: _activePhaseContext.classification,
+            impact_level: _activePhaseContext.impact_level,
+            status: _activePhaseContext.status,
+        };
+    }
+    fetch('/network/api/ai-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    })
+    .then(r => r.json())
+    .then(d => appendMsg('assistant', d.answer || d.error || 'No response'))
+    .catch(err => appendMsg('assistant', 'Error: ' + err));
+}
+
+function appendMsg(role, text) {
+    const box = document.getElementById('pd-chat-msgs');
+    const div = document.createElement('div');
+    div.className = 'pd-msg ' + role;
+    div.innerHTML = `<div class="pd-msg-label">${role === 'user' ? 'You' : 'AI'}</div>${esc(text)}`;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+}
+
+function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

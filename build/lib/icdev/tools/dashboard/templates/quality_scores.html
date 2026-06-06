@@ -1,0 +1,1049 @@
+{% extends "base.html" %}
+{% block title %}Quality Scores — PE/NAV Mispricing{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ─── Layout ──────────────────────────────────────────────────────────────── */
+.qs-page { padding: 20px; max-width: 1400px; margin: 0 auto; }
+.qs-page h1 {
+  font-size: 1.4rem; font-weight: 700;
+  color: var(--text-primary, #e0e0f0); margin: 0 0 4px;
+}
+.qs-subtitle {
+  font-size: 0.78rem; color: var(--text-muted, #6c6c80);
+  margin-bottom: 20px; font-style: italic;
+}
+
+/* ─── Stat cards ───────────────────────────────────────────────────────────── */
+.qs-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 14px; margin-bottom: 20px;
+}
+.qs-stat {
+  background: var(--bg-card, #16213e);
+  border: 1px solid var(--border-color, #2a2a40);
+  border-radius: 8px; padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.qs-stat-val {
+  font-size: 2rem; font-weight: 700; line-height: 1;
+  color: var(--text-primary, #e0e0f0);
+}
+.qs-stat-val.green { color: #4cda7a; }
+.qs-stat-val.red   { color: #f06375; }
+.qs-stat-val.blue  { color: #64b5f6; }
+.qs-stat-label {
+  font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-muted, #6c6c80);
+}
+
+/* ─── Two-column layout ────────────────────────────────────────────────────── */
+.qs-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; margin-bottom: 20px; }
+
+/* ─── Quadrant panel ───────────────────────────────────────────────────────── */
+.qs-quadrant-panel {
+  background: var(--bg-card, #16213e);
+  border: 1px solid var(--border-color, #2a2a40);
+  border-radius: 8px; padding: 16px;
+}
+.qs-panel-title {
+  font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-secondary, #a0a0b8);
+  margin-bottom: 12px;
+}
+.qs-quad-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.qs-quad-card {
+  border-radius: 6px; padding: 12px; cursor: pointer;
+  transition: opacity 0.15s;
+  border: 1px solid transparent;
+}
+.qs-quad-card:hover { opacity: 0.85; }
+.qs-quad-card.active { border-color: #64b5f6 !important; }
+.qs-quad-card.qd-dv  { background: rgba(76,218,122,0.08); border-color: rgba(76,218,122,0.25); }
+.qs-quad-card.qd-ec  { background: rgba(100,181,246,0.08); border-color: rgba(100,181,246,0.25); }
+.qs-quad-card.qd-ar  { background: rgba(240,180,41,0.08); border-color: rgba(240,180,41,0.25); }
+.qs-quad-card.qd-fp  { background: rgba(240,99,117,0.08); border-color: rgba(240,99,117,0.25); }
+
+.qs-quad-name { font-size: 0.72rem; font-weight: 700; margin-bottom: 4px; }
+.qs-quad-card.qd-dv .qs-quad-name  { color: #4cda7a; }
+.qs-quad-card.qd-ec .qs-quad-name  { color: #64b5f6; }
+.qs-quad-card.qd-ar .qs-quad-name  { color: #f0b429; }
+.qs-quad-card.qd-fp .qs-quad-name  { color: #f06375; }
+
+.qs-quad-count { font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #e0e0f0); }
+.qs-quad-desc  { font-size: 0.65rem; color: var(--text-muted, #6c6c80); margin-top: 4px; line-height: 1.4; }
+
+/* Tier distribution */
+.qs-tier-row { display: flex; gap: 8px; margin-top: 14px; align-items: center; }
+.qs-tier-label { font-size: 0.68rem; color: var(--text-muted, #6c6c80); white-space: nowrap; }
+.qs-tier-bar-wrap { flex: 1; display: flex; gap: 2px; height: 8px; border-radius: 4px; overflow: hidden; }
+.qs-tier-seg { height: 100%; }
+.qs-tier-seg.t1 { background: #4cda7a; }
+.qs-tier-seg.t2 { background: #f0b429; }
+.qs-tier-seg.t3 { background: #64b5f6; }
+.qs-tier-legend {
+  display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;
+}
+.qs-tier-leg {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 0.65rem; color: var(--text-muted, #6c6c80);
+}
+.qs-tier-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ─── Mispricing panel ─────────────────────────────────────────────────────── */
+.qs-misprice-panel {
+  background: var(--bg-card, #16213e);
+  border: 1px solid var(--border-color, #2a2a40);
+  border-radius: 8px; padding: 16px; overflow: hidden;
+}
+.qs-mp-list { display: flex; flex-direction: column; gap: 8px; max-height: 310px; overflow-y: auto; }
+.qs-mp-item {
+  display: grid; grid-template-columns: 60px 1fr auto auto;
+  align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 6px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border-color, #2a2a40);
+  cursor: pointer; transition: background 0.15s;
+}
+.qs-mp-item:hover { background: rgba(255,255,255,0.06); }
+.qs-mp-ticker { font-weight: 700; font-size: 0.9rem; color: var(--text-primary, #e0e0f0); }
+.qs-mp-desc   { font-size: 0.75rem; color: var(--text-secondary, #a0a0b8); line-height: 1.3; }
+.qs-mp-gap    { font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
+.qs-mp-gap.pos { color: #4cda7a; }
+.qs-mp-gap.neg { color: #f06375; }
+.qs-mp-conf   { font-size: 0.7rem; color: var(--text-muted, #6c6c80); white-space: nowrap; text-align: right; }
+.qs-empty {
+  text-align: center; padding: 30px;
+  color: var(--text-muted, #6c6c80); font-size: 0.8rem; font-style: italic;
+}
+
+/* ─── Universe table ──────────────────────────────────────────────────────── */
+.qs-table-panel {
+  background: var(--bg-card, #16213e);
+  border: 1px solid var(--border-color, #2a2a40);
+  border-radius: 8px; overflow: hidden;
+}
+.qs-table-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border-color, #2a2a40);
+  flex-wrap: wrap;
+}
+.qs-search {
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border-color, #2a2a40);
+  border-radius: 5px; padding: 6px 10px; font-size: 0.8rem;
+  color: var(--text-primary, #e0e0f0); width: 200px;
+}
+.qs-search::placeholder { color: var(--text-muted, #6c6c80); }
+.qs-filter-btn {
+  padding: 5px 12px; border-radius: 5px; font-size: 0.72rem; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border-color, #2a2a40);
+  background: transparent; color: var(--text-secondary, #a0a0b8);
+  transition: all 0.15s; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.qs-filter-btn:hover, .qs-filter-btn.active {
+  background: rgba(100,181,246,0.12); border-color: #64b5f6; color: #64b5f6;
+}
+.qs-count-label {
+  margin-left: auto; font-size: 0.72rem; color: var(--text-muted, #6c6c80);
+}
+.qs-table-wrap { overflow-x: auto; max-height: 520px; overflow-y: auto; }
+table.qs-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+table.qs-table th {
+  padding: 9px 12px; text-align: left; white-space: nowrap;
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-muted, #6c6c80);
+  border-bottom: 1px solid var(--border-color, #2a2a40);
+  position: sticky; top: 0; background: #16213e; cursor: pointer;
+}
+table.qs-table th:hover { color: #64b5f6; }
+table.qs-table th .sort-icon { margin-left: 4px; opacity: 0.4; }
+table.qs-table th.sorted .sort-icon { opacity: 1; color: #64b5f6; }
+table.qs-table td { padding: 9px 12px; border-bottom: 1px solid rgba(42,42,64,0.5); }
+table.qs-table tr:hover td { background: rgba(255,255,255,0.03); }
+table.qs-table tr:last-child td { border-bottom: none; }
+.qs-ticker-link { font-weight: 700; color: #64b5f6; cursor: pointer; }
+.qs-ticker-link:hover { text-decoration: underline; }
+.qs-score-bar-wrap { width: 80px; }
+.qs-score-bar-bg {
+  height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden;
+}
+.qs-score-bar { height: 100%; border-radius: 2px; }
+
+/* Quality label badges */
+.qlabel {
+  display: inline-block; padding: 2px 8px; border-radius: 3px;
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.qlabel-HIGH { background: rgba(76,218,122,0.15); color: #4cda7a; }
+.qlabel-ABOVE_AVERAGE { background: rgba(100,181,246,0.15); color: #64b5f6; }
+.qlabel-AVERAGE { background: rgba(240,180,41,0.15); color: #f0b429; }
+.qlabel-BELOW_AVERAGE { background: rgba(240,99,117,0.12); color: #f06375; }
+.qlabel-LOW { background: rgba(200,60,60,0.15); color: #e05060; }
+
+/* Quadrant badges */
+.quad-badge {
+  display: inline-block; padding: 2px 7px; border-radius: 3px;
+  font-size: 0.62rem; font-weight: 600;
+}
+.quad-deep_value           { background: rgba(76,218,122,0.12); color: #4cda7a; }
+.quad-efficient_compounder { background: rgba(100,181,246,0.12); color: #64b5f6; }
+.quad-asset_rich_earnings_poor { background: rgba(240,180,41,0.12); color: #f0b429; }
+.quad-fully_priced         { background: rgba(240,99,117,0.12); color: #f06375; }
+.quad-unknown              { background: rgba(108,108,128,0.12); color: #808090; }
+
+/* ─── Ticker drawer ────────────────────────────────────────────────────────── */
+.qs-drawer-backdrop {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5); z-index: 1000;
+}
+.qs-drawer-backdrop.open { display: block; }
+.qs-drawer {
+  position: fixed; right: 0; top: 0; bottom: 0;
+  width: 480px; max-width: 100vw;
+  background: var(--bg-surface, #0d1b2e);
+  border-left: 1px solid var(--border-color, #2a2a40);
+  z-index: 1001; overflow-y: auto;
+  transform: translateX(100%); transition: transform 0.25s ease;
+  padding: 24px;
+}
+.qs-drawer.open { transform: translateX(0); }
+.qs-drawer-close {
+  position: absolute; top: 16px; right: 16px;
+  background: none; border: none; color: var(--text-muted, #6c6c80);
+  font-size: 1.4rem; cursor: pointer; padding: 4px 8px;
+}
+.qs-drawer-close:hover { color: var(--text-primary, #e0e0f0); }
+.qs-drawer-ticker { font-size: 1.6rem; font-weight: 700; color: var(--text-primary, #e0e0f0); }
+.qs-drawer-score  { font-size: 0.8rem; color: var(--text-muted, #6c6c80); margin-bottom: 20px; }
+
+/* Dimension bars in drawer */
+.qs-dim-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.qs-dim-row  { display: flex; align-items: center; gap: 10px; }
+.qs-dim-name { font-size: 0.72rem; width: 160px; color: var(--text-secondary, #a0a0b8); flex-shrink: 0; }
+.qs-dim-bar-wrap { flex: 1; height: 6px; background: rgba(255,255,255,0.07); border-radius: 3px; overflow: hidden; }
+.qs-dim-bar  { height: 100%; border-radius: 3px; }
+.qs-dim-val  { font-size: 0.72rem; font-weight: 700; width: 36px; text-align: right; color: var(--text-primary, #e0e0f0); }
+
+/* PE/NAV block in drawer */
+.qs-penav-block {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border-color, #2a2a40);
+  border-radius: 6px; padding: 14px; margin-bottom: 16px;
+}
+.qs-penav-block-title {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-secondary, #a0a0b8); margin-bottom: 10px;
+}
+.qs-penav-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.qs-penav-key { font-size: 0.72rem; color: var(--text-muted, #6c6c80); }
+.qs-penav-val { font-size: 0.78rem; font-weight: 700; color: var(--text-primary, #e0e0f0); }
+.qs-penav-val.pos { color: #4cda7a; }
+.qs-penav-val.neg { color: #f06375; }
+
+/* Piotroski grid */
+.qs-piot-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px;
+}
+.qs-piot-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.67rem; color: var(--text-muted, #6c6c80);
+}
+.qs-piot-item.pass { color: #4cda7a; }
+.qs-piot-item.fail { color: #f06375; }
+.piot-mark { font-weight: 700; }
+
+/* Loading spinner */
+.qs-spinner {
+  display: inline-block; width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.1); border-top-color: #64b5f6;
+  border-radius: 50%; animation: qs-spin 0.6s linear infinite;
+}
+@keyframes qs-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 900px) {
+  .qs-stats { grid-template-columns: 1fr 1fr; }
+  .qs-grid  { grid-template-columns: 1fr; }
+  .qs-drawer { width: 100vw; }
+  .dc-stats { grid-template-columns: 1fr 1fr; }
+}
+
+/* ─── Tab system ───────────────────────────────────────────────────────────── */
+.qs-tabs { display:flex; gap:0; border-bottom:2px solid var(--border-color,#2a2a40); margin-bottom:20px; }
+.qs-tab { padding:10px 18px; font-size:0.78rem; font-weight:600; text-transform:uppercase;
+  letter-spacing:0.07em; cursor:pointer; color:var(--text-muted,#6c6c80);
+  border-bottom:2px solid transparent; margin-bottom:-2px; transition:color 0.15s, border-color 0.15s; }
+.qs-tab:hover { color:var(--text-secondary,#a0a0b8); }
+.qs-tab.active { color:#64b5f6; border-bottom-color:#64b5f6; }
+.qs-tab-panel { display:none; }
+.qs-tab-panel.active { display:block; }
+
+/* ─── Durable Compounders panel ─────────────────────────────────────────────── */
+.dc-meta { display:flex; align-items:center; gap:14px; margin-bottom:16px; flex-wrap:wrap; }
+.dc-meta-item { font-size:0.72rem; color:var(--text-muted,#6c6c80); }
+.dc-meta-item strong { color:var(--text-secondary,#a0a0b8); }
+.dc-refresh { padding:5px 12px; font-size:0.72rem; font-weight:600; border:1px solid #64b5f6;
+  color:#64b5f6; background:transparent; border-radius:4px; cursor:pointer; transition:background 0.15s; }
+.dc-refresh:hover { background:rgba(100,181,246,0.12); }
+.dc-refresh:disabled { opacity:0.5; cursor:not-allowed; }
+.dc-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+.dc-stat { background:var(--bg-card,#16213e); border:1px solid var(--border-color,#2a2a40);
+  border-radius:6px; padding:12px 16px; text-align:center; }
+.dc-stat-val { font-size:1.5rem; font-weight:700; }
+.dc-stat-label { font-size:0.68rem; font-weight:600; text-transform:uppercase;
+  letter-spacing:0.07em; color:var(--text-muted,#6c6c80); margin-top:2px; }
+.dc-stat-val.fortress { color:#4cda7a; }
+.dc-stat-val.solid    { color:#64b5f6; }
+.dc-stat-val.watchlist{ color:#f0b429; }
+.dc-stat-val.drifted  { color:#f06375; }
+.dc-table-wrap { overflow-x:auto; }
+.dc-table { width:100%; border-collapse:collapse; font-size:0.76rem; }
+.dc-table th { padding:8px 10px; text-align:left; font-size:0.68rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.07em; color:var(--text-muted,#6c6c80);
+  border-bottom:1px solid var(--border-color,#2a2a40); cursor:pointer; white-space:nowrap; }
+.dc-table th:hover { color:var(--text-secondary,#a0a0b8); }
+.dc-table td { padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.04);
+  color:var(--text-secondary,#a0a0b8); vertical-align:middle; }
+.dc-table tr:hover td { background:rgba(255,255,255,0.03); }
+.dc-tier-badge { display:inline-block; padding:2px 7px; border-radius:3px;
+  font-size:0.64rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; }
+.dc-tier-badge.fortress { background:rgba(76,218,122,0.15); color:#4cda7a; border:1px solid rgba(76,218,122,0.3); }
+.dc-tier-badge.solid    { background:rgba(100,181,246,0.15); color:#64b5f6; border:1px solid rgba(100,181,246,0.3); }
+.dc-tier-badge.watchlist{ background:rgba(240,180,41,0.15); color:#f0b429; border:1px solid rgba(240,180,41,0.3); }
+.dc-pillar-bars { display:flex; gap:4px; min-width:110px; }
+.dc-pillar-seg { height:6px; border-radius:2px; flex:none; }
+.dc-drift-badge { font-size:0.64rem; color:#f06375; font-weight:700; cursor:help; }
+.dc-ticker-link { cursor:pointer; color:#64b5f6; font-weight:700; }
+.dc-ticker-link:hover { text-decoration:underline; }
+.dc-empty { text-align:center; padding:40px; color:var(--text-muted,#6c6c80); font-size:0.8rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="qs-page">
+  <h1>Quality Scores — PE/NAV Mispricing</h1>
+  <div class="qs-subtitle">
+    Implied-ROE gap framework · 7-dimension quality scorer · Sector-tier-weighted signal
+    <span id="qs-updated" style="margin-left:12px;"></span>
+  </div>
+
+  <!-- ── Stats row ──────────────────────────────────────────────────────── -->
+  <div class="qs-stats">
+    <div class="qs-stat">
+      <div class="qs-stat-val blue" id="stat-total">—</div>
+      <div class="qs-stat-label">Tickers Scored</div>
+    </div>
+    <div class="qs-stat">
+      <div class="qs-stat-val green" id="stat-uv">—</div>
+      <div class="qs-stat-label">Undervalued (gap &gt; 4%)</div>
+    </div>
+    <div class="qs-stat">
+      <div class="qs-stat-val red" id="stat-ov">—</div>
+      <div class="qs-stat-label">Overvalued (gap &lt; −4%)</div>
+    </div>
+    <div class="qs-stat">
+      <div class="qs-stat-val" id="stat-mp" style="color:#f0b429;">—</div>
+      <div class="qs-stat-label">Mispricing Alerts</div>
+    </div>
+  </div>
+
+  <!-- ── Tab navigation ───────────────────────────────────────────────────── -->
+  <div class="qs-tabs">
+    <div class="qs-tab active" id="tab-penav-btn" onclick="switchTab('penav',this)">PE/NAV Universe</div>
+    <div class="qs-tab" id="tab-dc-btn" onclick="switchTab('dc',this)">Durable Compounders</div>
+  </div>
+
+  <div id="tab-penav" class="qs-tab-panel active">
+  <!-- ── Two-column: quadrant + mispricing ──────────────────────────────── -->
+  <div class="qs-grid">
+
+    <!-- Quadrant panel -->
+    <div class="qs-quadrant-panel">
+      <div class="qs-panel-title">PE/NAV Quadrant Distribution</div>
+      <div class="qs-quad-grid">
+        <div class="qs-quad-card qd-dv" onclick="setQuadrant('deep_value')">
+          <div class="qs-quad-name">Deep Value</div>
+          <div class="qs-quad-count" id="quad-deep_value">—</div>
+          <div class="qs-quad-desc">Low PE + Low PB<br>Cheap on earnings AND assets</div>
+        </div>
+        <div class="qs-quad-card qd-ec" onclick="setQuadrant('efficient_compounder')">
+          <div class="qs-quad-name">Efficient Compounder</div>
+          <div class="qs-quad-count" id="quad-efficient_compounder">—</div>
+          <div class="qs-quad-desc">Low PE + High PB<br>Market pays for assets; earnings modest</div>
+        </div>
+        <div class="qs-quad-card qd-ar" onclick="setQuadrant('asset_rich_earnings_poor')">
+          <div class="qs-quad-name">Asset-Rich / Earnings-Poor</div>
+          <div class="qs-quad-count" id="quad-asset_rich_earnings_poor">—</div>
+          <div class="qs-quad-desc">High PE + Low PB<br>Earnings-lean; potential deep turnaround</div>
+        </div>
+        <div class="qs-quad-card qd-fp" onclick="setQuadrant('fully_priced')">
+          <div class="qs-quad-name">Fully Priced</div>
+          <div class="qs-quad-count" id="quad-fully_priced">—</div>
+          <div class="qs-quad-desc">High PE + High PB<br>Growth must be exceptional to justify</div>
+        </div>
+      </div>
+
+      <!-- Tier bar -->
+      <div style="margin-top:14px;">
+        <div style="font-size:0.68rem;color:var(--text-muted,#6c6c80);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Signal Fidelity by Sector Tier</div>
+        <div class="qs-tier-bar-wrap" id="tier-bar-wrap">
+          <div class="qs-tier-seg t1" id="tier-seg-1" style="width:33%"></div>
+          <div class="qs-tier-seg t2" id="tier-seg-2" style="width:34%"></div>
+          <div class="qs-tier-seg t3" id="tier-seg-3" style="width:33%"></div>
+        </div>
+        <div class="qs-tier-legend">
+          <div class="qs-tier-leg"><div class="qs-tier-dot" style="background:#4cda7a;"></div>Tier 1 — Audited NAV (REITs, Banks)</div>
+          <div class="qs-tier-leg"><div class="qs-tier-dot" style="background:#f0b429;"></div>Tier 2 — Balance Sheet</div>
+          <div class="qs-tier-leg"><div class="qs-tier-dot" style="background:#64b5f6;"></div>Tier 3 — Intangibles-heavy</div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;text-align:center;">
+        <button class="qs-filter-btn" onclick="setQuadrant(null)" id="btn-all-quad">Show All</button>
+      </div>
+    </div>
+
+    <!-- Mispricing predictions panel -->
+    <div class="qs-misprice-panel">
+      <div class="qs-panel-title" style="display:flex;align-items:center;gap:10px;">
+        Fundamental Mispricing — Oracle Predictions
+        <span id="mp-spinner" class="qs-spinner"></span>
+      </div>
+      <div id="mp-list" class="qs-mp-list">
+        <div class="qs-empty">Loading predictions…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Universe table ─────────────────────────────────────────────────── -->
+  <div class="qs-table-panel">
+    <div class="qs-table-header">
+      <div class="qs-panel-title" style="margin:0;">Universe</div>
+      <input class="qs-search" type="text" id="qs-search" placeholder="Filter ticker…" oninput="filterTable()">
+      <button class="qs-filter-btn" id="btn-uv" onclick="toggleFilter('uv')">Undervalued</button>
+      <button class="qs-filter-btn" id="btn-ov" onclick="toggleFilter('ov')">Overvalued</button>
+      <button class="qs-filter-btn" id="btn-high" onclick="toggleFilter('high')">High Quality</button>
+      <span class="qs-count-label" id="table-count"></span>
+    </div>
+    <div class="qs-table-wrap">
+      <table class="qs-table" id="qs-table">
+        <thead>
+          <tr>
+            <th onclick="sortTable('ticker')">Ticker <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('composite_quality_score')">Quality Score <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('quality_label')">Label <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('nav_quadrant')">Quadrant <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('roe_gap')">ROE Gap <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('implied_roe')">Implied ROE <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('roe')">Actual ROE <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('pe_ratio')">PE <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('pb_ratio')">PB <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('pe_nav_score')">PE/NAV Score <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('sector_tier')">Tier <span class="sort-icon">↕</span></th>
+            <th>As Of</th>
+          </tr>
+        </thead>
+        <tbody id="qs-tbody">
+          <tr><td colspan="12" class="qs-empty">Loading universe…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  </div><!-- /tab-penav -->
+
+  <!-- ── Durable Compounders tab ──────────────────────────────────────────── -->
+  <div id="tab-dc" class="qs-tab-panel">
+
+    <!-- Meta bar: cache status + refresh -->
+    <div class="dc-meta">
+      <span class="dc-meta-item">Last scanned: <strong id="dc-last-scan">—</strong></span>
+      <span class="dc-meta-item">Cache hits: <strong id="dc-cache-hits">—</strong></span>
+      <span class="dc-meta-item">Recomputed: <strong id="dc-recomputed">—</strong></span>
+      <span class="dc-meta-item" id="dc-drift-meta" style="display:none;">Drifted: <strong id="dc-drifted" style="color:#f06375;">—</strong></span>
+      <span class="dc-meta-item">Scan time: <strong id="dc-scan-time">—</strong></span>
+      <button class="dc-refresh" id="dc-refresh-btn" onclick="loadDurableCompounders(true)">↻ Refresh</button>
+    </div>
+
+    <!-- Tier summary stats -->
+    <div class="dc-stats">
+      <div class="dc-stat">
+        <div class="dc-stat-val fortress" id="dc-stat-fortress">—</div>
+        <div class="dc-stat-label">Fortress</div>
+      </div>
+      <div class="dc-stat">
+        <div class="dc-stat-val solid" id="dc-stat-solid">—</div>
+        <div class="dc-stat-label">Solid</div>
+      </div>
+      <div class="dc-stat">
+        <div class="dc-stat-val watchlist" id="dc-stat-watchlist">—</div>
+        <div class="dc-stat-label">Watchlist</div>
+      </div>
+      <div class="dc-stat">
+        <div class="dc-stat-val drifted" id="dc-stat-drift">—</div>
+        <div class="dc-stat-label">Drifted</div>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+      <input class="qs-search" type="text" id="dc-search" placeholder="Filter ticker…" oninput="dcFilter()" style="width:160px;">
+      <button class="qs-filter-btn" id="dc-btn-fortress" onclick="dcToggleTier('fortress')">Fortress</button>
+      <button class="qs-filter-btn" id="dc-btn-solid" onclick="dcToggleTier('solid')">Solid</button>
+      <button class="qs-filter-btn" id="dc-btn-watchlist" onclick="dcToggleTier('watchlist')">Watchlist</button>
+      <button class="qs-filter-btn" id="dc-btn-drift" onclick="dcToggleTier('drift')">Drifted</button>
+      <span class="qs-count-label" id="dc-count"></span>
+    </div>
+
+    <!-- Results table -->
+    <div class="dc-table-wrap">
+      <table class="dc-table" id="dc-table">
+        <thead><tr>
+          <th onclick="dcSort('ticker')">Ticker</th>
+          <th onclick="dcSort('durable_score')">Durable Score ↕</th>
+          <th onclick="dcSort('tier')">Tier</th>
+          <th onclick="dcSort('balance_sheet_score')">Balance Sheet ↕</th>
+          <th onclick="dcSort('customer_loyalty_score')">Customer Loyalty ↕</th>
+          <th onclick="dcSort('cycle_resilience_score')">Cycle Resilience ↕</th>
+          <th>Pillars</th>
+          <th onclick="dcSort('drift_flagged')">Drift</th>
+          <th>As Of</th>
+        </tr></thead>
+        <tbody id="dc-tbody">
+          <tr><td colspan="9" class="dc-empty">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div><!-- /tab-dc -->
+
+</div><!-- /qs-page -->
+
+<!-- ── Ticker Drawer ─────────────────────────────────────────────────────── -->
+<div class="qs-drawer-backdrop" id="drawer-backdrop" onclick="closeDrawer()"></div>
+<div class="qs-drawer" id="qs-drawer">
+  <button class="qs-drawer-close" onclick="closeDrawer()">✕</button>
+  <div id="drawer-content"><div class="qs-empty">Select a ticker</div></div>
+</div>
+
+{% endblock %}
+
+{% block head %}
+<script>
+/* ─── State ─────────────────────────────────────────────────────────────── */
+let _universe   = [];
+let _filtered   = [];
+let _sortKey    = 'roe_gap';
+let _sortAsc    = false;
+let _quadFilter = null;
+let _activeFilter = null;
+
+/* ─── Boot ──────────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  loadStats();
+  loadMispricing();
+  loadUniverse();
+});
+
+/* ─── Stats ─────────────────────────────────────────────────────────────── */
+function loadStats() {
+  fetch('/api/quality-scores/stats')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('stat-total').textContent = d.total_tickers ?? '0';
+      document.getElementById('stat-uv').textContent    = d.undervalued ?? '0';
+      document.getElementById('stat-ov').textContent    = d.overvalued ?? '0';
+      document.getElementById('stat-mp').textContent    = d.mispricing_pending ?? '0';
+
+      const qc = d.quadrant_counts || {};
+      ['deep_value','efficient_compounder','asset_rich_earnings_poor','fully_priced'].forEach(k => {
+        const el = document.getElementById('quad-' + k);
+        if (el) el.textContent = qc[k] ?? '0';
+      });
+      document.getElementById('qs-updated').textContent =
+        'Updated ' + new Date().toLocaleTimeString();
+    })
+    .catch(() => {});
+}
+
+/* ─── Mispricing predictions ─────────────────────────────────────────────── */
+function loadMispricing() {
+  fetch('/api/quality-scores/mispricing?limit=30')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('mp-spinner').style.display = 'none';
+      const list = document.getElementById('mp-list');
+      const preds = d.predictions || [];
+      if (!preds.length) {
+        list.innerHTML = '<div class="qs-empty">No pending mispricing predictions.<br>Run the Oracle sweep to generate predictions.</div>';
+        return;
+      }
+      list.innerHTML = preds.map(p => {
+        const gap = p.roe_gap;
+        const gapStr = gap != null ? (gap >= 0 ? '+' : '') + (gap * 100).toFixed(1) + '%' : '—';
+        const gapCls = gap != null ? (gap >= 0 ? 'pos' : 'neg') : '';
+        const typeLabel = {
+          'fundamental_undervalued': '▲ Undervalued',
+          'fundamental_overvalued':  '▼ Overvalued',
+          'nav_premium_warning':     '⚠ Premium Risk',
+        }[p.type] || p.type;
+        return `<div class="qs-mp-item" onclick="openDrawer('${p.ticker}')">
+          <div>
+            <div class="qs-mp-ticker">${p.ticker}</div>
+            <div style="font-size:0.65rem;color:var(--text-muted,#6c6c80);">${typeLabel}</div>
+          </div>
+          <div class="qs-mp-desc">${p.description ? p.description.slice(0, 90) + '…' : '—'}</div>
+          <div class="qs-mp-gap ${gapCls}">${gapStr}</div>
+          <div class="qs-mp-conf">
+            ${Math.round((p.confidence || 0) * 100)}%<br>
+            <span style="font-size:0.6rem;">${p.severity || ''}</span>
+          </div>
+        </div>`;
+      }).join('');
+    })
+    .catch(() => {
+      document.getElementById('mp-spinner').style.display = 'none';
+      document.getElementById('mp-list').innerHTML =
+        '<div class="qs-empty">Could not load predictions.</div>';
+    });
+}
+
+/* ─── Universe ───────────────────────────────────────────────────────────── */
+function loadUniverse() {
+  fetch('/api/quality-scores/universe?limit=500')
+    .then(r => r.json())
+    .then(d => {
+      _universe = d.tickers || [];
+      updateTierBar();
+      applyFilters();
+    })
+    .catch(() => {
+      document.getElementById('qs-tbody').innerHTML =
+        '<tr><td colspan="12" class="qs-empty">Could not load universe. Run quality scorer to populate data.</td></tr>';
+    });
+}
+
+function updateTierBar() {
+  const counts = {1:0, 2:0, 3:0};
+  _universe.forEach(t => { const ti = t.sector_tier || 2; counts[ti]++; });
+  const total = _universe.length || 1;
+  ['1','2','3'].forEach(ti => {
+    const el = document.getElementById('tier-seg-' + ti);
+    if (el) el.style.width = ((counts[ti] / total) * 100).toFixed(1) + '%';
+  });
+}
+
+/* ─── Filtering & sorting ────────────────────────────────────────────────── */
+function setQuadrant(q) {
+  _quadFilter = q;
+  document.querySelectorAll('.qs-quad-card').forEach(c => c.classList.remove('active'));
+  if (q) {
+    const clsMap = {
+      'deep_value': 'qd-dv', 'efficient_compounder': 'qd-ec',
+      'asset_rich_earnings_poor': 'qd-ar', 'fully_priced': 'qd-fp',
+    };
+    const card = document.querySelector('.' + (clsMap[q] || ''));
+    if (card) card.classList.add('active');
+  }
+  applyFilters();
+}
+
+function toggleFilter(name) {
+  _activeFilter = _activeFilter === name ? null : name;
+  ['uv','ov','high'].forEach(f => {
+    const btn = document.getElementById('btn-' + f);
+    if (btn) btn.classList.toggle('active', f === _activeFilter);
+  });
+  applyFilters();
+}
+
+function filterTable() { applyFilters(); }
+
+function applyFilters() {
+  const q   = (document.getElementById('qs-search')?.value || '').toUpperCase();
+  let rows  = [..._universe];
+
+  if (_quadFilter)     rows = rows.filter(r => r.nav_quadrant === _quadFilter);
+  if (_activeFilter === 'uv')   rows = rows.filter(r => (r.roe_gap ?? 0) > 0.04);
+  if (_activeFilter === 'ov')   rows = rows.filter(r => (r.roe_gap ?? 0) < -0.04);
+  if (_activeFilter === 'high') rows = rows.filter(r => (r.composite_quality_score ?? 0) >= 70);
+  if (q) rows = rows.filter(r => (r.ticker || '').includes(q));
+
+  // Sort
+  rows.sort((a, b) => {
+    let va = a[_sortKey] ?? (typeof a[_sortKey] === 'number' ? -Infinity : '');
+    let vb = b[_sortKey] ?? (typeof b[_sortKey] === 'number' ? -Infinity : '');
+    if (typeof va === 'string') return _sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return _sortAsc ? va - vb : vb - va;
+  });
+
+  _filtered = rows;
+  document.getElementById('table-count').textContent = rows.length + ' tickers';
+  renderTable(rows);
+}
+
+function sortTable(key) {
+  if (_sortKey === key) _sortAsc = !_sortAsc;
+  else { _sortKey = key; _sortAsc = false; }
+  document.querySelectorAll('table.qs-table th').forEach(th => th.classList.remove('sorted'));
+  applyFilters();
+}
+
+function renderTable(rows) {
+  if (!rows.length) {
+    document.getElementById('qs-tbody').innerHTML =
+      '<tr><td colspan="12" class="qs-empty">No tickers match current filters.</td></tr>';
+    return;
+  }
+  const html = rows.map(r => {
+    const score  = r.composite_quality_score != null ? r.composite_quality_score.toFixed(1) : '—';
+    const gap    = r.roe_gap != null ? r.roe_gap : null;
+    const gapStr = gap != null ? (gap >= 0 ? '+' : '') + (gap * 100).toFixed(1) + '%' : '—';
+    const gapColor = gap != null ? (gap > 0.04 ? '#4cda7a' : gap < -0.04 ? '#f06375' : 'var(--text-secondary)') : 'inherit';
+    const iRoe   = r.implied_roe != null ? (r.implied_roe * 100).toFixed(1) + '%' : '—';
+    const aRoe   = r.roe != null ? (r.roe * 100).toFixed(1) + '%' : '—';
+    const pe     = r.pe_ratio != null ? r.pe_ratio.toFixed(1) : '—';
+    const pb     = r.pb_ratio != null ? r.pb_ratio.toFixed(1) : '—';
+    const pnScore = r.pe_nav_score != null ? r.pe_nav_score.toFixed(0) : '—';
+    const scoreWidth = r.composite_quality_score != null ? r.composite_quality_score : 0;
+    const scoreColor = scoreWidth >= 70 ? '#4cda7a' : scoreWidth >= 50 ? '#64b5f6' : scoreWidth >= 35 ? '#f0b429' : '#f06375';
+    const labelCls   = (r.quality_label || 'AVERAGE').replace(/ /g, '_');
+    const quadSlug   = r.nav_quadrant || 'unknown';
+    const quadLabel  = {
+      deep_value:'Deep Value', efficient_compounder:'Efficient',
+      asset_rich_earnings_poor:'Asset-Rich', fully_priced:'Fully Priced', unknown:'—'
+    }[quadSlug] || quadSlug;
+    const tierDot = {1:'#4cda7a',2:'#f0b429',3:'#64b5f6'}[r.sector_tier] || '#808090';
+    const asOf   = r.as_of_date ? r.as_of_date.slice(0, 10) : '—';
+
+    return `<tr>
+      <td><span class="qs-ticker-link" onclick="openDrawer('${r.ticker}')">${r.ticker}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="qs-score-bar-wrap">
+            <div class="qs-score-bar-bg">
+              <div class="qs-score-bar" style="width:${scoreWidth}%;background:${scoreColor};"></div>
+            </div>
+          </div>
+          <span style="color:${scoreColor};font-weight:700;">${score}</span>
+        </div>
+      </td>
+      <td><span class="qlabel qlabel-${labelCls}">${r.quality_label || '—'}</span></td>
+      <td><span class="quad-badge quad-${quadSlug}">${quadLabel}</span></td>
+      <td style="color:${gapColor};font-weight:700;">${gapStr}</td>
+      <td style="color:var(--text-secondary,#a0a0b8);">${iRoe}</td>
+      <td style="color:var(--text-secondary,#a0a0b8);">${aRoe}</td>
+      <td>${pe}</td>
+      <td>${pb}</td>
+      <td style="color:${scoreColor};">${pnScore}</td>
+      <td><span style="display:inline-flex;align-items:center;gap:4px;">
+        <span style="width:7px;height:7px;border-radius:50%;background:${tierDot};"></span>
+        T${r.sector_tier || '?'}</span>
+      </td>
+      <td style="color:var(--text-muted,#6c6c80);font-size:0.7rem;">${asOf}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('qs-tbody').innerHTML = html;
+}
+
+/* ─── Ticker Drawer ──────────────────────────────────────────────────────── */
+function openDrawer(ticker) {
+  document.getElementById('drawer-backdrop').classList.add('open');
+  document.getElementById('qs-drawer').classList.add('open');
+  document.getElementById('drawer-content').innerHTML =
+    '<div style="text-align:center;padding:40px;"><div class="qs-spinner" style="width:24px;height:24px;margin:auto;"></div><div style="margin-top:12px;color:var(--text-muted,#6c6c80);">Loading ' + ticker + '…</div></div>';
+
+  fetch('/api/quality-scores/ticker/' + ticker + '?demo=0')
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) {
+        // Try demo fallback
+        return fetch('/api/quality-scores/ticker/' + ticker + '?demo=1').then(r => r.json());
+      }
+      return d;
+    })
+    .then(d => renderDrawer(ticker, d.result || {}))
+    .catch(() => {
+      document.getElementById('drawer-content').innerHTML =
+        '<div class="qs-empty">Could not load data for ' + ticker + '.</div>';
+    });
+}
+
+function closeDrawer() {
+  document.getElementById('drawer-backdrop').classList.remove('open');
+  document.getElementById('qs-drawer').classList.remove('open');
+}
+
+function renderDrawer(ticker, r) {
+  if (!r || !r.ticker) {
+    document.getElementById('drawer-content').innerHTML =
+      '<div class="qs-empty">No data available for ' + ticker + '.</div>';
+    return;
+  }
+  const dims   = r.dimensions || {};
+  const pnm    = r.pe_nav_analysis || {};
+  const piot   = r.piotroski || {};
+  const score  = r.score != null ? r.score.toFixed(1) : '—';
+  const label  = r.quality_label || '—';
+  const labelCls = (label).replace(/ /g,'_');
+  const gap    = pnm.roe_gap;
+  const gapStr = gap != null ? (gap >= 0 ? '+' : '') + (gap * 100).toFixed(1) + '%' : 'N/A';
+  const gapCls = gap != null ? (gap > 0 ? 'pos' : 'neg') : '';
+  const quad   = pnm.nav_quadrant || 'unknown';
+  const tierColors = {1:'#4cda7a',2:'#f0b429',3:'#64b5f6'};
+
+  const dimOrder = ['valuation','profitability','growth','balance_sheet','capital_allocation','moat','pe_nav'];
+  const dimColors = v => v >= 70 ? '#4cda7a' : v >= 50 ? '#64b5f6' : v >= 35 ? '#f0b429' : '#f06375';
+
+  const dimsHtml = dimOrder.map(k => {
+    const v = dims[k] != null ? dims[k] : 0;
+    return `<div class="qs-dim-row">
+      <div class="qs-dim-name">${k.replace(/_/g,' ')}</div>
+      <div class="qs-dim-bar-wrap">
+        <div class="qs-dim-bar" style="width:${v}%;background:${dimColors(v)};"></div>
+      </div>
+      <div class="qs-dim-val" style="color:${dimColors(v)};">${v.toFixed(0)}</div>
+    </div>`;
+  }).join('');
+
+  const piotCriteria = piot.criteria || {};
+  const piotHtml = Object.entries(piotCriteria).map(([k, v]) => `
+    <div class="qs-piot-item ${v ? 'pass' : 'fail'}">
+      <span class="piot-mark">${v ? '✓' : '✗'}</span>
+      <span>${k.replace(/F\d+_/,'').replace(/_/g,' ')}</span>
+    </div>`).join('');
+
+  document.getElementById('drawer-content').innerHTML = `
+    <div style="padding-top:8px;">
+      <div class="qs-drawer-ticker">${r.ticker}
+        <span class="qlabel qlabel-${labelCls}" style="margin-left:10px;font-size:0.7rem;">${label}</span>
+      </div>
+      <div class="qs-drawer-score">
+        Score ${score}/100 · Composite z-score ${r.composite_score != null ? r.composite_score.toFixed(1) : '—'}/100
+        · Piotroski F=${piot.score ?? '—'}/9 [${piot.label || '—'}]
+      </div>
+
+      <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-secondary,#a0a0b8);margin-bottom:10px;">
+        7 Dimension Scores
+      </div>
+      <div class="qs-dim-list">${dimsHtml}</div>
+
+      <div class="qs-penav-block">
+        <div class="qs-penav-block-title">PE/NAV Analysis</div>
+        <div class="qs-penav-row">
+          <span class="qs-penav-key">Quadrant</span>
+          <span class="qs-penav-val"><span class="quad-badge quad-${quad}">${quad.replace(/_/g,' ')}</span></span>
+        </div>
+        <div class="qs-penav-row">
+          <span class="qs-penav-key">Sector Tier</span>
+          <span class="qs-penav-val">
+            <span style="display:inline-flex;align-items:center;gap:5px;">
+              <span style="width:8px;height:8px;border-radius:50%;background:${tierColors[pnm.sector_tier]||'#808090'};"></span>
+              Tier ${pnm.sector_tier || '?'}
+            </span>
+          </span>
+        </div>
+        <div class="qs-penav-row">
+          <span class="qs-penav-key">Implied ROE (P/B ÷ PE)</span>
+          <span class="qs-penav-val">${pnm.implied_roe != null ? (pnm.implied_roe * 100).toFixed(1) + '%' : 'N/A'}</span>
+        </div>
+        <div class="qs-penav-row">
+          <span class="qs-penav-key">Actual ROE</span>
+          <span class="qs-penav-val">${r.dimensions ? '—' : '—'}</span>
+        </div>
+        <div class="qs-penav-row">
+          <span class="qs-penav-key">ROE Gap (actual − implied)</span>
+          <span class="qs-penav-val ${gapCls}">${gapStr}
+            ${gap != null ? (gap > 0.04 ? ' ▲ undervalued' : gap < -0.04 ? ' ▼ overvalued' : ' ≈ fair') : ''}
+          </span>
+        </div>
+        <div class="qs-penav-row">
+          <span class="qs-penav-key">PE/NAV Score</span>
+          <span class="qs-penav-val">${dims.pe_nav != null ? dims.pe_nav.toFixed(1) + ' / 100' : '—'}</span>
+        </div>
+      </div>
+
+      <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-secondary,#a0a0b8);margin-bottom:8px;">
+        Piotroski F-Score Criteria
+      </div>
+      <div class="qs-piot-grid">${piotHtml || '<div class="qs-empty" style="grid-column:span 2;">No Piotroski data</div>'}</div>
+
+      ${r.summary ? `<div style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.03);border-radius:6px;font-size:0.73rem;color:var(--text-secondary,#a0a0b8);line-height:1.5;">${r.summary}</div>` : ''}
+    </div>`;
+}
+
+/* ─── Tab switching ──────────────────────────────────────────────────────── */
+function switchTab(id, el) {
+  document.querySelectorAll('.qs-tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.qs-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  el.classList.add('active');
+  if (id === 'dc' && !_dcLoaded) loadDurableCompounders(false);
+}
+
+/* ─── Durable Compounders ────────────────────────────────────────────────── */
+let _dcData     = [];
+let _dcFiltered = [];
+let _dcSortKey  = 'durable_score';
+let _dcSortAsc  = false;
+let _dcTierFilter = null;
+let _dcLoaded   = false;
+
+function loadDurableCompounders(force) {
+  const btn = document.getElementById('dc-refresh-btn');
+  btn.disabled = true;
+  btn.textContent = '↻ Scanning…';
+  document.getElementById('dc-tbody').innerHTML =
+    '<tr><td colspan="9" class="dc-empty"><div class="qs-spinner" style="width:18px;height:18px;margin:0 auto;"></div></td></tr>';
+
+  const url = '/api/quality-scores/durable-compounders?limit=500' + (force ? '&force=1' : '');
+  fetch(url)
+    .then(r => r.json())
+    .then(d => {
+      _dcData   = d.results || [];
+      _dcLoaded = true;
+
+      // Meta bar
+      document.getElementById('dc-cache-hits').textContent = d.cache_hits ?? '—';
+      document.getElementById('dc-recomputed').textContent = d.recomputed ?? '—';
+      document.getElementById('dc-scan-time').textContent  = (d.scan_time_ms ?? 0).toFixed(0) + 'ms';
+      document.getElementById('dc-last-scan').textContent  = new Date().toLocaleTimeString();
+      if ((d.drifted || 0) > 0) {
+        document.getElementById('dc-drift-meta').style.display = '';
+        document.getElementById('dc-drifted').textContent = d.drifted;
+      }
+
+      // Tier stats
+      const counts = {fortress:0, solid:0, watchlist:0, drift:0};
+      _dcData.forEach(r => {
+        counts[r.tier] = (counts[r.tier] || 0) + 1;
+        if (r.drift_flagged) counts.drift++;
+      });
+      document.getElementById('dc-stat-fortress').textContent  = counts.fortress;
+      document.getElementById('dc-stat-solid').textContent     = counts.solid;
+      document.getElementById('dc-stat-watchlist').textContent = counts.watchlist;
+      document.getElementById('dc-stat-drift').textContent     = counts.drift;
+
+      dcApplyFilters();
+    })
+    .catch(() => {
+      document.getElementById('dc-tbody').innerHTML =
+        '<tr><td colspan="9" class="dc-empty">Scan failed — run the quality scorer to populate fundamental data.</td></tr>';
+    })
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = '↻ Refresh';
+    });
+}
+
+function dcToggleTier(tier) {
+  _dcTierFilter = _dcTierFilter === tier ? null : tier;
+  ['fortress','solid','watchlist','drift'].forEach(t => {
+    const b = document.getElementById('dc-btn-' + t);
+    if (b) b.classList.toggle('active', t === _dcTierFilter);
+  });
+  dcApplyFilters();
+}
+
+function dcFilter() { dcApplyFilters(); }
+
+function dcApplyFilters() {
+  const q = (document.getElementById('dc-search')?.value || '').toUpperCase();
+  let rows = [..._dcData];
+
+  if (_dcTierFilter === 'drift') {
+    rows = rows.filter(r => r.drift_flagged);
+  } else if (_dcTierFilter) {
+    rows = rows.filter(r => r.tier === _dcTierFilter);
+  }
+  if (q) rows = rows.filter(r => (r.ticker || '').includes(q));
+
+  rows.sort((a, b) => {
+    let va = a[_dcSortKey] ?? (_dcSortKey === 'tier' ? '' : -Infinity);
+    let vb = b[_dcSortKey] ?? (_dcSortKey === 'tier' ? '' : -Infinity);
+    if (typeof va === 'string') return _dcSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return _dcSortAsc ? va - vb : vb - va;
+  });
+
+  _dcFiltered = rows;
+  document.getElementById('dc-count').textContent = rows.length + ' companies';
+  dcRenderTable(rows);
+}
+
+function dcSort(key) {
+  if (_dcSortKey === key) _dcSortAsc = !_dcSortAsc;
+  else { _dcSortKey = key; _dcSortAsc = false; }
+  dcApplyFilters();
+}
+
+function dcRenderTable(rows) {
+  if (!rows.length) {
+    document.getElementById('dc-tbody').innerHTML =
+      '<tr><td colspan="9" class="dc-empty">No companies match current filters.</td></tr>';
+    return;
+  }
+  const tierColor = { fortress:'#4cda7a', solid:'#64b5f6', watchlist:'#f0b429' };
+  const html = rows.map(r => {
+    const ds  = r.durable_score != null ? r.durable_score.toFixed(1) : '—';
+    const bs  = r.balance_sheet_score != null ? r.balance_sheet_score.toFixed(0) : 0;
+    const cl  = r.customer_loyalty_score != null ? r.customer_loyalty_score.toFixed(0) : 0;
+    const cr  = r.cycle_resilience_score != null ? r.cycle_resilience_score.toFixed(0) : 0;
+    const tier = r.tier || 'watchlist';
+    const tc   = tierColor[tier] || '#808090';
+    const scoreColor = r.durable_score >= 72 ? '#4cda7a' : r.durable_score >= 52 ? '#64b5f6' : '#f0b429';
+    const drift = r.drift_flagged
+      ? `<span class="dc-drift-badge" title="${r.drift_reason || 'drift detected'}">⚠ DRIFT</span>`
+      : '<span style="color:var(--text-muted,#6c6c80);font-size:0.7rem;">—</span>';
+    const asOf = r.as_of_date ? r.as_of_date.slice(0,10) : '—';
+    const cacheIcon = r.cache_hit
+      ? '<span title="cache hit" style="color:var(--text-muted,#6c6c80);font-size:0.65rem;">⚡</span>'
+      : '';
+    return `<tr>
+      <td><span class="dc-ticker-link" onclick="openDrawer('${r.ticker}')">${r.ticker}</span> ${cacheIcon}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="flex:1;height:5px;background:var(--border-color,#2a2a40);border-radius:2px;min-width:80px;">
+            <div style="width:${r.durable_score||0}%;height:100%;background:${scoreColor};border-radius:2px;"></div>
+          </div>
+          <span style="color:${scoreColor};font-weight:700;min-width:30px;">${ds}</span>
+        </div>
+      </td>
+      <td><span class="dc-tier-badge ${tier}">${tier}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="flex:1;height:5px;background:var(--border-color,#2a2a40);border-radius:2px;min-width:60px;">
+            <div style="width:${bs}%;height:100%;background:#4cda7a;border-radius:2px;"></div>
+          </div>
+          <span style="color:#4cda7a;font-weight:600;min-width:24px;">${bs}</span>
+        </div>
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="flex:1;height:5px;background:var(--border-color,#2a2a40);border-radius:2px;min-width:60px;">
+            <div style="width:${cl}%;height:100%;background:#64b5f6;border-radius:2px;"></div>
+          </div>
+          <span style="color:#64b5f6;font-weight:600;min-width:24px;">${cl}</span>
+        </div>
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="flex:1;height:5px;background:var(--border-color,#2a2a40);border-radius:2px;min-width:60px;">
+            <div style="width:${cr}%;height:100%;background:#f0b429;border-radius:2px;"></div>
+          </div>
+          <span style="color:#f0b429;font-weight:600;min-width:24px;">${cr}</span>
+        </div>
+      </td>
+      <td>
+        <div class="dc-pillar-bars">
+          <div class="dc-pillar-seg" style="width:${bs*0.6}px;background:#4cda7a;" title="Balance Sheet: ${bs}"></div>
+          <div class="dc-pillar-seg" style="width:${cl*0.6}px;background:#64b5f6;" title="Loyalty: ${cl}"></div>
+          <div class="dc-pillar-seg" style="width:${cr*0.6}px;background:#f0b429;" title="Resilience: ${cr}"></div>
+        </div>
+      </td>
+      <td>${drift}</td>
+      <td style="color:var(--text-muted,#6c6c80);font-size:0.7rem;">${asOf}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('dc-tbody').innerHTML = html;
+}
+</script>
+{% endblock %}

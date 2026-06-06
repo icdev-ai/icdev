@@ -1,0 +1,124 @@
+{% extends "security_canvas/base.html" %}
+{% block title %}Template Gallery — Security Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title" style="color:#e94560;">Security Template Gallery</h1>
+    <p class="page-subtitle">Pre-built security architecture patterns — load into canvas to customize</p>
+  </div>
+  <div class="page-actions">
+    <a href="/security/canvas/new" class="btn btn-primary" style="background:#e94560;border-color:#c0392b;">+ Blank Design</a>
+    <a href="/security/" class="btn btn-secondary">Dashboard</a>
+  </div>
+</div>
+
+{% set categories = {} %}
+{% for t in templates %}
+  {% if t.category not in categories %}
+    {% if categories.update({t.category: []}) %}{% endif %}
+  {% endif %}
+  {% if categories[t.category].append(t) %}{% endif %}
+{% endfor %}
+
+{% for cat, items in categories.items() %}
+<section class="panel panel-wide" style="margin-bottom:20px;">
+  <div class="panel-header"><h2 class="panel-title">{{ cat }}</h2></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;padding:16px;">
+    {% for t in items %}
+    <div class="tpl-card" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+      <div style="padding:12px 16px;">
+        <div style="font-weight:700;font-size:14px;color:var(--text);margin-bottom:4px;">{{ t.name }}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">{{ t.category }}</div>
+        <div style="font-size:12px;color:var(--text-dim);line-height:1.4;min-height:40px;">{{ t.description[:200] if t.description else '' }}</div>
+        {% if t.tags %}
+        <div class="tpl-tags" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;" data-tags="{{ t.tags }}"></div>
+        {% endif %}
+      </div>
+      <div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;gap:8px;">
+        <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;background:#e94560;border-color:#c0392b;" onclick="loadTemplate('{{ t.id }}')">Load</button>
+        <button class="btn btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="previewTemplate('{{ t.id }}')">Preview</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+{% if not templates %}
+<section class="panel panel-wide">
+  <div style="padding:2rem;text-align:center;color:var(--text-dim);">
+    No security templates found. Run <code>python tools/security_canvas/db/init_db.py</code> to seed templates.
+  </div>
+</section>
+{% endif %}
+
+<!-- Preview Modal -->
+<div id="preview-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;justify-content:center;align-items:center;">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:800px;max-height:80vh;overflow:auto;padding:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 id="preview-title" style="color:#e94560;margin:0;"></h3>
+      <button onclick="document.getElementById('preview-modal').style.display='none'" style="background:none;border:none;color:var(--text);cursor:pointer;font-size:20px;">&#x2715;</button>
+    </div>
+    <div id="preview-desc" style="font-size:13px;color:var(--text-dim);margin-bottom:16px;"></div>
+    <div id="preview-content" style="font-size:12px;"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Render tags from data attribute
+document.querySelectorAll('.tpl-tags').forEach(el => {
+  try {
+    const tags = JSON.parse(el.dataset.tags || '[]');
+    el.innerHTML = tags.map(t => `<span style="background:var(--accent);color:var(--text-dim);padding:1px 6px;border-radius:3px;font-size:10px;">${t}</span>`).join('');
+  } catch(e) {}
+});
+
+function loadTemplate(tplId) {
+  fetch(SC_BASE + '/api/templates').then(r => r.json()).then(templates => {
+    const tpl = templates.find(t => t.id === tplId);
+    if (!tpl) { alert('Template not found'); return; }
+    const graphJson = typeof tpl.graph_json === 'string' ? JSON.parse(tpl.graph_json) : tpl.graph_json;
+    // Create design from template
+    fetch(SC_BASE + '/api/designs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: tpl.name, description: tpl.description, graph_json: graphJson, template_id: tplId})
+    }).then(r => r.json()).then(d => {
+      window.location.href = SC_BASE + '/canvas/' + d.id;
+    });
+  });
+}
+
+function previewTemplate(tplId) {
+  fetch(SC_BASE + '/api/templates').then(r => r.json()).then(templates => {
+    const tpl = templates.find(t => t.id === tplId);
+    if (!tpl) return;
+    document.getElementById('preview-title').textContent = tpl.name;
+    document.getElementById('preview-desc').textContent = tpl.description || '';
+    const graph = typeof tpl.graph_json === 'string' ? JSON.parse(tpl.graph_json) : tpl.graph_json;
+    const nodes = graph.nodes || [];
+    const edges = graph.edges || [];
+    const bounds = graph.boundaries || [];
+    let html = `<div class="stats-bar" style="margin-bottom:12px;">
+      <div class="stat-card"><div class="stat-value">${nodes.length}</div><div class="stat-label">Assets</div></div>
+      <div class="stat-card"><div class="stat-value">${edges.length}</div><div class="stat-label">Data Flows</div></div>
+      <div class="stat-card"><div class="stat-value">${bounds.length}</div><div class="stat-label">Boundaries</div></div>
+      <div class="stat-card"><div class="stat-value">${(graph.threats||[]).length}</div><div class="stat-label">Threats</div></div>
+    </div>`;
+    if (nodes.length) {
+      html += '<h4 style="margin:8px 0;color:var(--text);">Components</h4><div style="display:flex;flex-wrap:wrap;gap:6px;">';
+      nodes.forEach(n => {
+        const isCtrl = (n.type||'').startsWith('ctrl-');
+        const color = isCtrl ? '#27ae60' : '#3498db';
+        html += `<span style="background:var(--bg3);border:1px solid ${color};padding:2px 8px;border-radius:4px;font-size:11px;color:${color};">${n.label||n.type}</span>`;
+      });
+      html += '</div>';
+    }
+    document.getElementById('preview-content').innerHTML = html;
+    document.getElementById('preview-modal').style.display = 'flex';
+  });
+}
+</script>
+{% endblock %}

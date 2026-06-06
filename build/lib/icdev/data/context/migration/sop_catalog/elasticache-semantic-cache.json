@@ -1,0 +1,16 @@
+{
+  "id": "mc-sop-semantic-cache-001",
+  "title": "ElastiCache Semantic Cache with Bedrock Embeddings",
+  "category": "ai-modernization",
+  "sop_target_canvas": "mc",
+  "platform": "aws",
+  "source_tech": "redis",
+  "target_tech": "elasticache-redis",
+  "description": "Implement semantic caching layer on ElastiCache using Bedrock embeddings to reduce LLM call costs.",
+  "steps": [
+    {"number": 1, "action": "Enable ElastiCache for Redis JSON module (configure via parameter group: loadmodule=librejson.so) and Redis Search module for vector similarity", "verify": "redis-cli MODULE LIST shows ReJSON and search modules loaded", "rollback": "Remove modules from parameter group, restart cluster", "time_est": "30m"},
+    {"number": 2, "action": "Create vector index in Redis Search: FT.CREATE semantic_cache SCHEMA query_embedding VECTOR HNSW 6 TYPE FLOAT32 DIM 1024 DISTANCE_METRIC COSINE response TEXT", "verify": "FT.INFO semantic_cache returns index with num_docs=0 and correct schema", "rollback": "FT.DROPINDEX semantic_cache DD", "time_est": "15m"},
+    {"number": 3, "action": "Implement cache-aside wrapper in application: before Bedrock call, embed query with Titan V2 and FT.SEARCH for cosine similarity > 0.95; on miss, call Bedrock and cache result", "verify": "Cache hit rate > 30% on test query set; Bedrock API call count drops proportionally", "rollback": "Disable semantic cache wrapper, revert to direct Bedrock calls", "time_est": "8h"},
+    {"number": 4, "action": "Set TTL policy: EXPIRE keys after 24h (SESSION.MAXMEMORY_POLICY=allkeys-lru, maxmemory set to 80% of node memory)", "verify": "redis-cli INFO memory shows used_memory < maxmemory; old cache entries expire correctly", "rollback": "Remove TTL; adjust maxmemory", "time_est": "30m"}
+  ]
+}

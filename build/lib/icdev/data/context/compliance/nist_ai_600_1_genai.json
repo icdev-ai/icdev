@@ -1,0 +1,326 @@
+{
+  "metadata": {
+    "title": "NIST AI 600-1 — Artificial Intelligence Risk Management Framework: Generative AI Profile",
+    "source": "National Institute of Standards and Technology, AI 600-1 (GenAI Profile), July 2024",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-23",
+    "description": "NIST AI 600-1 GenAI Profile requirements covering 12 risk categories specific to generative AI systems. Companion to NIST AI RMF 1.0, provides targeted guidance for confabulation, data privacy, environmental impact, information integrity, CBRN misuse, cybersecurity, homogenization, information security, intellectual property, obscene content, harmful bias, and value chain risks. Maps to NIST 800-53 Rev 5 controls via crosswalk for multi-regime deduplication (D113)."
+  },
+  "categories": [
+    {
+      "id": "CONFABULATION",
+      "title": "Confabulation (GAI.1)",
+      "description": "Risk of generating inaccurate, fabricated, or misleading content presented as factual",
+      "requirement_count": 3
+    },
+    {
+      "id": "DATA_PRIVACY",
+      "title": "Data Privacy (GAI.2)",
+      "description": "Risk of exposing, inferring, or misusing personal or sensitive data",
+      "requirement_count": 2
+    },
+    {
+      "id": "ENVIRONMENTAL",
+      "title": "Environmental Impact (GAI.3)",
+      "description": "Environmental costs of training and operating generative AI systems",
+      "requirement_count": 1
+    },
+    {
+      "id": "INFO_INTEGRITY",
+      "title": "Information Integrity (GAI.4)",
+      "description": "Risk of generating misleading or manipulative content at scale",
+      "requirement_count": 2
+    },
+    {
+      "id": "INFO_SECURITY",
+      "title": "Information Security (GAI.5)",
+      "description": "Security risks specific to generative AI including prompt injection and model exploitation",
+      "requirement_count": 2
+    },
+    {
+      "id": "HARMFUL_BIAS",
+      "title": "Harmful Bias and Homogenization (GAI.6)",
+      "description": "Risk of perpetuating societal biases and reducing output diversity",
+      "requirement_count": 2
+    },
+    {
+      "id": "IP_RIGHTS",
+      "title": "Intellectual Property (GAI.7)",
+      "description": "Risk of generating content that infringes on intellectual property rights",
+      "requirement_count": 1
+    },
+    {
+      "id": "CBRN",
+      "title": "CBRN and Dangerous Content (GAI.8)",
+      "description": "Risk of generating instructions for chemical, biological, radiological, nuclear, or other dangerous activities",
+      "requirement_count": 1
+    },
+    {
+      "id": "CYBERSECURITY",
+      "title": "Cybersecurity Misuse (GAI.9)",
+      "description": "Risk of generative AI being used to create malware, phishing content, or exploit code",
+      "requirement_count": 2
+    },
+    {
+      "id": "VALUE_CHAIN",
+      "title": "Value Chain and Component Integration (GAI.10)",
+      "description": "Risk from third-party model components, APIs, and supply chain dependencies",
+      "requirement_count": 2
+    }
+  ],
+  "requirements": [
+    {
+      "id": "GAI-1-1",
+      "family": "Confabulation (GAI.1)",
+      "title": "Confabulation Detection and Monitoring",
+      "description": "Organizations shall implement mechanisms to detect and monitor confabulation (hallucination) in generative AI outputs. Detection methods shall include output consistency checking, citation and source verification, internal contradiction detection, and confidence calibration tracking. Detection results shall be logged and tracked over time to identify patterns and systemic confabulation risks.",
+      "evidence_required": "Confabulation detection system documentation, detection method descriptions, detection results log, pattern analysis reports.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-4", "SI-7", "AU-2"],
+      "key_actions": [
+        "Implement confabulation detection mechanisms",
+        "Log and track detection results",
+        "Analyze confabulation patterns over time"
+      ]
+    },
+    {
+      "id": "GAI-1-2",
+      "family": "Confabulation (GAI.1)",
+      "title": "Confabulation Risk Mitigation",
+      "description": "Organizations shall implement guardrails to mitigate confabulation risk including: retrieval-augmented generation (RAG) where factual accuracy is critical, structured output validation for claims of fact, human review requirements for high-stakes content, and confidence thresholds below which outputs are flagged for review. The organization shall document which mitigation approaches are used per use case.",
+      "evidence_required": "Confabulation mitigation strategy documentation, RAG implementation evidence (where applicable), human review process documentation, confidence threshold configuration.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-7", "SA-8", "PM-4"],
+      "key_actions": [
+        "Implement RAG for factual accuracy use cases",
+        "Set confidence thresholds for human review",
+        "Document mitigation approaches per use case"
+      ]
+    },
+    {
+      "id": "GAI-1-3",
+      "family": "Confabulation (GAI.1)",
+      "title": "Output Provenance and Attribution",
+      "description": "Organizations shall maintain provenance records for generative AI outputs, tracking: which model produced the output, input prompt (or hash), generation parameters, timestamp, and any post-processing applied. For outputs that reference factual claims, the system should identify the source basis for generated content where technically feasible.",
+      "evidence_required": "Provenance tracking system documentation, provenance record samples, source attribution mechanism documentation.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["AU-2", "AU-3", "SI-4"],
+      "key_actions": [
+        "Implement output provenance tracking",
+        "Record generation metadata",
+        "Track source attribution where feasible"
+      ]
+    },
+    {
+      "id": "GAI-2-1",
+      "family": "Data Privacy (GAI.2)",
+      "title": "Training Data Privacy Controls",
+      "description": "Organizations using or deploying generative AI shall document the privacy characteristics of training data, implement controls to prevent memorization and regurgitation of personal data, and establish processes for handling data subject requests (access, deletion, correction) in the context of trained models. Where training data provenance is unavailable (third-party models), organizations shall document known privacy risks and compensating controls.",
+      "evidence_required": "Training data privacy assessment, memorization prevention controls, data subject request process, third-party model privacy risk documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SC-28", "SI-12", "PM-25"],
+      "key_actions": [
+        "Assess training data privacy characteristics",
+        "Implement memorization prevention controls",
+        "Establish data subject request processes"
+      ]
+    },
+    {
+      "id": "GAI-2-2",
+      "family": "Data Privacy (GAI.2)",
+      "title": "Output Privacy Screening",
+      "description": "Organizations shall implement screening mechanisms to detect and prevent generative AI from outputting personally identifiable information (PII), protected health information (PHI), or other sensitive data in responses. Screening shall include pattern-based detection for known data formats (SSN, phone, email, medical record numbers) and context-aware detection for narrative disclosures of private information.",
+      "evidence_required": "Output privacy screening system documentation, detection pattern configuration, screening test results, false positive/negative rate monitoring.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SC-28", "SI-4", "AC-4"],
+      "key_actions": [
+        "Implement PII/PHI output screening",
+        "Configure detection patterns",
+        "Monitor screening effectiveness"
+      ]
+    },
+    {
+      "id": "GAI-3-1",
+      "family": "Environmental Impact (GAI.3)",
+      "title": "Environmental Impact Tracking",
+      "description": "Organizations shall track and report the computational resource consumption associated with generative AI operations, including estimated energy consumption and carbon footprint for training and inference workloads. Environmental impact data shall be included in the system card and considered in acquisition and deployment decisions.",
+      "evidence_required": "Computational resource tracking data, energy consumption estimates, carbon footprint calculations, system card environmental section.",
+      "priority": "P3",
+      "nist_800_53_crosswalk": ["PM-5", "SA-4"],
+      "key_actions": [
+        "Track computational resource consumption",
+        "Estimate energy and carbon footprint",
+        "Include in system card"
+      ]
+    },
+    {
+      "id": "GAI-4-1",
+      "family": "Information Integrity (GAI.4)",
+      "title": "Synthetic Content Identification",
+      "description": "Organizations shall implement mechanisms to identify and label content generated by AI systems. Labeling approaches may include metadata tagging, watermarking, or provenance records. Users of generative AI outputs shall be informed that content was AI-generated, particularly in public-facing communications, reports, and documents.",
+      "evidence_required": "Content labeling mechanism documentation, AI-generated content policy, labeling implementation evidence, user notification process.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-7", "AU-2", "PM-15"],
+      "key_actions": [
+        "Implement AI content labeling",
+        "Notify users of AI-generated content",
+        "Maintain provenance records"
+      ]
+    },
+    {
+      "id": "GAI-4-2",
+      "family": "Information Integrity (GAI.4)",
+      "title": "Manipulation and Deepfake Prevention",
+      "description": "Organizations shall implement controls to prevent generative AI systems from being used to create manipulative, deceptive, or misleading content, including deepfakes. Controls shall include content policy enforcement, output filtering, and audit logging of generation requests that may produce misleading content.",
+      "evidence_required": "Content policy documentation, output filtering configuration, deepfake prevention controls, audit log of flagged requests.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SI-4", "SI-7", "AU-2"],
+      "key_actions": [
+        "Implement content policy enforcement",
+        "Configure output filtering for deceptive content",
+        "Log flagged generation requests"
+      ]
+    },
+    {
+      "id": "GAI-5-1",
+      "family": "Information Security (GAI.5)",
+      "title": "Prompt Injection Defense",
+      "description": "Organizations shall implement defenses against prompt injection attacks, including direct injection (malicious prompts from users), indirect injection (malicious content in retrieved documents or data sources), and encoded injection (base64, unicode, or other encoding-based attacks). Defense mechanisms shall include input validation, prompt sanitization, output monitoring, and regular adversarial testing.",
+      "evidence_required": "Prompt injection defense documentation, input validation rules, adversarial testing results, incident response plan for successful injections.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-10", "SI-4", "CA-8"],
+      "key_actions": [
+        "Implement prompt injection defenses",
+        "Conduct adversarial testing",
+        "Monitor for injection attempts"
+      ]
+    },
+    {
+      "id": "GAI-5-2",
+      "family": "Information Security (GAI.5)",
+      "title": "Model Security and Access Control",
+      "description": "Organizations shall implement access controls for generative AI model endpoints, enforce authentication and authorization for API access, implement rate limiting, and protect model weights and configuration from unauthorized access or extraction. Security controls shall be proportional to the sensitivity of the model's training data and the criticality of its use case.",
+      "evidence_required": "Model endpoint access control configuration, authentication/authorization documentation, rate limiting configuration, model weight protection evidence.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-2", "AC-3", "SC-7", "SC-13"],
+      "key_actions": [
+        "Implement model endpoint access controls",
+        "Enforce authentication and rate limiting",
+        "Protect model weights from extraction"
+      ]
+    },
+    {
+      "id": "GAI-6-1",
+      "family": "Harmful Bias and Homogenization (GAI.6)",
+      "title": "Bias Detection in GenAI Outputs",
+      "description": "Organizations shall implement mechanisms to detect harmful biases in generative AI outputs including stereotyping, discriminatory language, underrepresentation, and culturally insensitive content. Detection shall be both automated (pattern-based) and periodic (human review of output samples). Detected biases shall be documented, reported, and addressed through model adjustment, prompt engineering, or output filtering.",
+      "evidence_required": "Bias detection mechanism documentation, detection results, human review records, bias remediation actions, trend analysis.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-7", "SI-4", "PM-9"],
+      "key_actions": [
+        "Implement automated bias detection",
+        "Conduct periodic human review of outputs",
+        "Document and remediate detected biases"
+      ]
+    },
+    {
+      "id": "GAI-6-2",
+      "family": "Harmful Bias and Homogenization (GAI.6)",
+      "title": "Output Diversity and Homogenization Prevention",
+      "description": "Organizations shall monitor for output homogenization where generative AI systems consistently produce similar or identical responses, reducing diversity of perspectives and approaches. Where homogenization risks are identified, organizations shall implement diversity-promoting techniques such as temperature adjustment, diverse prompt strategies, and ensemble approaches.",
+      "evidence_required": "Output diversity monitoring data, homogenization risk assessment, diversity-promoting technique documentation, diversity metric tracking.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["CA-7", "PM-4"],
+      "key_actions": [
+        "Monitor output diversity",
+        "Assess homogenization risks",
+        "Implement diversity-promoting techniques"
+      ]
+    },
+    {
+      "id": "GAI-7-1",
+      "family": "Intellectual Property (GAI.7)",
+      "title": "IP Risk Management",
+      "description": "Organizations shall assess and manage intellectual property risks associated with generative AI, including: risk of generating content substantially similar to copyrighted works, risk of exposing proprietary or trade secret information through model outputs, and compliance with licensing terms of training data and model components. IP risk assessments shall be documented and reviewed by legal counsel.",
+      "evidence_required": "IP risk assessment documentation, legal counsel review records, licensing compliance audit, content similarity monitoring evidence.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SA-4", "PM-5", "PL-4"],
+      "key_actions": [
+        "Conduct IP risk assessment",
+        "Obtain legal counsel review",
+        "Monitor for content similarity issues"
+      ]
+    },
+    {
+      "id": "GAI-8-1",
+      "family": "CBRN and Dangerous Content (GAI.8)",
+      "title": "Dangerous Content Prevention",
+      "description": "Organizations shall implement controls to prevent generative AI systems from producing content that provides instructions, detailed knowledge, or operational guidance for chemical, biological, radiological, nuclear, or other dangerous activities. Controls shall include topic filtering, output screening, and escalation procedures for attempted misuse. Regular red-team testing shall verify the effectiveness of these controls.",
+      "evidence_required": "Dangerous content prevention controls documentation, topic filtering configuration, red-team test results, escalation procedure documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-4", "SI-7", "IR-4"],
+      "key_actions": [
+        "Implement dangerous content filtering",
+        "Conduct red-team testing",
+        "Establish escalation procedures"
+      ]
+    },
+    {
+      "id": "GAI-9-1",
+      "family": "Cybersecurity Misuse (GAI.9)",
+      "title": "Cybersecurity Misuse Prevention",
+      "description": "Organizations shall implement controls to prevent generative AI systems from being used to create malware, phishing content, social engineering materials, or exploit code. Controls shall include: use case restrictions, output monitoring for malicious patterns, rate limiting for suspicious usage patterns, and logging of requests that trigger security filters.",
+      "evidence_required": "Misuse prevention controls documentation, output monitoring configuration, security filter log samples, rate limiting evidence.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-4", "SI-7", "AC-6"],
+      "key_actions": [
+        "Implement misuse prevention controls",
+        "Monitor outputs for malicious patterns",
+        "Log and analyze security filter triggers"
+      ]
+    },
+    {
+      "id": "GAI-9-2",
+      "family": "Cybersecurity Misuse (GAI.9)",
+      "title": "Adversarial Robustness Testing",
+      "description": "Organizations shall conduct regular adversarial robustness testing of generative AI systems to evaluate resilience against prompt injection, jailbreaking, model extraction, membership inference, and other adversarial attack techniques. Testing frequency shall be commensurate with the system's risk classification — high-impact systems require at least quarterly adversarial testing.",
+      "evidence_required": "Adversarial testing plan, test execution records, vulnerability findings, remediation actions, testing frequency compliance.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-8", "RA-5", "SA-11"],
+      "key_actions": [
+        "Develop adversarial testing plan",
+        "Conduct regular adversarial testing",
+        "Remediate identified vulnerabilities"
+      ]
+    },
+    {
+      "id": "GAI-10-1",
+      "family": "Value Chain and Component Integration (GAI.10)",
+      "title": "AI Supply Chain Risk Management",
+      "description": "Organizations shall assess and manage risks arising from third-party AI components, including pre-trained models, APIs, embedding services, and fine-tuning datasets. Supply chain risk management shall include: documenting all AI components in an AI Bill of Materials (AI BOM), evaluating provider security and privacy practices, establishing contractual requirements for AI component providers, and monitoring for supply chain disruptions or compromises.",
+      "evidence_required": "AI BOM documentation, provider security assessments, contractual requirements, supply chain monitoring evidence.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SA-4", "SR-3", "SR-5", "PM-30"],
+      "key_actions": [
+        "Maintain AI Bill of Materials",
+        "Assess provider security practices",
+        "Establish contractual AI requirements"
+      ]
+    },
+    {
+      "id": "GAI-10-2",
+      "family": "Value Chain and Component Integration (GAI.10)",
+      "title": "Model Lifecycle and Deprecation Management",
+      "description": "Organizations shall implement processes for managing the lifecycle of generative AI models, including version tracking, deprecation planning, migration paths, and end-of-life procedures. When models are deprecated by providers, organizations shall have migration plans and testing procedures to ensure continuity of service and maintenance of quality standards.",
+      "evidence_required": "Model lifecycle management process documentation, version tracking records, deprecation plans, migration test results.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["CM-3", "CM-4", "SA-22"],
+      "key_actions": [
+        "Implement model version tracking",
+        "Develop deprecation and migration plans",
+        "Test model migrations before cutover"
+      ]
+    }
+  ]
+}
