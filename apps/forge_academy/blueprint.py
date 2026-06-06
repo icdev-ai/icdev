@@ -587,15 +587,16 @@ def api_workflow_submit():
 @bp.route("/academy/oracle")
 def oracle_page():
     _ensure_init()
-    from .oracle.db import summary_stats, list_predictions, list_convergence_events
-    stats = summary_stats()
-    predictions = list_predictions(limit=200)
-    convergence = list_convergence_events()
+    # Single shared DB connection for all three reads — each new canvas
+    # connection costs ~2s in the dashboard, so opening one instead of three
+    # cuts the page from ~6s of connection overhead to ~2s.
+    from .oracle.db import page_payload
+    data = page_payload(prediction_limit=200)
     return render_template(
         "forge_academy/oracle.html",
-        stats=stats,
-        predictions=predictions,
-        convergence=convergence,
+        stats=data["stats"],
+        predictions=data["predictions"],
+        convergence=data["convergence"],
     )
 
 

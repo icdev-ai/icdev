@@ -764,3 +764,103 @@ def api_simulate_state(session_id: int):
 def api_aar_markdown(session_id: int):
     md = generate_aar(session_id)
     return md, 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+# ---------------------------------------------------------------------------
+# AI League — autonomous 4-team tournament (Red/Blue/Gold/Green)
+# Pages + API. Backing engine lives in tools/gameday/* (db, leaderboard_engine,
+# game_master, round_manager). Routes were missing from this blueprint, which
+# caused health-prober HTTP HEAD 404s on /api/gameday/ai-league/* (issue #15).
+# ---------------------------------------------------------------------------
+
+@bp.route("/gameday/ai-league")
+def ai_league_hub():
+    _ensure_init()
+    from tools.gameday import db as _gdb
+    from tools.gameday.game_master import get_or_create_active_tournament
+    from tools.gameday.leaderboard_engine import get_round_scores, refresh_leaderboard
+    tournament = get_or_create_active_tournament()
+    tid = tournament["id"]
+    return render_template(
+        "gameday/ai_league.html",
+        tournament=tournament,
+        tournaments=_gdb.list_tournaments(),
+        leaderboard=refresh_leaderboard(tid),
+        round_scores=get_round_scores(tid),
+    )
+
+
+@bp.route("/gameday/ai-league/team/<team_key>")
+def ai_league_team(team_key: str):
+    _ensure_init()
+    from tools.gameday.game_master import get_or_create_active_tournament
+    from tools.gameday.leaderboard_engine import get_team_detail
+    tournament = get_or_create_active_tournament()
+    return render_template(
+        "gameday/team_detail.html",
+        team_key=team_key,
+        detail=get_team_detail(tournament["id"], team_key),
+        tournament=tournament,
+    )
+
+
+@bp.route("/gameday/ai-league/ops")
+def ai_league_ops():
+    _ensure_init()
+    from tools.gameday import db as _gdb
+    from tools.gameday.game_master import get_or_create_active_tournament
+    tournament = get_or_create_active_tournament()
+    return render_template(
+        "gameday/round_ops.html",
+        tournament=tournament,
+        events=_gdb.get_tournament_llmops(tournament["id"]),
+    )
+
+
+@bp.route("/api/gameday/ai-league/start", methods=["POST"])
+def ai_league_start():
+    _ensure_init()
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip() or None
+    try:
+        round_count = int(data.get("round_count", 5))
+    except (TypeError, ValueError):
+        round_count = 5
+    round_count = max(1, min(round_count, 10))
+    from tools.gameday.game_master import GameMaster
+    gm = GameMaster(tournament_name=name, round_count=round_count)
+    # run_tournament() drives LLM rounds (needs Ollama) and can take minutes —
+    # run it off the request thread so the endpoint returns immediately.
+    import threading
+
+    def _run():
+        try:
+            gm.run_tournament()
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("AI League tournament run failed: %s", exc)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"ok": True, "tournament_name": gm.tournament_name, "round_count": round_count})
+
+
+@bp.route("/api/gameday/ai-league/leaderboard", methods=["GET"])
+def ai_league_leaderboard_api():
+    _ensure_init()
+    from tools.gameday.game_master import get_or_create_active_tournament
+    from tools.gameday.leaderboard_engine import refresh_leaderboard
+    tournament = get_or_create_active_tournament()
+    return jsonify({
+        "ok": True,
+        "tournament_id": tournament["id"],
+        "leaderboard": refresh_leaderboard(tournament["id"]),
+    })
+
+
+@bp.route("/api/gameday/ai-league/team/<team_key>", methods=["GET"])
+def ai_league_team_api(team_key: str):
+    _ensure_init()
+    from tools.gameday.game_master import get_or_create_active_tournament
+    from tools.gameday.leaderboard_engine import get_team_detail
+    tournament = get_or_create_active_tournament()
+    return jsonify({"ok": True, "team": get_team_detail(tournament["id"], team_key)})
