@@ -45,6 +45,9 @@ env:
   AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-gov-west-1' }}
   # Tell Playwright the dashboard is managed by this workflow — don't spawn a second instance.
   ICDEV_NO_SERVER: "1"
+  # SIPA integrity gate — active by default so every kanban task PR is integrity
+  # checked; set the repo variable ICDEV_INTEGRITY_ENABLED=false to disable.
+  ICDEV_INTEGRITY_ENABLED: ${{ vars.ICDEV_INTEGRITY_ENABLED || 'true' }}
 
 jobs:
   run:
@@ -196,6 +199,19 @@ jobs:
       - name: Stop dashboard server
         if: always()
         run: kill $(cat /tmp/dashboard.pid 2>/dev/null) 2>/dev/null || true
+
+      # ── SIPA integrity gate (blocking, pre-PR) ────────────────────────────
+      # Assess the *.py files this task changed for unauthorized / malicious code
+      # BEFORE any PR is opened. ANVIL leaves its changes uncommitted in the work
+      # tree, so stage them and diff the staged index (--cached). Static-only —
+      # the changed code is never executed. A QUARANTINE verdict exits non-zero
+      # and fails the job, so the downstream PR step (no `if: always()`) is
+      # skipped and no PR is opened. Honors ICDEV_INTEGRITY_ENABLED (set in the
+      # workflow env): when off the gate no-ops to a pass.
+      - name: SIPA integrity gate
+        run: |
+          git add -A
+          python tools/integrity/pr_gates.py --cached --gate --json
 
       # ── CI auto-fix commit + PR ───────────────────────────────────────────
       # Fires only for ci-fix-* tasks. After ANVIL applies the fix, commit any
