@@ -318,27 +318,62 @@ CREATE TABLE IF NOT EXISTS kg_edges (
 """
 
 
-def migrate():
-    """Create all fa_* tables and seed static data."""
-    conn = get_connection()
-    for stmt in _DDL.strip().split(";\n\n"):
-        stmt = stmt.strip()
-        if stmt:
-            conn.execute(stmt)
-    conn.commit()
-    # Safe column additions for existing installs
-    for col_ddl in [
-        "ALTER TABLE fa_missions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
-        "ALTER TABLE fa_missions ADD COLUMN updated_at TEXT",
-    ]:
+def _set_lock_timeout(conn, value: str) -> None:
+    """Best-effort SET lock_timeout (PostgreSQL only; no-op/ignored on SQLite)."""
+    try:
+        conn.execute(f"SET lock_timeout = '{value}'")
+        conn.commit()
+    except Exception:
         try:
-            conn.execute(col_ddl)
-            conn.commit()
+            conn.rollback()
         except Exception:
-            pass  # Column already exists
-    _seed_achievements(conn)
-    _seed_skill_nodes(conn)
-    seed_mission_ontology_mappings()
+            pass
+
+
+def migrate():
+    """Create all fa_* tables and seed static data.
+
+    DDL runs with a short ``lock_timeout`` so a blocked ``CREATE``/``ALTER``
+    (e.g. queued behind a leaked idle-in-transaction reader on a fa_* table)
+    fails fast and is skipped instead of wedging the request thread. The fa_*
+    tables already exist on provisioned PostgreSQL installs, so a skipped
+    statement is safe. Without this guard, ``/academy/*`` pages hung
+    indefinitely on first request whenever the table lock was contended.
+    """
+    conn = get_connection()
+    _set_lock_timeout(conn, "3s")
+    try:
+        for stmt in _DDL.strip().split(";\n\n"):
+            stmt = stmt.strip()
+            if not stmt:
+                continue
+            try:
+                conn.execute(stmt)
+                conn.commit()
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                _log.debug("FORGE Academy DDL skipped: %s", exc)
+        # Safe column additions for existing installs
+        for col_ddl in [
+            "ALTER TABLE fa_missions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+            "ALTER TABLE fa_missions ADD COLUMN updated_at TEXT",
+        ]:
+            try:
+                conn.execute(col_ddl)
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass  # Column already exists
+        _seed_achievements(conn)
+        _seed_skill_nodes(conn)
+        seed_mission_ontology_mappings()
+    finally:
+        _set_lock_timeout(conn, "0")  # restore PG default (no lock timeout)
 
 
 def _seed_achievements(conn):
