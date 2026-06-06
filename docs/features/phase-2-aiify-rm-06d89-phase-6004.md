@@ -22,13 +22,13 @@ underlying opportunity — as `aiify-rm-06d89-phase-6003` and siblings
 paperless `src/*` files, same pattern). The scanner re-emits one card per scan for the
 same `consumer.py`; no additional code change is warranted.
 
-## Verification (at HEAD `3c0a0f492`, branch `kanban/aiify-rm-06d89-phase-6004`)
+## Verification (at HEAD `bfc7904fc`, branch `irad/feature`)
 
 - `dfb671f09` is an ancestor of HEAD ✓
 - temp clone path `aiify_git_zwu66zfu/src/documents/consumer.py` no longer exists ✓
 - `_load_anomaly_cfg` present in `tools/monitor/log_analyzer.py` (def L477) ✓
-- `_load_anomaly_cfg` present in `icdev/tools/monitor/log_analyzer.py` mirror ✓
-- `anomaly_detection` block in `args/monitoring_config.yaml` ✓
+- `_load_anomaly_cfg` present in `icdev/tools/monitor/log_analyzer.py` mirror (def L300) ✓
+- `anomaly_detection` block in `args/monitoring_config.yaml` (L91 log, L71 metric) ✓
 
 No competing implementation authored. Card moved to done with
 `bypass_verification: true` + `bypass_reason`.
