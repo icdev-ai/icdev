@@ -5519,6 +5519,123 @@ def _detect_execution_anomaly(age_seconds: float) -> Tuple[bool, str]:
 _SUGGESTED_DECAY_HOURS = _int_env("KANBAN_SUGGESTED_DECAY_HOURS", 48)
 
 
+def _promote_unblocking_suggested(conn: Any) -> None:
+    """Promote 'suggested' tasks that would otherwise stall the pipeline.
+
+    The 48 h decay pass and the bounded auto-revive both leave a class of
+    'suggested' tasks stranded indefinitely. This pass closes that gap for
+    GENUINE cards (failure_count < 5 and no 'hard-quarantine'/'hitl' reason —
+    AI predictions, V&V defect cards, etc.; truly failure-quarantined or
+    human-held tasks are left to _revive_quarantined_suggested / HITL).
+
+    Three independent triggers, each promoting the task to 'backlog' so the
+    dispatcher can pick it up on the next cycle:
+
+      1. CHAIN-BLOCKER — another non-terminal task ``depends_on`` this card.
+         Leaving the parent in the non-dispatchable 'suggested' lane deadlocks
+         the whole chain: the dependent never dispatches, so backlog/scheduled
+         never drain, so neither decay nor auto-revive is ever reached.
+         Promote immediately.
+      2. CRITICAL — priority == 'critical' with its own deps satisfied. A
+         critical defect (e.g. a silently-disabled malware scanner) must not
+         wait 48 h for the decay pass.
+      3. QUEUE-IDLE — there is NO dispatchable work anywhere (no backlog,
+         scheduled, or in_progress rows). Promote every eligible card so the
+         pipeline never idles while work waits in the review lane.
+
+    A hard-quarantined card that BLOCKS a chain is not auto-promoted (a human
+    asked for the hold) but is surfaced via a warning so the deadlock is
+    visible rather than silent.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
+        rows = [
+            dict(r) for r in conn.execute(
+                "SELECT id, priority, failure_count, last_failure_reason, "
+                "depends_on_task_id FROM kanban_tasks WHERE status = 'suggested'"
+            ).fetchall()
+        ]
+    except Exception as exc:
+        logger.warning("suggested-unblock: read failed: %s", exc)
+        return
+    if not rows:
+        return
+
+    # Ids that some non-terminal task depends on (would-be chain blockers).
+    needed = {
+        dict(r)["depends_on_task_id"]
+        for r in conn.execute(
+            "SELECT DISTINCT depends_on_task_id FROM kanban_tasks "
+            "WHERE depends_on_task_id IS NOT NULL "
+            "  AND status NOT IN ('done', 'decomposed')"
+        ).fetchall()
+    }
+
+    # Is there any dispatchable / in-flight work right now?
+    busy = conn.execute(
+        "SELECT 1 FROM kanban_tasks "
+        "WHERE status IN ('backlog', 'scheduled', 'in_progress') LIMIT 1"
+    ).fetchone()
+    queue_empty = busy is None
+
+    def _deps_ok(dep: Optional[str]) -> bool:
+        if not dep:
+            return True
+        prow = conn.execute(
+            "SELECT status FROM kanban_tasks WHERE id = ?", (dep,)
+        ).fetchone()
+        return bool(prow) and dict(prow).get("status") in ("done", "decomposed")
+
+    promoted: list = []
+    deadlocked_hitl: list = []
+    for d in rows:
+        tid = d["id"]
+        fc = d.get("failure_count") or 0
+        reason = (d.get("last_failure_reason") or "").lower()
+        hard_hitl = fc >= 5 or "hard-quarantine" in reason or "hitl" in reason
+        is_blocker = tid in needed
+
+        if hard_hitl:
+            # Respect the human hold, but make a deadlock visible.
+            if is_blocker:
+                deadlocked_hitl.append(tid)
+            continue
+
+        is_critical = d.get("priority") == "critical" and _deps_ok(d.get("depends_on_task_id"))
+        is_idle_fill = queue_empty and _deps_ok(d.get("depends_on_task_id"))
+        if not (is_blocker or is_critical or is_idle_fill):
+            continue
+
+        why = "chain-blocker" if is_blocker else ("critical" if is_critical else "queue-idle")
+        conn.execute(
+            "UPDATE kanban_tasks SET status = 'backlog', updated_at = ?, "
+            "last_failure_reason = ? WHERE id = ? AND status = 'suggested'",
+            (
+                now_iso,
+                f"auto-promote ({why}): unblocking 'suggested' -> backlog so the "
+                "pipeline does not stall",
+                tid,
+            ),
+        )
+        promoted.append((tid, why))
+
+    if promoted:
+        conn.commit()
+        for tid, why in promoted:
+            print(f"  Kanban: auto-promote {why} {tid} -> backlog")
+        logger.info(
+            "suggested-unblock: promoted %d task(s): %s",
+            len(promoted), [f"{t}({w})" for t, w in promoted],
+        )
+    if deadlocked_hitl:
+        logger.warning(
+            "suggested-unblock: %d HITL-held 'suggested' task(s) are blocking "
+            "dependents — chain deadlocked pending human action: %s",
+            len(deadlocked_hitl), deadlocked_hitl,
+        )
+
+
 def _promote_stale_suggested() -> None:
     """Decay sweep: re-queue 'suggested' tasks that have been stuck >48 h
     and are NOT hard-quarantined (failure_count < 5 and last_failure_reason
@@ -5531,6 +5648,10 @@ def _promote_stale_suggested() -> None:
     """
     try:
         with get_connection() as conn:
+            # Urgent unblocking first: chain-blockers, critical cards, and the
+            # queue-idle safety net don't wait for the 48 h decay window.
+            _promote_unblocking_suggested(conn)
+
             cutoff = (
                 datetime.now(timezone.utc) - timedelta(hours=_SUGGESTED_DECAY_HOURS)
             ).isoformat()
