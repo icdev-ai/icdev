@@ -14,6 +14,11 @@
     var CHAT_API = '/api/chat';
     var INTAKE_API = '/api/intake';
 
+    // Shown when a send is deferred to a background CLI job (content_type='pending').
+    // Polling /<id>/messages keeps running with no request-level timeout until the
+    // real assistant answer is posted, at which point it replaces this notice.
+    var PENDING_NOTICE_TEXT = 'Running in background — the result will be posted here when ready.';
+
     var _activeContextId = null;
     var _contextVersions = {};
     var _pollTimer = null;
@@ -356,6 +361,20 @@
                     return;
                 }
                 appendMessage({ role: 'user', content: content, turn_number: res.turn_number });
+
+                if (res.status === 'pending') {
+                    // Send was deferred to a background CLI job. Render an inline
+                    // 'running in background' notice and keep polling /messages
+                    // (no request-level timeout) until the real answer is posted.
+                    appendMessage({
+                        role: 'assistant',
+                        content: res.message || PENDING_NOTICE_TEXT,
+                        content_type: 'pending'
+                    });
+                }
+                // Keep the poll loop alive so a late assistant message (whether
+                // posted now or after a deferred job completes) is rendered in place.
+                if (!_pollTimer) startPolling(ctxId);
                 // GOV spinner stays visible until pollContextState clears is_processing
             })
             .catch(function (err) {
@@ -1506,7 +1525,13 @@
             return;
         }
         var html = '';
-        for (var i = 0; i < messages.length; i++) html += renderMessageHtml(messages[i]);
+        for (var i = 0; i < messages.length; i++) {
+            // A 'pending' placeholder is a transient "running in background" notice.
+            // Once a later message exists (the real answer overwrote/followed it),
+            // drop the notice so the answer renders in its place.
+            if ((messages[i].content_type === 'pending') && i < messages.length - 1) continue;
+            html += renderMessageHtml(messages[i]);
+        }
         stream.innerHTML = html;
         stream.scrollTop = stream.scrollHeight;
         var wb = document.getElementById('chat-welcome-banner');
@@ -1525,6 +1550,14 @@
     function renderMessageHtml(msg) {
         var role = msg.role || 'user';
         var ct = msg.content_type || 'text';
+
+        // Deferred-job placeholder: inline 'running in background' notice + spinner.
+        if (ct === 'pending') {
+            return '<div class="msg-bubble msg-bubble--pending" data-pending="true">'
+                + '<span class="pending-spinner"></span>'
+                + '<span class="pending-notice">' + escHtml(msg.content || PENDING_NOTICE_TEXT) + '</span>'
+                + '</div>';
+        }
 
         // Check if this is an advisory message type
         var advInfo = ADVISORY_MAP[ct] || ADVISORY_MAP[role];
