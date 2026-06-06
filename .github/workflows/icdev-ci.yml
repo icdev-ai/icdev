@@ -71,6 +71,42 @@ jobs:
         run: pip install -r requirements.txt && pip-audit --skip-editable -q
         continue-on-error: true
 
+  # ── Tier 1: SIPA Integrity Gate (PR-only, blocking) ─────────────────────
+  # Assesses ONLY the *.py files changed on the PR branch (git diff vs the base)
+  # for unauthorized / malicious code. Static-only — the changed code is never
+  # executed. Honors ICDEV_INTEGRITY_ENABLED (set true here so the gate is
+  # active); exits non-zero on a QUARANTINE verdict and blocks the merge.
+  sipa-gate:
+    name: SIPA Integrity Gate
+    runs-on: ubuntu-latest
+    needs: lint
+    if: github.event_name == 'pull_request'
+    env:
+      ICDEV_STORAGE_BACKEND: sqlite
+      ICDEV_INTEGRITY_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the merge-base with the base branch resolves for the
+          # `git diff <base>...HEAD` the gate runs.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e . 2>/dev/null || true
+      - name: Initialize database (SIPA assessment tables)
+        run: python tools/db/init_icdev_db.py
+      - name: SIPA PR diff gate
+        # ${{ github.base_ref }} is the PR's target branch (e.g. main); diff the
+        # branch against its remote tracking ref. Blocking — exit 1 quarantines.
+        run: |
+          python tools/integrity/pr_gates.py \
+            --base "origin/${{ github.base_ref }}" \
+            --gate --json
+
   # ── Tier 2: Two-Tier LLM Build (Ollama + Claude review) ─────────────────
   two-tier-build:
     name: Two-Tier LLM Build
