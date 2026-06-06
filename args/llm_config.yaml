@@ -1187,6 +1187,20 @@ chain_orchestration:
           - Bull case (strong buy / buy)
           - Bear case (sell / strong sell)
           - Neutral case (hold / wait)
+      # ACF go/no-go approval gate — debate across 4 DISTINCT Ollama-cloud models.
+      # debater_pool_role -> get_diverse_models picks 4 distinct cloud models; the legacy
+      # debater_models list is the fallback if the pool resolves empty.
+      capability_deliberation:
+        num_debaters: 4
+        debate_rounds: 2
+        debater_pool_role: acf_deliberation_debaters
+        judge_role: acf_deliberation_judge
+        judge_model: glm5-cloud
+        debater_models:
+          - glm5-cloud
+          - qwen3next-cloud
+          - deepseek-cloud
+          - kimi-cloud
 
 # -----------------------------------------------------------------------
 # Reasoned Codegen (tools/llm/reasoned_codegen.py)
