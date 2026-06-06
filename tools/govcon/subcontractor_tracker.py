@@ -146,11 +146,13 @@ def create_subcontractor(contract_id, data):
             data.get("business_size", "large"),
             data.get("subcontract_value", 0.0),
             data.get("performance_rating"),
-            data.get("flow_down_complete", 0),
-            data.get("flowdown_verified", 0),
-            data.get("cybersecurity_compliant", 0),
+            # Coerce boolean flags to int — these are INTEGER columns and PG
+            # (unlike SQLite) rejects a boolean expression for an integer column.
+            int(bool(data.get("flow_down_complete", 0))),
+            int(bool(data.get("flowdown_verified", 0))),
+            int(bool(data.get("cybersecurity_compliant", 0))),
             data.get("cmmc_level"),
-            data.get("isr_ssr_current", 0),
+            int(bool(data.get("isr_ssr_current", 0))),
             data.get("status", "active"),
             data.get("notes"),
             _now(),

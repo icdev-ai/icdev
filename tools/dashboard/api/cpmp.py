@@ -1061,6 +1061,20 @@ def _get_cor_contracts(cor_email):
     return [dict(r) for r in rows]
 
 
+def _cor_contract_authorized(contract_id) -> bool:
+    """Authorize COR-portal access to a contract.
+
+    A `cor` user may only see contracts they are personally assigned to (by
+    cor_email). Oversight roles (admin/pm/co/isso) provide program-wide
+    visibility and may view any contract's COR data.
+    """
+    user = g.current_user or {}
+    if user.get("role", "") in ("admin", "pm", "co", "isso"):
+        return True
+    cor_email = user.get("email", "")
+    return any(c.get("id") == contract_id for c in _get_cor_contracts(cor_email))
+
+
 # Hidden fields for COR view (from config)
 COR_HIDDEN_FIELDS = {
     "subcontractor_pricing",
@@ -1109,9 +1123,7 @@ def cor_get_contract(contract_id):
         cor_email = g.current_user.get("email", "")
         if not cor_email:
             return jsonify({"status": "error", "message": "Authenticated user has no email"}), 400
-        # Verify COR is assigned to this contract
-        cor_contracts = _get_cor_contracts(cor_email)
-        if not any(c.get("id") == contract_id for c in cor_contracts):
+        if not _cor_contract_authorized(contract_id):
             return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.contract_manager import get_contract as _get
 
@@ -1135,8 +1147,7 @@ def cor_list_deliverables(contract_id):
         cor_email = g.current_user.get("email", "")
         if not cor_email:
             return jsonify({"status": "error", "message": "Authenticated user has no email"}), 400
-        cor_contracts = _get_cor_contracts(cor_email)
-        if not any(c.get("id") == contract_id for c in cor_contracts):
+        if not _cor_contract_authorized(contract_id):
             return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.contract_manager import list_deliverables as _list
 
@@ -1158,8 +1169,7 @@ def cor_get_evm(contract_id):
         cor_email = g.current_user.get("email", "")
         if not cor_email:
             return jsonify({"status": "error", "message": "Authenticated user has no email"}), 400
-        cor_contracts = _get_cor_contracts(cor_email)
-        if not any(c.get("id") == contract_id for c in cor_contracts):
+        if not _cor_contract_authorized(contract_id):
             return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.evm_engine import aggregate_contract_evm
 
@@ -1181,8 +1191,7 @@ def cor_get_cpars(contract_id):
         cor_email = g.current_user.get("email", "")
         if not cor_email:
             return jsonify({"status": "error", "message": "Authenticated user has no email"}), 400
-        cor_contracts = _get_cor_contracts(cor_email)
-        if not any(c.get("id") == contract_id for c in cor_contracts):
+        if not _cor_contract_authorized(contract_id):
             return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.cpars_predictor import list_assessments as _list
 

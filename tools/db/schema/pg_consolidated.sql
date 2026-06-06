@@ -9576,6 +9576,7 @@ CREATE TABLE public.cpmp_subcontractors (
     billed_value real DEFAULT 0.0,
     performance_rating text,
     flow_down_complete integer DEFAULT 0,
+    flowdown_verified integer DEFAULT 0,
     cybersecurity_compliant integer DEFAULT 0,
     cmmc_level integer,
     isr_ssr_current integer DEFAULT 0,
