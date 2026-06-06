@@ -269,7 +269,7 @@ TASKS = [
             "config.deliberation.defer_to_score_on_fallback, return decision='build' iff the deterministic "
             "composite passed (i.e. the score gate stands alone) — ACF NEVER blocks on LLM availability. "
             "CONFIG ALREADY WIRED (do NOT re-add): args/llm_config.yaml has the 'capability_deliberation' "
-            "function route + cod.per_function.capability_deliberation (num_debaters:4, "
+            "function route + cod.per_function.capability_deliberation (num_debaters:5, "
             "debater_pool_role:'acf_deliberation_debaters' = 10 distinct Ollama-cloud models (CLOUD-ONLY, "
             "no local), judge_role:'acf_deliberation_judge') + the matching cot.per_function override. "
             "Just call ChainOrchestrator with function='capability_deliberation'. Tests (no real LLM — "

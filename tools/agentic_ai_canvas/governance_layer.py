@@ -12,11 +12,12 @@ the public entry-point consumed by AgenticResearchPipeline.run().
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Optional
 
-logger = logging.getLogger("icdev.aadc.governance_layer")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.aadc.governance_layer")
 
 _DEFAULT_CONFIDENCE_THRESHOLD = 0.5
 _MIN_ANSWER_LEN = 10
