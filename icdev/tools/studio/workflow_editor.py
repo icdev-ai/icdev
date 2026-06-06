@@ -1757,12 +1757,20 @@ def create_workflow(
 
     conn = get_connection()
     try:
+        # Stamp the row with the caller's classification so the exact-match RLS
+        # predicate lets the same caller read/update/delete it afterwards. Without
+        # this the column falls back to the schema default ('CUI'), which is
+        # invisible to a higher-clearance caller (e.g. the TOP SECRET//SCI E2E
+        # auth-bypass context) and makes the create->delete roundtrip 404.
+        ctx = getattr(conn, "_security_context", None)
+        classification = getattr(ctx, "classification", None) or "CUI"
         conn.execute(
             """INSERT INTO studio_workflows
                (workflow_id, name, description, template_yaml, category,
-                created_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (wf_id, name, description, template_yaml, category, created_by, now, now),
+                created_by, created_at, updated_at, classification)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (wf_id, name, description, template_yaml, category, created_by, now, now,
+             classification),
         )
         conn.commit()
         return {"status": "ok", "workflow_id": wf_id}
