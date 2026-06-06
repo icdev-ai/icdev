@@ -22,6 +22,8 @@ Checks:
  12. karpathy_sync  — 5 canonical Karpathy headings present in all 10 AI platform configs
  13. openapi_parity — generate_openapi_spec(app) paths match app.url_map /api/v1/* routes
  14. security_context — RLS auto-wiring intact; set_security_context(None) bypasses documented
+ 15. no_placeholders — zero-tolerance: any stub/placeholder in changed non-test source fails (codegen)
+ 16. duplicate_code — warn: changed function is a verbatim copy of an existing tools/ function (codegen)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -3085,6 +3087,298 @@ def check_log_standard_compliance() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check 24: no_placeholders — zero-tolerance stub/placeholder gate (codegen)
+# ---------------------------------------------------------------------------
+#
+# Fails the gate on ANY placeholder/stub in a changed, non-test source file:
+# TODO/FIXME, pass-only / ellipsis-only / NotImplementedError functions,
+# trivial-return and placeholder-string stubs. Reuses the per-language
+# detection in tools/testing/stub_detector.py (no logic duplicated here).
+#
+# Scope contract (matches check_import_usage): no --changed-files ⇒ no-op pass,
+# so `--all --gate` stays green and enforcement happens at the explicit
+# changed-files call site (ANVIL VERIFY / pre-commit). Tests and .tmp are
+# excluded — test scaffolding is explicitly permitted by the build goals.
+# Within a changed file, only NEWLY added/modified lines (git diff vs HEAD) are
+# gated, so editing a legacy file does not fail on its pre-existing stubs;
+# brand-new (untracked) files and no-git environments are checked in full.
+
+_CODEGEN_SOURCE_EXTS = {".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rs", ".cs"}
+
+
+def _added_line_numbers(path: Path) -> Optional[Set[int]]:
+    """Return 1-based line numbers added/modified vs HEAD for `path`.
+
+    Returns None when the whole file should be checked: git unavailable, or the
+    file is untracked (brand-new → every line is "added"). This scopes the
+    zero-tolerance gate to NEW code, so editing a legacy file does not fail on
+    its pre-existing stubs.
+    """
+    import subprocess
+
+    try:
+        rel = str(path.relative_to(PROJECT_ROOT)) if path.is_relative_to(PROJECT_ROOT) else str(path)
+    except Exception:
+        return None
+    try:
+        tracked = subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "ls-files", "--error-unmatch", rel],
+            capture_output=True, text=True, timeout=15,
+        )
+        if tracked.returncode != 0:
+            return None  # untracked → treat as all-new
+        diff = subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "diff", "--unified=0", "HEAD", "--", rel],
+            capture_output=True, text=True, timeout=30,
+        )
+        if diff.returncode != 0:
+            return None
+    except Exception:
+        return None
+
+    added: Set[int] = set()
+    for line in diff.stdout.splitlines():
+        if line.startswith("@@"):
+            m = re.search(r"\+(\d+)(?:,(\d+))?", line)
+            if m:
+                start = int(m.group(1))
+                count = int(m.group(2)) if m.group(2) else 1
+                added.update(range(start, start + count))
+    return added
+
+
+def _is_test_or_excluded(path: Path) -> bool:
+    """True if a path is a test, fixture, or scratch file exempt from codegen gates."""
+    parts = {p.lower() for p in path.parts}
+    if "tests" in parts or ".tmp" in parts:
+        return True
+    name = path.name.lower()
+    if name == "conftest.py" or name.startswith("test_") or name.endswith("_test.py"):
+        return True
+    return False
+
+
+def check_no_placeholders(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Zero-tolerance: any stub/placeholder in changed non-test source code fails."""
+    files = changed_files or []
+    if not files:
+        return CoherenceCheck(
+            check_id="no_placeholders",
+            check_name="No Placeholders",
+            status="pass",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
+            message="No files specified — use --changed-files",
+        )
+
+    targets = [
+        f for f in files
+        if f.suffix.lower() in _CODEGEN_SOURCE_EXTS and f.exists() and not _is_test_or_excluded(f)
+    ]
+    if not targets:
+        return CoherenceCheck(
+            check_id="no_placeholders",
+            check_name="No Placeholders",
+            status="pass",
+            expected=["No stubs in changed source"],
+            actual=["No applicable source files in change set"],
+            missing=[],
+            extra=[],
+            message="No applicable (non-test) source files to check",
+        )
+
+    try:
+        from tools.testing.stub_detector import check_substantive
+    except Exception as exc:  # pragma: no cover - import guard
+        return CoherenceCheck(
+            check_id="no_placeholders",
+            check_name="No Placeholders",
+            status="warn",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
+            message=f"stub_detector unavailable: {exc}",
+        )
+
+    findings: List[str] = []
+    for path in targets:
+        rel = path.relative_to(PROJECT_ROOT) if path.is_relative_to(PROJECT_ROOT) else path
+        added = _added_line_numbers(path)  # None ⇒ check whole file (new/untracked or no git)
+        sub = check_substantive(path)
+        for stub in sub.get("stubs_found", []):
+            if added is not None and stub["line"] not in added:
+                continue  # pre-existing stub in a touched file — not introduced by this change
+            findings.append(f"{rel}:{stub['line']}: {stub['pattern']} — {stub['text']}")
+
+    if findings:
+        return CoherenceCheck(
+            check_id="no_placeholders",
+            check_name="No Placeholders",
+            status="fail",
+            expected=["Zero stubs/placeholders in changed source"],
+            actual=findings,
+            missing=findings,
+            extra=[],
+            message=(
+                f"{len(findings)} placeholder/stub(s) in changed code — finish or "
+                "remove them (zero-tolerance gate)"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="no_placeholders",
+        check_name="No Placeholders",
+        status="pass",
+        expected=["Zero stubs/placeholders in changed source"],
+        actual=[f"Checked {len(targets)} file(s)"],
+        missing=[],
+        extra=[],
+        message="No placeholders/stubs in changed source",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check 25: duplicate_code — reuse-missed detector (warn, codegen)
+# ---------------------------------------------------------------------------
+#
+# Warns when a function in changed code is a verbatim (rename-insensitive)
+# copy of a function that already exists elsewhere in tools/ — the "AI pasted
+# a helper that already exists" case. Exact normalized-body hashing keeps
+# false positives near zero (this is a WARN, never a merge blocker).
+
+_DUP_MIN_BODY_LINES = 6
+
+
+def _func_body_fingerprints(content: str) -> Dict[str, Tuple[str, int]]:
+    """Map normalized-body sha256 -> (function_name, lineno) for substantial funcs.
+
+    Fast: splits the source once and slices each function body by line span
+    (avoids per-statement ast.get_source_segment, which re-splits the whole
+    source on every call and is O(N*lines) over a large tree).
+    """
+    import hashlib
+    import textwrap
+
+    out: Dict[str, Tuple[str, int]] = {}
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return out
+
+    src_lines = content.splitlines()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        body = list(node.body)
+        # Drop a leading docstring so doc-only differences don't matter.
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(getattr(body[0], "value", None), ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            body = body[1:]
+        if not body:
+            continue
+        start = body[0].lineno
+        end = getattr(body[-1], "end_lineno", body[-1].lineno) or body[-1].lineno
+        raw = "\n".join(src_lines[start - 1:end])
+        if not raw.strip():
+            continue
+        norm_lines = [
+            ln.rstrip()
+            for ln in textwrap.dedent(raw).splitlines()
+            if ln.strip() and not ln.strip().startswith("#")
+        ]
+        if len(norm_lines) < _DUP_MIN_BODY_LINES:
+            continue
+        digest = hashlib.sha256("\n".join(norm_lines).encode("utf-8")).hexdigest()
+        out.setdefault(digest, (node.name, node.lineno))
+    return out
+
+
+def check_duplicate_code(
+    changed_files: Optional[List[Path]] = None,
+    scan_root: Optional[Path] = None,
+) -> CoherenceCheck:
+    """Warn when changed functions duplicate functions already present in tools/.
+
+    scan_root: directory whose .py files form the "existing code" index
+    (defaults to tools/). Exposed for hermetic testing and scoping.
+    """
+    files = changed_files or []
+    changed_py = [
+        f for f in files
+        if f.suffix.lower() == ".py" and f.exists() and not _is_test_or_excluded(f)
+    ]
+    if not changed_py:
+        return CoherenceCheck(
+            check_id="duplicate_code",
+            check_name="Duplicate Code",
+            status="pass",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
+            message="No applicable changed .py files — use --changed-files",
+        )
+
+    changed_resolved = {f.resolve() for f in changed_py}
+
+    # Fingerprint the existing code tree once, excluding the changed files.
+    existing: Dict[str, str] = {}  # digest -> "rel_path:func:line"
+    tools_dir = scan_root or (PROJECT_ROOT / "tools")
+    for py in tools_dir.rglob("*.py"):
+        if py.resolve() in changed_resolved or _is_test_or_excluded(py):
+            continue
+        try:
+            src = py.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = py.relative_to(PROJECT_ROOT) if py.is_relative_to(PROJECT_ROOT) else py
+        for digest, (fname, line) in _func_body_fingerprints(src).items():
+            existing.setdefault(digest, f"{rel}:{fname}:{line}")
+
+    dups: List[str] = []
+    for path in changed_py:
+        rel = path.relative_to(PROJECT_ROOT) if path.is_relative_to(PROJECT_ROOT) else path
+        try:
+            src = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for digest, (fname, line) in _func_body_fingerprints(src).items():
+            match = existing.get(digest)
+            if match:
+                dups.append(f"{rel}:{fname}:{line} duplicates {match} — reuse it")
+
+    if dups:
+        return CoherenceCheck(
+            check_id="duplicate_code",
+            check_name="Duplicate Code",
+            status="warn",
+            expected=["Changed functions reuse existing code"],
+            actual=dups,
+            missing=[],
+            extra=dups,
+            message=f"{len(dups)} duplicated function(s) — import the existing symbol instead",
+        )
+
+    return CoherenceCheck(
+        check_id="duplicate_code",
+        check_name="Duplicate Code",
+        status="pass",
+        expected=["Changed functions reuse existing code"],
+        actual=[f"Checked {len(changed_py)} file(s)"],
+        missing=[],
+        extra=[],
+        message="No duplicated functions detected",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -3113,6 +3407,8 @@ CHECK_REGISTRY = {
     "nav_route_parity": check_nav_route_parity,
     "blueprint_imports": check_blueprint_imports,
     "new_page_completeness": check_new_page_completeness,
+    "no_placeholders": check_no_placeholders,
+    "duplicate_code": check_duplicate_code,
 }
 
 
@@ -3142,6 +3438,8 @@ _FIX_REGISTRY: Dict[str, str] = {
     "hitl_workflow": "skip",  # module fixes require human judgment
     "mcp_security": "skip",  # scanner module creation requires human judgment
     "security_context": "skip",  # RLS bypass documentation and wiring fixes require human judgment
+    "no_placeholders": "skip",  # removing stubs requires finishing the code — human judgment
+    "duplicate_code": "skip",  # de-dup / import-the-original requires human judgment
 }
 
 

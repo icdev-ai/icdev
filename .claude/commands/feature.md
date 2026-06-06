@@ -85,6 +85,16 @@ conn.close()
 
 ### Phase 2: Implement (Link + Assemble)
 
+7b. **Reuse Scout (pre-generation)** — Before writing any new code, find existing symbols to reuse:
+   ```bash
+   python tools/codegen/reuse_scout.py --intent "<feature summary>" \
+     --symbols "<planned_func1>,<planned_func2>" --markdown
+   ```
+   - **REUSE** the symbols it lists — import and call them; do NOT re-implement.
+   - Build ONLY the items under **GENERATE ONLY** (no existing match).
+   - The brief follows `hardprompts/minimal_generation.md`. Apply its rules:
+     generate only what's required, reuse first, and never emit a placeholder/stub.
+
 8. **Execute the Plan** — Follow every step in the plan's `Step by Step Tasks` section, top to bottom. Write the actual code changes.
 
 9. **Classification Markings** — If `marking_required` is true, verify every new or modified Python file includes the classification header comment (`<resolved code_header>`). Add it to any file missing the marking. If `marking_required` is false, skip this step.
@@ -166,6 +176,21 @@ These gates apply to every commit regardless of project type.
        ```
     4. Note the auto-created chore issue number in the validation report under Tier 1 > Code Quality.
     This does NOT block the current workflow — pre-existing violations are tracked for separate cleanup.
+
+11b. **Codegen Quality (No Placeholders / Reuse-First)** — Keep AI-generated code lean. Pass the
+    files you created/modified this task as `--changed-files` (comma-separated):
+    ```bash
+    python tools/workflow/coherence_checker.py --check no_placeholders,duplicate_code \
+      --changed-files "<file1>,<file2>" --gate
+    ```
+    - **`no_placeholders` BLOCKS** (zero-tolerance, `codegen_quality` gate): any
+      TODO/FIXME/pass-only/ellipsis/`NotImplementedError`/placeholder-return in a changed
+      non-test source file fails the gate. Finish or remove the stub — do not ship it. Test
+      files (`tests/`, `test_*.py`, `conftest.py`) and `.tmp/` scratch are exempt.
+    - **`duplicate_code` WARNS**: a changed function that is a verbatim copy of an existing
+      `tools/` function — import and reuse the original instead of pasting a copy.
+    Before generating new code, prefer `tools/codegen/reuse_scout.py` (NAVIGATE phase) to find
+    existing symbols to reuse rather than writing new ones.
 
 12. **Unit Tests (pytest)** — Run the test suite:
     ```bash

@@ -169,6 +169,13 @@ projects/<name>/tests/unit/test_<feature>.py::test_edge_case FAILED
 
 ### Step 4: Generate Implementation Code
 
+**Pre-generation (reuse first):** Run the Reuse Scout to find existing symbols before writing new code:
+```
+python tools/codegen/reuse_scout.py --intent "<feature summary>" --symbols "<planned symbols>" --markdown
+```
+Reuse everything it lists under REUSE; build only the GENERATE ONLY residual. The brief
+follows `hardprompts/minimal_generation.md` (also auto-applied to LLM `code_generation` calls).
+
 **Tool:** `python tools/builder/code_generator.py --project <name> --spec "projects/<name>/tests/features/<feature-name>.feature"`
 
 **Expected output:**
@@ -187,6 +194,9 @@ Complexity: <low|medium|high>
 **Code generation rules:**
 - Write the MINIMUM code to make tests pass
 - No speculative features (YAGNI — You Ain't Gonna Need It)
+- Reuse existing symbols (see Reuse Scout) — do not re-implement what exists
+- No placeholders/stubs — every function must be complete (enforced post-gen by
+  `coherence_checker --check no_placeholders --changed-files <files> --gate`)
 - Follow project language conventions
 - Include type hints (Python) or JSDoc (JavaScript)
 - No hardcoded values — use configuration from args/
