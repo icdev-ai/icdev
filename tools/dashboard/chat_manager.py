@@ -1173,6 +1173,14 @@ class ChatManager:
                 # Process message through LLM
                 response = self._process_message(ctx, msg)
 
+                # CLI bridge deferred this turn to a background job. The PENDING
+                # placeholder is already persisted by _process_message; finish
+                # the task and let the worker post the real answer later, rather
+                # than blocking or double-inserting an assistant message.
+                if isinstance(response, dict) and response.get("status") == "pending":
+                    self._db_complete_task(task_id, response.get("message", ""))
+                    continue
+
                 # Intervention check point 3: after LLM response
                 intervention = ctx.check_intervention()
                 if intervention:
@@ -1268,7 +1276,22 @@ class ChatManager:
         6. Track RAG sources in metadata
 
         Falls back to echo response if LLM is unavailable.
+
+        When the CLI bridge is active and a request outruns the soft-wait, the
+        router raises ``CLIJobDeferred``. We catch it specifically, persist a
+        PENDING assistant placeholder carrying the ``job_id``, and return a
+        ``{"status": "pending", ...}`` dict so the caller switches to background
+        mode instead of blocking. The echo fallback is reserved for the case
+        where the bridge is disabled / no LLM is reachable.
         """
+        # Resolve CLIJobDeferred lazily; if the bridge isn't installed the name
+        # becomes an empty tuple so the ``except`` clauses below never match and
+        # the existing echo fallback handles unavailability unchanged.
+        try:
+            from tools.llm.cli_bridge.cli_provider import CLIJobDeferred
+        except Exception:  # bridge not installed/disabled
+            CLIJobDeferred = ()
+
         try:
             from tools.llm.router import LLMRouter
 
@@ -1365,6 +1388,8 @@ class ChatManager:
                     if not result:
                         response = router.invoke("chat_response", request)
                         result = response.content if response.content else str(response)
+                except CLIJobDeferred:
+                    raise  # let the outer handler switch to background mode
                 except Exception as exc:
                     logger.debug("reasoned codegen failed (%s) — plain chat", exc)
                     response = router.invoke("chat_response", request)
@@ -1379,10 +1404,60 @@ class ChatManager:
 
             return result
 
+        except CLIJobDeferred as exc:
+            # CLI bridge accepted the request but it outran the soft-wait. Post a
+            # PENDING placeholder (carrying job_id) and hand control back so the
+            # request doesn't block; the backend worker posts the real answer.
+            logger.info(
+                "CLI job %s deferred to background for context %s",
+                getattr(exc, "job_id", ""),
+                ctx.context_id,
+            )
+            return self._persist_pending_placeholder(ctx, getattr(exc, "job_id", ""))
+
         except (ImportError, Exception) as exc:
             logger.debug("LLM unavailable for chat: %s — using echo fallback", exc)
             content = msg.get("content", "")
             return f"[Agent {ctx.agent_model}] Acknowledged: {content[:500]}"
+
+    _PENDING_PLACEHOLDER_TEXT = (
+        "Working… running in background; I'll post the result here."
+    )
+
+    def _persist_pending_placeholder(self, ctx: "ChatContext", job_id: str) -> dict:
+        """Persist a PENDING assistant placeholder for a deferred CLI job.
+
+        Writes an assistant message (``content_type="pending"``) carrying the
+        ``job_id`` in metadata so the UI can render a "still working" bubble and
+        a worker can later overwrite/append the real answer. Returns the pending
+        descriptor the agent loop / caller surfaces instead of blocking.
+        """
+        ctx.turn_number += 1
+        self._db_insert_message(
+            ctx.context_id,
+            ctx.turn_number,
+            "assistant",
+            self._PENDING_PLACEHOLDER_TEXT,
+            content_type="pending",
+            metadata={"status": "pending", "job_id": job_id},
+        )
+        _mark_dirty(
+            ctx.context_id,
+            "new_message",
+            {
+                "turn_number": ctx.turn_number,
+                "role": "assistant",
+                "content": self._PENDING_PLACEHOLDER_TEXT,
+                "content_type": "pending",
+                "status": "pending",
+                "job_id": job_id,
+            },
+        )
+        return {
+            "status": "pending",
+            "job_id": job_id,
+            "message": self._PENDING_PLACEHOLDER_TEXT,
+        }
 
     # ------------------------------------------------------------------
     # Generic advisory injection
@@ -1444,6 +1519,11 @@ class ChatManager:
                 "role": "user",
             },
         )
+
+        # If the CLI bridge deferred to a background job, the PENDING placeholder
+        # is already persisted — nothing more to record here.
+        if isinstance(response, dict) and response.get("status") == "pending":
+            return
 
         # Record intervention response
         ctx.turn_number += 1
