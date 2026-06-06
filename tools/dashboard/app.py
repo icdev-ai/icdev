@@ -3452,7 +3452,7 @@ def create_app() -> Flask:
             "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
             "slides":         ("tools.iqe.adapters.slides",            ["slides.decks", "slides.slides"]),
             "cpmp":           ("tools.iqe.adapters.cpmp",              ["cpmp.contracts", "cpmp.deliverables", "cpmp.clins", "cpmp.cpars", "cpmp.evm"]),
-            "ace":            ("icdev.tools.iqe.adapters.ace",          ["ace.coworkers", "ace.sessions", "ace.suggestions"]),
+            "ace":            ("tools.iqe.adapters.ace",                ["ace.instances", "ace.coworkers", "ace.messages"]),
             "logs":           ("tools.iqe.adapters.logs",               ["logs.entries"]),
             "foundry":        ("tools.iqe.adapters.foundry",            ["foundry.concepts", "foundry.signals", "foundry.runs", "foundry.outcomes"]),
         }
