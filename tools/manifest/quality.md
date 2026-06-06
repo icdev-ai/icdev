@@ -6,6 +6,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Rigor Gates | tools/quality/rigor_gates.py | IL-tier quality rigor gates: coverage and static-analysis thresholds; auto-discovers coverage.xml; graceful degrade if no coverage data available | --tier (il2/il4/il5/il6), --project-dir, --coverage, --json, --gate | Gate pass/fail with violations list |
+| Completion Auditor | tools/quality/completion_auditor.py | Per-canvas 8-component completeness scorecard; enumerates EVERY dashboard canvas (not just those with page.html) and scores each against the CLAUDE.md completeness gate — surfaces canvases the coherence gate never sees | --json, --md | JSON to stdout, or writes docs/quality/completion-scorecard.md (sorted least→most complete) |
 
 ### IL-Tier Thresholds
 
