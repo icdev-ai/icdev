@@ -166,6 +166,7 @@ _CANVAS_DEFS = [
     ("ace", "ICDEV_ACE_ENABLED", "icdev.tools.ace.blueprint", "ace_bp"),
     ("aisg", "ICDEV_AISG_ENABLED", "tools.aisg.blueprint", "bp"),
     ("integrity", "ICDEV_INTEGRITY_ENABLED", "tools.integrity.blueprint", "create_integrity_blueprint"),
+    ("foundry", "ICDEV_FOUNDRY_ENABLED", "tools.foundry.blueprint", "create_foundry_blueprint"),
     ("logs", "ICDEV_LOGS_ENABLED", "tools.logging.blueprint", "create_logs_blueprint"),
 ]
 
@@ -2198,6 +2199,7 @@ def create_app() -> Flask:
         "ccc": "",
         "dsoc": "",
         "integrity": "",
+        "foundry": "",
         "logs": "",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():

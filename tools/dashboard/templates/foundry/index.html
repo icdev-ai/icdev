@@ -1,0 +1,175 @@
+<!-- CUI // SP-CTI — ACF Autonomous Capability Foundry — Concept List -->
+{% extends "base.html" %}
+{% block title %}Autonomous Capability Foundry — ICDEV{% endblock %}
+{% block content %}
+{#
+  Context (from tools/foundry/blueprint.py :: foundry_index):
+    runs         : list[dict] — id, cycle_at, harvested, concepts_proposed,
+                   concepts_approved, tasks_emitted, status (most recent first)
+    latest_run   : runs[0] or None
+    concepts     : list[dict] — id, run_id, name, slug, problem_statement,
+                   proposed_capability, *_score, composite_score, status, reject_reason
+    summary      : {by_status: {proposed/scored/approved/rejected: n}, total}
+    signal_count : int — harvested signals available to the next cycle
+    statuses     : CONCEPT_STATUSES (proposed, scored, approved, rejected)
+#}
+<style>
+  .acf-hero { padding: 20px 30px 6px; }
+  .acf-hero h1 { font-size: 22px; margin: 0 0 4px; display:flex; align-items:center; gap:10px; }
+  .acf-hero h1 .acf-tag { font-size:10px; font-weight:700; letter-spacing:.08em; background:#1b0d4e; color:#b388ff; border:1px solid #4527a0; border-radius:4px; padding:2px 7px; }
+  .acf-hero p { color: #8c8ab0; font-size: 13px; margin: 0; max-width: 900px; }
+
+  .acf-rollup { display:flex; gap:14px; padding:16px 30px 4px; flex-wrap:wrap; }
+  .acf-rcard { flex:1; min-width:140px; background:#1a163e; border:1px solid #2e1e6e; border-radius:8px; padding:14px 16px; border-left-width:4px; }
+  .acf-rcard .val { font-size:30px; font-weight:700; line-height:1; }
+  .acf-rcard .lbl { font-size:11px; color:#8c8ab0; text-transform:uppercase; letter-spacing:.06em; margin-top:6px; }
+  .acf-rcard.total     { border-left-color:#b388ff; } .acf-rcard.total     .val { color:#b388ff; }
+  .acf-rcard.proposed  { border-left-color:#4fc3f7; } .acf-rcard.proposed  .val { color:#4fc3f7; }
+  .acf-rcard.scored    { border-left-color:#ffb300; } .acf-rcard.scored    .val { color:#ffb300; }
+  .acf-rcard.approved  { border-left-color:#66bb6a; } .acf-rcard.approved  .val { color:#66bb6a; }
+  .acf-rcard.rejected  { border-left-color:#bcaaa4; } .acf-rcard.rejected  .val { color:#bcaaa4; }
+  .acf-rcard.signals   { border-left-color:#26c6da; } .acf-rcard.signals   .val { color:#26c6da; }
+
+  .acf-runbar { display:flex; align-items:center; gap:16px; margin:18px 30px 4px; background:#150f30; border:1px solid #2e1e6e; border-radius:8px; padding:14px 18px; flex-wrap:wrap; }
+  .acf-runbar .meta { color:#9b97c4; font-size:12px; }
+  .acf-runbar .meta b { color:#cfc6f5; }
+  .acf-btn { background:#4527a0; color:#ede7ff; border:1px solid #5e35b1; border-radius:5px; font-size:13px; font-weight:600; padding:9px 16px; cursor:pointer; font-family:inherit; }
+  .acf-btn:hover { background:#5e35b1; }
+  .acf-btn:disabled { opacity:.5; cursor:default; }
+  .acf-status { color:#9b97c4; font-size:12px; margin-left:6px; }
+
+  .acf-section-title { font-size:13px; font-weight:700; color:#cfc6f5; text-transform:uppercase; letter-spacing:.06em; padding:18px 30px 6px; }
+  .acf-tbl-wrap { margin:0 30px; }
+  .acf-tbl { width:100%; border-collapse:collapse; }
+  .acf-tbl th { text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:#6a6a9c; border-bottom:1px solid #2a2050; padding:8px 10px; }
+  .acf-tbl td { padding:10px; border-bottom:1px solid #1c1740; font-size:13px; color:#d6d2ee; vertical-align:top; }
+  .acf-tbl tr.clickable:hover { background:#1a1440; cursor:pointer; }
+  .acf-name { font-weight:600; color:#ede7ff; }
+  .acf-prob { color:#9b97c4; font-size:12px; display:block; margin-top:2px; max-width:520px; }
+  .sbadge { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.05em; padding:3px 9px; border-radius:4px; text-transform:uppercase; }
+  .sbadge.proposed { background:#0a1830; color:#7aa8d8; }
+  .sbadge.scored   { background:#2a1f05; color:#ffb300; }
+  .sbadge.approved { background:#0c2417; color:#81c784; }
+  .sbadge.rejected { background:#241a0c; color:#bcaaa4; }
+  .sbadge.unknown  { background:#1a2438; color:#6a86b0; }
+  .acf-score { display:flex; align-items:center; gap:8px; min-width:120px; }
+  .acf-score .track { flex:1; height:6px; background:#1c1740; border-radius:3px; overflow:hidden; min-width:60px; }
+  .acf-score .fill { height:100%; border-radius:3px; background:#b388ff; }
+  .acf-score .num { font-size:11px; color:#cfc6f5; font-variant-numeric:tabular-nums; min-width:34px; text-align:right; }
+  .acf-empty { color:#8c8ab0; padding:24px 30px; font-size:13px; }
+</style>
+
+<div class="acf-hero">
+  <h1>Autonomous Capability Foundry <span class="acf-tag">ACF</span></h1>
+  <p>A 0&rarr;1 product factory: it harvests innovation, creative, research, Genesis, and
+     telemetry signals, clusters them into <b>net-new</b> capability concepts, gates them through
+     a novelty check and a Chain-of-Debate go/no-go, self-vets the plan with SIPA, and seeds the
+     approved ones as autonomous Kanban builds. Distinct from Oracle/Genesis, which improve existing work.</p>
+</div>
+
+<!-- Concept status roll-up -->
+{% set bs = summary.by_status if summary and summary.by_status else {} %}
+<div class="acf-rollup">
+  <div class="acf-rcard total"><div class="val">{{ summary.total if summary else 0 }}</div><div class="lbl">Concepts</div></div>
+  <div class="acf-rcard proposed"><div class="val">{{ bs.get('proposed', 0) }}</div><div class="lbl">Proposed</div></div>
+  <div class="acf-rcard scored"><div class="val">{{ bs.get('scored', 0) }}</div><div class="lbl">Scored</div></div>
+  <div class="acf-rcard approved"><div class="val">{{ bs.get('approved', 0) }}</div><div class="lbl">Approved</div></div>
+  <div class="acf-rcard rejected"><div class="val">{{ bs.get('rejected', 0) }}</div><div class="lbl">Rejected</div></div>
+  <div class="acf-rcard signals"><div class="val">{{ signal_count }}</div><div class="lbl">Signals</div></div>
+</div>
+
+<!-- Run controls -->
+<div class="acf-runbar">
+  <button class="acf-btn" id="acf-run-btn" onclick="acfRun()">&#9889; Run Cycle</button>
+  <span class="acf-status" id="acf-status"></span>
+  <span class="meta" style="margin-left:auto;">
+    {% if latest_run %}
+      Last cycle <b>{{ (latest_run.cycle_at[:16] if latest_run.cycle_at is string else latest_run.cycle_at.strftime('%Y-%m-%d %H:%M')) if latest_run.cycle_at else '—' }}</b>
+      · harvested <b>{{ latest_run.harvested or 0 }}</b>
+      · proposed <b>{{ latest_run.concepts_proposed or 0 }}</b>
+      · approved <b>{{ latest_run.concepts_approved or 0 }}</b>
+      · tasks <b>{{ latest_run.tasks_emitted or 0 }}</b>
+    {% else %}
+      No cycles run yet — {{ signal_count }} signal(s) staged for the first cycle.
+    {% endif %}
+  </span>
+</div>
+
+<div class="acf-section-title">Concepts</div>
+<div class="acf-tbl-wrap">
+  {% if concepts %}
+  <table class="acf-tbl">
+    <thead>
+      <tr><th>Concept</th><th>Capability</th><th>Composite</th><th>Status</th><th>Created</th></tr>
+    </thead>
+    <tbody>
+      {% for c in concepts %}
+      {% set st = (c.status or 'unknown')|lower %}
+      {% set cs = c.composite_score if c.composite_score is not none else 0 %}
+      {% set cpct = (cs * 100) if cs <= 1 else cs %}
+      <tr class="clickable" onclick="location.href='/foundry/{{ c.id }}'">
+        <td>
+          <span class="acf-name">{{ c.name or c.slug or c.id }}</span>
+          {% if c.problem_statement %}<span class="acf-prob">{{ c.problem_statement[:160] }}{% if c.problem_statement|length > 160 %}…{% endif %}</span>{% endif %}
+        </td>
+        <td style="color:#9b97c4;font-size:12px;max-width:280px;">{{ (c.proposed_capability or '—')[:160] }}</td>
+        <td>
+          <div class="acf-score">
+            <div class="track"><div class="fill" style="width:{{ cpct|round(0)|int }}%;"></div></div>
+            <span class="num">{{ cpct|round(0)|int }}</span>
+          </div>
+        </td>
+        <td>
+          <span class="sbadge {{ st if st in ['proposed','scored','approved','rejected'] else 'unknown' }}">{{ c.status or '—' }}</span>
+          {% if st == 'rejected' and c.reject_reason %}<div style="color:#8c8ab0;font-size:11px;margin-top:3px;">{{ c.reject_reason[:80] }}</div>{% endif %}
+        </td>
+        <td style="color:#8c8ab0;white-space:nowrap;">{{ (c.created_at[:16] if c.created_at is string else c.created_at.strftime('%Y-%m-%d %H:%M')) if c.created_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="acf-empty">No concepts yet. {{ signal_count }} signal(s) are staged — click <b>Run Cycle</b> to synthesize the first net-new capability concepts.</div>
+  {% endif %}
+</div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "foundry" %}
+{% set iqe_api_route = "/foundry/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Foundry Concepts & Cycles" %}
+{% set iqe_examples = [
+  {"label": "Approved concepts", "query": "foreach c in foundry.concepts where c.status == \"approved\" select c.name, c.composite_score, c.proposed_capability"},
+  {"label": "Rejected (low novelty)", "query": "foreach c in foundry.concepts where c.status == \"rejected\" select c.name, c.novelty_score, c.reject_reason"},
+  {"label": "Recent cycles", "query": "foreach r in foundry.runs select r.cycle_at, r.harvested, r.concepts_approved, r.tasks_emitted"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+async function acfRun() {
+  const btn = document.getElementById('acf-run-btn');
+  const status = document.getElementById('acf-status');
+  btn.disabled = true;
+  status.textContent = 'Running cycle…';
+  try {
+    const resp = await fetch('/api/foundry/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({dry_run: false})
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      status.textContent = (data && data.error) ? ('⚠ ' + data.error) : ('⚠ HTTP ' + resp.status);
+      btn.disabled = false;
+      return;
+    }
+    status.textContent = '✓ Cycle complete — reloading…';
+    setTimeout(() => location.reload(), 900);
+  } catch (e) {
+    status.textContent = '⚠ ' + e;
+    btn.disabled = false;
+  }
+}
+</script>
+{% endblock %}
