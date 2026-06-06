@@ -819,6 +819,7 @@ def api_search():
     top_k = min(int(data.get("top_k", 10)), 50)
     explain_access = bool(data.get("explain_access"))
     expand = bool(data.get("expand"))
+    keywords = data.get("keywords")
     tenant_id, clearance = _security_context()
 
     try:
@@ -838,6 +839,14 @@ def api_search():
         payload = {"results": [r.to_dict() for r in results], "count": len(results)}
         if expansion is not None:
             payload["expansion"] = expansion.to_dict()
+        # Opt-in: embedding-based search over a literal keyword list. Semantic
+        # matches surface even when a document lacks the literal term; degrades
+        # to literal keyword matching when no embedding provider is available.
+        if isinstance(keywords, list) and keywords:
+            kw_result = engine.keyword_search(
+                keywords, collection_id=collection_id, top_k=top_k, clearance=clearance,
+            )
+            payload["keyword_search"] = kw_result.to_dict()
         # Opt-in: explain (without leaking) what was withheld above clearance.
         if explain_access:
             expl = engine.access_explanation(
