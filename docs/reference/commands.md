@@ -2123,6 +2123,20 @@ python tools/db/migrations/120_ops_hub/up.py
 python _seed_ohc_kanban.py
 ```
 
+## Done-Artifact Auditor (post-process: did 'done' tasks actually ship?)
+
+```bash
+# Audit every done task across all projects-in-flight; fail (exit 1) on any missing artifact
+python tools/kanban/done_artifact_auditor.py --all --gate --json
+
+# Audit one project; also flag artifacts that exist on disk but aren't tracked on the current branch
+python tools/kanban/done_artifact_auditor.py --project ace --git
+
+# Why: status='done' is not evidence the artifact exists — autonomous sessions mark tasks
+# done on stale per-task branches that never merge. The auditor parses each done task's
+# claimed file paths + Verify: commands and checks they exist on the working tree.
+```
+
 ## SRE Tools — SLO Manager, Runbook Executor, Incident Commander
 
 ```bash
