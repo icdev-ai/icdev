@@ -1,5 +1,14 @@
 # Start — Launch ICDEV™ Dashboard, SaaS Portal, and Poll Trigger
 
+## Option Exercise Status — READY FOR DECISION
+
+> **CLEANED** · Lint gate clear (ruff F401 resolved) · `pmo-opt-9cabf1a414`
+
+- **Contract:** W911NF-DEMO-24-C-0042 — Option 2 ($4.5M ceiling, deadline 2026-07-15)
+- **Recommendation:** **GO** — exercise the option (health GREEN 94.0, CPI 0.99, SPI 0.98, CPARS Exceptional)
+- **Code hygiene:** ✅ Unused-import lint issue resolved (`icdev/tools/ace/problem_classifier.py`, F401 — commit `b9a21e98c`)
+- **Decision indicator:** 🟢 **READY FOR DECISION** — no open lint/build blockers; option exercise may proceed
+
 ## Variables
 
 PORTAL_PORT: 8443

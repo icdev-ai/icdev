@@ -47,7 +47,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         DB_PATH = str(BASE_DIR / "data" / "icdev.db")
         conn = get_connection(db_path=DB_PATH)
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: background reflex, no Flask request/tenant context; govcon tables lack tenant_id/classification
 
         today = date.today().isoformat()
 
