@@ -1376,6 +1376,345 @@ def _ai_extract_correspondence(text: str) -> dict | None:
 
 
 # --------------------------------------------------------------------------- #
+# Date-parsing anomaly detection (aiify-opp-6048: hardcoded_threshold ->
+# anomaly_detection). The external scan flagged paperless-ngx
+# src/documents/plugins/date_parsing/__init__.py — the consumer plugin that
+# parses dates out of a document's OCR text — and recommended an
+# anomaly-detection paradigm over its fixed parsing rules. The repo is
+# ephemeral, so per the established aiify-opp pattern the augmentation lands in
+# the analogous ICDEV subsystem (DIC). DIC's _ai_metadata_extraction
+# (aiify-opp-6086) already proposes a *single* document date; this complementary
+# layer parses *every* candidate date the text contains and flags the
+# anomalous ones — a date in the future, one implausibly far in the past, or a
+# statistical outlier relative to the document's own cluster of dates (an OCR
+# typo that turned 2023 into 2093, a mis-scanned year, a back-dated insert).
+#
+# Design (mirrors the freshness-anomaly sibling, aiify-opp-6042):
+#   - the deterministic detector is the ALWAYS-authoritative baseline: pure
+#     regex parsing + named-threshold / statistical-outlier rules, no network.
+#   - the named thresholds below are exactly the "hardcoded_threshold" the scan
+#     called out, lifted out of inline literals into one tunable place.
+#   - the optional LLM layer only grades *severity* and explains the flagged
+#     dates; it degrades silently to the heuristic severity and is never a hard
+#     dependency.
+#   - results are surfaced as a *proposal* under
+#     IngestOutcome.metadata["date_anomalies"] — never silently written — so a
+#     human confirms before anything sticks.
+# --------------------------------------------------------------------------- #
+
+# A parsed date more than this many days past "now" is treated as future-dated
+# (a small tolerance absorbs timezone / clock skew on legitimately current docs).
+_DATE_FUTURE_TOLERANCE_DAYS = 1
+
+# Dates before this calendar year are implausible for an ingested business
+# document and almost always an OCR/typo artifact (e.g. "1066", "0202").
+_DATE_MIN_PLAUSIBLE_YEAR = 1900
+
+# A parsed date more than this many standard deviations from the document's own
+# date cluster is flagged as a statistical outlier. Kept at 2.0 in step with the
+# freshness-anomaly sibling (_ANOMALY_STDEV_K) so a lone strong outlier — which
+# inflates the stdev and can mask itself at higher k — is still caught.
+_DATE_ANOMALY_STDEV_K = 2.0
+
+# Need at least this many valid dates before a distribution is meaningful enough
+# to call any of them an outlier.
+_DATE_ANOMALY_MIN_SAMPLE = 4
+
+# Bound how many flagged dates the optional LLM severity pass is shown.
+_DATE_ANOMALY_LLM_SAMPLE = 6
+
+# Only the leading slice of a document is scanned for dates — keeps the pass
+# cheap and bounded regardless of document size.
+_DATE_INPUT_CHARS = 20000
+
+# Deterministic severity cutoffs on the anomalous fraction of parsed dates.
+_DATE_SEV_HIGH_FRACTION = 0.34
+_DATE_SEV_MEDIUM_FRACTION = 0.10
+
+_MONTHS = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+    "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9, "october": 10,
+    "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12,
+}
+
+_MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))
+
+# Multi-format candidate-date patterns. Each capture group set maps to (y, m, d)
+# via its handler below. Deterministic and offline — no third-party dateutil.
+_DATE_PATTERNS = (
+    # ISO 8601: 2024-03-09
+    (re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b"), "ymd"),
+    # US slashes/dots: 03/09/2024 or 3.9.2024  (month first)
+    (re.compile(r"\b(\d{1,2})[/.](\d{1,2})[/.](\d{4})\b"), "mdy"),
+    # Long month, day, year: March 9, 2024 / Mar 9 2024
+    (re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b", re.I), "Mdy"),
+    # Day, long month, year: 9 March 2024 / 09 Mar 2024
+    (re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_ALT})\.?,?\s+(\d{{4}})\b", re.I), "dMy"),
+)
+
+_DATE_ANOMALY_SYSTEM_PROMPT = (
+    "You are a records-management analyst grading how concerning the dates "
+    "parsed from a single document are. You are given every date found in the "
+    "document, which ones a deterministic detector flagged as anomalous and "
+    "why (future-dated, implausibly old, or a statistical outlier relative to "
+    "the document's own dates), and a deterministic baseline severity. Dates "
+    "far in the future or that dominate the document are most concerning; a "
+    "lone slightly-off outlier is minor. You may agree with or adjust the "
+    "baseline, but justify any change. Respond ONLY with a JSON object: "
+    '{"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<the single most concerning date as YYYY-MM-DD>"}. Never '
+    "invent dates beyond those provided."
+)
+
+
+def _parse_candidate_dates(text: str) -> list[dict]:
+    """Extract every parseable calendar date from ``text`` (deterministic).
+
+    Scans the leading ``_DATE_INPUT_CHARS`` for ISO, US-slash, and long-form
+    (month-name) dates. Each hit is validated as a real calendar date — invalid
+    combinations (month 13, day 31 in a 30-day month, …) are dropped — and
+    de-duplicated by ISO value, keeping the first textual occurrence.
+
+    Returns:
+        A list of ``{"iso": "YYYY-MM-DD", "raw": <matched text>, "offset": int}``
+        sorted by position in the text. Empty when nothing parses.
+    """
+    if not text:
+        return []
+    window = text[:_DATE_INPUT_CHARS]
+    seen: set[str] = set()
+    out: list[dict] = []
+    for pattern, kind in _DATE_PATTERNS:
+        for m in pattern.finditer(window):
+            try:
+                if kind == "ymd":
+                    y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                elif kind == "mdy":
+                    mo, d, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                elif kind == "Mdy":
+                    mo = _MONTHS[m.group(1).lower()]
+                    d, y = int(m.group(2)), int(m.group(3))
+                else:  # dMy
+                    d = int(m.group(1))
+                    mo = _MONTHS[m.group(2).lower()]
+                    y = int(m.group(3))
+                # Validate as a real calendar date (rejects 2024-02-31 etc.).
+                dt = datetime(y, mo, d, tzinfo=timezone.utc)
+            except (ValueError, KeyError):
+                continue
+            iso = dt.strftime("%Y-%m-%d")
+            if iso in seen:
+                continue
+            seen.add(iso)
+            out.append({"iso": iso, "raw": m.group(0), "offset": m.start()})
+    out.sort(key=lambda r: r["offset"])
+    return out
+
+
+def _heuristic_date_anomaly_severity(anomaly_count: int, total: int) -> str:
+    """Deterministic anomaly severity — the always-available baseline.
+
+    Pure function of how large a fraction of the parsed dates are anomalous.
+    """
+    if total <= 0 or anomaly_count <= 0:
+        return "low"
+    fraction = anomaly_count / total
+    if fraction >= _DATE_SEV_HIGH_FRACTION:
+        return "high"
+    if fraction >= _DATE_SEV_MEDIUM_FRACTION:
+        return "medium"
+    return "low"
+
+
+def _detect_date_anomalies(parsed: list[dict], now_iso: str | None = None) -> dict:
+    """Flag anomalous dates among ``parsed`` (deterministic, authoritative).
+
+    Three rules, each lifting a named threshold out of inline magic numbers:
+      • future-dated — more than ``_DATE_FUTURE_TOLERANCE_DAYS`` past now;
+      • implausibly-old — calendar year before ``_DATE_MIN_PLAUSIBLE_YEAR``;
+      • cluster-outlier — more than ``_DATE_ANOMALY_STDEV_K`` standard deviations
+        from the mean of the document's own dates (only with at least
+        ``_DATE_ANOMALY_MIN_SAMPLE`` dates and a non-degenerate spread).
+
+    Args:
+        parsed: output of :func:`_parse_candidate_dates`.
+        now_iso: reference "now" as an ISO string; defaults to the current UTC
+            time. Injectable so callers/tests are deterministic.
+
+    Returns:
+        ``{"total": int, "anomaly_count": int, "anomalies": [...],
+           "mean_year": float, "stdev_days": float,
+           "baseline_severity": "low|medium|high"}``. ``anomalies`` items carry
+        ``{"iso", "raw", "reason"}`` where reason is one of ``future_dated`` /
+        ``implausibly_old`` / ``cluster_outlier``.
+    """
+    total = len(parsed)
+    empty = {
+        "total": total, "anomaly_count": 0, "anomalies": [],
+        "mean_year": 0.0, "stdev_days": 0.0, "baseline_severity": "low",
+    }
+    if total == 0:
+        return empty
+
+    try:
+        now = (
+            datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+            if now_iso else datetime.now(timezone.utc)
+        )
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+    except Exception:
+        now = datetime.now(timezone.utc)
+    future_cutoff = now.timestamp() + _DATE_FUTURE_TOLERANCE_DAYS * 86400.0
+
+    ordinals: list[float] = []
+    years: list[int] = []
+    for r in parsed:
+        dt = datetime.fromisoformat(r["iso"]).replace(tzinfo=timezone.utc)
+        r["_ts"] = dt.timestamp()
+        r["_year"] = dt.year
+        ordinals.append(dt.timestamp())
+        years.append(dt.year)
+
+    mean = sum(ordinals) / len(ordinals)
+    variance = sum((o - mean) ** 2 for o in ordinals) / len(ordinals)
+    stdev = variance ** 0.5
+
+    anomalies: list[dict] = []
+    for r in parsed:
+        reason: str | None = None
+        if r["_ts"] > future_cutoff:
+            reason = "future_dated"
+        elif r["_year"] < _DATE_MIN_PLAUSIBLE_YEAR:
+            reason = "implausibly_old"
+        elif (
+            total >= _DATE_ANOMALY_MIN_SAMPLE
+            and stdev > 0
+            and abs(r["_ts"] - mean) > _DATE_ANOMALY_STDEV_K * stdev
+        ):
+            reason = "cluster_outlier"
+        if reason:
+            anomalies.append({"iso": r["iso"], "raw": r["raw"], "reason": reason})
+
+    for r in parsed:  # strip scratch fields so the result is JSON-clean
+        r.pop("_ts", None)
+        r.pop("_year", None)
+
+    return {
+        "total": total,
+        "anomaly_count": len(anomalies),
+        "anomalies": anomalies,
+        "mean_year": round(sum(years) / len(years), 1),
+        "stdev_days": round(stdev / 86400.0, 1),
+        "baseline_severity": _heuristic_date_anomaly_severity(len(anomalies), total),
+    }
+
+
+def _ai_date_anomaly_assessment(summary: dict, anomalies: list[dict]) -> dict | None:
+    """Grade parsed-date-anomaly severity with the LLM, grounded on real data.
+
+    Best-effort enrichment only. Returns
+    ``{"severity": "low|medium|high", "rationale": str, "top_concern": str}`` on
+    success, or ``None`` when there is nothing to grade, the model is
+    unavailable, or the output is missing/blank/malformed/out-of-range. Callers
+    MUST treat ``None`` as "use the deterministic baseline".
+    """
+    if not anomalies or summary.get("anomaly_count", 0) <= 0:
+        return None
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        lines = [
+            f"Document date facts: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {summary.get('baseline_severity')}",
+            "Flagged dates:",
+        ]
+        for a in anomalies[:_DATE_ANOMALY_LLM_SAMPLE]:
+            lines.append(f"- {_json.dumps(a, default=str)}")
+
+        req = LLMRequest(
+            messages=[
+                {"role": "user", "content": "\n".join(lines) + "\n\nGrade the severity."}
+            ],
+            system_prompt=_DATE_ANOMALY_SYSTEM_PROMPT,
+            max_tokens=200,
+            temperature=0.1,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("dic_date_anomaly_assessment", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+        severity = str(parsed.get("severity") or "").strip().lower()
+        if severity not in {"low", "medium", "high"}:
+            return None
+        return {
+            "severity": severity,
+            "rationale": str(parsed.get("rationale") or "").strip()[:200],
+            "top_concern": str(parsed.get("top_concern") or "").strip()[:40],
+        }
+    except Exception:
+        return None
+
+
+def assess_document_dates(text: str, now_iso: str | None = None) -> dict | None:
+    """Parse a document's dates and flag the anomalous ones (HITL proposal).
+
+    Orchestrates :func:`_parse_candidate_dates` + :func:`_detect_date_anomalies`
+    (always authoritative) and layers best-effort LLM severity grading on top.
+
+    Args:
+        text: the document's extracted text.
+        now_iso: injectable reference "now" (ISO string) for deterministic tests.
+
+    Returns:
+        ``None`` when no anomalies were found (nothing to surface), else
+        ``{"dates": [...all parsed dates...], "anomalies": [...],
+           "total": int, "anomaly_count": int, "severity": str,
+           "rationale": str, "top_concern": str}``. ``severity`` is the LLM grade
+        when available, otherwise the deterministic baseline.
+    """
+    parsed = _parse_candidate_dates(text or "")
+    summary = _detect_date_anomalies(parsed, now_iso=now_iso)
+    if summary["anomaly_count"] <= 0:
+        return None
+
+    ai = _ai_date_anomaly_assessment(
+        {
+            "total": summary["total"],
+            "anomaly_count": summary["anomaly_count"],
+            "mean_year": summary["mean_year"],
+            "stdev_days": summary["stdev_days"],
+            "baseline_severity": summary["baseline_severity"],
+        },
+        summary["anomalies"],
+    )
+    severity = ai["severity"] if ai else summary["baseline_severity"]
+    return {
+        "dates": parsed,
+        "anomalies": summary["anomalies"],
+        "total": summary["total"],
+        "anomaly_count": summary["anomaly_count"],
+        "severity": severity,
+        "rationale": (ai or {}).get("rationale", ""),
+        "top_concern": (ai or {}).get("top_concern", ""),
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
@@ -1395,6 +1734,7 @@ def ingest_file(
     classify_taxonomy: list[str] | None = None,
     classify_multi_label: bool = False,
     extract_correspondence: bool = True,
+    detect_date_anomalies: bool = True,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -1449,6 +1789,15 @@ def ingest_file(
             confidence gated. Surfaced as a HITL proposal under
             ``IngestOutcome.metadata["correspondence"]``; never silently
             persisted. Failures degrade silently to no correspondence fields.
+        detect_date_anomalies: when True, deterministically parse every calendar
+            date in the document's text and flag the anomalous ones — future
+            dated, implausibly old, or a statistical outlier vs the document's
+            own date cluster (aiify-opp-6048), the anomaly-detection analog of
+            paperless's date-parsing plugin. The detector is offline and always
+            authoritative; an optional best-effort LLM pass only grades severity.
+            Surfaced as a HITL proposal under
+            ``IngestOutcome.metadata["date_anomalies"]`` only when at least one
+            anomaly is found; never silently persisted. Degrades silently.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -1542,6 +1891,17 @@ def ingest_file(
         corr = _ai_extract_correspondence(text)
         if corr:
             ai_metadata = {**ai_metadata, "correspondence": corr}
+
+    # Date-anomaly detection (deterministic + best-effort LLM severity): parse
+    # every date in the text and flag future-dated / implausibly-old / outlier
+    # dates the way an OCR typo or a back-dated insert would produce. Always
+    # authoritative offline baseline; surfaced as a HITL proposal under
+    # metadata["date_anomalies"] only when an anomaly is found. (aiify-opp-6048)
+    if detect_date_anomalies and text.strip():
+        _emit("date_anomalies", "Scanning document dates…", 9)
+        da = assess_document_dates(text)
+        if da:
+            ai_metadata = {**ai_metadata, "date_anomalies": da}
 
     # ── Duplicate detection + bookkeeping ─────────────────────────────────────
     # Open a single DB connection (or reuse caller's) for dedup + writes.
