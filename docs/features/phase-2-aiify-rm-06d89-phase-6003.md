@@ -1,9 +1,9 @@
-# Phase 2 — AI-ify Determination: aiify-rm-06d89-phase-6004
+# Phase 2 — AI-ify Determination: aiify-rm-06d89-phase-6003
 
-**Opportunity:** 6004 (scan_id 43, roadmap `rm-06d89040cf`)
+**Opportunity:** 6003 (scan_id 43, roadmap `rm-06d89040cf`)
 **Pattern:** `hardcoded_threshold` → `anomaly_detection`
 **External module:** `src/documents/consumer.py` (paperless-ngx shallow clone `aiify_git_zwu66zfu`)
-**Disposition:** Closed as **duplicate** of `dfb671f09` (MONITOR `log_analyzer.py` anomaly-detection), and a re-emission of sibling card `aiify-rm-06d89-phase-6003` (identical file + pattern + paradigm).
+**Disposition:** Closed as **duplicate** of `dfb671f09` (MONITOR `log_analyzer.py` anomaly-detection).
 
 ## Rationale
 
@@ -16,19 +16,17 @@ subsystem** selected by **pattern + paradigm**, not by filename.
 For `hardcoded_threshold` → `anomaly_detection`, the analog is **MONITOR**
 (`tools/monitor/log_analyzer.py`), where inline z-score / error-rate constants were
 replaced with a config-driven `anomaly_detection` block in `args/monitoring_config.yaml`
-plus a robust MAD (modified z-score) method. This is the same target — and the same
-underlying opportunity — as `aiify-rm-06d89-phase-6003` and siblings
+plus a robust MAD (modified z-score) method. This is the same target as siblings
 6067 / 6068 / 6070 / 6071 / 6077 / 6083 / 6087 / 6088 / 6119 / 6120 / 6121 / 6133 (all
-paperless `src/*` files, same pattern). The scanner re-emits one card per scan for the
-same `consumer.py`; no additional code change is warranted.
+paperless `src/*` files, same pattern).
 
-## Verification (at HEAD `3c0a0f492`, branch `kanban/aiify-rm-06d89-phase-6004`)
+## Verification (at HEAD `113d2e5b8`, branch `kanban/aiify-rm-06d89-phase-6003`)
 
 - `dfb671f09` is an ancestor of HEAD ✓
 - temp clone path `aiify_git_zwu66zfu/src/documents/consumer.py` no longer exists ✓
 - `_load_anomaly_cfg` present in `tools/monitor/log_analyzer.py` (def L477) ✓
-- `_load_anomaly_cfg` present in `icdev/tools/monitor/log_analyzer.py` mirror ✓
-- `anomaly_detection` block in `args/monitoring_config.yaml` ✓
+- `_load_anomaly_cfg` present in `icdev/tools/monitor/log_analyzer.py` mirror (def L300) ✓
+- `anomaly_detection` block in `args/monitoring_config.yaml` (L71 metric, L87 log) ✓
 
 No competing implementation authored. Card moved to done with
 `bypass_verification: true` + `bypass_reason`.
