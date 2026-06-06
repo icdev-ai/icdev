@@ -24,6 +24,43 @@ logger = get_logger(__name__)
 _FRESHNESS_STATES = ["fresh", "aging", "stale", "unknown"]
 _DEFAULT_RETENTION_DAYS = 90
 
+# State classification cutoffs. These were the original hardcoded magic numbers
+# inline in _score_doc; aiify-opp-6042 (hardcoded_threshold -> anomaly_detection,
+# the document-freshness sibling of opp-6090 in analytics_engine) lifts them into
+# named constants. score < _FRESH_THRESHOLD → fresh; < _STALE_THRESHOLD → aging;
+# otherwise stale. Changing the band boundaries now happens in one place.
+_FRESH_THRESHOLD = 0.35
+_STALE_THRESHOLD = 0.70
+
+# ── Anomaly detection (collection-relative outliers) ──────────────────────────
+# The fixed thresholds above grade each document against an absolute retention
+# yardstick. They are blind to a document that is anomalous *for its collection*:
+# the one stale outlier in an otherwise-fresh corpus, or the worst-rotted doc in
+# a uniformly aging one. The anomaly layer flags docs whose freshness score sits
+# more than _ANOMALY_STDEV_K standard deviations above the collection mean. It is
+# a pure statistical heuristic and is ALWAYS authoritative; the optional LLM grade
+# is best-effort severity enrichment that degrades silently to None.
+_ANOMALY_STDEV_K = 2.0          # outlier if score > mean + k * stdev
+_ANOMALY_MIN_DOCS = 4           # need a real distribution before flagging outliers
+_ANOMALY_ABS_FLOOR = _FRESH_THRESHOLD  # never flag a doc that is itself still fresh
+_ANOMALY_SAMPLE = 5             # bound how many concrete outliers the LLM sees
+
+# Deterministic severity cutoffs on the anomalous fraction of the collection.
+_ANOMALY_SEV_HIGH_FRACTION = 0.25
+_ANOMALY_SEV_MEDIUM_FRACTION = 0.10
+
+_ANOMALY_SEVERITY_SYSTEM_PROMPT = (
+    "You are a records-management analyst grading how urgently a document "
+    "collection needs a freshness review. You are given the collection size, the "
+    "documents whose staleness is a statistical outlier relative to their peers, "
+    "and a deterministic baseline severity. Outliers that are far above the mean "
+    "or that dominate a small collection are the most urgent. You may agree with "
+    "or adjust the baseline, but justify any change. Respond ONLY with a JSON "
+    'object: {"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<doc_id or title of the single most urgent outlier>"}. Never '
+    "invent documents beyond those provided."
+)
+
 
 @dataclass
 class FreshnessResult:
@@ -47,6 +84,7 @@ class ScanResult:
     fresh_count: int = 0
     regen_priority: float = 0.0
     docs: list[FreshnessResult] = field(default_factory=list)
+    anomalies: dict = field(default_factory=dict)
 
 
 def _now_utc() -> str:
@@ -61,6 +99,186 @@ def _days_since(iso: str | None) -> float:
         return (datetime.now(timezone.utc) - dt).total_seconds() / 86400.0
     except Exception:
         return 9999.0
+
+
+def _classify_state(score: float) -> str:
+    """Map a freshness score to a state using the named band thresholds.
+
+    Pure function: ``score < _FRESH_THRESHOLD`` → ``"fresh"``,
+    ``< _STALE_THRESHOLD`` → ``"aging"``, otherwise ``"stale"``.
+    """
+    if score < _FRESH_THRESHOLD:
+        return "fresh"
+    if score < _STALE_THRESHOLD:
+        return "aging"
+    return "stale"
+
+
+def _heuristic_anomaly_severity(anomaly_count: int, total: int) -> str:
+    """Deterministic anomaly severity — the always-available baseline.
+
+    Pure function of how large a fraction of the collection is anomalous. Used
+    directly when the LLM grade is unavailable and handed to the model as the
+    reference baseline otherwise.
+    """
+    if total <= 0 or anomaly_count <= 0:
+        return "low"
+    fraction = anomaly_count / total
+    if fraction >= _ANOMALY_SEV_HIGH_FRACTION:
+        return "high"
+    if fraction >= _ANOMALY_SEV_MEDIUM_FRACTION:
+        return "medium"
+    return "low"
+
+
+def _compute_freshness_anomalies(results: list["FreshnessResult"]) -> dict:
+    """Pure statistical outlier pass — the authoritative, LLM-free heuristic.
+
+    An outlier is a doc whose score exceeds ``mean + _ANOMALY_STDEV_K * stdev``
+    AND clears ``_ANOMALY_ABS_FLOOR`` (so a still-fresh doc is never flagged).
+    Below ``_ANOMALY_MIN_DOCS`` the distribution is too small to be meaningful and
+    no anomalies are reported. No I/O, no LLM — safe to call anywhere.
+
+    Returns the count summary plus the ranked outlier list and the deterministic
+    ``severity`` baseline. :func:`detect_freshness_anomalies` layers the optional
+    LLM grade on top of this.
+    """
+    scores = [r.score for r in results]
+    total = len(scores)
+    if total < _ANOMALY_MIN_DOCS:
+        return {
+            "anomaly_count": 0, "mean": 0.0, "stdev": 0.0, "threshold": 0.0,
+            "anomalies": [], "severity": "low", "total": total,
+        }
+
+    mean = sum(scores) / total
+    variance = sum((s - mean) ** 2 for s in scores) / total
+    stdev = variance ** 0.5
+    threshold = mean + _ANOMALY_STDEV_K * stdev
+
+    anomalies: list[dict] = []
+    for r in results:
+        if r.score > threshold and r.score >= _ANOMALY_ABS_FLOOR:
+            z = round((r.score - mean) / stdev, 3) if stdev > 0 else 0.0
+            anomalies.append({
+                "doc_id": r.doc_id,
+                "title": r.title,
+                "score": r.score,
+                "z_score": z,
+                "state": r.state,
+            })
+    anomalies.sort(key=lambda a: a["score"], reverse=True)
+
+    return {
+        "anomaly_count": len(anomalies),
+        "mean": round(mean, 3),
+        "stdev": round(stdev, 3),
+        "threshold": round(threshold, 3),
+        "anomalies": anomalies,
+        "severity": _heuristic_anomaly_severity(len(anomalies), total),
+        "total": total,
+    }
+
+
+def detect_freshness_anomalies(results: list["FreshnessResult"]) -> dict:
+    """Flag documents whose freshness score is a statistical outlier for the corpus.
+
+    Complements the absolute fresh/aging/stale bands: a doc can sit inside an
+    acceptable band yet be markedly staler than its peers (or be the worst case in
+    an already-degraded collection).
+
+    The statistical detection (:func:`_compute_freshness_anomalies`) and the
+    deterministic ``severity`` baseline are ALWAYS authoritative and never depend
+    on the LLM. The returned ``ai_grade`` is best-effort severity enrichment and is
+    ``None`` when the model is unavailable or there is nothing to grade.
+
+    Returns:
+        {
+          "anomaly_count": int,
+          "mean": float, "stdev": float, "threshold": float,
+          "anomalies": [{"doc_id", "title", "score", "z_score", "state"}],
+          "severity": "low|medium|high",   # authoritative deterministic baseline
+          "ai_grade": {...} | None,        # optional LLM refinement
+        }
+    """
+    out = _compute_freshness_anomalies(results)
+    ai_grade = _ai_freshness_anomaly_severity(
+        {"anomaly_count": out["anomaly_count"], "total": out["total"],
+         "mean": out["mean"], "stdev": out["stdev"],
+         "baseline_severity": out["severity"]},
+        out["anomalies"],
+    )
+    out.pop("total", None)
+    out["ai_grade"] = ai_grade
+    return out
+
+
+def _ai_freshness_anomaly_severity(summary: dict, anomalies: list[dict]) -> dict | None:
+    """Grade collection freshness-anomaly severity with the LLM, grounded on real data.
+
+    Args:
+        summary: Distribution facts — anomaly_count, total, mean, stdev, and the
+            deterministic ``baseline_severity``.
+        anomalies: The concrete outlier docs. Only the leading ``_ANOMALY_SAMPLE``
+            are sent to the model, keeping the call cheap and bounded regardless of
+            collection size.
+
+    Returns:
+        ``{"severity": "low|medium|high", "rationale": str, "top_concern": str}``
+        on success, or ``None`` when there are no anomalies to grade, the model is
+        unavailable, or the output is missing/blank/malformed/out-of-range. Callers
+        MUST treat ``None`` as "use the deterministic heuristic" — this is
+        best-effort enrichment, never a hard dependency.
+    """
+    if not anomalies or summary.get("anomaly_count", 0) <= 0:
+        return None
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        lines = [
+            f"Collection facts: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {summary.get('baseline_severity')}",
+            "Outlier documents:",
+        ]
+        for a in anomalies[:_ANOMALY_SAMPLE]:
+            lines.append(f"- {_json.dumps(a, default=str)}")
+
+        req = LLMRequest(
+            messages=[
+                {"role": "user", "content": "\n".join(lines) + "\n\nGrade the severity."}
+            ],
+            system_prompt=_ANOMALY_SEVERITY_SYSTEM_PROMPT,
+            max_tokens=200,
+            temperature=0.1,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("dic_freshness_anomaly_severity", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+        severity = str(parsed.get("severity") or "").strip().lower()
+        if severity not in {"low", "medium", "high"}:
+            return None
+        return {
+            "severity": severity,
+            "rationale": str(parsed.get("rationale") or "").strip()[:200],
+            "top_concern": str(parsed.get("top_concern") or "").strip()[:80],
+        }
+    except Exception:
+        return None
 
 
 def _score_doc(
@@ -101,12 +319,7 @@ def _score_doc(
     )
     score = round(min(max(score, 0.0), 1.0), 3)
 
-    if score < 0.35:
-        state = "fresh"
-    elif score < 0.7:
-        state = "aging"
-    else:
-        state = "stale"
+    state = _classify_state(score)
 
     reasons = []
     if age_score > 0.5:
@@ -265,6 +478,10 @@ def scan_collection(
 
         conn.commit()
 
+        # Collection-relative anomaly pass — flags outliers the absolute bands
+        # miss. Deterministic; LLM severity grade is best-effort enrichment.
+        anomalies = detect_freshness_anomalies(results)
+
         return ScanResult(
             scan_id=scan_id,
             collection_id=collection_id,
@@ -273,6 +490,7 @@ def scan_collection(
             fresh_count=fresh_count,
             regen_priority=regen_priority,
             docs=results,
+            anomalies=anomalies,
         )
     finally:
         conn.close()

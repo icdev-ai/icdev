@@ -514,6 +514,14 @@ routing:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
 
+  # DIC document-freshness anomaly severity grading (aiify-opp-6042:
+  # hardcoded_threshold -> anomaly_detection). Grades collection-relative
+  # staleness outliers; deterministic statistical heuristic is authoritative,
+  # this layer is best-effort severity enrichment.
+  dic_freshness_anomaly_severity:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
   oracle_triage_nlp_extract:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
