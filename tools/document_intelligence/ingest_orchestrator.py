@@ -1140,6 +1140,242 @@ def _ai_classify_into_taxonomy(
 
 
 # --------------------------------------------------------------------------- #
+# LLM correspondence extraction (aiify-opp-6100: regex_user_input ->
+# nlp_extractor). The external scan flagged paperless-ngx
+# src/paperless_mail/.../mail.py — the MailDocumentParser, which parses an email
+# (.eml/.msg) by pulling its header/envelope fields (From, To/Cc, Subject, sent
+# date) out of user-controlled message text. The recommended paradigm is to
+# replace that brittle regex/header parsing with an NLP entity extractor. The
+# repo is ephemeral, so per the established aiify-opp pattern the augmentation
+# lands in the analogous ICDEV subsystem (DIC). When an ingested document is an
+# email / piece of correspondence, its participants and envelope fields are only
+# present as in-body text — DIC otherwise derives just a title/summary. This
+# optional helper proposes those structured correspondence fields from the
+# document's own text — the NLP-extractor analog of the email header parser.
+#
+# This is deliberately distinct from the open-vocabulary metadata extraction
+# (6086: document_type / tags / date) and the identifier extraction (5988:
+# barcode-style codes): it models the *email envelope* specifically — sender,
+# recipients, subject, sent date.
+#
+# Grounding + safety (mirrors the 6086/5988/6043 designs & ICDEV AI-security
+# posture):
+#   - email addresses must match a compact e-mail shape AND their local/core
+#     characters must literally appear in the source text — a hard
+#     anti-hallucination guard, identical in spirit to the identifier core
+#     membership check, so the model can only surface addresses actually printed
+#     in the message.
+#   - party display names and the subject are length-capped and must have an
+#     alphanumeric core that literally appears in the text, so the model cannot
+#     invent a participant or a subject line that is not in the message.
+#   - recipients are de-duplicated and count-capped; the sent date must be a real
+#     ISO (YYYY-MM-DD) calendar date or it is dropped.
+#   - a single confidence score gates the whole suggestion: below
+#     _CORRESPONDENCE_MIN_CONFIDENCE it is discarded (HITL / manual fallback).
+#   - the result is surfaced as a *proposal* under IngestOutcome.metadata
+#     ["correspondence"] — never silently written to dic_documents — so a human
+#     confirms before it sticks. Any failure degrades to None (air-gap safe).
+# --------------------------------------------------------------------------- #
+
+# Only the leading slice carries the envelope signal (From/To/Subject/Date sit at
+# the top of an email); keep the call cheap and bounded regardless of size.
+_CORRESPONDENCE_INPUT_CHARS = 6000
+
+# Below this confidence the whole suggestion is dropped for the HITL / manual path.
+_CORRESPONDENCE_MIN_CONFIDENCE = 0.70
+
+# Bound recipient fan-out and the length of any single party / subject value.
+_CORRESPONDENCE_MAX_RECIPIENTS = 25
+_CORRESPONDENCE_NAME_MAX_LEN = 120
+_CORRESPONDENCE_SUBJECT_MAX_LEN = 300
+
+# Compact RFC-5322-ish e-mail shape. Not a validator — a guard that the value is
+# an address rather than free prose before the membership check runs.
+_CORRESPONDENCE_EMAIL_RE = re.compile(
+    r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"
+)
+
+_CORRESPONDENCE_SYSTEM_PROMPT = (
+    "You extract the envelope fields of a single email / piece of correspondence "
+    "for a document-management index. Use ONLY the provided text — never invent a "
+    "sender, recipient, subject, address, or date not present in it. Respond with "
+    "a strict JSON object and nothing else, of the form "
+    '{"from_name": "<sender display name or \"\">", '
+    '"from_email": "<sender email address or \"\">", '
+    '"to": [{"name": "<recipient display name or \"\">", '
+    '"email": "<recipient email address or \"\">"}], '
+    '"subject": "<the email subject line, or \"\">", '
+    '"sent_date": "<the message date as YYYY-MM-DD, or null>", '
+    '"confidence": <0..1 overall confidence>}. '
+    "Include Cc recipients in the to list. Leave a field empty rather than "
+    "guessing, and return low confidence when the text is not actually an email."
+)
+
+
+def _ground_token(value: str, haystack: str, max_len: int) -> str:
+    """Trim/length-cap ``value`` and keep it only if grounded in ``haystack``.
+
+    Returns the cleaned value when its alphanumeric, case-folded core literally
+    appears in ``haystack`` (the same membership guard the identifier extractor
+    uses), else "" — so the model can never surface a name/subject that is not in
+    the source text. ``haystack`` must already be the alnum-only, lower-cased form
+    of the document text.
+    """
+    cleaned = (value or "").strip()[:max_len]
+    if not cleaned:
+        return ""
+    core = "".join(ch for ch in cleaned if ch.isalnum()).lower()
+    if not core or core not in haystack:
+        return ""
+    return cleaned
+
+
+def _ai_extract_correspondence(text: str) -> dict | None:
+    """Extract structured email envelope fields from ``text`` via the LLM.
+
+    The NLP-extractor analog of paperless' email header parser (aiify-opp-6100):
+    surfaces the sender, recipients, subject, and sent date of a piece of
+    correspondence from its own text, grounded so the model can only report
+    participants/subjects actually printed in the message.
+
+    Args:
+        text: The full extracted document text. Only the leading
+            ``_CORRESPONDENCE_INPUT_CHARS`` characters are sent to the model,
+            keeping the call cheap and bounded regardless of document size.
+
+    Returns:
+        ``{"from_name": str, "from_email": str, "to": list[{"name": str,
+        "email": str}], "subject": str, "sent_date": str|None, "confidence":
+        float}`` on success, or ``None`` when extraction is unavailable, the text
+        is empty, the model output is unusable, the overall confidence is below
+        ``_CORRESPONDENCE_MIN_CONFIDENCE``, or nothing survives the grounding
+        guards (no sender, recipients, or subject left). Callers MUST treat
+        ``None`` as "no correspondence fields" and proceed with ingestion
+        unchanged — this is a best-effort, HITL proposal, never a hard
+        dependency, and is never silently persisted.
+    """
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    snippet = snippet[:_CORRESPONDENCE_INPUT_CHARS]
+    # Alphanumeric-only, case-folded form of the source for the membership guard
+    # (tolerates stray spacing / punctuation differences between header and body).
+    haystack = "".join(ch for ch in snippet if ch.isalnum()).lower()
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Document text (leading excerpt):\n"
+                        f"{snippet}\n\n"
+                        "Produce the correspondence JSON."
+                    ),
+                }
+            ],
+            system_prompt=_CORRESPONDENCE_SYSTEM_PROMPT,
+            max_tokens=512,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+
+        # Confidence gate: drop the whole suggestion below threshold (HITL).
+        try:
+            confidence = float(parsed.get("confidence"))
+        except (TypeError, ValueError):
+            return None
+        if confidence < _CORRESPONDENCE_MIN_CONFIDENCE:
+            return None
+
+        def _email(value: str) -> str:
+            """Keep an address only if it is e-mail-shaped AND grounded in text."""
+            addr = (value or "").strip()
+            if not addr or len(addr) > _CORRESPONDENCE_NAME_MAX_LEN:
+                return ""
+            if not _CORRESPONDENCE_EMAIL_RE.match(addr):
+                return ""
+            # Grounding: the address's alphanumeric core must appear in the text.
+            core = "".join(ch for ch in addr if ch.isalnum()).lower()
+            return addr if core and core in haystack else ""
+
+        from_name = _ground_token(
+            parsed.get("from_name"), haystack, _CORRESPONDENCE_NAME_MAX_LEN
+        )
+        from_email = _email(parsed.get("from_email"))
+
+        recipients: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for item in parsed.get("to") or []:
+            if not isinstance(item, dict):
+                continue
+            name = _ground_token(
+                item.get("name"), haystack, _CORRESPONDENCE_NAME_MAX_LEN
+            )
+            email = _email(item.get("email"))
+            # Drop a recipient that has neither a grounded name nor a grounded
+            # address — it would be an ungrounded hallucination.
+            if not name and not email:
+                continue
+            key = (name.lower(), email.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            recipients.append({"name": name, "email": email})
+            if len(recipients) >= _CORRESPONDENCE_MAX_RECIPIENTS:
+                break
+
+        subject = _ground_token(
+            parsed.get("subject"), haystack, _CORRESPONDENCE_SUBJECT_MAX_LEN
+        )
+
+        # sent_date: keep only a real ISO calendar date.
+        date_val = parsed.get("sent_date")
+        sent_date: str | None = None
+        if isinstance(date_val, str) and date_val.strip():
+            candidate = date_val.strip()
+            try:
+                datetime.strptime(candidate, "%Y-%m-%d")
+                sent_date = candidate
+            except ValueError:
+                sent_date = None
+
+        # Require at least one grounded envelope signal — otherwise this was not a
+        # piece of correspondence (or nothing survived grounding): manual path.
+        if not (from_name or from_email or recipients or subject):
+            return None
+
+        return {
+            "from_name": from_name,
+            "from_email": from_email,
+            "to": recipients,
+            "subject": subject,
+            "sent_date": sent_date,
+            "confidence": round(confidence, 4),
+        }
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
@@ -1158,6 +1394,7 @@ def ingest_file(
     extract_identifiers: bool = True,
     classify_taxonomy: list[str] | None = None,
     classify_multi_label: bool = False,
+    extract_correspondence: bool = True,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -1203,6 +1440,15 @@ def ingest_file(
         classify_multi_label: when True, ``classify_taxonomy`` may return several
             labels (the Tag analog); when False (default) only the single best
             label is kept (the Correspondent / DocumentType analog).
+        extract_correspondence: when True, best-effort LLM extraction of email
+            envelope fields — sender, recipients (To/Cc), subject, sent date —
+            from the document's own text (aiify-opp-6100), the NLP-extractor
+            analog of an email header parser. Addresses are e-mail-shape and
+            grounding guarded (must appear verbatim in the text) and names/subject
+            must have a grounded core (anti-hallucination); the result is
+            confidence gated. Surfaced as a HITL proposal under
+            ``IngestOutcome.metadata["correspondence"]``; never silently
+            persisted. Failures degrade silently to no correspondence fields.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -1285,6 +1531,17 @@ def ingest_file(
         )
         if cls_result:
             ai_metadata = {**ai_metadata, "classification": cls_result}
+
+    # LLM correspondence extraction (best-effort): the email envelope fields
+    # (sender, recipients, subject, sent date) pulled from the document text — the
+    # NLP-extractor analog of an email header parser. Address/name/subject grounded
+    # and confidence gated; surfaced as a HITL proposal under
+    # metadata["correspondence"], never silently written. (aiify-opp-6100)
+    if extract_correspondence and text.strip():
+        _emit("correspondence", "Extracting correspondence fields…", 9)
+        corr = _ai_extract_correspondence(text)
+        if corr:
+            ai_metadata = {**ai_metadata, "correspondence": corr}
 
     # ── Duplicate detection + bookkeeping ─────────────────────────────────────
     # Open a single DB connection (or reuse caller's) for dedup + writes.
