@@ -818,16 +818,35 @@ def api_search():
     mode = data.get("mode", "grounded")
     top_k = min(int(data.get("top_k", 10)), 50)
     explain_access = bool(data.get("explain_access"))
+    expand = bool(data.get("expand"))
+    keywords = data.get("keywords")
     tenant_id, clearance = _security_context()
 
     try:
         from tools.document_intelligence.search_engine import DICSearchEngine
         engine = DICSearchEngine(tenant_id=tenant_id)
+        # Opt-in: broaden the query with LLM-suggested synonyms for better recall.
+        # Degrades to the original query when the LLM is unavailable.
+        expansion = None
+        effective_query = query
+        if expand:
+            expansion = engine.expand_query(query)
+            effective_query = expansion.expanded_query or query
         # Enforce the caller's clearance: results above it are never returned.
         results = engine.search(
-            query, collection_id=collection_id, top_k=top_k, mode=mode, clearance=clearance,
+            effective_query, collection_id=collection_id, top_k=top_k, mode=mode, clearance=clearance,
         )
         payload = {"results": [r.to_dict() for r in results], "count": len(results)}
+        if expansion is not None:
+            payload["expansion"] = expansion.to_dict()
+        # Opt-in: embedding-based search over a literal keyword list. Semantic
+        # matches surface even when a document lacks the literal term; degrades
+        # to literal keyword matching when no embedding provider is available.
+        if isinstance(keywords, list) and keywords:
+            kw_result = engine.keyword_search(
+                keywords, collection_id=collection_id, top_k=top_k, clearance=clearance,
+            )
+            payload["keyword_search"] = kw_result.to_dict()
         # Opt-in: explain (without leaking) what was withheld above clearance.
         if explain_access:
             expl = engine.access_explanation(
