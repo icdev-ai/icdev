@@ -13,7 +13,7 @@
   var SLIDES = DECK.slides || [];
   var COLORS = DECK.colors || {};
   var FONTS = ["Segoe UI", "Arial", "Georgia", "Times New Roman", "Courier New", "Verdana", "Tahoma"];
-  var cur = 0, selId = null, dirty = false, _id = 0, gesture = null, zoom = 1;
+  var cur = 0, selId = null, selIds = [], dirty = false, _id = 0, gesture = null, zoom = 1;
   var undoStack = [], redoStack = [], saveTimer = null;
   // Bundled icon set (air-gap, fill=currentColor so it inherits the element colour).
   var ICONS = {
@@ -189,11 +189,14 @@
   function setZoom(z) { zoom = Math.max(0.25, Math.min(4, z)); sizeSurface(); renderSurface(); }
 
   function renderSurface() {
+    // keep multi-selection coherent with the primary selection
+    if (selId && selIds.indexOf(selId) < 0) selIds = [selId];
+    if (!selId) selIds = selIds.filter(function (id) { return els().some(function (e) { return e.id === id; }); });
     var s = $("#surface"); s.innerHTML = "";
     var list = els().slice().sort(function (a, b) { return (a.z || 0) - (b.z || 0); });
     list.forEach(function (e) {
       if (e.hidden) return;  // hidden elements live only in the layers panel
-      var d = el("div", "el" + (e.id === selId ? " sel" : ""));
+      var d = el("div", "el" + (selIds.indexOf(e.id) >= 0 ? " sel" : ""));
       d.dataset.id = e.id;
       d.style.left = (e.x * 100) + "%"; d.style.top = (e.y * 100) + "%";
       d.style.width = (e.w * 100) + "%"; d.style.height = (e.h * 100) + "%";
@@ -238,14 +241,26 @@
   /* ---- drag + resize ---- */
   function onPointerDown(ev) {
     var node = ev.currentTarget; var id = node.dataset.id;
-    selId = id; renderProps(); renderLayers();
-    document.querySelectorAll(".el").forEach(function (n) { n.classList.toggle("sel", n.dataset.id === id); });
-    if (selEl() && selEl().locked) { ev.preventDefault(); return; }  // locked: select only, no drag/resize
+    if (ev.target.isContentEditable) return;  // let text editing happen
+    if (ev.shiftKey) {  // toggle membership in the multi-selection
+      var i = selIds.indexOf(id);
+      if (i >= 0) selIds.splice(i, 1); else selIds.push(id);
+      selId = selIds[selIds.length - 1] || null;
+      renderSurface(); renderProps(); renderLayers(); ev.preventDefault(); return;
+    }
+    var elem = selEl0(id);
+    if (elem && elem.groupId) {  // selecting any grouped element selects the whole group
+      selIds = els().filter(function (x) { return x.groupId === elem.groupId; }).map(function (x) { return x.id; });
+      selId = id;
+    } else if (selIds.indexOf(id) < 0) { selIds = [id]; selId = id; }
+    else { selId = id; }  // clicked an already-selected element → keep multi for group drag
+    renderProps(); renderLayers();
+    document.querySelectorAll(".el").forEach(function (n) { n.classList.toggle("sel", selIds.indexOf(n.dataset.id) >= 0); });
+    if (selEl() && selEl().locked) { ev.preventDefault(); return; }  // locked: select only
     if (ev.target.classList.contains("handle")) {
       snapshot();
       gesture = { mode: "resize", dir: ev.target.dataset.dir };
     } else {
-      if (ev.target.isContentEditable) return;  // let text editing happen
       snapshot();
       gesture = { mode: "move" };
     }
@@ -253,10 +268,15 @@
     gesture.startX = ev.clientX; gesture.startY = ev.clientY;
     gesture.ox = e.x; gesture.oy = e.y; gesture.ow = e.w; gesture.oh = e.h;
     gesture.sw = s.width; gesture.sh = s.height; gesture.e = e;
+    // capture originals of all selected (for group move)
+    gesture.group = (gesture.mode === "move" && selIds.length > 1)
+      ? selIds.map(function (sid) { var g = selEl0(sid); return g ? { el: g, ox: g.x, oy: g.y } : null; }).filter(Boolean)
+      : null;
     document.addEventListener("pointermove", onPointerMove);
     document.addEventListener("pointerup", onPointerUp, { once: true });
     ev.preventDefault();
   }
+  function selEl0(id) { return els().filter(function (x) { return x.id === id; })[0] || null; }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   function onPointerMove(ev) {
     if (!gesture) return;
@@ -265,6 +285,14 @@
     var e = gesture.e;
     if (gesture.mode === "move") {
       e.x = clamp(gesture.ox + dx, 0, 1 - e.w); e.y = clamp(gesture.oy + dy, 0, 1 - e.h);
+      if (gesture.group) {  // move the whole selection together (no snapping)
+        gesture.group.forEach(function (g) {
+          g.el.x = clamp(g.ox + dx, 0, 1 - g.el.w); g.el.y = clamp(g.oy + dy, 0, 1 - g.el.h);
+          var nd = document.querySelector('.el[data-id="' + g.el.id + '"]');
+          if (nd) { nd.style.left = g.el.x * 100 + "%"; nd.style.top = g.el.y * 100 + "%"; }
+        });
+        return;
+      }
       applySnap(e);
     } else {
       var d = gesture.dir;
@@ -331,7 +359,24 @@
 
   /* ---- properties panel ---- */
   function renderProps() {
-    var p = $("#props"); var e = selEl();
+    var p = $("#props");
+    if (selIds.length > 1) {
+      p.innerHTML = "<h4>" + selIds.length + " SELECTED</h4>" +
+        "<div class='row'><label>Align</label><span class=seg>" +
+        "<button data-align=left title='Left'>⬅</button><button data-align=cx title='Center'>↔</button>" +
+        "<button data-align=right title='Right'>➡</button><button data-align=top title='Top'>⬆</button>" +
+        "<button data-align=cy title='Middle'>↕</button><button data-align=bottom title='Bottom'>⬇</button></span></div>" +
+        "<div class='row'><label>Distribute</label><span class=seg>" +
+        "<button data-dist=h>Horiz</button><button data-dist=v>Vert</button></span></div>" +
+        "<div class='row'><button id=p-group>Group</button><button id=p-ungroup>Ungroup</button></div>" +
+        "<div class='hint'>Shift-click to add/remove · marquee-drag empty canvas to select · drag to move together.</div>";
+      document.querySelectorAll("#props [data-align]").forEach(function (b) { b.addEventListener("click", function () { alignSel(b.dataset.align); }); });
+      document.querySelectorAll("#props [data-dist]").forEach(function (b) { b.addEventListener("click", function () { distSel(b.dataset.dist); }); });
+      $("#p-group").addEventListener("click", groupSel);
+      $("#p-ungroup").addEventListener("click", ungroupSel);
+      return;
+    }
+    var e = selEl();
     if (!e) {
       var sl = curSlide();
       p.innerHTML = "<h4>SLIDE " + (cur + 1) + " OF " + SLIDES.length + "</h4>" +
@@ -434,7 +479,40 @@
     openModal();
   }
   function layer(dir) { var e = selEl(); if (!e) return; snapshot(); e.z = (e.z || 0) + dir; setDirty(true); renderSurface(); }
-  function del() { var e = selEl(); if (!e) return; snapshot(); curSlide().elements = els().filter(function (x) { return x.id !== e.id; }); selId = null; setDirty(true); renderAll(); }
+  function del() {
+    var ids = selIds.length ? selIds.slice() : (selId ? [selId] : []);
+    if (!ids.length) return; snapshot();
+    curSlide().elements = els().filter(function (x) { return ids.indexOf(x.id) < 0; });
+    selId = null; selIds = []; setDirty(true); renderAll();
+  }
+  function avg(a) { return a.reduce(function (s, v) { return s + v; }, 0) / a.length; }
+  function alignSel(how) {
+    if (selIds.length < 2) return; snapshot();
+    var sel = selIds.map(selEl0).filter(Boolean);
+    if (how === "left") { var l = Math.min.apply(null, sel.map(function (e) { return e.x; })); sel.forEach(function (e) { e.x = l; }); }
+    else if (how === "right") { var r = Math.max.apply(null, sel.map(function (e) { return e.x + e.w; })); sel.forEach(function (e) { e.x = r - e.w; }); }
+    else if (how === "cx") { var c = avg(sel.map(function (e) { return e.x + e.w / 2; })); sel.forEach(function (e) { e.x = c - e.w / 2; }); }
+    else if (how === "top") { var t = Math.min.apply(null, sel.map(function (e) { return e.y; })); sel.forEach(function (e) { e.y = t; }); }
+    else if (how === "bottom") { var b = Math.max.apply(null, sel.map(function (e) { return e.y + e.h; })); sel.forEach(function (e) { e.y = b - e.h; }); }
+    else if (how === "cy") { var m = avg(sel.map(function (e) { return e.y + e.h / 2; })); sel.forEach(function (e) { e.y = m - e.h / 2; }); }
+    setDirty(true); renderSurface();
+  }
+  function distSel(axis) {
+    if (selIds.length < 3) return; snapshot();
+    var sel = selIds.map(selEl0).filter(Boolean);
+    if (axis === "h") {
+      sel.sort(function (a, b) { return a.x - b.x; });
+      var f = sel[0].x + sel[0].w / 2, l = sel[sel.length - 1].x + sel[sel.length - 1].w / 2, st = (l - f) / (sel.length - 1);
+      sel.forEach(function (e, i) { e.x = f + st * i - e.w / 2; });
+    } else {
+      sel.sort(function (a, b) { return a.y - b.y; });
+      var ff = sel[0].y + sel[0].h / 2, ll = sel[sel.length - 1].y + sel[sel.length - 1].h / 2, sv = (ll - ff) / (sel.length - 1);
+      sel.forEach(function (e, i) { e.y = ff + sv * i - e.h / 2; });
+    }
+    setDirty(true); renderSurface();
+  }
+  function groupSel() { if (selIds.length < 2) return; snapshot(); var gid = uid("grp"); selIds.forEach(function (id) { var e = selEl0(id); if (e) e.groupId = gid; }); setDirty(true); renderProps(); }
+  function ungroupSel() { snapshot(); selIds.forEach(function (id) { var e = selEl0(id); if (e) delete e.groupId; }); setDirty(true); renderProps(); }
   function nudge(key, big) {
     var e = selEl(); if (!e) return; snapshot(); var s = big ? 0.05 : 0.01;
     if (key === "ArrowLeft") e.x = clamp(e.x - s, 0, 1 - e.w);
@@ -666,7 +744,34 @@
     window.addEventListener("beforeunload", function (e) { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
     window.addEventListener("resize", function () { sizeSurface(); renderSurface(); });
     // click empty surface clears selection
-    $("#surface").addEventListener("pointerdown", function (e) { if (e.target.id === "surface") { selId = null; renderSurface(); renderProps(); renderLayers(); } });
+    $("#surface").addEventListener("pointerdown", function (ev) {
+      if (ev.target.id !== "surface") return;
+      selId = null; selIds = []; renderSurface(); renderProps(); renderLayers();
+      var srect = $("#surface").getBoundingClientRect();
+      var x0 = (ev.clientX - srect.left) / srect.width, y0 = (ev.clientY - srect.top) / srect.height;
+      var box = el("div"); box.style.cssText = "position:absolute;border:1px solid #ff4da6;" +
+        "background:rgba(255,77,166,.1);z-index:9998;pointer-events:none;"; $("#surface").appendChild(box);
+      var rc = { l: x0, t: y0, r: x0, b: y0 };
+      function mm(e) {
+        var x1 = (e.clientX - srect.left) / srect.width, y1 = (e.clientY - srect.top) / srect.height;
+        rc = { l: Math.min(x0, x1), t: Math.min(y0, y1), r: Math.max(x0, x1), b: Math.max(y0, y1) };
+        box.style.left = rc.l * 100 + "%"; box.style.top = rc.t * 100 + "%";
+        box.style.width = (rc.r - rc.l) * 100 + "%"; box.style.height = (rc.b - rc.t) * 100 + "%";
+      }
+      function mu() {
+        document.removeEventListener("pointermove", mm); box.remove();
+        if ((rc.r - rc.l) > 0.01 || (rc.b - rc.t) > 0.01) {
+          selIds = els().filter(function (e2) {
+            if (e2.hidden) return false;
+            var cx = e2.x + e2.w / 2, cy = e2.y + e2.h / 2;
+            return cx >= rc.l && cx <= rc.r && cy >= rc.t && cy <= rc.b;
+          }).map(function (e2) { return e2.id; });
+          selId = selIds[selIds.length - 1] || null;
+        }
+        renderSurface(); renderProps(); renderLayers();
+      }
+      document.addEventListener("pointermove", mm); document.addEventListener("pointerup", mu, { once: true });
+    });
     renderAll();
   }
 
