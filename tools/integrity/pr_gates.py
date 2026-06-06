@@ -39,7 +39,6 @@ mirroring ``engine.assess``.
 """
 from __future__ import annotations
 
-import os
 import shutil
 # subprocess is used ONLY for a fixed-arg, shell=False ``git diff`` (read-only);
 # the changed files are never executed. shell=True is banned under tools/integrity/.

@@ -482,6 +482,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "integrity_findings",
         "integrity_verdicts",
         "integrity_authorizations",
+        # ACF Autonomous Capability Foundry (acf-, append-only signal/concept/spec ledger)
+        "foundry_signals",
     ]
 
     if tool_name == "Bash":
