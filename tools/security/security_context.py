@@ -39,6 +39,29 @@ def _get_clearance_order(cls: str) -> int:
         )
 
 
+# Canonical classification ladder, lowest → highest. Used to build the
+# read-down set for RLS. Kept in sync with _get_clearance_order's ordering.
+_CLASSIFICATION_LABELS = ("PUBLIC", "CUI", "SECRET", "TOP SECRET", "TOP SECRET//SCI")
+
+
+def classifications_dominated_by(classification: Optional[str]) -> Set[str]:
+    """Bell-LaPadula "read-down": every classification label a caller at the
+    given clearance is allowed to read — i.e. all labels whose order is <= the
+    caller's clearance, plus the caller's own label.
+
+    This exists so RLS emits ``classification IN (...)`` (read-down) instead of
+    ``classification = ?`` (exact match). Exact match wrongly hid lower-
+    classification rows from higher-clearance callers (e.g. a CUI row was
+    invisible to a TOP SECRET//SCI user). The set NEVER contains a label above
+    the caller's clearance, so it cannot grant read-up.
+    """
+    if not classification:
+        return set()
+    caller_order = _get_clearance_order(classification)
+    candidates = set(_CLASSIFICATION_LABELS) | {classification.upper()}
+    return {lbl for lbl in candidates if _get_clearance_order(lbl) <= caller_order}
+
+
 # ---------------------------------------------------------------------------
 # Dataclass
 # ---------------------------------------------------------------------------

@@ -863,8 +863,15 @@ class StorageCursor:
             return sql, params
         try:
             from tools.security.row_security import inject_row_predicate
+            from tools.security.security_context import classifications_dominated_by
             tenant_id = getattr(ctx, "tenant_id", None)
             classification = getattr(ctx, "classification", None)
+            # Bell-LaPadula read-down: a caller may read any classification their
+            # clearance dominates, so inject `classification IN (<dominated set>)`
+            # rather than `classification = ?` (exact match, which wrongly hid a
+            # CUI row from a TOP SECRET//SCI caller). The set never includes a
+            # label above the caller's clearance, so read-up stays blocked.
+            classifications = classifications_dominated_by(classification) or None
             # Derive LAC and COI label sets from the compartments frozenset.
             # LAC_* prefixed tags → label-based access control predicate.
             # COI_* prefixed tags → community-of-interest predicate.
@@ -874,7 +881,7 @@ class StorageCursor:
             new_sql, extra, n_before = inject_row_predicate(
                 sql,
                 tenant_id=tenant_id,
-                classification=classification,
+                classifications=classifications,
                 lac_labels=lac_labels,
                 coi_tags=coi_tags,
             )
