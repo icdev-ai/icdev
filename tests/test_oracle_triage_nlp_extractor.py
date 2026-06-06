@@ -21,11 +21,20 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def clear_nlp_cache():
-    """Reset the per-process NLP subject cache before each test."""
+    """Reset all per-process NLP caches before and after each test.
+
+    The module memoizes three separate caches; clearing only the single-subject
+    cache let _NLP_BATCH_SUBJECTS_CACHE leak between tests that share a
+    (lens, description) key, making test order significant.
+    """
     import tools.genesis.reflexes.oracle_triage as ot
-    ot._NLP_SUBJECT_CACHE.clear()
+    for cache_name in ("_NLP_SUBJECT_CACHE", "_NLP_BATCH_LENS_CACHE",
+                       "_NLP_BATCH_SUBJECTS_CACHE"):
+        getattr(ot, cache_name).clear()
     yield
-    ot._NLP_SUBJECT_CACHE.clear()
+    for cache_name in ("_NLP_SUBJECT_CACHE", "_NLP_BATCH_LENS_CACHE",
+                       "_NLP_BATCH_SUBJECTS_CACHE"):
+        getattr(ot, cache_name).clear()
 
 
 @pytest.fixture()
