@@ -251,6 +251,17 @@ python tools/compliance/xai_assessor.py --project-id "sparkpilot" --json
 
 ---
 
+## EQO Centralized Logging Commands (eqo-log)
+```bash
+# Query the append-only centralized_logs sink (RLS-aware, newest first)
+python tools/logging/log_query.py --component genesis --level ERROR --json
+python tools/logging/log_query.py --contains timeout --since 2026-06-06 --limit 50
+# Dashboard: /logs  |  JSON API: GET /api/logs?component=&level=&since=&contains=&limit=
+# IQE: POST /logs/api/iqe-query {question}  (collection logs.entries)
+```
+
+---
+
 ## Code Intelligence Commands
 ```bash
 python tools/analysis/code_analyzer.py --project-dir tools/ --json

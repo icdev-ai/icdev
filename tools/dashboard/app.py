@@ -166,9 +166,10 @@ _CANVAS_DEFS = [
     ("ace", "ICDEV_ACE_ENABLED", "icdev.tools.ace.blueprint", "ace_bp"),
     ("aisg", "ICDEV_AISG_ENABLED", "tools.aisg.blueprint", "bp"),
     ("integrity", "ICDEV_INTEGRITY_ENABLED", "tools.integrity.blueprint", "create_integrity_blueprint"),
+    ("logs", "ICDEV_LOGS_ENABLED", "tools.logging.blueprint", "create_logs_blueprint"),
 ]
 
-_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity"}
+_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity", "logs"}
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
     _default = "true" if _key in _CANVAS_DEFAULTS_TRUE else "false"
@@ -2197,6 +2198,7 @@ def create_app() -> Flask:
         "ccc": "",
         "dsoc": "",
         "integrity": "",
+        "logs": "",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
@@ -3449,6 +3451,7 @@ def create_app() -> Flask:
             "slides":         ("tools.iqe.adapters.slides",            ["slides.decks", "slides.slides"]),
             "cpmp":           ("tools.iqe.adapters.cpmp",              ["cpmp.contracts", "cpmp.deliverables", "cpmp.clins", "cpmp.cpars", "cpmp.evm"]),
             "ace":            ("icdev.tools.iqe.adapters.ace",          ["ace.coworkers", "ace.sessions", "ace.suggestions"]),
+            "logs":           ("tools.iqe.adapters.logs",               ["logs.entries"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
