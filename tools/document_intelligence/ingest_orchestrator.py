@@ -2020,6 +2020,311 @@ def assess_duplicate_blocks(text: str) -> dict | None:
 
 
 # --------------------------------------------------------------------------- #
+# Ingest-workload anomaly detection (aiify-opp-6097: hardcoded_threshold ->
+# anomaly_detection). The external scan flagged paperless-ngx
+# src/paperless/celery.py — the Celery task-queue / worker config — and
+# recommended an anomaly-detection paradigm over its fixed numeric thresholds
+# (the hardcoded task time/size limits a worker config sets to fence off
+# runaway tasks). The repo is ephemeral, so per the established aiify-opp
+# pattern the augmentation lands in the analogous ICDEV subsystem (DIC).
+#
+# The DIC analog of a Celery worker guard is the ingest pipeline's *workload
+# profile*: every ingested file becomes a background job (extract -> OCR ->
+# embed -> KG bridge) whose cost is driven by the file. A worker config caps
+# task time/size to stop one pathological payload from hammering the pool; the
+# document-level analog is detecting a pathological *ingest cost profile* up
+# front so a human is warned before the file silently overloads the pipeline:
+#   - sparse_extraction — a substantial file that yields almost no text (an
+#     image-only / scanned / corrupt PDF) will hammer the OCR worker for no
+#     content; the classic runaway a task time-limit fences off.
+#   - sparse_pages — many pages but near-zero text per page: scanned imagery
+#     that OCR could not (or did not) recover.
+#   - payload_explosion — extracted text far larger than the file's own bytes,
+#     implying a decompression/expansion blow-up (an archive- or zip-bomb-like
+#     payload) that balloons downstream chunk/embed work.
+#
+# Design (mirrors the date- and duplicate-anomaly siblings, aiify-opp 6048 /
+# 5984):
+#   - the deterministic detector is the ALWAYS-authoritative baseline: pure
+#     ratio math + named-threshold rules, offline, no network.
+#   - the named thresholds below are exactly the "hardcoded_threshold" the scan
+#     called out, lifted out of inline literals into one tunable place.
+#   - small files are excluded by a minimum-size floor — extraction-yield
+#     ratios on tiny notes are noise, and a short legitimate memo is not a
+#     runaway job.
+#   - the optional LLM layer only grades *severity* and explains the flagged
+#     profile; it degrades silently to the heuristic severity and is never a
+#     hard dependency.
+#   - results are surfaced as a *proposal* under
+#     IngestOutcome.metadata["workload_anomaly"] only when something is
+#     anomalous — never silently acted on — so a human reviews before the file
+#     is trusted to the pipeline.
+# --------------------------------------------------------------------------- #
+
+# Below this file size, extraction-yield ratios are too noisy to judge — a short
+# legitimate note is small AND text-light without being a runaway job. 50 KiB.
+_WORKLOAD_MIN_FILE_BYTES = 51200
+
+# A file at/above the size floor that yields fewer than this many characters per
+# KiB is almost certainly image-only / scanned / corrupt — a "sparse extraction"
+# that will hammer the OCR worker for little or no content.
+_WORKLOAD_MIN_CHARS_PER_KB = 2.0
+
+# Pages averaging fewer than this many characters are image-only / scanned
+# (OCR did not recover their text). Only assessed when the page count is known.
+_WORKLOAD_MIN_CHARS_PER_PAGE = 50.0
+
+# Extracted text more than this many characters per KiB — i.e. several times the
+# file's own byte size — implies a decompression/expansion blow-up (archive- or
+# zip-bomb-like) rather than ordinary document text (~1 char/byte ≈ 1024/KiB).
+_WORKLOAD_MAX_CHARS_PER_KB = 4096.0
+
+# Smallest file worth checking for a payload explosion — below this even a large
+# expansion ratio is a handful of bytes and not worth surfacing. 1 KiB.
+_WORKLOAD_EXPLOSION_MIN_BYTES = 1024
+
+# A sparse extraction this far below the chars/KiB floor on a file this many
+# times the size floor is an essentially-empty large payload — the worst case.
+_WORKLOAD_SEVERE_CHARS_PER_KB = _WORKLOAD_MIN_CHARS_PER_KB / 4.0  # 0.5
+_WORKLOAD_SEVERE_FILE_BYTES = _WORKLOAD_MIN_FILE_BYTES * 4        # 200 KiB
+
+_WORKLOAD_SYSTEM_PROMPT = (
+    "You are a document-pipeline operations analyst grading how concerning a "
+    "single file's ingest workload profile is. You are given the file's size, "
+    "how much text was extracted, its page count, the derived characters-per-KiB "
+    "and characters-per-page ratios, which deterministic rules a detector "
+    "flagged and why (sparse_extraction = a large file that yielded almost no "
+    "text and will hammer OCR; sparse_pages = many pages with near-zero text "
+    "each; payload_explosion = extracted text far larger than the file itself), "
+    "and a deterministic baseline severity. A large file that extracted no text, "
+    "or a payload that explodes far beyond its byte size, is most concerning; a "
+    "mildly text-light file is minor. You may agree with or adjust the baseline, "
+    "but justify any change. Respond ONLY with a JSON object: "
+    '{"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<the single most concerning rule name>"}. Never invent '
+    "metrics beyond those provided."
+)
+
+
+def _heuristic_workload_severity(flags: list[dict]) -> str:
+    """Deterministic ingest-workload severity — the always-available baseline.
+
+    Pure function of which rules fired and how extreme they are. A payload
+    explosion, or an essentially-empty large file, is ``high``; any other
+    flagged profile is ``medium``. ``low`` is never returned because the caller
+    only invokes this when at least one rule has fired.
+    """
+    if not flags:
+        return "low"
+    for f in flags:
+        if f.get("rule") == "payload_explosion":
+            return "high"
+        if (
+            f.get("rule") == "sparse_extraction"
+            and f.get("byte_size", 0) >= _WORKLOAD_SEVERE_FILE_BYTES
+            and f.get("metric", _WORKLOAD_MIN_CHARS_PER_KB) < _WORKLOAD_SEVERE_CHARS_PER_KB
+        ):
+            return "high"
+    return "medium"
+
+
+def _detect_workload_anomaly(
+    byte_size: int, text_len: int, page_count: int
+) -> dict:
+    """Flag pathological ingest-cost profiles (deterministic, authoritative).
+
+    Three rules, each lifting a named threshold out of inline magic numbers:
+      • sparse_extraction — file ≥ :data:`_WORKLOAD_MIN_FILE_BYTES` yet under
+        :data:`_WORKLOAD_MIN_CHARS_PER_KB` characters per KiB.
+      • sparse_pages — page count known and average characters per page under
+        :data:`_WORKLOAD_MIN_CHARS_PER_PAGE` (only on files past the size floor).
+      • payload_explosion — file past :data:`_WORKLOAD_EXPLOSION_MIN_BYTES` whose
+        text exceeds :data:`_WORKLOAD_MAX_CHARS_PER_KB` characters per KiB.
+
+    Args:
+        byte_size: the file's size on disk in bytes.
+        text_len: number of characters extracted from the file.
+        page_count: number of pages (0/unknown skips the per-page rule).
+
+    Returns:
+        ``{"byte_size": int, "text_len": int, "page_count": int,
+           "chars_per_kb": float, "chars_per_page": float|None,
+           "flags": [{"rule", "metric", "threshold", "byte_size", "detail"}...],
+           "anomaly_count": int, "baseline_severity": str}``. ``anomaly_count``
+        is 0 (and ``baseline_severity`` ``"low"``) when nothing is anomalous.
+    """
+    byte_size = max(int(byte_size or 0), 0)
+    text_len = max(int(text_len or 0), 0)
+    page_count = max(int(page_count or 0), 0)
+
+    chars_per_kb = (text_len * 1024.0 / byte_size) if byte_size > 0 else 0.0
+    chars_per_page = (text_len / page_count) if page_count > 0 else None
+
+    flags: list[dict] = []
+
+    if byte_size >= _WORKLOAD_MIN_FILE_BYTES and chars_per_kb < _WORKLOAD_MIN_CHARS_PER_KB:
+        flags.append({
+            "rule": "sparse_extraction",
+            "metric": round(chars_per_kb, 2),
+            "threshold": _WORKLOAD_MIN_CHARS_PER_KB,
+            "byte_size": byte_size,
+            "detail": (
+                f"{byte_size} byte file yielded only {text_len} chars "
+                f"({round(chars_per_kb, 2)}/KiB) — likely image-only/scanned/corrupt."
+            ),
+        })
+
+    if (
+        page_count > 0
+        and byte_size >= _WORKLOAD_MIN_FILE_BYTES
+        and chars_per_page is not None
+        and chars_per_page < _WORKLOAD_MIN_CHARS_PER_PAGE
+    ):
+        flags.append({
+            "rule": "sparse_pages",
+            "metric": round(chars_per_page, 1),
+            "threshold": _WORKLOAD_MIN_CHARS_PER_PAGE,
+            "byte_size": byte_size,
+            "detail": (
+                f"{page_count} pages but only {round(chars_per_page, 1)} chars/page "
+                "— scanned imagery OCR did not recover."
+            ),
+        })
+
+    if byte_size >= _WORKLOAD_EXPLOSION_MIN_BYTES and chars_per_kb > _WORKLOAD_MAX_CHARS_PER_KB:
+        flags.append({
+            "rule": "payload_explosion",
+            "metric": round(chars_per_kb, 1),
+            "threshold": _WORKLOAD_MAX_CHARS_PER_KB,
+            "byte_size": byte_size,
+            "detail": (
+                f"Extracted {text_len} chars from a {byte_size} byte file "
+                f"({round(chars_per_kb, 1)}/KiB) — decompression/expansion blow-up."
+            ),
+        })
+
+    return {
+        "byte_size": byte_size,
+        "text_len": text_len,
+        "page_count": page_count,
+        "chars_per_kb": round(chars_per_kb, 2),
+        "chars_per_page": round(chars_per_page, 1) if chars_per_page is not None else None,
+        "flags": flags,
+        "anomaly_count": len(flags),
+        "baseline_severity": _heuristic_workload_severity(flags),
+    }
+
+
+def _ai_workload_severity(summary: dict) -> dict | None:
+    """Grade ingest-workload anomaly severity with the LLM, grounded on metrics.
+
+    Best-effort enrichment only. Returns
+    ``{"severity": "low|medium|high", "rationale": str, "top_concern": str}`` on
+    success, or ``None`` when there is nothing to grade, the model is
+    unavailable, or the output is missing/blank/malformed/out-of-range. Callers
+    MUST treat ``None`` as "use the deterministic baseline".
+    """
+    if summary.get("anomaly_count", 0) <= 0:
+        return None
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        facts = {
+            k: summary.get(k)
+            for k in (
+                "byte_size", "text_len", "page_count",
+                "chars_per_kb", "chars_per_page", "baseline_severity",
+            )
+        }
+        lines = [
+            f"Ingest workload facts: {_json.dumps(facts, sort_keys=True)}",
+            f"Deterministic baseline severity: {summary.get('baseline_severity')}",
+            "Flagged rules:",
+        ]
+        for f in summary.get("flags", []):
+            lines.append(f"- {_json.dumps(f, default=str)}")
+
+        req = LLMRequest(
+            messages=[
+                {"role": "user", "content": "\n".join(lines) + "\n\nGrade the severity."}
+            ],
+            system_prompt=_WORKLOAD_SYSTEM_PROMPT,
+            max_tokens=200,
+            temperature=0.1,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("dic_workload_anomaly_assessment", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+        severity = str(parsed.get("severity") or "").strip().lower()
+        if severity not in {"low", "medium", "high"}:
+            return None
+        return {
+            "severity": severity,
+            "rationale": str(parsed.get("rationale") or "").strip()[:200],
+            "top_concern": str(parsed.get("top_concern") or "").strip()[:40],
+        }
+    except Exception:
+        return None
+
+
+def assess_ingest_workload(
+    byte_size: int, text_len: int, page_count: int
+) -> dict | None:
+    """Flag a pathological ingest-cost profile for a file (HITL proposal).
+
+    Orchestrates :func:`_detect_workload_anomaly` (always authoritative) and
+    layers best-effort LLM severity grading on top. Unlike the text-content
+    detectors this is deliberately evaluated even when no text was extracted —
+    an empty extraction on a large file is precisely the anomaly it catches.
+
+    Args:
+        byte_size: the file's size on disk in bytes.
+        text_len: number of characters extracted from the file.
+        page_count: number of pages (0/unknown skips the per-page rule).
+
+    Returns:
+        ``None`` when the profile is unremarkable (nothing to surface), else
+        ``{"byte_size": int, "text_len": int, "page_count": int,
+           "chars_per_kb": float, "chars_per_page": float|None, "flags": [...],
+           "anomaly_count": int, "severity": str, "rationale": str,
+           "top_concern": str}``. ``severity`` is the LLM grade when available,
+        otherwise the deterministic baseline.
+    """
+    summary = _detect_workload_anomaly(byte_size, text_len, page_count)
+    if summary["anomaly_count"] <= 0:
+        return None
+
+    ai = _ai_workload_severity(summary)
+    severity = ai["severity"] if ai else summary["baseline_severity"]
+    return {
+        "byte_size": summary["byte_size"],
+        "text_len": summary["text_len"],
+        "page_count": summary["page_count"],
+        "chars_per_kb": summary["chars_per_kb"],
+        "chars_per_page": summary["chars_per_page"],
+        "flags": summary["flags"],
+        "anomaly_count": summary["anomaly_count"],
+        "severity": severity,
+        "rationale": (ai or {}).get("rationale", ""),
+        "top_concern": (ai or {}).get("top_concern", ""),
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
@@ -2041,6 +2346,7 @@ def ingest_file(
     extract_correspondence: bool = True,
     detect_date_anomalies: bool = True,
     detect_duplicate_blocks: bool = True,
+    detect_workload_anomaly: bool = True,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -2115,6 +2421,18 @@ def ingest_file(
             grades severity. Surfaced as a HITL proposal under
             ``IngestOutcome.metadata["duplicate_blocks"]`` only when a block
             recurs; never silently deduped. Degrades silently.
+        detect_workload_anomaly: when True, check the file's ingest-cost profile
+            and flag a pathological one — a large file that extracted almost no
+            text (a scanned/corrupt OCR hammer), near-zero text per page, or a
+            payload that explodes far beyond its own byte size (aiify-opp-6097),
+            the anomaly-detection analog of a Celery worker's hardcoded task
+            time/size limit. Unlike the content detectors it is evaluated even
+            when no text was extracted — an empty extraction on a large file is
+            precisely the anomaly. The detector is offline and always
+            authoritative; an optional best-effort LLM pass only grades
+            severity. Surfaced as a HITL proposal under
+            ``IngestOutcome.metadata["workload_anomaly"]`` only when the profile
+            is anomalous. Degrades silently.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -2232,6 +2550,23 @@ def ingest_file(
         dup = assess_duplicate_blocks(text)
         if dup:
             ai_metadata = {**ai_metadata, "duplicate_blocks": dup}
+
+    # Ingest-workload anomaly detection (deterministic + best-effort LLM
+    # severity): flag a pathological ingest-cost profile — a large file that
+    # extracted almost no text (a scanned/corrupt OCR hammer), near-zero text
+    # per page, or a payload that explodes far beyond its own byte size — the
+    # way a Celery worker's task time/size limit fences off a runaway job.
+    # Deliberately NOT gated on text being non-empty: an empty extraction on a
+    # large file is exactly the anomaly. Surfaced as a HITL proposal under
+    # metadata["workload_anomaly"] only when something is anomalous. (aiify-opp-6097)
+    if detect_workload_anomaly:
+        _emit("workload_anomaly", "Checking ingest workload profile…", 9)
+        try:
+            wl = assess_ingest_workload(p.stat().st_size, len(text), extraction.page_count or 0)
+        except Exception:
+            wl = None
+        if wl:
+            ai_metadata = {**ai_metadata, "workload_anomaly": wl}
 
     # ── Duplicate detection + bookkeeping ─────────────────────────────────────
     # Open a single DB connection (or reuse caller's) for dedup + writes.
