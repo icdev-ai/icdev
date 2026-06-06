@@ -30,6 +30,7 @@ env/
 venv/
 .venv/
 *.egg-info/
+build/
 .pytest_cache/
 
 # Node
