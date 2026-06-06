@@ -4,6 +4,26 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: eqo
+  name: Eqo Project
+  description: Auto-registered project for tasks with prefix 'eqo-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: eqo-
+  default_open: true
+  briefs: []
+  epics:
+  - key: log
+    title: LOG
+    priority: medium
+  - key: prd
+    title: PRD
+    priority: medium
+  - key: sipa
+    title: SIPA
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: acf
   name: Acf Project
   description: Auto-registered project for tasks with prefix 'acf-'. Update name and
