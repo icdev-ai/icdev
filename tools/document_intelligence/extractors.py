@@ -989,3 +989,372 @@ def extract_batch_with_quality(
     extractions = [extract_file(p) for p in paths]
     report = detect_extraction_anomalies(extractions, use_llm=use_llm)
     return extractions, report
+
+
+# --------------------------------------------------------------------------- #
+# OCR confidence anomaly detection (aiify-opp-6105: hardcoded_threshold ->
+# anomaly_detection, modeled on the Tesseract OCR parser of a document-management
+# backend). A tesseract-style parser keeps a single *hardcoded confidence cutoff*
+# — accept any recognised word whose engine confidence is above N, drop the rest
+# — which is blind to two silent OCR-quality failure modes the absolute number
+# can't see: (1) a page that OCR'd into mostly low-confidence "garbled" tokens
+# (a skewed/blurry scan, the wrong language model, a low-DPI fax) yet still
+# returned *some* above-cutoff words, so the page reads as "fine"; and (2) a
+# confidence *cliff* where most of a page recognised cleanly and a pocket of
+# words collapsed into near-noise that the absolute cutoff alone never surfaces
+# relative to the rest of the page. This layer lifts the implicit confidence
+# cutoff into named per-word confidence bands AND adds a confidence-distribution
+# outlier pass over the page's words. The statistical detection is ALWAYS
+# authoritative and LLM-free (air-gap safe); the optional LLM severity grade is
+# best-effort enrichment that degrades silently to None. It NEVER changes which
+# words tesseract recognised — it only annotates OCR confidence quality.
+# --------------------------------------------------------------------------- #
+
+# Per-word confidence bands (Tesseract reports word confidence on a 0–100 scale).
+# These replace the single magic "min confidence" cutoff a parser would hardcode:
+# conf >= _OCR_CONF_HIGH → "confident"; >= _OCR_CONF_LOW → "uncertain"; below →
+# "garbled" (the recognition is effectively noise). Centralizing them means
+# tuning the notion of "too unsure" happens in one place, not scattered numbers.
+_OCR_CONF_HIGH = 80.0
+_OCR_CONF_LOW = 50.0
+
+# ── Anomaly detection (page-relative confidence outliers) ─────────────────────
+# The absolute bands grade each word against a fixed yardstick. They miss a word
+# that is anomalous *for this page*: the low-confidence pocket past a sharp
+# confidence cliff. The anomaly layer flags words whose confidence sits more than
+# _OCR_ANOMALY_STDEV_K standard deviations BELOW the page mean (low outliers) and
+# that are not themselves already confident (abs ceiling). Pure statistics, no I/O.
+_OCR_ANOMALY_STDEV_K = 1.5            # outlier if conf < mean - k * stdev
+_OCR_ANOMALY_MIN_WORDS = 8           # need a real distribution before flagging outliers
+_OCR_ANOMALY_ABS_CEIL = _OCR_CONF_HIGH  # never flag a word that is itself confident
+_OCR_ANOMALY_SAMPLE = 8             # bound how many concrete outliers the LLM sees
+
+# Deterministic severity cutoffs on the uncertain / garbled fractions of the page.
+# A few low-confidence words among thousands is normal OCR noise, so severity is
+# driven by the *fraction* of the page that is uncertain/garbled, not a bare flag.
+_OCR_SEV_HIGH_UNCERTAIN_FRACTION = 0.50
+_OCR_SEV_MEDIUM_UNCERTAIN_FRACTION = 0.25
+_OCR_SEV_HIGH_GARBLED_FRACTION = 0.25
+_OCR_SEV_MEDIUM_GARBLED_FRACTION = 0.10
+
+_OCR_ANOMALY_SYSTEM_PROMPT = (
+    "You are an OCR-quality analyst grading how badly a page came out of an OCR "
+    "engine. You are given the number of recognised words, their per-word "
+    "confidence distribution (0-100 scale), the fraction that is uncertain or "
+    "garbled, the lowest-confidence outlier words (the near-noise pocket past a "
+    "confidence cliff), and a deterministic baseline severity. A page where most "
+    "words are garbled, or where a large share is uncertain, is the most severe — "
+    "the text it produced cannot be trusted. You may agree with or adjust the "
+    "baseline, but justify any change. "
+    'Respond ONLY with a JSON object: {"severity": "low|medium|high", "rationale": '
+    '"<=160 chars", "top_concern": "<short phrase naming the main quality problem>"}. '
+    "Never invent words beyond those provided."
+)
+
+
+def _ocr_word_fields(item: "dict | tuple | list") -> dict:
+    """Read ``text`` and ``conf`` off an OCR word, tolerating dicts or pairs.
+
+    Pure accessor that accepts either a ``{"text", "conf"}`` dict (the form
+    :func:`_extract_word_confidences` emits) or a ``(text, conf)`` pair, so the
+    detector works on freshly parsed words and on reloaded records alike.
+    Confidence is coerced to float and clamped to ``[0, 100]``; a non-numeric or
+    Tesseract "no text" sentinel (``-1``) floors to ``0.0``.
+    """
+    if isinstance(item, dict):
+        text = item.get("text") or ""
+        raw_conf = item.get("conf")
+    else:
+        text = item[0] if len(item) > 0 else ""
+        raw_conf = item[1] if len(item) > 1 else None
+    try:
+        conf = float(raw_conf)
+    except (TypeError, ValueError):
+        conf = 0.0
+    if conf < 0:
+        conf = 0.0
+    if conf > 100:
+        conf = 100.0
+    return {"text": str(text), "conf": conf}
+
+
+def _classify_ocr_confidence(conf: float) -> str:
+    """Map a word's OCR confidence to a band using the named thresholds.
+
+    Pure function: ``conf >= _OCR_CONF_HIGH`` → ``"confident"``,
+    ``>= _OCR_CONF_LOW`` → ``"uncertain"``, otherwise ``"garbled"``.
+    """
+    if conf >= _OCR_CONF_HIGH:
+        return "confident"
+    if conf >= _OCR_CONF_LOW:
+        return "uncertain"
+    return "garbled"
+
+
+def _heuristic_ocr_anomaly_severity(uncertain_count: int, garbled_count: int, total: int) -> str:
+    """Deterministic OCR-anomaly severity — the always-available baseline.
+
+    Pure function of how large a fraction of the page's words are uncertain or
+    garbled. Garbled (near-noise) words weigh more heavily than merely uncertain
+    ones, since a high garbled share means the recognised text cannot be trusted.
+    Used directly when the LLM grade is unavailable and handed to the model as the
+    reference baseline.
+    """
+    if total <= 0:
+        return "low"
+    uncertain_fraction = uncertain_count / total
+    garbled_fraction = garbled_count / total
+    if (garbled_fraction >= _OCR_SEV_HIGH_GARBLED_FRACTION
+            or uncertain_fraction >= _OCR_SEV_HIGH_UNCERTAIN_FRACTION):
+        return "high"
+    if (garbled_fraction >= _OCR_SEV_MEDIUM_GARBLED_FRACTION
+            or uncertain_fraction >= _OCR_SEV_MEDIUM_UNCERTAIN_FRACTION):
+        return "medium"
+    return "low"
+
+
+def _compute_ocr_confidence_anomalies(words: "list[dict | tuple]") -> dict:
+    """Pure statistical outlier pass over a page's OCR words — the authoritative heuristic.
+
+    A *low outlier* is a word whose confidence is below ``mean -
+    _OCR_ANOMALY_STDEV_K * stdev`` AND not itself confident (``conf <
+    _OCR_ANOMALY_ABS_CEIL``) — the near-noise pocket past a confidence cliff.
+    ``uncertain_count`` counts words below the "confident" band; ``garbled_count``
+    counts words in the "garbled" band (recognition effectively noise). Below
+    ``_OCR_ANOMALY_MIN_WORDS`` the distribution is too small to be meaningful, so
+    only the band classification is evaluated and no statistical outliers are
+    reported. No I/O, no LLM — safe to call anywhere (air-gap).
+
+    Returns the count summary, the ranked outlier list, the garbled/uncertain
+    counts, and the deterministic ``severity`` baseline.
+    """
+    recs = [_ocr_word_fields(w) for w in words]
+    # Drop blank tokens (Tesseract emits whitespace rows with no recognised text).
+    recs = [r for r in recs if r["text"].strip()]
+    confs = [r["conf"] for r in recs]
+    total = len(confs)
+
+    uncertain_count = sum(1 for c in confs if c < _OCR_CONF_HIGH)
+    garbled_count = sum(1 for c in confs if c < _OCR_CONF_LOW)
+
+    if total < _OCR_ANOMALY_MIN_WORDS:
+        return {
+            "anomaly_count": 0,
+            "mean": round(sum(confs) / total, 2) if total else 0.0,
+            "stdev": 0.0,
+            "threshold": 0.0,
+            "uncertain_count": uncertain_count,
+            "garbled_count": garbled_count,
+            "anomalies": [],
+            "severity": _heuristic_ocr_anomaly_severity(uncertain_count, garbled_count, total),
+            "total": total,
+        }
+
+    mean = sum(confs) / total
+    variance = sum((c - mean) ** 2 for c in confs) / total
+    stdev = variance ** 0.5
+    threshold = mean - _OCR_ANOMALY_STDEV_K * stdev
+
+    anomalies: list[dict] = []
+    for r in recs:
+        conf = r["conf"]
+        if conf < threshold and conf < _OCR_ANOMALY_ABS_CEIL:
+            z = round((conf - mean) / stdev, 3) if stdev > 0 else 0.0
+            anomalies.append({
+                "text": r["text"][:60],
+                "conf": round(conf, 2),
+                "z_score": z,
+                "band": _classify_ocr_confidence(conf),
+            })
+    anomalies.sort(key=lambda a: a["conf"])
+
+    return {
+        "anomaly_count": len(anomalies),
+        "mean": round(mean, 2),
+        "stdev": round(stdev, 2),
+        "threshold": round(threshold, 2),
+        "uncertain_count": uncertain_count,
+        "garbled_count": garbled_count,
+        "anomalies": anomalies,
+        "severity": _heuristic_ocr_anomaly_severity(uncertain_count, garbled_count, total),
+        "total": total,
+    }
+
+
+def _ai_ocr_anomaly_severity(summary: dict, anomalies: list[dict]) -> dict | None:
+    """Grade OCR-confidence-anomaly severity with the LLM, grounded on real data.
+
+    Args:
+        summary: Distribution facts — word_count, mean, stdev, uncertain_count,
+            garbled_count, anomaly_count, and the deterministic
+            ``baseline_severity``.
+        anomalies: The concrete low-confidence outlier words (recognised text +
+            per-word confidence). Only the leading ``_OCR_ANOMALY_SAMPLE`` are
+            sent, keeping the call cheap and bounded regardless of page size.
+            Injection scanning stays ON (``skip_injection_scan`` is NOT set)
+            because the recognised text is derived from arbitrary scanned images.
+
+    Returns:
+        ``{"severity": "low|medium|high", "rationale": str, "top_concern": str}``
+        on success, or ``None`` when there is nothing to grade (no outliers and no
+        garbled words), the model is unavailable, or the output is
+        missing/blank/malformed/out-of-range. Callers MUST treat ``None`` as "use
+        the deterministic heuristic" — this is best-effort enrichment, never a
+        hard dependency.
+    """
+    if not anomalies and not summary.get("garbled_count"):
+        return None
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        lines = [
+            f"Page facts: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {summary.get('baseline_severity')}",
+            "Low-confidence outlier words:",
+        ]
+        for a in anomalies[:_OCR_ANOMALY_SAMPLE]:
+            lines.append(f"- {_json.dumps(a, default=str)}")
+
+        req = LLMRequest(
+            messages=[
+                {"role": "user", "content": "\n".join(lines) + "\n\nGrade the severity."}
+            ],
+            system_prompt=_OCR_ANOMALY_SYSTEM_PROMPT,
+            max_tokens=200,
+            temperature=0.1,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("dic_ocr_confidence_anomaly_severity", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+        severity = str(parsed.get("severity") or "").strip().lower()
+        if severity not in {"low", "medium", "high"}:
+            return None
+        return {
+            "severity": severity,
+            "rationale": str(parsed.get("rationale") or "").strip()[:200],
+            "top_concern": str(parsed.get("top_concern") or "").strip()[:80],
+        }
+    except Exception:
+        return None
+
+
+def detect_ocr_confidence_anomalies(words: "list[dict | tuple]", use_llm: bool = True) -> dict:
+    """Flag a page of OCR words for low-confidence noise / a confidence cliff.
+
+    Complements the absolute confident/uncertain/garbled bands: a page can read as
+    acceptable on its absolute counts yet expose a sharp confidence cliff (a
+    near-noise pocket of low outliers), or degrade outright (a large garbled
+    share that makes the recognised text untrustworthy).
+
+    The statistical detection (:func:`_compute_ocr_confidence_anomalies`) and the
+    deterministic ``severity`` baseline are ALWAYS authoritative and never depend
+    on the LLM. The returned ``ai_grade`` is best-effort severity enrichment and
+    is ``None`` when the model is unavailable, ``use_llm`` is False, or there is
+    nothing to grade.
+
+    Args:
+        words: Per-word OCR records — ``{"text", "conf"}`` dicts or ``(text, conf)``
+            pairs, where ``conf`` is the engine confidence on a 0–100 scale.
+        use_llm: When False, skip the optional LLM grade entirely (air-gap / cost).
+
+    Returns:
+        {
+          "anomaly_count": int,
+          "mean": float, "stdev": float, "threshold": float,
+          "uncertain_count": int, "garbled_count": int,
+          "anomalies": [{"text","conf","z_score","band"}],
+          "severity": "low|medium|high",   # authoritative deterministic baseline
+          "ai_grade": {...} | None,        # optional LLM refinement
+        }
+    """
+    out = _compute_ocr_confidence_anomalies(words)
+    ai_grade = None
+    if use_llm:
+        ai_grade = _ai_ocr_anomaly_severity(
+            {"word_count": out["total"], "mean": out["mean"], "stdev": out["stdev"],
+             "uncertain_count": out["uncertain_count"], "garbled_count": out["garbled_count"],
+             "anomaly_count": out["anomaly_count"], "baseline_severity": out["severity"]},
+            out["anomalies"],
+        )
+    out.pop("total", None)
+    out["ai_grade"] = ai_grade
+    return out
+
+
+def _extract_word_confidences(img) -> "tuple[list[dict], str]":
+    """Run Tesseract on a PIL image and return per-word confidences + reconstructed text.
+
+    Uses ``pytesseract.image_to_data`` (the structured, confidence-bearing call)
+    rather than ``image_to_string``, so the per-word engine confidence used by the
+    anomaly detector is captured in the SAME pass that produces the text. Words are
+    grouped back into lines by their (block, paragraph, line) indices to preserve
+    layout. Returns ``([], "")`` when pytesseract or its native binary is
+    unavailable — the caller falls back to the plain string path.
+    """
+    try:
+        import pytesseract
+        from pytesseract import Output
+    except Exception:
+        return [], ""
+
+    try:
+        data = pytesseract.image_to_data(img, output_type=Output.DICT)
+    except Exception as exc:
+        logger.debug("dic.extractors: image_to_data failed: %s", exc)
+        return [], ""
+
+    words: list[dict] = []
+    line_parts: list[str] = []
+    text_lines: list[str] = []
+    last_key: tuple | None = None
+    n = len(data.get("text", []))
+    for i in range(n):
+        token = (data["text"][i] or "").strip()
+        if not token:
+            continue
+        key = (data.get("block_num", [0] * n)[i],
+               data.get("par_num", [0] * n)[i],
+               data.get("line_num", [0] * n)[i])
+        if last_key is not None and key != last_key and line_parts:
+            text_lines.append(" ".join(line_parts))
+            line_parts = []
+        last_key = key
+        line_parts.append(token)
+        words.append(_ocr_word_fields({"text": token, "conf": data["conf"][i]}))
+    if line_parts:
+        text_lines.append(" ".join(line_parts))
+
+    return words, "\n".join(text_lines)
+
+
+def ocr_image_with_quality(img, use_llm: bool = True) -> "tuple[str, dict]":
+    """OCR a PIL image and annotate it with an OCR-confidence-quality report.
+
+    Returns the recognised text together with the deterministic OCR-confidence
+    report from :func:`detect_ocr_confidence_anomalies` (low-confidence / garbled
+    flags plus an optional best-effort LLM severity grade). Quality assessment
+    never changes which words Tesseract recognised. If the structured
+    confidence-bearing path is unavailable (no pytesseract binary), the text falls
+    back to the existing OCR cascade and the report is an empty-page baseline.
+    """
+    words, text = _extract_word_confidences(img)
+    if not words:
+        # No confidence-bearing path available — keep text fidelity via the
+        # existing cascade; the report degrades to a clean empty-page baseline.
+        text = _ocr_image(img)
+    report = detect_ocr_confidence_anomalies(words, use_llm=use_llm)
+    return text, report
