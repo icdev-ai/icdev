@@ -781,7 +781,51 @@
       }
       document.addEventListener("pointermove", mm); document.addEventListener("pointerup", mu, { once: true });
     });
+    wireOnboarding();
     renderAll();
+  }
+
+  /* ---- H7: simple/advanced toggle, help panel, guided walkthrough ---- */
+  function _ls(k, v) { try { return v === undefined ? localStorage.getItem(k) : localStorage.setItem(k, v); } catch (e) { return null; } }
+  var _adv = false;
+  function applyAdvanced(on) {
+    _adv = !!on;
+    var lay = $("#layers"); if (lay) lay.style.display = _adv ? "" : "none";
+    ["add-shape", "add-icon", "layer-up", "layer-down", "add-canvas"].forEach(function (id) {
+      var e = $("#" + id); if (e) e.style.display = _adv ? "" : "none";
+    });
+    var t = $("#adv-toggle"); if (t) t.textContent = _adv ? "Advanced ▾" : "Advanced ▸";
+    _ls("studio_advanced", _adv ? "1" : "0");
+  }
+  var TOUR = [
+    { sel: "#strip", text: "Slides live here — add, duplicate, and drag to reorder them." },
+    { sel: "#toolbar", text: "Build each slide: add Text, Charts, Tables, and Images from the toolbar." },
+    { sel: "#surface", text: "Drag and resize elements on the canvas — they snap into alignment automatically." },
+    { sel: "#help-btn", text: "That's it! Changes autosave. Open Help anytime for shortcuts, and Present to show your deck." }
+  ];
+  var _tstep = 0;
+  function showTourStep() {
+    var s = TOUR[_tstep];
+    $("#tour-step").textContent = "Step " + (_tstep + 1) + " of " + TOUR.length;
+    $("#tour-text").textContent = s.text;
+    $("#tour-next").textContent = (_tstep === TOUR.length - 1) ? "Done" : "Next";
+    var t = document.querySelector(s.sel);
+    var r = t ? t.getBoundingClientRect() : { left: innerWidth / 2, bottom: innerHeight / 2 };
+    var card = $("#tour-card");
+    card.style.left = Math.min(Math.max(12, r.left), window.innerWidth - 320) + "px";
+    card.style.top = Math.min((r.bottom || 0) + 12, window.innerHeight - 170) + "px";
+  }
+  function startTour() { _tstep = 0; $("#tour-overlay").style.display = "block"; showTourStep(); }
+  function endTour() { $("#tour-overlay").style.display = "none"; _ls("studio_onboarded", "1"); }
+  function wireOnboarding() {
+    applyAdvanced(_ls("studio_advanced") === "1");
+    var at = $("#adv-toggle"); if (at) at.addEventListener("click", function () { applyAdvanced(!_adv); });
+    var hb = $("#help-btn"); if (hb) hb.addEventListener("click", function () { $("#help-overlay").style.display = "block"; });
+    var hc = $("#help-close"); if (hc) hc.addEventListener("click", function () { $("#help-overlay").style.display = "none"; });
+    var ht = $("#help-tour"); if (ht) ht.addEventListener("click", function () { $("#help-overlay").style.display = "none"; startTour(); });
+    var tn = $("#tour-next"); if (tn) tn.addEventListener("click", function () { if (_tstep >= TOUR.length - 1) endTour(); else { _tstep += 1; showTourStep(); } });
+    var ts = $("#tour-skip"); if (ts) ts.addEventListener("click", endTour);
+    if (_ls("studio_onboarded") !== "1") setTimeout(startTour, 700);  // first-visit walkthrough
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

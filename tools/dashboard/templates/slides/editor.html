@@ -146,6 +146,8 @@
     <option value="govcon_proposal"{% if deck.theme == 'govcon_proposal' %} selected{% endif %}>GovCon</option>
     <option value="compliance_briefing"{% if deck.theme == 'compliance_briefing' %} selected{% endif %}>Compliance</option>
   </select>
+  <button id="adv-toggle" title="Show advanced tools (layers, shapes, icons)">Advanced ▸</button>
+  <button id="help-btn" title="Help & keyboard shortcuts">? Help</button>
   <button class="save" id="save">Save</button>
   <a href="/slides/{{ deck.deck_id }}/present" target="_blank">▶ Present</a>
   <a href="/slides/{{ deck.deck_id }}">Exit</a>
@@ -165,6 +167,45 @@
   <div id="props"><div class="empty">Select an element to edit its properties, or use the toolbar to add one.</div></div>
 </div>
 <div id="viz-modal" class="modal-overlay"><div class="modal-box"><div id="modal-body"></div></div></div>
+
+<!-- Help panel -->
+<div id="help-overlay" style="display:none; position:fixed; inset:0; z-index:200; background:rgba(5,8,15,.7);">
+  <div style="position:absolute; top:60px; right:24px; width:360px; max-height:80vh; overflow:auto;
+       background:#11192a; border:1px solid var(--dark); border-radius:10px; padding:18px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <h3 style="margin:0; font-size:16px;">Help &amp; shortcuts</h3>
+      <button id="help-close" style="background:none;border:0;color:var(--subtext);font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <div style="font-size:13px; color:var(--subtext); line-height:1.7;">
+      <p style="color:var(--text);margin:.2em 0;"><b>Add content</b> — use the toolbar: Text, Chart, Table, Image (Shapes &amp; Icons under <i>Advanced</i>).</p>
+      <p style="color:var(--text);margin:.2em 0;"><b>Arrange</b> — drag to move, corner handles to resize. Elements snap to each other and the slide center.</p>
+      <p style="color:var(--text);margin:.2em 0;"><b>Edit</b> — double-click a text/chart/table to edit it.</p>
+      <hr style="border-color:var(--dark)">
+      <div><b style="color:var(--text)">Keyboard</b></div>
+      <div>Ctrl+Z / Ctrl+Y — undo / redo</div>
+      <div>Ctrl+D — duplicate element &nbsp;·&nbsp; Delete — remove</div>
+      <div>Arrow keys — nudge (Shift = bigger)</div>
+      <div>Shift-click / drag empty canvas — multi-select</div>
+      <div>Ctrl+S — save (autosaves too)</div>
+      <hr style="border-color:var(--dark)">
+      <div>Changes <b>autosave</b>. Use <b>▶ Present</b> for the live deck (G = slide grid, F = fullscreen) and the deck list to export <b>PDF/PPTX</b> or get a <b>share link</b>.</div>
+      <button id="help-tour" style="margin-top:12px;width:100%;background:var(--accent);color:#0a0f1a;border:0;border-radius:6px;padding:8px;font-weight:700;cursor:pointer;">Take the quick tour</button>
+    </div>
+  </div>
+</div>
+
+<!-- First-visit guided walkthrough (coachmarks) -->
+<div id="tour-overlay" style="display:none; position:fixed; inset:0; z-index:210; background:rgba(5,8,15,.72);">
+  <div id="tour-card" style="position:absolute; background:#11192a; border:1px solid var(--accent); border-radius:10px;
+       padding:16px 18px; width:300px; box-shadow:0 8px 30px rgba(0,0,0,.5);">
+    <div id="tour-step" style="color:var(--accent); font-size:11px; letter-spacing:.05em; margin-bottom:6px;"></div>
+    <div id="tour-text" style="color:var(--text); font-size:14px; line-height:1.5; margin-bottom:14px;"></div>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <button id="tour-skip" style="background:none;border:0;color:var(--subtext);cursor:pointer;font-size:12px;">Skip</button>
+      <button id="tour-next" style="background:var(--accent);color:#0a0f1a;border:0;border-radius:6px;padding:7px 16px;font-weight:700;cursor:pointer;">Next</button>
+    </div>
+  </div>
+</div>
 
 <script>window.__DECK = {{ deck_json | safe }}; window.__DECK_ID = {{ deck.deck_id }};</script>
 <script src="/static/js/charts.js"></script>
