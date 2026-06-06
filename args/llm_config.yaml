@@ -64,10 +64,28 @@ providers:
     base_url: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
     api_key_env: OLLAMA_API_KEY
 
+  # Local Claude Code CLI bridge — fronts routing when ICDEV_CLI_BRIDGE=true
+  # (air-gap / no cloud key). Shells out to the `claude` binary in print mode.
+  cli_bridge:
+    type: cli
+    cli_binary: ${CLAUDE_CLI_PATH:-claude}
+    soft_wait_seconds: 60
+    backend: ${ICDEV_CLI_BRIDGE_BACKEND:-auto}
+
 # -----------------------------------------------------------------------
 # Model Registry
 # -----------------------------------------------------------------------
 models:
+  # -- Local Claude CLI bridge (air-gap / no-cloud-key fallback) --
+  claude-cli:
+    provider: cli_bridge
+    model_id: ${ICDEV_CLI_BRIDGE_MODEL:-claude-opus-4-8}
+    max_output_tokens: 64000
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
   # -- Anthropic direct API (user has Anthropic subscription, not Bedrock) --
   claude-opus:
     provider: anthropic

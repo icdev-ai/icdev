@@ -524,6 +524,14 @@ class LLMRouter:
                     url=url,
                 )
 
+            elif ptype == "cli":
+                from tools.llm.cli_provider import CLIProvider
+
+                cli_binary = _expand_env(provider_cfg.get("cli_binary", "claude"))
+                soft_wait = int(provider_cfg.get("soft_wait_seconds", 60) or 60)
+                backend = _expand_env(provider_cfg.get("backend", "auto"))
+                instance = CLIProvider(cli_binary=cli_binary, soft_wait_seconds=soft_wait, backend=backend)
+
             else:
                 logger.warning("Unknown provider type: %s", ptype)
                 return None
@@ -639,11 +647,28 @@ class LLMRouter:
         route = routing.get(function, routing.get("default", {}))
         return route.get("effort", "medium")
 
+    def _cli_bridge_active(self) -> bool:
+        """True when the local Claude CLI should front every routing chain.
+
+        Enabled by ICDEV_CLI_BRIDGE=1/true/yes (e.g. air-gap / no cloud key).
+        """
+        return os.environ.get("ICDEV_CLI_BRIDGE", "").strip().lower() in ("1", "true", "yes", "on")
+
     def _get_chain_for_function(self, function: str) -> list:
-        """Get the model chain for a function."""
+        """Get the model chain for a function.
+
+        When the CLI bridge is active, the local `claude-cli` model is prepended
+        to every chain so routing works with no cloud API key (it falls through
+        to the configured cloud/local models if the CLI is unavailable).
+        """
         routing = self._config.get("routing", {})
         route = routing.get(function, routing.get("default", {}))
-        return route.get("chain", [])
+        chain = list(route.get("chain", []))
+        if (self._cli_bridge_active()
+                and "claude-cli" in self._config.get("models", {})
+                and "claude-cli" not in chain):
+            chain = ["claude-cli"] + chain
+        return chain
 
     def _log_telemetry(
         self,
@@ -1730,12 +1755,18 @@ class LLMRouter:
             if cached is not None:
                 return cached
 
+        # When the local CLI bridge is active (air-gap / no cloud key), it must
+        # front every chain — skip two-tier and RL reordering so claude-cli (the
+        # prepended head of the chain) is honored, falling through only if it errors.
+        cli_bridge = self._cli_bridge_active()
+
         # Two-tier routing: qwen3 worker → Claude planner/reviewer
-        two_tier_result = self._maybe_invoke_two_tier(function, request)
-        if two_tier_result is not None:
-            # D-CACHE-4: Store two-tier results too
-            self._cache_store(function, request, two_tier_result, two_tier_result.model_id)
-            return two_tier_result
+        if not cli_bridge:
+            two_tier_result = self._maybe_invoke_two_tier(function, request)
+            if two_tier_result is not None:
+                # D-CACHE-4: Store two-tier results too
+                self._cache_store(function, request, two_tier_result, two_tier_result.model_id)
+                return two_tier_result
 
         # Chain of Thought / Chain of Debate mode switch
         if request.chain_mode == "cot":
@@ -1744,8 +1775,10 @@ class LLMRouter:
             return self.invoke_chain_of_debate(function, request)
 
         chain = self._get_chain_for_function(function)
-        # RL routing: reorder chain by learned Q-values (epsilon-greedy)
-        chain = self._get_rl_router().rank_models(function, chain)
+        # RL routing: reorder chain by learned Q-values (epsilon-greedy).
+        # Skipped under the CLI bridge so the prepended claude-cli stays first.
+        if not cli_bridge:
+            chain = self._get_rl_router().rank_models(function, chain)
         # Multimodal: prefer vision-capable models when the request has images.
         chain = self._apply_vision_routing(chain, request)
         last_error = None
