@@ -2798,6 +2798,13 @@ def check_new_page_completeness() -> CoherenceCheck:
 
     Only checks page.html files under canvas sub-directories (not top-level
     flat templates like code_quality.html).
+
+    Plus a full mirror-parity sub-check: for every canvas sub-directory,
+    every tools/dashboard/templates/<dir>/*.html must have a matching
+    icdev/tools/dashboard/templates/<dir>/*.html mirror. Each missing one
+    is reported as `<rel_path>: icdev/ mirror missing` and folded into the
+    same `missing` list. This catches canvases that have no page.html at
+    all (e.g. slides/mfa/zta) which the page.html loop above never sees.
     """
     templates_dir = PROJECT_ROOT / "tools" / "dashboard" / "templates"
     base_html_path = templates_dir / "base.html"
@@ -2864,24 +2871,67 @@ def check_new_page_completeness() -> CoherenceCheck:
         if missing:
             violations.append(f"{rel_page}: missing [{', '.join(missing)}]")
 
-    status = "fail" if violations else "pass"
+    # ------------------------------------------------------------------
+    # Sub-check: full icdev/ mirror parity for ALL canvas templates.
+    # The 8-component check above is keyed on page.html, so a canvas whose
+    # templates are named differently (e.g. slides/{index,detail,new}.html,
+    # mfa/{enroll,challenge}.html, zta/lac_simulator.html) can ship with no
+    # icdev/ mirror at all and slip through entirely. Here we set-diff the
+    # *.html filenames per canvas directory — cheap, no content compare —
+    # and flag every source template that lacks a matching icdev/ mirror.
+    # ------------------------------------------------------------------
+    icdev_templates_dir = (
+        PROJECT_ROOT / "icdev" / "tools" / "dashboard" / "templates"
+    )
+    mirror_violations: List[str] = []
+    for canvas_subdir in sorted(p for p in templates_dir.iterdir() if p.is_dir()):
+        canvas = canvas_subdir.name
+        if canvas in whitelist:
+            continue
+        src_names = {p.name for p in canvas_subdir.glob("*.html")}
+        if not src_names:
+            continue
+        mirror_subdir = icdev_templates_dir / canvas
+        mirror_names = (
+            {p.name for p in mirror_subdir.glob("*.html")}
+            if mirror_subdir.exists()
+            else set()
+        )
+        for name in sorted(src_names - mirror_names):
+            # page.html mirror is already covered by component #1 above.
+            if name == "page.html":
+                continue
+            rel = (canvas_subdir / name).relative_to(PROJECT_ROOT)
+            mirror_violations.append(f"{rel}: icdev/ mirror missing")
+
+    all_violations = violations + mirror_violations
+    status = "fail" if all_violations else "pass"
     canvas_count = len(list(templates_dir.rglob("*/page.html")))
     checked_count = canvas_count - whitelisted_count
     wl_note = f" ({whitelisted_count} whitelisted)" if whitelisted_count else ""
     incomplete_count = len(violations)
+    mirror_count = len(mirror_violations)
+    mirror_note = f"; {mirror_count} icdev/ mirror gap(s)" if mirror_count else ""
     return CoherenceCheck(
         check_id="new_page_completeness",
         check_name="New Page 8-Component Completeness",
         status=status,
-        expected=[f"0 incomplete pages out of {checked_count} checked{wl_note}"],
-        actual=[f"{incomplete_count} incomplete page(s) out of {checked_count} checked{wl_note}"],
-        missing=violations,
+        expected=[
+            f"0 incomplete pages out of {checked_count} checked{wl_note}; "
+            "0 icdev/ mirror gaps"
+        ],
+        actual=[
+            f"{incomplete_count} incomplete page(s) out of {checked_count} "
+            f"checked{wl_note}{mirror_note}"
+        ],
+        missing=all_violations,
         extra=[],
         message=(
-            f"{incomplete_count} canvas page(s) are missing required components — "
-            "these features will be broken or unreachable"
-        ) if violations else (
-            f"All {checked_count} canvas pages have required components{wl_note}"
+            f"{incomplete_count} canvas page(s) missing components"
+            f"{mirror_note} — these features will be broken, unreachable, "
+            "or absent from the icdev/ package"
+        ) if all_violations else (
+            f"All {checked_count} canvas pages complete and icdev/ mirrors in parity{wl_note}"
             if checked_count > 0
             else f"No new canvas pages to check{wl_note}"
         ),
