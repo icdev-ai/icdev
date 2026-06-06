@@ -142,6 +142,121 @@ def co_occurrence(min_weight: float = 0.0, limit: int = 60) -> dict:
 
 # ── Anomaly Detection ─────────────────────────────────────────────────────────
 
+# Deterministic severity thresholds. These were the original hardcoded magic
+# numbers inline in detect_anomalies; aiify-opp-6090 (hardcoded_threshold ->
+# anomaly_detection) lifts them into named constants and layers an LLM judgement
+# on top. They remain the safety-net baseline so detection NEVER depends on the
+# LLM — the AI grade is best-effort enrichment, the heuristic is authoritative
+# whenever the model is unavailable.
+_SEV_HIGH_CONTRADICTIONS = 5
+_SEV_HIGH_STALE_DOCS = 2
+_SEV_MEDIUM_ORPHANS = 20
+_SEV_MEDIUM_SINGLE_SOURCE = 10
+
+# Bound how many concrete anomalies are described to the model — keeps the call
+# cheap and the prompt bounded regardless of graph size.
+_ANOMALY_SAMPLE = 5
+
+_ANOMALY_SEVERITY_SYSTEM_PROMPT = (
+    "You are a knowledge-graph quality analyst grading the overall severity of "
+    "structural anomalies found in a document knowledge graph. You are given the "
+    "anomaly counts, a few concrete examples, and a deterministic baseline "
+    "severity. Weigh anomalies by how badly they undermine trust in the graph: "
+    "contradictions and stale (un-ingested) documents are the most damaging; "
+    "orphaned and single-source entities are weaker signals. You may agree with "
+    "or adjust the baseline, but justify any change. Respond ONLY with a JSON "
+    'object: {"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<the single most concerning anomaly category>"}. Never '
+    "invent anomalies beyond those provided."
+)
+
+
+def _heuristic_severity(summary: dict) -> str:
+    """Deterministic severity from anomaly counts — the always-available baseline.
+
+    Pure function of the ``summary`` count dict produced by
+    :func:`detect_anomalies`. Used directly when the LLM grade is unavailable and
+    passed to the model as the reference baseline otherwise.
+    """
+    if (summary.get("contradiction_count", 0) > _SEV_HIGH_CONTRADICTIONS
+            or summary.get("stale_doc_count", 0) > _SEV_HIGH_STALE_DOCS):
+        return "high"
+    if (summary.get("orphan_count", 0) > _SEV_MEDIUM_ORPHANS
+            or summary.get("single_source_count", 0) > _SEV_MEDIUM_SINGLE_SOURCE):
+        return "medium"
+    return "low"
+
+
+def _ai_anomaly_severity(summary: dict, samples: dict) -> dict | None:
+    """Grade overall anomaly severity with the LLM, grounded on the real counts.
+
+    Args:
+        summary: The anomaly count dict (orphan_count, contradiction_count, …).
+        samples: Mapping of anomaly category -> list of concrete example rows.
+            Only the leading ``_ANOMALY_SAMPLE`` of each are sent to the model,
+            keeping the call cheap and bounded regardless of graph size.
+
+    Returns:
+        ``{"severity": "low|medium|high", "rationale": str, "top_concern": str}``
+        on success, or ``None`` when there are no anomalies to grade, the model is
+        unavailable, or the output is missing/blank/malformed/out-of-range.
+        Callers MUST treat ``None`` as "use the deterministic heuristic" — this is
+        best-effort enrichment, never a hard dependency.
+    """
+    # Nothing to grade — the heuristic already returns "low" for an empty graph.
+    if not any(summary.values()):
+        return None
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        baseline = _heuristic_severity(summary)
+        lines = [
+            f"Anomaly counts: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {baseline}",
+            "Examples:",
+        ]
+        for key, items in samples.items():
+            if items:
+                lines.append(f"- {key}: {_json.dumps(items[:_ANOMALY_SAMPLE], default=str)}")
+
+        req = LLMRequest(
+            messages=[
+                {"role": "user", "content": "\n".join(lines) + "\n\nGrade the severity."}
+            ],
+            system_prompt=_ANOMALY_SEVERITY_SYSTEM_PROMPT,
+            max_tokens=200,
+            temperature=0.1,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("dic_anomaly_severity", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+        severity = str(parsed.get("severity") or "").strip().lower()
+        if severity not in {"low", "medium", "high"}:
+            return None
+        return {
+            "severity": severity,
+            "rationale": str(parsed.get("rationale") or "").strip()[:200],
+            "top_concern": str(parsed.get("top_concern") or "").strip()[:80],
+        }
+    except Exception:
+        return None
+
+
 def detect_anomalies() -> dict:
     """Detect structural anomalies in the DIC knowledge graph.
 
@@ -157,7 +272,10 @@ def detect_anomalies() -> dict:
         gids = _dic_graph_ids(conn)
         if not gids:
             return {
-                "severity": "low", "orphans": [], "single_source": [], "hubs": [],
+                "severity": "low", "severity_source": "heuristic",
+                "severity_rationale": "", "severity_top_concern": "",
+                "heuristic_severity": "low",
+                "orphans": [], "single_source": [], "hubs": [],
                 "contradictions": [], "stale_docs": [], "empty": True,
                 "message": "No DIC documents ingested yet.",
                 "summary": {"orphan_count": 0, "single_source_count": 0, "hub_count": 0,
@@ -227,26 +345,49 @@ def detect_anomalies() -> dict:
     finally:
         conn.close()
 
-    severity = "low"
-    if len(contradictions) > 5 or len(stale_docs) > 2:
-        severity = "high"
-    elif len(orphans) > 20 or len(single_source) > 10:
-        severity = "medium"
+    summary = {
+        "orphan_count": len(orphans),
+        "single_source_count": len(single_source),
+        "hub_count": len(hubs),
+        "contradiction_count": len(contradictions),
+        "stale_doc_count": len(stale_docs),
+    }
+
+    # Deterministic baseline is authoritative; the LLM grade refines it when
+    # available and degrades silently to the heuristic on any failure.
+    heuristic = _heuristic_severity(summary)
+    ai = _ai_anomaly_severity(
+        summary,
+        {
+            "contradictions": contradictions,
+            "stale_docs": stale_docs,
+            "orphans": orphans,
+            "single_source": single_source,
+        },
+    )
+    if ai:
+        severity = ai["severity"]
+        severity_source = "ai"
+        severity_rationale = ai["rationale"]
+        severity_top_concern = ai["top_concern"]
+    else:
+        severity = heuristic
+        severity_source = "heuristic"
+        severity_rationale = ""
+        severity_top_concern = ""
 
     return {
         "severity": severity,
+        "severity_source": severity_source,
+        "severity_rationale": severity_rationale,
+        "severity_top_concern": severity_top_concern,
+        "heuristic_severity": heuristic,
         "orphans": orphans,
         "single_source": single_source,
         "hubs": hubs,
         "contradictions": contradictions,
         "stale_docs": stale_docs,
-        "summary": {
-            "orphan_count": len(orphans),
-            "single_source_count": len(single_source),
-            "hub_count": len(hubs),
-            "contradiction_count": len(contradictions),
-            "stale_doc_count": len(stale_docs),
-        },
+        "summary": summary,
     }
 
 
