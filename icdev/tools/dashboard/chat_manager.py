@@ -85,6 +85,54 @@ def _fire_intake_hook(context_id: str, content: str) -> None:
     threading.Thread(target=_run, daemon=True).start()
 
 
+def _check_coworker_trigger(context_id: str, content: str, context: dict) -> None:
+    """Persist an ACE co-worker instance link if the extension hook attached one.
+
+    The ``chat_message_before`` extension hook may set ``coworker_instance_id`` on the
+    returned hook context to associate this chat session with an ACE co-worker team
+    (``ace_instances.id`` — see ``icdev.tools.ace.db.init_db``). When present, the link
+    is stored in the ``chat_contexts.context_config`` JSON field so the chat UI can
+    render a "View Co-Worker Team" button.
+
+    Purely additive: a missing/empty id is a no-op and no existing behavior changes.
+    """
+    if not isinstance(context, dict):
+        return
+    coworker_instance_id = context.get("coworker_instance_id")
+    if not coworker_instance_id:
+        return
+    try:
+        conn = get_connection(db_path=str(DB_PATH))
+        try:
+            row = conn.execute(
+                "SELECT context_config FROM chat_contexts WHERE id = ?",
+                (context_id,),
+            ).fetchone()
+            try:
+                cfg = json.loads(row["context_config"]) if row and row["context_config"] else {}
+            except (TypeError, ValueError):
+                cfg = {}
+            if not isinstance(cfg, dict):
+                cfg = {}
+            if cfg.get("coworker_instance_id") == coworker_instance_id:
+                return  # already linked — idempotent
+            cfg["coworker_instance_id"] = coworker_instance_id
+            conn.execute(
+                "UPDATE chat_contexts SET context_config = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(cfg), datetime.now(timezone.utc).isoformat(), context_id),
+            )
+            conn.commit()
+            logger.info(
+                "[ACE] Linked chat context %s to co-worker instance %s",
+                context_id,
+                coworker_instance_id,
+            )
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.debug("[ACE] Could not store coworker link for %s: %s", context_id, exc)
+
+
 def _mark_dirty(context_id: str, change_type: str, data: Optional[dict] = None):
     """Mark context dirty on state tracker if available (Feature 4)."""
     try:
@@ -914,6 +962,8 @@ class ChatManager:
 
         if role == "user":
             _fire_intake_hook(context_id, content)
+            # ACE: if the before-hook linked an ACE co-worker instance, persist it
+            _check_coworker_trigger(context_id, content, hook_ctx)
             # RICOAS Adaptation 3: detect and persist corrections
             _detect_and_store_correction(context_id, content, turn_number=turn)
             # RICOAS: if user confirms inception interpretation, mark complete
