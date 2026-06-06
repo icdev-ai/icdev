@@ -1181,6 +1181,86 @@ CREATE TABLE IF NOT EXISTS cli_llm_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_cli_llm_jobs_claim   ON cli_llm_jobs (status, backend, created_at);
 CREATE INDEX IF NOT EXISTS idx_cli_llm_jobs_context ON cli_llm_jobs (context_id);
+
+-- ACF — Autonomous Capability Foundry (acf-db) — 6 platform findings tables.
+CREATE TABLE IF NOT EXISTS foundry_runs (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_at          TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    harvested         INTEGER NOT NULL DEFAULT 0,
+    concepts_proposed INTEGER NOT NULL DEFAULT 0,
+    concepts_approved INTEGER NOT NULL DEFAULT 0,
+    tasks_emitted     INTEGER NOT NULL DEFAULT 0,
+    status            TEXT    NOT NULL DEFAULT 'running',
+    detail            TEXT    DEFAULT '{}',
+    tenant_id         TEXT    NOT NULL DEFAULT 'default',
+    classification    TEXT    NOT NULL DEFAULT 'CUI',
+    created_at        TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS foundry_signals (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id            TEXT    NOT NULL,
+    source_engine     TEXT    NOT NULL,
+    source_ref        TEXT    NOT NULL,
+    theme             TEXT,
+    raw_score         REAL    DEFAULT 0.0,
+    keywords          TEXT    DEFAULT '[]',
+    tenant_id         TEXT    NOT NULL DEFAULT 'default',
+    classification    TEXT    NOT NULL DEFAULT 'CUI',
+    created_at        TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS foundry_concepts (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id              TEXT    NOT NULL,
+    name                TEXT    NOT NULL,
+    slug                TEXT    NOT NULL UNIQUE,
+    problem_statement   TEXT,
+    proposed_capability TEXT,
+    target_users        TEXT,
+    cluster_signal_ids  TEXT    DEFAULT '[]',
+    novelty_score       REAL    DEFAULT 0.0,
+    market_score        REAL    DEFAULT 0.0,
+    fit_score           REAL    DEFAULT 0.0,
+    effort_estimate     REAL    DEFAULT 0.0,
+    compliance_risk     REAL    DEFAULT 0.0,
+    composite_score     REAL    DEFAULT 0.0,
+    status              TEXT    NOT NULL DEFAULT 'proposed',
+    reject_reason       TEXT,
+    tenant_id           TEXT    NOT NULL DEFAULT 'default',
+    classification      TEXT    NOT NULL DEFAULT 'CUI',
+    created_by          TEXT    NOT NULL DEFAULT 'system',
+    created_at          TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS foundry_specs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    concept_id      INTEGER NOT NULL,
+    spec_md         TEXT    NOT NULL,
+    canvas_contract TEXT    DEFAULT '{}',
+    task_count      INTEGER NOT NULL DEFAULT 0,
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS foundry_tasks_emitted (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    concept_id     INTEGER NOT NULL,
+    kanban_task_id TEXT    NOT NULL,
+    epic           TEXT,
+    seq            INTEGER NOT NULL DEFAULT 0,
+    tenant_id      TEXT    NOT NULL DEFAULT 'default',
+    classification TEXT    NOT NULL DEFAULT 'CUI',
+    created_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS foundry_outcomes (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    concept_id     INTEGER NOT NULL,
+    outcome        TEXT    NOT NULL,
+    metric         REAL,
+    detail         TEXT    DEFAULT '{}',
+    tenant_id      TEXT    NOT NULL DEFAULT 'default',
+    classification TEXT    NOT NULL DEFAULT 'CUI',
+    created_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
