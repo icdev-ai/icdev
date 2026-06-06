@@ -322,7 +322,7 @@ def _push_kanban_task(snapshot: Dict[str, Any], narrative: str, report_date: str
     try:
         from tools.db.storage import get_connection
         conn = get_connection(db_path=str(BASE_DIR / "data" / "icdev.db"))
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: background reflex; kanban_tasks has no classification/tenant_id columns
         health = snapshot.get("health", {})
         import uuid as _uuid3
         from datetime import datetime, timezone

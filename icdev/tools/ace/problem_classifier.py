@@ -322,7 +322,7 @@ class ProblemClassifierLens(BaseLens):
         Returns empty list if LLM is unavailable so the caller uses the fallback.
         """
         try:
-            from icdev.tools.llm.router import LLMRouter, LLMUnavailableError
+            from icdev.tools.llm.router import LLMRouter
             from icdev.tools.llm.provider import LLMRequest
         except ImportError:
             return []
