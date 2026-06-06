@@ -43,7 +43,7 @@ import json
 import os
 from typing import Any, Optional
 
-from flask import Blueprint, g, jsonify, render_template, request
+from flask import Blueprint, jsonify, render_template, request
 
 from tools.logging.icdev_logger import get_logger
 
@@ -423,7 +423,9 @@ def create_foundry_blueprint() -> Optional[Blueprint]:
         adapter is not yet present (shipped by the sibling IQE task)."""
         body = request.get_json(silent=True) or {}
         question = (body.get("question") or "").strip()
-        collections = body.get("collections") or ["foundry_concepts", "foundry_runs"]
+        collections = body.get("collections") or [
+            "foundry.concepts", "foundry.signals", "foundry.runs", "foundry.outcomes",
+        ]
         iqe_str = ""
         try:
             from tools.iqe import adapters as _adapters  # noqa: F401
