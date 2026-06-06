@@ -83,6 +83,7 @@ def index():
 
 @slides_bp.route("/new")
 def new_deck():
+    from tools.slides.templates import list_deck_templates
     return render_template(
         "slides/new.html",
         deck_types=DECK_TYPES,
@@ -90,6 +91,7 @@ def new_deck():
         source_types=SOURCE_TYPES,
         default_theme=DEFAULT_THEME,
         default_deck_type=DEFAULT_DECK_TYPE,
+        templates=list_deck_templates(),
         env=os.environ,
     )
 
@@ -182,6 +184,49 @@ def present(deck_id: int):
 
 # ── API Routes ───────────────────────────────────────────────────────────────
 
+@slides_bp.route("/api/templates/new", methods=["POST"])
+def api_template_new():
+    """Create a new deck from a starter template. Body: {template, theme, title}."""
+    data = request.get_json(silent=True) or {}
+    from tools.slides import templates as _tpl
+    key = data.get("template", "blank")
+    theme = data.get("theme", DEFAULT_THEME)
+    title = data.get("title") or _tpl.DECK_TEMPLATES.get(key, {}).get("name", "New Deck")
+    slides = _tpl.build_from_template(key)
+    if not slides:
+        return jsonify({"error": "unknown template"}), 400
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO slides_decks (title, deck_type, theme, status, source_types, slide_count) "
+            "VALUES (?, 'custom', ?, 'completed', ?, ?) RETURNING deck_id",
+            (title, theme, json.dumps(["template:" + key]), len(slides)),
+        )
+        deck_id = int(cur.fetchone()[0])
+        for s in slides:
+            _append_slide(conn, deck_id, s)
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "deck_id": deck_id})
+
+
+@slides_bp.route("/api/<int:deck_id>/theme", methods=["POST"])
+def api_set_theme(deck_id: int):
+    """Switch a deck's theme cohesively. Body: {theme}."""
+    data = request.get_json(silent=True) or {}
+    theme = data.get("theme")
+    if theme not in THEMES:
+        return jsonify({"error": "invalid theme"}), 400
+    conn = _conn()
+    try:
+        conn.execute("UPDATE slides_decks SET theme = ? WHERE deck_id = ?", (theme, deck_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "theme": theme})
+
+
 @slides_bp.route("/api/generate", methods=["POST"])
 def api_generate():
     """Trigger deck generation. Runs synchronously (returns when done)."""
@@ -192,6 +237,7 @@ def api_generate():
     sources = data.get("sources", ["icdev_capabilities", "canvases", "kanban"])
     max_slides = int(data.get("max_slides", 10))
     upload_text = data.get("upload_text", "")
+    prompt = data.get("prompt", "")
 
     from tools.slides.engine import DeckEngine, DeckRequest
     req = DeckRequest(
@@ -201,6 +247,7 @@ def api_generate():
         sources=sources,
         max_slides=max_slides,
         upload_text=upload_text,
+        prompt=prompt,
     )
     result = DeckEngine().run(req)
 

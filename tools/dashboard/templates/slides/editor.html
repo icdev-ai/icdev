@@ -141,6 +141,11 @@
     <button id="layer-down" title="Send back">⤓</button>
     <button id="delete-el" title="Delete">🗑</button>
   </div>
+  <select id="theme-sel" title="Deck theme" style="background:#1b2740;color:var(--text);border:1px solid #2a3a5c;border-radius:6px;padding:6px 8px;">
+    <option value="midnight_executive"{% if deck.theme == 'midnight_executive' %} selected{% endif %}>Midnight</option>
+    <option value="govcon_proposal"{% if deck.theme == 'govcon_proposal' %} selected{% endif %}>GovCon</option>
+    <option value="compliance_briefing"{% if deck.theme == 'compliance_briefing' %} selected{% endif %}>Compliance</option>
+  </select>
   <button class="save" id="save">Save</button>
   <a href="/slides/{{ deck.deck_id }}/present" target="_blank">▶ Present</a>
   <a href="/slides/{{ deck.deck_id }}">Exit</a>

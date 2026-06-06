@@ -722,6 +722,15 @@
     $("#zoom-in").addEventListener("click", function () { setZoom(zoom * 1.25); });
     $("#zoom-out").addEventListener("click", function () { setZoom(zoom / 1.25); });
     $("#zoom-fit").addEventListener("click", function () { setZoom(1); });
+    var themeSel = $("#theme-sel");
+    if (themeSel) themeSel.addEventListener("change", function () {
+      var t = this.value;
+      fetch("/slides/api/" + DECK_ID + "/theme", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: t }) })
+        .then(function (r) { return r.json(); }).then(function (d) {
+          if (d.ok) window.location.reload();  // re-theme cohesively
+        });
+    });
     $("#file-input").addEventListener("change", function () { if (this.files[0]) uploadImage(this.files[0]); this.value = ""; });
     $("#add-canvas").addEventListener("click", function () { window.location.href = "/slides/" + DECK_ID + "/add-from-canvas"; });
     $("#layer-up").addEventListener("click", function () { layer(1); });

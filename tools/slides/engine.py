@@ -39,6 +39,7 @@ class DeckRequest:
     upload_text: str = ""
     upload_file_path: str = ""
     enable_graphics: bool = True
+    prompt: str = ""  # "describe your presentation" brief → AI-driven, topic-specific deck
 
 
 @dataclass
@@ -70,7 +71,7 @@ class DeckEngine:
             if dataset:
                 return self._run_dataset_story(deck_id, req, dataset)
 
-            # Phase 2: Plan outline
+            # Phase 2: Plan outline (brief-driven when a prompt is supplied)
             from tools.slides import orchestrator
             outline = orchestrator.plan_outline(
                 raw_content=raw,
@@ -78,11 +79,12 @@ class DeckEngine:
                 deck_type=req.deck_type,
                 min_slides=req.min_slides,
                 max_slides=req.max_slides,
+                brief=req.prompt,
             )
 
             # Phase 3: Generate content (parallel)
             from tools.slides import content_agent
-            slides = content_agent.generate_all(outline, raw)
+            slides = content_agent.generate_all(outline, raw, brief=req.prompt)
 
             # Phase 3.5: deterministic data-driven viz slides (real numbers, no LLM)
             from tools.slides import viz_mapper

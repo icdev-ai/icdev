@@ -117,6 +117,25 @@ def _parse_slide(raw: str, title: str) -> dict:
     }
 
 
+_GENERAL_SYSTEM = """You are an expert slide content writer.
+Write content for a single PowerPoint slide that fits the user's presentation brief.
+
+Output ONLY valid JSON with these exact keys:
+{
+  "title": "<exact slide title>",
+  "bullets": ["bullet 1", "bullet 2", "bullet 3"],
+  "speaker_notes": "2-4 sentences of presenter guidance.",
+  "visual_context": "One sentence describing the ideal visual for this slide.",
+  "slide_type": "content"
+}
+
+Rules:
+- 3-5 bullets, each <=15 words, concrete and specific to the brief and this slide's title
+- speaker_notes: 2-4 natural spoken sentences expanding on the bullets
+- slide_type: "content" | "data" (metrics) | "two_column" | "quote"
+"""
+
+
 def _generate_one(
     title: str,
     position: int,
@@ -125,34 +144,38 @@ def _generate_one(
     is_outro: bool = False,
     previous: dict | None = None,
     feedback: str | None = None,
+    brief: str = "",
 ) -> dict:
     """Generate content for a single slide."""
     if is_title_slide:
         return {
             "title": title,
             "bullets": [],
-            "speaker_notes": (
-                f"Welcome to this presentation on {title}. "
-                "ICDEV™ is a full-stack AI DevSecOps platform purpose-built for federal government."
-            ),
-            "visual_context": "Bold navy slide with gold ICDEV™ logo, minimalist corporate design",
+            "speaker_notes": (f"Welcome to this presentation on {title}." if brief
+                              else f"Welcome to this presentation on {title}. "
+                              "ICDEV™ is a full-stack AI DevSecOps platform purpose-built for federal government."),
+            "visual_context": "Bold title slide, minimalist corporate design",
             "slide_type": "title",
         }
     if is_outro:
         return {
             "title": title,
-            "bullets": [
+            "bullets": (["Questions & discussion", "Thank you"] if brief else [
                 "Request a live demo at icdev.ai",
                 "Schedule a technical deep-dive with our team",
                 "Access open-source components on GitHub",
-            ],
-            "speaker_notes": "Thank you for your time. We welcome the opportunity to demonstrate ICDEV™ capabilities in your environment.",
-            "visual_context": "Minimalist outro slide with navy background, gold accent bar, and call-to-action",
+            ]),
+            "speaker_notes": "Thank you for your time." if brief
+                             else "Thank you for your time. We welcome the opportunity to demonstrate ICDEV™ capabilities in your environment.",
+            "visual_context": "Minimalist outro slide with accent bar and call-to-action",
             "slide_type": "outro",
         }
 
     # Build context excerpt for the LLM
-    context_parts: list[str] = [f"Slide Title: {title}", f"Position: {position}", ""]
+    context_parts: list[str] = []
+    if brief:
+        context_parts.append(f"Presentation brief: {brief}")
+    context_parts += [f"Slide Title: {title}", f"Position: {position}", ""]
     for src_key, src_data in raw_content.items():
         if isinstance(src_data, dict) and "summary" in src_data:
             context_parts.append(f"[{src_key.upper()}]: {src_data['summary']}")
@@ -174,7 +197,7 @@ def _generate_one(
         router = LLMRouter()
         request = LLMRequest(
             messages=[{"role": "user", "content": user_msg}],
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=_GENERAL_SYSTEM if brief else _SYSTEM_PROMPT,
             max_tokens=512,
             temperature=0.35,
             agent_id=f"slides-content-{position}",
@@ -196,8 +219,10 @@ def generate_all(
     outline: list[str],
     raw_content: dict[str, Any],
     max_workers: int = 4,
+    brief: str = "",
 ) -> list[dict]:
-    """Generate content for all slides in parallel."""
+    """Generate content for all slides in parallel. ``brief`` (optional) drives
+    a general, topic-specific deck instead of the ICDEV-default content."""
     if not outline:
         return []
 
@@ -206,7 +231,7 @@ def generate_all(
     for i, title in enumerate(outline):
         is_title = i == 0
         is_outro = i == n - 1 and n > 1
-        args_list.append((title, i + 1, raw_content, is_title, is_outro))
+        args_list.append((title, i + 1, raw_content, is_title, is_outro, None, None, brief))
 
     results: list[dict | None] = [None] * n
     with ThreadPoolExecutor(max_workers=min(max_workers, n)) as pool:

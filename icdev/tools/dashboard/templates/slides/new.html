@@ -12,6 +12,37 @@
 </div>
 
 <form id="generate-form" style="max-width:800px;">
+    <div class="card" style="margin-bottom:20px; border:1px solid var(--accent-blue);">
+        <div class="card-header"><h3 style="margin:0;">✨ Describe your presentation (AI)</h3></div>
+        <div class="card-body">
+            <p style="color:var(--text-secondary); font-size:13px; margin-bottom:10px;">
+                Just describe what you want in plain English — ICDEV™ writes the outline and every slide for you.
+                Leave blank to build from ICDEV data sources or a dataset instead.
+            </p>
+            <textarea id="prompt" class="form-control" rows="3"
+                      placeholder="e.g. A 6-slide overview of zero-trust architecture for a non-technical executive audience, with a comparison table and a roadmap"></textarea>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3 style="margin:0;">📑 Start from a template</h3></div>
+        <div class="card-body">
+            <p style="color:var(--text-secondary); font-size:13px; margin-bottom:12px;">
+                Pick a ready-made structure and fill it in — opens straight into the editor.
+            </p>
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px,1fr)); gap:10px;">
+                {% for t in templates %}
+                <button type="button" class="tpl-card" data-tpl="{{ t.key }}"
+                        style="text-align:left; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:12px; cursor:pointer; color:var(--text-primary);">
+                    <div style="font-weight:700; font-size:13px;">{{ t.name }}</div>
+                    <div style="font-size:11px; color:var(--text-secondary); margin-top:3px;">{{ t.description }}</div>
+                    <div style="font-size:10px; color:var(--accent-blue); margin-top:6px;">{{ t.slides }} slides →</div>
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
     <div class="card" style="margin-bottom:20px;">
         <div class="card-header"><h3 style="margin:0;">Deck Settings</h3></div>
         <div class="card-body">
@@ -147,16 +178,17 @@ document.getElementById('generate-form').addEventListener('submit', async functi
 
     var sources = Array.from(document.querySelectorAll('input[name=sources]:checked')).map(i => i.value);
 
-    // A pasted dataset (CSV/JSON) drives the interactive data-story path; the
-    // engine auto-detects tabular content and takes the dashboard route.
+    // Priority: AI prompt (topic-driven) > pasted dataset (data story) > ICDEV sources.
+    var prompt = document.getElementById('prompt').value.trim();
     var dataset = document.getElementById('dataset_text').value.trim();
     var payload = {
         title: document.getElementById('title').value,
         deck_type: document.getElementById('deck_type').value,
         theme: document.getElementById('theme').value,
         max_slides: parseInt(document.getElementById('max_slides').value),
-        sources: sources,
-        upload_text: dataset || document.getElementById('upload_text').value,
+        sources: prompt ? [] : sources,                        // prompt → topic-only, no ICDEV sources
+        upload_text: prompt ? '' : (dataset || document.getElementById('upload_text').value),
+        prompt: prompt,
     };
 
     try {
@@ -182,6 +214,24 @@ document.getElementById('generate-form').addEventListener('submit', async functi
         btn.textContent = 'Generate Deck ✨';
         progress.style.display = 'none';
     }
+});
+
+// Start-from-template cards → create deck → open editor
+document.querySelectorAll('.tpl-card').forEach(function (b) {
+    b.addEventListener('click', function () {
+        b.style.opacity = '0.6';
+        fetch('/slides/api/templates/new', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                template: b.dataset.tpl,
+                theme: document.getElementById('theme').value,
+                title: document.getElementById('title').value
+            })
+        }).then(function (r) { return r.json(); }).then(function (d) {
+            if (d.deck_id) window.location.href = '/slides/' + d.deck_id + '/edit';
+            else { b.style.opacity = '1'; alert('Template failed: ' + (d.error || 'unknown')); }
+        }).catch(function (e) { b.style.opacity = '1'; alert('Error: ' + e.message); });
+    });
 });
 </script>
 {% endblock %}

@@ -30,6 +30,17 @@ Rules:
 - Return ONLY a JSON array of strings. Example: ["Title One", "Title Two", "Title Three"]
 """
 
+_GENERAL_PROMPT = """You are an expert presentation designer.
+Given the user's brief, design a compelling, well-structured slide deck outline.
+
+Rules:
+- Return BETWEEN {min_slides} AND {max_slides} slide titles
+- Each title: 3-8 words, clear and specific to the brief
+- Logical narrative arc tailored to the topic (open → build → evidence → close)
+- First slide: a title/cover slide; last slide: conclusion or call-to-action
+- Return ONLY a JSON array of strings. Example: ["Title One", "Title Two"]
+"""
+
 _REVISION_SUFFIX = """
 Previous outline: {previous_outline}
 User feedback: {feedback}
@@ -88,13 +99,18 @@ def plan_outline(
     max_slides: int = DEFAULT_MAX_SLIDES,
     previous_outline: list[str] | None = None,
     feedback: str | None = None,
+    brief: str = "",
 ) -> list[str]:
     """Call LLM to produce a slide title outline.
 
-    Falls back to a static outline if LLM is unavailable.
+    When ``brief`` is provided (a user's "describe your presentation" prompt),
+    the deck is built around that brief with a general-purpose designer prompt.
+    Falls back to a static outline if the LLM is unavailable.
     """
     # Build content summary for LLM
     content_parts: list[str] = [f"Deck Title: {deck_title}", f"Deck Type: {deck_type}", ""]
+    if brief:
+        content_parts = [f"Presentation brief: {brief}", f"Deck Title: {deck_title}", ""]
     for source_key, source_data in raw_content.items():
         if isinstance(source_data, dict) and "summary" in source_data:
             content_parts.append(f"[{source_key.upper()}]")
@@ -103,7 +119,7 @@ def plan_outline(
 
     content_str = "\n".join(content_parts)
 
-    system = _SYSTEM_PROMPT.format(min_slides=min_slides, max_slides=max_slides)
+    system = (_GENERAL_PROMPT if brief else _SYSTEM_PROMPT).format(min_slides=min_slides, max_slides=max_slides)
     if previous_outline and feedback:
         user_msg = content_str + "\n" + _REVISION_SUFFIX.format(
             previous_outline=json.dumps(previous_outline),
