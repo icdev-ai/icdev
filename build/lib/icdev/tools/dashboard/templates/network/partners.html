@@ -1,0 +1,192 @@
+{% extends "network/base.html" %}
+{% block title %}Partner Registry — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h4 class="mb-1">Partner Registry</h4>
+    <p class="text-muted small mb-0">Unified view of peering partners — agreements, BGP sessions, and cross-connects</p>
+  </div>
+  <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addPartnerModal">
+    <i class="bi bi-plus-lg me-1"></i>Add Partner
+  </button>
+</div>
+
+<!-- Stat cards -->
+<div class="row g-3 mb-4" id="partner-stats">
+  <div class="col-md-3">
+    <div class="card text-center p-3">
+      <div class="fs-2 fw-bold text-success" id="stat-active">—</div>
+      <div class="text-muted small">Active Partners</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-center p-3">
+      <div class="fs-2 fw-bold text-warning" id="stat-renewing">—</div>
+      <div class="text-muted small">Renewing Within 90d</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-center p-3">
+      <div class="fs-2 fw-bold text-info" id="stat-xc">—</div>
+      <div class="text-muted small">Cross-Connects</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-center p-3">
+      <div class="fs-2 fw-bold text-danger" id="stat-suspended">—</div>
+      <div class="text-muted small">Suspended</div>
+    </div>
+  </div>
+</div>
+
+<!-- Partner list -->
+<div class="row g-3" id="partner-list">
+  <div class="col-12 text-muted text-center py-4">Loading partners…</div>
+</div>
+
+<!-- IQE Query Widget -->
+{% include "includes/iqe_query_widget.html" %}
+
+<!-- Add Partner Modal -->
+<div class="modal fade" id="addPartnerModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">Add Partner</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label small">Partner Name *</label>
+          <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" id="p-name">
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="form-label small">Type</label>
+            <select class="form-select form-select-sm bg-dark text-light border-secondary" id="p-type">
+              <option value="isp">ISP</option>
+              <option value="carrier">Carrier</option>
+              <option value="cloud">Cloud</option>
+              <option value="content">Content</option>
+              <option value="enterprise">Enterprise</option>
+              <option value="ix">Internet Exchange</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label small">ASN</label>
+            <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary" id="p-asn" placeholder="e.g. 13335">
+          </div>
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="form-label small">NOC Email</label>
+            <input type="email" class="form-control form-control-sm bg-dark text-light border-secondary" id="p-noc-email">
+          </div>
+          <div class="col-6">
+            <label class="form-label small">NOC Phone</label>
+            <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" id="p-noc-phone">
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small">Legal Entity</label>
+          <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" id="p-legal">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small">Contract Manager</label>
+          <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" id="p-mgr">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small">Notes</label>
+          <textarea class="form-control form-control-sm bg-dark text-light border-secondary" id="p-notes" rows="2"></textarea>
+        </div>
+        <div id="partner-form-error" class="text-danger small d-none"></div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-primary" id="save-partner-btn">Save Partner</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const TYPE_COLORS = {isp:'primary',carrier:'info',cloud:'success',content:'warning',enterprise:'secondary',ix:'danger'};
+const today = new Date();
+
+function daysDiff(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return Math.round((d - today) / 86400000);
+}
+
+function renewalBadge(days) {
+  if (days === null) return '';
+  if (days < 0) return '<span class="badge bg-danger ms-1">Expired</span>';
+  if (days <= 30) return `<span class="badge bg-danger ms-1">Renew in ${days}d</span>`;
+  if (days <= 90) return `<span class="badge bg-warning ms-1">Renew in ${days}d</span>`;
+  return '';
+}
+
+function renderCard(p) {
+  const tc = TYPE_COLORS[p.partner_type] || 'secondary';
+  const asnBadge = p.asn ? `<span class="badge bg-secondary ms-1">AS${p.asn}</span>` : '';
+  return `
+    <div class="col-md-4 col-lg-3">
+      <div class="card h-100">
+        <div class="card-body p-3">
+          <div class="d-flex align-items-center mb-2">
+            <span class="badge bg-${tc} me-2">${p.partner_type}</span>
+            <strong class="text-truncate">${p.name}</strong>
+            ${asnBadge}
+          </div>
+          <div class="small text-muted mb-2">${p.legal_entity || p.noc_email || '—'}</div>
+          <div class="d-flex gap-2 flex-wrap">
+            <a href="/api/partners/${p.id}/unified-view" target="_blank" class="btn btn-xs btn-outline-info">Unified View</a>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function loadPartners() {
+  fetch('/api/partners')
+    .then(r => r.json())
+    .then(data => {
+      const list = document.getElementById('partner-list');
+      if (!data.length) { list.innerHTML = '<div class="col-12 text-muted text-center py-4">No partners yet. Add your first partner above.</div>'; return; }
+      let activeCount = 0, suspendedCount = 0, xcTotal = 0, renewingCount = 0;
+      list.innerHTML = data.map(p => {
+        if (p.status === 'active') activeCount++;
+        if (p.status === 'suspended') suspendedCount++;
+        return renderCard(p);
+      }).join('');
+      document.getElementById('stat-active').textContent = activeCount;
+      document.getElementById('stat-suspended').textContent = suspendedCount;
+    }).catch(() => {
+      document.getElementById('partner-list').innerHTML = '<div class="col-12 text-danger small">Failed to load partners.</div>';
+    });
+}
+
+document.getElementById('save-partner-btn').addEventListener('click', function() {
+  const name = document.getElementById('p-name').value.trim();
+  if (!name) { document.getElementById('partner-form-error').textContent='Name is required'; document.getElementById('partner-form-error').classList.remove('d-none'); return; }
+  const payload = {
+    name, partner_type: document.getElementById('p-type').value,
+    asn: parseInt(document.getElementById('p-asn').value) || null,
+    noc_email: document.getElementById('p-noc-email').value,
+    noc_phone: document.getElementById('p-noc-phone').value,
+    legal_entity: document.getElementById('p-legal').value,
+    contract_manager: document.getElementById('p-mgr').value,
+    notes: document.getElementById('p-notes').value,
+  };
+  fetch('/api/partners', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
+    .then(r => r.json())
+    .then(d => {
+      bootstrap.Modal.getInstance(document.getElementById('addPartnerModal')).hide();
+      loadPartners();
+    }).catch(e => { document.getElementById('partner-form-error').textContent=String(e); document.getElementById('partner-form-error').classList.remove('d-none'); });
+});
+
+loadPartners();
+</script>
+{% endblock %}

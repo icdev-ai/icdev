@@ -1,0 +1,53 @@
+# CUI // SP-CTI — Pipeline Design Canvas Configuration
+# Classification: CUI — Controlled Unclassified Information
+
+app:
+  name: "Pipeline Design Canvas"
+  version: "1.0.0"
+  port: 7070  # Shares dashboard port
+  debug: false
+  secret_key: "pc-dev-secret-change-in-prod"
+  classification: ""  # Set to e.g. "CUI // SP-CTI" for classification banner
+
+database:
+  path: "pipeline_canvas.db"
+  wal_mode: true
+  foreign_keys: true
+
+canvas:
+  autosave_delay_ms: 3000
+  grid_size: 10
+  default_width: 110
+  default_height: 60
+  max_undo_steps: 50
+  default_flow_direction: "left-to-right"  # left-to-right or top-to-bottom
+
+analysis:
+  default_runs_per_month: 500
+  default_build_time_min: 10
+  parallel_discount_pct: 40
+
+export:
+  formats:
+    - gitlab_ci
+    - github_actions
+    - jenkinsfile
+    - tekton
+    - azure_pipelines
+    - drawio
+    - svg
+    - terraform
+    - ansible
+    - oscal
+
+templates:
+  count: 12
+  auto_seed: true
+
+snippets:
+  count: 10
+  auto_seed: true
+
+logging:
+  level: INFO
+  audit_enabled: true

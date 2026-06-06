@@ -1,0 +1,97 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "description": "Known ambiguous phrases in requirements with suggested clarifications",
+  "ambiguity_patterns": [
+    {
+      "phrase": "as needed",
+      "category": "vague_trigger",
+      "severity": "high",
+      "clarification": "Define the specific conditions that trigger this action. What criteria determine when it is needed?"
+    },
+    {
+      "phrase": "appropriate",
+      "category": "subjective_quality",
+      "severity": "high",
+      "clarification": "Define measurable criteria for what constitutes 'appropriate' in this context."
+    },
+    {
+      "phrase": "timely",
+      "category": "undefined_time",
+      "severity": "high",
+      "clarification": "Specify an exact time threshold (e.g., within 2 seconds, within 24 hours)."
+    },
+    {
+      "phrase": "user-friendly",
+      "category": "subjective_quality",
+      "severity": "medium",
+      "clarification": "Define specific usability criteria: max clicks to complete task, WCAG compliance level, user satisfaction score target."
+    },
+    {
+      "phrase": "fast",
+      "category": "undefined_metric",
+      "severity": "high",
+      "clarification": "Specify a measurable target (e.g., <2 second response time, <500ms API latency)."
+    },
+    {
+      "phrase": "secure",
+      "category": "undefined_metric",
+      "severity": "critical",
+      "clarification": "Specify security requirements: FIPS 140-2 encryption, CAC authentication, STIG compliance, specific NIST controls."
+    },
+    {
+      "phrase": "scalable",
+      "category": "undefined_metric",
+      "severity": "medium",
+      "clarification": "Define target scale: max concurrent users, data volume growth rate, horizontal vs vertical scaling requirements."
+    },
+    {
+      "phrase": "efficient",
+      "category": "undefined_metric",
+      "severity": "medium",
+      "clarification": "Define efficiency metric: CPU utilization target, memory footprint limit, cost per transaction."
+    },
+    {
+      "phrase": "reasonable",
+      "category": "subjective_quality",
+      "severity": "high",
+      "clarification": "Define the quantitative threshold that constitutes 'reasonable' in this context."
+    },
+    {
+      "phrase": "adequate",
+      "category": "subjective_quality",
+      "severity": "high",
+      "clarification": "Define the minimum acceptable criteria with measurable thresholds."
+    },
+    {
+      "phrase": "flexible",
+      "category": "undefined_scope",
+      "severity": "medium",
+      "clarification": "Define what specifically needs to be configurable and what the expected variation parameters are."
+    },
+    {
+      "phrase": "robust",
+      "category": "undefined_metric",
+      "severity": "medium",
+      "clarification": "Define failure scenarios the system must handle and recovery time objectives."
+    },
+    {
+      "phrase": "etc.",
+      "category": "incomplete_list",
+      "severity": "high",
+      "clarification": "Enumerate all items explicitly. Incomplete lists lead to scope creep and missing requirements."
+    },
+    {
+      "phrase": "and/or",
+      "category": "logical_ambiguity",
+      "severity": "medium",
+      "clarification": "Clarify whether this is inclusive OR (either or both) or exclusive OR (one but not both)."
+    },
+    {
+      "phrase": "should",
+      "category": "weak_obligation",
+      "severity": "medium",
+      "clarification": "Is this a MUST (mandatory) or SHOULD (recommended)? Use RFC 2119 language for clarity."
+    }
+  ]
+}

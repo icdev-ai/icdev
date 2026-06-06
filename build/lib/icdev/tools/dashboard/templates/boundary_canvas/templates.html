@@ -1,0 +1,38 @@
+<!-- CUI // SP-CTI — Boundary Design Canvas Templates Gallery -->
+{% extends "base.html" %}
+{% block title %}Templates — Boundary Canvas — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .bdc-hero { padding: 20px 30px; }
+  .bdc-hero h1 { font-size: 22px; margin: 0 0 4px; }
+  .bdc-hero p { color: #7a8cb0; font-size: 13px; margin: 0; }
+  .bdc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; padding: 0 30px 30px; }
+  .bdc-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 16px; cursor: pointer; transition: border-color 0.2s; }
+  .bdc-card:hover { border-color: #9c27b0; }
+  .bdc-card h3 { margin: 0 0 6px; font-size: 14px; }
+  .bdc-card p { color: #7a8cb0; font-size: 12px; margin: 0; }
+  .bdc-card .meta { font-size: 11px; color: #5a6e8c; margin-top: 8px; }
+  .tag { display: inline-block; padding: 1px 6px; font-size: 10px; background: #0f3460; color: #7a8cb0; border-radius: 3px; margin-right: 3px; }
+  .bdc-back { display: inline-block; padding: 6px 16px; background: transparent; border: 1px solid #1e3a6e; color: #7a8cb0; border-radius: 4px; text-decoration: none; font-size: 12px; margin-top: 12px; }
+</style>
+
+<div class="bdc-hero">
+  <h1>Boundary Design Templates</h1>
+  <p>Pre-built boundary and interconnection designs for ATO boundaries, ISA/MOU, and cross-domain solutions. Click to create a new design from a template.</p>
+  <a href="/boundary/" class="bdc-back">Back to Dashboard</a>
+</div>
+
+<div class="bdc-grid">
+  {% for t in templates %}
+  <div class="bdc-card" onclick="location.href='/boundary/canvas/new?template={{ t.id }}'">
+    <h3>{{ t.name }}</h3>
+    <p>{{ t.description or '' }}</p>
+    <div class="meta">
+      <span class="tag">{{ t.category or 'general' }}</span>
+    </div>
+  </div>
+  {% else %}
+  <p style="color:#7a8cb0;">No templates available.</p>
+  {% endfor %}
+</div>
+{% endblock %}

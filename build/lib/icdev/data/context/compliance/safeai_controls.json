@@ -1,0 +1,512 @@
+{
+  "metadata": {
+    "title": "SAFE-AI: AI-Affected NIST 800-53 Rev 5 Controls",
+    "source": "Synthesis of NIST AI RMF (AI 100-1), MITRE ATLAS, OWASP LLM Top 10 v2025, EO 14110, DoD Responsible AI Strategy",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-21",
+    "description": "NIST 800-53 Rev 5 controls that have AI-specific concerns, enhanced guidance, or modified implementation requirements when LLMs or autonomous AI agents are deployed. Each control includes the standard NIST requirement augmented with AI-specific risk narrative, implementation guidance for AI systems, and cross-references to OWASP LLM Top 10 and MITRE ATLAS. This catalog enables dual-use assessment: traditional IT security plus AI-specific security posture in a single unified control set."
+  },
+  "controls": [
+    {
+      "control_id": "AC-2",
+      "title": "Account Management",
+      "family": "Access Control",
+      "ai_concern": "AI agents require service accounts with specific permissions to execute tools, call APIs, and access databases. Autonomous agents may create, modify, or escalate accounts without human oversight. Multi-agent architectures require per-agent identity with individually scoped permissions.",
+      "ai_guidance": "Implement least-privilege for all AI agent service accounts. Monitor automated account actions with anomaly detection. Require human-in-the-loop for privilege escalation. Each agent in a multi-agent system must have a unique service account with individually auditable permissions.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM06"],
+      "related_atlas": ["AML.T0086"]
+    },
+    {
+      "control_id": "AC-3",
+      "title": "Access Enforcement",
+      "family": "Access Control",
+      "ai_concern": "LLMs may bypass access controls through prompt injection, tool misuse, or by generating code/commands that circumvent authorization checks. AI agents with function-calling capabilities can access resources beyond their intended scope if tool permissions are not enforced at the platform level.",
+      "ai_guidance": "Enforce access controls at the tool/function level, not just the user level. AI agent tool calls must be authorized against an allowlist. Apply mandatory access control (MAC) on all AI-accessible resources. Validate that LLM-generated commands respect authorization boundaries before execution.",
+      "risk_level": "critical",
+      "related_owasp_llm": ["LLM01", "LLM06"],
+      "related_atlas": ["AML.T0040", "AML.T0051"]
+    },
+    {
+      "control_id": "AC-4",
+      "title": "Information Flow Enforcement",
+      "family": "Access Control",
+      "ai_concern": "LLMs can inadvertently transfer information across security domains through their responses, context windows, or shared embedding stores. RAG systems may retrieve documents from higher classification levels and include them in responses to lower-classified users. Cross-domain LLM deployments require strict information flow enforcement.",
+      "ai_guidance": "Implement cross-domain guards for LLM responses in multi-level security environments. Enforce data classification on all RAG sources and filter retrieval results by user clearance. Apply output DLP scanning for classification spillage. Separate embedding stores by classification level.",
+      "risk_level": "critical",
+      "related_owasp_llm": ["LLM02", "LLM08"],
+      "related_atlas": ["AML.T0024", "AML.T0025"]
+    },
+    {
+      "control_id": "AC-6",
+      "title": "Least Privilege",
+      "family": "Access Control",
+      "ai_concern": "AI agents often receive overly broad permissions for convenience, especially when using function-calling or tool-use capabilities. Default configurations may grant agents access to all available tools. Agents may request elevated privileges dynamically through conversational manipulation.",
+      "ai_guidance": "Apply per-agent tool allowlists restricting callable functions. Block destructive operations (deploy, delete, modify infrastructure) from AI agents by default. Require explicit human approval for any privilege escalation requested by an AI agent. Implement agent permission boundaries per environment (dev/staging/prod).",
+      "risk_level": "critical",
+      "related_owasp_llm": ["LLM06"],
+      "related_atlas": ["AML.T0086", "AML.T0040"]
+    },
+    {
+      "control_id": "AC-6(1)",
+      "title": "Least Privilege | Authorize Access to Security Functions",
+      "family": "Access Control",
+      "ai_concern": "AI agents should never have direct access to security functions such as modifying access control policies, changing audit configurations, or managing encryption keys unless explicitly authorized with human oversight.",
+      "ai_guidance": "Prohibit AI agent access to security administration functions by default. Any AI-initiated security configuration change must require human-in-the-loop approval. Implement domain authority veto for security-critical operations.",
+      "risk_level": "critical",
+      "related_owasp_llm": ["LLM06"],
+      "related_atlas": ["AML.T0086"]
+    },
+    {
+      "control_id": "AC-17",
+      "title": "Remote Access",
+      "family": "Access Control",
+      "ai_concern": "AI agents may be accessed or controlled remotely through messaging channels (Slack, Teams, Telegram), API endpoints, or remote command gateways. Remote AI agent access introduces additional attack surface for prompt injection, unauthorized command execution, and classification spillage across channels with different security levels.",
+      "ai_guidance": "Enforce user binding ceremonies before allowing remote AI agent commands. Apply per-channel classification ceilings (IL-aware response filtering). Implement rate limiting and command allowlists for all remote AI agent interfaces. Block destructive commands on all remote channels.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM06", "LLM01"],
+      "related_atlas": ["AML.T0051"]
+    },
+    {
+      "control_id": "AC-19",
+      "title": "Access Control for Mobile Devices",
+      "family": "Access Control",
+      "ai_concern": "Mobile AI assistants and LLM-powered apps on mobile devices may cache sensitive context, conversation history, or model weights locally. AI voice interfaces on mobile devices introduce additional eavesdropping and social engineering risks.",
+      "ai_guidance": "Enforce encryption at rest for all AI conversation caches on mobile devices. Implement automatic conversation purging after session timeout. Disable AI voice interfaces in physically insecure locations. Apply mobile device management (MDM) policies to AI-enabled applications.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM02"],
+      "related_atlas": ["AML.T0024"]
+    },
+    {
+      "control_id": "AC-20",
+      "title": "Use of External Systems",
+      "family": "Access Control",
+      "ai_concern": "AI agents that call external APIs, search the web, or interact with third-party services introduce external system dependencies. LLM tool-use capabilities may connect to untrusted external systems, enabling indirect prompt injection through external content or data exfiltration through outbound API calls.",
+      "ai_guidance": "Maintain an allowlist of approved external systems for AI agent access. Monitor all outbound AI agent API calls. Apply content sanitization on data received from external systems before feeding to LLMs. Block AI agent access to external systems in air-gapped environments.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM01", "LLM03"],
+      "related_atlas": ["AML.T0043", "AML.T0042"]
+    },
+    {
+      "control_id": "AT-2",
+      "title": "Literacy Training and Awareness",
+      "family": "Awareness and Training",
+      "ai_concern": "Personnel interacting with AI systems may not understand AI-specific risks including hallucinations, prompt injection, overreliance on AI-generated content, and the limitations of LLM reasoning. Without AI literacy training, users may trust AI outputs without verification, share sensitive data in prompts, or fail to recognize adversarial manipulation.",
+      "ai_guidance": "Include AI-specific security awareness in mandatory training: prompt injection risks, hallucination recognition, sensitive data handling in AI prompts, AI content verification requirements, and reporting procedures for suspicious AI behavior. Train users to label and verify AI-generated content.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM09"],
+      "related_atlas": ["AML.T0047"]
+    },
+    {
+      "control_id": "AT-3",
+      "title": "Role-Based Training",
+      "family": "Awareness and Training",
+      "ai_concern": "Developers building AI systems, security analysts reviewing AI outputs, and administrators managing AI infrastructure require specialized role-based training on AI-specific threats (MITRE ATLAS), secure AI development practices, prompt engineering security, and AI incident response procedures.",
+      "ai_guidance": "Provide role-based AI security training: developers receive secure AI coding practices (OWASP LLM Top 10), security analysts receive MITRE ATLAS and AI threat hunting, administrators receive AI infrastructure security (model serving, embedding stores, RAG pipelines). Track completion in training management system.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM09"],
+      "related_atlas": ["AML.T0047"]
+    },
+    {
+      "control_id": "AT-6",
+      "title": "Training Feedback",
+      "family": "Awareness and Training",
+      "ai_concern": "AI systems used for training content generation may produce inaccurate, biased, or fabricated training materials if not subject to human review. AI-generated training assessments may not accurately measure comprehension of AI-specific security risks.",
+      "ai_guidance": "Require human expert review of all AI-generated training content before deployment. Implement feedback mechanisms for users to report AI training material inaccuracies. Track AI-generated vs human-authored training content separately.",
+      "risk_level": "low",
+      "related_owasp_llm": ["LLM09"],
+      "related_atlas": ["AML.T0048"]
+    },
+    {
+      "control_id": "AU-2",
+      "title": "Event Logging",
+      "family": "Audit and Accountability",
+      "ai_concern": "AI systems generate novel event types that traditional audit logging may not capture: prompt injection attempts, model inference requests, tool/function calls, agent-to-agent communications, token consumption, confidence scores, and hallucination detection events. Without AI-specific audit events, security monitoring is blind to AI-specific attacks.",
+      "ai_guidance": "Configure audit logging for all AI-specific events: prompt submissions, model responses, tool/function calls, agent communications, token usage, prompt injection detection alerts, confidence score thresholds, and human-in-the-loop decisions. Include AI telemetry in SIEM forwarding.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM06", "LLM10"],
+      "related_atlas": ["AML.T0086"]
+    },
+    {
+      "control_id": "AU-3",
+      "title": "Content of Audit Records",
+      "family": "Audit and Accountability",
+      "ai_concern": "AI audit records must capture context beyond traditional IT events: the full prompt (or hash for classified), model ID and version, agent identity, tool/function called, response confidence score, token count, and any prompt injection detection flags. Standard audit record formats may not accommodate these AI-specific fields.",
+      "ai_guidance": "Extend audit record schema to include AI-specific fields: model_id, agent_id, prompt_hash, tool_calls, token_count, confidence_score, injection_flags, response_classification. Store AI audit records in append-only tables. Ensure audit records are sufficient for AI incident forensics.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM06", "LLM10"],
+      "related_atlas": ["AML.T0086"]
+    },
+    {
+      "control_id": "AU-6",
+      "title": "Audit Record Review, Analysis, and Reporting",
+      "family": "Audit and Accountability",
+      "ai_concern": "AI audit logs contain high-volume, high-velocity data that may overwhelm traditional manual review processes. AI-specific attack patterns (prompt injection, data exfiltration through responses, excessive agency) require specialized analysis rules and detection logic.",
+      "ai_guidance": "Implement automated analysis rules for AI-specific audit patterns: repeated prompt injection attempts, unusual tool call sequences, anomalous token consumption, information leakage patterns in responses, and agent communication anomalies. Integrate AI telemetry with SIEM for correlation with traditional security events.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM01", "LLM10"],
+      "related_atlas": ["AML.T0051", "AML.T0029"]
+    },
+    {
+      "control_id": "AU-12",
+      "title": "Audit Record Generation",
+      "family": "Audit and Accountability",
+      "ai_concern": "AI components (model inference engines, agent orchestrators, RAG pipelines, embedding services) must generate audit records at the component level. Multi-agent systems require correlation of audit records across agents to reconstruct decision chains.",
+      "ai_guidance": "Ensure all AI infrastructure components generate audit records: model serving endpoints, agent orchestrators, tool execution layers, RAG retrieval pipelines, and embedding services. Use correlation IDs to link related AI audit events across multi-agent workflows. Implement tamper-evident logging (HMAC signing) for AI audit trails.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM06"],
+      "related_atlas": ["AML.T0086"]
+    },
+    {
+      "control_id": "AU-16",
+      "title": "Cross-Organizational Audit Logging",
+      "family": "Audit and Accountability",
+      "ai_concern": "Federated AI systems, marketplace-shared AI components, and cross-tenant AI services require audit correlation across organizational boundaries. AI audit data may contain sensitive prompt content that must be filtered before cross-organizational sharing.",
+      "ai_guidance": "Implement audit record sanitization for cross-organizational sharing (redact prompt content, retain metadata). Establish AI-specific audit sharing agreements for federated AI deployments. Correlate AI audit events across tenant boundaries for marketplace-installed components.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM03"],
+      "related_atlas": ["AML.T0042"]
+    },
+    {
+      "control_id": "CA-2",
+      "title": "Control Assessments",
+      "family": "Assessment, Authorization, and Monitoring",
+      "ai_concern": "Traditional control assessments may not cover AI-specific risks. Assessment methodologies must include AI red-teaming (prompt injection, jailbreaking, data extraction), model robustness testing, AI supply chain review, and evaluation of human-in-the-loop effectiveness.",
+      "ai_guidance": "Include AI-specific assessment activities: prompt injection red-teaming, model robustness evaluation, AI supply chain audit (AI-BOM review), human-in-the-loop gate effectiveness testing, and MITRE ATLAS technique coverage assessment. Document AI-specific findings separately for specialized remediation.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM01", "LLM03"],
+      "related_atlas": ["AML.T0051", "AML.T0042"]
+    },
+    {
+      "control_id": "CA-7",
+      "title": "Continuous Monitoring",
+      "family": "Assessment, Authorization, and Monitoring",
+      "ai_concern": "AI systems exhibit emergent behaviors that may not be detected by traditional continuous monitoring. Model drift, prompt injection patterns, hallucination rates, and anomalous agent behavior require AI-specific continuous monitoring capabilities. cATO programs must include AI-specific evidence freshness tracking.",
+      "ai_guidance": "Implement AI-specific continuous monitoring: model performance drift detection, prompt injection attempt tracking, hallucination rate monitoring, agent behavior anomaly detection, token consumption trends, and AI-BOM currency checks. Feed AI telemetry into cATO evidence pipeline.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM04", "LLM09"],
+      "related_atlas": ["AML.T0020", "AML.T0047"]
+    },
+    {
+      "control_id": "CA-8",
+      "title": "Penetration Testing",
+      "family": "Assessment, Authorization, and Monitoring",
+      "ai_concern": "Standard penetration testing does not cover AI-specific attack vectors. AI systems require specialized red-team testing covering prompt injection (direct and indirect), jailbreak techniques, data extraction through model responses, agent manipulation, embedding poisoning, and model inversion attacks.",
+      "ai_guidance": "Include AI-specific scenarios in penetration testing: prompt injection (OWASP LLM01), system prompt extraction (LLM07), data exfiltration through responses (LLM02), agent privilege escalation (LLM06), RAG poisoning (LLM08), and model denial of service (LLM10). Use MITRE ATLAS as the adversarial framework for AI penetration testing.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM01", "LLM02", "LLM06"],
+      "related_atlas": ["AML.T0051", "AML.T0024", "AML.T0086"]
+    },
+    {
+      "control_id": "CM-2",
+      "title": "Baseline Configuration",
+      "family": "Configuration Management",
+      "ai_concern": "AI systems require baselines for model versions, hyperparameters, system prompt configurations, tool/function registrations, embedding model versions, and RAG pipeline configurations. These AI-specific configuration elements change independently of traditional infrastructure baselines.",
+      "ai_guidance": "Maintain AI-specific baseline configurations: model ID and version, system prompt content (hashed for classified), tool/function registration list, embedding model and dimension, RAG pipeline configuration, and agent permission boundaries. Version-control all AI configurations alongside infrastructure baselines.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM03", "LLM04"],
+      "related_atlas": ["AML.T0042", "AML.T0020"]
+    },
+    {
+      "control_id": "CM-3",
+      "title": "Configuration Change Control",
+      "family": "Configuration Management",
+      "ai_concern": "Changes to AI system configurations (model updates, prompt modifications, tool additions, embedding re-indexing) can have unpredictable effects on system behavior. Model updates may introduce new vulnerabilities or alter safety properties. Prompt changes can inadvertently weaken security controls.",
+      "ai_guidance": "Apply change control to all AI configuration changes: model version updates, system prompt modifications, tool/function additions or removals, embedding model changes, and RAG data source changes. Require security review for prompt changes that affect safety or access control logic. Test AI behavior regression after configuration changes.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM03", "LLM04"],
+      "related_atlas": ["AML.T0042", "AML.T0020"]
+    },
+    {
+      "control_id": "CM-7",
+      "title": "Least Functionality",
+      "family": "Configuration Management",
+      "ai_concern": "AI systems should expose only the minimum necessary tools, functions, and capabilities. Default LLM deployments often include broad tool-use capabilities that exceed operational requirements. Unused model capabilities (code execution, web browsing, file system access) increase attack surface.",
+      "ai_guidance": "Disable all AI capabilities not required for the specific use case. Implement tool allowlists rather than denylists. Remove code execution capabilities from LLMs that only need text generation. Disable web browsing for air-gapped deployments. Restrict file system access to specific approved directories.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM06"],
+      "related_atlas": ["AML.T0086", "AML.T0040"]
+    },
+    {
+      "control_id": "CM-8",
+      "title": "System Component Inventory",
+      "family": "Configuration Management",
+      "ai_concern": "Traditional component inventories do not capture AI-specific components: models, datasets, embedding stores, RAG corpora, plugins, and AI-specific middleware. An AI Bill of Materials (AI-BOM) is needed to supplement the SBOM for full supply chain visibility.",
+      "ai_guidance": "Maintain an AI Bill of Materials (AI-BOM) alongside the SBOM, documenting: model provenance (source, training data lineage, license), embedding models and stores, RAG data sources and their classification, plugins and extensions with versions, and AI middleware components. Update AI-BOM on every model or component change.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM03"],
+      "related_atlas": ["AML.T0042", "AML.T0010"]
+    },
+    {
+      "control_id": "IA-2",
+      "title": "Identification and Authentication (Organizational Users)",
+      "family": "Identification and Authentication",
+      "ai_concern": "AI agents acting on behalf of users create identity delegation challenges. The system must distinguish between actions taken directly by a human user versus actions delegated to an AI agent acting under that user's authority. AI-generated requests must carry both the delegating user's identity and the agent's service identity.",
+      "ai_guidance": "Implement dual-identity tracking for AI agent actions: the human principal who initiated the workflow and the AI agent identity executing it. Require re-authentication for AI agents requesting elevated privileges. Log the full identity chain (human -> agent -> tool) in all audit records.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM06"],
+      "related_atlas": ["AML.T0086"]
+    },
+    {
+      "control_id": "IA-8",
+      "title": "Identification and Authentication (Non-Organizational Users)",
+      "family": "Identification and Authentication",
+      "ai_concern": "External AI services (cloud LLM APIs, third-party model endpoints) and federated AI agents from partner organizations require authentication and authorization. AI-to-AI authentication (A2A protocol) must use mutual TLS or equivalent strong authentication to prevent impersonation.",
+      "ai_guidance": "Authenticate all external AI service connections with strong credentials (API keys with rotation, OAuth tokens, mTLS). Implement agent-to-agent authentication using mutual TLS within Kubernetes clusters. Validate agent identity cards (/.well-known/agent.json) before accepting inter-agent communications.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM03"],
+      "related_atlas": ["AML.T0042"]
+    },
+    {
+      "control_id": "IA-9",
+      "title": "Service Identification and Authentication",
+      "family": "Identification and Authentication",
+      "ai_concern": "AI model serving endpoints, embedding services, and RAG retrieval APIs must be authenticated to prevent model substitution attacks, embedding poisoning through unauthorized write access, and unauthorized inference requests. In multi-model architectures, each model endpoint must be individually authenticated.",
+      "ai_guidance": "Implement service-level authentication for all AI infrastructure: model serving endpoints require API key or mTLS, embedding write operations require elevated service credentials, RAG retrieval APIs enforce caller authentication, and model registry access requires signed requests.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM03", "LLM08"],
+      "related_atlas": ["AML.T0042", "AML.T0010"]
+    },
+    {
+      "control_id": "IR-4",
+      "title": "Incident Handling",
+      "family": "Incident Response",
+      "ai_concern": "AI-specific incidents (prompt injection attacks, model compromise, training data poisoning, AI-enabled social engineering, hallucination-caused mission impact) require specialized incident response procedures. Traditional IR playbooks do not cover AI-specific containment (model quarantine, prompt rollback, embedding store isolation) or evidence preservation (conversation logs, model snapshots, RAG state).",
+      "ai_guidance": "Develop AI-specific incident response procedures covering: model quarantine and rollback, system prompt emergency override, embedding store isolation, conversation log preservation with classification markings, model snapshot capture for forensics, and AI vendor notification. Include AI-specific scenarios in tabletop exercises.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM01", "LLM04"],
+      "related_atlas": ["AML.T0051", "AML.T0020"]
+    },
+    {
+      "control_id": "IR-6",
+      "title": "Incident Reporting",
+      "family": "Incident Response",
+      "ai_concern": "AI incidents may require reporting to specialized bodies beyond traditional CISO channels: AI ethics boards, MITRE ATLAS for technique cataloging, model vendors for vulnerability coordination, and government AI oversight bodies per EO 14110 requirements.",
+      "ai_guidance": "Establish AI-specific incident reporting channels: internal AI safety team, AI vendor security team, MITRE ATLAS contribution (for novel attack techniques), and government AI oversight per EO 14110. Include AI-specific incident classification criteria in the reporting taxonomy.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM01", "LLM04"],
+      "related_atlas": ["AML.T0051", "AML.T0020"]
+    },
+    {
+      "control_id": "MA-3",
+      "title": "Maintenance Tools",
+      "family": "Maintenance",
+      "ai_concern": "AI system maintenance tools (model fine-tuning utilities, embedding re-indexing scripts, RAG pipeline management, AI debugging and prompt engineering tools) have elevated access to model weights, training data, and system prompts. Compromised maintenance tools can introduce backdoors or extract sensitive model artifacts.",
+      "ai_guidance": "Control access to AI maintenance tools with the same rigor as security administration tools. Require multi-factor authentication for model fine-tuning and re-training operations. Log all maintenance tool usage. Verify integrity of maintenance tools before use. Restrict AI debugging tools to non-production environments.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM04", "LLM03"],
+      "related_atlas": ["AML.T0020", "AML.T0042"]
+    },
+    {
+      "control_id": "PM-11",
+      "title": "Mission and Business Process Definition",
+      "family": "Program Management",
+      "ai_concern": "Organizations must define acceptable AI use cases, prohibited AI applications, and risk tolerance for AI-assisted decision-making aligned with DoD Responsible AI principles (reliable, equitable, traceable, robust, governable). Mission-critical processes enhanced by AI require explicit risk acceptance for AI failure modes.",
+      "ai_guidance": "Document approved AI use cases with explicit risk acceptance for each. Define prohibited AI applications (autonomous lethal decision-making, unsupervised classification decisions, unmonitored PII processing). Establish AI risk tolerance thresholds aligned with DoD Responsible AI principles and organizational risk appetite.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM09"],
+      "related_atlas": ["AML.T0047"]
+    },
+    {
+      "control_id": "PM-32",
+      "title": "Purposing",
+      "family": "Program Management",
+      "ai_concern": "AI systems must have clearly defined purposes and boundaries. Purpose drift (using an AI system for tasks beyond its original design) introduces unassessed risks. Models trained for one task may behave unpredictably when repurposed for another.",
+      "ai_guidance": "Document the intended purpose, scope, and boundaries for each AI system deployment. Require re-assessment when AI systems are repurposed beyond original scope. Implement technical controls to enforce purpose boundaries (tool allowlists, prompt restrictions, output format constraints).",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM06", "LLM09"],
+      "related_atlas": ["AML.T0086"]
+    },
+    {
+      "control_id": "RA-3",
+      "title": "Risk Assessment",
+      "family": "Risk Assessment",
+      "ai_concern": "Traditional risk assessments do not cover AI-specific threats cataloged in MITRE ATLAS. AI systems introduce novel risk categories: model manipulation, training data poisoning, adversarial machine learning, emergent behavior, hallucination impact, and AI supply chain compromise. Risk assessment must incorporate AI-specific threat intelligence.",
+      "ai_guidance": "Include MITRE ATLAS techniques in threat modeling for AI systems. Assess risks specific to LLM deployment: prompt injection likelihood, hallucination impact severity, data leakage exposure, agent autonomy risk, and supply chain compromise probability. Use OWASP LLM Top 10 as supplementary risk framework.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM01", "LLM02", "LLM03", "LLM04"],
+      "related_atlas": ["AML.T0051", "AML.T0024", "AML.T0042", "AML.T0020"]
+    },
+    {
+      "control_id": "RA-5",
+      "title": "Vulnerability Monitoring and Scanning",
+      "family": "Risk Assessment",
+      "ai_concern": "AI systems have vulnerability categories beyond traditional CVEs: adversarial robustness weaknesses, prompt injection susceptibilities, model inversion vulnerabilities, and embedding store exposure. Standard vulnerability scanners do not detect AI-specific vulnerabilities.",
+      "ai_guidance": "Implement AI-specific vulnerability scanning: prompt injection testing (automated red-team), adversarial robustness evaluation, model inversion resistance testing, and AI dependency vulnerability scanning (model supply chain). Integrate AI vulnerability findings into the standard vulnerability management workflow.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM01", "LLM03"],
+      "related_atlas": ["AML.T0051", "AML.T0042"]
+    },
+    {
+      "control_id": "RA-10",
+      "title": "Threat Hunting",
+      "family": "Risk Assessment",
+      "ai_concern": "AI-specific threat hunting requires specialized detection of adversarial ML techniques: prompt injection campaigns, model exfiltration attempts, training data poisoning indicators, embedding store manipulation, and coordinated AI abuse patterns. Traditional threat hunting playbooks do not cover MITRE ATLAS techniques.",
+      "ai_guidance": "Develop AI-specific threat hunting hypotheses based on MITRE ATLAS: detect prompt injection patterns across user sessions, identify model output anomalies indicating compromise, hunt for embedding store tampering, analyze token consumption patterns for abuse, and correlate AI telemetry with network-level indicators.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM01", "LLM04"],
+      "related_atlas": ["AML.T0051", "AML.T0020"]
+    },
+    {
+      "control_id": "SA-3",
+      "title": "System Development Life Cycle",
+      "family": "System and Services Acquisition",
+      "ai_concern": "AI system development introduces additional lifecycle phases not covered by traditional SDLC: data collection and curation, model training and validation, prompt engineering and testing, AI-specific security testing (red-teaming), and ongoing model monitoring and retraining. AI development must integrate responsible AI principles throughout the lifecycle.",
+      "ai_guidance": "Extend SDLC to include AI-specific phases: data governance and curation, model development with bias testing, prompt security review, AI red-team testing, AI-specific acceptance criteria, and post-deployment model monitoring. Apply TDD practices to AI components (test prompts, expected outputs, boundary conditions).",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM04", "LLM09"],
+      "related_atlas": ["AML.T0020", "AML.T0047"]
+    },
+    {
+      "control_id": "SA-9",
+      "title": "External System Services",
+      "family": "System and Services Acquisition",
+      "ai_concern": "Cloud LLM APIs (Bedrock, Azure OpenAI, Anthropic API) are external services requiring supply chain risk assessment. Model providers may update models without notice, changing behavior. External AI services may log prompts containing sensitive data. Service availability affects AI-dependent mission systems.",
+      "ai_guidance": "Assess cloud LLM providers as critical external services. Negotiate data handling agreements that prohibit prompt logging or training on customer data. Implement model version pinning to prevent unannounced behavior changes. Maintain fallback chains across providers for operational resilience. Monitor provider SLAs and model deprecation notices.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM03"],
+      "related_atlas": ["AML.T0042"]
+    },
+    {
+      "control_id": "SA-11",
+      "title": "Developer Testing and Evaluation",
+      "family": "System and Services Acquisition",
+      "ai_concern": "AI-generated code must undergo the same security testing as human-written code (SAST, dependency audit, secret detection). Additionally, AI systems require prompt injection testing, output validation testing, and adversarial robustness evaluation that traditional testing frameworks do not provide.",
+      "ai_guidance": "Apply full security testing pipeline to AI-generated code: SAST, dependency audit, secret detection, and CUI marking verification. Add AI-specific test categories: prompt injection resistance, output sanitization validation, hallucination detection, tool call authorization testing, and agent boundary enforcement.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM05", "LLM01"],
+      "related_atlas": ["AML.T0048", "AML.T0051"]
+    },
+    {
+      "control_id": "SA-15",
+      "title": "Development Process, Standards, and Tools",
+      "family": "System and Services Acquisition",
+      "ai_concern": "AI development tools (training frameworks, prompt engineering IDEs, model serving infrastructure) must meet the same security standards as other development tools. AI-assisted development tools (Copilot, Claude Code, Codex) introduce AI-specific risks into the development process itself.",
+      "ai_guidance": "Apply security standards to AI development tools and infrastructure. Vet AI-assisted coding tools for data handling (prompt logging, code telemetry). Enforce code review on AI-generated code regardless of source. Maintain approved tool lists for AI development and AI-assisted development.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM03", "LLM05"],
+      "related_atlas": ["AML.T0042"]
+    },
+    {
+      "control_id": "SC-4",
+      "title": "Information in Shared Resources",
+      "family": "System and Communications Protection",
+      "ai_concern": "LLM context windows, shared embedding stores, and multi-tenant model serving infrastructure may leak information across users, sessions, or tenants. Shared GPU memory in model serving may retain residual data from previous inference requests. RAG systems with shared vector stores may expose cross-tenant documents.",
+      "ai_guidance": "Implement context isolation between user sessions and tenants in LLM deployments. Clear GPU memory between inference requests for sensitive workloads. Enforce tenant isolation in shared embedding stores. Apply per-tenant RAG retrieval filtering. Verify context window isolation in multi-tenant model serving.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM02", "LLM08"],
+      "related_atlas": ["AML.T0024", "AML.T0025"]
+    },
+    {
+      "control_id": "SC-5",
+      "title": "Denial-of-Service Protection",
+      "family": "System and Communications Protection",
+      "ai_concern": "AI systems are vulnerable to denial-of-service through resource exhaustion: excessively long prompts, recursive agent loops, compute-intensive queries, denial-of-wallet attacks through API abuse, and adversarial inputs designed to maximize inference latency. AI-specific DoS attacks target expensive inference resources rather than network bandwidth.",
+      "ai_guidance": "Implement AI-specific DoS protections: maximum token limits per request and session, prompt length validation, agent loop detection with circuit breakers, per-user and per-tenant rate limiting on inference endpoints, cost-based throttling at budget thresholds, and query complexity analysis before inference.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM10"],
+      "related_atlas": ["AML.T0029", "AML.T0034"]
+    },
+    {
+      "control_id": "SC-7",
+      "title": "Boundary Protection",
+      "family": "System and Communications Protection",
+      "ai_concern": "AI systems that interact with external content (web search, document retrieval, API calls) create boundary crossings that traditional network perimeter controls may not govern. LLM tool-use capabilities can initiate outbound connections that bypass application-layer firewalls. Indirect prompt injection exploits boundary crossings to inject malicious instructions.",
+      "ai_guidance": "Apply boundary protection to AI system data flows: control outbound connections from AI agents, filter external content before LLM ingestion (sanitize for indirect prompt injection), enforce egress rules on AI inference endpoints, and monitor AI-initiated network connections. In air-gapped environments, disable all external data retrieval capabilities.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM01", "LLM03"],
+      "related_atlas": ["AML.T0043", "AML.T0042"]
+    },
+    {
+      "control_id": "SC-8",
+      "title": "Transmission Confidentiality and Integrity",
+      "family": "System and Communications Protection",
+      "ai_concern": "AI inference traffic (prompts and responses) may contain sensitive data and must be encrypted in transit. Agent-to-agent communications in multi-agent architectures must use mutual TLS. Telemetry and audit data from AI systems must be transmitted securely to monitoring endpoints.",
+      "ai_guidance": "Encrypt all AI inference traffic (prompts and responses) with TLS 1.2+ or mTLS. Enforce mutual TLS for agent-to-agent communications within Kubernetes clusters. Encrypt AI telemetry and audit log transmission. Apply FIPS 140-2 validated encryption for AI traffic in Gov/DoD environments.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM02"],
+      "related_atlas": ["AML.T0024"]
+    },
+    {
+      "control_id": "SC-13",
+      "title": "Cryptographic Protection",
+      "family": "System and Communications Protection",
+      "ai_concern": "AI model weights, embeddings, and training data represent high-value intellectual property and may contain memorized sensitive data. Cryptographic protection must extend to model artifacts at rest and in transit. Model signing ensures integrity and provenance verification.",
+      "ai_guidance": "Apply FIPS 140-2 validated cryptographic protection to: model weights at rest and in transit, embedding stores containing classified or CUI document representations, training data archives, and AI configuration artifacts. Implement model signing for provenance verification. Use encrypted model registries.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM03"],
+      "related_atlas": ["AML.T0010"]
+    },
+    {
+      "control_id": "SC-28",
+      "title": "Protection of Information at Rest",
+      "family": "System and Communications Protection",
+      "ai_concern": "AI systems store sensitive data at rest in novel formats: model weights (which may memorize training data), vector embeddings (which encode document content), conversation logs (which contain user prompts), and fine-tuning datasets. These AI-specific data stores require encryption at rest with classification-appropriate key management.",
+      "ai_guidance": "Encrypt all AI data at rest: model weight files, vector embedding databases, conversation log stores, fine-tuning datasets, and RAG document corpora. Apply classification-appropriate encryption (FIPS 140-2 for CUI, NSA Type 1 for classified). Implement key management that separates encryption keys from AI data stores.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM02", "LLM07"],
+      "related_atlas": ["AML.T0024"]
+    },
+    {
+      "control_id": "SI-3",
+      "title": "Malicious Code Protection",
+      "family": "System and Information Integrity",
+      "ai_concern": "AI-generated code may contain malicious patterns (backdoors, logic bombs, data exfiltration) either through model compromise, training data poisoning, or adversarial prompt manipulation. Traditional malware signatures do not detect AI-introduced malicious logic. LLM tool outputs may contain executable payloads.",
+      "ai_guidance": "Run SAST and behavioral analysis on all AI-generated code before integration. Scan LLM tool outputs for executable content. Apply sandboxing for AI-generated code execution. Monitor for known AI-introduced vulnerability patterns (insecure defaults, backdoor patterns, obfuscated logic).",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM05", "LLM04"],
+      "related_atlas": ["AML.T0048", "AML.T0020"]
+    },
+    {
+      "control_id": "SI-4",
+      "title": "System Monitoring",
+      "family": "System and Information Integrity",
+      "ai_concern": "AI systems require specialized monitoring beyond traditional system metrics: model performance drift, hallucination rates, prompt injection attempt frequency, agent behavior anomalies, token consumption trends, and AI-specific security events. Without AI-specific monitoring, attacks against AI components go undetected.",
+      "ai_guidance": "Implement AI-specific monitoring dashboards tracking: model inference latency and error rates, prompt injection detection alerts, hallucination rate trends, agent tool call patterns, token consumption by user and project, embedding store access patterns, and AI security event correlation. Set alert thresholds for anomalous AI behavior.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM10", "LLM01"],
+      "related_atlas": ["AML.T0029", "AML.T0051"]
+    },
+    {
+      "control_id": "SI-7",
+      "title": "Software, Firmware, and Information Integrity",
+      "family": "System and Information Integrity",
+      "ai_concern": "AI model integrity must be verified at deployment and runtime. Model weight tampering, embedding store corruption, and system prompt modification can compromise AI system behavior without triggering traditional integrity checks. Integrity verification must cover all AI artifacts: model files, embedding indices, system prompts, and tool configurations.",
+      "ai_guidance": "Implement integrity verification for all AI artifacts: cryptographic checksums on model weight files, hash verification on embedding store contents, version-controlled system prompts with change detection, and signed tool/function configurations. Alert on any unauthorized modification of AI artifacts.",
+      "risk_level": "high",
+      "related_owasp_llm": ["LLM04", "LLM03"],
+      "related_atlas": ["AML.T0020", "AML.T0010"]
+    },
+    {
+      "control_id": "SI-10",
+      "title": "Information Input Validation",
+      "family": "System and Information Integrity",
+      "ai_concern": "LLM inputs (prompts) are the primary attack vector for prompt injection, the most critical AI-specific vulnerability. Traditional input validation (SQL injection, XSS prevention) does not address natural language prompt injection. AI systems require AI-specific input validation: prompt injection detection, input length limits, encoding checks, and content policy enforcement.",
+      "ai_guidance": "Implement multi-layered input validation for LLM prompts: pattern-based prompt injection detection, ML-based injection classifiers, input length and token limits, base64/encoding attack detection, content policy enforcement, and structural validation for tool-calling inputs. Deploy prompt injection detection as a pre-processing stage before model inference.",
+      "risk_level": "critical",
+      "related_owasp_llm": ["LLM01"],
+      "related_atlas": ["AML.T0051", "AML.T0054"]
+    },
+    {
+      "control_id": "SI-12",
+      "title": "Information Management and Retention",
+      "family": "System and Information Integrity",
+      "ai_concern": "AI conversation logs, prompt histories, model training data, and inference metadata contain sensitive data that must be managed according to retention policies. LLM providers may retain prompts for model improvement unless explicitly opted out. Conversation logs containing classified or CUI data require retention and disposal aligned with records management policies.",
+      "ai_guidance": "Establish retention policies for AI-specific data: conversation logs, prompt histories, model training data, inference metadata, and AI audit records. Ensure LLM provider agreements prohibit prompt retention for training. Implement automated purging of AI conversation data per retention schedule. Apply classification-appropriate disposal to AI data stores.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM02"],
+      "related_atlas": ["AML.T0024"]
+    },
+    {
+      "control_id": "SI-18",
+      "title": "Personally Identifiable Information Quality",
+      "family": "System and Information Integrity",
+      "ai_concern": "AI systems processing PII may generate inaccurate personal information through hallucination, combine PII from multiple sources inappropriately, or create synthetic PII that is mistaken for real data. AI-generated PII assessments, recommendations, or decisions must be verified for accuracy before action.",
+      "ai_guidance": "Implement PII quality checks on AI-generated outputs: verify any AI-generated personal information against authoritative sources, flag AI-generated PII for human review, prohibit AI systems from creating or modifying PII records without human confirmation, and monitor for PII hallucination in AI responses.",
+      "risk_level": "moderate",
+      "related_owasp_llm": ["LLM09"],
+      "related_atlas": ["AML.T0048"]
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+# ICDEV™ SharePoint Ingestion Configuration (Phase E / P4.1)
+#
+# On-premises SharePoint Server 2016/2019/SE is the primary target. REST
+# endpoints at `<endpoint_url>/_api/web/*` are hit by
+# tools/sharepoint/client.py::SharePointClient, which authenticates via the
+# mode selected below.
+#
+# SharePoint Online / M365 is NOT the target here — that needs Microsoft
+# Graph + MSAL (separate module, deferred). This config addresses local /
+# on-prem SharePoint only.
+#
+# How to load:
+#   import yaml
+#   from pathlib import Path
+#   cfg = yaml.safe_load(Path("args/sharepoint.yaml").read_text(encoding="utf-8"))
+#
+# Environment-variable references use the literal string "${VAR_NAME}" so
+# tooling can expand them at load-time. `credential_source: env` means
+# username/password come from ICDEV_SHAREPOINT_USER + ICDEV_SHAREPOINT_PASS
+# env vars.
+
+sharepoint:
+  # ------------------------------------------------------------------
+  # Endpoint — the root of the SharePoint Server web application
+  # (NOT a site collection URL).  Leave blank in version control;
+  # operators override per deployment via env or a companion sops file.
+  # Example: "https://sp.internal.mil" or "https://sharepoint.corp.local"
+  # ------------------------------------------------------------------
+  endpoint_url: ""
+
+  # ------------------------------------------------------------------
+  # Authentication mode:
+  #   ntlm      — username/password via requests-ntlm (Windows AD domain).
+  #               Required on SharePoint Server when form/Kerberos aren't
+  #               configured. Works in air-gap against local domain.
+  #   kerberos  — SPNEGO/Kerberos via requests-kerberos. Preferred when
+  #               the ICDEV host is joined to the same AD domain as SP.
+  #               Needs a valid keytab or active kinit ticket.
+  #   basic     — plain Basic auth. Only used on lab SP installs; fails
+  #               on most production servers by policy. Last-resort.
+  # ------------------------------------------------------------------
+  auth_mode: "ntlm"
+
+  # ------------------------------------------------------------------
+  # Credential source — where the client looks up the secret pair.
+  #   env          — ICDEV_SHAREPOINT_USER + ICDEV_SHAREPOINT_PASS.
+  #   windows_sso  — use the Win32 default credential (current user's
+  #                  NTLM/Kerberos context). No explicit user/pass.
+  #                  Only works when the Python process runs under the
+  #                  user account authorised on SharePoint.
+  #   vault        — fetch from a local Vault agent; key path under
+  #                  `vault_key` below. Requires ICDEV_VAULT_ADDR +
+  #                  ICDEV_VAULT_TOKEN env vars in the runtime.
+  # ------------------------------------------------------------------
+  credential_source: "env"
+
+  # Vault key path (only used when credential_source: vault).
+  # Expected Vault secret shape: {"username": "...", "password": "..."}.
+  vault_key: "secret/icdev/sharepoint"
+
+  # ------------------------------------------------------------------
+  # Site scope — list of fully-qualified site URLs under `endpoint_url`.
+  # Each URL is walked by the ingestor to enumerate lists + libraries.
+  # Keep blank to ingest the root web only.
+  # Example:
+  #   site_scope:
+  #     - "https://sp.internal.mil/sites/engineering"
+  #     - "https://sp.internal.mil/sites/compliance"
+  # ------------------------------------------------------------------
+  site_scope: []
+
+  # ------------------------------------------------------------------
+  # Selenium fallback (Phase F / P4.2).
+  # When the REST API cannot render a classic web part / SPFx page, the
+  # ingestor can delegate to tools/sharepoint/browser_fallback.py which
+  # drives Edge/Chrome via tools/browser/driver_manager.py.  Default is
+  # OFF — Selenium ingestion is the heavy, fragile path; only enable
+  # when you have a concrete page REST can't render.
+  # ------------------------------------------------------------------
+  fallback_enabled: false
+
+  # ------------------------------------------------------------------
+  # Ingest cadence — how often tools/sharepoint/ingest.py re-walks the
+  # site_scope when run from a daemon / cron.  `null` disables the
+  # scheduled loop (one-shot CLI use only).  Minimum practical value is
+  # 300 seconds (5 min) to avoid hammering the SP Search service.
+  # ------------------------------------------------------------------
+  ingest_interval_sec: 3600   # 1 hour
+
+  # ------------------------------------------------------------------
+  # Request timeout (seconds) applied to every SharePoint REST call.
+  # Matches the `timeout=` kwarg passed to requests. Individual retries
+  # stack on top of this via exponential backoff in the client.
+  # ------------------------------------------------------------------
+  request_timeout_sec: 30
+
+  # ------------------------------------------------------------------
+  # TLS verification. Leave true for prod. Set to a CA-bundle path (str)
+  # when SP uses an internal PKI not in the system trust store. Never
+  # set to false outside of a short-lived dev exploration.
+  # ------------------------------------------------------------------
+  verify_tls: true

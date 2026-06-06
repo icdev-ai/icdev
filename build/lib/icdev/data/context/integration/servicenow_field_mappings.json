@@ -1,0 +1,22 @@
+{
+  "safe_to_servicenow_table_mapping": {
+    "epic": {"table": "rm_epic", "category": "Epic"},
+    "feature": {"table": "rm_story", "category": "Feature"},
+    "story": {"table": "rm_story", "category": "Story"},
+    "enabler": {"table": "rm_story", "category": "Enabler"}
+  },
+  "field_mapping": {
+    "title": "short_description",
+    "description": "description",
+    "acceptance_criteria": "acceptance_criteria",
+    "priority": "priority",
+    "status": "state",
+    "story_points": "story_points"
+  },
+  "status_mapping": {
+    "pending": "1",
+    "in_progress": "2",
+    "completed": "3",
+    "blocked": "-5"
+  }
+}

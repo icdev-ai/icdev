@@ -1,0 +1,228 @@
+# CUI // SP-CTI
+# Internal Awareness Engine configuration.
+# Read by tools/genesis/reflexes/awareness.py and optionally by the
+# individual awareness sub-tools (component_indexer, health_prober, etc.)
+# when invoked standalone.
+#
+# Cadence: 3 hours (per user sign-off 2026-04-11).
+# See docs/features/internal-awareness-engine.md for the full design.
+
+schedule:
+  interval_hours: 3          # How often the Genesis reflex fires
+  cooldown_minutes: 60       # Minimum gap between consecutive cycles
+
+probes:
+  http_head:
+    enabled: true
+    timeout_seconds: 5
+    concurrency: 10           # Max parallel HEAD requests
+  module_import:
+    enabled: true
+  db_table_present:
+    enabled: true
+  api_surface_match:
+    enabled: true
+  # test_green requires a hook to feed pytest results into health snapshots.
+  # Off by default until the hook is wired (Phase 5.3).
+  test_green:
+    enabled: false
+  coherence_status:
+    enabled: true
+
+drift:
+  consecutive_fails_for_regression: 2  # N consecutive fail snapshots = regression
+  baseline_window_days: 7              # Rolling window for stable baseline
+
+gaps:
+  # Seven rules default-ON per user sign-off 2026-04-11
+  route_not_listed:
+    enabled: true
+    confidence: 0.9
+  tool_not_in_manifest:
+    enabled: true
+    confidence: 0.95
+  skill_references_missing_goal:
+    enabled: true
+    confidence: 0.95
+  orphan_db_table:
+    enabled: true
+    confidence: 0.85
+  broken_test_reference:
+    enabled: true
+    confidence: 0.90
+  route_no_e2e:
+    enabled: true
+    confidence: 0.70
+  empty_mcp_server:
+    enabled: true
+    confidence: 0.85
+  # stale_code is DEFAULT OFF (noisy — large number of unchanged utility files
+  # would flood the board without providing actionable signal)
+  stale_code:
+    enabled: false
+    confidence: 0.50
+
+oracle:
+  lens_name: internal_awareness
+  # Findings with confidence >= promotion_threshold are auto-promoted to
+  # kanban_tasks with status='suggested'.  Matches user sign-off: >= 0.7.
+  promotion_threshold: 0.7
+
+narrative:
+  # Off by default — narration is opt-in per query via ?narrate=true.
+  # When enabled, routes through LLMRouter.invoke(function="narrative_generation")
+  # which maps to the Scanner tier (qwen3.5 or equivalent local model).
+  # Zero Claude tokens consumed in the hot path regardless of this setting.
+  enabled: false
+  function: narrative_generation
+
+# --------------------------------------------------------------------------
+# Value scoring for suggested kanban cards (2026-04-11)
+# --------------------------------------------------------------------------
+# Consumed by tools/awareness/value_scorer.py and exposed via the dashboard
+# kanban API at /api/kanban/tasks?sort=value. Formula:
+#
+#   value = confidence × rule_weight × (1 + dedup_boost × min(dup_count-1, dedup_cap))
+#
+# Where dup_count is the number of suggested cards sharing the same subject
+# (one fix remediates N findings → ranks higher). Tune freely — the scorer
+# reloads on every request, no restart required.
+value_weights:
+  # Runtime breakage — real bugs that will bite on next execution
+  broken_test_reference:         1.50   # CI silently lying about coverage
+  module_import_broken:          1.50   # drift rule — hard runtime failure
+  orphan_db_table:               1.40   # fresh deploys crash (same class as daily_logs)
+  route_regression:              1.40   # drift rule — dashboard starts 500ing
+  empty_mcp_server:              1.30   # operator-facing MCP tools ImportError
+
+  # Discoverability / hygiene — important but not runtime-breaking
+  tool_not_in_manifest:          1.20
+  skill_references_missing_goal: 1.20
+  coherence_new_fail:            1.10
+
+  # Long-term investment
+  route_no_e2e:                  0.90   # valuable but massive effort per item
+
+  # Noisy rule — awaiting refinement to distinguish API vs page routes
+  route_not_listed:              0.60
+
+  # Default for any unknown rule name
+  _default:                      1.00
+
+# +10% per duplicate finding of the same subject, capped at 10 dups (2× max)
+value_dedup_boost: 0.10
+value_dedup_cap:   10
+
+# --------------------------------------------------------------------------
+# Suggested card promotion filters (2026-04-12)
+# --------------------------------------------------------------------------
+# Applied by suggested_card_writer.py BEFORE inserting into kanban_tasks.
+# These filters catch false positives that escape individual gap rules.
+# Edit freely — the writer reloads on every run, no restart needed.
+
+promotion_filters:
+  # Subject-level dedup: skip if a suggested card already exists for the
+  # same (rule, subject) pair, regardless of source_prediction_id.
+  # Defense-in-depth beyond the prediction-level dedup.
+  subject_dedup: true
+
+  # Consolidation: when a single rule produces more than `threshold`
+  # findings, create ONE batch card summarising all N items instead of
+  # N individual cards.  The batch card title reads e.g.
+  # "[Batch] route_not_listed: 26 routes missing from start.md"
+  # and the description lists every subject.
+  consolidation:
+    enabled: true
+    threshold: 5        # minimum findings per rule to trigger consolidation
+
+  # Auto-dismiss: cards sitting in 'suggested' for > N days without
+  # being promoted to backlog are auto-dismissed on the next writer run.
+  # Prevents stale cards from accumulating indefinitely.
+  auto_dismiss:
+    enabled: true
+    stale_days: 30      # days in suggested before auto-dismiss
+
+# --------------------------------------------------------------------------
+# module_import probe suppressions (2026-04-24)
+# --------------------------------------------------------------------------
+# Paths listed here are skipped (not failed) by the module_import probe.
+# Use for child-app scripts and renamed/removed tools that are still
+# referenced in the knowledge graph but do not belong to ICDEV core.
+module_import_suppressions:
+  - tools/db/migrate_alphadesk.py          # child app (AlphaDesk → FathomDesk); not in ICDEV core
+  - tools/scripts/schedule_alphadesk_news_plan.py  # stale auto-added script; child app artifact
+
+# --------------------------------------------------------------------------
+# Network Migration Canvas (NMCE) — added 2026-05-08
+# Monitored routes, modules, and DB tables for health/drift/gap probes.
+# --------------------------------------------------------------------------
+nmce:
+  monitored_routes:
+    - /migration-canvas/network-migration/
+    - /migration-canvas/api/network-migration/inventory
+    - /migration-canvas/api/network-migration/import/topologies
+    - /migration-canvas/api/network-migration/import/csv
+    - /migration-canvas/api/network-migration/import/netbox
+    - /migration-canvas/api/network-migration/import/topology
+  monitored_modules:
+    - tools.migration_canvas.network_migration
+    - tools.migration_canvas.blueprint
+    - tools.migration_canvas.db.init_db
+    - tools.network.device_manager
+    - tools.network.netbox_client
+    - tools.genesis.reflexes.migration_canvas
+  monitored_db_tables:
+    - mc_net_sessions
+    - mc_net_port_map
+    - mc_net_compat_checks
+    - mc_net_test_cases
+    - mc_net_cutover_steps
+    - mc_net_erb_metadata
+    - mc_net_ai_sessions
+    - mc_net_protocol_plans
+    - mc_net_parallel_timelines
+    - ni_devices
+    - ni_device_configs
+
+# --------------------------------------------------------------------------
+# GovChain periodic anchor reflex (govchain_anchor.py)
+# --------------------------------------------------------------------------
+# Runs chain_anchor --periodic on a 30-minute cadence. Set enabled: false
+# to suppress the reflex entirely (e.g., for environments without a Fabric
+# peer). In air-gap mode the reflex still queues to govchain_pending_operations.
+govchain:
+  enabled: true
+  interval_minutes: 30       # How often the anchor reflex fires
+  max_batch_size: 100        # Passed to ChainAnchor.anchor_audit_batch limit
+  alert_on_pending_above: 500  # Log a warning when queue depth exceeds this
+
+# --------------------------------------------------------------------------
+# Data Design Canvas (DDC) + Data Mesh -- added 2026-05-26
+# Monitored routes, modules, and DB tables for health/drift/gap probes.
+# --------------------------------------------------------------------------
+data_canvas:
+  monitored_routes:
+    - /data/mesh
+    - /api/dm/summary
+    - /api/dm/domains
+    - /api/dm/products
+    - /api/dm/contracts
+    - /api/dm/policies
+    - /api/dm/governance/evaluate
+    - /api/dm/governance/federation
+  monitored_modules:
+    - tools.data_canvas.data_mesh.domain_manager
+    - tools.data_canvas.data_mesh.product_registry
+    - tools.data_canvas.data_mesh.contract_engine
+    - tools.data_canvas.data_mesh.governance_engine
+    - tools.data_canvas.sync.datahub_sync
+  monitored_db_tables:
+    - dm_domains
+    - dm_products
+    - dm_contracts
+    - dm_ports
+    - dm_policies
+    - dm_ownership
+    - dm_lineage
+    - dm_metrics
+    - dm_events

@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+{% block title %}ATO Compliance Dashboard - ICDEV™{% endblock %}
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">ATO Compliance Dashboard</span>
+    </nav>
+
+    <h1>ATO Compliance Dashboard</h1>
+    <p class="text-muted">NIST 800-53 control tracking, DoD RMF workflow stages, artifact readiness, and multi-framework crosswalk coverage.</p>
+
+    <!-- Project Selector -->
+    <div style="display:flex;align-items:center;gap:1rem;margin:1.5rem 0;padding:1rem;background:#f8f9fa;border-radius:8px;border:1px solid #ddd;">
+        <label for="project-id-input" style="font-weight:600;white-space:nowrap;">Project ID:</label>
+        <input type="text" id="project-id-input" placeholder="Enter project ID (e.g., proj-001)"
+               style="flex:1;padding:8px 12px;border:1px solid #ccc;border-radius:4px;font-size:0.95rem;">
+        <button onclick="loadAll()" style="padding:8px 20px;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Load</button>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- 1. Posture Score Gauge                                   -->
+    <!-- ======================================================= -->
+    <div style="display:flex;justify-content:center;margin:2rem 0;">
+        <div style="text-align:center;">
+            <div style="position:relative;width:200px;height:200px;margin:0 auto;">
+                <div id="posture-gauge" style="width:200px;height:200px;border-radius:50%;background:conic-gradient(#9e9e9e 0deg,#9e9e9e 360deg);display:flex;align-items:center;justify-content:center;">
+                    <div style="width:144px;height:144px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+                        <span id="posture-score-val" style="font-size:2.8rem;font-weight:bold;color:#333;">--</span>
+                        <span id="posture-grade" style="font-size:1.2rem;font-weight:600;color:#555;">--</span>
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top:0.75rem;font-size:0.9rem;color:#666;">ATO Posture Score</div>
+            <!-- Component bars -->
+            <div id="component-bars" style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.8rem;margin-top:1.5rem;max-width:600px;margin-left:auto;margin-right:auto;">
+                <div style="padding:0.6rem 0.8rem;border:1px solid #ddd;border-radius:6px;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;">
+                        <span style="font-size:0.8rem;font-weight:600;">Controls</span>
+                        <span id="ctrl-pct" style="font-size:0.8rem;font-weight:bold;">--%</span>
+                    </div>
+                    <div style="height:6px;background:#eee;border-radius:3px;overflow:hidden;">
+                        <div id="bar-ctrl" style="height:100%;width:0%;background:#1976d2;border-radius:3px;transition:width 0.6s;"></div>
+                    </div>
+                </div>
+                <div style="padding:0.6rem 0.8rem;border:1px solid #ddd;border-radius:6px;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;">
+                        <span style="font-size:0.8rem;font-weight:600;">RMF</span>
+                        <span id="rmf-pct" style="font-size:0.8rem;font-weight:bold;">--%</span>
+                    </div>
+                    <div style="height:6px;background:#eee;border-radius:3px;overflow:hidden;">
+                        <div id="bar-rmf" style="height:100%;width:0%;background:#7b1fa2;border-radius:3px;transition:width 0.6s;"></div>
+                    </div>
+                </div>
+                <div style="padding:0.6rem 0.8rem;border:1px solid #ddd;border-radius:6px;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;">
+                        <span style="font-size:0.8rem;font-weight:600;">Artifacts</span>
+                        <span id="art-pct" style="font-size:0.8rem;font-weight:bold;">--%</span>
+                    </div>
+                    <div style="height:6px;background:#eee;border-radius:3px;overflow:hidden;">
+                        <div id="bar-art" style="height:100%;width:0%;background:#00897b;border-radius:3px;transition:width 0.6s;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- 2. RMF Workflow Stages                                   -->
+    <!-- ======================================================= -->
+    <h2 style="margin-top:2rem;">RMF Workflow Stages</h2>
+    <p style="font-size:0.88rem;color:#666;margin-bottom:1rem;">NIST SP 800-37 Rev 2 — DoD RMF six-step lifecycle.</p>
+    <div id="rmf-stages" style="display:flex;align-items:center;gap:0;overflow-x:auto;padding:0.5rem 0;margin-bottom:2rem;">
+        <div style="color:#999;text-align:center;width:100%;">Enter a project ID and click Load</div>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- 3. Control Implementation Summary                        -->
+    <!-- ======================================================= -->
+    <h2 style="margin-top:2rem;">NIST 800-53 Control Implementation</h2>
+    <div id="ctrl-summary-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin:1rem 0;">
+        <!-- Summary stat cards -->
+    </div>
+
+    <!-- Family breakdown table -->
+    <div style="overflow-x:auto;margin-top:1rem;">
+        <table id="family-table" style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+            <thead>
+                <tr style="background:#f5f5f5;">
+                    <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #ddd;">Family</th>
+                    <th style="padding:10px 12px;text-align:center;border-bottom:2px solid #ddd;">Total</th>
+                    <th style="padding:10px 12px;text-align:center;border-bottom:2px solid #ddd;">Implemented</th>
+                    <th style="padding:10px 12px;text-align:center;border-bottom:2px solid #ddd;">Partial</th>
+                    <th style="padding:10px 12px;text-align:center;border-bottom:2px solid #ddd;">Planned</th>
+                    <th style="padding:10px 12px;text-align:center;border-bottom:2px solid #ddd;">N/A</th>
+                    <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #ddd;">Coverage</th>
+                </tr>
+            </thead>
+            <tbody id="family-tbody">
+                <tr><td colspan="7" style="padding:12px;color:#999;text-align:center;">Load a project to see control families</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- 4. Artifact Readiness                                    -->
+    <!-- ======================================================= -->
+    <h2 style="margin-top:2.5rem;">Artifact Readiness</h2>
+    <p style="font-size:0.88rem;color:#666;margin-bottom:1rem;">Status of required ATO package documents.</p>
+    <div id="artifact-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.2rem;margin-bottom:2rem;">
+        <div style="padding:1.5rem;border:1px solid #eee;border-radius:8px;text-align:center;color:#999;">Load a project to see artifact status</div>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- 5. Crosswalk Coverage                                    -->
+    <!-- ======================================================= -->
+    <h2 style="margin-top:2rem;">Framework Crosswalk Coverage</h2>
+    <p style="font-size:0.88rem;color:#666;margin-bottom:1rem;">NIST 800-53 Rev 5 crosswalk: implement once, satisfy many.</p>
+    <div id="crosswalk-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-bottom:2rem;">
+        <!-- Populated by JS -->
+    </div>
+</div>
+
+<script>
+const GRADE_COLORS = {A:'#2e7d32', B:'#558b2f', C:'#f57f17', D:'#e65100', F:'#c62828'};
+const STATUS_COLORS = {
+    complete:'#2e7d32', in_progress:'#1565c0', not_started:'#9e9e9e', blocked:'#c62828'
+};
+const ARTIFACT_ICONS = {ssp:'📋', poam:'⚠️', stig:'🔒', sbom:'📦'};
+const ARTIFACT_STATUS_COLOR = {
+    approved:'#2e7d32', draft:'#f57f17', missing:'#c62828',
+    ok:'#2e7d32', open:'#f57f17', critical:'#c62828', present:'#2e7d32'
+};
+
+function getProjectId() {
+    return document.getElementById('project-id-input').value.trim();
+}
+
+function pctColor(pct) {
+    if (pct >= 80) return '#2e7d32';
+    if (pct >= 50) return '#f57f17';
+    return '#c62828';
+}
+
+async function loadAll() {
+    const pid = getProjectId();
+    if (!pid) { alert('Enter a project ID'); return; }
+    try {
+        const [dash] = await Promise.all([
+            fetch(`/api/ato-compliance/dashboard/${pid}`).then(r => r.json()),
+        ]);
+        renderPosture(dash.posture_score);
+        renderRMFStages(dash.rmf_stages || []);
+        renderControls(dash.controls || {});
+        renderArtifacts(dash.artifacts || {});
+        renderCrosswalk(dash.crosswalk || {});
+    } catch(e) {
+        console.error('ATO Dashboard load error:', e);
+    }
+}
+
+function renderPosture(posture) {
+    if (!posture) return;
+    const score = posture.score || 0;
+    const grade = posture.grade || 'F';
+    const comp = posture.components || {};
+    const deg = Math.round(score / 100 * 360);
+    const gradeColor = GRADE_COLORS[grade] || '#555';
+
+    document.getElementById('posture-score-val').textContent = score;
+    const gradeEl = document.getElementById('posture-grade');
+    gradeEl.textContent = grade;
+    gradeEl.style.color = gradeColor;
+
+    const gaugeColor = score >= 80 ? '#4caf50' : score >= 60 ? '#ff9800' : '#f44336';
+    document.getElementById('posture-gauge').style.background =
+        `conic-gradient(${gaugeColor} 0deg, ${gaugeColor} ${deg}deg, #eee ${deg}deg, #eee 360deg)`;
+
+    const ctrlPct = comp.control_pct || 0;
+    const rmfPct = comp.rmf_pct || 0;
+    const artPct = comp.artifact_pct || 0;
+
+    document.getElementById('ctrl-pct').textContent = `${ctrlPct}%`;
+    document.getElementById('rmf-pct').textContent = `${rmfPct}%`;
+    document.getElementById('art-pct').textContent = `${artPct}%`;
+    document.getElementById('bar-ctrl').style.width = `${ctrlPct}%`;
+    document.getElementById('bar-rmf').style.width = `${rmfPct}%`;
+    document.getElementById('bar-art').style.width = `${artPct}%`;
+}
+
+function renderRMFStages(stages) {
+    const el = document.getElementById('rmf-stages');
+    if (!stages || stages.length === 0) {
+        el.innerHTML = '<div style="color:#999;text-align:center;width:100%;">No RMF stage data</div>';
+        return;
+    }
+    el.innerHTML = stages.map((s, i) => {
+        const color = STATUS_COLORS[s.status] || '#9e9e9e';
+        const isComplete = s.status === 'complete';
+        const isInProg = s.status === 'in_progress';
+        const icon = isComplete ? '✓' : isInProg ? '▶' : (i + 1);
+        const border = `2px solid ${color}`;
+        const bg = isComplete ? '#e8f5e9' : isInProg ? '#e3f2fd' : '#fafafa';
+        const arrow = i < stages.length - 1
+            ? `<div style="flex-shrink:0;color:#ccc;font-size:1.4rem;padding:0 0.3rem;">›</div>`
+            : '';
+        return `
+            <div style="display:flex;align-items:center;">
+                <div style="padding:0.8rem 1rem;border:${border};border-radius:8px;background:${bg};min-width:110px;text-align:center;cursor:default;">
+                    <div style="font-size:1.3rem;font-weight:bold;color:${color};">${icon}</div>
+                    <div style="font-size:0.8rem;font-weight:600;margin-top:0.2rem;">${s.label}</div>
+                    <div style="font-size:0.72rem;color:${color};margin-top:0.1rem;">${s.status.replace('_',' ')}</div>
+                    ${s.completed_at ? `<div style="font-size:0.68rem;color:#888;">${s.completed_at.substring(0,10)}</div>` : ''}
+                </div>
+                ${arrow}
+            </div>`;
+    }).join('');
+}
+
+function renderControls(ctrl) {
+    // Summary stat cards
+    const statsEl = document.getElementById('ctrl-summary-cards');
+    const statCards = [
+        {label:'Total Controls', val: ctrl.total_controls || 0, color:'#1976d2'},
+        {label:'Implemented', val: ctrl.implemented || 0, color:'#2e7d32'},
+        {label:'Partial', val: ctrl.partially_implemented || 0, color:'#f57f17'},
+        {label:'Planned', val: ctrl.planned || 0, color:'#9e9e9e'},
+        {label:'N/A', val: ctrl.not_applicable || 0, color:'#607d8b'},
+        {label:'Posture', val: `${ctrl.posture_pct || 0}%`, color: pctColor(ctrl.posture_pct || 0)},
+    ];
+    statsEl.innerHTML = statCards.map(c => `
+        <div class="card" style="padding:1rem;text-align:center;">
+            <div style="font-size:1.8rem;font-weight:bold;color:${c.color};">${c.val}</div>
+            <div style="font-size:0.78rem;color:#666;">${c.label}</div>
+        </div>`).join('');
+
+    // Family table
+    const tbody = document.getElementById('family-tbody');
+    if (!ctrl.families || ctrl.families.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="padding:12px;color:#999;text-align:center;">No control family data</td></tr>';
+        return;
+    }
+    tbody.innerHTML = ctrl.families.map(f => {
+        const covered = (f.implemented || 0) + (f.partially_implemented || 0);
+        const na = f.not_applicable || 0;
+        const effective_total = (f.total || 0) - na;
+        const cov_pct = effective_total > 0 ? Math.round(covered / effective_total * 100) : 100;
+        const barColor = cov_pct >= 80 ? '#4caf50' : cov_pct >= 50 ? '#ff9800' : '#f44336';
+        return `
+            <tr style="border-bottom:1px solid #f0f0f0;">
+                <td style="padding:10px 12px;font-weight:600;">${f.family}</td>
+                <td style="padding:10px 12px;text-align:center;">${f.total}</td>
+                <td style="padding:10px 12px;text-align:center;color:#2e7d32;font-weight:600;">${f.implemented}</td>
+                <td style="padding:10px 12px;text-align:center;color:#f57f17;">${f.partially_implemented}</td>
+                <td style="padding:10px 12px;text-align:center;color:#9e9e9e;">${f.planned}</td>
+                <td style="padding:10px 12px;text-align:center;color:#607d8b;">${na}</td>
+                <td style="padding:10px 12px;min-width:120px;">
+                    <div style="display:flex;align-items:center;gap:0.5rem;">
+                        <div style="flex:1;height:8px;background:#eee;border-radius:4px;overflow:hidden;">
+                            <div style="height:100%;width:${cov_pct}%;background:${barColor};border-radius:4px;transition:width 0.5s;"></div>
+                        </div>
+                        <span style="font-size:0.8rem;font-weight:600;">${cov_pct}%</span>
+                    </div>
+                </td>
+            </tr>`;
+    }).join('');
+}
+
+function renderArtifacts(artData) {
+    const el = document.getElementById('artifact-cards');
+    const arts = artData.artifacts || [];
+    if (arts.length === 0) {
+        el.innerHTML = '<div style="padding:1.5rem;border:1px solid #eee;border-radius:8px;text-align:center;color:#999;">No artifact data</div>';
+        return;
+    }
+    const readiness = artData.readiness_score || 0;
+    el.innerHTML = arts.map(a => {
+        const icon = ARTIFACT_ICONS[a.type] || '📄';
+        const color = ARTIFACT_STATUS_COLOR[a.status] || '#9e9e9e';
+        const typeLabel = a.type.toUpperCase();
+        return `
+            <div style="padding:1.4rem;border:2px solid ${color}20;border-radius:8px;background:#fafafa;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div>
+                        <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;color:#555;">${typeLabel}</div>
+                        <div style="font-size:2rem;font-weight:bold;color:${color};margin:0.3rem 0;">${a.count}</div>
+                    </div>
+                    <div style="font-size:1.6rem;">${icon}</div>
+                </div>
+                <div style="font-size:0.78rem;color:${color};font-weight:600;">${a.status.replace('_',' ')}</div>
+                <div style="font-size:0.75rem;color:#888;margin-top:0.3rem;">${a.detail}</div>
+            </div>`;
+    }).join('');
+
+    // Append readiness score card
+    const scoreColor = readiness >= 70 ? '#2e7d32' : readiness >= 40 ? '#f57f17' : '#c62828';
+    el.innerHTML += `
+        <div style="padding:1.4rem;border:2px solid ${scoreColor};border-radius:8px;background:#fafafa;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+            <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;color:#555;margin-bottom:0.5rem;">Readiness Score</div>
+            <div style="font-size:2.5rem;font-weight:bold;color:${scoreColor};">${readiness}</div>
+            <div style="font-size:0.78rem;color:#888;">out of 100</div>
+        </div>`;
+}
+
+function renderCrosswalk(xwData) {
+    const el = document.getElementById('crosswalk-cards');
+    const frameworks = xwData.frameworks || [];
+    if (!frameworks.length) {
+        el.innerHTML = '<div style="padding:1rem;color:#999;border:1px solid #eee;border-radius:8px;text-align:center;">Crosswalk data unavailable</div>';
+        return;
+    }
+    el.innerHTML = frameworks.map(fw => {
+        const pct = fw.coverage_pct || 0;
+        const barColor = pct >= 80 ? '#4caf50' : pct >= 50 ? '#ff9800' : '#f44336';
+        return `
+            <div style="padding:1.2rem;border:1px solid #ddd;border-radius:8px;">
+                <div style="font-size:0.82rem;font-weight:600;color:#333;margin-bottom:0.8rem;">${fw.name}</div>
+                <div style="display:flex;align-items:center;gap:0.8rem;">
+                    <div style="flex:1;height:10px;background:#eee;border-radius:5px;overflow:hidden;">
+                        <div style="height:100%;width:${pct}%;background:${barColor};border-radius:5px;transition:width 0.6s;"></div>
+                    </div>
+                    <span style="font-size:0.9rem;font-weight:bold;color:${barColor};">${pct}%</span>
+                </div>
+                <div style="font-size:0.75rem;color:#888;margin-top:0.5rem;">${fw.covered_controls} / ${fw.mapped_controls} controls covered</div>
+            </div>`;
+    }).join('');
+}
+</script>
+{% endblock %}

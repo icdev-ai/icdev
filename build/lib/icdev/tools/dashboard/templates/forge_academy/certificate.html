@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}{{ cert_def.label }} — FORGE Academy{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --fa-gold:#FFB800; --fa-green:#00FF88; --fa-blue:#4A90E2;
+  --fa-red:#FF4444;  --fa-card:#12192b;  --fa-border:rgba(74,144,217,0.25);
+}
+.cert-hero {
+  background:linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  border-bottom:1px solid var(--fa-border);padding:2rem 2rem 1.5rem;
+}
+.cert-hero h1 { font-size:1.6rem;font-weight:700;color:var(--fa-gold);margin:0 0 .25rem; }
+.cert-hero p  { color:#8899aa;margin:0;font-size:.9rem; }
+.cert-body    { max-width:900px;margin:0 auto;padding:1.5rem 2rem 4rem; }
+
+/* Certificate card */
+.cert-card {
+  background:var(--fa-card);border:2px solid var(--cert-color, var(--fa-gold));
+  border-radius:16px;padding:2.5rem;margin-bottom:1.5rem;text-align:center;
+  position:relative;overflow:hidden;
+}
+.cert-card::before {
+  content:'CUI // SP-CTI';
+  position:absolute;top:12px;right:16px;
+  font-size:.65rem;color:rgba(255,184,0,.4);font-family:monospace;letter-spacing:.05em;
+}
+.cert-icon  { font-size:4rem;margin-bottom:.5rem; }
+.cert-title { font-size:1.8rem;font-weight:800;color:var(--cert-color,var(--fa-gold));margin:.25rem 0; }
+.cert-name  { font-size:1.1rem;color:#ccd;margin:.25rem 0; }
+.cert-date  { font-size:.85rem;color:#8899aa;margin:.5rem 0; }
+.cert-token {
+  background:#0d1220;border:1px solid var(--fa-border);border-radius:8px;
+  padding:.5rem 1rem;font-family:monospace;font-size:.8rem;color:#8899aa;
+  word-break:break-all;margin:.75rem auto;max-width:500px;
+}
+.cert-verify-link { font-size:.8rem;color:var(--fa-blue);text-decoration:none; }
+.cert-verify-link:hover { text-decoration:underline; }
+.cert-actions { display:flex;gap:.75rem;justify-content:center;margin-top:1.25rem; }
+.cert-btn {
+  padding:.5rem 1.25rem;border-radius:8px;font-weight:600;font-size:.85rem;
+  text-decoration:none;border:none;cursor:pointer;
+}
+.cert-btn-primary { background:var(--cert-color,var(--fa-gold));color:#000; }
+.cert-btn-secondary { background:rgba(255,255,255,.08);color:#ccd;border:1px solid var(--fa-border); }
+
+/* Gates */
+.gates-section { margin-bottom:1.5rem; }
+.gates-section h3 { font-size:1rem;font-weight:700;color:var(--fa-gold);margin:0 0 .75rem; }
+.gate-row {
+  display:flex;align-items:center;gap:.75rem;
+  background:var(--fa-card);border:1px solid var(--fa-border);
+  border-radius:8px;padding:.65rem 1rem;margin-bottom:.5rem;
+}
+.gate-icon { font-size:1.1rem;flex-shrink:0; }
+.gate-name { font-weight:600;font-size:.9rem;color:#ccd;flex:1; }
+.gate-detail { font-size:.8rem;color:#8899aa; }
+.gate-met   { border-left:3px solid var(--fa-green); }
+.gate-unmet { border-left:3px solid var(--fa-red); }
+
+/* Tier ladder */
+.tier-ladder { display:flex;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap; }
+.tier-chip {
+  display:inline-flex;align-items:center;gap:.4rem;
+  padding:.35rem .9rem;border-radius:20px;font-size:.8rem;font-weight:600;
+  border:1px solid var(--fa-border);color:#ccd;background:rgba(255,255,255,.04);
+}
+.tier-chip.active { color:#000; }
+
+/* Issue button */
+.issue-btn {
+  width:100%;padding:.75rem;border-radius:10px;font-size:1rem;font-weight:700;
+  border:none;cursor:pointer;margin-top:.5rem;
+}
+.issue-btn:disabled { opacity:.5;cursor:not-allowed; }
+
+/* Alert */
+.alert { padding:.75rem 1rem;border-radius:8px;font-size:.85rem;margin-bottom:1rem; }
+.alert-success { background:rgba(0,255,136,.1);border:1px solid var(--fa-green);color:var(--fa-green); }
+.alert-error   { background:rgba(255,68,68,.1);border:1px solid var(--fa-red);color:var(--fa-red); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cert-hero">
+  <div style="max-width:900px;margin:0 auto;">
+    <a href="/academy" style="color:var(--fa-gold);text-decoration:none;font-size:.85rem;">← FORGE Academy</a>
+    <h1 style="margin-top:.5rem;">{{ cert_def.icon }} {{ cert_def.label }}</h1>
+    <p>{{ cert_def.description }}</p>
+  </div>
+</div>
+
+<div class="cert-body">
+
+  <!-- Tier ladder -->
+  <div class="tier-ladder">
+    {% for ct in cert_tiers %}
+    <a href="/academy/certificate/{{ ct.key }}" style="text-decoration:none;">
+      <span class="tier-chip {% if ct.key == cert_def.key %}active{% endif %}"
+            style="{% if ct.key == cert_def.key %}background:{{ ct.color }};border-color:{{ ct.color }};{% endif %}">
+        {{ ct.icon }} {{ ct.label }}
+      </span>
+    </a>
+    {% endfor %}
+  </div>
+
+  {% if existing_cert %}
+  <!-- Already earned — show the cert -->
+  <div class="cert-card" style="--cert-color:{{ cert_def.color }};">
+    <div class="cert-icon">{{ cert_def.icon }}</div>
+    <div class="cert-title">{{ cert_def.label }}</div>
+    <div class="cert-name">{{ fa_user.display_name or fa_user.email }}</div>
+    <div class="cert-date">Issued {{ existing_cert.issued_at[:10] if existing_cert.issued_at else '' }}</div>
+    <div class="cert-token">{{ existing_cert.token }}</div>
+    <a class="cert-verify-link" href="/academy/verify/{{ existing_cert.token }}" target="_blank">
+      Verify this certificate →
+    </a>
+    <div class="cert-actions">
+      <button class="cert-btn cert-btn-primary" onclick="copyCertToken('{{ existing_cert.token }}')">
+        Copy Token
+      </button>
+      <a class="cert-btn cert-btn-secondary" href="/academy/my-certificates">
+        All My Certs
+      </a>
+    </div>
+  </div>
+  <div id="copy-msg" style="display:none;text-align:center;color:var(--fa-green);font-size:.85rem;margin-bottom:.75rem;">
+    Token copied!
+  </div>
+
+  {% else %}
+  <!-- Not yet earned — show eligibility gates + issue button -->
+  <div class="gates-section">
+    <h3>Eligibility Gates</h3>
+    {% for gate in eligibility.gates %}
+    <div class="gate-row {% if gate.met %}gate-met{% else %}gate-unmet{% endif %}">
+      <span class="gate-icon">{% if gate.met %}✅{% else %}❌{% endif %}</span>
+      <span class="gate-name">{{ gate.name }}</span>
+      <span class="gate-detail">{{ gate.detail }}</span>
+    </div>
+    {% else %}
+    <p style="color:#8899aa;font-size:.9rem;">Log in to check eligibility.</p>
+    {% endfor %}
+  </div>
+
+  <div id="issue-alert" style="display:none;" class="alert"></div>
+
+  {% if fa_user %}
+  <button id="issue-btn"
+          class="issue-btn cert-btn-primary"
+          style="background:{{ cert_def.color }};"
+          {% if not eligibility.eligible %}disabled{% endif %}
+          onclick="issueCert('{{ cert_def.key }}')">
+    {% if eligibility.eligible %}
+      Claim {{ cert_def.label }} Certificate
+    {% else %}
+      Gates not yet met
+    {% endif %}
+  </button>
+  {% endif %}
+
+  <div style="margin-top:1.5rem;padding:1rem;background:var(--fa-card);border:1px solid var(--fa-border);border-radius:10px;">
+    <p style="color:#8899aa;font-size:.85rem;margin:0;">
+      <strong style="color:var(--fa-gold);">XP Bonus:</strong> +{{ cert_def.xp_bonus|int }} XP awarded on claim.
+    </p>
+  </div>
+  {% endif %}
+
+  <!-- All certs quick nav -->
+  <div style="margin-top:2rem;text-align:center;">
+    <a href="/academy/my-certificates" style="color:var(--fa-blue);font-size:.85rem;text-decoration:none;">
+      View all certificates →
+    </a>
+  </div>
+
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function issueCert(certKey) {
+  const btn = document.getElementById('issue-btn');
+  const alert = document.getElementById('issue-alert');
+  btn.disabled = true;
+  btn.textContent = 'Issuing…';
+  fetch(`/api/academy/certificate/${certKey}/issue`, {method:'POST', headers:{'Content-Type':'application/json'}})
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        alert.className = 'alert alert-success';
+        alert.textContent = 'Certificate issued! Refreshing…';
+        alert.style.display = 'block';
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        alert.className = 'alert alert-error';
+        alert.textContent = d.reason || 'Not eligible yet.';
+        alert.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Try Again';
+      }
+    })
+    .catch(() => {
+      alert.className = 'alert alert-error';
+      alert.textContent = 'Request failed. Try again.';
+      alert.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Claim Certificate';
+    });
+}
+
+function copyCertToken(token) {
+  navigator.clipboard.writeText(token).then(() => {
+    const msg = document.getElementById('copy-msg');
+    msg.style.display = 'block';
+    setTimeout(() => msg.style.display = 'none', 2000);
+  });
+}
+</script>
+{% endblock %}

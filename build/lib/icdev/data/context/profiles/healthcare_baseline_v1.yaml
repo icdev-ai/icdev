@@ -1,0 +1,135 @@
+# Healthcare Baseline Development Profile v1
+# For HIPAA-regulated healthcare organizations
+name: "Healthcare Baseline"
+version: "1.0.0"
+description: "Development standards for healthcare organizations handling PHI"
+applicable_to: [healthcare]
+impact_levels: [IL2, IL4]
+
+language:
+  primary: python
+  allowed: [python, java, typescript]
+  forbidden: []
+  versions:
+    python: ">=3.11"
+    java: ">=17"
+    typescript: ">=5.0"
+  package_managers:
+    python: pip
+    java: maven
+    typescript: npm
+  virtual_env_tool: venv
+  banned_packages: []
+  approved_registries: []
+
+style:
+  naming_convention: snake_case
+  indent_style: spaces
+  indent_size: 4
+  max_line_length: 120
+  docstring_format: google
+  import_order: isort
+  formatter:
+    python: black
+    java: google-java-format
+    typescript: prettier
+  linter:
+    python: ruff
+    java: checkstyle
+    typescript: eslint
+  trailing_commas: true
+  quote_style: double
+
+testing:
+  methodology: tdd
+  min_coverage: 85
+  require_bdd: true
+  require_unit: true
+  require_e2e: true
+  bdd_framework:
+    python: behave
+    java: cucumber-jvm
+    typescript: cucumber-js
+  test_naming_pattern: "test_{description}"
+  flaky_test_policy: fix_immediately
+
+architecture:
+  web_framework:
+    python: flask
+    java: spring-boot
+    typescript: express
+  database: postgresql
+  orm:
+    python: sqlalchemy
+    java: hibernate
+  auth_pattern: oauth2_oidc
+  api_style: rest_openapi
+  container_base:
+    python: "python:3.12-slim"
+    java: "eclipse-temurin:17-jre-alpine"
+  error_handling: structured_hierarchy
+  logging_format: structured_json
+  project_structure: layered
+
+security:
+  encryption_standard: aes_256
+  secret_management: aws_secrets_manager
+  sast_tools:
+    python: bandit
+    java: spotbugs
+    typescript: eslint-security
+  dependency_audit: true
+  container_hardening: stig
+  vulnerability_sla:
+    critical: "24h"
+    high: "7d"
+    medium: "30d"
+    low: "90d"
+  secret_rotation_days: 90
+  image_signing: false
+
+compliance:
+  frameworks: [hipaa, hitrust_csf, soc2_type_ii]
+  cui_required: false
+  audit_trail_required: true
+  classification_level: PHI
+  sbom_format: cyclonedx
+  ato_approach: traditional
+
+operations:
+  deployment_target: kubernetes
+  container_runtime: containerd
+  ci_cd_platform: github_actions
+  monitoring_stack: [prometheus, grafana, elk]
+  region: us-east-1
+  service_mesh: none
+  network_policy: default_deny
+  backup_strategy: daily
+
+documentation:
+  readme_required: true
+  api_docs_required: true
+  adr_required: true
+  changelog_required: true
+  diagram_tool: mermaid
+  spec_format: markdown
+  runbook_required: true
+
+git:
+  branching_strategy: github_flow
+  merge_strategy: squash
+  commit_format: conventional_commits
+  branch_naming: "{type}/{num}-{slug}"
+  min_approvals: 1
+  gpg_signing: recommended
+  pr_size_limit: 500
+  delete_branch_on_merge: true
+
+ai:
+  preferred_provider: bedrock
+  code_gen_model: claude-sonnet
+  compliance_model: claude-sonnet
+  token_budget_monthly: 2000000
+  attribution: required
+  byok_enabled: true
+  prompt_governance: centralized

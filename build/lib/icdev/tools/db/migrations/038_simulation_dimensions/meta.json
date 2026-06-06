@@ -1,0 +1,6 @@
+{
+  "id": "038_simulation_dimensions",
+  "description": "Expand simulation_results.dimension CHECK to include resource_allocation and quality",
+  "tables_affected": ["simulation_results"],
+  "reversible": true
+}

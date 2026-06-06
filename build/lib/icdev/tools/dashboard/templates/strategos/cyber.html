@@ -1,0 +1,825 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Cyber — Strategos Intelligence{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}"/>
+<style>
+/* ── Strategos Cyber Dashboard ── */
+:root {
+  --sg-void:    #060d0d;
+  --sg-bg:      #0a1410;
+  --sg-surface: #111e18;
+  --sg-card:    #172418;
+  --sg-border:  #253428;
+  --sg-amber:   #f59e0b;
+  --sg-green:   #22c55e;
+  --sg-red:     #ef4444;
+  --sg-cyan:    #22d3ee;
+  --sg-purple:  #a855f7;
+  --sg-orange:  #f97316;
+  --sg-grey:    #6b7280;
+  --sg-text:    #d1fae5;
+  --sg-text-dim:#6b9e7a;
+}
+.sg-cyber-page {
+  background: var(--sg-void);
+  min-height: calc(100vh - 48px);
+  padding: 0;
+}
+/* ── Toolbar ── */
+#sg-cyber-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--sg-bg);
+  border-bottom: 1px solid var(--sg-border);
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+.sg-title { font-size: 13px; font-weight: 700; color: var(--sg-amber); text-transform: uppercase; letter-spacing: .1em; }
+.sg-badge-cui { background: #c8960c; color: #000; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 2px; letter-spacing: .06em; }
+.sg-badge-module { background: var(--sg-surface); border: 1px solid var(--sg-border); color: var(--sg-cyan); font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 2px; }
+#sg-cyber-toolbar select {
+  background: var(--sg-surface); border: 1px solid var(--sg-border); color: var(--sg-text);
+  font-size: 11px; padding: 2px 8px; border-radius: 3px; cursor: pointer;
+}
+.sg-toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; color: var(--sg-text-dim); font-size: 11px; }
+/* ── Layout grid ── */
+.sg-cyber-grid {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  grid-template-rows: 380px;
+  gap: 8px;
+  padding: 8px;
+}
+/* ── Map card ── */
+.sg-map-card {
+  background: var(--sg-card);
+  border: 1px solid var(--sg-border);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sg-card-header {
+  padding: 6px 12px;
+  background: var(--sg-bg);
+  border-bottom: 1px solid var(--sg-border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sg-amber);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.sg-card-header .sg-sub { font-weight: 400; color: var(--sg-text-dim); font-size: 10px; text-transform: none; letter-spacing: 0; }
+#sg-infra-map { flex: 1; min-height: 0; }
+/* Leaflet overrides */
+.leaflet-container { background: #060d0d; }
+/* ── Infra legend ── */
+.sg-infra-legend {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(6,13,13,.85);
+  border: 1px solid var(--sg-border);
+  border-radius: 3px;
+  padding: 6px 10px;
+  font-size: 10px;
+  color: var(--sg-text-dim);
+  z-index: 1000;
+  pointer-events: none;
+}
+.sg-infra-legend .leg-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.sg-infra-legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+/* ── ATT&CK heatmap card ── */
+.sg-heatmap-card {
+  background: var(--sg-card);
+  border: 1px solid var(--sg-border);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#sg-attack-heatmap {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+}
+.hm-tactic-label {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--sg-text-dim);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 3px;
+  white-space: nowrap;
+}
+.hm-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 2px;
+}
+.hm-cell {
+  width: 46px;
+  height: 28px;
+  border-radius: 2px;
+  margin-right: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  transition: filter .15s;
+  flex-shrink: 0;
+}
+.hm-cell:hover { filter: brightness(1.4); }
+.hm-cell-id { font-size: 8px; font-weight: 700; color: rgba(255,255,255,.9); line-height: 1; }
+.hm-cell-cnt { font-size: 9px; color: rgba(255,255,255,.7); line-height: 1; margin-top: 1px; }
+/* ── Timeline card ── */
+.sg-timeline-card {
+  grid-column: 1 / -1;
+  background: var(--sg-card);
+  border: 1px solid var(--sg-border);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 280px;
+}
+#sg-timeline-svg {
+  flex: 1;
+  width: 100%;
+}
+.sg-timeline-legend {
+  display: flex;
+  gap: 16px;
+  padding: 4px 12px;
+  background: var(--sg-bg);
+  border-top: 1px solid var(--sg-border);
+  flex-shrink: 0;
+}
+.sg-tl-leg-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--sg-text-dim); }
+.sg-tl-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+/* ── Tooltip ── */
+#sg-tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: rgba(6,13,13,.95);
+  border: 1px solid var(--sg-border);
+  border-radius: 3px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--sg-text);
+  max-width: 260px;
+  z-index: 9999;
+  display: none;
+  line-height: 1.5;
+}
+/* Keep nav dropdowns above Leaflet map panes (leaflet-top/bottom = 1000) */
+.nav-dropdown-menu { z-index: 1100 !important; }
+.navbar, .sub-nav  { z-index: 1050 !important; }
+/* ── CVE Feed section ── */
+.sg-cve-section {
+  padding: 8px;
+}
+.sg-cve-card {
+  background: var(--sg-card);
+  border: 1px solid var(--sg-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.sg-cve-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--sg-bg);
+  border-bottom: 1px solid var(--sg-border);
+}
+.sg-cve-toolbar .sg-card-header {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+#sg-cve-count {
+  background: var(--sg-surface);
+  border: 1px solid var(--sg-border);
+  color: var(--sg-cyan);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 10px;
+  min-width: 24px;
+  text-align: center;
+}
+#sg-cve-status-filter {
+  background: var(--sg-surface);
+  border: 1px solid var(--sg-border);
+  color: var(--sg-text);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-left: auto;
+}
+.sg-cve-table-wrap {
+  overflow-x: auto;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.sg-cve-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.sg-cve-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--sg-bg);
+  color: var(--sg-text-dim);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--sg-border);
+  white-space: nowrap;
+  text-align: left;
+}
+.sg-cve-table tbody tr {
+  border-bottom: 1px solid rgba(37,52,40,.5);
+  transition: background .1s;
+}
+.sg-cve-table tbody tr:hover { background: rgba(23,36,24,.7); }
+.sg-cve-table td {
+  padding: 5px 10px;
+  color: var(--sg-text);
+  white-space: nowrap;
+}
+.sg-cve-table td.cve-title { white-space: normal; max-width: 320px; }
+.cvss-critical{ color: #b91c1c; font-weight: 700; }
+.cvss-high   { color: #ef4444; font-weight: 700; }
+.cvss-medium { color: #f97316; font-weight: 700; }
+.cvss-low    { color: #22c55e; font-weight: 700; }
+.sev-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-right: 4px;
+}
+.sev-critical { background: rgba(185,28,28,.2); color: #fca5a5; border: 1px solid rgba(185,28,28,.4); }
+.sev-high     { background: rgba(239,68,68,.15); color: #ef4444; border: 1px solid rgba(239,68,68,.3); }
+.sev-medium   { background: rgba(249,115,22,.15); color: #f97316; border: 1px solid rgba(249,115,22,.3); }
+.sev-low      { background: rgba(34,197,94,.12); color: #22c55e; border: 1px solid rgba(34,197,94,.3); }
+.kev-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  background: rgba(239,68,68,.2); color: #f87171; border: 1px solid rgba(239,68,68,.4);
+}
+.cve-status-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.cve-status-new      { background: rgba(239,68,68,.15); color: #ef4444; border: 1px solid rgba(239,68,68,.3); }
+.cve-status-reviewed { background: rgba(245,158,11,.15); color: #f59e0b; border: 1px solid rgba(245,158,11,.3); }
+.cve-status-mitigated{ background: rgba(34,197,94,.15);  color: #22c55e; border: 1px solid rgba(34,197,94,.3); }
+#sg-cve-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--sg-text-dim);
+  font-size: 11px;
+  display: none;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sg-cyber-page">
+  <div id="sg-cyber-toolbar">
+    <span class="sg-badge-cui">CUI // SP-CTI</span>
+    <span class="sg-title">Strategos — Cyber Threat Intelligence</span>
+    <span class="sg-badge-module">CYBER-OPS</span>
+    <label style="color:var(--sg-text-dim);font-size:11px">AOI:</label>
+    <select id="sg-aoi-filter">
+      <option value="">All</option>
+      <option value="ukraine">Ukraine</option>
+      <option value="taiwan">Taiwan</option>
+    </select>
+    <div class="sg-toolbar-right">
+      <a href="/strategos" style="color:var(--sg-text-dim);text-decoration:none;font-size:11px">&larr; Back</a>
+      <span id="sg-last-refresh" style="color:var(--sg-grey)">Loading…</span>
+    </div>
+  </div>
+
+  <div class="sg-cyber-grid">
+    <!-- ── Map ── -->
+    <div class="sg-map-card">
+      <div class="sg-card-header">
+        &#9670; Infrastructure Overlay
+        <span class="sg-sub">Leaflet · cyber_vuln_score heat layer · power / rail / water / comms</span>
+      </div>
+      <div id="sg-infra-map" style="position:relative"></div>
+    </div>
+
+    <!-- ── ATT&CK Heatmap ── -->
+    <div class="sg-heatmap-card">
+      <div class="sg-card-header">
+        &#9670; MITRE ATT&CK Heatmap
+        <span class="sg-sub">Technique frequency by tactic</span>
+      </div>
+      <div id="sg-attack-heatmap">
+        <div style="color:var(--sg-text-dim);font-size:11px;padding:8px">Loading…</div>
+      </div>
+    </div>
+
+    <!-- ── Dual-axis Timeline ── -->
+    <div class="sg-timeline-card">
+      <div class="sg-card-header">
+        &#9670; Dual-Axis Timeline
+        <span class="sg-sub">Cyber events (top) · Kinetic events (bottom) · Correlation arrows</span>
+      </div>
+      <svg id="sg-timeline-svg"></svg>
+      <div class="sg-timeline-legend">
+        <div class="sg-tl-leg-item"><span class="sg-tl-dot" style="background:#ef4444"></span>Cyber Op</div>
+        <div class="sg-tl-leg-item"><span class="sg-tl-dot" style="background:#3b82f6"></span>Kinetic Event</div>
+        <div class="sg-tl-leg-item">
+          <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="#a855f7" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#tl-arrow-leg)"/><defs><marker id="tl-arrow-leg" markerWidth="4" markerHeight="4" refX="4" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4 Z" fill="#a855f7"/></marker></defs></svg>
+          Temporal Correlation
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CVE Feed ── -->
+  <div class="sg-cve-section">
+    <div class="sg-cve-card">
+      <div class="sg-cve-toolbar">
+        <div class="sg-card-header" style="flex-shrink:0">
+          &#9670; Live CVE Feed
+          <span id="sg-cve-count">—</span>
+        </div>
+        <select id="sg-cve-status-filter">
+          <option value="all">All Statuses</option>
+          <option value="new">New</option>
+          <option value="reviewed">Reviewed</option>
+          <option value="mitigated">Mitigated</option>
+        </select>
+      </div>
+      <div class="sg-cve-table-wrap">
+        <table class="sg-cve-table" id="sg-cve-table">
+          <thead>
+            <tr>
+              <th>CVE ID</th>
+              <th>Title</th>
+              <th>CVSS</th>
+              <th>Status</th>
+              <th>Age</th>
+            </tr>
+          </thead>
+          <tbody id="sg-cve-tbody">
+            <tr><td colspan="5" style="padding:16px;color:var(--sg-text-dim);text-align:center">Loading…</td></tr>
+          </tbody>
+        </table>
+        <div id="sg-cve-empty">No CVE entries match the selected filter.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="sg-tooltip"></div>
+{% endblock %}
+
+{% block scripts %}
+<!-- D3 v7 (CDN — replace with local vendor if air-gapped) -->
+<script src="/strategos/static/js/d3.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script>
+(function () {
+'use strict';
+
+const AOI_FILTER = document.getElementById('sg-aoi-filter');
+const LAST_REFRESH = document.getElementById('sg-last-refresh');
+const TIP = document.getElementById('sg-tooltip');
+
+// ── Tooltip helpers ──────────────────────────────────────────────────────────
+function tipShow(html, evt) {
+  TIP.innerHTML = html;
+  TIP.style.display = 'block';
+  tipMove(evt);
+}
+function tipHide() { TIP.style.display = 'none'; }
+function tipMove(evt) {
+  const x = evt.clientX + 14, y = evt.clientY + 14;
+  TIP.style.left = (x + TIP.offsetWidth > window.innerWidth ? x - TIP.offsetWidth - 28 : x) + 'px';
+  TIP.style.top  = y + 'px';
+}
+
+// ── Infrastructure type colours ──────────────────────────────────────────────
+const INFRA_COLOR = { power: '#f59e0b', rail: '#38bdf8', water: '#22d3ee', comms: '#a855f7', generic: '#6b7280' };
+const INFRA_ICON  = { power: '⚡', rail: '🚆', water: '💧', comms: '📡', generic: '⬡' };
+
+// Vuln score → heat colour (green→yellow→red)
+function vulnColor(score) {
+  const t = Math.max(0, Math.min(1, score / 10));
+  if (t < 0.5) {
+    const g = Math.round(197 + (159 - 197) * (t / 0.5));
+    const r = Math.round(34  + (239 - 34)  * (t / 0.5));
+    return `rgb(${r},${g},34)`;
+  } else {
+    const tt = (t - 0.5) / 0.5;
+    const g = Math.round(159 - 159 * tt);
+    return `rgb(239,${g},34)`;
+  }
+}
+
+// ── Leaflet Map ──────────────────────────────────────────────────────────────
+let map;
+const infraLayer = L.layerGroup();
+
+function initMap() {
+  map = L.map('sg-infra-map', { center: [49, 32], zoom: 5, zoomControl: true });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; CartoDB', maxZoom: 18,
+  }).addTo(map);
+  infraLayer.addTo(map);
+
+  // Legend
+  const legend = L.control({ position: 'bottomright' });
+  legend.onAdd = function () {
+    const div = L.DomUtil.create('div', 'sg-infra-legend');
+    div.innerHTML = Object.entries(INFRA_COLOR).map(([t, c]) =>
+      `<div class="leg-row"><span class="dot" style="background:${c}"></span>${t}</div>`
+    ).join('') + '<div class="leg-row" style="margin-top:4px;border-top:1px solid #253428;padding-top:4px"><b>Ring</b> = vuln score</div>';
+    return div;
+  };
+  legend.addTo(map);
+}
+
+function renderInfraNodes(nodes) {
+  infraLayer.clearLayers();
+  nodes.forEach(n => {
+    const typeColor = INFRA_COLOR[n.type] || INFRA_COLOR.generic;
+    const heatColor = vulnColor(n.cyber_vuln_score || 5);
+    const score = (n.cyber_vuln_score || 0).toFixed(1);
+    const radius = 8 + (n.cyber_vuln_score || 5) * 1.2;
+
+    // Outer heat ring
+    L.circleMarker([n.lat, n.lon], {
+      radius: radius,
+      color: heatColor,
+      fillColor: heatColor,
+      fillOpacity: 0.18,
+      weight: 1.5,
+    }).addTo(infraLayer);
+
+    // Inner node
+    const marker = L.circleMarker([n.lat, n.lon], {
+      radius: 7,
+      color: typeColor,
+      fillColor: typeColor,
+      fillOpacity: 0.85,
+      weight: 1.5,
+    }).addTo(infraLayer);
+
+    marker.on('mouseover', function (e) {
+      tipShow(
+        `<b>${INFRA_ICON[n.type] || '⬡'} ${n.label}</b><br>` +
+        `Type: <span style="color:${typeColor}">${n.type}</span><br>` +
+        `Vuln Score: <span style="color:${heatColor}"><b>${score}/10</b></span><br>` +
+        `AOI: ${n.aoi || '—'}`,
+        e.originalEvent
+      );
+    });
+    marker.on('mousemove', function (e) { tipMove(e.originalEvent); });
+    marker.on('mouseout', tipHide);
+  });
+}
+
+// ── ATT&CK Heatmap ───────────────────────────────────────────────────────────
+function renderHeatmap(data) {
+  const container = document.getElementById('sg-attack-heatmap');
+  if (!data || !data.cells || !data.cells.length) {
+    container.innerHTML = '<div style="color:var(--sg-text-dim);font-size:11px;padding:8px">No technique data.</div>';
+    return;
+  }
+
+  const maxCount = data.max_count || 1;
+  const tacticMap = {};
+  data.tactics.forEach(t => { tacticMap[t.id] = { label: t.label, cells: [] }; });
+  data.cells.forEach(c => {
+    if (tacticMap[c.tactic]) tacticMap[c.tactic].cells.push(c);
+  });
+
+  // Colour: low=dark-green, high=red
+  function hmColor(count) {
+    const t = count / maxCount;
+    const r = Math.round(239 * t + 23 * (1 - t));
+    const g = Math.round(68  * t + 197 * (1 - t));
+    const b = Math.round(68  * t + 94  * (1 - t));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  let html = '';
+  data.tactics.forEach(tactic => {
+    const cells = (tacticMap[tactic.id] || {}).cells || [];
+    if (!cells.length) return;
+    html += `<div class="hm-tactic-label">${tactic.label}</div>`;
+    html += '<div class="hm-row">';
+    cells.forEach(c => {
+      const bg = hmColor(c.count);
+      html += `<div class="hm-cell" style="background:${bg}" title="${c.technique_id}: ${c.name} (${c.count}x)"
+         onmouseover="tipShow('<b>${c.technique_id}</b> ${c.name.replace(/'/g,"&#39;")}<br>Tactic: ${tactic.label}<br>Observed: <b>${c.count}x</b>',event)"
+         onmousemove="tipMove(event)" onmouseout="tipHide()">
+        <span class="hm-cell-id">${c.technique_id}</span>
+        <span class="hm-cell-cnt">${c.count}x</span>
+      </div>`;
+    });
+    html += '</div>';
+  });
+  container.innerHTML = html || '<div style="color:var(--sg-text-dim);font-size:11px;padding:8px">No data.</div>';
+}
+
+// ── D3 Dual-Axis Timeline ────────────────────────────────────────────────────
+function renderTimeline(data) {
+  const svgEl = document.getElementById('sg-timeline-svg');
+  const W = svgEl.clientWidth || svgEl.parentElement.clientWidth;
+  const H = svgEl.clientHeight || 200;
+  const margin = { top: 24, right: 20, bottom: 24, left: 60 };
+  const innerW = W - margin.left - margin.right;
+  const innerH = H - margin.top - margin.bottom;
+  const laneH = innerH / 2 - 4;
+
+  const cyber   = data.cyber_events   || [];
+  const kinetic = data.kinetic_events  || [];
+  const corrs   = data.correlations    || [];
+
+  if (!cyber.length && !kinetic.length) {
+    d3.select(svgEl).append('text').attr('x', W / 2).attr('y', H / 2)
+      .attr('text-anchor', 'middle').attr('fill', '#6b7280').attr('font-size', 12)
+      .text('No timeline data');
+    return;
+  }
+
+  // Parse timestamps
+  const parse = t => {
+    const d = new Date(t);
+    return isNaN(d.getTime()) ? null : d;
+  };
+  const allDates = [
+    ...cyber.map(e => parse(e.event_ts)),
+    ...kinetic.map(e => parse(e.event_ts)),
+  ].filter(Boolean);
+
+  const xDomain = d3.extent(allDates);
+  // Pad by 6h on each side
+  const pad = 6 * 3600 * 1000;
+  xDomain[0] = new Date(xDomain[0].getTime() - pad);
+  xDomain[1] = new Date(xDomain[1].getTime() + pad);
+
+  const xScale = d3.scaleTime().domain(xDomain).range([0, innerW]);
+
+  // Build id→x lookup for correlation arrows
+  const idToX = {};
+  cyber.forEach(e => { const d = parse(e.event_ts); if (d) idToX[e.id] = xScale(d); });
+  kinetic.forEach(e => { const d = parse(e.event_ts); if (d) idToX[e.id] = xScale(d); });
+
+  // Clear previous render
+  d3.select(svgEl).selectAll('*').remove();
+
+  const defs = d3.select(svgEl).append('defs');
+  defs.append('marker')
+    .attr('id', 'tl-arrow').attr('markerWidth', 6).attr('markerHeight', 6)
+    .attr('refX', 6).attr('refY', 3).attr('orient', 'auto')
+    .append('path').attr('d', 'M0,0 L6,3 L0,6 Z').attr('fill', '#a855f7');
+
+  const svg = d3.select(svgEl).append('g')
+    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // Lane dividers & labels
+  const cyberY  = laneH / 2;
+  const kineticY = laneH + 8 + laneH / 2;
+
+  svg.append('text').attr('x', -4).attr('y', cyberY + 4)
+    .attr('text-anchor', 'end').attr('fill', '#ef4444')
+    .attr('font-size', 9).attr('font-weight', '700').text('CYBER');
+  svg.append('text').attr('x', -4).attr('y', kineticY + 4)
+    .attr('text-anchor', 'end').attr('fill', '#3b82f6')
+    .attr('font-size', 9).attr('font-weight', '700').text('KINETIC');
+
+  // Centre divider
+  svg.append('line')
+    .attr('x1', 0).attr('y1', laneH + 4)
+    .attr('x2', innerW).attr('y2', laneH + 4)
+    .attr('stroke', '#253428').attr('stroke-width', 1);
+
+  // X axis
+  svg.append('g')
+    .attr('transform', `translate(0,${innerH})`)
+    .call(
+      d3.axisBottom(xScale).ticks(6).tickFormat(d3.timeFormat('%d %b %H:%M'))
+    )
+    .call(g => {
+      g.select('.domain').attr('stroke', '#253428');
+      g.selectAll('.tick line').attr('stroke', '#253428');
+      g.selectAll('.tick text').attr('fill', '#6b7280').attr('font-size', 9);
+    });
+
+  // Correlation arrows (drawn first, below nodes)
+  corrs.forEach(c => {
+    const cx = idToX[c.cyber_id];
+    const kx = idToX[c.kinetic_id];
+    if (cx == null || kx == null) return;
+    const opacity = 0.35 + (c.strength || 0.5) * 0.55;
+    svg.append('line')
+      .attr('x1', cx).attr('y1', cyberY + 9)
+      .attr('x2', kx).attr('y2', kineticY - 9)
+      .attr('stroke', '#a855f7')
+      .attr('stroke-width', 1 + (c.strength || 0.5))
+      .attr('stroke-dasharray', '5,3')
+      .attr('opacity', opacity)
+      .attr('marker-end', 'url(#tl-arrow)');
+  });
+
+  // Cyber event dots
+  const cyberSel = svg.selectAll('.tl-cyber')
+    .data(cyber.filter(e => parse(e.event_ts)))
+    .enter().append('circle')
+    .attr('class', 'tl-cyber')
+    .attr('cx', e => xScale(parse(e.event_ts)))
+    .attr('cy', cyberY)
+    .attr('r', 6)
+    .attr('fill', '#ef4444')
+    .attr('stroke', '#fca5a5')
+    .attr('stroke-width', 1)
+    .attr('opacity', .85)
+    .style('cursor', 'pointer');
+
+  cyberSel
+    .on('mouseover', function (evt, e) {
+      d3.select(this).attr('r', 9);
+      const actor = e.threat_actor || 'Unknown actor';
+      const techs = e.technique_ids ? e.technique_ids.split(',').join(', ') : '—';
+      const conf  = e.confidence != null ? `${e.confidence}%` : '—';
+      tipShow(
+        `<b style="color:#ef4444">CYBER OP</b><br>${new Date(e.event_ts).toLocaleString()}<br>` +
+        `Actor: <b>${actor}</b><br>Techniques: ${techs}<br>Confidence: ${conf}<br>` +
+        `<span style="color:#9ca3af">${(e.description||'').slice(0,120)}</span>`,
+        evt
+      );
+    })
+    .on('mousemove', (evt) => tipMove(evt))
+    .on('mouseout', function () { d3.select(this).attr('r', 6); tipHide(); });
+
+  // Kinetic event diamonds
+  const kineticSel = svg.selectAll('.tl-kinetic')
+    .data(kinetic.filter(e => parse(e.event_ts)))
+    .enter().append('path')
+    .attr('class', 'tl-kinetic')
+    .attr('transform', e => {
+      const x = xScale(parse(e.event_ts));
+      return `translate(${x},${kineticY})`;
+    })
+    .attr('d', d3.symbol().type(d3.symbolDiamond).size(80))
+    .attr('fill', '#3b82f6')
+    .attr('stroke', '#93c5fd')
+    .attr('stroke-width', 1)
+    .attr('opacity', .85)
+    .style('cursor', 'pointer');
+
+  kineticSel
+    .on('mouseover', function (evt, e) {
+      d3.select(this).attr('transform', d => {
+        const x = xScale(parse(d.event_ts));
+        return `translate(${x},${kineticY}) scale(1.4)`;
+      });
+      const gs = e.goldstein_scale != null ? e.goldstein_scale.toFixed(1) : '—';
+      tipShow(
+        `<b style="color:#3b82f6">KINETIC EVENT</b><br>${new Date(e.event_ts).toLocaleString()}<br>` +
+        `Actors: ${e.actor1 || '?'} vs ${e.actor2 || '?'}<br>Goldstein: ${gs}<br>` +
+        `<span style="color:#9ca3af">${(e.description||'').slice(0,120)}</span>`,
+        evt
+      );
+    })
+    .on('mousemove', (evt) => tipMove(evt))
+    .on('mouseout', function () {
+      d3.select(this).attr('transform', d => {
+        const x = xScale(parse(d.event_ts));
+        return `translate(${x},${kineticY})`;
+      });
+      tipHide();
+    });
+}
+
+// ── Data loading ─────────────────────────────────────────────────────────────
+function loadAll() {
+  const aoi = AOI_FILTER.value;
+  const qs   = aoi ? `?aoi=${aoi}` : '';
+
+  // Parallel fetches
+  Promise.all([
+    fetch(`/strategos/api/cyber/infra-nodes${qs}`).then(r => r.json()),
+    fetch(`/strategos/api/cyber/attack-heatmap`).then(r => r.json()),
+    fetch(`/strategos/api/cyber/timeline${qs}`).then(r => r.json()),
+  ]).then(([infraData, hmData, tlData]) => {
+    renderInfraNodes(infraData.nodes || []);
+    renderHeatmap(hmData);
+    renderTimeline(tlData);
+    LAST_REFRESH.textContent = 'Updated ' + new Date().toLocaleTimeString();
+  }).catch(err => {
+    console.error('Strategos Cyber load error:', err);
+    LAST_REFRESH.textContent = 'Error loading data';
+  });
+}
+
+// ── CVE Feed ─────────────────────────────────────────────────────────────────
+const CVE_STATUS_FILTER = document.getElementById('sg-cve-status-filter');
+const CVE_TBODY         = document.getElementById('sg-cve-tbody');
+const CVE_COUNT         = document.getElementById('sg-cve-count');
+const CVE_EMPTY         = document.getElementById('sg-cve-empty');
+
+function cvssClass(score) {
+  if (score >= 9.0) return 'cvss-critical';
+  if (score >= 7.0) return 'cvss-high';
+  if (score >= 4.0) return 'cvss-medium';
+  return 'cvss-low';
+}
+function sevBadge(sev) {
+  if (!sev) return '';
+  const s = sev.toLowerCase();
+  return `<span class="sev-badge sev-${s}">${s}</span>`;
+}
+
+function cveAge(publishedAt) {
+  if (!publishedAt) return '—';
+  const ms  = Date.now() - new Date(publishedAt).getTime();
+  const days = Math.floor(ms / 86400000);
+  if (days > 0) return days + 'd';
+  const hrs = Math.floor(ms / 3600000);
+  if (hrs > 0) return hrs + 'h';
+  return Math.floor(ms / 60000) + 'm';
+}
+
+function renderCveFeed(items) {
+  CVE_COUNT.textContent = items.length;
+  if (!items.length) {
+    CVE_TBODY.innerHTML = '';
+    CVE_EMPTY.style.display = 'block';
+    return;
+  }
+  CVE_EMPTY.style.display = 'none';
+  CVE_TBODY.innerHTML = items.map(r => {
+    const title = (r.title || '').slice(0, 60) + ((r.title || '').length > 60 ? '…' : '');
+    const cvss  = r.cvss_score != null ? Number(r.cvss_score).toFixed(1) : '—';
+    const cls   = r.cvss_score != null ? cvssClass(r.cvss_score) : '';
+    const st    = (r.status || 'new').toLowerCase();
+    const age   = cveAge(r.published_date);
+    const kev   = r.is_kev ? '<span class="kev-badge">KEV</span>' : '';
+    const sev   = sevBadge(r.severity);
+    return `<tr>
+      <td style="font-family:monospace;color:var(--sg-cyan)">${r.cve_id || '—'}</td>
+      <td class="cve-title">${kev}${title || '—'}</td>
+      <td class="${cls}">${sev}${cvss}</td>
+      <td><span class="cve-status-badge cve-status-${st}">${st}</span></td>
+      <td style="color:var(--sg-text-dim)">${age}</td>
+    </tr>`;
+  }).join('');
+}
+
+function loadCveFeed() {
+  const status = CVE_STATUS_FILTER.value;
+  const qs     = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
+  fetch(`/api/strategos/cyber/cve${qs}`)
+    .then(r => r.json())
+    .then(d => renderCveFeed(Array.isArray(d) ? d : (d.cves || [])))
+    .catch(() => {
+      CVE_COUNT.textContent = '0';
+      CVE_TBODY.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--sg-text-dim);text-align:center">Error loading CVE data.</td></tr>';
+    });
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function () {
+  initMap();
+  loadAll();
+  loadCveFeed();
+  AOI_FILTER.addEventListener('change', loadAll);
+  CVE_STATUS_FILTER.addEventListener('change', loadCveFeed);
+});
+
+// Expose tooltip helpers globally for inline HTML handlers
+window.tipShow  = tipShow;
+window.tipHide  = tipHide;
+window.tipMove  = tipMove;
+
+})();
+</script>
+{% endblock %}

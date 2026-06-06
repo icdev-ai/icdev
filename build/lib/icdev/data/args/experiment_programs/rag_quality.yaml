@@ -1,0 +1,57 @@
+# CUI // SP-CTI
+# Autoresearch Experiment Program — RAG Quality Domain
+#
+# Optimizes retrieval relevance across the RAG subsystem.
+# Modifies chunking, retrieval, reranking, and injection parameters.
+
+domain: rag_quality
+
+objective:
+  metric_name: retrieval_relevance_at_5
+  direction: maximize
+  measurement_command: "python tools/rag/evaluator.py --project-id sparkpilot --json"
+  metric_path: "metrics.ndcg_at_k"
+
+modifiable_paths:
+  - tools/rag/
+  - args/rag_config.yaml
+
+forbidden_paths:
+  - tools/db/storage.py
+  - tools/db/init_icdev_db.py
+  - .env
+
+time_budget_seconds: 300
+keep_threshold: 0.01
+
+category_order:
+  - retrieval_parameters
+  - chunking_strategy
+  - reranker_tuning
+  - injection_format
+
+categories:
+  retrieval_parameters:
+    description: "Tune vector search and fusion parameters"
+    risk: low
+    example_hypotheses:
+      - "Increase vector_top_k from 50 to 75 for broader initial pool"
+      - "Adjust RRF constant k from 60 to 45 for stronger top-rank emphasis"
+  chunking_strategy:
+    description: "Improve adaptive chunking boundaries and overlap"
+    risk: low
+    example_hypotheses:
+      - "Increase overlap from 10% to 15% at sentence boundaries"
+      - "Reduce chunk size from 2000 to 1500 tokens for finer granularity"
+  reranker_tuning:
+    description: "Adjust re-ranking weights and diversity boost"
+    risk: low
+    example_hypotheses:
+      - "Increase rerank_weight from 0.6 to 0.7"
+      - "Increase teaching_boost_weight from 0.15 to 0.20"
+  injection_format:
+    description: "Optimize how RAG context is injected into LLM prompts"
+    risk: medium
+    example_hypotheses:
+      - "Add relevance scores to injected context for LLM prioritization"
+      - "Group injected chunks by source type for coherent context"

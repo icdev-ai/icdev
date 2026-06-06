@@ -1,0 +1,711 @@
+<!-- CUI // SP-CTI — Network Migration Phases View -->
+{% extends "network/base.html" %}
+{% block title %}Migration Phases — {{ topo_name }} — Network Design Canvas{% endblock %}
+
+{% block head %}
+<style>
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+.mp-shell { display: flex; flex-direction: column; height: calc(100vh - 56px); overflow: hidden; }
+.mp-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: #0d1b2e; border-bottom: 1px solid #1e3a6e; flex-shrink: 0; }
+.mp-toolbar h2 { margin: 0; font-size: 15px; color: #eaeaea; font-weight: 700; flex: 1; }
+.mp-toolbar .topo-name { font-size: 12px; color: #4a6080; margin-left: 6px; }
+.mp-panels { display: flex; flex: 1; overflow: hidden; gap: 0; }
+
+/* ── Phase Navigator ──────────────────────────────────────────────────────── */
+.mp-nav { width: 200px; min-width: 200px; background: #081525; border-right: 1px solid #1e3a6e; display: flex; flex-direction: column; overflow-y: auto; }
+.mp-nav-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #8099b8; padding: 12px 14px 6px; }
+.mp-nav-item { display: flex; align-items: center; gap: 8px; padding: 9px 14px; cursor: pointer; color: #b0c4dc; font-size: 12px; border-left: 3px solid transparent; transition: all 0.15s; }
+.mp-nav-item:hover { color: #eaeaea; background: #111f35; }
+.mp-nav-item.active { color: #27ae60; border-left-color: #27ae60; background: #0f1e30; }
+.mp-nav-item.current { border-left-color: #2980b9; }
+.mp-nav-item.final { border-left-color: #8e44ad; }
+.mp-nav-badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; background: #2a4a8a; color: #c0d4f0; margin-left: auto; }
+.mp-nav-item.active .mp-nav-badge { background: #1a5e2d; color: #27ae60; }
+.mp-nav-sep { height: 1px; background: #1e3a6e; margin: 6px 0; }
+
+/* ── Main Panel Area ──────────────────────────────────────────────────────── */
+.mp-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #0a1628; }
+.mp-panel { display: none; flex: 1; overflow: hidden; flex-direction: row; }
+.mp-panel.active { display: flex; }
+
+/* ── Diagram Section ──────────────────────────────────────────────────────── */
+.mp-diagram-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #1e3a6e; }
+.mp-diagram-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #0d1b2e; border-bottom: 1px solid #1e3a6e; flex-shrink: 0; }
+.mp-diagram-header h3 { margin: 0; font-size: 13px; color: #eaeaea; font-weight: 700; flex: 1; }
+.mp-diagram-canvas { flex: 1; overflow: hidden; position: relative; }
+
+/* ── Export Toolbar ───────────────────────────────────────────────────────── */
+.export-toolbar { display: flex; gap: 6px; }
+.export-btn { display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 4px; border: 1px solid #2d4a7a; background: #111f35; color: #b0c4dc; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s; text-decoration: none; }
+.export-btn:hover { background: #1e3a6e; color: #eaeaea; border-color: #4a6ea0; }
+.export-btn.pdf { border-color: #6e2d2d; color: #e07070; }
+.export-btn.pdf:hover { background: #3d1515; color: #ef9090; }
+.export-btn.visio { border-color: #2d4a8e; color: #6090e0; }
+.export-btn.visio:hover { background: #1e2d6e; color: #90b0f0; }
+.export-btn.drawio { border-color: #3d6e2d; color: #70c080; }
+.export-btn.drawio:hover { background: #1e3d15; color: #90e0a0; }
+
+/* ── SVG Canvas ───────────────────────────────────────────────────────────── */
+.mp-svg-wrap { width: 100%; height: 100%; overflow: auto; cursor: grab; }
+.mp-svg-wrap:active { cursor: grabbing; }
+.mp-svg-wrap svg { display: block; min-width: 600px; min-height: 400px; }
+
+/* ── Info Boxes Panel ─────────────────────────────────────────────────────── */
+.mp-infoboxes { width: 320px; min-width: 280px; overflow-y: auto; background: #081525; border-left: 1px solid #1e3a6e; display: flex; flex-direction: column; }
+.mp-infoboxes-header { padding: 10px 14px; background: #0d1b2e; border-bottom: 1px solid #1e3a6e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #8099b8; flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+.mp-infoboxes-header span { flex: 1; }
+.infoboxes-toggle-all { font-size: 10px; color: #8099b8; cursor: pointer; padding: 2px 6px; background: #1e3a6e; border-radius: 3px; border: none; }
+.infoboxes-toggle-all:hover { color: #eaeaea; }
+
+/* ── Single Info Box ──────────────────────────────────────────────────────── */
+.infobox { margin: 8px 8px 0; border-radius: 6px; overflow: hidden; border: 1px solid #1e3a6e; }
+.infobox:last-child { margin-bottom: 8px; }
+.infobox-header { display: flex; align-items: center; gap: 6px; padding: 7px 10px; cursor: pointer; user-select: none; }
+.infobox-header h4 { margin: 0; font-size: 12px; font-weight: 700; color: #eaeaea; flex: 1; }
+.infobox-icon { font-size: 14px; }
+.infobox-chevron { font-size: 10px; color: rgba(255,255,255,0.5); transition: transform 0.2s; }
+.infobox.collapsed .infobox-chevron { transform: rotate(-90deg); }
+.infobox-body { background: #0a1628; }
+.infobox.collapsed .infobox-body { display: none; }
+.infobox-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px; border-top: 1px solid #0f1e30; font-size: 11px; }
+.infobox-row:first-child { border-top: none; }
+.infobox-label { color: #a0b8d0; }
+.infobox-value { font-weight: 600; color: #eaeaea; text-align: right; }
+.infobox-value.ok { color: #27ae60; }
+.infobox-value.warn { color: #f39c12; }
+.infobox-value.critical { color: #e74c3c; }
+.infobox-value.info { color: #3498db; }
+
+/* ── Phase Status Badge ───────────────────────────────────────────────────── */
+.phase-status { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
+.phase-status.planned { background: #2a4a8a; color: #c0d4f0; }
+.phase-status.pending { background: #2a4a8a; color: #c0d4f0; }
+.phase-status.in_progress { background: #1a4a2e; color: #27ae60; }
+.phase-status.completed { background: #0f3a20; color: #1abc9c; }
+.phase-status.rolled_back { background: #3d1515; color: #e74c3c; }
+
+/* ── Legend bar ───────────────────────────────────────────────────────────── */
+.mp-legend { display: flex; gap: 12px; align-items: center; padding: 6px 14px; background: #0a1628; border-top: 1px solid #1e3a6e; flex-shrink: 0; }
+.legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #a8bdd6; }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+/* ── Loading / empty states ───────────────────────────────────────────────── */
+.mp-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: #8099b8; font-size: 13px; flex-direction: column; gap: 12px; }
+.mp-spinner { width: 28px; height: 28px; border: 3px solid #1e3a6e; border-top-color: #27ae60; border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Consolidation Summary Banner ────────────────────────────────────────── */
+.consol-banner { margin: 8px; background: #0d2a1e; border: 1px solid #1a5e2d; border-radius: 6px; padding: 10px 14px; }
+.consol-banner h5 { margin: 0 0 8px; font-size: 12px; color: #27ae60; text-transform: uppercase; letter-spacing: 1px; }
+.consol-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.consol-stat { text-align: center; }
+.consol-stat .cval { font-size: 18px; font-weight: 700; color: #27ae60; }
+.consol-stat .clbl { font-size: 10px; color: #8099b8; }
+
+/* ── View Tabs (Physical / Logical) ─────────────────────────────────────── */
+.mp-view-tabs { display: flex; gap: 0; padding: 0 14px; background: #0d1b2e; border-bottom: 1px solid #1e3a6e; flex-shrink: 0; }
+.mp-view-tab { padding: 6px 14px; font-size: 11px; font-weight: 600; color: #8099b8; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none; }
+.mp-view-tab:hover { color: #a0b8d0; }
+.mp-view-tab.active { color: #27ae60; border-bottom-color: #27ae60; background: #0f1e30; }
+
+/* ── Resize handle ────────────────────────────────────────────────────────── */
+.resize-handle { width: 5px; cursor: col-resize; background: #1e3a6e; flex-shrink: 0; transition: background 0.15s; }
+.resize-handle:hover { background: #27ae60; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="mp-shell">
+  <!-- Top Toolbar -->
+  <div class="mp-toolbar">
+    <h2>Network Migration Phases <span class="topo-name">— {{ topo_name }}</span></h2>
+    <a href="/network/canvas/{{ topo_id }}" class="export-btn" title="Open in canvas editor" target="_blank">✏ Edit Canvas</a>
+    <a href="/network/" class="export-btn">← Network</a>
+  </div>
+
+  <div class="mp-panels">
+    <!-- Phase Navigator (left sidebar) -->
+    <nav class="mp-nav">
+      <div class="mp-nav-title">Migration Phases</div>
+
+      <div class="mp-nav-item current active" data-panel="panel-current" onclick="activatePanel('panel-current', this)">
+        <span>📋</span>
+        <span>Current State</span>
+        <span class="mp-nav-badge">AS-IS</span>
+      </div>
+
+      {% if phases %}
+        <div class="mp-nav-sep"></div>
+        {% for ph in phases %}
+        <div class="mp-nav-item" data-panel="panel-phase-{{ ph.phase_num }}" onclick="activatePanel('panel-phase-{{ ph.phase_num }}', this)">
+          <span>🔄</span>
+          <span>Phase {{ ph.phase_num }}</span>
+          <span class="mp-nav-badge phase-status {{ ph.status or 'planned' }}">{{ (ph.status or 'planned')|title }}</span>
+        </div>
+        {% endfor %}
+        <div class="mp-nav-sep"></div>
+      {% else %}
+        <div style="padding:12px 14px;font-size:11px;color:#4a6080">
+          No migration phases defined.<br><br>
+          <a href="/migration-canvas/network-migration/" style="color:#27ae60">Create migration plan →</a>
+        </div>
+        <div class="mp-nav-sep"></div>
+      {% endif %}
+
+      <div class="mp-nav-item final" data-panel="panel-final" onclick="activatePanel('panel-final', this)">
+        <span>🏁</span>
+        <span>Final / To-Be</span>
+        <span class="mp-nav-badge">TO-BE</span>
+      </div>
+
+      <!-- Consolidation Quick Stats -->
+      <div style="margin-top:auto;padding:12px 14px;border-top:1px solid #1e3a6e">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#8099b8;margin-bottom:8px">Consolidation</div>
+        <div id="nav-consol-stats" style="color:#a0b8d0;font-size:11px">Loading…</div>
+      </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <div class="mp-content" id="mp-main-content">
+
+      <!-- ── Current State Panel ───────────────────────────────────────── -->
+      <div class="mp-panel active" id="panel-current">
+        <div class="mp-diagram-section">
+          <div class="mp-diagram-header">
+            <h3>📋 Current State — As-Is Network</h3>
+            <div class="export-toolbar">
+              <button class="export-btn pdf" onclick="exportPhase('current','pdf')" title="Export as PDF">⬇ PDF</button>
+              <button class="export-btn visio" onclick="exportPhase('current','visio')" title="Export as Visio VSDX">⬇ Visio</button>
+              <button class="export-btn drawio" onclick="exportPhase('current','drawio')" title="Export as Draw.io">⬇ Draw.io</button>
+            </div>
+          </div>
+          <div class="mp-view-tabs">
+            <button class="mp-view-tab active" data-view="physical" onclick="switchView('current','physical',this)">🔌 Physical</button>
+            <button class="mp-view-tab" data-view="logical" onclick="switchView('current','logical',this)">🌐 Logical</button>
+          </div>
+          <div class="mp-diagram-canvas" id="canvas-current-physical" style="display:block;">
+            <div class="mp-loading"><div class="mp-spinner"></div><span>Loading topology…</span></div>
+          </div>
+          <div class="mp-diagram-canvas" id="canvas-current-logical" style="display:none;">
+            <div class="mp-loading"><div class="mp-spinner"></div><span>Loading topology…</span></div>
+          </div>
+          <div class="mp-legend" id="legend-current"></div>
+        </div>
+        <div class="resize-handle" onmousedown="startResize(event, 'panel-current')"></div>
+        <div class="mp-infoboxes" id="boxes-current">
+          <div class="mp-infoboxes-header">
+            <span>🔍 Critical Info</span>
+            <button class="infoboxes-toggle-all" onclick="toggleAll('boxes-current')">Collapse All</button>
+          </div>
+          <div class="mp-loading" style="height:200px"><div class="mp-spinner"></div></div>
+        </div>
+      </div>
+
+      <!-- ── Phase Panels (generated per phase) ───────────────────────── -->
+      {% for ph in phases %}
+      <div class="mp-panel" id="panel-phase-{{ ph.phase_num }}">
+        <div class="mp-diagram-section">
+          <div class="mp-diagram-header">
+            <h3>
+              🔄 Phase {{ ph.phase_num }}: {{ ph.title or 'Migration Phase' }}
+              <span class="phase-status {{ ph.status or 'planned' }}" style="margin-left:8px">{{ (ph.status or 'planned')|title }}</span>
+              {% if ph.duration_days %}<span style="font-size:11px;color:#4a6080;margin-left:8px;font-weight:400">{{ ph.duration_days }}d</span>{% endif %}
+            </h3>
+            <div class="export-toolbar">
+              <button class="export-btn pdf" onclick="exportPhase('phase-{{ ph.phase_num }}','pdf')" title="Export as PDF">⬇ PDF</button>
+              <button class="export-btn visio" onclick="exportPhase('phase-{{ ph.phase_num }}','visio')" title="Export as Visio VSDX">⬇ Visio</button>
+              <button class="export-btn drawio" onclick="exportPhase('phase-{{ ph.phase_num }}','drawio')" title="Export as Draw.io">⬇ Draw.io</button>
+            </div>
+          </div>
+          <div class="mp-view-tabs">
+            <button class="mp-view-tab active" data-view="physical" onclick="switchView('phase-{{ ph.phase_num }}','physical',this)">🔌 Physical</button>
+            <button class="mp-view-tab" data-view="logical" onclick="switchView('phase-{{ ph.phase_num }}','logical',this)">🌐 Logical</button>
+          </div>
+          <div class="mp-diagram-canvas" id="canvas-phase-{{ ph.phase_num }}-physical" style="display:block;">
+            <div class="mp-loading"><div class="mp-spinner"></div><span>Loading phase {{ ph.phase_num }}…</span></div>
+          </div>
+          <div class="mp-diagram-canvas" id="canvas-phase-{{ ph.phase_num }}-logical" style="display:none;">
+            <div class="mp-loading"><div class="mp-spinner"></div><span>Loading phase {{ ph.phase_num }}…</span></div>
+          </div>
+          <div class="mp-legend" id="legend-phase-{{ ph.phase_num }}">
+            <div class="legend-item"><div class="legend-dot" style="background:#1e6eb5"></div>Existing</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#27ae60"></div>New</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#e67e22"></div>Changing</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div>Retiring</div>
+            {% if ph.rollback_criteria %}<div class="legend-item" style="margin-left:auto;font-size:11px;color:#f39c12">⚠ Rollback: {{ ph.rollback_criteria[:40] }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="resize-handle" onmousedown="startResize(event, 'panel-phase-{{ ph.phase_num }}')"></div>
+        <div class="mp-infoboxes" id="boxes-phase-{{ ph.phase_num }}">
+          <div class="mp-infoboxes-header">
+            <span>🔍 Critical Info</span>
+            <button class="infoboxes-toggle-all" onclick="toggleAll('boxes-phase-{{ ph.phase_num }}')">Collapse All</button>
+          </div>
+          <div class="mp-loading" style="height:200px"><div class="mp-spinner"></div></div>
+        </div>
+      </div>
+      {% endfor %}
+
+      <!-- ── Final / To-Be Panel ───────────────────────────────────────── -->
+      <div class="mp-panel" id="panel-final">
+        <div class="mp-diagram-section">
+          <div class="mp-diagram-header">
+            <h3>🏁 Final / To-Be State</h3>
+            <div class="export-toolbar">
+              <button class="export-btn pdf" onclick="exportPhase('final','pdf')" title="Export as PDF">⬇ PDF</button>
+              <button class="export-btn visio" onclick="exportPhase('final','visio')" title="Export as Visio VSDX">⬇ Visio</button>
+              <button class="export-btn drawio" onclick="exportPhase('final','drawio')" title="Export as Draw.io">⬇ Draw.io</button>
+            </div>
+          </div>
+          <div class="mp-view-tabs">
+            <button class="mp-view-tab active" data-view="physical" onclick="switchView('final','physical',this)">🔌 Physical</button>
+            <button class="mp-view-tab" data-view="logical" onclick="switchView('final','logical',this)">🌐 Logical</button>
+          </div>
+          <!-- Consolidation Summary Banner (injected by JS) -->
+          <div id="consol-banner-wrap"></div>
+          <div class="mp-diagram-canvas" id="canvas-final-physical" style="display:block;">
+            <div class="mp-loading"><div class="mp-spinner"></div><span>Computing final state…</span></div>
+          </div>
+          <div class="mp-diagram-canvas" id="canvas-final-logical" style="display:none;">
+            <div class="mp-loading"><div class="mp-spinner"></div><span>Computing final state…</span></div>
+          </div>
+          <div class="mp-legend" id="legend-final"></div>
+        </div>
+        <div class="resize-handle" onmousedown="startResize(event, 'panel-final')"></div>
+        <div class="mp-infoboxes" id="boxes-final">
+          <div class="mp-infoboxes-header">
+            <span>🔍 Critical Info</span>
+            <button class="infoboxes-toggle-all" onclick="toggleAll('boxes-final')">Collapse All</button>
+          </div>
+          <div class="mp-loading" style="height:200px"><div class="mp-spinner"></div></div>
+        </div>
+      </div>
+
+    </div><!-- /.mp-content -->
+  </div><!-- /.mp-panels -->
+</div><!-- /.mp-shell -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TOPO_ID = {{ topo_id|tojson }};
+const TOPO_NAME = {{ topo_name|tojson }};
+let _phaseData = null;
+
+// ── Panel Activation ───────────────────────────────────────────────────────
+function activatePanel(panelId, navEl) {
+  document.querySelectorAll('.mp-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.mp-nav-item').forEach(n => n.classList.remove('active'));
+  const panel = document.getElementById(panelId);
+  if (panel) panel.classList.add('active');
+  if (navEl) navEl.classList.add('active');
+}
+
+// ── Active view tracker per panel ───────────────────────────────────────────
+const _activeViews = {};
+
+function _viewKey(panelKey) {
+  return panelKey;
+}
+
+function getActiveView(panelKey) {
+  return _activeViews[_viewKey(panelKey)] || 'physical';
+}
+
+function setActiveView(panelKey, view) {
+  _activeViews[_viewKey(panelKey)] = view;
+}
+
+// ── Tab Switching ──────────────────────────────────────────────────────────
+function switchView(panelKey, view, btnEl) {
+  setActiveView(panelKey, view);
+
+  // Toggle canvases
+  const phyCanvas = document.getElementById(`canvas-${panelKey}-physical`);
+  const logCanvas = document.getElementById(`canvas-${panelKey}-logical`);
+  if (phyCanvas) phyCanvas.style.display = view === 'physical' ? 'block' : 'none';
+  if (logCanvas) logCanvas.style.display = view === 'logical' ? 'block' : 'none';
+
+  // Toggle tab buttons
+  const tabsContainer = btnEl.parentElement;
+  if (tabsContainer) {
+    tabsContainer.querySelectorAll('.mp-view-tab').forEach(t => t.classList.remove('active'));
+  }
+  if (btnEl) btnEl.classList.add('active');
+
+  // Swap infoboxes if we have cached data
+  if (!_phaseData) return;
+  let boxes = null;
+  if (panelKey === 'current') {
+    boxes = view === 'physical' ? (_phaseData.current.infoboxes_physical || _phaseData.current.infoboxes)
+                                  : (_phaseData.current.infoboxes_logical || _phaseData.current.infoboxes);
+  } else if (panelKey === 'final') {
+    boxes = view === 'physical' ? (_phaseData.final.infoboxes_physical || _phaseData.final.infoboxes)
+                                : (_phaseData.final.infoboxes_logical || _phaseData.final.infoboxes);
+  } else if (panelKey.startsWith('phase-')) {
+    const phNum = parseInt(panelKey.replace('phase-', ''), 10);
+    const ph = (_phaseData.phases || []).find(p => p.phase_num === phNum);
+    if (ph) {
+      boxes = view === 'physical' ? (ph.infoboxes_physical || ph.infoboxes)
+                                  : (ph.infoboxes_logical || ph.infoboxes);
+    }
+  }
+  const boxContainerId = `boxes-${panelKey}`;
+  if (boxes) {
+    renderInfoboxes(boxContainerId, boxes);
+  }
+}
+
+// ── Load All Phase Data ────────────────────────────────────────────────────
+async function loadAllPhaseData() {
+  try {
+    const resp = await fetch(`/network/api/migration-phases/${TOPO_ID}/data`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    _phaseData = data;
+
+    // Render Current (both views)
+    renderDiagram('canvas-current-physical', data.current.graph, 'current', 'physical');
+    renderDiagram('canvas-current-logical', data.current.graph, 'current', 'logical');
+    renderInfoboxes('boxes-current', data.current.infoboxes);
+
+    // Render Phases (both views)
+    (data.phases || []).forEach(ph => {
+      renderDiagram(`canvas-phase-${ph.phase_num}-physical`, ph.graph_physical || ph.graph, `phase-${ph.phase_num}`, 'physical');
+      renderDiagram(`canvas-phase-${ph.phase_num}-logical`, ph.graph_logical || ph.graph, `phase-${ph.phase_num}`, 'logical');
+      renderInfoboxes(`boxes-phase-${ph.phase_num}`, ph.infoboxes);
+    });
+
+    // Render Final (both views)
+    renderDiagram('canvas-final-physical', data.final.graph, 'final', 'physical');
+    renderDiagram('canvas-final-logical', data.final.graph, 'final', 'logical');
+    renderInfoboxes('boxes-final', data.final.infoboxes);
+    renderConsolidationBanner(data.final.consolidation);
+    updateNavConsolStats(data.final.consolidation);
+
+  } catch (err) {
+    console.error('Failed to load phase data:', err);
+    document.querySelectorAll('.mp-loading').forEach(el => {
+      el.innerHTML = `<span style="color:#e74c3c">Failed to load: ${err.message}</span>`;
+    });
+  }
+}
+
+// ── Diagram Renderer (SVG) ─────────────────────────────────────────────────
+const STATE_COLORS = {
+  existing: '#1e6eb5',
+  new:      '#27ae60',
+  changing: '#e67e22',
+  retiring: '#e74c3c',
+  default:  '#1e6eb5',
+};
+
+function renderDiagram(containerId, graph, phaseKey, diagramType) {
+  diagramType = diagramType || 'physical';
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const nodes = (graph && graph.nodes) || [];
+  const edges = (graph && graph.edges) || [];
+
+  if (!nodes.length) {
+    container.innerHTML = `<div class="mp-loading"><span style="color:#4a6080">No topology data. <a href="/network/canvas/${TOPO_ID}" style="color:#27ae60">Add devices in the canvas editor →</a></span></div>`;
+    return;
+  }
+
+  // Compute bounds
+  const xs = nodes.map(n => n.x || 0);
+  const ys = nodes.map(n => n.y || 0);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const W = Math.max(800, maxX - minX + 200);
+  const H = Math.max(500, maxY - minY + 160);
+
+  // Position map
+  const pos = {};
+  nodes.forEach(n => {
+    pos[n.id] = { x: (n.x || 0) - minX + 60, y: (n.y || 0) - minY + 40 };
+  });
+
+  // Build SVG edges
+  let edgeSvg = '';
+  edges.slice(0, 200).forEach(e => {
+    const s = pos[e.source], t = pos[e.target];
+    if (!s || !t) return;
+    const bw = e.bandwidth_gbps || e.bandwidth || '';
+    const util = e.utilization_pct || 0;
+
+    let stroke, sw, labelText;
+    if (diagramType === 'logical') {
+      stroke = e.protocol_color || (util > 80 ? '#e74c3c' : util > 60 ? '#f39c12' : '#1e4a7e');
+      sw = 2.0;
+      labelText = e.protocol || '';
+    } else {
+      stroke = util > 80 ? '#e74c3c' : util > 60 ? '#f39c12' : '#1e4a7e';
+      sw = util > 80 ? 2.5 : 1.5;
+      const srcIf = e.source_interface || '';
+      const tgtIf = e.target_interface || '';
+      if (srcIf && tgtIf) {
+        labelText = `${srcIf} ↔ ${tgtIf}`;
+      } else if (srcIf) {
+        labelText = srcIf;
+      } else if (tgtIf) {
+        labelText = tgtIf;
+      } else {
+        labelText = '';
+      }
+    }
+
+    const x1 = s.x + 50, y1 = s.y + 16, x2 = t.x + 50, y2 = t.y + 16;
+    edgeSvg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${sw}" opacity="0.85"/>`;
+
+    // Edge label
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    if (labelText) {
+      edgeSvg += `<rect x="${mx - 36}" y="${my - 14}" width="72" height="14" rx="3" fill="#0a1628" opacity="0.85"/>`;
+      edgeSvg += `<text x="${mx}" y="${my - 4}" fill="#b0c4dc" font-size="8" text-anchor="middle" font-family="monospace">${_esc(labelText.substring(0, 28))}</text>`;
+    }
+    if (bw && diagramType === 'physical') {
+      edgeSvg += `<text x="${mx}" y="${my + 8}" fill="#4a6080" font-size="8" text-anchor="middle">${bw}G</text>`;
+    }
+  });
+
+  // Build SVG nodes
+  let nodeSvg = '';
+  nodes.slice(0, 150).forEach(n => {
+    const p = pos[n.id];
+    if (!p) return;
+    const state = n.phase_state || 'default';
+    const color = STATE_COLORS[state] || STATE_COLORS.default;
+    const label = (n.label || n.id || '').substring(0, 14);
+    const type = (n.type || '').toLowerCase();
+    const icon = _typeIcon(type);
+    const isEol = n.eol && new Date(n.eol) < new Date();
+
+    // Logical overlay: show ASN or role
+    let extraText = '';
+    if (diagramType === 'logical' && n.logical) {
+      const asn = n.logical.asn;
+      const role = n.logical.role;
+      extraText = asn ? `AS${asn}` : (role || '');
+    }
+
+    nodeSvg += `
+      <g class="nc-node" transform="translate(${p.x},${p.y})" onclick="showNodeDetail(${JSON.stringify(JSON.stringify(n))})" style="cursor:pointer">
+        <rect x="0" y="0" width="100" height="${extraText ? 40 : 32}" rx="5" fill="${color}" stroke="${isEol ? '#e74c3c' : 'rgba(255,255,255,0.15)'}" stroke-width="${isEol ? 2 : 1}"/>
+        <text x="12" y="14" fill="rgba(255,255,255,0.8)" font-size="12">${icon}</text>
+        <text x="28" y="13" fill="#ffffff" font-size="10" font-weight="700">${_esc(label)}</text>
+        <text x="28" y="24" fill="rgba(255,255,255,0.6)" font-size="8">${_esc((n.type||'').substring(0,16))}</text>
+        ${extraText ? `<text x="28" y="35" fill="#a5b4fc" font-size="7" font-family="monospace">${_esc(extraText)}</text>` : ''}
+        ${isEol ? '<text x="86" y="10" fill="#e74c3c" font-size="9" font-weight="bold">EOL</text>' : ''}
+      </g>`;
+  });
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="background:#0a1628">
+    <defs>
+      <marker id="arr-${phaseKey}-${diagramType}" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L6,3 z" fill="#1e4a7e"/>
+      </marker>
+    </defs>
+    <g id="edges-${phaseKey}-${diagramType}">${edgeSvg}</g>
+    <g id="nodes-${phaseKey}-${diagramType}">${nodeSvg}</g>
+  </svg>`;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'mp-svg-wrap';
+  wrap.innerHTML = svg;
+  container.innerHTML = '';
+  container.appendChild(wrap);
+
+  // Pan + zoom
+  _initPanZoom(wrap);
+}
+
+function _typeIcon(type) {
+  if (type.includes('router') || type.includes('router')) return '🖧';
+  if (type.includes('firewall') || type.includes('fw')) return '🔥';
+  if (type.includes('switch')) return '⊞';
+  if (type.includes('load') || type.includes('lb')) return '⚖';
+  if (type.includes('cloud') || type.includes('aws') || type.includes('az-') || type.includes('gcp')) return '☁';
+  if (type.includes('server')) return '🖥';
+  return '□';
+}
+
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Pan + Zoom ─────────────────────────────────────────────────────────────
+function _initPanZoom(el) {
+  let isPanning = false, startX, startY, scrollLeft, scrollTop;
+  el.addEventListener('mousedown', e => {
+    isPanning = true; startX = e.pageX - el.offsetLeft; startY = e.pageY - el.offsetTop;
+    scrollLeft = el.scrollLeft; scrollTop = el.scrollTop;
+  });
+  el.addEventListener('mouseleave', () => isPanning = false);
+  el.addEventListener('mouseup', () => isPanning = false);
+  el.addEventListener('mousemove', e => {
+    if (!isPanning) return;
+    e.preventDefault();
+    el.scrollLeft = scrollLeft - (e.pageX - el.offsetLeft - startX);
+    el.scrollTop  = scrollTop  - (e.pageY - el.offsetTop  - startY);
+  });
+}
+
+// ── Info Box Renderer ──────────────────────────────────────────────────────
+function renderInfoboxes(containerId, boxes) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (!boxes || !boxes.length) {
+    container.innerHTML = `<div class="mp-infoboxes-header"><span>🔍 Critical Info</span></div><div style="padding:16px;color:#4a6080;font-size:12px">No data available.</div>`;
+    return;
+  }
+
+  const header = container.querySelector('.mp-infoboxes-header');
+  // Remove existing loading indicators
+  Array.from(container.children).forEach(c => { if (!c.classList.contains('mp-infoboxes-header')) c.remove(); });
+
+  boxes.forEach(box => {
+    const boxEl = document.createElement('div');
+    boxEl.className = 'infobox';
+    boxEl.dataset.boxId = box.id;
+
+    const hdrColor = box.color || '#1e6eb5';
+    const rowsHtml = (box.rows || []).map(row => {
+      const valClass = row.status ? `infobox-value ${row.status}` : 'infobox-value';
+      return `<div class="infobox-row">
+        <span class="infobox-label">${_esc(row.label || '')}</span>
+        <span class="${valClass}">${_esc(row.value || '')}</span>
+      </div>`;
+    }).join('');
+
+    boxEl.innerHTML = `
+      <div class="infobox-header" style="background:${hdrColor}" onclick="toggleInfobox(this.parentElement)">
+        <span class="infobox-icon">${box.icon || '📋'}</span>
+        <h4>${_esc(box.title || '')}</h4>
+        <span class="infobox-chevron">▼</span>
+      </div>
+      <div class="infobox-body">${rowsHtml}</div>`;
+
+    container.appendChild(boxEl);
+  });
+}
+
+function toggleInfobox(el) {
+  el.classList.toggle('collapsed');
+}
+
+function toggleAll(containerId) {
+  const container = document.getElementById(containerId);
+  const boxes = container.querySelectorAll('.infobox');
+  const allCollapsed = Array.from(boxes).every(b => b.classList.contains('collapsed'));
+  boxes.forEach(b => { allCollapsed ? b.classList.remove('collapsed') : b.classList.add('collapsed'); });
+  const btn = container.querySelector('.infoboxes-toggle-all');
+  if (btn) btn.textContent = allCollapsed ? 'Collapse All' : 'Expand All';
+}
+
+// ── Consolidation Banner ───────────────────────────────────────────────────
+function renderConsolidationBanner(c) {
+  if (!c) return;
+  const wrap = document.getElementById('consol-banner-wrap');
+  if (!wrap) return;
+  const saved = Math.abs(c.tco_3yr_delta || 0);
+  wrap.innerHTML = `
+    <div class="consol-banner">
+      <h5>💰 Consolidation & Optimization Summary</h5>
+      <div class="consol-grid">
+        <div class="consol-stat"><div class="cval">${c.devices_removed || 0}</div><div class="clbl">Devices Removed</div></div>
+        <div class="consol-stat"><div class="cval">${c.rack_units_freed || 0}U</div><div class="clbl">Rack Units Freed</div></div>
+        <div class="consol-stat"><div class="cval">${c.power_saved_watts || 0}W</div><div class="clbl">Power Saved</div></div>
+        <div class="consol-stat"><div class="cval" style="font-size:14px">$${_fmtNum(saved)}</div><div class="clbl">3-Yr TCO Savings</div></div>
+      </div>
+    </div>`;
+}
+
+function updateNavConsolStats(c) {
+  const el = document.getElementById('nav-consol-stats');
+  if (!el || !c) return;
+  el.innerHTML = `
+    <div style="margin-bottom:4px"><span style="color:#eaeaea;font-weight:700">${c.devices_removed || 0}</span> devices removed</div>
+    <div style="margin-bottom:4px"><span style="color:#eaeaea;font-weight:700">${c.rack_units_freed || 0}U</span> rack freed</div>
+    <div><span style="color:#27ae60;font-weight:700">$${_fmtNum(Math.abs(c.tco_3yr_delta || 0))}</span> 3yr savings</div>`;
+}
+
+function _fmtNum(n) {
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(0) + 'K';
+  return n.toFixed(0);
+}
+
+// ── Export ─────────────────────────────────────────────────────────────────
+async function exportPhase(phaseKey, fmt) {
+  const btn = event.target;
+  const origText = btn.textContent;
+  btn.textContent = '⏳ …';
+  btn.disabled = true;
+  try {
+    const resp = await fetch(`/network/api/migration-phases/${TOPO_ID}/export/${phaseKey}/${fmt}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    const cd = resp.headers.get('Content-Disposition') || '';
+    const fnMatch = cd.match(/filename="([^"]+)"/);
+    const fname = fnMatch ? fnMatch[1] : `network_${phaseKey}.${fmt}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname; a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert(`Export failed: ${err.message}`);
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = false;
+  }
+}
+
+// ── Node Detail Tooltip ────────────────────────────────────────────────────
+function showNodeDetail(nodeJson) {
+  try {
+    const n = JSON.parse(nodeJson);
+    const meta = n.meta || {};
+    const detail = [
+      `Device: ${n.label || n.id}`,
+      `Type: ${n.type || '—'}`,
+      `Vendor: ${n.vendor || meta.vendor || '—'}`,
+      `Model: ${n.model || meta.model || '—'}`,
+      `Mgmt IP: ${n.ip || n.mgmt_ip || meta.mgmt_ip || '—'}`,
+      `EOL: ${n.eol || '—'}`,
+      n.phase_state ? `Phase State: ${n.phase_state}` : '',
+    ].filter(Boolean).join('\n');
+    // Simple tooltip — in a full implementation this would be a modal
+    console.info('[ICDEV NDC] Node:', n);
+  } catch {}
+}
+
+// ── Resize handle ──────────────────────────────────────────────────────────
+function startResize(e, panelId) {
+  const panel = document.getElementById(panelId);
+  const diagSection = panel.querySelector('.mp-diagram-section');
+  const startX = e.clientX;
+  const startW = diagSection.offsetWidth;
+  const onMove = ev => {
+    const newW = Math.max(300, startW + ev.clientX - startX);
+    diagSection.style.flex = 'none';
+    diagSection.style.width = newW + 'px';
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  e.preventDefault();
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadAllPhaseData();
+});
+</script>
+{% endblock %}

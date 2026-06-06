@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}LOA Requests — CCC{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0" style="color:#38bdf8;"><i class="bi bi-file-earmark-check me-2"></i>Letter of Authorization Requests</h5>
+    <a href="/ccc" class="btn btn-sm btn-outline-secondary">← Overview</a>
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;">
+    <a href="/ccc" class="btn btn-sm btn-outline-secondary">Overview</a>
+    <a href="/ccc/circuits" class="btn btn-sm btn-outline-secondary">Circuits</a>
+    <a href="/ccc/cross-connects" class="btn btn-sm btn-outline-secondary">Cross-Connects</a>
+    <a href="/ccc/loa" class="btn btn-sm btn-outline-info active">LOA</a>
+    <a href="/ccc/orders" class="btn btn-sm btn-outline-secondary">Orders</a>
+    <a href="/ccc/capacity" class="btn btn-sm btn-outline-secondary">Capacity</a>
+    <a href="/ccc/dwdm" class="btn btn-sm btn-outline-secondary">DWDM</a>
+  </div>
+
+  <!-- Create LOA -->
+  <div class="card bg-dark border-secondary mb-4">
+    <div class="card-header border-secondary">Request LOA</div>
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-md-2">
+          <select class="form-select form-select-sm bg-dark text-light border-secondary" id="f-loa-facility">
+            <option value="">Facility *</option>
+            <option>equinix</option><option>megaport</option><option>zayo</option><option>lumen</option>
+            <option>coresite</option><option>digital_realty</option><option>other</option>
+          </select>
+        </div>
+        <div class="col-md-2"><input class="form-control form-control-sm bg-dark text-light border-secondary" id="f-loa-name" placeholder="Requester Name *"></div>
+        <div class="col-md-2"><input class="form-control form-control-sm bg-dark text-light border-secondary" id="f-loa-email" placeholder="Requester Email *" type="email"></div>
+        <div class="col-md-2"><input class="form-control form-control-sm bg-dark text-light border-secondary" id="f-loa-company" placeholder="Company *"></div>
+        <div class="col-md-1"><input class="form-control form-control-sm bg-dark text-light border-secondary" id="f-loa-rack-a" placeholder="Rack A"></div>
+        <div class="col-md-1"><input class="form-control form-control-sm bg-dark text-light border-secondary" id="f-loa-rack-z" placeholder="Rack Z"></div>
+        <div class="col-md-1"><input class="form-control form-control-sm bg-dark text-light border-secondary" id="f-loa-days" placeholder="Days" type="number" value="30"></div>
+        <div class="col-md-1"><button class="btn btn-sm btn-info w-100" onclick="createLOA()">Request</button></div>
+      </div>
+      <div id="loa-msg" class="mt-2 small"></div>
+    </div>
+  </div>
+
+  <div class="card bg-dark border-secondary">
+    <div class="card-body p-0">
+      <table class="table table-dark table-sm mb-0">
+        <thead>
+          <tr><th>LOA Number</th><th>Facility</th><th>Company</th><th>Requester</th><th>Rack A</th><th>Rack Z</th><th>Valid Days</th><th>Created</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for loa in loas %}
+          <tr>
+            <td class="text-info fw-bold">{{ loa.loa_number }}</td>
+            <td class="text-uppercase" style="font-size:.8rem;">{{ loa.facility }}</td>
+            <td>{{ loa.requester_company }}</td>
+            <td class="text-muted" style="font-size:.8rem;">{{ loa.requester_name }}</td>
+            <td class="text-muted" style="font-size:.8rem;">{{ loa.rack_a or '—' }}</td>
+            <td class="text-muted" style="font-size:.8rem;">{{ loa.rack_z or '—' }}</td>
+            <td>{{ loa.valid_days }}</td>
+            <td class="text-muted" style="font-size:.8rem;">{{ loa.created_at | ts }}</td>
+            <td>
+              <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;"
+                class="badge-{{ loa.status }}">{{ loa.status }}</span>
+            </td>
+            <td>
+              <button class="btn btn-xs btn-outline-secondary" style="font-size:10px;padding:1px 6px;"
+                onclick="fetchDoc({{ loa.id }})">Doc</button>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10" class="text-center text-muted py-4">No LOA requests yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- LOA document modal -->
+  <div id="loa-doc-panel" class="d-none mt-4 card bg-dark border-info">
+    <div class="card-header border-info d-flex justify-content-between">
+      <span>LOA Document</span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('loa-doc-panel').classList.add('d-none')">×</button>
+    </div>
+    <div class="card-body">
+      <pre id="loa-doc-text" class="text-light" style="font-size:.8rem;white-space:pre-wrap;"></pre>
+    </div>
+  </div>
+
+  {% include 'includes/iqe_query_widget.html' %}
+</div>
+<script>
+const IQE_CANVAS = 'ccc'; const IQE_COLLECTION = 'ccc.loa';
+function createLOA() {
+  const data = {
+    facility: document.getElementById('f-loa-facility').value,
+    requester_name: document.getElementById('f-loa-name').value,
+    requester_email: document.getElementById('f-loa-email').value,
+    requester_company: document.getElementById('f-loa-company').value,
+    rack_a: document.getElementById('f-loa-rack-a').value,
+    rack_z: document.getElementById('f-loa-rack-z').value,
+    valid_days: parseInt(document.getElementById('f-loa-days').value) || 30,
+  };
+  const msg = document.getElementById('loa-msg');
+  fetch('/api/ccc/loa', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    .then(r => r.json())
+    .then(d => { msg.innerHTML = d.loa_number ? `<span class="text-success">Created: ${d.loa_number}</span>` : `<span class="text-danger">${d.error||'Error'}</span>`; })
+    .catch(e => { msg.innerHTML = '<span class="text-danger">'+e+'</span>'; });
+}
+function fetchDoc(loaId) {
+  fetch(`/api/ccc/loa/${loaId}/document`).then(r=>r.json()).then(d=>{
+    document.getElementById('loa-doc-text').textContent = d.document || '';
+    document.getElementById('loa-doc-panel').classList.remove('d-none');
+  }).catch(()=>{});
+}
+</script>
+{% endblock %}

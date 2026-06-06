@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}GeoSIGINT — Indo-Pacific Theater Analysis{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+.geo-hero { background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%); border:1px solid #334155; border-radius:8px; padding:1.5rem 2rem; margin-bottom:1.5rem; display:flex; align-items:center; justify-content:space-between; }
+.geo-hero__title { font-size:1.5rem; font-weight:800; letter-spacing:-.5px; color:#e2e8f0; }
+.geo-hero__sub { font-size:.82rem; color:#64748b; margin-top:.3rem; }
+.geo-hero__badge { background:#1e3a5f; border:1px solid #2563eb; color:#60a5fa; border-radius:4px; padding:.2rem .65rem; font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+.analyzer-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:1rem; margin-bottom:1.5rem; }
+.analyzer-card { background:#1e293b; border:1px solid #334155; border-radius:8px; padding:1.25rem; text-decoration:none; color:inherit; transition:border-color .2s,transform .1s; display:block; }
+.analyzer-card:hover { border-color:#2563eb; transform:translateY(-2px); color:inherit; text-decoration:none; }
+.analyzer-card__icon { font-size:1.8rem; margin-bottom:.6rem; }
+.analyzer-card__title { font-size:.95rem; font-weight:700; color:#e2e8f0; margin-bottom:.3rem; }
+.analyzer-card__desc { font-size:.78rem; color:#64748b; line-height:1.45; }
+.analyzer-card__tags { margin-top:.65rem; display:flex; flex-wrap:wrap; gap:.3rem; }
+.tag { background:#0f172a; border:1px solid #334155; color:#94a3b8; border-radius:3px; padding:.1rem .45rem; font-size:.68rem; }
+.stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.75rem; margin-bottom:1.5rem; }
+.stat-box { background:#1e293b; border:1px solid #334155; border-radius:6px; padding:.9rem 1.1rem; text-align:center; }
+.stat-box__val { font-size:1.5rem; font-weight:800; color:#60a5fa; }
+.stat-box__label { font-size:.72rem; color:#64748b; margin-top:.2rem; text-transform:uppercase; letter-spacing:.05em; }
+#index-map { height:400px; border-radius:8px; overflow:hidden; margin-bottom:1.5rem; position:relative; z-index:0; isolation:isolate; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="geo-hero">
+    <div>
+        <div class="geo-hero__title">&#127757; GeoSIGINT — Indo-Pacific Theater Analysis</div>
+        <div class="geo-hero__sub">Open-source geospatial & strategic intelligence across 6 threat domains</div>
+    </div>
+    <span class="geo-hero__badge">CUI // SP-CTI</span>
+</div>
+
+<div id="index-map"></div>
+
+<div class="stat-row" id="stat-row">
+    <div class="stat-box"><div class="stat-box__val" id="stat-troops">43,550</div><div class="stat-box__label">PLAN First-Wave Troops</div></div>
+    <div class="stat-box"><div class="stat-box__val" id="stat-bases">16</div><div class="stat-box__label">Allied Bases (1IC+2IC)</div></div>
+    <div class="stat-box"><div class="stat-box__val" id="stat-crossing">~17h</div><div class="stat-box__label">Min Strait Crossing</div></div>
+    <div class="stat-box"><div class="stat-box__val" id="stat-zones">6</div><div class="stat-box__label">Disputed Maritime Zones</div></div>
+    <div class="stat-box"><div class="stat-box__val" id="stat-tsmc">92%</div><div class="stat-box__label">Taiwan TSMC Share</div></div>
+    <div class="stat-box"><div class="stat-box__val" id="stat-scenarios">5</div><div class="stat-box__label">Disruption Scenarios</div></div>
+</div>
+
+<h2 style="font-size:.85rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:.75rem">Analysis Modules</h2>
+<div class="analyzer-grid">
+    <a href="/geosigint/a2ad" class="analyzer-card">
+        <div class="analyzer-card__icon">&#127987;</div>
+        <div class="analyzer-card__title">A2/AD Zone Mapper</div>
+        <div class="analyzer-card__desc">Anti-access/area-denial weapon system deployment sites. DF-21D, DF-26, YJ-18, and S-400 range rings across 16 launch positions.</div>
+        <div class="analyzer-card__tags"><span class="tag">Leaflet</span><span class="tag">DF-21D</span><span class="tag">DF-26</span><span class="tag">S-400</span></div>
+    </a>
+    <a href="/geosigint/amphibious" class="analyzer-card">
+        <div class="analyzer-card__icon">&#128674;</div>
+        <div class="analyzer-card__title">Amphibious Threat Assessment</div>
+        <div class="analyzer-card__desc">PLAN amphibious lift capacity against 9 Taiwan landing zones. Weather window calendar, crossing corridors, and radar detection curves.</div>
+        <div class="analyzer-card__tags"><span class="tag">43,550 troops</span><span class="tag">Weather</span><span class="tag">Detection</span></div>
+    </a>
+    <a href="/geosigint/strait-crossing" class="analyzer-card">
+        <div class="analyzer-card__icon">&#128315;</div>
+        <div class="analyzer-card__title">Strait Crossing Analysis</div>
+        <div class="analyzer-card__desc">Taiwan Strait crossing timelines at 5 speed scenarios. ROCAF intercept windows, radar detection probability, and EW offset modeling.</div>
+        <div class="analyzer-card__tags"><span class="tag">180 nm</span><span class="tag">ROCAF</span><span class="tag">Intercept</span></div>
+    </a>
+    <a href="/geosigint/island-chain" class="analyzer-card">
+        <div class="analyzer-card__icon">&#127970;</div>
+        <div class="analyzer-card__title">Island Chain Defense</div>
+        <div class="analyzer-card__desc">US and allied base coverage across First and Second Island Chains. THAAD battery positions, maritime chokepoints, and Taiwan coverage radii.</div>
+        <div class="analyzer-card__tags"><span class="tag">16 bases</span><span class="tag">THAAD</span><span class="tag">Chokepoints</span></div>
+    </a>
+    <a href="/geosigint/militia" class="analyzer-card">
+        <div class="analyzer-card__icon">&#128674;</div>
+        <div class="analyzer-card__title">Maritime Militia Classifier</div>
+        <div class="analyzer-card__desc">Three-layer detection engine for Little Blue Men: fishing-pattern anomaly in disputed zones, formation behavior coherence, and AIS darkness near PLAN artificial islands.</div>
+        <div class="analyzer-card__tags"><span class="tag">3-layer</span><span class="tag">DBSCAN</span><span class="tag">Spratly</span></div>
+    </a>
+    <a href="/geosigint/semiconductor" class="analyzer-card">
+        <div class="analyzer-card__icon">&#129520;</div>
+        <div class="analyzer-card__title">Semiconductor Chain Simulator</div>
+        <div class="analyzer-card__desc">Global chip supply chain disruption cascade. Five pre-computed scenarios (Taiwan conflict, REE embargo, ASML ban). Simulates wafer production degradation over 60–720 days.</div>
+        <div class="analyzer-card__tags"><span class="tag">TSMC</span><span class="tag">ASML EUV</span><span class="tag">REE flow</span></div>
+    </a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+    const map = L.map('index-map', { center: [22, 122], zoom: 4 });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 18
+    }).addTo(map);
+
+    // A2/AD overview rings
+    Promise.all([
+        fetch('/api/geosigint/a2ad/zones').then(r => r.json()),
+        fetch('/api/geosigint/amphibious/zones').then(r => r.json()),
+        fetch('/api/geosigint/island-chain/bases').then(r => r.json()),
+        fetch('/api/geosigint/militia/zones').then(r => r.json()),
+    ]).then(([a2ad, amph, ic, militia]) => {
+        // A2/AD range rings
+        (a2ad.zones || []).forEach(z => {
+            L.circle([z.lat, z.lon], {
+                radius: z.range_km * 1000,
+                color: z.color || '#ef4444',
+                weight: 1,
+                fillOpacity: 0.03,
+                dashArray: z.dash_array || null,
+            }).bindPopup(`<b style="color:${z.color}">${z.name}</b><br>${(z.range_km).toLocaleString()} km`).addTo(map);
+            L.circleMarker([z.lat, z.lon], { radius: 5, color: z.color || '#ef4444', fillOpacity: .8 }).addTo(map);
+        });
+        // Landing zones
+        (amph.zones || []).forEach(z => {
+            L.circleMarker([z.lat, z.lon], { radius: 6, color: z.color, fillColor: z.color, fillOpacity: .7, weight: 2 })
+                .bindPopup(`<b>${z.name}</b><br>${z.viability}`).addTo(map);
+        });
+        // Allied bases
+        (ic.bases || []).forEach(b => {
+            L.circleMarker([b.lat, b.lon], { radius: 7, color: '#22c55e', fillColor: '#22c55e', fillOpacity: .8, weight: 2 })
+                .bindPopup(`<b>${b.name}</b><br>${b.country || ''}`).addTo(map);
+        });
+        // Disputed zones
+        (militia.disputed_zones || []).forEach(z => {
+            L.rectangle([[z.lat_min, z.lon_min], [z.lat_max, z.lon_max]], {
+                color: z.color || '#ef4444', weight: 1, fillOpacity: 0.07,
+            }).bindPopup(`<b>${z.name}</b>`).addTo(map);
+        });
+    }).catch(() => {});
+})();
+</script>
+{% endblock %}

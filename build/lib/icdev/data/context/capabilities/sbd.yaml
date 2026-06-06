@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+# ICDEV™ Capability Domain: Secure by Design
+# Auto-generated from icdev_capability_catalog.json + CLAUDE.md
+# Last refreshed: 2026-03-13
+
+domain: sbd
+description: "CISA Secure by Design pledge assessment, Cloudyrion 8-pillar alignment, and exception management"
+capabilities:
+  - slug: sbd-assessor
+    name: "CISA Secure by Design Assessment"
+    description: "35 SBD requirements mapped to Cloudyrion 8-Pillar framework, gate enforcement, exception registry with max 365-day lifecycle"
+    cli_examples:
+      - "python tools/compliance/sbd_assessor.py --project-id sparkpilot --project-dir . --gate --json"
+      - "python tools/compliance/sbd_assessor.py --project-id sparkpilot --list-exceptions --json"
+      - "python tools/compliance/sbd_report_generator.py --project-id sparkpilot --json"
+    related_controls: ["SA-3", "SA-8", "SA-11", "SA-15"]
+    article_hooks:
+      - "35 Secure by Design requirements mapped to Cloudyrion's 8 pillars -- assess, remediate, and report in one workflow"
+      - "Security exception registry with max 365-day lifecycle and aging gates -- expired exceptions block deployment"
+      - "Developer Scorecard includes SbD posture (20% weight) -- expired exceptions directly penalize the score"
+    frameworks: ["CISA Secure by Design", "Cloudyrion 8-Pillar"]
+    keywords: ["Secure by Design", "SbD", "CISA", "Cloudyrion", "security exception", "shift left", "secure development"]
+    source_catalog_id: "cap-sbd"

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}QDC SOPs — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  <h2 style="margin:0;color:#eaeaea;">Standard Operating Procedures</h2>
+  <a href="/quality/" class="btn btn-sm" style="background:#2196f3;color:#fff;padding:6px 14px;border-radius:4px;text-decoration:none;">← Back to QDC</a>
+</div>
+<div class="table-container" style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;overflow:hidden;">
+  <table style="width:100%;border-collapse:collapse;font-size:13px;color:#eaeaea;">
+    <thead><tr style="background:#0a1628;">
+      <th style="padding:10px 12px;text-align:left;color:#7a8cb0;font-size:11px;text-transform:uppercase;">SOP #</th>
+      <th style="padding:10px 12px;text-align:left;">Title</th>
+      <th style="padding:10px 12px;text-align:center;">Version</th>
+      <th style="padding:10px 12px;text-align:center;">Frequency</th>
+      <th style="padding:10px 12px;text-align:left;">Audience</th>
+      <th style="padding:10px 12px;text-align:center;">Status</th>
+    </tr></thead>
+    <tbody>
+      {% for s in sops %}
+      <tr style="border-top:1px solid #1e3a6e;">
+        <td style="padding:8px 12px;font-family:monospace;color:#2196f3;">{{ s.sop_number }}</td>
+        <td style="padding:8px 12px;font-weight:600;">{{ s.title }}</td>
+        <td style="padding:8px 12px;text-align:center;color:#7a8cb0;">v{{ s.version }}</td>
+        <td style="padding:8px 12px;text-align:center;color:#7a8cb0;">{{ s.frequency }}</td>
+        <td style="padding:8px 12px;color:#7a8cb0;">{{ s.audience }}</td>
+        <td style="padding:8px 12px;text-align:center;">
+          {% if s.approval_status == 'approved' %}<span style="background:#27ae60;color:#fff;padding:2px 8px;border-radius:3px;font-size:10px;">Approved</span>
+          {% elif s.approval_status == 'pending_review' %}<span style="background:#f39c12;color:#fff;padding:2px 8px;border-radius:3px;font-size:10px;">Pending</span>
+          {% else %}<span style="background:#5a6e8c;color:#fff;padding:2px 8px;border-radius:3px;font-size:10px;">Draft</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

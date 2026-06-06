@@ -1,0 +1,120 @@
+{% extends "network/base.html" %}
+{% block title %}Global Network Canvas — Network Design Canvas{% endblock %}
+{% block global_banner %}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='js/vendor/joint.css') }}"/>
+<script src="{{ url_for('static', filename='js/vendor/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/lodash.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/backbone.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/joint.js') }}"></script>
+<style>
+  .main-content { padding: 0; display: flex; flex-direction: column; }
+  #global-canvas-container { flex: 1; background: var(--bg); position: relative; overflow: hidden; }
+  #global-canvas-toolbar {
+    display: flex; gap: 8px; padding: 8px 16px;
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    align-items: center; font-size: 12px;
+  }
+  #global-canvas-toolbar .tb-btn {
+    background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); padding: 4px 10px; border-radius: 4px;
+    cursor: pointer; font-size: 12px;
+  }
+  #global-canvas-toolbar .tb-btn:hover { border-color: var(--red); }
+  .gc-legend { display: flex; gap: 12px; margin-left: auto; font-size: 11px; color: var(--text-dim); }
+  .gc-legend-item { display: flex; align-items: center; gap: 4px; }
+  .gc-dot { width: 10px; height: 10px; border-radius: 50%; }
+</style>
+{% endblock %}
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
+<div id="global-canvas-toolbar">
+  <button class="tb-btn" onclick="gcZoomIn()">+ Zoom</button>
+  <button class="tb-btn" onclick="gcZoomOut()">- Zoom</button>
+  <button class="tb-btn" onclick="gcFit()">Fit All</button>
+  <button class="tb-btn" onclick="gcReset()">1:1</button>
+  <span style="margin-left:12px;color:var(--text-dim);" id="gc-stats">Loading...</span>
+  <div class="gc-legend">
+    <div class="gc-legend-item"><div class="gc-dot" style="background:#27ae60;"></div> Router</div>
+    <div class="gc-legend-item"><div class="gc-dot" style="background:#3498db;"></div> Switch</div>
+    <div class="gc-legend-item"><div class="gc-dot" style="background:#e74c3c;"></div> Firewall</div>
+    <div class="gc-legend-item"><div class="gc-dot" style="background:#f39c12;"></div> Other</div>
+  </div>
+  <a href="/network/global" class="tb-btn" style="text-decoration:none;">Back to Global</a>
+</div>
+<div id="global-canvas-container"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const GC_COLORS = {
+  'router': '#27ae60', 'switch-l3': '#3498db', 'switch-l2': '#3498db',
+  'firewall': '#e74c3c', 'server': '#9b59b6', 'cloud': '#1abc9c',
+};
+const GC_DEFAULT = '#f39c12';
+
+async function initGlobalCanvas() {
+  const paper = new joint.dia.Paper({
+    el: document.getElementById('global-canvas-container'),
+    model: new joint.dia.Graph(),
+    width: '100%', height: '100%',
+    gridSize: 10, background: {color: '#1a1a2e'},
+    interactive: false,
+  });
+  const graph = paper.model;
+  window._gcPaper = paper;
+
+  const r = await fetch(NC_BASE + '/api/global-canvas-data');
+  const d = await r.json();
+
+  document.getElementById('gc-stats').textContent =
+    d.total_nodes + ' nodes, ' + d.total_edges + ' edges, ' + d.groups.length + ' topologies';
+
+  // Render nodes
+  const nodeMap = {};
+  d.nodes.forEach(n => {
+    const color = GC_COLORS[n.type] || GC_DEFAULT;
+    const el = new joint.shapes.standard.Circle({
+      position: {x: n.x || 0, y: n.y || 0},
+      size: {width: 30, height: 30},
+      attrs: {
+        body: {fill: color, stroke: '#333', strokeWidth: 1},
+        label: {text: (n.label || '').substring(0, 12), fill: '#eee', fontSize: 8},
+      }
+    });
+    el.addTo(graph);
+    nodeMap[n.id] = el;
+  });
+
+  // Render edges
+  d.edges.forEach(e => {
+    const src = nodeMap[e.source];
+    const tgt = nodeMap[e.target];
+    if (src && tgt) {
+      const link = new joint.shapes.standard.Link({
+        source: {id: src.id}, target: {id: tgt.id},
+        attrs: {
+          line: {
+            stroke: e.is_interconnect ? '#e94560' : '#445',
+            strokeWidth: e.is_interconnect ? 3 : 1,
+            strokeDasharray: e.is_interconnect ? '8 4' : 'none',
+          },
+        },
+        labels: e.label ? [{attrs: {text: {text: e.label, fill: '#888', fontSize: 7}}}] : [],
+      });
+      link.addTo(graph);
+    }
+  });
+
+  // Fit to content
+  paper.scaleContentToFit({padding: 40, maxScale: 1.5});
+}
+
+function gcZoomIn() { const s = window._gcPaper.scale(); window._gcPaper.scale(s.sx * 1.2, s.sy * 1.2); }
+function gcZoomOut() { const s = window._gcPaper.scale(); window._gcPaper.scale(s.sx / 1.2, s.sy / 1.2); }
+function gcFit() { window._gcPaper.scaleContentToFit({padding: 40, maxScale: 1.5}); }
+function gcReset() { window._gcPaper.scale(1, 1); window._gcPaper.translate(0, 0); }
+
+initGlobalCanvas();
+</script>
+{% endblock %}

@@ -1,0 +1,46 @@
+{
+  "categories": [
+    {
+      "id": "RISK-TECH",
+      "name": "Technical Risk",
+      "indicators": ["complex architecture", "new technology", "integration challenges", "performance requirements"],
+      "base_probability": 0.3,
+      "impact_levels": {"low": 0.1, "medium": 0.3, "high": 0.6, "critical": 0.9}
+    },
+    {
+      "id": "RISK-COMP",
+      "name": "Compliance Risk",
+      "indicators": ["ATO boundary change", "control gaps", "classification change", "framework requirements"],
+      "base_probability": 0.25,
+      "impact_levels": {"low": 0.1, "medium": 0.3, "high": 0.6, "critical": 0.9}
+    },
+    {
+      "id": "RISK-SC",
+      "name": "Supply Chain Risk",
+      "indicators": ["new vendor", "single source", "foreign dependency", "CVE history"],
+      "base_probability": 0.2,
+      "impact_levels": {"low": 0.05, "medium": 0.2, "high": 0.5, "critical": 0.8}
+    },
+    {
+      "id": "RISK-SCHED",
+      "name": "Schedule Risk",
+      "indicators": ["aggressive timeline", "resource constraints", "dependencies", "scope creep"],
+      "base_probability": 0.4,
+      "impact_levels": {"low": 0.1, "medium": 0.25, "high": 0.5, "critical": 0.8}
+    },
+    {
+      "id": "RISK-COST",
+      "name": "Cost Risk",
+      "indicators": ["estimation uncertainty", "hidden costs", "vendor pricing", "scope changes"],
+      "base_probability": 0.35,
+      "impact_levels": {"low": 0.1, "medium": 0.2, "high": 0.4, "critical": 0.7}
+    },
+    {
+      "id": "RISK-ORG",
+      "name": "Organizational Risk",
+      "indicators": ["stakeholder misalignment", "change resistance", "skill gaps", "turnover"],
+      "base_probability": 0.2,
+      "impact_levels": {"low": 0.05, "medium": 0.15, "high": 0.35, "critical": 0.6}
+    }
+  ]
+}

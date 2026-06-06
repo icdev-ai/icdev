@@ -1,0 +1,839 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Operational Map — Strategos Intelligence{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}"/>
+<style>
+/* ── Strategos Operational Map ── */
+:root {
+  --sg-void:    #060d0d;
+  --sg-bg:      #0a1410;
+  --sg-surface: #111e18;
+  --sg-card:    #172418;
+  --sg-border:  #253428;
+  --sg-amber:   #f59e0b;
+  --sg-green:   #22c55e;
+  --sg-red:     #ef4444;
+  --sg-cyan:    #22d3ee;
+  --sg-purple:  #a855f7;
+  --sg-orange:  #f97316;
+  --sg-grey:    #6b7280;
+  --sg-text:    #d1fae5;
+  --sg-text-dim:#6b9e7a;
+  --sg-blue:    #3b82f6;
+}
+
+/* ── Nav z-index fix (Leaflet panes reach z-index 1000) ── */
+.nav-dropdown-menu { z-index: 1100 !important; }
+.navbar, .sub-nav  { z-index: 1050 !important; }
+
+/* ── Full viewport layout ── */
+.sg-map-page {
+  background: var(--sg-void);
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 48px);
+}
+
+/* ── Toolbar ── */
+#sg-map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 16px;
+  background: var(--sg-bg);
+  border-bottom: 1px solid var(--sg-border);
+  font-size: 12px;
+  letter-spacing: .04em;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.sg-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sg-amber);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+
+.sg-badge-cui {
+  background: #c8960c;
+  color: #000;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 2px;
+  letter-spacing: .06em;
+}
+
+.sg-badge-module {
+  background: var(--sg-surface);
+  border: 1px solid var(--sg-border);
+  color: var(--sg-cyan);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 2px;
+}
+
+/* ── Layer toggle checkboxes ── */
+.sg-layer-toggles {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.sg-layer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--sg-text-dim);
+  user-select: none;
+}
+
+.sg-layer-toggle input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--sg-border);
+  background: var(--sg-surface);
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.sg-layer-toggle input[type="checkbox"]:checked {
+  background: var(--sg-surface);
+  border-color: var(--sg-amber);
+}
+
+.sg-layer-toggle input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 7px;
+  height: 7px;
+  background: var(--sg-amber);
+  border-radius: 1px;
+}
+
+.sg-layer-toggle .layer-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* ── Refresh button ── */
+#sg-refresh-btn {
+  background: var(--sg-surface);
+  border: 1px solid var(--sg-border);
+  color: var(--sg-cyan);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  transition: border-color .15s, color .15s;
+}
+
+#sg-refresh-btn:hover {
+  border-color: var(--sg-cyan);
+  color: #fff;
+}
+
+.sg-toolbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--sg-text-dim);
+  font-size: 11px;
+}
+
+/* ── Map fills remainder of viewport ── */
+#sg-op-map {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Leaflet overrides ── */
+.leaflet-container {
+  background: #060d0d;
+}
+
+.leaflet-control-zoom a {
+  background: var(--sg-surface) !important;
+  border-color: var(--sg-border) !important;
+  color: var(--sg-text) !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background: var(--sg-card) !important;
+  color: var(--sg-amber) !important;
+}
+
+.leaflet-control-attribution {
+  background: rgba(6, 13, 13, 0.75) !important;
+  color: var(--sg-grey) !important;
+  font-size: 9px !important;
+}
+
+.leaflet-control-attribution a {
+  color: var(--sg-text-dim) !important;
+}
+
+/* ── Legend panel (bottom-right) ── */
+.sg-op-legend {
+  background: rgba(6, 13, 13, 0.9);
+  border: 1px solid var(--sg-border);
+  border-radius: 3px;
+  padding: 8px 12px;
+  font-size: 10px;
+  color: var(--sg-text-dim);
+  min-width: 170px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.sg-op-legend .leg-section-title {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--sg-amber);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-top: 6px;
+  margin-bottom: 3px;
+  padding-top: 5px;
+  border-top: 1px solid var(--sg-border);
+}
+
+.sg-op-legend .leg-section-title:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.sg-op-legend .leg-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 3px;
+}
+
+.sg-op-legend .leg-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.sg-op-legend .leg-square {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+  flex-shrink: 0;
+  transform: rotate(45deg);
+}
+
+.sg-op-legend .leg-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: 0 0 4px 2px rgba(245, 158, 11, 0.5);
+}
+
+/* ── Pulse animation for ghost signal markers ── */
+@keyframes sg-pulse {
+  0%   { stroke-opacity: 1;   stroke-width: 2px; }
+  50%  { stroke-opacity: 0.3; stroke-width: 8px; }
+  100% { stroke-opacity: 1;   stroke-width: 2px; }
+}
+
+.sg-ghost-pulse {
+  animation: sg-pulse 2s ease-in-out infinite;
+}
+
+/* ── Floating tooltip ── */
+#sg-map-tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: rgba(6, 13, 13, 0.95);
+  border: 1px solid var(--sg-border);
+  border-radius: 3px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--sg-text);
+  max-width: 280px;
+  z-index: 9999;
+  display: none;
+  line-height: 1.6;
+}
+
+#sg-map-tooltip b {
+  color: var(--sg-amber);
+}
+
+#sg-map-tooltip .tip-label {
+  color: var(--sg-text-dim);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sg-map-page">
+
+  <!-- ── Toolbar ── -->
+  <div id="sg-map-toolbar">
+    <span class="sg-badge-cui">CUI // SP-CTI</span>
+    <span class="sg-title">Operational Map</span>
+    <span class="sg-badge-module">STRATEGOS-OPS</span>
+
+    <div class="sg-layer-toggles">
+      <label class="sg-layer-toggle">
+        <input type="checkbox" id="toggle-orbat" checked>
+        <span class="layer-dot" style="background: var(--sg-blue)"></span>
+        ORBAT Units
+      </label>
+      <label class="sg-layer-toggle">
+        <input type="checkbox" id="toggle-ghost" checked>
+        <span class="layer-dot" style="background: var(--sg-amber)"></span>
+        Ghost Signals
+      </label>
+      <label class="sg-layer-toggle">
+        <input type="checkbox" id="toggle-events" checked>
+        <span class="layer-dot" style="background: var(--sg-red)"></span>
+        Conflict Events
+      </label>
+      <label class="sg-layer-toggle">
+        <input type="checkbox" id="toggle-supply" checked>
+        <span class="layer-dot" style="background: var(--sg-cyan)"></span>
+        Supply Nodes
+      </label>
+      <label class="sg-layer-toggle">
+        <input type="checkbox" id="toggle-satellite">
+        <span class="layer-dot" style="background: #a3e635; border-radius: 2px;"></span>
+        Satellite
+      </label>
+      <label class="sg-layer-toggle">
+        <input type="checkbox" id="toggle-a2ad">
+        <span class="layer-dot" style="background: #ef4444; border: 1px dashed #fca5a5;"></span>
+        A2/AD Rings
+      </label>
+      <label class="sg-layer-toggle">
+        <input type="checkbox" id="toggle-frontlines">
+        <span class="layer-dot" style="background: #f97316;"></span>
+        Frontlines
+      </label>
+    </div>
+
+    <button id="sg-refresh-btn">&#8635; Refresh</button>
+
+    <div class="sg-toolbar-right">
+      <a href="/strategos" style="color:var(--sg-text-dim);text-decoration:none;font-size:11px">&larr; Back</a>
+      <span id="sg-map-status" style="color:var(--sg-grey)">Loading&hellip;</span>
+    </div>
+  </div>
+
+  <!-- ── Map ── -->
+  <div id="sg-op-map"></div>
+
+</div>
+
+<!-- ── Floating tooltip ── -->
+<div id="sg-map-tooltip"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script>
+(function () {
+'use strict';
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const STATUS     = document.getElementById('sg-map-status');
+const TIP        = document.getElementById('sg-map-tooltip');
+const TOGGLE_ORBAT      = document.getElementById('toggle-orbat');
+const TOGGLE_A2AD       = document.getElementById('toggle-a2ad');
+const TOGGLE_FRONTLINES = document.getElementById('toggle-frontlines');
+const TOGGLE_GHOST     = document.getElementById('toggle-ghost');
+const TOGGLE_EVENTS    = document.getElementById('toggle-events');
+const TOGGLE_SUPPLY    = document.getElementById('toggle-supply');
+const TOGGLE_SATELLITE = document.getElementById('toggle-satellite');
+const REFRESH_BTN      = document.getElementById('sg-refresh-btn');
+
+// ── Tooltip helpers ───────────────────────────────────────────────────────────
+function tipShow(html, evt) {
+  TIP.innerHTML = html;
+  TIP.style.display = 'block';
+  tipMove(evt);
+}
+
+function tipHide() {
+  TIP.style.display = 'none';
+}
+
+function tipMove(evt) {
+  const x = evt.clientX + 14;
+  const y = evt.clientY + 14;
+  TIP.style.left = (x + TIP.offsetWidth > window.innerWidth ? x - TIP.offsetWidth - 28 : x) + 'px';
+  TIP.style.top  = y + 'px';
+}
+
+// ── Color maps ────────────────────────────────────────────────────────────────
+const ORBAT_NATION_COLOR = {
+  us:      '#3b82f6',
+  usa:     '#3b82f6',
+  china:   '#ef4444',
+  prc:     '#ef4444',
+  russia:  '#f97316',
+  rus:     '#f97316',
+};
+
+function orbatColor(nation) {
+  if (!nation) return '#22c55e';
+  const key = nation.toLowerCase();
+  return ORBAT_NATION_COLOR[key] || '#22c55e';
+}
+
+const EVENT_TYPE_COLOR = {
+  cyber_op:         '#ef4444',
+  usv_strike:       '#f97316',
+  narrative_event:  '#a855f7',
+};
+
+function eventColor(eventType) {
+  if (!eventType) return '#6b7280';
+  return EVENT_TYPE_COLOR[eventType.toLowerCase()] || '#6b7280';
+}
+
+// ── Leaflet map ───────────────────────────────────────────────────────────────
+let map;
+const layers = {
+  orbat:      L.layerGroup(),
+  ghost:      L.layerGroup(),
+  events:     L.layerGroup(),
+  supply:     L.layerGroup(),
+  satellite:  L.layerGroup(),
+  a2ad:       L.layerGroup(),
+  frontlines: L.layerGroup(),
+};
+
+function initMap() {
+  map = L.map('sg-op-map', {
+    center: [20, 35],
+    zoom: 3,
+    zoomControl: true,
+    attributionControl: true,
+  });
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19,
+  }).addTo(map);
+
+  // Add all layers except satellite (off by default for performance)
+  ['orbat', 'ghost', 'events', 'supply'].forEach(function (k) { layers[k].addTo(map); });
+
+  // Legend (bottom-right, above attribution)
+  const legendCtrl = L.control({ position: 'bottomright' });
+  legendCtrl.onAdd = function () {
+    const div = L.DomUtil.create('div', 'sg-op-legend');
+    div.innerHTML =
+      '<div class="leg-section-title">ORBAT — Nation</div>' +
+      '<div class="leg-row"><span class="leg-dot" style="background:#3b82f6"></span>United States</div>' +
+      '<div class="leg-row"><span class="leg-dot" style="background:#ef4444"></span>China (PRC)</div>' +
+      '<div class="leg-row"><span class="leg-dot" style="background:#f97316"></span>Russia</div>' +
+      '<div class="leg-row"><span class="leg-dot" style="background:#22c55e"></span>Other Nation</div>' +
+
+      '<div class="leg-section-title">Ghost Signals</div>' +
+      '<div class="leg-row"><span class="leg-pulse" style="background:#f59e0b"></span>Pulsing Amber Marker</div>' +
+
+      '<div class="leg-section-title">Conflict Events</div>' +
+      '<div class="leg-row"><span class="leg-dot" style="background:#ef4444"></span>Cyber Op</div>' +
+      '<div class="leg-row"><span class="leg-dot" style="background:#f97316"></span>USV Strike</div>' +
+      '<div class="leg-row"><span class="leg-dot" style="background:#a855f7"></span>Narrative Event</div>' +
+      '<div class="leg-row"><span class="leg-dot" style="background:#6b7280"></span>Other Event</div>' +
+
+      '<div class="leg-section-title">Supply Nodes</div>' +
+      '<div class="leg-row"><span class="leg-square" style="background:#22d3ee"></span>Supply Node (Cyan)</div>' +
+      '<div class="leg-section-title">Satellite (EO)</div>' +
+      '<div class="leg-row"><span class="leg-square" style="background:#a3e635;border-radius:2px;transform:none"></span>EO Scene Footprint</div>';
+    return div;
+  };
+  legendCtrl.addTo(map);
+}
+
+// ── Layer visibility toggles ──────────────────────────────────────────────────
+function applyToggle(toggle, layerGroup) {
+  toggle.addEventListener('change', function () {
+    if (this.checked) {
+      layers[layerGroup].addTo(map);
+    } else {
+      map.removeLayer(layers[layerGroup]);
+    }
+  });
+}
+
+applyToggle(TOGGLE_ORBAT,  'orbat');
+applyToggle(TOGGLE_GHOST,  'ghost');
+applyToggle(TOGGLE_EVENTS, 'events');
+applyToggle(TOGGLE_SUPPLY, 'supply');
+
+// A2/AD toggle — lazy load on first enable
+var _a2adLoaded = false;
+TOGGLE_A2AD.addEventListener('change', function () {
+  if (this.checked) {
+    layers.a2ad.addTo(map);
+    if (!_a2adLoaded) {
+      _a2adLoaded = true;
+      var theater = document.querySelector('[data-theater]')?.dataset.theater || 'pacific';
+      fetch('/strategos/api/map/a2ad?theater=' + theater)
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { features: [] }; })
+        .then(function (geojson) { renderA2AD(geojson); });
+    }
+  } else {
+    layers.a2ad.removeFrom(map);
+  }
+});
+
+// Frontlines toggle — lazy load
+var _frontlinesLoaded = false;
+TOGGLE_FRONTLINES.addEventListener('change', function () {
+  if (this.checked) {
+    layers.frontlines.addTo(map);
+    if (!_frontlinesLoaded) {
+      _frontlinesLoaded = true;
+      var theater = document.querySelector('[data-theater]')?.dataset.theater || 'ukraine';
+      fetch('/strategos/api/map/frontlines?theater=' + theater)
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { features: [] }; })
+        .then(function (geojson) { renderFrontlines(geojson); });
+    }
+  } else {
+    layers.frontlines.removeFrom(map);
+  }
+});
+
+// Satellite toggle uses lazy loading — fetch only on first enable
+var _satelliteLoaded = false;
+TOGGLE_SATELLITE.addEventListener('change', function () {
+  if (this.checked) {
+    layers.satellite.addTo(map);
+    if (!_satelliteLoaded) {
+      _satelliteLoaded = true;
+      fetch('/api/strategos/geoint/scenes')
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { scenes: [] }; })
+        .then(function (data) { renderSatellite(data.scenes || []); });
+    }
+  } else {
+    map.removeLayer(layers.satellite);
+  }
+});
+
+// ── ORBAT layer ───────────────────────────────────────────────────────────────
+function renderOrbat(units) {
+  layers.orbat.clearLayers();
+  if (!Array.isArray(units) || !units.length) return;
+
+  units.forEach(function (u) {
+    if (u.lat == null || u.lon == null) return;
+    const color = orbatColor(u.nation);
+    const marker = L.circleMarker([u.lat, u.lon], {
+      radius: 8,
+      color: color,
+      fillColor: color,
+      fillOpacity: 0.75,
+      weight: 1.5,
+    }).addTo(layers.orbat);
+
+    marker.on('mouseover', function (e) {
+      tipShow(
+        '<b>' + (u.unit_name || 'Unknown Unit') + '</b><br>' +
+        '<span class="tip-label">Type:</span> ' + (u.unit_type || '—') + '<br>' +
+        '<span class="tip-label">Nation:</span> <span style="color:' + color + '">' + (u.nation || '—') + '</span><br>' +
+        '<span class="tip-label">Strength:</span> ' + (u.strength != null ? u.strength : '—'),
+        e.originalEvent
+      );
+    });
+    marker.on('mousemove', function (e) { tipMove(e.originalEvent); });
+    marker.on('mouseout', tipHide);
+  });
+}
+
+// ── Ghost Signals layer ───────────────────────────────────────────────────────
+function renderGhost(signals) {
+  layers.ghost.clearLayers();
+  if (!Array.isArray(signals) || !signals.length) return;
+
+  signals.forEach(function (s) {
+    if (s.lat == null || s.lon == null) return;
+
+    // Outer pulsing ring
+    const ring = L.circleMarker([s.lat, s.lon], {
+      radius: 14,
+      color: '#f59e0b',
+      fillColor: 'transparent',
+      fillOpacity: 0,
+      weight: 2,
+      className: 'sg-ghost-pulse',
+    }).addTo(layers.ghost);
+
+    // Inner solid dot
+    const dot = L.circleMarker([s.lat, s.lon], {
+      radius: 5,
+      color: '#f59e0b',
+      fillColor: '#f59e0b',
+      fillOpacity: 0.9,
+      weight: 1,
+    }).addTo(layers.ghost);
+
+    function onOver(e) {
+      const conf = s.confidence != null ? (s.confidence * 100).toFixed(0) + '%' : '—';
+      tipShow(
+        '<b>Ghost Signal</b><br>' +
+        '<span class="tip-label">Type:</span> ' + (s.signal_type || '—') + '<br>' +
+        '<span class="tip-label">Confidence:</span> ' + conf + '<br>' +
+        '<span class="tip-label">Detected:</span> ' + (s.detected_at || '—'),
+        e.originalEvent
+      );
+    }
+    function onMove(e) { tipMove(e.originalEvent); }
+
+    ring.on('mouseover', onOver);
+    ring.on('mousemove', onMove);
+    ring.on('mouseout', tipHide);
+    dot.on('mouseover', onOver);
+    dot.on('mousemove', onMove);
+    dot.on('mouseout', tipHide);
+  });
+}
+
+// ── Conflict Events layer ─────────────────────────────────────────────────────
+function renderEvents(events) {
+  layers.events.clearLayers();
+  if (!Array.isArray(events) || !events.length) return;
+
+  events.forEach(function (ev) {
+    if (ev.lat == null || ev.lon == null) return;
+    const color = eventColor(ev.event_type);
+
+    const marker = L.circleMarker([ev.lat, ev.lon], {
+      radius: 7,
+      color: color,
+      fillColor: color,
+      fillOpacity: 0.8,
+      weight: 1.5,
+    }).addTo(layers.events);
+
+    marker.on('mouseover', function (e) {
+      const desc = ev.description ? ev.description.slice(0, 140) : '—';
+      tipShow(
+        '<b style="color:' + color + '">' + (ev.event_type || 'Event').toUpperCase() + '</b><br>' +
+        '<span class="tip-label">Actors:</span> ' + (ev.actor1 || '?') + ' vs ' + (ev.actor2 || '?') + '<br>' +
+        '<span class="tip-label">Detail:</span> <span style="color:#9ca3af">' + desc + '</span>',
+        e.originalEvent
+      );
+    });
+    marker.on('mousemove', function (e) { tipMove(e.originalEvent); });
+    marker.on('mouseout', tipHide);
+  });
+}
+
+// ── Supply Nodes layer ────────────────────────────────────────────────────────
+function renderSupply(nodes) {
+  layers.supply.clearLayers();
+  if (!Array.isArray(nodes) || !nodes.length) return;
+
+  nodes.forEach(function (n) {
+    if (n.lat == null || n.lon == null) return;
+
+    // Diamond icon via a rotated square DivIcon
+    const iconHtml =
+      '<div style="width:12px;height:12px;background:#22d3ee;border:1.5px solid #67e8f9;' +
+      'transform:rotate(45deg);border-radius:2px;"></div>';
+    const icon = L.divIcon({
+      html: iconHtml,
+      className: '',
+      iconSize:   [14, 14],
+      iconAnchor: [7, 7],
+    });
+
+    const marker = L.marker([n.lat, n.lon], { icon: icon }).addTo(layers.supply);
+
+    marker.on('mouseover', function (e) {
+      const crit = n.criticality != null ? n.criticality : '—';
+      tipShow(
+        '<b style="color:#22d3ee">' + (n.label || 'Supply Node') + '</b><br>' +
+        '<span class="tip-label">Type:</span> ' + (n.node_type || '—') + '<br>' +
+        '<span class="tip-label">Criticality:</span> ' + crit,
+        e.originalEvent
+      );
+    });
+    marker.on('mousemove', function (e) { tipMove(e.originalEvent); });
+    marker.on('mouseout', tipHide);
+  });
+}
+
+// ── Satellite (EO) layer ──────────────────────────────────────────────────────
+function parseBboxWkt(wkt) {
+  if (!wkt) return null;
+  const m = wkt.match(/POLYGON\s*\(\(([^)]+)\)\)/i);
+  if (!m) return null;
+  return m[1].split(',').map(function (pair) {
+    const p = pair.trim().split(/\s+/);
+    // WKT stores lon lat; Leaflet needs [lat, lon]
+    return [parseFloat(p[1]), parseFloat(p[0])];
+  });
+}
+
+function renderA2AD(geojson) {
+  layers.a2ad.clearLayers();
+  if (!geojson || !Array.isArray(geojson.features)) return;
+  geojson.features.forEach(function (feat) {
+    if (!feat.geometry) return;
+    var props = feat.properties || {};
+    var color = props.color || '#ef4444';
+    var opacity = props.opacity || 0.12;
+    if (feat.geometry.type === 'Polygon') {
+      var coords = feat.geometry.coordinates[0].map(function (c) { return [c[1], c[0]]; });
+      L.polygon(coords, {
+        color: color, fillColor: color, fillOpacity: opacity, weight: 1,
+        dashArray: '4 4',
+      }).bindTooltip(
+        '<b>' + (props.label || props.id) + '</b><br>' +
+        (props.threat_ring_nm ? props.threat_ring_nm + ' nm reach' : '') +
+        (props.weapon_type ? ' &bull; ' + props.weapon_type : ''),
+        { sticky: true }
+      ).addTo(layers.a2ad);
+    } else if (feat.geometry.type === 'Point') {
+      var c = feat.geometry.coordinates;
+      L.circleMarker([c[1], c[0]], {
+        radius: 6, color: color, fillColor: color, fillOpacity: 0.8, weight: 2,
+      }).bindTooltip(
+        '<b>' + (props.label || props.id) + '</b><br>' +
+        'Chokepoint &bull; ' + (props.width_nm || '?') + ' nm wide<br>' +
+        'PRC systems in range: ' + (props.prc_systems || 0) + '<br>' +
+        'Denial probability: ' + ((props.denial_probability || 0) * 100).toFixed(0) + '%',
+        { sticky: true }
+      ).addTo(layers.a2ad);
+    }
+  });
+}
+
+function renderFrontlines(geojson) {
+  layers.frontlines.clearLayers();
+  if (!geojson || !Array.isArray(geojson.features)) return;
+  geojson.features.forEach(function (feat) {
+    if (!feat.geometry) return;
+    var props = feat.properties || {};
+    var coords;
+    if (feat.geometry.type === 'LineString') {
+      coords = feat.geometry.coordinates.map(function (c) { return [c[1], c[0]]; });
+      L.polyline(coords, { color: '#f97316', weight: 2.5, opacity: 0.85 })
+        .bindTooltip(
+          'Frontline ' + (props.snapshot_date || '') +
+          (props.advance_km ? ' &bull; ' + props.advance_km + ' km advance' : '') +
+          ' &bull; ' + (props.source || ''),
+          { sticky: true }
+        ).addTo(layers.frontlines);
+    } else if (feat.geometry.type === 'MultiLineString') {
+      feat.geometry.coordinates.forEach(function (line) {
+        coords = line.map(function (c) { return [c[1], c[0]]; });
+        L.polyline(coords, { color: '#f97316', weight: 2.5, opacity: 0.85 }).addTo(layers.frontlines);
+      });
+    }
+  });
+}
+
+function renderSatellite(scenes) {
+  layers.satellite.clearLayers();
+  if (!Array.isArray(scenes) || !scenes.length) return;
+
+  scenes.forEach(function (sc) {
+    const coords = parseBboxWkt(sc.bbox_wkt);
+    if (!coords || coords.length < 3) return;
+
+    const poly = L.polygon(coords, {
+      color: '#a3e635',
+      fillColor: '#a3e635',
+      fillOpacity: 0.12,
+      weight: 1.5,
+      dashArray: '5 4',
+    }).addTo(layers.satellite);
+
+    poly.on('mouseover', function (e) {
+      const score = sc.relevance_score != null ? (sc.relevance_score * 100).toFixed(0) + '%' : '—';
+      const cloud = sc.cloud_pct != null ? sc.cloud_pct.toFixed(1) + '%' : '—';
+      tipShow(
+        '<b style="color:#a3e635">' + (sc.scene_id || sc.id || 'EO Scene') + '</b><br>' +
+        '<span class="tip-label">Satellite:</span> ' + (sc.satellite || '—') + '<br>' +
+        '<span class="tip-label">Date:</span> ' + (sc.sensing_date || '—') + '<br>' +
+        '<span class="tip-label">Cloud cover:</span> ' + cloud + '<br>' +
+        '<span class="tip-label">Relevance:</span> ' + score + '<br>' +
+        '<span class="tip-label">AOI:</span> ' + (sc.aoi_tag || '—'),
+        e.originalEvent
+      );
+    });
+    poly.on('mousemove', function (e) { tipMove(e.originalEvent); });
+    poly.on('mouseout', tipHide);
+  });
+}
+
+// ── Data loading ──────────────────────────────────────────────────────────────
+function loadAll() {
+  STATUS.textContent = 'Loading…';
+  REFRESH_BTN.disabled = true;
+
+  Promise.all([
+    fetch('/strategos/api/map/orbat').then(function (r) { return r.json(); }).catch(function () { return []; }),
+    fetch('/strategos/api/map/ghost').then(function (r) { return r.json(); }).catch(function () { return []; }),
+    fetch('/strategos/api/map/events').then(function (r) { return r.json(); }).catch(function () { return []; }),
+    fetch('/strategos/api/map/supply').then(function (r) { return r.json(); }).catch(function () { return []; }),
+  ]).then(function (results) {
+    var orbatData  = Array.isArray(results[0]) ? results[0] : (results[0].units  || []);
+    var ghostData  = Array.isArray(results[1]) ? results[1] : (results[1].signals || []);
+    var eventsData = Array.isArray(results[2]) ? results[2] : (results[2].events  || []);
+    var supplyData = Array.isArray(results[3]) ? results[3] : (results[3].nodes   || []);
+
+    renderOrbat(orbatData);
+    renderGhost(ghostData);
+    renderEvents(eventsData);
+    renderSupply(supplyData);
+
+    STATUS.textContent = 'Updated ' + new Date().toLocaleTimeString();
+    REFRESH_BTN.disabled = false;
+  }).catch(function (err) {
+    console.error('Strategos Map load error:', err);
+    STATUS.textContent = 'Error loading data';
+    REFRESH_BTN.disabled = false;
+  });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function () {
+  initMap();
+  loadAll();
+  REFRESH_BTN.addEventListener('click', loadAll);
+});
+
+})();
+</script>
+{% endblock %}

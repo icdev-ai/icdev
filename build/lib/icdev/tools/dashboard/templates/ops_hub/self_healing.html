@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Self-Healing — Ops Hub{% endblock %}
+{% block extra_css %}
+<style>
+.ohc-page-header{background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:22px 28px;border-radius:10px;margin-bottom:24px;}
+.ohc-page-header h1{margin:0;font-size:1.4rem;font-weight:700;color:#e0f2fe;}
+.ohc-page-header p{margin:4px 0 0;color:#7dd3fc;font-size:.85rem;}
+.stat-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px 22px;text-align:center;}
+.stat-card .val{font-size:1.8rem;font-weight:700;color:#e0e7ff;}
+.stat-card .lbl{font-size:.75rem;color:#64748b;margin-top:2px;}
+.section-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px 24px;margin-bottom:16px;}
+.section-card h4{margin:0 0 14px;font-size:.95rem;color:#e2e8f0;}
+.heal-row{display:flex;align-items:flex-start;gap:12px;padding:10px 12px;background:#0f172a;border-radius:6px;margin-bottom:6px;font-size:.82rem;}
+.heal-auto{border-left:3px solid #22c55e;}
+.heal-suggested{border-left:3px solid #f59e0b;}
+.heal-failed{border-left:3px solid #ef4444;}
+.conf-bar{width:60px;height:6px;background:#1e293b;border-radius:3px;overflow:hidden;margin-top:4px;}
+.conf-fill{height:100%;border-radius:3px;}
+.outcome-auto{color:#22c55e;}
+.outcome-suggested{color:#f59e0b;}
+.outcome-failed{color:#ef4444;}
+.heatmap-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:3px;margin-top:10px;}
+.heatmap-cell{height:20px;border-radius:3px;cursor:default;}
+.back-link{color:#7dd3fc;text-decoration:none;font-size:.85rem;}
+</style>
+{% endblock %}
+{% block content %}
+<a class="back-link" href="/ops">← Ops Hub</a>
+<div class="ohc-page-header mt-2">
+  <h1>🔧 Self-Healing</h1>
+  <p>Auto-Resolution Log · Confidence Heatmap — {{ classification }}</p>
+</div>
+
+{% set log = data.log %}
+{% set summary = data.summary %}
+
+<!-- Stats Row -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val">{{ summary.get('total_events', '—') }}</div>
+    <div class="lbl">Resolution Events</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val" style="color:#22c55e;">{{ summary.get('auto_resolved', 0) }}</div>
+    <div class="lbl">Auto-Resolved</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val" style="color:#f59e0b;">{{ summary.get('suggested', 0) }}</div>
+    <div class="lbl">Suggested (HITL)</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val" style="font-size:1.2rem;">
+      {% if summary.get('avg_confidence') is not none %}{{ (summary.avg_confidence * 100)|round(0)|int }}%{% else %}—{% endif %}</div>
+    <div class="lbl">Avg Confidence</div>
+  </div></div>
+</div>
+
+<!-- Confidence Heatmap -->
+{% if log %}
+<div class="section-card">
+  <h4>Confidence Distribution Heatmap</h4>
+  <div style="display:flex;justify-content:space-between;font-size:.72rem;color:#64748b;margin-bottom:4px;">
+    <span>Low (0.0)</span><span>Threshold (0.3)</span><span>Auto-heal (0.7)</span><span>High (1.0)</span>
+  </div>
+  <div class="heatmap-grid">
+    {% set buckets = [0]*12 %}
+    {% for entry in log %}
+      {% set conf = entry.get('confidence', 0) %}
+      {% set bucket = [[(conf * 12)|int, 0]|max, 11]|min %}
+      {% set _ = buckets.__setitem__(bucket, buckets[bucket] + 1) %}
+    {% endfor %}
+    {% set max_bucket = buckets|max if buckets|max > 0 else 1 %}
+    {% for i in range(12) %}
+      {% set intensity = buckets[i] / max_bucket %}
+      {% set bucket_pos = i / 11 %}
+      {% set color = '#ef4444' if bucket_pos < 0.3 else '#f59e0b' if bucket_pos < 0.7 else '#22c55e' %}
+      <div class="heatmap-cell" title="{{ buckets[i] }} events at {{ (bucket_pos * 100)|round(0)|int }}% confidence"
+           style="background:{{ color }}{{ '%02x'|format((intensity * 200)|int) }}; border:1px solid {{ color }}33;">
+      </div>
+    {% endfor %}
+  </div>
+  <div style="display:flex;gap:12px;margin-top:8px;font-size:.72rem;">
+    <span style="color:#ef4444;">■ Escalate (&lt;0.3)</span>
+    <span style="color:#f59e0b;">■ Suggest (0.3–0.7)</span>
+    <span style="color:#22c55e;">■ Auto-heal (≥0.7)</span>
+  </div>
+</div>
+{% endif %}
+
+<!-- Resolution Log -->
+<div class="section-card">
+  <h4>Auto-Resolution Log</h4>
+  {% if log %}
+    {% for entry in log[:15] %}
+    {% set outcome = entry.get('outcome', entry.get('resolution_type', 'unknown')) %}
+    {% set conf = entry.get('confidence', 0) %}
+    <div class="heal-row heal-{{ 'auto' if outcome == 'auto_resolved' else ('suggested' if outcome == 'suggested' else 'failed') }}">
+      <div style="flex:1;min-width:0;">
+        <div style="color:#e2e8f0;font-weight:600;font-size:.85rem;">{{ entry.get('issue_type', entry.get('resolution_type','?')) }}</div>
+        <div style="color:#64748b;font-size:.75rem;margin-top:2px;">{{ entry.get('description', entry.get('action', '')) }}</div>
+        <div style="display:flex;gap:8px;margin-top:5px;align-items:center;">
+          <span class="outcome-{{ 'auto' if outcome == 'auto_resolved' else ('suggested' if outcome == 'suggested' else 'failed') }}" style="font-size:.72rem;font-weight:600;">
+            {{ '✓ AUTO' if outcome == 'auto_resolved' else ('⚠ HITL' if outcome == 'suggested' else '✗ FAILED') }}
+          </span>
+          <div>
+            <div style="font-size:.7rem;color:#64748b;">conf: {{ (conf * 100)|round(0)|int }}%</div>
+            <div class="conf-bar">
+              <div class="conf-fill" style="width:{{ (conf * 100)|round(0)|int }}%;background:{{ '#22c55e' if conf >= 0.7 else '#f59e0b' if conf >= 0.3 else '#ef4444' }};"></div>
+            </div>
+          </div>
+          <span style="color:#475569;font-size:.7rem;margin-left:auto;">{{ entry.get('created_at', entry.get('timestamp', '')) | string | truncate(16, True, '') }}</span>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    {% if log|length > 15 %}
+    <p class="text-muted small mt-2 mb-0">+ {{ log|length - 15 }} more events</p>
+    {% endif %}
+    <a href="/api/ops/self-healing" class="small text-muted mt-2 d-block">View full JSON →</a>
+  {% else %}
+    <div style="padding:20px;text-align:center;">
+      <div style="font-size:1.5rem;margin-bottom:6px;">🔧</div>
+      <p class="text-muted small mb-0">No self-healing events recorded yet.</p>
+    </div>
+  {% endif %}
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

@@ -1,0 +1,27 @@
+# Compliance Executive Summary
+
+**Project:** {{ project_name }}
+**Date:** {{ report_date }}
+**Overall Posture:** {{ overall_posture }}
+
+## Framework Status
+
+{% for fw in frameworks %}
+### {{ fw.name }}
+- **Controls Assessed:** {{ fw.total_controls }}
+- **Satisfied:** {{ fw.satisfied }} ({{ fw.satisfied_pct }}%)
+- **Partially Satisfied:** {{ fw.partial }}
+- **Not Satisfied:** {{ fw.not_satisfied }}
+- **Risk Level:** {{ fw.risk_level }}
+
+{% endfor %}
+
+## Risk Assessment
+
+{{ risk_narrative }}
+
+## Priority Recommendations
+
+{% for rec in recommendations %}
+{{ loop.index }}. **{{ rec.title }}** — {{ rec.description }}
+{% endfor %}

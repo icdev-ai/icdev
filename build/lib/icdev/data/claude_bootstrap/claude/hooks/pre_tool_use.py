@@ -1,0 +1,693 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV™ Pre-Tool-Use Hook — Safety validation before tool execution
+# Adapted from ADW pre_tool_use.py
+
+"""
+Pre-tool-use hook that validates tool calls before execution.
+
+Blocks:
+    - Dangerous rm -rf commands
+    - Access to .env files containing secrets
+    - UPDATE/DELETE/DROP/TRUNCATE on all 32 append-only tables (D6, NIST AU)
+      See APPEND_ONLY_TABLES list in is_append_only_table_modification()
+    - Deletion of CUI-marked artifacts without explicit approval
+
+Exit codes:
+    0 = allow tool call
+    2 = block tool call (shows error to Claude)
+"""
+
+import json
+import os
+import re
+import sys
+from fnmatch import fnmatch
+from pathlib import Path
+
+
+def is_dangerous_rm_command(command: str) -> bool:
+    """Detect dangerous rm commands."""
+    normalized = " ".join(command.lower().split())
+
+    patterns = [
+        r"\brm\s+.*-[a-z]*r[a-z]*f",
+        r"\brm\s+.*-[a-z]*f[a-z]*r",
+        r"\brm\s+--recursive\s+--force",
+        r"\brm\s+--force\s+--recursive",
+        r"\brm\s+-r\s+.*-f",
+        r"\brm\s+-f\s+.*-r",
+    ]
+
+    for pattern in patterns:
+        if re.search(pattern, normalized):
+            return True
+
+    # Check for rm with recursive flag targeting dangerous paths
+    dangerous_paths = [r"/", r"/\*", r"~", r"~/", r"\$HOME", r"\.\.", r"\*", r"\."]
+    if re.search(r"\brm\s+.*-[a-z]*r", normalized):
+        for path in dangerous_paths:
+            if re.search(path, normalized):
+                return True
+
+    return False
+
+
+def is_env_file_access(tool_name: str, tool_input: dict) -> bool:
+    """Check if a tool is trying to access .env files."""
+    if tool_name in ("Read", "Edit", "MultiEdit", "Write"):
+        file_path = tool_input.get("file_path", "")
+        if ".env" in file_path and not file_path.endswith(".env.sample"):
+            return True
+
+    elif tool_name == "Bash":
+        command = tool_input.get("command", "")
+        env_patterns = [
+            r"\b\.env\b(?!\.sample)",
+            r"cat\s+.*\.env\b(?!\.sample)",
+            r"echo\s+.*>\s*\.env\b(?!\.sample)",
+        ]
+        for pattern in env_patterns:
+            if re.search(pattern, command):
+                return True
+
+    return False
+
+
+def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
+    """Block UPDATE/DELETE/DROP/TRUNCATE on all append-only tables (NIST 800-53 AU, D6).
+
+    This list must stay in sync with init_icdev_db.py. Run the governance
+    validator to detect drift: python tools/testing/claude_dir_validator.py --json
+    """
+    APPEND_ONLY_TABLES = [
+        # === CHILD-INHERITABLE (copied to child apps via step_09c) ===
+        # Core audit
+        "audit_trail",
+        "hook_events",
+        # Phase-E V&V hardening (migration 025) — append-only status transition log
+        "kanban_status_transitions",
+        # FathomDesk auto-trading (append-only NIST AU)
+        "ad_trade_audit",
+        "ad_kill_switch",
+        "ad_decision_snapshots",
+        # FathomDesk news (plan adn-)
+        "ad_news_items",
+        "ad_news_scenario_links",
+        "ad_news_clusters",
+        "ad_news_patterns",
+        # FathomDesk Trading Oracle (append-only predictions + convergence)
+        "ad_trading_predictions",
+        "ad_trading_convergence_events",
+        "ad_trading_decision_approvals",
+        # FathomDesk user-defined alerts (append-only fired-alert log)
+        "ad_alerts_log",
+        # FathomDesk auth — password-reset audit (used_at flips, never DELETE before purge)
+        "ad_password_reset_tokens",
+        # FathomDesk auth — MFA attempts audit (NIST AU; required for rate-limit forensics)
+        "ad_mfa_attempts",
+        # FathomDesk BYOK — credential audit (NIST AU; tracks every set/delete/test/used)
+        "ad_credential_audit",
+        # FathomDesk tenancy — invitations are append-only (revoked_at + accepted_at flips, never DELETE)
+        "ad_tenant_invitations",
+        # FathomDesk billing (Phase 5B) — Stripe webhook audit (NIST AU; idempotency + forensics)
+        "ad_stripe_events",
+        # FathomDesk progression (Phase 6.1) — XP events audit (NIST AU; idempotency + anti-farming audit)
+        "ad_xp_events",
+        # FathomDesk progression (Phase 6.2) — earned badges (NIST AU; badges never un-award)
+        "ad_user_achievements",
+        # FathomDesk challenges (Phase 6.3.5) — sandbox order fills (NIST AU; full trade audit)
+        "ad_sandbox_orders",
+        # FathomDesk challenges (Phase 6.3.5 follow-up) — daily snapshots drive continuously-held predicate; rewriting history would corrupt past-day checks
+        "ad_sandbox_daily_snapshots",
+        # FathomDesk tax-lots (Phase 7+) — realizations are tax history; must be append-only
+        "ad_tax_realizations",
+        # FathomDesk tax-lots (Phase 7+) — wash-sale flags audit; must be append-only
+        "ad_tax_wash_sale_flags",
+        # FathomDesk options coach (Phase 7.6) — event history; recommendation column mutable, rows never deleted
+        "ad_options_coach_events",
+        # FathomDesk lessons (Phase 6.5) — quiz attempt audit (NIST AU; anti-cheat + learning analytics)
+        "ad_user_quiz_attempts",
+        # Phase 44 — Innovation Adaptation
+        "extension_execution_log",
+        "memory_consolidation_log",
+        # Phase 29 — Proactive Monitoring
+        "auto_resolution_log",
+        # Phase 36 — Evolutionary Intelligence
+        "propagation_log",
+        # Phase 37 — AI Security
+        "prompt_injection_log",
+        "ai_telemetry",
+        # Phase 22 — Marketplace
+        "marketplace_reviews",
+        "marketplace_scan_results",
+        # Phase 69 — OpenClaw Bridge
+        "openclaw_exports",
+        # Multi-Agent Orchestration
+        "agent_vetoes",
+        # Dashboard Auth (D169-D172)
+        "dashboard_auth_log",
+        # Phase 24 — DevSecOps
+        "devsecops_pipeline_audit",
+        # Phase 28 — Remote Gateway
+        "remote_command_log",
+        # Phase 35 — Innovation Engine (D206)
+        "innovation_signals",
+        "innovation_triage_log",
+        # Phase 39 — Observability
+        "agent_executions",
+        # Phase 40 — NLQ
+        "nlq_queries",
+        # Phase 22 — Marketplace (immutable published versions)
+        "marketplace_versions",
+        # Phase 34 — Dev Profiles (immutable rows, D183)
+        "dev_profiles",
+        # Phase 45 — OWASP Agentic AI Security (D258, D259, D260)
+        "tool_chain_events",
+        "agent_trust_scores",
+        "agent_output_violations",
+        # Phase 46 — Observability, Traceability & XAI (D280-D290)
+        "otel_spans",
+        "prov_entities",
+        "prov_activities",
+        "prov_relations",
+        "shap_attributions",
+        "xai_assessments",
+        # Phase 47 — Production Readiness Audit (D292)
+        "production_audits",
+        # Phase 47 — Production Remediation (D296-D300)
+        "remediation_audit_log",
+        # OSCAL Ecosystem (D306 — validation audit trail)
+        "oscal_validation_log",
+        # Phase 48 — AI Transparency & Accountability (D307-D315)
+        "confabulation_checks",
+        "fairness_assessments",
+        "model_cards",
+        "system_cards",
+        "ai_use_case_inventory",
+        # Phase 49 — AI Accountability (D316-D321)
+        "ai_oversight_plans",
+        "ai_accountability_appeals",
+        "ai_incident_log",
+        "ai_ethics_reviews",
+        # Phase 52 — Code Intelligence (D332)
+        "code_quality_metrics",
+        "runtime_feedback",
+        # Phase 53 — OWASP ASI + FedRAMP 20x (D339)
+        "owasp_asi_assessments",
+        # Phase 57 — EU AI Act (D349)
+        "eu_ai_act_assessments",
+        # Phase 64 — RAG Subsystem (D-RAG-8, D-RAG-11)
+        "rag_ingestion_log",
+        "rag_retrieval_log",
+        # Phase 69 — Codebase Assistant (D-CA-6)
+        "codebase_qa_cache",
+        # Genesis v2.0 (D-GEN-6, D-GEN-10)
+        "genesis_audit",
+        # Genesis reflex observer (monitoring — append-only NIST AU)
+        "reflex_observations",
+        # Knowledge Graph (D-KARL-1)
+        "kg_retrieval_log",
+        # Phase 64 Extension — Fine-Tuning (D-FT-3, D-FT-9, D-FT-14, D-FT-16, D-FT-13)
+        "ft_dataset_examples",
+        # RAG-to-FT Pipeline (D-KARL-5, D-KARL-8)
+        "ft_pipeline_runs",
+        "ft_quality_snapshots",
+        "ft_training_job_events",
+        "ft_evaluations",
+        "ft_promotion_log",
+        "ft_hyperparam_results",
+        # Trajectory-to-Training Pipeline (D-FT-TRAJ)
+        "ft_trajectory_steps",
+        # === PARENT-ONLY (excluded from child apps — D-CHILD-3) ===
+        # Proposal Lifecycle (D-PROP-3 — reviews, findings, status history are immutable)
+        "proposal_reviews",
+        "proposal_review_findings",
+        "proposal_status_history",
+        # Creative Engine (D357 — creative_competitors excluded: allows UPDATE for status transitions)
+        "creative_signals",
+        "creative_pain_points",
+        "creative_feature_gaps",
+        "creative_specs",
+        "creative_trends",
+        # GovCon Intelligence (Phase 59, D361-D373)
+        "sam_gov_quota_events",
+        "rfp_shall_statements",
+        "rfp_requirement_patterns",
+        "icdev_capability_map",
+        "proposal_section_drafts",
+        "govcon_awards",
+        # Customer Delivery Tracking (D374)
+        "customer_deliveries",
+        # Phase 59 — Questions to Government (D-QTG-2)
+        "proposal_question_responses",
+        # Phase 60 — CPMP (D-CPMP-7)
+        "cpmp_status_history",
+        "cpmp_negative_events",
+        "cpmp_evm_periods",
+        "cpmp_cdrl_generations",
+        "cpmp_cor_access_log",
+        # Phase 61 — ANVIL Critique (Feature 3)
+        "anvil_critique_sessions",
+        "anvil_critique_findings",
+        # Phase 61 — Prompt Chain Execution (Feature 2)
+        "prompt_chain_executions",
+        # Phase 61 — Dispatcher Mode (Feature 1)
+        "dispatcher_mode_overrides",
+        # Phase 63 — Industry Research Engine (D-RES-5)
+        # research_sessions excluded: allows UPDATE for status transitions
+        # research_verticals excluded: allows UPDATE for activation
+        "research_signals",
+        "research_challenges",
+        "research_regulatory_map",
+        "research_build_buy",
+        "research_dossiers",
+        "research_trends",
+        "research_capability_map",
+        "research_forecasts",
+        # Proposal Genesis (D-PG-1 through D-PG-10)
+        "pg_proposal_genesis_audit",
+        "pg_amendment_diffs",
+        "pg_pulse_proposal_links",
+        "pg_proposal_quality_scores",
+        "pg_bid_decisions",
+        "pg_bid_decision_outcomes",
+        "pg_win_loss_records",
+        "pg_win_loss_lessons",
+        "pg_crm_interactions",
+        "pg_crm_engagement_scores",
+        "pg_capture_activities",
+        "pg_teaming_assessments",
+        # Proposal Genesis Enhancement (append-only review/theme/experiment tracking)
+        "pg_review_findings",
+        "pg_theme_tracking",
+        "pg_quality_experiments",
+        # File Sync Module (D-SYNC-7 — sync_log is append-only, NIST AU)
+        "sync_log",
+        # Phase 65 — Quality Design Canvas (D-QDC-5)
+        "qdc_audit",
+        "qdc_gate_results",
+        "qdc_uqs_history",
+        # Phase 65 — Adaptive Intelligence (Red Team, Convergence, Stagnation, Benchmarks)
+        "red_team_results",
+        "genesis_convergence_log",
+        "genesis_stagnation_log",
+        "agent_benchmark_results",
+        # GSD-adapted: 4-Level Verification, Context Pressure, Deviation Rules (D-GSD-1 through D-GSD-9)
+        "stub_detection_results",
+        "context_pressure_events",
+        "deviation_rule_events",
+        # Evolution Daemon (D-EVO-1, Phase 36 autonomous lifecycle)
+        "evolution_audit",
+        # Outcome Verifier (D-EVO-6, self-healing feedback loop)
+        "outcome_verification_log",
+        # NemoClaw-Adapted Agent Sandboxing (D-NC-1, D-NC-2, D-NC-3, D-NC-5)
+        "credential_broker_log",
+        "egress_policy_audit",
+        "blueprint_digests",
+        "propagation_verifications",
+        # Bayesian Teaching Intelligence Layer (D-BT-1 through D-BT-6)
+        "bayesian_teaching_scores",
+        # Phase 66 — Workflow Discipline Engine (D-WF-1 through D-WF-7)
+        "workflow_reconciliations",
+        "workflow_handoffs",
+        # WriteGuard (D-WG-9 — analysis results/findings are immutable)
+        "wg_analysis_results",
+        "wg_analysis_findings",
+        # DataBridge (D-DB-6 — sync log, mapping log, messages are append-only)
+        "db_sync_log",
+        "db_mapping_log",
+        "db_messages",
+        # Connector Forge (D-CF sandbox/promotion logs are append-only)
+        "db_forge_sandbox_log",
+        "db_forge_promotions",
+        # CloudForge (D-CF-10, D-CF-15, D-CF-20, D-CF-21 — all append-only)
+        "cf_provision_log",
+        "cf_siem_events",
+        "cf_runbook_executions",
+        "cf_runbook_task_log",
+        # Phase 67 — Engineering Review Board (D-RB-2, D-RB-10 — audit + findings + remediation append-only)
+        "review_board_audit",
+        "review_board_findings",
+        "review_board_remediation_log",
+        "review_board_health_history",
+        # Phase 68 — Autonomy Engine (D-AE-5, D-AE-10, D-AE-12 — observations, actions, behavior append-only)
+        "autonomy_observations",
+        "autonomy_actions",
+        "autonomy_behavior_log",
+        # Phase 67 — Bayesian Autoresearch (D-AR-4)
+        "experiment_results",
+        "bayesian_experiment_scores",
+        # Scout Daemon (D-SCT-1 — daily autonomous scan audit trail)
+        "scout_audit",
+        # Phase 70 — AIOps/LLMOps Adaptation (append-only audit/event tables)
+        "llm_gateway_audit",
+        "prompt_audit_log",
+        "llm_cost_alerts",
+        "model_drift_events",
+        "sre_slo_measurements",
+        "sre_runbook_executions",
+        "sre_incident_events",
+        "agent_topology_snapshots",
+        # Phase 71 — Sandbox Executor (D-SEC-10)
+        "sandbox_execution_log",
+        # Phase 71 — CRAG Evaluation (D-RAG-23)
+        "rag_evaluation_campaigns",
+        "rag_evaluation_results",
+        # Phase 70 — Redaction & Data Protection (D-RDT-1)
+        "redaction_audit",
+        # Phase 72 — Notification Gateway (Hermes adaptation)
+        "notification_log",
+        # Phase 72 — ICDEV™ Studio (D364, D365 — case history + automation runs)
+        "studio_case_history",
+        "studio_automation_runs",
+        # Cross-canvas KG build audit log (append-only — NIST AU)
+        "canvas_kg_build_log",
+        # Phase 73 — Findings + Oracle Predictions (NIST AU, append-only)
+        "finding_approvals",
+        "oracle_convergence_events",
+        "oracle_predictions",
+        "oracle_remediation_proposals",
+        # Phase 4 (Internal Awareness) — Q&A messages are append-only (NIST AU)
+        "icdev_qa_messages",
+        # Awareness run log + health snapshots (NIST AU, append-only)
+        "awareness_run_log",
+        "awareness_component_health",
+        # Observability Canvas integration (D-OC audit trail, NIST AU)
+        "od_audit",
+        "nc_audit",
+        # ODC Twin — MITRE ATT&CK coverage events (migration 028, append-only NIST AU)
+        "mitre_coverage",
+        # Passive CVE Watcher — ATO continuous monitoring (NIST SI-4, CA-7)
+        "cve_passive_watch_log",
+        # BDC cATO Twin — compliance control snapshots (migration 027, NIST AU)
+        "compliance_snapshots",
+        # SDC Attack Path Twin — append-only attack graph (NIST AU; migration 028)
+        "attack_graph_nodes",
+        "attack_graph_edges",
+        # Network Canvas simulation history (migration 037, NIST AU)
+        "nc_simulation_sessions",
+        "nc_simulation_runs",
+        "nc_simulation_artifacts",
+        # Cross-canvas event bus (migration 037, NIST AU — payload history preserved)
+        "canvas_events",
+        # ODC MITRE ATT&CK technique catalog (migration cvo-odc-01, append-only NIST AU)
+        "odc_mitre_techniques",
+        # Security Framework (Phase 74 — sec-fnd)
+        "security_policies",
+        "user_compartments",
+        "security_context_log",
+        "abac_decisions",
+        "mac_violations",
+        "rls_audit",
+        "column_mask_audit",
+        "field_filter_audit",
+        # FathomDesk Market Breadth (migration 047 — periodic breadth snapshots, NIST AU)
+        "ad_breadth_snapshots",
+        # FathomDesk Value Compass (migration 048 — F&G + Buffett snapshots, NIST AU)
+        "ad_fear_greed_snapshots",
+        "ad_buffett_snapshots",
+        # Strategos Analyst Annotation Layer (migration 060, NIST AU — append-only annotation store)
+        "sg_analyst_annotations",
+        # DES execution audit log (NIST AU — append-only)
+        "des_execution_events",
+        # Strategos SOCMINT signals (migration 023, NIST AU — append-only ingestion log)
+        "sg_socmint_signals",
+        # FathomDesk analyst panel decision audit (migration 078, SEC Rule 17a-4 / NIST AU)
+        "ad_decision_audit",
+        # FathomDesk backtest result store (migration 057, NIST AU — append-only)
+        "ad_backtest_runs",
+        # HITL Workflow Management (migration 079, NIST AU — feedback, submissions, citations append-only)
+        "wf_feedback",
+        "wf_document_submissions",
+        "wf_citations",
+        # WNE artifact store (migration 084, NIST AU — append-only)
+        "wne_artifacts",
+        # Genesis reflex run log (migration 116, NIST AU — cooldown tracking + audit)
+        "genesis_reflex_log",
+        # NMCE — AI conversation audit trail (migration canvas, NIST AU)
+        "mc_net_ai_sessions",
+        # STRATEGOS — war readiness event log (migration 118, NIST AU — append-only I&W audit)
+        "sg_war_readiness_events",
+        # STRATEGOS — adversarial data validation audit (NIST AU-9 — append-only)
+        "sg_adversarial_validation_audit",
+        # NDC↔Migration — topology snapshots (NIST AU; phase-completion history must be immutable)
+        "nc_topology_snapshots",
+        # Phase 71 — OHC Ops Hub Canvas (migration 120, NIST AU — adapter health log + drift events append-only)
+        "ohc_adapter_health_log",
+        "ohc_data_drift_events",
+        # GovLift DoD IL4 Cloud Migration (NIST AU — audit log append-only)
+        "govlift_audit_log",
+        # AI Traceability (migration 121 — cross-canvas AI decision audit log, NIST AU-2/AU-3)
+        "canvas_ai_decisions",
+        # Cross-Agency Data Transfer (NIST AU-2, AU-9 — append-only transfer audit log)
+        "cross_agency_transfers",
+        # IL5 data ingestion audit (NIST AU-2, AU-12 — 30-second SLA display pipeline)
+        "il5_ingestion_log",
+        # Canvas Instances — seeding audit (NIST AU — append-only activation log)
+        "canvas_instances",
+        # NOC Operations Canvas — audit trail (NIST AU, append-only)
+        "noc_audit",
+        # Peering Management Canvas — audit trail (NIST AU, append-only)
+        "pmc_audit",
+        # Circuit & Capacity Canvas — audit trail (NIST AU, append-only)
+        "ccc_audit",
+        # DDoS & Security Ops Canvas — audit trail (NIST AU, append-only)
+        "dsoc_audit",
+        # OSINT Privacy Sanitizer — PII detection/redaction audit (NIST AU, migration 159)
+        "osint_privacy_audit",
+        # AI Augmentation Canvas — scan sessions and audit trail (NIST AU, append-only)
+        "aac_scans",
+        "aac_audit_log",
+        # ISP/Telco — Partner & Agreement Lifecycle (NIST AU, append-only amendment log)
+        "nc_agreement_amendments",
+        # ISP/Telco — Cross-Connect Order Workflow (NIST AU, append-only order state log)
+        "ccc_xc_order_events",
+    ]
+
+    if tool_name == "Bash":
+        command = tool_input.get("command", "").lower()
+        for table in APPEND_ONLY_TABLES:
+            # Block SQL UPDATE/DELETE on protected table
+            if re.search(rf"(update|delete)\s+(from\s+)?{table}", command):
+                return True
+            # Block DROP TABLE on protected table
+            if re.search(rf"drop\s+table\s+.*{table}", command):
+                return True
+            # Block TRUNCATE on protected table
+            if re.search(rf"truncate\s+.*{table}", command):
+                return True
+
+    return False
+
+
+def _load_file_access_tiers():
+    """Load file access tier config from args/file_access_tiers.yaml."""
+    try:
+        import yaml
+    except ImportError:
+        return None
+    config_path = Path(__file__).resolve().parent.parent.parent / "args" / "file_access_tiers.yaml"
+    if not config_path.exists():
+        return None
+    try:
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        tiers = config.get("file_access_tiers", {})
+        if not tiers.get("enabled", False):
+            return None
+        return tiers
+    except Exception:
+        return None
+
+
+def _matches_tier(file_path: str, patterns: list) -> bool:
+    """Check if file_path matches any pattern in the tier (glob-style)."""
+    if not file_path:
+        return False
+    # Normalize to forward slashes and strip leading ./
+    fp = file_path.replace("\\", "/")
+    if fp.startswith("./"):
+        fp = fp[2:]
+    for pattern in patterns:
+        if pattern.startswith("!"):
+            continue  # exclusion patterns handled separately
+        # Check exclusions first
+        excluded = False
+        for exc in patterns:
+            if exc.startswith("!") and fnmatch(fp, exc[1:]):
+                excluded = True
+                break
+        if excluded:
+            continue
+        if fnmatch(fp, pattern) or fnmatch(os.path.basename(fp), pattern):
+            return True
+    return False
+
+
+def check_file_access_tiers(tool_name: str, tool_input: dict) -> str:
+    """Check file access tiers. Returns error message if blocked, None if allowed.
+
+    Decision D-ORCH-8: Tiered file access control.
+    """
+    tiers = _load_file_access_tiers()
+    if not tiers:
+        return None
+
+    file_path = ""
+    is_write = False
+    is_delete = False
+
+    if tool_name in ("Read",):
+        file_path = tool_input.get("file_path", "")
+        # Read — only blocked by zero_access
+    elif tool_name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+        file_path = tool_input.get("file_path", tool_input.get("notebook_path", ""))
+        is_write = True
+    elif tool_name == "Bash":
+        command = tool_input.get("command", "")
+        # Check for rm/delete commands targeting protected files
+        rm_match = re.search(r'\brm\s+(?:-[a-z]*\s+)*([^\s|;&]+)', command)
+        if rm_match:
+            file_path = rm_match.group(1)
+            is_delete = True
+        # Check for write redirections
+        redir_match = re.search(r'>\s*([^\s|;&]+)', command)
+        if redir_match and not is_delete:
+            file_path = redir_match.group(1)
+            is_write = True
+
+    if not file_path:
+        return None
+
+    # Zero access — block everything
+    zero_patterns = [p for t in [tiers.get("zero_access", {})] for p in t.get("patterns", [])]
+    if _matches_tier(file_path, zero_patterns):
+        return f"BLOCKED: File '{file_path}' is in zero_access tier (D-ORCH-8). No access allowed."
+
+    # Read only — block writes and deletes
+    ro_patterns = [p for t in [tiers.get("read_only", {})] for p in t.get("patterns", [])]
+    if (is_write or is_delete) and _matches_tier(file_path, ro_patterns):
+        return f"BLOCKED: File '{file_path}' is in read_only tier (D-ORCH-8). Write/delete prohibited."
+
+    # No delete — block deletes only
+    nd_patterns = [p for t in [tiers.get("no_delete", {})] for p in t.get("patterns", [])]
+    if is_delete and _matches_tier(file_path, nd_patterns):
+        return f"BLOCKED: File '{file_path}' is in no_delete tier (D-ORCH-8). Deletion prohibited."
+
+    return None
+
+
+def is_direct_sqlite_usage(tool_name: str, tool_input: dict) -> bool:
+    """Block direct sqlite3.connect() usage that bypasses the storage layer.
+
+    Production backend is PostgreSQL. Writing to sqlite3 directly means the
+    data is invisible to the dashboard and API. This has caused repeated
+    confusion — data written to SQLite never appears in the UI.
+
+    ALWAYS use: from tools.db.storage import get_connection
+
+    Exemptions (files that legitimately need raw sqlite3):
+        - tools/db/storage.py — IS the storage layer
+        - tools/db/init_icdev_db.py — DDL/schema initialization
+        - tools/db/migration_runner.py — schema migrations
+        - tools/db/backup_manager.py — backup/restore with sqlite3 API
+        - tools/db/pg_init.py — PG initialization
+        - tools/db/migrate_to_storage.py — one-time migration script
+        - */init_db.py — child app/canvas isolated DB initialization
+        - tools/saas/* — tenant-isolated DBs (separate SQLite per tenant)
+        - tools/compat/db_utils.py — path resolution utilities
+    """
+    EXEMPT_PATTERNS = [
+        "tools/db/storage.py",
+        "tools/db/init_icdev_db.py",
+        "tools/db/migration_runner.py",
+        "tools/db/backup_manager.py",
+        "tools/db/pg_init.py",
+        "tools/db/migrate_to_storage.py",
+        "tools/db/migrate_add_missing_columns.py",
+        "tools/compat/db_utils.py",
+        "tools/saas/",
+    ]
+
+    if tool_name in ("Edit", "Write"):
+        file_path = tool_input.get("file_path", "").replace("\\", "/")
+        new_content = tool_input.get("new_string", "") or tool_input.get("content", "")
+
+        # Only check files under tools/ (handle both absolute and relative paths)
+        if "/tools/" not in file_path and not file_path.startswith("tools/"):
+            return False
+
+        # Check exemptions
+        for exempt in EXEMPT_PATTERNS:
+            if exempt in file_path:
+                return False
+
+        # Allow init_db.py files (canvas/child app isolated DBs)
+        if file_path.endswith("/init_db.py"):
+            return False
+
+        # Block if introducing sqlite3.connect(
+        if "sqlite3.connect(" in new_content:
+            return True
+
+    elif tool_name == "Bash":
+        command = tool_input.get("command", "")
+        # Block ad-hoc sqlite3.connect to icdev.db in python one-liners
+        if "sqlite3.connect" in command and "icdev.db" in command:
+            # Allow if it's running a migration or init script
+            if any(x in command for x in ["init_icdev_db", "migration_runner", "migrate_to_storage", "backup"]):
+                return False
+            return True
+
+    return False
+
+
+def main():
+    try:
+        input_data = json.load(sys.stdin)
+        tool_name = input_data.get("tool_name", "")
+        tool_input = input_data.get("tool_input", {})
+
+        # Block .env file access
+        if is_env_file_access(tool_name, tool_input):
+            print("BLOCKED: Access to .env files is prohibited. Use AWS Secrets Manager.", file=sys.stderr)
+            sys.exit(2)
+
+        # Block dangerous rm commands
+        if tool_name == "Bash":
+            command = tool_input.get("command", "")
+            if is_dangerous_rm_command(command):
+                print("BLOCKED: Dangerous rm command detected and prevented", file=sys.stderr)
+                sys.exit(2)
+
+        # Block modification of all append-only tables (NIST 800-53 AU, D6)
+        if is_append_only_table_modification(tool_name, tool_input):
+            print("BLOCKED: Append-only table (D6, NIST 800-53 AU). No UPDATE/DELETE/DROP/TRUNCATE allowed.", file=sys.stderr)
+            sys.exit(2)
+
+        # Block direct sqlite3.connect() — use get_connection() instead
+        if is_direct_sqlite_usage(tool_name, tool_input):
+            print(
+                "BLOCKED: Direct sqlite3.connect() bypasses the storage layer. "
+                "Production backend is PostgreSQL. Use: from tools.db.storage import get_connection; "
+                "conn = get_connection(). See MEMORY: feedback_always_use_get_connection.md",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+        # Check tiered file access control (D-ORCH-8)
+        tier_error = check_file_access_tiers(tool_name, tool_input)
+        if tier_error:
+            print(tier_error, file=sys.stderr)
+            sys.exit(2)
+
+        sys.exit(0)
+
+    except json.JSONDecodeError:
+        sys.exit(0)
+    except Exception:
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

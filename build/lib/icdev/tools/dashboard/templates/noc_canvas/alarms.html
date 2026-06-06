@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}NOC — Alarms{% endblock %}
+{% block extra_css %}
+<style>
+.nocc-header{background:linear-gradient(135deg,#0f172a,#1c2a3a);padding:22px 28px;border-radius:10px;margin-bottom:24px;border-left:4px solid #ef4444;}
+.sev-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:700;}
+.sev-critical{background:#7f1d1d;color:#fca5a5;}
+.sev-major{background:#7c2d12;color:#fdba74;}
+.sev-minor{background:#713f12;color:#fde68a;}
+.sev-warning{background:#1e3a5f;color:#7dd3fc;}
+.sev-info{background:#1e293b;color:#94a3b8;}
+.alarm-table th{background:#0f172a;color:#94a3b8;font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;}
+.alarm-table td{padding:9px 12px;font-size:.83rem;border-bottom:1px solid #1e293b;vertical-align:middle;}
+.alarm-table tr:hover td{background:#1e293b;}
+.btn-ack{padding:3px 10px;font-size:.72rem;border:1px solid #3b82f6;border-radius:6px;color:#3b82f6;background:transparent;cursor:pointer;}
+.btn-ack:hover{background:#3b82f6;color:#fff;}
+.btn-clear{padding:3px 10px;font-size:.72rem;border:1px solid #22c55e;border-radius:6px;color:#22c55e;background:transparent;cursor:pointer;}
+.btn-clear:hover{background:#22c55e;color:#0f172a;}
+.filter-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
+.filter-btn{padding:5px 14px;border-radius:20px;font-size:.78rem;border:1px solid #334155;color:#94a3b8;background:#1e293b;cursor:pointer;text-decoration:none;}
+.filter-btn.active,.filter-btn:hover{border-color:#f97316;color:#f97316;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="nocc-header">
+  <div class="d-flex justify-content-between align-items-center">
+    <div>
+      <h2 style="margin:0;color:#fca5a5;font-size:1.3rem;">Active Alarms</h2>
+      <div style="color:#64748b;font-size:.85rem;margin-top:4px;">{{ classification }} &middot; Auto-refresh: 60s</div>
+    </div>
+    <div style="display:flex;gap:6px;">
+      {% for sev, cnt in summary.items() %}
+      <span class="sev-badge sev-{{ sev }}" title="{{ sev }}">{{ cnt }}</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="filter-bar">
+  <a class="filter-btn active" href="/noc/alarms">All</a>
+  <a class="filter-btn" href="/noc/alarms?sev=critical">Critical</a>
+  <a class="filter-btn" href="/noc/alarms?sev=major">Major</a>
+  <a class="filter-btn" href="/noc/alarms?sev=minor">Minor</a>
+  <a class="filter-btn" href="/noc/alarms?sev=warning">Warning</a>
+</div>
+
+<div class="table-responsive">
+  <table class="alarm-table w-100" id="alarmTable">
+    <thead>
+      <tr>
+        <th>Severity</th>
+        <th>Type</th>
+        <th>Device</th>
+        <th>Circuit / Carrier</th>
+        <th>Description</th>
+        <th>Source</th>
+        <th>First Seen</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in alarms %}
+      <tr id="alarm-{{ a.id }}">
+        <td><span class="sev-badge sev-{{ a.severity }}">{{ a.severity|upper }}</span></td>
+        <td style="color:#94a3b8;">{{ a.alarm_type }}</td>
+        <td style="color:#e2e8f0;font-weight:600;">
+          {% if a.alarm_source == 'peering_renewal' %}
+            <a href="/network/partners" style="color:#38bdf8;text-decoration:none;" title="Agreement ID: {{ a.device_name }}">⟳ Peering Agreement</a>
+          {% elif a.alarm_source == 'xc_order_poller' %}
+            <a href="/ccc/orders" style="color:#38bdf8;text-decoration:none;" title="XC ID: {{ a.device_name }}">📦 XC Order #{{ a.device_name }}</a>
+          {% else %}
+            {{ a.device_name or '—' }}
+          {% endif %}
+        </td>
+        <td style="color:#94a3b8;font-size:.78rem;">{{ a.circuit_id or '' }}{% if a.carrier %} / {{ a.carrier }}{% endif %}</td>
+        <td style="color:#cbd5e1;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ a.description }}">{{ a.description }}</td>
+        <td style="color:#64748b;font-size:.75rem;">{{ a.alarm_source }}</td>
+        <td style="color:#64748b;font-size:.75rem;white-space:nowrap;">{{ a.first_seen | ts }}</td>
+        <td style="white-space:nowrap;">
+          {% if not a.acknowledged %}
+          <button class="btn-ack" onclick="ackAlarm('{{ a.id }}')">Ack</button>
+          {% endif %}
+          <button class="btn-clear" onclick="clearAlarm('{{ a.id }}')">Clear</button>
+          {% if a.alarm_source == 'peering_renewal' %}
+          <a class="btn-ack" href="/network/partners" style="text-decoration:none;margin-left:4px;">View Partner</a>
+          {% elif a.alarm_source == 'xc_order_poller' %}
+          <a class="btn-ack" href="/ccc/orders" style="text-decoration:none;margin-left:4px;">View Orders</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="text-align:center;color:#64748b;padding:30px;">No active alarms</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% include 'includes/iqe_query_widget.html' %}
+{% endblock %}
+{% block extra_js %}
+<script>
+const IQE_CANVAS = "nocc";
+const IQE_API = "/api/noc/iqe-query";
+async function ackAlarm(id) {
+  await fetch(`/api/noc/alarms/${id}/ack`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:'dashboard'})});
+  document.querySelector(`#alarm-${id} .btn-ack`)?.remove();
+}
+async function clearAlarm(id) {
+  await fetch(`/api/noc/alarms/${id}/clear`, {method:'POST'});
+  document.getElementById(`alarm-${id}`)?.remove();
+}
+setTimeout(() => location.reload(), 60000);
+</script>
+{% endblock %}

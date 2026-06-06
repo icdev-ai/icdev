@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}NOC — Maintenance Windows{% endblock %}
+{% block extra_css %}
+<style>
+.nocc-header{background:linear-gradient(135deg,#0f172a,#1a1a0d);padding:22px 28px;border-radius:10px;margin-bottom:24px;border-left:4px solid #eab308;}
+.mw-table th{background:#0f172a;color:#94a3b8;font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;}
+.mw-table td{padding:9px 12px;font-size:.83rem;border-bottom:1px solid #1e293b;vertical-align:middle;}
+.mw-table tr:hover td{background:#1e293b;}
+.status-pill{padding:2px 8px;border-radius:10px;font-size:.7rem;border:1px solid #334155;color:#94a3b8;}
+.status-scheduled{border-color:#eab308;color:#eab308;}.status-in-progress{border-color:#f97316;color:#f97316;}
+.status-completed{border-color:#22c55e;color:#22c55e;}.status-cancelled{border-color:#64748b;color:#64748b;}
+.scope-global{color:#ef4444;font-weight:600;}.scope-region{color:#f97316;}.scope-site{color:#eab308;}
+.scope-multi-circuit{color:#3b82f6;}.scope-single-circuit{color:#64748b;}
+.notify-yes{color:#22c55e;font-size:.8rem;}.notify-no{color:#ef4444;font-size:.8rem;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="nocc-header">
+  <div class="d-flex justify-content-between align-items-center">
+    <div>
+      <h2 style="margin:0;color:#fde68a;font-size:1.3rem;">Maintenance Windows</h2>
+      <div style="color:#64748b;font-size:.85rem;margin-top:4px;">{{ upcoming|length }} upcoming &middot; {{ classification }}</div>
+    </div>
+    <button onclick="document.getElementById('newMwModal').style.display='flex'"
+            style="padding:8px 16px;background:#713f12;border:none;border-radius:8px;color:#fde68a;font-weight:600;cursor:pointer;">
+      + Schedule Window
+    </button>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="mw-table w-100">
+    <thead>
+      <tr><th>Window #</th><th>Title</th><th>Start</th><th>End</th><th>Scope</th><th>Status</th><th>Notified</th><th>RFC</th></tr>
+    </thead>
+    <tbody>
+      {% for w in windows %}
+      <tr>
+        <td style="font-family:monospace;font-size:.75rem;color:#94a3b8;">{{ w.window_number }}</td>
+        <td style="color:#e2e8f0;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ w.title }}</td>
+        <td style="color:#64748b;font-size:.78rem;white-space:nowrap;">{{ w.scheduled_start | ts }}</td>
+        <td style="color:#64748b;font-size:.78rem;white-space:nowrap;">{{ w.scheduled_end | ts }}</td>
+        <td class="scope-{{ w.impact_scope|replace(' ','-') }}">{{ w.impact_scope }}</td>
+        <td><span class="status-pill status-{{ w.status|replace(' ','-') }}">{{ w.status }}</span></td>
+        <td>{% if w.notification_sent %}<span class="notify-yes">Yes</span>{% else %}<span class="notify-no">No</span>{% endif %}</td>
+        <td style="color:#64748b;font-size:.75rem;">{{ w.rfc_id[:8] ~ '...' if w.rfc_id else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="text-align:center;color:#64748b;padding:30px;">No maintenance windows found</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- New Maintenance Window Modal -->
+<div id="newMwModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:28px;width:520px;max-width:95vw;">
+    <h3 style="margin:0 0 20px;color:#e2e8f0;">Schedule Maintenance Window</h3>
+    <div class="mb-3">
+      <label style="color:#94a3b8;font-size:.8rem;">Title *</label>
+      <input id="mwTitle" type="text" class="form-control" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;" placeholder="e.g. BGP session migration — AS65001">
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col">
+        <label style="color:#94a3b8;font-size:.8rem;">Start (UTC) *</label>
+        <input id="mwStart" type="datetime-local" class="form-control" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;">
+      </div>
+      <div class="col">
+        <label style="color:#94a3b8;font-size:.8rem;">End (UTC) *</label>
+        <input id="mwEnd" type="datetime-local" class="form-control" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;">
+      </div>
+    </div>
+    <div class="mb-3">
+      <label style="color:#94a3b8;font-size:.8rem;">Impact Scope</label>
+      <select id="mwScope" class="form-select" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;">
+        <option value="single-circuit" selected>Single Circuit</option>
+        <option value="multi-circuit">Multi-Circuit</option>
+        <option value="site">Site</option>
+        <option value="region">Region</option>
+        <option value="global">Global</option>
+      </select>
+    </div>
+    <div class="d-flex gap-2 justify-content-end">
+      <button onclick="document.getElementById('newMwModal').style.display='none'"
+              style="padding:8px 16px;border:1px solid #334155;border-radius:8px;background:transparent;color:#94a3b8;cursor:pointer;">Cancel</button>
+      <button onclick="createWindow()"
+              style="padding:8px 16px;background:#713f12;border:none;border-radius:8px;color:#fde68a;font-weight:600;cursor:pointer;">Schedule</button>
+    </div>
+  </div>
+</div>
+
+{% include 'includes/iqe_query_widget.html' %}
+{% endblock %}
+{% block extra_js %}
+<script>
+const IQE_CANVAS = "nocc";
+const IQE_API = "/api/noc/iqe-query";
+async function createWindow() {
+  const title = document.getElementById('mwTitle').value.trim();
+  const start = document.getElementById('mwStart').value;
+  const end = document.getElementById('mwEnd').value;
+  if (!title || !start || !end) return alert('Title, start, and end are required');
+  const r = await fetch('/api/noc/maintenance', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({title, scheduled_start: start+'Z', scheduled_end: end+'Z',
+      impact_scope: document.getElementById('mwScope').value})
+  });
+  if (r.ok) location.reload();
+}
+</script>
+{% endblock %}

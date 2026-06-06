@@ -1,0 +1,482 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI #}
+{% block title %}Ontology Explorer — ICDEV™{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Ontology Explorer</h1>
+  <p class="page-subtitle">Cross-domain class hierarchy, equivalences, and knowledge graph enrichment</p>
+</div>
+
+{# ── Stats Row ── #}
+<div class="stats-row" style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+  <div class="stat-card">
+    <div class="stat-value">{{ stats.class_count }}</div>
+    <div class="stat-label">Classes</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ stats.domain_count }}</div>
+    <div class="stat-label">Domains</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ stats.closure_pairs }}</div>
+    <div class="stat-label">Closure Pairs</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ stats.alignment_count }}</div>
+    <div class="stat-label">Alignments</div>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;">
+    <button id="rebuild-btn" class="btn btn-sm btn-primary" onclick="rebuildFederation()">Rebuild Federation</button>
+  </div>
+</div>
+
+{# ── Domain Breakdown ── #}
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header"><h3 class="card-title">Domain Breakdown</h3></div>
+  <div class="card-body">
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+      <button class="domain-btn active" data-domain="" onclick="filterDomain(this,'')">All</button>
+      {% for d in domains %}
+      <button class="domain-btn" data-domain="{{ d.domain }}" onclick="filterDomain(this,'{{ d.domain }}')">
+        {{ d.label }} <span class="badge">{{ d.count }}</span>
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# ── View Tabs ── #}
+<div style="margin-bottom:1rem;border-bottom:1px solid var(--border,#2d3347);display:flex;gap:0;">
+  <button id="tab-table" class="view-tab active" onclick="switchTab('table')">Table</button>
+  <button id="tab-tree" class="view-tab" onclick="switchTab('tree')">Hierarchy Tree</button>
+</div>
+
+{# ── Class Table ── #}
+<div id="view-table" class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h3 class="card-title" style="margin:0;">Classes</h3>
+    <input id="class-search" type="text" class="form-control form-control-sm" style="width:250px;"
+           placeholder="Filter classes…" oninput="filterClasses()">
+  </div>
+  <div class="card-body" style="padding:0;">
+    <div id="class-table-wrap" style="overflow-x:auto;">
+      <table class="table table-sm table-hover" id="class-table">
+        <thead>
+          <tr>
+            <th>Class ID</th>
+            <th>Domain</th>
+            <th>Label</th>
+            <th>Superclasses</th>
+            <th>Canonical</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="class-tbody">
+          <tr><td colspan="6" class="text-center text-muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ── Hierarchy Tree ── #}
+<div id="view-tree" class="card" style="margin-bottom:1.5rem;display:none;">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;">
+    <h3 class="card-title" style="margin:0;">Class Hierarchy Tree</h3>
+    <div style="display:flex;gap:.5rem;align-items:center;">
+      <input id="tree-search" type="text" class="form-control form-control-sm" style="width:200px;"
+             placeholder="Highlight class…" oninput="highlightNode()">
+      <button class="btn btn-sm btn-secondary" onclick="resetTree()">Reset</button>
+      <button class="btn btn-sm btn-secondary" onclick="collapseAll()">Collapse All</button>
+      <button class="btn btn-sm btn-secondary" onclick="expandAll()">Expand All</button>
+    </div>
+  </div>
+  <div class="card-body" style="padding:0;overflow:auto;">
+    <div id="tree-legend" style="padding:.75rem 1rem;border-bottom:1px solid var(--border,#2d3347);display:flex;gap:.5rem;flex-wrap:wrap;font-size:.75rem;"></div>
+    <div id="tree-container" style="width:100%;min-height:500px;overflow:auto;position:relative;">
+      <svg id="tree-svg" style="display:block;"></svg>
+    </div>
+    <div id="tree-status" style="padding:.5rem 1rem;font-size:.75rem;color:var(--text-muted,#8892a4);">Loading hierarchy…</div>
+  </div>
+</div>
+
+{# ── Closure Detail Panel ── #}
+<div id="closure-panel" class="card" style="display:none;margin-bottom:1.5rem;">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h3 class="card-title" style="margin:0;">Hierarchy: <span id="closure-title"></span></h3>
+    <button class="btn btn-sm btn-secondary" onclick="closeClosure()">Close</button>
+  </div>
+  <div class="card-body">
+    <div style="display:flex;gap:2rem;flex-wrap:wrap;">
+      <div>
+        <h6>Superclasses (ancestors)</h6>
+        <ul id="super-list" style="list-style:none;padding:0;"></ul>
+      </div>
+      <div>
+        <h6>Subclasses (descendants)</h6>
+        <ul id="sub-list" style="list-style:none;padding:0;"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── IQE Widget ── #}
+{% include "includes/iqe_query_widget.html" %}
+
+<style>
+.stat-card{background:var(--card-bg,#1e2130);border-radius:8px;padding:1rem 1.5rem;min-width:120px;text-align:center;}
+.stat-value{font-size:1.8rem;font-weight:700;color:var(--accent,#4a9eff);}
+.stat-label{font-size:.8rem;color:var(--text-muted,#8892a4);margin-top:.2rem;}
+.domain-btn{border:1px solid var(--border,#2d3347);background:transparent;color:var(--text,#cdd6f4);padding:.25rem .75rem;border-radius:999px;cursor:pointer;font-size:.8rem;transition:all .15s;}
+.domain-btn:hover,.domain-btn.active{background:var(--accent,#4a9eff);color:#fff;border-color:var(--accent,#4a9eff);}
+.domain-btn .badge{background:rgba(255,255,255,.15);border-radius:999px;padding:.1rem .4rem;margin-left:.3rem;font-size:.7rem;}
+#class-table tbody tr:hover{cursor:pointer;}
+#class-table .btn-link{background:none;border:none;color:var(--accent,#4a9eff);cursor:pointer;padding:0;font-size:.8rem;}
+.dist-badge{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.75rem;background:var(--card-bg,#1e2130);border:1px solid var(--border,#2d3347);margin:.1rem;}
+/* View tabs */
+.view-tab{background:transparent;border:none;border-bottom:3px solid transparent;color:var(--text-muted,#8892a4);padding:.5rem 1.25rem;cursor:pointer;font-size:.9rem;transition:all .15s;}
+.view-tab:hover{color:var(--text,#cdd6f4);}
+.view-tab.active{border-bottom-color:var(--accent,#4a9eff);color:var(--text,#cdd6f4);font-weight:600;}
+/* D3 tree */
+#tree-svg .link{fill:none;stroke:#2d3347;stroke-width:1.5px;}
+#tree-svg .node circle{stroke-width:2px;cursor:pointer;transition:r .1s;}
+#tree-svg .node text{font-size:11px;fill:#cdd6f4;pointer-events:none;}
+#tree-svg .node.collapsed circle{stroke-dasharray:4,2;}
+#tree-svg .node.highlighted circle{stroke:#fff !important;stroke-width:3px;}
+#tree-svg .node.dimmed{opacity:.3;}
+</style>
+
+<script>
+var _allClasses = [];
+var _currentDomain = '';
+
+function loadClasses(domain) {
+  _currentDomain = domain;
+  var url = '/api/ontology/classes' + (domain ? '?domain=' + encodeURIComponent(domain) : '');
+  fetch(url).then(r => r.json()).then(data => {
+    _allClasses = data.classes || [];
+    renderClasses(_allClasses);
+  }).catch(e => {
+    document.getElementById('class-tbody').innerHTML =
+      '<tr><td colspan="6" class="text-center text-danger">Error loading classes: ' + e + '</td></tr>';
+  });
+}
+
+function renderClasses(classes) {
+  var q = (document.getElementById('class-search').value || '').toLowerCase();
+  var filtered = q ? classes.filter(c =>
+    (c.id||'').toLowerCase().includes(q) ||
+    (c.label||'').toLowerCase().includes(q) ||
+    (c.domain||'').toLowerCase().includes(q)
+  ) : classes;
+  var html = '';
+  if (!filtered.length) {
+    html = '<tr><td colspan="6" class="text-center text-muted">No classes found.</td></tr>';
+  } else {
+    filtered.forEach(c => {
+      var supers = (c.superclasses || []).map(s =>
+        '<span class="dist-badge">' + esc(s) + '</span>'
+      ).join('');
+      var canonical = (c.canonical_id && c.canonical_id !== c.id)
+        ? '<span class="text-muted" style="font-size:.75rem;">' + esc(c.canonical_id) + '</span>'
+        : '<span class="text-muted" style="font-size:.75rem;">self</span>';
+      html += '<tr onclick="showClosure(\'' + esc(c.id) + '\')">' +
+        '<td><code style="font-size:.8rem;">' + esc(c.id) + '</code></td>' +
+        '<td><span style="font-size:.75rem;">' + esc(c.domain) + '</span></td>' +
+        '<td>' + esc(c.label) + '</td>' +
+        '<td>' + (supers || '<span class="text-muted">—</span>') + '</td>' +
+        '<td>' + canonical + '</td>' +
+        '<td><button class="btn-link" onclick="event.stopPropagation();showClosure(\'' + esc(c.id) + '\')">⬡</button></td>' +
+        '</tr>';
+    });
+  }
+  document.getElementById('class-tbody').innerHTML = html;
+}
+
+function filterDomain(btn, domain) {
+  document.querySelectorAll('.domain-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadClasses(domain);
+}
+
+function filterClasses() {
+  renderClasses(_allClasses);
+}
+
+function showClosure(classId) {
+  document.getElementById('closure-title').textContent = classId;
+  document.getElementById('closure-panel').style.display = '';
+  document.getElementById('super-list').innerHTML = '<li class="text-muted">Loading…</li>';
+  document.getElementById('sub-list').innerHTML = '<li class="text-muted">Loading…</li>';
+  fetch('/api/ontology/closure?class_id=' + encodeURIComponent(classId))
+    .then(r => r.json()).then(data => {
+      var superHtml = (data.superclasses || []).map(s =>
+        '<li><code>' + esc(s.id) + '</code> <span class="text-muted">d=' + s.distance + '</span></li>'
+      ).join('') || '<li class="text-muted">None (root class)</li>';
+      var subHtml = (data.subclasses || []).map(s =>
+        '<li><code>' + esc(s.id) + '</code> <span class="text-muted">d=' + s.distance + '</span></li>'
+      ).join('') || '<li class="text-muted">None (leaf class)</li>';
+      document.getElementById('super-list').innerHTML = superHtml;
+      document.getElementById('sub-list').innerHTML = subHtml;
+    });
+}
+
+function closeClosure() {
+  document.getElementById('closure-panel').style.display = 'none';
+}
+
+function rebuildFederation() {
+  var btn = document.getElementById('rebuild-btn');
+  btn.disabled = true;
+  btn.textContent = 'Rebuilding…';
+  fetch('/api/ontology/rebuild', {method:'POST'})
+    .then(r => r.json()).then(data => {
+      btn.textContent = 'Rebuilt (' + (data.classes_total||'?') + ' classes)';
+      setTimeout(() => { btn.disabled = false; btn.textContent = 'Rebuild Federation'; }, 3000);
+      loadClasses(_currentDomain);
+    }).catch(e => {
+      btn.textContent = 'Error';
+      setTimeout(() => { btn.disabled = false; btn.textContent = 'Rebuild Federation'; }, 3000);
+    });
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Tab switcher ──────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.getElementById('view-table').style.display = tab === 'table' ? '' : 'none';
+  document.getElementById('view-tree').style.display  = tab === 'tree'  ? '' : 'none';
+  document.getElementById('tab-table').classList.toggle('active', tab === 'table');
+  document.getElementById('tab-tree').classList.toggle('active',  tab === 'tree');
+  if (tab === 'tree' && !_treeBuilt) buildTree();
+}
+
+// Initial load
+loadClasses('');
+</script>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// ── D3 Hierarchy Tree ─────────────────────────────────────────────────────────
+var _treeBuilt = false;
+var _treeRoot  = null;
+var _treeSvg   = null;
+var _treeG     = null;
+var _treeLayout = null;
+
+var _DOMAIN_COLORS = [
+  '#4a9eff','#34d399','#f59e0b','#ef4444','#a78bfa',
+  '#ec4899','#14b8a6','#f97316','#84cc16','#06b6d4',
+  '#8b5cf6','#e879f9','#fb923c','#22d3ee',
+];
+var _domainColor = {};
+
+function buildTree() {
+  _treeBuilt = true;
+  document.getElementById('tree-status').textContent = 'Building tree…';
+
+  fetch('/api/ontology/classes')
+    .then(r => r.json())
+    .then(data => {
+      var classes = data.classes || [];
+      if (!classes.length) {
+        document.getElementById('tree-status').textContent = 'No classes to display.';
+        return;
+      }
+
+      // Assign colors to domains
+      var domains = [...new Set(classes.map(c => c.domain))].sort();
+      domains.forEach((d, i) => { _domainColor[d] = _DOMAIN_COLORS[i % _DOMAIN_COLORS.length]; });
+      renderLegend(domains);
+
+      // Build id→node map; add virtual ROOT
+      var nodeMap = {};
+      classes.forEach(c => { nodeMap[c.id] = {id: c.id, domain: c.domain, label: c.label, superclasses: c.superclasses || [], children: []}; });
+
+      // Build adjacency using first known superclass as parent
+      var childSet = new Set();
+      classes.forEach(c => {
+        var supers = (c.superclasses || []).filter(s => nodeMap[s]);
+        if (supers.length) {
+          nodeMap[supers[0]].children.push(nodeMap[c.id]);
+          childSet.add(c.id);
+        }
+      });
+
+      // Virtual root with all top-level nodes
+      var roots = classes.filter(c => !childSet.has(c.id));
+      var virtualRoot = {id: '__ROOT__', domain: '', label: 'Ontology', children: roots.map(c => nodeMap[c.id])};
+
+      // Collapse large subtrees (>40 children) by default
+      function collapseDeep(node, depth) {
+        if (depth > 2 && node.children && node.children.length) {
+          node._children = node.children;
+          node.children = null;
+        } else if (node.children) {
+          node.children.forEach(ch => collapseDeep(ch, depth + 1));
+        }
+      }
+      // Don't auto-collapse if total < 60 nodes
+      if (classes.length > 60) collapseDeep(virtualRoot, 0);
+
+      _treeRoot = d3.hierarchy(virtualRoot, d => d.children);
+      _treeRoot.x0 = 0;
+      _treeRoot.y0 = 0;
+
+      var container = document.getElementById('tree-container');
+      var W = Math.max(container.clientWidth, 900);
+      var nodeH = 28;
+
+      _treeSvg = d3.select('#tree-svg')
+        .attr('width', W)
+        .attr('height', 500);
+
+      _treeG = _treeSvg.append('g').attr('transform', 'translate(180,20)');
+
+      // Zoom
+      _treeSvg.call(d3.zoom().scaleExtent([0.2, 3]).on('zoom', e => {
+        _treeG.attr('transform', e.transform);
+      }));
+
+      _treeLayout = d3.tree().nodeSize([nodeH, 220]);
+      updateTree(_treeRoot);
+      document.getElementById('tree-status').textContent =
+        classes.length + ' classes · click a node to expand/collapse · scroll/pinch to zoom';
+    })
+    .catch(e => {
+      document.getElementById('tree-status').textContent = 'Error: ' + e;
+    });
+}
+
+function updateTree(source) {
+  _treeLayout(_treeRoot);
+  var nodes = _treeRoot.descendants();
+  var links = _treeRoot.links();
+
+  // Resize SVG height dynamically
+  var yVals = nodes.map(n => n.x);
+  var minY = Math.min(...yVals), maxY = Math.max(...yVals);
+  var svgH = Math.max(500, maxY - minY + 80);
+  _treeSvg.attr('height', svgH);
+
+  var duration = 300;
+
+  // ── Links ──
+  var link = _treeG.selectAll('.link').data(links, d => d.target.data.id);
+  var linkEnter = link.enter().append('path').attr('class', 'link')
+    .attr('d', d => {
+      var o = {x: source.x0 || 0, y: source.y0 || 0};
+      return diagonal({source: o, target: o});
+    });
+  link.merge(linkEnter).transition().duration(duration)
+    .attr('d', diagonal);
+  link.exit().transition().duration(duration)
+    .attr('d', d => {
+      var o = {x: source.x, y: source.y};
+      return diagonal({source: o, target: o});
+    }).remove();
+
+  // ── Nodes ──
+  var node = _treeG.selectAll('.node').data(nodes, d => d.data.id);
+  var nodeEnter = node.enter().append('g').attr('class', d => {
+    var cls = 'node';
+    if (!d.data.children && d.data._children) cls += ' collapsed';
+    return cls;
+  }).attr('transform', d => 'translate(' + (source.y0||0) + ',' + (source.x0||0) + ')')
+    .on('click', (event, d) => {
+      if (d.data.id === '__ROOT__') return;
+      if (d.children) { d._children = d.children; d.children = null; }
+      else if (d._children) { d.children = d._children; d._children = null; }
+      updateTree(d);
+    })
+    .on('dblclick', (event, d) => {
+      if (d.data.id !== '__ROOT__') showClosure(d.data.id);
+    });
+
+  nodeEnter.append('circle').attr('r', 0)
+    .attr('fill', d => d.data.id === '__ROOT__' ? '#374151' : (_domainColor[d.data.domain] || '#4a9eff'))
+    .attr('stroke', d => d.data.id === '__ROOT__' ? '#6b7280' : (_domainColor[d.data.domain] || '#4a9eff'));
+
+  nodeEnter.append('text')
+    .attr('dy', '0.35em')
+    .attr('x', d => (d.children || d._children) ? -10 : 10)
+    .style('text-anchor', d => (d.children || d._children) ? 'end' : 'start')
+    .text(d => {
+      var lbl = d.data.label || d.data.id;
+      return lbl.length > 28 ? lbl.slice(0, 26) + '…' : lbl;
+    });
+
+  var nodeMerge = node.merge(nodeEnter);
+  nodeMerge.transition().duration(duration)
+    .attr('transform', d => 'translate(' + d.y + ',' + d.x + ')')
+    .select('circle').attr('r', d => d.data.id === '__ROOT__' ? 8 : 5);
+
+  nodeMerge.attr('class', d => {
+    var cls = 'node';
+    if (!d.children && d._children) cls += ' collapsed';
+    return cls;
+  });
+
+  node.exit().transition().duration(duration)
+    .attr('transform', d => 'translate(' + source.y + ',' + source.x + ')').remove();
+
+  nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+}
+
+function diagonal(d) {
+  return 'M' + d.source.y + ',' + d.source.x
+    + 'C' + ((d.source.y + d.target.y) / 2) + ',' + d.source.x
+    + ' ' + ((d.source.y + d.target.y) / 2) + ',' + d.target.x
+    + ' ' + d.target.y + ',' + d.target.x;
+}
+
+function resetTree() {
+  if (_treeSvg) _treeSvg.call(d3.zoom().transform, d3.zoomIdentity.translate(180, 20));
+}
+
+function collapseAll() {
+  if (!_treeRoot) return;
+  function collapseNode(d) {
+    if (d.children) { d._children = d.children; d.children = null; }
+    if (d._children) d._children.forEach(collapseNode);
+  }
+  if (_treeRoot.children) _treeRoot.children.forEach(collapseNode);
+  updateTree(_treeRoot);
+}
+
+function expandAll() {
+  if (!_treeRoot) return;
+  function expandNode(d) {
+    if (d._children) { d.children = d._children; d._children = null; }
+    if (d.children) d.children.forEach(expandNode);
+  }
+  expandNode(_treeRoot);
+  updateTree(_treeRoot);
+}
+
+function highlightNode() {
+  var q = (document.getElementById('tree-search').value || '').toLowerCase().trim();
+  if (!_treeG) return;
+  _treeG.selectAll('.node').classed('highlighted', false).classed('dimmed', false);
+  if (!q) return;
+  _treeG.selectAll('.node').classed('highlighted', d =>
+    (d.data.id||'').toLowerCase().includes(q) || (d.data.label||'').toLowerCase().includes(q)
+  ).classed('dimmed', d =>
+    !((d.data.id||'').toLowerCase().includes(q) || (d.data.label||'').toLowerCase().includes(q))
+  );
+}
+
+function renderLegend(domains) {
+  var html = '<span style="color:var(--text-muted,#8892a4);margin-right:.5rem;">Domains:</span>';
+  domains.forEach(d => {
+    html += '<span style="display:inline-flex;align-items:center;gap:.3rem;margin-right:.5rem;">'
+      + '<svg width="10" height="10"><circle cx="5" cy="5" r="5" fill="' + (_domainColor[d]||'#4a9eff') + '"/></svg>'
+      + d + '</span>';
+  });
+  document.getElementById('tree-legend').innerHTML = html;
+}
+</script>
+{% endblock %}

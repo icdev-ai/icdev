@@ -1,0 +1,165 @@
+<style>
+:root{--bg2:#1e293b;--bg3:#334155;--accent:#3b82f6;--green:#10b981;--text:#e2e8f0;--dim:#94a3b8}
+.icdev-page *{box-sizing:border-box;margin:0;padding:0}
+.icdev-page{font-family:'Inter',system-ui,sans-serif;color:var(--text);max-width:1100px;margin:0 auto;line-height:1.7;padding:0 24px}
+.icdev-page h2{font-size:1.8rem;font-weight:700;margin:48px 0 16px}
+.icdev-page h3{font-size:1.2rem;font-weight:600;margin:0 0 8px}
+.icdev-page p{color:var(--dim);font-size:1.05rem;margin-bottom:16px}
+.icdev-page a{color:var(--accent);text-decoration:none}
+.icdev-page a:hover{text-decoration:underline}
+.contact-hero{text-align:center;padding:40px 0 20px}
+.contact-hero h2{font-size:2.2rem;margin-bottom:12px}
+.contact-hero p{max-width:600px;margin:0 auto;font-size:1.15rem}
+.contact-layout{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin:40px 0;align-items:start}
+.contact-form{background:var(--bg2);border-radius:12px;padding:32px;border:1px solid var(--bg3)}
+.contact-form label{display:block;font-size:.85rem;font-weight:600;color:var(--dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.contact-form input,.contact-form select,.contact-form textarea{width:100%;padding:12px 14px;background:rgba(255,255,255,.05);border:1px solid var(--bg3);border-radius:8px;color:var(--text);font-size:1rem;font-family:inherit;margin-bottom:20px;transition:border-color .2s}
+.contact-form input:focus,.contact-form select:focus,.contact-form textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+.contact-form select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
+.contact-form select option{background:var(--bg2);color:var(--text)}
+.contact-form textarea{min-height:140px;resize:vertical}
+.btn-submit{background:var(--accent);color:#fff;padding:14px 40px;border:none;border-radius:8px;font-weight:600;font-size:1rem;cursor:pointer;width:100%;transition:background .2s}
+.btn-submit:hover{background:#2563eb}
+.btn-submit:disabled{opacity:.6;cursor:not-allowed}
+.form-status{text-align:center;padding:12px;border-radius:8px;margin-top:16px;font-size:.95rem;display:none}
+.form-success{background:rgba(16,185,129,.15);color:var(--green);display:block}
+.form-error{background:rgba(239,68,68,.15);color:#ef4444;display:block}
+.contact-info h3{color:var(--accent);margin-bottom:12px;margin-top:32px}
+.contact-info h3:first-child{margin-top:0}
+.info-card{background:var(--bg2);border-radius:10px;padding:20px;border:1px solid var(--bg3);margin-bottom:16px}
+.info-card h3{color:var(--accent);margin-bottom:8px}
+.info-card p{font-size:.9rem;margin:0}
+.help-list{list-style:none;padding:0}
+.help-list li{padding:8px 0;font-size:.95rem;color:var(--dim);border-bottom:1px solid var(--bg3)}
+.help-list li:last-child{border-bottom:none}
+.help-list li::before{content:"\2192 ";color:var(--accent);font-weight:700}
+.response-note{background:rgba(59,130,246,.08);border-radius:10px;padding:16px;border:1px solid rgba(59,130,246,.2);margin-top:24px;font-size:.9rem;color:var(--dim)}
+.response-note strong{color:var(--text)}
+@media(max-width:768px){.contact-layout{grid-template-columns:1fr}}
+</style>
+<div class="icdev-page">
+
+<div class="contact-hero">
+<h2>Let's Talk Compliance</h2>
+<p>Whether you're pursuing FedRAMP, CMMC, or continuous ATO &mdash; we can help you get there in weeks instead of months.</p>
+</div>
+
+<div class="contact-layout">
+
+<div class="contact-form">
+<form id="icdev-contact-form" action="https://formsubmit.co/sovanna.chuon@gmail.com" method="POST">
+<label for="cf-name">Your Name</label>
+<input type="text" id="cf-name" name="name" placeholder="Jane Smith" required>
+
+<label for="cf-email">Work Email</label>
+<input type="email" id="cf-email" name="email" placeholder="jane@agency.gov" required>
+
+<label for="cf-org">Organization</label>
+<input type="text" id="cf-org" name="organization" placeholder="Department of Defense, Lockheed Martin, etc.">
+
+<label for="cf-role">Your Role</label>
+<select id="cf-role" name="role">
+<option value="">Select your role...</option>
+<option value="program_manager">Program Manager</option>
+<option value="ciso_isso">CISO / ISSO</option>
+<option value="cto_architect">CTO / Software Architect</option>
+<option value="devsecops">DevSecOps Engineer</option>
+<option value="systems_engineer">Systems Engineer</option>
+<option value="compliance_officer">Compliance Officer</option>
+<option value="contractor">Defense Contractor</option>
+<option value="other">Other</option>
+</select>
+
+<label for="cf-interest">What are you interested in?</label>
+<select id="cf-interest" name="interest">
+<option value="">Select a topic...</option>
+<option value="ato_acceleration">ATO Acceleration (FedRAMP/CMMC)</option>
+<option value="devsecops">DevSecOps Pipeline Security</option>
+<option value="modernization">Legacy App Modernization</option>
+<option value="ai_governance">AI Governance &amp; Compliance</option>
+<option value="demo">Platform Demo</option>
+<option value="partnership">Partnership / Integration</option>
+<option value="open_source">Open Source Contribution</option>
+<option value="other">Something Else</option>
+</select>
+
+<label for="cf-message">Tell us about your challenge</label>
+<textarea id="cf-message" name="message" placeholder="What compliance or development challenge are you facing? What's your timeline?"></textarea>
+
+<input type="text" name="_gotcha" style="display:none">
+<input type="hidden" name="_subject" value="ICDEV™ Contact Form Submission">
+<input type="hidden" name="_captcha" value="false">
+<input type="hidden" name="_next" value="https://icdev.ai/contact/?thanks=1">
+<input type="hidden" name="_template" value="table">
+
+<button type="submit" class="btn-submit" id="cf-submit">Send Message</button>
+<div id="cf-status" class="form-status"></div>
+</form>
+</div>
+
+<div class="contact-info">
+<div class="info-card">
+<h3>Response Time</h3>
+<p>We respond to all inquiries within 24 hours. For urgent compliance deadlines, mention your timeline in the message.</p>
+</div>
+
+<div class="info-card">
+<h3>Open Source</h3>
+<p>ICDEV™ is licensed under the <strong>Apache License 2.0</strong> — free for use, modification, and distribution with patent protection.</p>
+<p style="margin-top:8px"><a href="https://github.com/icdev-ai/icdev" style="font-weight:600">github.com/icdev-ai/icdev</a></p>
+</div>
+
+<h3>What We Help With</h3>
+<ul class="help-list">
+<li>FedRAMP Moderate/High and 20x authorization</li>
+<li>CMMC Level 2/3 certification gaps</li>
+<li>Continuous ATO for cloud-native applications</li>
+<li>DevSecOps pipeline security and Zero Trust</li>
+<li>Legacy system modernization with ATO preservation</li>
+<li>AI/ML compliance (NIST AI RMF, EU AI Act)</li>
+<li>OSCAL artifact generation for eMASS/Xacta</li>
+<li>Multi-framework crosswalk (30+ frameworks)</li>
+</ul>
+
+<div class="response-note">
+<strong>Government teams:</strong> ICDEV™ supports IL2 through IL6 classification levels. We can discuss CUI and classified environment requirements on a secure channel.
+</div>
+</div>
+
+</div>
+</div>
+
+<script>
+document.getElementById('icdev-contact-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var form = this;
+    var btn = document.getElementById('cf-submit');
+    var status = document.getElementById('cf-status');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    status.className = 'form-status';
+    status.style.display = 'none';
+
+    fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: {'Accept': 'application/json'}
+    }).then(function(r) {
+        if (r.ok) {
+            status.textContent = 'Message sent. We will get back to you within 24 hours.';
+            status.className = 'form-status form-success';
+            form.reset();
+        } else {
+            status.textContent = 'Something went wrong. Please try again or email us directly.';
+            status.className = 'form-status form-error';
+        }
+        btn.disabled = false;
+        btn.textContent = 'Send Message';
+    }).catch(function() {
+        status.textContent = 'Network error. Please check your connection and try again.';
+        status.className = 'form-status form-error';
+        btn.disabled = false;
+        btn.textContent = 'Send Message';
+    });
+});
+</script>

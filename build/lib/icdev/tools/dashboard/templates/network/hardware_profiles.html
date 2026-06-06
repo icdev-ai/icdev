@@ -1,0 +1,585 @@
+{% extends "network/base.html" %}
+{% block title %}Hardware Catalog — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Hardware Device Catalog</h1>
+    <p class="page-subtitle">Datasheet-level device profiles — ports, power, performance, lifecycle. Assign to canvas devices for auto-populated intelligence.</p>
+  </div>
+  <div class="page-actions">
+    <input type="text" id="hw-search" class="form-control" placeholder="Search vendor, model..." style="width:250px;" oninput="hwRender()">
+    <select id="hw-vendor-filter" class="form-control" style="width:150px;" onchange="hwRender()">
+      <option value="">All Vendors</option>
+    </select>
+    <button class="btn btn-primary" onclick="document.getElementById('hw-add-modal').style.display='flex'">+ Add Profile</button>
+  </div>
+</div>
+
+<!-- Stats Bar -->
+<div class="stat-bar" style="display:flex;gap:16px;margin-bottom:20px;">
+  <div class="stat-card" style="flex:1;text-align:center;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;">
+    <div id="hw-stat-total" style="font-size:24px;font-weight:700;">0</div>
+    <div style="font-size:11px;color:var(--text-dim);">Total Profiles</div>
+  </div>
+  <div class="stat-card" style="flex:1;text-align:center;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;">
+    <div id="hw-stat-vendors" style="font-size:24px;font-weight:700;">0</div>
+    <div style="font-size:11px;color:var(--text-dim);">Vendors</div>
+  </div>
+  <div class="stat-card" style="flex:1;text-align:center;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;">
+    <div id="hw-stat-eol" style="font-size:24px;font-weight:700;color:#f57c00;">0</div>
+    <div style="font-size:11px;color:var(--text-dim);">Approaching EOL</div>
+  </div>
+</div>
+
+<!-- Naming Conventions Section -->
+<section class="panel" style="margin-bottom:20px;">
+  <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <h2 class="panel-title">Naming Conventions</h2>
+    <div style="display:flex;gap:6px;">
+      <button class="btn btn-sm btn-secondary" onclick="document.getElementById('nc-help-panel').style.display=document.getElementById('nc-help-panel').style.display==='none'?'block':'none'" title="How naming conventions work" style="border-radius:50%;width:28px;height:28px;padding:0;font-weight:700;font-size:14px;">?</button>
+      <button class="btn btn-sm btn-secondary" onclick="hwTestNaming()">Test Generator</button>
+      <button class="btn btn-sm btn-primary" onclick="document.getElementById('nc-add-modal').style.display='flex'">+ New Convention</button>
+    </div>
+  </div>
+
+  <!-- Help Panel (hidden by default) -->
+  <div id="nc-help-panel" style="display:none;padding:16px;border-bottom:1px solid var(--border);background:var(--bg-body);font-size:13px;line-height:1.6;">
+    <h3 style="margin:0 0 10px;font-size:15px;">How Naming Conventions Work</h3>
+    <p>A naming convention is a <strong>template</strong> that generates standardized device names from fields you define. Each <code>{FIELD}</code> in the pattern is replaced with a value when generating a name.</p>
+
+    <h4 style="margin:12px 0 6px;font-size:13px;">Pattern Tokens</h4>
+    <table class="data-table" style="font-size:12px;margin-bottom:12px;">
+      <thead><tr><th>Token</th><th>Meaning</th><th>Example Values</th></tr></thead>
+      <tbody>
+        <tr><td><code>{SITE}</code></td><td>Site or location code</td><td>NYC, LAX, DCA, IAD</td></tr>
+        <tr><td><code>{ROLE}</code></td><td>Device function/role</td><td>CORE, DIST, ACCS, FWLL, VPNG</td></tr>
+        <tr><td><code>{SEQ}</code></td><td>Auto-incrementing sequence number</td><td>01, 02, 03...</td></tr>
+        <tr><td><code>{SEP}</code></td><td>Separator character (dash, underscore, etc.)</td><td>-, _, .</td></tr>
+        <tr><td><code>{CITY}</code></td><td>City abbreviation</td><td>NYC, CHI, SFO</td></tr>
+        <tr><td><code>{BLDG}</code></td><td>Building identifier</td><td>WS, B12, HQ1</td></tr>
+        <tr><td><code>{FLOOR}</code></td><td>Floor number</td><td>1, 3, 12</td></tr>
+        <tr><td><code>{TYPE}</code></td><td>Device type prefix</td><td>RTR, SW, FW, SRV</td></tr>
+        <tr><td><code>{COCOM}</code></td><td>Combatant Command (DoD)</td><td>CONUS, EUCOM, PACOM</td></tr>
+        <tr><td><code>{BASE}</code></td><td>Military installation name</td><td>BRAGG, HOOD, LEWIS</td></tr>
+      </tbody>
+    </table>
+
+    <h4 style="margin:12px 0 6px;font-size:13px;">Reading a Pattern</h4>
+    <p>Example: <code>{COCOM}{SEP}{BASE}{SEP}{BLDG}{SEP}{ROLE}{SEP}{SEQ}</code> with separator <code>-</code></p>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:8px 0;font-size:12px;">
+      <span style="padding:4px 8px;background:#1976d2;color:#fff;border-radius:4px;">CONUS</span>
+      <span style="color:var(--text-dim);font-weight:700;">-</span>
+      <span style="padding:4px 8px;background:#43a047;color:#fff;border-radius:4px;">BRAGG</span>
+      <span style="color:var(--text-dim);font-weight:700;">-</span>
+      <span style="padding:4px 8px;background:#f57c00;color:#fff;border-radius:4px;">B12</span>
+      <span style="color:var(--text-dim);font-weight:700;">-</span>
+      <span style="padding:4px 8px;background:#7b1fa2;color:#fff;border-radius:4px;">RTR</span>
+      <span style="color:var(--text-dim);font-weight:700;">-</span>
+      <span style="padding:4px 8px;background:#e53935;color:#fff;border-radius:4px;">001</span>
+      <span style="font-weight:700;margin-left:12px;">=  CONUS-BRAGG-B12-RTR-001</span>
+    </div>
+
+    <h4 style="margin:12px 0 6px;font-size:13px;">Field Types</h4>
+    <table class="data-table" style="font-size:12px;margin-bottom:12px;">
+      <thead><tr><th>Type</th><th>Accepts</th><th>Width</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><strong>alpha</strong></td><td>Letters only (A-Z)</td><td>Fixed character count</td><td>NYC (width=3)</td></tr>
+        <tr><td><strong>numeric</strong></td><td>Digits only (0-9)</td><td>Zero-padded to width</td><td>03 (width=2, pad=0)</td></tr>
+        <tr><td><strong>alphanumeric</strong></td><td>Letters + digits</td><td>Fixed character count</td><td>DC1A (width=4)</td></tr>
+        <tr><td><strong>enum</strong></td><td>Must be from allowed list</td><td>Auto from values</td><td>CORE, DIST, ACCS</td></tr>
+        <tr><td><strong>freetext</strong></td><td>Any characters</td><td>Up to max width</td><td>WALLST (width=6)</td></tr>
+        <tr><td><strong>sequence</strong></td><td>Auto-incrementing number</td><td>Zero-padded to width</td><td>001, 002, 003...</td></tr>
+      </tbody>
+    </table>
+
+    <h4 style="margin:12px 0 6px;font-size:13px;">Quick Examples</h4>
+    <table class="data-table" style="font-size:12px;">
+      <thead><tr><th>Convention</th><th>Pattern</th><th>Output</th><th>Use Case</th></tr></thead>
+      <tbody>
+        <tr><td>Site-Sequence</td><td><code>{SITE}{SEQ}</code></td><td><strong>NYC01</strong></td><td>Simple, compact</td></tr>
+        <tr><td>Site-Role-Sequence</td><td><code>{SITE}-{ROLE}-{SEQ}</code></td><td><strong>NYC-CORE-01</strong></td><td>Enterprise standard</td></tr>
+        <tr><td>DoD Standard</td><td><code>{COCOM}-{BASE}-{BLDG}-{ROLE}-{SEQ}</code></td><td><strong>CONUS-BRAGG-B12-RTR-001</strong></td><td>Military/government</td></tr>
+        <tr><td>Simple</td><td><code>{TYPE}-{SEQ}</code></td><td><strong>RTR-001</strong></td><td>Lab/quick deploy</td></tr>
+      </tbody>
+    </table>
+
+    <p style="margin-top:10px;color:var(--text-dim);font-size:11px;">Click <strong>"+ New Convention"</strong> to create your own, or <strong>"Edit"</strong> on any existing convention to modify it. Use <strong>"Test Generator"</strong> to try generating names interactively.</p>
+  </div>
+
+  <div style="padding:12px;overflow-x:auto;">
+    <table class="data-table" id="nc-table">
+      <thead><tr><th>Name</th><th>Pattern</th><th>Separator</th><th>Example</th><th>Fields</th><th style="width:60px;">Actions</th></tr></thead>
+      <tbody id="nc-table-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Naming Convention Create/Edit Modal -->
+<div id="nc-add-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:24px;max-width:700px;width:95%;max-height:85vh;overflow-y:auto;">
+    <h2 style="margin:0 0 4px;" id="nc-modal-title">Create Naming Convention</h2>
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 16px;">Define fields with type and width to build your device naming standard.</p>
+    <form onsubmit="return ncSave(event)">
+      <input type="hidden" id="nc-edit-id" value="">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <label>Convention Name <input id="nc-name" name="name" class="form-control" required placeholder="My Convention"></label>
+        <label>Description <input id="nc-desc" name="description" class="form-control" placeholder="Short description"></label>
+        <label>Separator Character <select id="nc-sep" name="separator" class="form-control">
+          <option value="">None (concatenated)</option><option value="-">Dash (-)</option><option value="_">Underscore (_)</option><option value=".">Dot (.)</option>
+        </select></label>
+        <label>Case Rule <select id="nc-case" name="case_rule" class="form-control">
+          <option value="upper">UPPERCASE</option><option value="lower">lowercase</option><option value="preserve">Preserve</option>
+        </select></label>
+        <label>Max Length <input id="nc-maxlen" name="max_length" type="number" class="form-control" value="63" min="1" max="253"></label>
+        <label>Example Output <input id="nc-example" name="example" class="form-control" placeholder="NYC-CORE-01" readonly style="background:var(--bg-body);"></label>
+      </div>
+
+      <h3 style="font-size:14px;margin:16px 0 8px;">Field Definitions</h3>
+      <p style="font-size:11px;color:var(--text-dim);margin:0 0 8px;">Each field becomes a {FIELD_NAME} token in the pattern. Separate with separator character above.</p>
+      <table class="data-table" style="font-size:12px;" id="nc-fields-table">
+        <thead><tr>
+          <th>Field Name</th><th>Type</th><th>Width</th><th>Pad</th><th>Allowed Values (comma-sep)</th><th>Required</th><th></th>
+        </tr></thead>
+        <tbody id="nc-fields-body"></tbody>
+      </table>
+      <button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="ncAddFieldRow()">+ Add Field</button>
+
+      <div style="margin-top:12px;padding:10px;background:var(--bg-body);border-radius:6px;">
+        <strong style="font-size:12px;">Generated Pattern:</strong>
+        <code id="nc-pattern-preview" style="font-size:13px;margin-left:8px;color:#4a90d9;">—</code>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('nc-add-modal').style.display='none'">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="nc-save-btn">Create Convention</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Profile Cards Grid -->
+<div id="hw-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;"></div>
+
+<!-- Detail Expand Panel -->
+<div id="hw-detail" class="panel" style="display:none;margin-top:16px;">
+  <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <h2 class="panel-title" id="hw-detail-title"></h2>
+    <button class="btn btn-sm btn-secondary" onclick="document.getElementById('hw-detail').style.display='none'">Close</button>
+  </div>
+  <div id="hw-detail-body" style="padding:16px;"></div>
+</div>
+
+<!-- Add Profile Modal -->
+<div id="hw-add-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
+    <h2 style="margin:0 0 16px;">Add Hardware Profile</h2>
+    <form onsubmit="return hwCreate(event)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <label>Vendor <input name="vendor" class="form-control" required placeholder="Cisco"></label>
+        <label>Model <input name="model" class="form-control" required placeholder="ASR-1001-X"></label>
+        <label>Model Family <input name="model_family" class="form-control" placeholder="ASR 1000 Series"></label>
+        <label>Device Type <select name="device_type" class="form-control">
+          <option>router</option><option>switch</option><option>firewall</option><option>server</option><option>load_balancer</option><option>access_point</option>
+        </select></label>
+        <label>Form Factor <select name="form_factor" class="form-control">
+          <option>rack</option><option>chassis</option><option>blade</option><option>desktop</option><option>virtual</option>
+        </select></label>
+        <label>Rack Units <input name="rack_units" type="number" class="form-control" value="1" min="1"></label>
+        <label>Weight (kg) <input name="weight_kg" type="number" step="0.1" class="form-control"></label>
+        <label>Throughput (Gbps) <input name="throughput_gbps" type="number" step="0.1" class="form-control"></label>
+        <label>Power Typical (W) <input name="power_typical_w" type="number" class="form-control"></label>
+        <label>Power Max (W) <input name="power_max_w" type="number" class="form-control"></label>
+        <label>Replacement Cost ($) <input name="replacement_cost" type="number" class="form-control"></label>
+        <label>EOL Date <input name="eol_date" type="date" class="form-control"></label>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('hw-add-modal').style.display='none'">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Profile</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+var _allProfiles = [];
+var _allConventions = [];
+
+// ── Load data ─────────────────────────────────────────────────────────────
+async function hwLoad() {
+  try {
+    _allProfiles = await fetch(NC_BASE + '/api/hardware-profiles').then(r => r.json());
+    _allConventions = await fetch(NC_BASE + '/api/naming-conventions').then(r => r.json());
+  } catch(e) { console.warn('Load failed', e); }
+  hwRender();
+  ncRender();
+}
+
+// ── Render profiles ───────────────────────────────────────────────────────
+function hwRender() {
+  const search = (document.getElementById('hw-search').value || '').toLowerCase();
+  const vendorFilter = document.getElementById('hw-vendor-filter').value;
+  const container = document.getElementById('hw-cards');
+
+  // Vendor filter options
+  const vendors = [...new Set(_allProfiles.map(p => p.vendor))].sort();
+  const sel = document.getElementById('hw-vendor-filter');
+  if (sel.options.length <= 1) {
+    vendors.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+  }
+
+  // Filter
+  const filtered = _allProfiles.filter(p => {
+    if (vendorFilter && p.vendor !== vendorFilter) return false;
+    if (search && !(p.vendor + ' ' + p.model + ' ' + (p.model_family||'')).toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  // Stats
+  document.getElementById('hw-stat-total').textContent = _allProfiles.length;
+  document.getElementById('hw-stat-vendors').textContent = vendors.length;
+  const now = new Date().toISOString().slice(0, 10);
+  const twoYears = new Date(Date.now() + 2 * 365 * 24 * 3600000).toISOString().slice(0, 10);
+  document.getElementById('hw-stat-eol').textContent = _allProfiles.filter(p => p.eol_date && p.eol_date <= twoYears).length;
+
+  // Cards
+  const typeIcon = {router:'\u2295',switch:'\u2b21',firewall:'\ud83d\udee1',server:'\u25a3',load_balancer:'\u2696',access_point:'\ud83d\udce1'};
+  const typeColor = {router:'#4a90d9',switch:'#43a047',firewall:'#e53935',server:'#7b1fa2',load_balancer:'#5c6bc0',access_point:'#8d6e63'};
+
+  container.innerHTML = filtered.map(p => {
+    const icon = typeIcon[p.device_type] || '\u25cf';
+    const color = typeColor[p.device_type] || '#999';
+    const portSummary = (p.ports || []).map(pt => pt.count + 'x' + pt.speed).join(', ') || 'N/A';
+    const eolWarn = p.eol_date && p.eol_date <= twoYears;
+    const eosWarn = p.eos_date && p.eos_date <= now;
+
+    return '<div class="panel" style="cursor:pointer;transition:transform .2s;" onclick="hwShowDetail(\'' + esc(p.id) + '\')" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'">' +
+      '<div style="padding:16px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
+      '<div><span style="font-size:20px;margin-right:6px;">' + icon + '</span>' +
+      '<span style="font-size:16px;font-weight:700;">' + esc(p.model) + '</span></div>' +
+      '<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:' + color + ';color:#fff;">' + esc(p.device_type) + '</span></div>' +
+      '<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">' + esc(p.vendor) + ' &bull; ' + esc(p.model_family || '') + '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;">' +
+      '<div><span style="color:var(--text-dim);">RU:</span> <strong>' + (p.rack_units||'?') + '</strong></div>' +
+      '<div><span style="color:var(--text-dim);">Power:</span> <strong>' + (p.power_max_w||'?') + 'W</strong></div>' +
+      '<div><span style="color:var(--text-dim);">Throughput:</span> <strong>' + (p.throughput_gbps ? (p.throughput_gbps >= 1000 ? (p.throughput_gbps/1000).toFixed(1) + ' Tbps' : p.throughput_gbps + ' Gbps') : '?') + '</strong></div>' +
+      '<div><span style="color:var(--text-dim);">Cost:</span> <strong>$' + (p.replacement_cost ? Number(p.replacement_cost).toLocaleString() : '?') + '</strong></div>' +
+      '</div>' +
+      '<div style="font-size:10px;color:var(--text-dim);margin-top:6px;">Ports: ' + esc(portSummary) + '</div>' +
+      (eolWarn ? '<div style="font-size:10px;color:#f57c00;margin-top:4px;">\u26a0 EOL: ' + esc(p.eol_date) + '</div>' : '') +
+      (eosWarn ? '<div style="font-size:10px;color:#e53935;margin-top:2px;">\u26d4 EOS: ' + esc(p.eos_date) + '</div>' : '') +
+      '</div></div>';
+  }).join('');
+}
+
+// ── Detail view ───────────────────────────────────────────────────────────
+async function hwShowDetail(pid) {
+  const detail = document.getElementById('hw-detail');
+  detail.style.display = 'block';
+  document.getElementById('hw-detail-title').textContent = 'Loading...';
+  document.getElementById('hw-detail-body').innerHTML = '';
+  try {
+    const d = await fetch(NC_BASE + '/api/hardware-profiles/' + pid).then(r => r.json());
+    document.getElementById('hw-detail-title').textContent = d.vendor + ' ' + d.model;
+
+    const sections = [
+      {title: 'Identity', rows: [
+        ['Vendor', d.vendor], ['Model', d.model], ['Family', d.model_family],
+        ['Type', d.device_type], ['Form Factor', d.form_factor], ['License', d.license_model]
+      ]},
+      {title: 'Physical', rows: [
+        ['Rack Units', d.rack_units + 'RU'], ['Weight', (d.weight_kg||'?') + ' kg'],
+        ['Dimensions', (d.width_mm||'?') + ' x ' + (d.depth_mm||'?') + ' x ' + (d.height_mm||'?') + ' mm'],
+        ['Airflow', d.airflow_direction || 'N/A']
+      ]},
+      {title: 'Power / Environmental', rows: [
+        ['Power (typical)', (d.power_typical_w||'?') + 'W'], ['Power (max)', (d.power_max_w||'?') + 'W'],
+        ['PSU Count', d.psu_count], ['PSU Type', d.psu_type || 'N/A'],
+        ['Temp Range', (d.operating_temp_min_c||0) + '\u00b0C to ' + (d.operating_temp_max_c||40) + '\u00b0C'],
+        ['Humidity', (d.humidity_min_pct||10) + '% to ' + (d.humidity_max_pct||85) + '%'],
+        ['Altitude', (d.altitude_max_m||3000) + 'm'], ['Acoustic', (d.acoustic_dba||'?') + ' dBA']
+      ]},
+      {title: 'Performance', rows: [
+        ['Throughput', d.throughput_gbps ? (d.throughput_gbps >= 1000 ? (d.throughput_gbps/1000).toFixed(1) + ' Tbps' : d.throughput_gbps + ' Gbps') : 'N/A'],
+        ['PPS', d.pps_mpps ? d.pps_mpps + ' Mpps' : 'N/A'],
+        ['Routing Table', d.routing_table_size ? Number(d.routing_table_size).toLocaleString() + ' routes' : 'N/A'],
+        ['ARP Table', d.arp_table_size ? Number(d.arp_table_size).toLocaleString() : 'N/A'],
+        ['NAT Sessions', d.nat_sessions ? Number(d.nat_sessions).toLocaleString() : 'N/A'],
+        ['VPN Tunnels', d.vpn_tunnels ? Number(d.vpn_tunnels).toLocaleString() : 'N/A'],
+        ['VLANs', d.vlan_count || 'N/A']
+      ]},
+      {title: 'Lifecycle', rows: [
+        ['Replacement Cost', d.replacement_cost ? '$' + Number(d.replacement_cost).toLocaleString() : 'N/A'],
+        ['Maintenance %', (d.annual_maintenance_pct ? (d.annual_maintenance_pct * 100).toFixed(0) + '%' : '15%') + ' of cost/yr'],
+        ['EOS Date', d.eos_date || 'N/A'], ['EOL Date', d.eol_date || 'N/A']
+      ]}
+    ];
+
+    let html = '<div style="display:flex;gap:16px;flex-wrap:wrap;">';
+    sections.forEach(s => {
+      html += '<div style="flex:1;min-width:250px;"><h3 style="font-size:13px;margin:0 0 8px;color:var(--text-dim);">' + s.title + '</h3>';
+      html += '<table class="data-table" style="font-size:12px;"><tbody>';
+      s.rows.forEach(r => {
+        html += '<tr><td style="color:var(--text-dim);width:120px;">' + r[0] + '</td><td><strong>' + esc(String(r[1]||'')) + '</strong></td></tr>';
+      });
+      html += '</tbody></table></div>';
+    });
+
+    // Ports
+    const ports = d.ports || [];
+    if (ports.length) {
+      html += '<div style="flex:1;min-width:250px;"><h3 style="font-size:13px;margin:0 0 8px;color:var(--text-dim);">Port Layout</h3>';
+      html += '<table class="data-table" style="font-size:12px;"><thead><tr><th>Count</th><th>Speed</th><th>Type</th><th>Breakout</th></tr></thead><tbody>';
+      ports.forEach(pt => {
+        html += '<tr><td>' + pt.count + '</td><td>' + esc(pt.speed) + '</td><td>' + esc(pt.type) + '</td><td>' + esc(pt.breakout||'—') + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
+    // Components BOM
+    const comps = d.components || [];
+    if (comps.length) {
+      html += '<div style="flex:1;min-width:250px;"><h3 style="font-size:13px;margin:0 0 8px;color:var(--text-dim);">Components BOM</h3>';
+      html += '<table class="data-table" style="font-size:12px;"><thead><tr><th>Type</th><th>Model</th><th>Qty</th></tr></thead><tbody>';
+      comps.forEach(c => {
+        html += '<tr><td>' + esc(c.type) + '</td><td>' + esc(c.model) + '</td><td>' + (c.qty||1) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
+    html += '</div>';
+    document.getElementById('hw-detail-body').innerHTML = html;
+    detail.scrollIntoView({behavior: 'smooth', block: 'start'});
+  } catch(e) {
+    document.getElementById('hw-detail-title').textContent = 'Error';
+    document.getElementById('hw-detail-body').textContent = e.message;
+  }
+}
+
+// ── Create profile ────────────────────────────────────────────────────────
+async function hwCreate(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const data = {};
+  fd.forEach((v, k) => { data[k] = v; });
+  ['rack_units','weight_kg','throughput_gbps','power_typical_w','power_max_w','replacement_cost'].forEach(k => {
+    if (data[k]) data[k] = Number(data[k]);
+  });
+  try {
+    const r = await fetch(NC_BASE + '/api/hardware-profiles', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    });
+    const d = await r.json();
+    if (d.error) { alert('Error: ' + d.error); return false; }
+    document.getElementById('hw-add-modal').style.display = 'none';
+    e.target.reset();
+    hwLoad();
+  } catch(err) { alert('Failed: ' + err.message); }
+  return false;
+}
+
+// ── Naming conventions table ──────────────────────────────────────────────
+function ncRender() {
+  const tbody = document.getElementById('nc-table-body');
+  const _fieldColors = {SITE:'#1976d2',ROLE:'#7b1fa2',SEQ:'#e53935',CITY:'#1976d2',BLDG:'#f57c00',FLOOR:'#00897b',TYPE:'#5c6bc0',COCOM:'#1976d2',BASE:'#43a047',REGION:'#1976d2'};
+  tbody.innerHTML = _allConventions.map(c => {
+    const fields = c.fields_json ? JSON.parse(c.fields_json) : [];
+    const isBuiltin = c.is_builtin;
+    const sep = c.separator || '';
+    // Build visual pattern with color badges
+    let visualPattern = '';
+    fields.forEach((f, i) => {
+      if (i > 0 && sep) visualPattern += '<span style="color:var(--text-dim);font-weight:700;margin:0 1px;">' + esc(sep) + '</span>';
+      const color = _fieldColors[f.name] || '#666';
+      visualPattern += '<span style="display:inline-block;padding:1px 6px;border-radius:3px;background:' + color + ';color:#fff;font-size:10px;font-weight:600;" title="' + esc(f.description||f.name) + ' (' + f.type + (f.width?':'+f.width:'') + ')">' + esc(f.name) + '</span>';
+    });
+    // Build fields summary with descriptions
+    const fieldsSummary = fields.map(f => {
+      const vals = (f.values||[]).slice(0,3).join(', ');
+      return '<div style="margin:1px 0;"><strong>' + esc(f.name) + '</strong> <span style="color:var(--text-dim);">' + f.type + (f.width?'('+f.width+')':'') + '</span>' +
+        (vals ? ' <span style="color:#999;font-size:9px;">' + esc(vals) + (f.values&&f.values.length>3?'...':'') + '</span>' : '') + '</div>';
+    }).join('');
+    return '<tr>' +
+      '<td><strong>' + esc(c.name) + '</strong><div style="font-size:10px;color:var(--text-dim);">' + esc(c.description||'') + '</div></td>' +
+      '<td>' + visualPattern + '</td>' +
+      '<td><code style="font-size:13px;">' + esc(sep || '(none)') + '</code></td>' +
+      '<td style="font-weight:700;font-size:13px;letter-spacing:0.5px;">' + esc(c.example||'') + '</td>' +
+      '<td style="font-size:10px;">' + fieldsSummary + '</td>' +
+      '<td><button class="btn btn-sm btn-secondary" onclick="ncEdit(\'' + esc(c.id) + '\')" title="Edit">Edit</button>' +
+      (!isBuiltin ? ' <button class="btn btn-sm" style="color:#e53935;" onclick="ncDelete(\'' + esc(c.id) + '\')" title="Delete">Del</button>' : '') +
+      '</td></tr>';
+  }).join('');
+}
+
+// ── Add field row to convention modal ─────────────────────────────────────
+function ncAddFieldRow(data) {
+  const tbody = document.getElementById('nc-fields-body');
+  const d = data || {};
+  const idx = tbody.children.length;
+  const tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td><input class="form-control" name="f_name_' + idx + '" value="' + esc(d.name||'') + '" placeholder="SITE" style="width:80px;text-transform:uppercase;"></td>' +
+    '<td><select class="form-control" name="f_type_' + idx + '" style="width:110px;">' +
+      '<option' + (d.type==='alpha'?' selected':'') + '>alpha</option>' +
+      '<option' + (d.type==='numeric'?' selected':'') + '>numeric</option>' +
+      '<option' + (d.type==='alphanumeric'?' selected':'') + '>alphanumeric</option>' +
+      '<option' + (d.type==='enum'?' selected':'') + '>enum</option>' +
+      '<option' + (d.type==='freetext'?' selected':'') + '>freetext</option>' +
+      '<option' + (d.type==='sequence'?' selected':'') + '>sequence</option>' +
+    '</select></td>' +
+    '<td><input class="form-control" name="f_width_' + idx + '" type="number" value="' + (d.width||'') + '" min="1" max="20" style="width:50px;" placeholder="3"></td>' +
+    '<td><select class="form-control" name="f_pad_' + idx + '" style="width:60px;">' +
+      '<option value="none"' + (d.pad==='none'||!d.pad?' selected':'') + '>none</option>' +
+      '<option value="0"' + (d.pad==='0'?' selected':'') + '>0</option>' +
+      '<option value=" "' + (d.pad===' '?' selected':'') + '>space</option>' +
+    '</select></td>' +
+    '<td><input class="form-control" name="f_values_' + idx + '" value="' + esc((d.values||[]).join(',')) + '" placeholder="NYC,LAX,DCA" style="width:160px;"></td>' +
+    '<td><input type="checkbox" name="f_req_' + idx + '"' + (d.required?' checked':'') + '></td>' +
+    '<td><button type="button" class="btn btn-sm" style="color:#e53935;" onclick="this.closest(\'tr\').remove();ncUpdatePreview();">X</button></td>';
+  tbody.appendChild(tr);
+  ncUpdatePreview();
+}
+
+// ── Update pattern preview ────────────────────────────────────────────────
+function ncUpdatePreview() {
+  const tbody = document.getElementById('nc-fields-body');
+  const sep = document.getElementById('nc-sep').value;
+  const parts = [];
+  for (let i = 0; i < tbody.children.length; i++) {
+    const name = (tbody.children[i].querySelector('[name^="f_name_"]')?.value || '').toUpperCase().replace(/[^A-Z0-9_]/g, '');
+    if (name) parts.push('{' + name + '}');
+  }
+  const pattern = parts.join(sep ? '{SEP}' : '');
+  document.getElementById('nc-pattern-preview').textContent = pattern || '—';
+  // Auto-fill example
+  const caseRule = document.getElementById('nc-case').value;
+  let example = pattern.replace(/\{SEP\}/g, sep);
+  for (let i = 0; i < tbody.children.length; i++) {
+    const name = (tbody.children[i].querySelector('[name^="f_name_"]')?.value || '').toUpperCase();
+    const type = tbody.children[i].querySelector('[name^="f_type_"]')?.value || 'alpha';
+    const width = parseInt(tbody.children[i].querySelector('[name^="f_width_"]')?.value) || 3;
+    const vals = (tbody.children[i].querySelector('[name^="f_values_"]')?.value || '').split(',').filter(v=>v.trim());
+    let sample = vals[0] || (type === 'sequence' || type === 'numeric' ? '01' : 'ABC');
+    if (type === 'numeric' || type === 'sequence') sample = sample.padStart(width, '0');
+    example = example.replace('{' + name + '}', sample.slice(0, width || 10));
+  }
+  if (caseRule === 'upper') example = example.toUpperCase();
+  else if (caseRule === 'lower') example = example.toLowerCase();
+  document.getElementById('nc-example').value = example;
+}
+
+// ── Edit convention ───────────────────────────────────────────────────────
+async function ncEdit(cid) {
+  try {
+    const d = await fetch(NC_BASE + '/api/naming-conventions/' + cid).then(r => r.json());
+    document.getElementById('nc-edit-id').value = cid;
+    document.getElementById('nc-modal-title').textContent = 'Edit: ' + d.name;
+    document.getElementById('nc-save-btn').textContent = 'Save Changes';
+    document.getElementById('nc-name').value = d.name || '';
+    document.getElementById('nc-desc').value = d.description || '';
+    document.getElementById('nc-sep').value = d.separator || '';
+    document.getElementById('nc-case').value = d.case_rule || 'upper';
+    document.getElementById('nc-maxlen').value = d.max_length || 63;
+    document.getElementById('nc-example').value = d.example || '';
+    // Populate fields
+    document.getElementById('nc-fields-body').innerHTML = '';
+    (d.fields || []).forEach(f => ncAddFieldRow(f));
+    ncUpdatePreview();
+    document.getElementById('nc-add-modal').style.display = 'flex';
+  } catch(e) { alert('Error loading convention: ' + e.message); }
+}
+
+// ── Delete convention ─────────────────────────────────────────────────────
+async function ncDelete(cid) {
+  if (!confirm('Delete this naming convention?')) return;
+  try {
+    const r = await fetch(NC_BASE + '/api/naming-conventions/' + cid, {method:'DELETE'});
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    hwLoad();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// ── Save convention (create or update) ────────────────────────────────────
+async function ncSave(e) {
+  e.preventDefault();
+  const editId = document.getElementById('nc-edit-id').value;
+  const sep = document.getElementById('nc-sep').value;
+  const tbody = document.getElementById('nc-fields-body');
+
+  // Collect fields
+  const fields = [];
+  const parts = [];
+  for (let i = 0; i < tbody.children.length; i++) {
+    const name = (tbody.children[i].querySelector('[name^="f_name_"]')?.value || '').toUpperCase().replace(/[^A-Z0-9_]/g, '');
+    const type = tbody.children[i].querySelector('[name^="f_type_"]')?.value || 'alpha';
+    const width = parseInt(tbody.children[i].querySelector('[name^="f_width_"]')?.value) || 0;
+    const pad = tbody.children[i].querySelector('[name^="f_pad_"]')?.value || 'none';
+    const values = (tbody.children[i].querySelector('[name^="f_values_"]')?.value || '').split(',').map(v=>v.trim()).filter(v=>v);
+    const required = !!tbody.children[i].querySelector('[name^="f_req_"]')?.checked;
+    if (!name) continue;
+    fields.push({name, type, width: width || undefined, pad, values: values.length ? values : undefined, required, start: type === 'sequence' ? 1 : undefined});
+    parts.push('{' + name + '}');
+  }
+  const pattern = parts.join(sep ? '{SEP}' : '');
+
+  const data = {
+    name: document.getElementById('nc-name').value,
+    description: document.getElementById('nc-desc').value,
+    pattern: pattern,
+    fields_json: JSON.stringify(fields),
+    separator: sep,
+    max_length: parseInt(document.getElementById('nc-maxlen').value) || 63,
+    case_rule: document.getElementById('nc-case').value,
+    example: document.getElementById('nc-example').value,
+  };
+
+  try {
+    const url = editId
+      ? NC_BASE + '/api/naming-conventions/' + editId
+      : NC_BASE + '/api/naming-conventions';
+    const method = editId ? 'PUT' : 'POST';
+    const r = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    const d = await r.json();
+    if (d.error) { alert(d.error); return false; }
+    document.getElementById('nc-add-modal').style.display = 'none';
+    document.getElementById('nc-edit-id').value = '';
+    document.getElementById('nc-modal-title').textContent = 'Create Naming Convention';
+    document.getElementById('nc-save-btn').textContent = 'Create Convention';
+    hwLoad();
+  } catch(err) { alert('Failed: ' + err.message); }
+  return false;
+}
+
+// Watch for field changes to update preview
+document.getElementById('nc-sep')?.addEventListener('change', ncUpdatePreview);
+document.getElementById('nc-case')?.addEventListener('change', ncUpdatePreview);
+
+// ── Test naming generator ─────────────────────────────────────────────────
+async function hwTestNaming() {
+  const convId = prompt('Convention ID (e.g., nc-site-seq):', 'nc-site-seq');
+  if (!convId) return;
+  const conv = _allConventions.find(c => c.id === convId);
+  const fields = conv ? JSON.parse(conv.fields_json || '[]') : [];
+  const vars = {};
+  for (const f of fields) {
+    if (f.type === 'sequence') continue;
+    const val = prompt(f.name + (f.values ? ' [' + f.values.join(',') + ']' : '') + ':', f.values?.[0] || '');
+    if (val !== null) vars[f.name] = val;
+  }
+  try {
+    const r = await fetch(NC_BASE + '/api/naming-conventions/' + convId + '/generate', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(vars)
+    });
+    const d = await r.json();
+    alert('Generated name: ' + (d.name || JSON.stringify(d)) + '\nValid: ' + d.valid + (d.errors?.length ? '\nErrors: ' + d.errors.join(', ') : ''));
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+
+hwLoad();
+</script>
+{% endblock %}

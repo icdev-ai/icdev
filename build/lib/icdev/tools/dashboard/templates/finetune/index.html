@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Fine-Tuning — ICDEV™ Dashboard{% endblock %}
+{% block content %}
+
+<div class="container">
+    <nav aria-label="breadcrumb">
+        <span><a href="/">Home</a></span> &gt; <span>Fine-Tuning</span>
+    </nav>
+
+    <h1>Fine-Tuning &amp; Custom Model Training</h1>
+    <p class="text-muted">Phase 64 Extension — QLoRA fine-tuning pipeline with evaluation, auto-promotion, and two-tier LLM integration (D-FT-1 through D-FT-22).</p>
+
+    <!-- Stat Grid -->
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-datasets" style="font-size:2rem;font-weight:bold;">{{ stats.datasets|default('--') }}</div>
+            <div class="stat-label" style="color:#666;">Datasets</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-jobs" style="font-size:2rem;font-weight:bold;">{{ stats.total_jobs|default('--') }}</div>
+            <div class="stat-label" style="color:#666;">Training Jobs</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-active" style="font-size:2rem;font-weight:bold;color:#ff9800;">{{ stats.active_jobs|default('--') }}</div>
+            <div class="stat-label" style="color:#666;">Active Jobs</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-models" style="font-size:2rem;font-weight:bold;">{{ stats.model_versions|default('--') }}</div>
+            <div class="stat-label" style="color:#666;">Model Versions</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-promoted" style="font-size:2rem;font-weight:bold;color:#4caf50;">{{ stats.promoted_models|default('--') }}</div>
+            <div class="stat-label" style="color:#666;">Promoted</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-overrides" style="font-size:2rem;font-weight:bold;color:#1976d2;">{{ stats.active_overrides|default('--') }}</div>
+            <div class="stat-label" style="color:#666;">Active Overrides</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-evals" style="font-size:2rem;font-weight:bold;">{{ stats.evaluations|default('--') }}</div>
+            <div class="stat-label" style="color:#666;">Evaluations</div>
+        </div>
+    </div>
+
+    <!-- GPU Status -->
+    <div id="gpu-status" style="margin:1rem 0;padding:0.75rem 1rem;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
+        <strong>GPU:</strong> <span id="gpu-info">Detecting...</span>
+    </div>
+
+    <!-- Quick Links -->
+    <div style="margin:1rem 0;display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <a href="/finetune/datasets" style="padding:0.5rem 1.2rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;text-decoration:none;">Datasets</a>
+        <a href="/finetune/jobs" style="padding:0.5rem 1.2rem;background:#607d8b;color:#fff;border:none;border-radius:4px;cursor:pointer;text-decoration:none;">Training Jobs</a>
+        <a href="/finetune/models" style="padding:0.5rem 1.2rem;background:#4caf50;color:#fff;border:none;border-radius:4px;cursor:pointer;text-decoration:none;">Models</a>
+        <a href="/finetune/evaluate" style="padding:0.5rem 1.2rem;background:#ff9800;color:#fff;border:none;border-radius:4px;cursor:pointer;text-decoration:none;">Evaluate</a>
+    </div>
+
+    <!-- Recent Training Jobs -->
+    <h2>Recent Training Jobs</h2>
+    <div class="table-container">
+        <table id="tbl-jobs">
+            <thead>
+                <tr>
+                    <th>Job ID</th>
+                    <th>Provider</th>
+                    <th>Base Model</th>
+                    <th>Status</th>
+                    <th>Loss</th>
+                    <th>Duration</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr>
+                    <td><a href="/finetune/jobs/{{ job.id }}">{{ job.id[:12] }}...</a></td>
+                    <td>{{ job.provider }}</td>
+                    <td>{{ job.base_model }}</td>
+                    <td>
+                        {% if job.status == 'completed' %}
+                        <span style="color:#4caf50;font-weight:bold;">{{ job.status }}</span>
+                        {% elif job.status == 'training' %}
+                        <span style="color:#ff9800;font-weight:bold;">{{ job.status }}</span>
+                        {% elif job.status == 'failed' %}
+                        <span style="color:#f44336;font-weight:bold;">{{ job.status }}</span>
+                        {% else %}
+                        <span style="color:#607d8b;">{{ job.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ "%.4f"|format(job.current_loss) if job.current_loss else '--' }}</td>
+                    <td>{{ job.training_duration_seconds|default('--') }}s</td>
+                    <td>{{ job.created_at|default('--') }}</td>
+                </tr>
+                {% endfor %}
+                {% if not jobs %}
+                <tr><td colspan="7" style="text-align:center;color:#999;">No training jobs yet. <a href="/finetune/datasets">Create a dataset</a> to get started.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Active Model Overrides -->
+    <h2>Active Model Overrides</h2>
+    <p class="text-muted">Fine-tuned models currently overriding the default qwen3 worker tier (D-FT-6).</p>
+    <div class="table-container">
+        <table id="tbl-overrides">
+            <thead>
+                <tr>
+                    <th>Function</th>
+                    <th>Ollama Model</th>
+                    <th>Routing Tier</th>
+                    <th>Activated By</th>
+                    <th>Activated At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for am in active_models %}
+                <tr>
+                    <td><code>{{ am.function_name }}</code></td>
+                    <td><strong>{{ am.ollama_model_name }}</strong></td>
+                    <td>{{ am.routing_tier|default('worker') }}</td>
+                    <td>{{ am.activated_by|default('--') }}</td>
+                    <td>{{ am.activated_at|default('--') }}</td>
+                </tr>
+                {% endfor %}
+                {% if not active_models %}
+                <tr><td colspan="5" style="text-align:center;color:#999;">No active model overrides. Promote a trained model to activate.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Recent Promotions -->
+    <h2>Recent Promotion Log</h2>
+    <div class="table-container">
+        <table id="tbl-promotions">
+            <thead>
+                <tr>
+                    <th>Action</th>
+                    <th>Function</th>
+                    <th>Previous Model</th>
+                    <th>Reason</th>
+                    <th>Actor</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in promotions %}
+                <tr>
+                    <td>
+                        {% if 'promoted' in p.action %}
+                        <span style="color:#4caf50;font-weight:bold;">{{ p.action }}</span>
+                        {% elif 'demoted' in p.action %}
+                        <span style="color:#f44336;font-weight:bold;">{{ p.action }}</span>
+                        {% else %}
+                        {{ p.action }}
+                        {% endif %}
+                    </td>
+                    <td><code>{{ p.function_name }}</code></td>
+                    <td>{{ p.previous_model|default('--') }}</td>
+                    <td>{{ p.reason|default('--') }}</td>
+                    <td>{{ p.actor|default('--') }}</td>
+                    <td>{{ p.created_at|default('--') }}</td>
+                </tr>
+                {% endfor %}
+                {% if not promotions %}
+                <tr><td colspan="6" style="text-align:center;color:#999;">No promotion events yet.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+(function() {
+    fetch('/api/finetune/gpu-status')
+        .then(r => r.json())
+        .then(d => {
+            const el = document.getElementById('gpu-info');
+            const hasGpu = d.has_gpu || d.available;
+            const gpuName = (d.gpus && d.gpus[0] ? d.gpus[0].name : null) || d.gpu_name || 'GPU';
+            const vram = d.total_vram_mb || (d.gpus && d.gpus[0] ? d.gpus[0].vram_total_mb : 0) || 0;
+            const canTrain = d.can_train;
+            if (hasGpu) {
+                const trainBadge = canTrain
+                    ? ' <span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:4px;font-size:0.8em;">QLoRA Ready</span>'
+                    : ' <span style="background:#ff9800;color:#fff;padding:2px 8px;border-radius:4px;font-size:0.8em;">Serve Only</span>';
+                el.innerHTML = '<span style="color:#4caf50;">' + gpuName +
+                    ' (' + vram + ' MB VRAM, CUDA ' + (d.cuda_version || '?') + ')</span>' + trainBadge;
+            } else {
+                el.innerHTML = '<span style="color:#ff9800;">No GPU detected (CPU serving only via Ollama)</span>';
+            }
+        })
+        .catch(() => {
+            document.getElementById('gpu-info').textContent = 'Detection unavailable';
+        });
+})();
+</script>
+
+{% endblock %}

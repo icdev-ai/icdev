@@ -1,0 +1,11 @@
+{
+  "id": "117",
+  "name": "mcp_tool_registry",
+  "description": "Create mcp_tool_registry table for MCP gateway tool discovery via AADC design sync.",
+  "created_at": "2026-05-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "notes": "Mutable registry. tools/agentic_ai_canvas/mcp_sync.py upserts into this table. Safe to re-run (CREATE TABLE IF NOT EXISTS)."
+}

@@ -1,0 +1,791 @@
+{% extends "base.html" %}
+{% block title %}Digital Program Twin - ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">Simulation</span>
+    </nav>
+
+    <h1>Digital Program Twin</h1>
+    <p class="text-muted">6-dimension what-if simulation, Monte Carlo estimation, and Course of Action analysis across architecture, compliance, supply chain, schedule, cost, and risk.</p>
+
+    <!-- NLP Query Bar -->
+    <div style="margin:1.5rem 0;padding:1.25rem;border:2px solid #1976d2;border-radius:12px;background:linear-gradient(135deg,#e3f2fd 0%,#fafafa 100%);">
+        <label style="display:block;font-weight:700;font-size:1.05rem;margin-bottom:0.5rem;color:#1565c0;">Ask the Digital Twin</label>
+        <div style="display:flex;gap:0.75rem;align-items:flex-start;">
+            <div style="flex:1;">
+                <input id="nlq-input" type="text" placeholder='e.g. "What happens if we add 3 microservices and move to IL5?"' style="width:100%;padding:0.65rem 1rem;border:1px solid #bbdefb;border-radius:8px;box-sizing:border-box;font-size:0.95rem;" onkeydown="if(event.key==='Enter')runNLQ()" />
+                <div style="margin-top:0.4rem;font-size:0.75rem;color:#999;">
+                    Try: "add AWS as a vendor" &bull; "scope creep" &bull; "what systems depend on AC-2?" &bull; "extend timeline by 3 months"
+                </div>
+            </div>
+            <div>
+                <label for="nlq-project" style="display:block;font-size:0.75rem;color:#666;margin-bottom:2px;">Project</label>
+                <input id="nlq-project" type="text" placeholder="proj-id" value="" style="width:120px;padding:0.65rem 0.5rem;border:1px solid #ccc;border-radius:8px;font-size:0.85rem;" />
+            </div>
+            <button onclick="runNLQ()" style="padding:0.65rem 1.5rem;background:#1976d2;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:0.95rem;font-weight:600;white-space:nowrap;">Simulate</button>
+            <button onclick="runCascadeFromNLQ()" style="padding:0.65rem 1.2rem;background:#ff9800;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:0.95rem;font-weight:600;white-space:nowrap;">Cascade</button>
+        </div>
+        <div id="nlq-status" style="margin-top:0.5rem;font-size:0.9rem;color:#666;"></div>
+        <!-- NLQ Parse Preview -->
+        <div id="nlq-preview" style="display:none;margin-top:0.75rem;padding:0.75rem;background:#fff;border:1px solid #e0e0e0;border-radius:8px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;font-size:0.85rem;">
+                <div><strong>Intent:</strong> <span id="nlq-intent"></span></div>
+                <div><strong>Confidence:</strong> <span id="nlq-confidence"></span></div>
+                <div><strong>Scenario Type:</strong> <span id="nlq-type"></span></div>
+            </div>
+            <div style="margin-top:0.5rem;font-size:0.85rem;">
+                <strong>Parsed Modifications:</strong>
+                <pre id="nlq-mods" style="margin:0.25rem 0 0;padding:0.5rem;background:#f5f5f5;border-radius:4px;font-size:0.8rem;overflow-x:auto;max-height:120px;"></pre>
+            </div>
+            <div id="nlq-entities" style="margin-top:0.5rem;font-size:0.85rem;"></div>
+        </div>
+    </div>
+
+    <!-- Cascade Results Panel -->
+    <div id="cascade-panel" style="display:none;margin:1.5rem 0;">
+        <h2>Cascade Analysis</h2>
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:1.5rem;">
+            <!-- Cascade Diagram -->
+            <div style="border:1px solid #ddd;border-radius:8px;padding:1rem;">
+                <h3 style="margin:0 0 0.75rem;font-size:1rem;">Dependency Propagation</h3>
+                <div id="cascade-summary" style="margin-bottom:0.75rem;font-size:0.9rem;"></div>
+                <div id="cascade-levels" style="max-height:400px;overflow-y:auto;"></div>
+            </div>
+            <!-- Dimension Impact -->
+            <div style="border:1px solid #ddd;border-radius:8px;padding:1rem;">
+                <h3 style="margin:0 0 0.75rem;font-size:1rem;">Dimension Impact</h3>
+                <div id="cascade-dimensions"></div>
+                <div style="margin-top:1rem;">
+                    <h4 style="margin:0 0 0.5rem;font-size:0.9rem;">Suggested Modifications</h4>
+                    <pre id="cascade-mods" style="padding:0.5rem;background:#f5f5f5;border-radius:4px;font-size:0.8rem;overflow-x:auto;max-height:150px;"></pre>
+                </div>
+                <button id="btn-apply-cascade" onclick="applyCascadeMods()" style="display:none;margin-top:0.75rem;padding:0.5rem 1rem;background:#4caf50;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85rem;">Apply to Scenario</button>
+            </div>
+        </div>
+        <!-- Mermaid Diagram -->
+        <div id="cascade-mermaid-container" style="display:none;margin-top:1rem;border:1px solid #ddd;border-radius:8px;padding:1rem;">
+            <h3 style="margin:0 0 0.75rem;font-size:1rem;">Cascade Flowchart</h3>
+            <pre id="cascade-mermaid" style="background:#f5f5f5;padding:0.75rem;border-radius:4px;font-size:0.8rem;overflow-x:auto;max-height:300px;"></pre>
+        </div>
+    </div>
+
+    <!-- Stat Grid -->
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_scenarios }}</div>
+            <div class="stat-label" style="color:#666;">Total Scenarios</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" style="font-size:2rem;font-weight:bold;color:#ff9800;">{{ stats.running }}</div>
+            <div class="stat-label" style="color:#666;">Running</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" style="font-size:2rem;font-weight:bold;color:#4caf50;">{{ stats.completed }}</div>
+            <div class="stat-label" style="color:#666;">Completed</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" style="font-size:2rem;font-weight:bold;color:#1976d2;">{{ stats.monte_carlo_runs }}</div>
+            <div class="stat-label" style="color:#666;">Monte Carlo Runs</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" style="font-size:2rem;font-weight:bold;color:#9c27b0;">{{ stats.coas_generated }}</div>
+            <div class="stat-label" style="color:#666;">COAs Generated</div>
+        </div>
+    </div>
+
+    <!-- Create Scenario Panel -->
+    <h2>Create Scenario</h2>
+    <div style="margin:1rem 0;padding:1.25rem;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;">
+            <div>
+                <label for="sim-project" style="display:block;font-weight:600;margin-bottom:0.3rem;">Project ID</label>
+                <input id="sim-project" type="text" placeholder="e.g. proj-123" style="width:100%;padding:0.5rem 0.8rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;" />
+            </div>
+            <div>
+                <label for="sim-name" style="display:block;font-weight:600;margin-bottom:0.3rem;">Scenario Name</label>
+                <input id="sim-name" type="text" placeholder="e.g. Add microservice layer" style="width:100%;padding:0.5rem 0.8rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;" />
+            </div>
+            <div>
+                <label for="sim-type" style="display:block;font-weight:600;margin-bottom:0.3rem;">Type</label>
+                <select id="sim-type" style="width:100%;padding:0.5rem 0.8rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;background:#fff;">
+                    <option value="what_if">What-If</option>
+                    <option value="coa_comparison">COA Comparison</option>
+                    <option value="risk_analysis">Risk Analysis</option>
+                    <option value="schedule_impact">Schedule Impact</option>
+                    <option value="cost_impact">Cost Impact</option>
+                    <option value="compliance_impact">Compliance Impact</option>
+                    <option value="supply_chain_disruption">Supply Chain Disruption</option>
+                    <option value="architecture_change">Architecture Change</option>
+                    <option value="compound">Compound</option>
+                </select>
+            </div>
+        </div>
+        <div style="margin-top:1rem;">
+            <label for="sim-mods" style="display:block;font-weight:600;margin-bottom:0.3rem;">Modifications <span style="color:#999;font-weight:normal;">(JSON)</span></label>
+            <textarea id="sim-mods" rows="4" placeholder='{"add_components": 3, "new_api_endpoints": 5, "add_vendors": 1}' style="width:100%;padding:0.5rem 0.8rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-family:monospace;resize:vertical;"></textarea>
+        </div>
+        <div style="margin-top:1rem;display:flex;gap:0.5rem;align-items:center;">
+            <button onclick="createScenario()" id="btn-create" style="padding:0.5rem 1.2rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;">Create Scenario</button>
+            <button onclick="createAndRun()" id="btn-create-run" style="padding:0.5rem 1.2rem;background:#4caf50;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;">Create &amp; Run</button>
+            <span id="create-status" style="color:#666;font-size:0.9rem;"></span>
+        </div>
+    </div>
+
+    <!-- Scenario Registry -->
+    <h2 style="margin-top:1.5rem;">Scenario Registry</h2>
+    <div style="margin-bottom:0.75rem;display:flex;gap:0.5rem;align-items:center;">
+        <label style="font-weight:600;font-size:0.9rem;">Filter:</label>
+        <select id="filter-status" onchange="filterScenarios()" style="padding:0.3rem 0.6rem;border:1px solid #ccc;border-radius:4px;background:#fff;font-size:0.85rem;">
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="running">Running</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+        </select>
+        <select id="filter-type" onchange="filterScenarios()" style="padding:0.3rem 0.6rem;border:1px solid #ccc;border-radius:4px;background:#fff;font-size:0.85rem;">
+            <option value="">All Types</option>
+            <option value="what_if">What-If</option>
+            <option value="coa_comparison">COA Comparison</option>
+            <option value="risk_analysis">Risk Analysis</option>
+        </select>
+    </div>
+    <div class="table-container">
+        <table id="tbl-scenarios" style="width:100%;border-collapse:collapse;">
+            <thead>
+                <tr style="border-bottom:2px solid #ddd;">
+                    <th style="text-align:left;padding:0.5rem;">Name</th>
+                    <th style="text-align:left;padding:0.5rem;">Type</th>
+                    <th style="text-align:center;padding:0.5rem;">Status</th>
+                    <th style="text-align:left;padding:0.5rem;">Project</th>
+                    <th style="text-align:left;padding:0.5rem;">Created</th>
+                    <th style="text-align:center;padding:0.5rem;">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="scenarios-body">
+                {% if scenarios %}
+                    {% for s in scenarios %}
+                    <tr class="scenario-row" data-status="{{ s.status }}" data-type="{{ s.scenario_type }}" data-id="{{ s.id }}" style="border-bottom:1px solid #eee;cursor:pointer;" onclick="selectScenario('{{ s.id }}')">
+                        <td style="padding:0.5rem;font-weight:600;">{{ s.scenario_name }}</td>
+                        <td style="padding:0.5rem;">
+                            <span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:0.8rem;background:
+                                {%- if s.scenario_type == 'what_if' %}#e3f2fd;color:#1565c0
+                                {%- elif s.scenario_type == 'coa_comparison' %}#f3e5f5;color:#7b1fa2
+                                {%- elif s.scenario_type == 'risk_analysis' %}#fff3e0;color:#e65100
+                                {%- else %}#f5f5f5;color:#616161
+                                {%- endif %};">{{ s.scenario_type|replace('_', ' ')|title }}</span>
+                        </td>
+                        <td style="padding:0.5rem;text-align:center;">
+                            <span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:0.8rem;background:
+                                {%- if s.status == 'completed' %}#e8f5e9;color:#2e7d32
+                                {%- elif s.status == 'running' %}#fff3e0;color:#e65100
+                                {%- elif s.status == 'failed' %}#ffebee;color:#c62828
+                                {%- else %}#f5f5f5;color:#616161
+                                {%- endif %};">{{ s.status|title }}</span>
+                        </td>
+                        <td style="padding:0.5rem;font-size:0.85rem;color:#666;">{{ s.project_id[:12] if s.project_id else '--' }}</td>
+                        <td style="padding:0.5rem;font-size:0.85rem;color:#666;">{{ s.created_at[:16] if s.created_at else '--' }}</td>
+                        <td style="padding:0.5rem;text-align:center;">
+                            {% if s.status == 'pending' %}
+                            <button onclick="event.stopPropagation();runSimulation('{{ s.id }}')" style="padding:2px 10px;background:#4caf50;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.8rem;" title="Run simulation">Run</button>
+                            {% endif %}
+                            {% if s.status == 'completed' %}
+                            <button onclick="event.stopPropagation();runMonteCarlo('{{ s.id }}')" style="padding:2px 10px;background:#ff9800;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.8rem;" title="Monte Carlo">MC</button>
+                            {% endif %}
+                            <button onclick="event.stopPropagation();forkScenario('{{ s.id }}','{{ s.scenario_name }}')" style="padding:2px 10px;background:#9e9e9e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.8rem;" title="Fork scenario">Fork</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr><td colspan="6" style="padding:1.5rem;text-align:center;color:#999;">No scenarios yet. Create one above to get started.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Simulation Results (shown when scenario selected) -->
+    <div id="results-panel" style="display:none;margin-top:2rem;">
+        <h2>Simulation Results <span id="results-scenario-name" style="font-weight:normal;color:#666;font-size:0.9rem;"></span></h2>
+
+        <!-- Overall Impact Score -->
+        <div id="impact-score-bar" style="margin:1rem 0;padding:1rem;border:1px solid #ddd;border-radius:8px;display:flex;align-items:center;gap:1.5rem;">
+            <div style="text-align:center;">
+                <div id="impact-score" style="font-size:2.5rem;font-weight:bold;color:#1976d2;">--</div>
+                <div style="font-size:0.85rem;color:#666;">Overall Impact</div>
+            </div>
+            <div style="flex:1;">
+                <div style="background:#e0e0e0;border-radius:8px;height:16px;overflow:hidden;">
+                    <div id="impact-bar" style="background:linear-gradient(90deg,#4caf50,#ff9800,#f44336);height:100%;width:0%;transition:width 0.6s;border-radius:8px;"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:#999;margin-top:4px;">
+                    <span>Low Impact</span><span>High Impact</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6-Dimension Chart -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin:1.5rem 0;">
+            <div style="border:1px solid #ddd;border-radius:8px;padding:1rem;">
+                <h3 style="margin:0 0 0.75rem;font-size:1rem;">Baseline vs. Simulated</h3>
+                <div id="chart-dimensions" style="min-height:280px;"></div>
+            </div>
+            <div style="border:1px solid #ddd;border-radius:8px;padding:1rem;">
+                <h3 style="margin:0 0 0.75rem;font-size:1rem;">Delta by Dimension (%)</h3>
+                <div id="chart-deltas" style="min-height:280px;"></div>
+            </div>
+        </div>
+
+        <!-- Dimension Detail Cards -->
+        <div id="dimension-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:1.5rem 0;"></div>
+    </div>
+
+    <!-- Monte Carlo Results -->
+    <div id="mc-panel" style="display:none;margin-top:2rem;">
+        <h2>Monte Carlo Estimation</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;">
+            <div style="border:1px solid #ddd;border-radius:8px;padding:1rem;">
+                <h3 style="margin:0 0 0.5rem;font-size:1rem;">Schedule (weeks)</h3>
+                <div id="mc-schedule-stats" style="margin-bottom:0.75rem;"></div>
+                <div id="mc-schedule-hist" style="min-height:200px;"></div>
+            </div>
+            <div style="border:1px solid #ddd;border-radius:8px;padding:1rem;">
+                <h3 style="margin:0 0 0.5rem;font-size:1rem;">Cost ($)</h3>
+                <div id="mc-cost-stats" style="margin-bottom:0.75rem;"></div>
+                <div id="mc-cost-hist" style="min-height:200px;"></div>
+            </div>
+            <div style="border:1px solid #ddd;border-radius:8px;padding:1rem;">
+                <h3 style="margin:0 0 0.5rem;font-size:1rem;">Risk Score</h3>
+                <div id="mc-risk-stats" style="margin-bottom:0.75rem;"></div>
+                <div id="mc-risk-hist" style="min-height:200px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- COA Comparison -->
+    <div id="coa-panel" style="display:none;margin-top:2rem;">
+        <h2>Course of Action Comparison</h2>
+        <div id="coa-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.5rem;"></div>
+        <div id="coa-chart" style="margin-top:1.5rem;border:1px solid #ddd;border-radius:8px;padding:1rem;">
+            <h3 style="margin:0 0 0.75rem;font-size:1rem;">COA Dimension Comparison</h3>
+            <div id="chart-coa-compare" style="min-height:280px;"></div>
+        </div>
+    </div>
+
+    <!-- Live Risk Monitor -->
+    <div style="margin-top:2rem;">
+        <h2>Live Risk Monitor</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+            <!-- Composite Risk -->
+            <div style="border:1px solid #ddd;border-radius:8px;padding:1.25rem;">
+                <h3 style="margin:0 0 0.75rem;font-size:1rem;">Composite Program Risk</h3>
+                <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;">
+                    <input id="risk-project" type="text" placeholder="Project ID" style="flex:1;padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;" />
+                    <button onclick="runCompositeRisk()" style="padding:0.4rem 1rem;background:#f44336;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85rem;">Calculate</button>
+                </div>
+                <div id="composite-result" style="display:none;">
+                    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.75rem;">
+                        <div id="composite-score" style="font-size:2.5rem;font-weight:bold;">--</div>
+                        <div>
+                            <div id="composite-severity" style="font-size:1rem;font-weight:600;">--</div>
+                            <div style="font-size:0.75rem;color:#999;">Severity</div>
+                        </div>
+                    </div>
+                    <div style="font-size:0.8rem;font-family:monospace;color:#666;margin-bottom:0.75rem;" id="composite-formula"></div>
+                    <div id="composite-bars"></div>
+                    <div id="composite-alerts" style="margin-top:0.5rem;"></div>
+                </div>
+            </div>
+            <!-- CPARS Risk -->
+            <div style="border:1px solid #ddd;border-radius:8px;padding:1.25rem;">
+                <h3 style="margin:0 0 0.75rem;font-size:1rem;">CPARS Risk Score</h3>
+                <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;">
+                    <input id="cpars-contract" type="text" placeholder="Contract ID" style="flex:1;padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;" />
+                    <button onclick="runCparsRisk()" style="padding:0.4rem 1rem;background:#ff9800;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85rem;">Calculate</button>
+                </div>
+                <div id="cpars-result" style="display:none;">
+                    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.75rem;">
+                        <div id="cpars-score" style="font-size:2.5rem;font-weight:bold;">--</div>
+                        <div>
+                            <div id="cpars-rating" style="font-size:1rem;font-weight:600;">--</div>
+                            <div style="font-size:0.75rem;color:#999;">Projected Rating</div>
+                        </div>
+                    </div>
+                    <div style="font-size:0.8rem;font-family:monospace;color:#666;margin-bottom:0.75rem;" id="cpars-formula"></div>
+                    <div id="cpars-bars"></div>
+                    <div id="cpars-alerts" style="margin-top:0.5rem;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+/* ── Simulation Dashboard JS ──────────────────────────────────── */
+const API = '/api/simulation';
+let allRows = [];
+
+function setStatus(id, msg, color) {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = msg; el.style.color = color || '#666'; }
+}
+
+/* ── Create ────────────────────────────────────────────────────── */
+function createScenario(andRun) {
+    const project = document.getElementById('sim-project').value.trim();
+    const name = document.getElementById('sim-name').value.trim();
+    const type = document.getElementById('sim-type').value;
+    let mods = {};
+    try { mods = JSON.parse(document.getElementById('sim-mods').value || '{}'); } catch(e) {
+        setStatus('create-status', 'Invalid JSON in modifications', '#c62828'); return;
+    }
+    if (!project || !name) { setStatus('create-status', 'Project ID and Name required', '#c62828'); return; }
+    setStatus('create-status', 'Creating...', '#1976d2');
+    fetch(API + '/scenarios', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({project_id: project, scenario_name: name, scenario_type: type, modifications: mods})
+    }).then(r => r.json()).then(data => {
+        if (data.error) { setStatus('create-status', data.error, '#c62828'); return; }
+        setStatus('create-status', 'Created: ' + data.scenario_id, '#2e7d32');
+        if (andRun) runSimulation(data.scenario_id);
+        setTimeout(() => location.reload(), 1200);
+    }).catch(e => setStatus('create-status', 'Error: ' + e.message, '#c62828'));
+}
+function createAndRun() { createScenario(true); }
+
+/* ── Run Simulation ────────────────────────────────────────────── */
+function runSimulation(scenarioId) {
+    setStatus('create-status', 'Running simulation...', '#ff9800');
+    fetch(API + '/scenarios/' + scenarioId + '/run', {method: 'POST'})
+        .then(r => r.json()).then(data => {
+            if (data.error) { setStatus('create-status', data.error, '#c62828'); return; }
+            setStatus('create-status', 'Simulation complete', '#2e7d32');
+            showResults(data);
+            setTimeout(() => location.reload(), 2000);
+        }).catch(e => setStatus('create-status', 'Error: ' + e.message, '#c62828'));
+}
+
+/* ── Select Scenario ───────────────────────────────────────────── */
+function selectScenario(scenarioId) {
+    document.querySelectorAll('.scenario-row').forEach(r => r.style.background = '');
+    const row = document.querySelector('[data-id="'+scenarioId+'"]');
+    if (row) row.style.background = '#e3f2fd';
+    fetch(API + '/scenarios/' + scenarioId + '/summary')
+        .then(r => r.json()).then(data => {
+            if (data.error) return;
+            if (data.results && data.results.length > 0) showResults(data);
+            if (data.monte_carlo_runs && data.monte_carlo_runs.length > 0) showMonteCarlo(data.monte_carlo_runs);
+        }).catch(() => {});
+    // Load COAs if any
+    fetch(API + '/scenarios/' + scenarioId + '/coas')
+        .then(r => r.json()).then(data => {
+            if (data.coas && data.coas.length > 0) showCOAs(data.coas);
+        }).catch(() => {});
+}
+
+/* ── Show Results ──────────────────────────────────────────────── */
+function showResults(data) {
+    const panel = document.getElementById('results-panel');
+    panel.style.display = 'block';
+    const nameEl = document.getElementById('results-scenario-name');
+    if (data.scenario_name) nameEl.textContent = '— ' + data.scenario_name;
+
+    // Overall impact
+    const score = data.overall_impact_score || 0;
+    document.getElementById('impact-score').textContent = score.toFixed(1);
+    document.getElementById('impact-bar').style.width = Math.min(score * 10, 100) + '%';
+    const scoreColor = score < 3 ? '#4caf50' : score < 6 ? '#ff9800' : '#f44336';
+    document.getElementById('impact-score').style.color = scoreColor;
+
+    // Dimension charts
+    const dims = ['architecture','compliance','supply_chain','schedule','cost','risk'];
+    const labels = dims.map(d => d.replace('_',' ').replace(/\b\w/g, c => c.toUpperCase()));
+    const results = data.results || data.dimensions || [];
+    const baseline = [], simulated = [], deltas = [];
+
+    if (Array.isArray(results)) {
+        // From get_scenario_summary — results is array of {dimension, baseline_value, simulated_value, delta_pct}
+        dims.forEach(dim => {
+            const r = results.find(x => x.dimension === dim);
+            baseline.push(r ? (typeof r.baseline_value === 'number' ? r.baseline_value : 0) : 0);
+            simulated.push(r ? (typeof r.simulated_value === 'number' ? r.simulated_value : 0) : 0);
+            deltas.push(r ? (r.delta_pct || 0) : 0);
+        });
+    } else if (typeof results === 'object') {
+        // From run_simulation — dimensions is {dim: {baseline, simulated, delta_pct}}
+        dims.forEach(dim => {
+            const r = results[dim];
+            baseline.push(r ? (typeof r.baseline === 'number' ? r.baseline : 0) : 0);
+            simulated.push(r ? (typeof r.simulated === 'number' ? r.simulated : 0) : 0);
+            deltas.push(r ? (r.delta_pct || 0) : 0);
+        });
+    }
+
+    if (typeof ICDEV !== 'undefined' && ICDEV.barChart) {
+        ICDEV.barChart('chart-dimensions', {labels: labels, series: [
+            {name: 'Baseline', values: baseline},
+            {name: 'Simulated', values: simulated}
+        ]});
+        ICDEV.barChart('chart-deltas', {labels: labels, series: [
+            {name: 'Delta %', values: deltas}
+        ]});
+    }
+
+    // Dimension detail cards
+    const cardsEl = document.getElementById('dimension-cards');
+    cardsEl.innerHTML = '';
+    dims.forEach((dim, i) => {
+        const delta = deltas[i];
+        const tierColor = Math.abs(delta) < 10 ? '#4caf50' : Math.abs(delta) < 25 ? '#ff9800' : '#f44336';
+        const tierLabel = Math.abs(delta) < 10 ? 'GREEN' : Math.abs(delta) < 25 ? 'YELLOW' : 'RED';
+        cardsEl.innerHTML += `
+            <div style="border:1px solid #ddd;border-radius:8px;padding:1rem;border-left:4px solid ${tierColor};">
+                <div style="font-weight:600;margin-bottom:0.5rem;">${labels[i]}</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;font-size:0.85rem;">
+                    <div><span style="color:#666;">Baseline</span><br><strong>${baseline[i].toFixed(1)}</strong></div>
+                    <div><span style="color:#666;">Simulated</span><br><strong>${simulated[i].toFixed(1)}</strong></div>
+                    <div><span style="color:#666;">Delta</span><br><strong style="color:${tierColor};">${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%</strong></div>
+                </div>
+                <div style="margin-top:0.5rem;font-size:0.75rem;color:${tierColor};font-weight:600;">${tierLabel}</div>
+            </div>`;
+    });
+}
+
+/* ── Monte Carlo ───────────────────────────────────────────────── */
+function runMonteCarlo(scenarioId) {
+    setStatus('create-status', 'Running Monte Carlo (schedule, cost, risk)...', '#ff9800');
+    const dims = ['schedule','cost','risk'];
+    Promise.all(dims.map(dim =>
+        fetch(API + '/scenarios/' + scenarioId + '/monte-carlo', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({dimension: dim, iterations: 10000})
+        }).then(r => r.json())
+    )).then(results => {
+        setStatus('create-status', 'Monte Carlo complete', '#2e7d32');
+        showMonteCarlo(results);
+    }).catch(e => setStatus('create-status', 'MC Error: ' + e.message, '#c62828'));
+}
+
+function showMonteCarlo(runs) {
+    document.getElementById('mc-panel').style.display = 'block';
+    const dims = ['schedule','cost','risk'];
+    dims.forEach(dim => {
+        const run = Array.isArray(runs) ? runs.find(r => r.dimension === dim) : null;
+        if (!run) return;
+        const statsEl = document.getElementById('mc-' + dim + '-stats');
+        const p = run.percentiles || {p10: run.p10_value, p50: run.p50_value, p80: run.p80_value, p90: run.p90_value};
+        const mean = run.mean || run.mean_value || 0;
+        statsEl.innerHTML = `
+            <div style="display:flex;gap:1rem;font-size:0.85rem;flex-wrap:wrap;">
+                <div><span style="color:#666;">Mean</span> <strong>${fmtNum(mean)}</strong></div>
+                <div><span style="color:#4caf50;">P10</span> <strong>${fmtNum(p.p10)}</strong></div>
+                <div><span style="color:#1976d2;">P50</span> <strong>${fmtNum(p.p50)}</strong></div>
+                <div><span style="color:#ff9800;">P80</span> <strong>${fmtNum(p.p80)}</strong></div>
+                <div><span style="color:#f44336;">P90</span> <strong>${fmtNum(p.p90)}</strong></div>
+            </div>`;
+        // Histogram
+        const hist = run.histogram;
+        if (hist && typeof ICDEV !== 'undefined' && ICDEV.barChart) {
+            const bins = hist.bins || [];
+            const counts = hist.counts || [];
+            const binLabels = bins.map(b => fmtNum(b));
+            ICDEV.barChart('mc-' + dim + '-hist', {labels: binLabels, series: [{name: dim, values: counts}]});
+        }
+    });
+}
+
+function fmtNum(n) {
+    if (n === undefined || n === null) return '--';
+    return n >= 1000 ? (n/1000).toFixed(1) + 'k' : Number(n).toFixed(1);
+}
+
+/* ── COA ───────────────────────────────────────────────────────── */
+function showCOAs(coas) {
+    document.getElementById('coa-panel').style.display = 'block';
+    const cardsEl = document.getElementById('coa-cards');
+    cardsEl.innerHTML = '';
+    const typeColors = {speed: '#2196f3', balanced: '#4caf50', comprehensive: '#9c27b0', alternative: '#ff9800'};
+    coas.forEach(coa => {
+        const color = typeColors[coa.coa_type] || '#616161';
+        const tierColors = {GREEN: '#4caf50', YELLOW: '#ff9800', ORANGE: '#e65100', RED: '#f44336'};
+        const tc = tierColors[coa.boundary_tier] || '#666';
+        let cost = '--';
+        try {
+            const ce = typeof coa.cost_estimate === 'string' ? JSON.parse(coa.cost_estimate) : coa.cost_estimate;
+            if (ce && ce.low && ce.high) cost = '$' + fmtNum(ce.low) + ' - $' + fmtNum(ce.high);
+            else if (ce && ce.total) cost = '$' + fmtNum(ce.total);
+        } catch(e) {}
+        cardsEl.innerHTML += `
+            <div style="border:1px solid #ddd;border-radius:8px;padding:1.25rem;border-top:4px solid ${color};">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+                    <h3 style="margin:0;font-size:1.1rem;">${coa.coa_name || coa.coa_type}</h3>
+                    <span style="padding:2px 10px;border-radius:12px;font-size:0.8rem;background:${color}22;color:${color};font-weight:600;">${(coa.coa_type||'').replace('_',' ').toUpperCase()}</span>
+                </div>
+                <p style="color:#666;font-size:0.9rem;margin:0 0 0.75rem;">${coa.architecture_summary || coa.description || ''}</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.85rem;">
+                    <div><span style="color:#666;">Timeline:</span> ${coa.timeline || '--'}</div>
+                    <div><span style="color:#666;">Cost:</span> ${cost}</div>
+                    <div><span style="color:#666;">Boundary:</span> <strong style="color:${tc};">${coa.boundary_tier || '--'}</strong></div>
+                    <div><span style="color:#666;">Mission Fit:</span> <strong>${coa.mission_fit_pct ? coa.mission_fit_pct.toFixed(0) + '%' : '--'}</strong></div>
+                </div>
+                <div style="margin-top:0.75rem;display:flex;gap:0.5rem;">
+                    ${coa.status === 'presented' || coa.status === 'draft' || coa.status === 'simulated' ?
+                        `<button onclick="selectCOA('${coa.id}')" style="padding:4px 12px;background:#4caf50;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.8rem;">Select</button>
+                         <button onclick="rejectCOA('${coa.id}')" style="padding:4px 12px;background:#f44336;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.8rem;">Reject</button>` :
+                        `<span style="font-size:0.8rem;color:#666;">${coa.status}</span>`}
+                </div>
+            </div>`;
+    });
+}
+
+/* ── Fork ──────────────────────────────────────────────────────── */
+function forkScenario(scenarioId, name) {
+    const newName = prompt('New scenario name:', name + ' (fork)');
+    if (!newName) return;
+    fetch(API + '/scenarios/' + scenarioId + '/fork', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({new_name: newName})
+    }).then(r => r.json()).then(data => {
+        if (data.error) { alert(data.error); return; }
+        location.reload();
+    }).catch(e => alert('Error: ' + e.message));
+}
+
+/* ── COA Actions ───────────────────────────────────────────────── */
+function selectCOA(coaId) {
+    fetch(API + '/coas/' + coaId + '/select', {method: 'POST'})
+        .then(r => r.json()).then(() => location.reload()).catch(e => alert(e.message));
+}
+function rejectCOA(coaId) {
+    fetch(API + '/coas/' + coaId + '/reject', {method: 'POST'})
+        .then(r => r.json()).then(() => location.reload()).catch(e => alert(e.message));
+}
+
+/* ── Filter ────────────────────────────────────────────────────── */
+function filterScenarios() {
+    const status = document.getElementById('filter-status').value;
+    const type = document.getElementById('filter-type').value;
+    document.querySelectorAll('.scenario-row').forEach(row => {
+        let show = true;
+        if (status && row.dataset.status !== status) show = false;
+        if (type && row.dataset.type !== type) show = false;
+        row.style.display = show ? '' : 'none';
+    });
+}
+
+/* ── NLQ — Natural Language Query ─────────────────────────────── */
+let lastParsed = null;
+let lastCascadeResult = null;
+
+function runNLQ() {
+    const query = document.getElementById('nlq-input').value.trim();
+    const projectId = document.getElementById('nlq-project').value.trim();
+    if (!query) { setStatus('nlq-status', 'Enter a query first', '#c62828'); return; }
+    if (!projectId) { setStatus('nlq-status', 'Enter a Project ID', '#c62828'); return; }
+    setStatus('nlq-status', 'Parsing and simulating...', '#1976d2');
+
+    fetch(API + '/nlq/run', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({query: query, project_id: projectId})
+    }).then(r => r.json()).then(data => {
+        if (data.error) { setStatus('nlq-status', data.error, '#c62828'); return; }
+        lastParsed = data.parsed;
+        showNLQPreview(data.parsed);
+        if (data.simulation) {
+            showResults(data.simulation);
+            setStatus('nlq-status', 'Simulation complete — scenario created', '#2e7d32');
+        } else if (data.scenario) {
+            setStatus('nlq-status', 'Scenario created (run failed — no SysML data). ID: ' + data.scenario.scenario_id, '#ff9800');
+        }
+    }).catch(e => setStatus('nlq-status', 'Error: ' + e.message, '#c62828'));
+}
+
+function showNLQPreview(parsed) {
+    document.getElementById('nlq-preview').style.display = 'block';
+    document.getElementById('nlq-intent').textContent = parsed.intent;
+    const conf = parsed.intent_confidence;
+    const confEl = document.getElementById('nlq-confidence');
+    confEl.textContent = (conf * 100).toFixed(0) + '%';
+    confEl.style.color = conf > 0.7 ? '#2e7d32' : conf > 0.5 ? '#ff9800' : '#c62828';
+    document.getElementById('nlq-type').textContent = parsed.scenario_type;
+    document.getElementById('nlq-mods').textContent = JSON.stringify(parsed.modifications, null, 2);
+
+    const entEl = document.getElementById('nlq-entities');
+    if (parsed.entities && parsed.entities.length > 0) {
+        entEl.innerHTML = '<strong>Entities:</strong> ' + parsed.entities.map(e =>
+            `<span style="display:inline-block;padding:2px 8px;margin:2px;border-radius:12px;font-size:0.8rem;background:#e8eaf6;color:#283593;">${e.type}: ${e.name}</span>`
+        ).join('');
+    } else {
+        entEl.innerHTML = '';
+    }
+}
+
+/* ── Cascade ──────────────────────────────────────────────────── */
+function runCascadeFromNLQ() {
+    const query = document.getElementById('nlq-input').value.trim();
+    const projectId = document.getElementById('nlq-project').value.trim();
+    if (!query) { setStatus('nlq-status', 'Enter a query first', '#c62828'); return; }
+    if (!projectId) { setStatus('nlq-status', 'Enter a Project ID', '#c62828'); return; }
+
+    // First parse for preview
+    setStatus('nlq-status', 'Parsing query...', '#1976d2');
+    fetch(API + '/nlq', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({query: query})
+    }).then(r => r.json()).then(parsed => {
+        if (parsed.error) { setStatus('nlq-status', parsed.error, '#c62828'); return; }
+        lastParsed = parsed;
+        showNLQPreview(parsed);
+
+        // Now run cascade
+        setStatus('nlq-status', 'Running cascade analysis...', '#ff9800');
+        return fetch(API + '/cascade', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({project_id: projectId, trigger: query})
+        });
+    }).then(r => r ? r.json() : null).then(data => {
+        if (!data) return;
+        if (data.error) { setStatus('nlq-status', 'Cascade: ' + data.error, '#c62828'); return; }
+        lastCascadeResult = data;
+        showCascadeResults(data);
+        setStatus('nlq-status', 'Cascade complete — ' + data.total_nodes_discovered + ' nodes discovered', '#2e7d32');
+    }).catch(e => setStatus('nlq-status', 'Error: ' + e.message, '#c62828'));
+}
+
+function showCascadeResults(data) {
+    const panel = document.getElementById('cascade-panel');
+    panel.style.display = 'block';
+
+    // Summary
+    document.getElementById('cascade-summary').innerHTML =
+        `<strong>${data.total_nodes_discovered}</strong> nodes across <strong>${data.total_levels}</strong> levels ` +
+        `| Severity: <strong style="color:${data.modifications_suggested?.cascade_severity === 'HIGH' ? '#f44336' : data.modifications_suggested?.cascade_severity === 'MEDIUM' ? '#ff9800' : '#4caf50'}">${data.modifications_suggested?.cascade_severity || 'LOW'}</strong>`;
+
+    // Levels
+    const levelsEl = document.getElementById('cascade-levels');
+    levelsEl.innerHTML = '';
+    const dimColors = {architecture:'#2196f3',compliance:'#4caf50',supply_chain:'#ff9800',schedule:'#9c27b0',cost:'#795548',risk:'#f44336'};
+    Object.entries(data.levels || {}).sort((a,b) => a[0]-b[0]).forEach(([lvl, nodes]) => {
+        let html = `<div style="margin-bottom:0.75rem;"><strong style="font-size:0.85rem;color:#666;">Level ${lvl}</strong>`;
+        html += '<div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.3rem;">';
+        nodes.forEach(n => {
+            const color = dimColors[n.dimension] || '#607d8b';
+            html += `<span style="display:inline-block;padding:3px 10px;border-radius:16px;font-size:0.8rem;background:${color}22;color:${color};border:1px solid ${color}44;" title="${n.relationship} from ${n.source} | ${n.timing}">${n.label}</span>`;
+        });
+        html += '</div></div>';
+        levelsEl.innerHTML += html;
+    });
+
+    // Dimension impact
+    const dimEl = document.getElementById('cascade-dimensions');
+    dimEl.innerHTML = '';
+    Object.entries(data.dimension_impact || {}).forEach(([dim, info]) => {
+        const color = dimColors[dim] || '#607d8b';
+        const pct = Math.min(100, info.node_count * 15);
+        dimEl.innerHTML += `
+            <div style="margin-bottom:0.5rem;">
+                <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+                    <span style="color:${color};font-weight:600;">${dim.replace('_',' ').replace(/\\b\\w/g,c=>c.toUpperCase())}</span>
+                    <span>${info.node_count} nodes</span>
+                </div>
+                <div style="background:#e0e0e0;border-radius:4px;height:8px;margin-top:2px;">
+                    <div style="background:${color};height:100%;width:${pct}%;border-radius:4px;transition:width 0.4s;"></div>
+                </div>
+            </div>`;
+    });
+
+    // Suggested modifications
+    document.getElementById('cascade-mods').textContent = JSON.stringify(data.modifications_suggested || {}, null, 2);
+    document.getElementById('btn-apply-cascade').style.display = data.modifications_suggested ? 'inline-block' : 'none';
+
+    // Mermaid
+    if (data.mermaid) {
+        document.getElementById('cascade-mermaid-container').style.display = 'block';
+        document.getElementById('cascade-mermaid').textContent = data.mermaid;
+    }
+}
+
+function applyCascadeMods() {
+    if (!lastCascadeResult || !lastCascadeResult.modifications_suggested) return;
+    const mods = lastCascadeResult.modifications_suggested;
+    document.getElementById('sim-mods').value = JSON.stringify(mods, null, 2);
+    document.getElementById('sim-project').value = document.getElementById('nlq-project').value;
+    document.getElementById('sim-name').value = 'Cascade: ' + (lastCascadeResult.trigger || 'analysis');
+    window.scrollTo({top: document.getElementById('sim-name').offsetTop - 80, behavior: 'smooth'});
+    setStatus('nlq-status', 'Cascade modifications applied to Create Scenario form', '#2e7d32');
+}
+
+/* ── Live Risk Monitor ────────────────────────────────────────── */
+const sevColors = {GREEN:'#4caf50',YELLOW:'#ff9800',ORANGE:'#e65100',RED:'#f44336'};
+const ratingColors = {exceptional:'#4caf50',very_good:'#2196f3',satisfactory:'#ff9800',marginal:'#e65100',unsatisfactory:'#f44336'};
+
+function runCompositeRisk() {
+    const pid = document.getElementById('risk-project').value.trim();
+    if (!pid) return;
+    fetch(API + '/risk/composite', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({project_id: pid})
+    }).then(r => r.json()).then(data => {
+        if (data.error) { alert(data.error); return; }
+        document.getElementById('composite-result').style.display = 'block';
+        const score = data.composite_risk;
+        const sev = data.severity;
+        document.getElementById('composite-score').textContent = (score * 100).toFixed(1) + '%';
+        document.getElementById('composite-score').style.color = sevColors[sev] || '#666';
+        document.getElementById('composite-severity').textContent = sev;
+        document.getElementById('composite-severity').style.color = sevColors[sev] || '#666';
+        document.getElementById('composite-formula').textContent = data.formula;
+        // Component bars
+        const barsEl = document.getElementById('composite-bars');
+        barsEl.innerHTML = '';
+        const labels = {overdue_tasks:'Overdue Tasks',resource_utilization:'Resource Utilization',dependency_violations:'Dependency Violations',compliance_gaps:'Compliance Gaps'};
+        Object.entries(data.components).forEach(([key, comp]) => {
+            const pct = (comp.normalized * 100).toFixed(0);
+            const w = (comp.weight * 100).toFixed(0);
+            barsEl.innerHTML += `<div style="margin-bottom:0.4rem;font-size:0.8rem;">
+                <div style="display:flex;justify-content:space-between;"><span>${labels[key]||key} (${w}%)</span><span>${pct}%</span></div>
+                <div style="background:#e0e0e0;border-radius:3px;height:6px;"><div style="background:${pct>50?'#f44336':pct>25?'#ff9800':'#4caf50'};height:100%;width:${pct}%;border-radius:3px;"></div></div>
+            </div>`;
+        });
+        // Alerts
+        const alertsEl = document.getElementById('composite-alerts');
+        alertsEl.innerHTML = data.alerts.map(a => `<div style="font-size:0.8rem;color:${a.startsWith('HIGH')?'#f44336':'#ff9800'};margin-top:2px;">${a}</div>`).join('');
+    }).catch(e => alert(e.message));
+}
+
+function runCparsRisk() {
+    const cid = document.getElementById('cpars-contract').value.trim();
+    if (!cid) return;
+    fetch(API + '/risk/cpars', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({contract_id: cid})
+    }).then(r => r.json()).then(data => {
+        if (data.error) { alert(data.error); return; }
+        document.getElementById('cpars-result').style.display = 'block';
+        const score = data.cpars_risk;
+        const rating = data.projected_rating;
+        document.getElementById('cpars-score').textContent = (score * 100).toFixed(1) + '%';
+        document.getElementById('cpars-score').style.color = ratingColors[rating] || '#666';
+        document.getElementById('cpars-rating').textContent = rating.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase());
+        document.getElementById('cpars-rating').style.color = ratingColors[rating] || '#666';
+        document.getElementById('cpars-formula').textContent = data.formula;
+        const barsEl = document.getElementById('cpars-bars');
+        barsEl.innerHTML = '';
+        const labels = {overdue_cdrls:'Overdue CDRLs',rejected_deliverables:'Rejected Deliverables',non_compliant_items:'Non-Compliant Items',late_submissions:'Late Submissions'};
+        Object.entries(data.components).forEach(([key, comp]) => {
+            const pct = (comp.normalized * 100).toFixed(0);
+            const w = (comp.weight * 100).toFixed(0);
+            barsEl.innerHTML += `<div style="margin-bottom:0.4rem;font-size:0.8rem;">
+                <div style="display:flex;justify-content:space-between;"><span>${labels[key]||key} (${w}%)</span><span>${comp.raw}/${comp.total} (${pct}%)</span></div>
+                <div style="background:#e0e0e0;border-radius:3px;height:6px;"><div style="background:${pct>50?'#f44336':pct>25?'#ff9800':'#4caf50'};height:100%;width:${pct}%;border-radius:3px;"></div></div>
+            </div>`;
+        });
+        const alertsEl = document.getElementById('cpars-alerts');
+        alertsEl.innerHTML = data.alerts.map(a => `<div style="font-size:0.8rem;color:${a.startsWith('CRITICAL')?'#f44336':'#ff9800'};margin-top:2px;">${a}</div>`).join('');
+    }).catch(e => alert(e.message));
+}
+</script>
+{% endblock %}

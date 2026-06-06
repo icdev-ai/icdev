@@ -1,0 +1,162 @@
+{% extends "network/base.html" %}
+{% block title %}Cross-Project Comparison — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Cross-Project Comparison</h1>
+    <p class="page-subtitle">Side-by-side compliance, cost, and risk analysis across all projects</p>
+  </div>
+  <div class="page-actions">
+    <a href="/network/projects" class="btn btn-secondary">Back to Portfolio</a>
+  </div>
+</div>
+
+{% if comparison %}
+<!-- ═══════════════ COMPARISON MATRIX ═══════════════ -->
+<section class="panel panel-wide">
+  <div class="panel-header"><h2 class="panel-title">Comparison Matrix</h2></div>
+  <div style="overflow-x:auto;">
+  <table class="data-table" id="compare-matrix">
+    <thead>
+      <tr>
+        <th>Project</th>
+        <th>Status</th>
+        <th>Topos</th>
+        <th>Nodes</th>
+        <th>Devices</th>
+        <th>Compliance</th>
+        <th>CAT1</th>
+        <th>CAT2</th>
+        <th>CAT3</th>
+        <th>Open Findings</th>
+        <th>CapEx</th>
+        <th>Circuit $/mo</th>
+        <th>MC Resilience</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in comparison %}
+      <tr>
+        <td>
+          <a href="/network/projects/{{ c.id }}" class="table-link"><strong>{{ c.name }}</strong></a>
+          {% if c.customer %}<div class="table-sub">{{ c.customer }}</div>{% endif %}
+        </td>
+        <td><span class="badge badge-{% if c.status in ('approved','deployed') %}public{% elif c.status == 'in_review' %}warning{% else %}info{% endif %}">{{ c.status }}</span></td>
+        <td>{{ c.topo_count }}</td>
+        <td>{{ c.nodes }}</td>
+        <td>{{ c.devices }}</td>
+        <td>
+          {% if c.compliance_pct is not none %}
+          <div class="compare-bar">
+            <div class="compare-fill {% if c.compliance_pct >= 80 %}fill-green{% elif c.compliance_pct >= 50 %}fill-yellow{% else %}fill-red{% endif %}" style="width:{{ c.compliance_pct }}%"></div>
+            <span class="compare-label">{{ c.compliance_pct }}%</span>
+          </div>
+          {% else %}<span style="color:var(--text-dim);">No audit</span>{% endif %}
+        </td>
+        <td>{% if c.cat1 > 0 %}<span class="health-pill pill-red">{{ c.cat1 }}</span>{% else %}0{% endif %}</td>
+        <td>{% if c.cat2 > 0 %}<span class="health-pill pill-yellow">{{ c.cat2 }}</span>{% else %}0{% endif %}</td>
+        <td>{{ c.cat3 }}</td>
+        <td>{% if c.open_findings > 0 %}<span class="health-pill pill-red">{{ c.open_findings }}</span>{% else %}0{% endif %}</td>
+        <td>${{ c.capex|round(0)|int }}</td>
+        <td>{% if c.circuit_cost > 0 %}${{ c.circuit_cost|round(0)|int }}{% else %}--{% endif %}</td>
+        <td>
+          {% if c.mc_resilience is not none %}
+          <span class="health-pill {% if c.mc_resilience <= 30 %}pill-green{% elif c.mc_resilience <= 60 %}pill-yellow{% else %}pill-red{% endif %}">{{ c.mc_resilience }}%</span>
+          {% else %}<span style="color:var(--text-dim);">--</span>{% endif %}
+        </td>
+        <td class="actions">
+          <a href="/network/projects/{{ c.id }}" class="action-btn" title="Details">&#x270F;</a>
+          <a href="/network/?project={{ c.id }}" class="action-btn" title="Filter">&#x1F50D;</a>
+          <button class="action-btn" onclick="cloneProject('{{ c.id }}','{{ c.name }}')" title="Clone">&#x2398;</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ═══════════════ RISK HEATMAP ═══════════════ -->
+<section class="panel panel-wide" style="margin-top:20px;">
+  <div class="panel-header"><h2 class="panel-title">Risk Heatmap</h2></div>
+  <div class="heatmap-grid" id="risk-heatmap">
+    <div class="heatmap-header">
+      <div class="hm-cell hm-corner"></div>
+      <div class="hm-cell hm-col-label">Compliance</div>
+      <div class="hm-cell hm-col-label">CAT1 Findings</div>
+      <div class="hm-cell hm-col-label">Open Findings</div>
+      <div class="hm-cell hm-col-label">Cost Exposure</div>
+      <div class="hm-cell hm-col-label">MC Resilience</div>
+    </div>
+    {% for c in comparison %}
+    <div class="heatmap-row">
+      <div class="hm-cell hm-row-label">{{ c.name[:25] }}</div>
+      <div class="hm-cell {{ 'hm-green' if c.compliance_pct is not none and c.compliance_pct >= 80 else 'hm-yellow' if c.compliance_pct is not none and c.compliance_pct >= 50 else 'hm-red' if c.compliance_pct is not none else 'hm-gray' }}">
+        {{ c.compliance_pct if c.compliance_pct is not none else '--' }}{% if c.compliance_pct is not none %}%{% endif %}
+      </div>
+      <div class="hm-cell {{ 'hm-red' if c.cat1 > 0 else 'hm-green' }}">{{ c.cat1 }}</div>
+      <div class="hm-cell {{ 'hm-red' if c.open_findings > 10 else 'hm-yellow' if c.open_findings > 3 else 'hm-green' }}">{{ c.open_findings }}</div>
+      <div class="hm-cell {{ 'hm-red' if (c.capex + c.circuit_cost * 12) > 500000 else 'hm-yellow' if (c.capex + c.circuit_cost * 12) > 100000 else 'hm-green' }}">
+        ${{ ((c.capex + c.circuit_cost * 12) / 1000)|round(0)|int }}k
+      </div>
+      <div class="hm-cell {{ 'hm-red' if c.mc_resilience is not none and c.mc_resilience > 60 else 'hm-yellow' if c.mc_resilience is not none and c.mc_resilience > 30 else 'hm-green' if c.mc_resilience is not none else 'hm-gray' }}">
+        {{ c.mc_resilience if c.mc_resilience is not none else '--' }}{% if c.mc_resilience is not none %}%{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% else %}
+<div class="empty-state" style="margin-top:40px;">
+  <div class="empty-icon">&#x2637;</div>
+  <p>No projects to compare. <a href="/network/projects">Create some projects</a> first.</p>
+</div>
+{% endif %}
+
+<!-- Clone Modal -->
+<div id="clone-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Clone Project</h3>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:12px;">Deep-copies all topologies, circuits, IPAM blocks, and compliance profiles.</p>
+    <form onsubmit="return submitClone(event)">
+      <input type="hidden" name="source_id" id="clone-source-id">
+      <div class="form-grid">
+        <label style="grid-column:span 2">New Project Name <input name="name" id="clone-name" required placeholder="New project name"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Clone</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function cloneProject(id, name) {
+  document.getElementById('clone-source-id').value = id;
+  document.getElementById('clone-name').value = name + ' (Copy)';
+  document.getElementById('clone-modal').style.display = 'flex';
+}
+function submitClone(e) {
+  e.preventDefault();
+  const sid = document.getElementById('clone-source-id').value;
+  const name = document.getElementById('clone-name').value;
+  fetch(NC_BASE + '/api/projects/' + sid + '/clone', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: name})
+  }).then(r => r.json()).then(d => {
+    if (d.id) {
+      alert('Cloned! ' + d.topologies_cloned + ' topologies copied.');
+      location.reload();
+    } else {
+      alert('Clone failed: ' + (d.error || 'Unknown error'));
+    }
+  });
+  return false;
+}
+</script>
+{% endblock %}

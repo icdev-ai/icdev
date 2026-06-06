@@ -1,0 +1,134 @@
+# Startup Baseline Development Profile v1
+# For commercial ISVs with minimal compliance requirements
+name: "Startup Baseline"
+version: "1.0.0"
+description: "Lean development standards for commercial startups and ISVs"
+applicable_to: [isv_startup]
+impact_levels: [IL2]
+
+language:
+  primary: typescript
+  allowed: [typescript, python, go, rust, java, javascript, csharp]
+  forbidden: []
+  versions:
+    typescript: ">=5.0"
+    python: ">=3.11"
+    go: ">=1.22"
+  package_managers:
+    typescript: npm
+    python: pip
+    go: go
+  virtual_env_tool: venv
+  banned_packages: []
+  approved_registries: []
+
+style:
+  naming_convention: camelCase
+  indent_style: spaces
+  indent_size: 2
+  max_line_length: 120
+  docstring_format: jsdoc
+  import_order: organized
+  formatter:
+    typescript: prettier
+    python: black
+    go: gofmt
+  linter:
+    typescript: eslint
+    python: ruff
+    go: golangci-lint
+  trailing_commas: true
+  quote_style: single
+
+testing:
+  methodology: test_after
+  min_coverage: 70
+  require_bdd: false
+  require_unit: true
+  require_e2e: false
+  bdd_framework:
+    typescript: cucumber-js
+    python: behave
+  test_naming_pattern: "should {description}"
+  flaky_test_policy: quarantine_and_fix
+
+architecture:
+  web_framework:
+    typescript: express
+    python: fastapi
+    go: gin
+  database: postgresql
+  orm:
+    typescript: prisma
+    python: sqlalchemy
+  auth_pattern: oauth2_oidc
+  api_style: rest_openapi
+  container_base:
+    typescript: "node:20-alpine"
+    python: "python:3.12-slim"
+  error_handling: structured_hierarchy
+  logging_format: structured_json
+  project_structure: flat
+
+security:
+  encryption_standard: aes_256
+  secret_management: env_vars
+  sast_tools:
+    typescript: eslint-security
+    python: bandit
+    go: gosec
+  dependency_audit: true
+  container_hardening: minimal
+  vulnerability_sla:
+    critical: "48h"
+    high: "14d"
+    medium: "60d"
+    low: "90d"
+  secret_rotation_days: 180
+  image_signing: false
+
+compliance:
+  frameworks: []
+  cui_required: false
+  audit_trail_required: false
+  classification_level: public
+  sbom_format: cyclonedx
+  ato_approach: none
+
+operations:
+  deployment_target: docker_compose
+  container_runtime: docker
+  ci_cd_platform: github_actions
+  monitoring_stack: [prometheus, grafana]
+  region: us-east-1
+  service_mesh: none
+  network_policy: default_allow
+  backup_strategy: weekly
+
+documentation:
+  readme_required: true
+  api_docs_required: true
+  adr_required: false
+  changelog_required: false
+  diagram_tool: mermaid
+  spec_format: markdown
+  runbook_required: false
+
+git:
+  branching_strategy: github_flow
+  merge_strategy: squash
+  commit_format: conventional_commits
+  branch_naming: "{type}/{slug}"
+  min_approvals: 1
+  gpg_signing: optional
+  pr_size_limit: 1000
+  delete_branch_on_merge: true
+
+ai:
+  preferred_provider: openai
+  code_gen_model: claude-sonnet
+  compliance_model: claude-sonnet
+  token_budget_monthly: 1000000
+  attribution: optional
+  byok_enabled: true
+  prompt_governance: per_team
