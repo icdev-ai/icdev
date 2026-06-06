@@ -1055,6 +1055,28 @@ class LLMRouter:
             logger.debug("RAG augment skipped for %s: %s", function, exc)
             return request  # Never fail the main pipeline
 
+    def _codegen_augment(self, request: LLMRequest, function: str) -> LLMRequest:
+        """Append the minimal-generation guardrail to code-generation requests.
+
+        For code-generation functions, appends hardprompts/minimal_generation.md
+        to the system prompt so generated code is minimal, reuse-first, and free
+        of placeholders/stubs. Defensive: returns the original request unchanged
+        on any error (never fails the main pipeline).
+        """
+        if not (function == "code_generation" or "code_gen" in function or "codegen" in function):
+            return request
+        try:
+            guard_path = Path(__file__).resolve().parent.parent.parent / "hardprompts" / "minimal_generation.md"
+            if not guard_path.exists():
+                return request
+            guard = guard_path.read_text(encoding="utf-8")
+        except Exception:
+            return request
+        req = copy.copy(request)
+        req.system_prompt = (request.system_prompt or "") + "\n\n" + guard
+        logger.debug("Codegen augment: applied minimal-generation guardrail for %s", function)
+        return req
+
     def _draft_request(self, request: LLMRequest) -> LLMRequest:
         """Return a copy of request with a compact-output instruction appended.
 
@@ -1387,6 +1409,8 @@ class LLMRouter:
 
             # RAG augment: inject relevant context before drafting (D-RAG-2)
             augmented = self._rag_augment(request, function)
+            # Codegen augment: enforce minimal, reuse-first, no-placeholder generation
+            augmented = self._codegen_augment(augmented, function)
 
             if ft_override:
                 # Fine-tuned model replaces qwen3 as drafter

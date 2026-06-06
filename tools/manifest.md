@@ -6,6 +6,7 @@
 ## Index
 
 - [LLM Chain Orchestration (CoT / CoD)](manifest/llm-chain-orchestration.md)
+- [Codegen Guardrails (AI Code Optimization)](manifest/codegen-guardrails.md)
 - [AIS Vessel Data Importer](manifest/ais-importer.md)
 - [Network Design Canvas + IQE (ICDEV Query Engine)](manifest/network-iqe.md)
 - [Memory System](manifest/memory-system.md)
@@ -36,6 +37,7 @@
 - [Infrastructure](manifest/infrastructure.md)
 - [Knowledge & Self-Healing](manifest/knowledge-self-healing.md)
 - [Monitoring](manifest/monitoring.md)
+- [Logging System](manifest/logging-system.md)
 - [Dashboard](manifest/dashboard.md)
 - [CLI Output Formatting](manifest/cli-output-formatting.md)
 - [Browser Automation (Selenium Driver Manager)](manifest/browser.md)
@@ -99,6 +101,7 @@
 - [Proposal Genesis — Autonomous Proposal Intelligence](manifest/proposal-genesis-autonomous-proposal-intelligence.md)
 - [AppForge — Autonomous Vertical App Builder](manifest/appforge-autonomous-vertical-app-builder.md)
 - [Internal Awareness Engine (Phase 1a-1g)](manifest/internal-awareness-engine.md)
+- [Autonomous Capability Foundry (ACF)](manifest/foundry.md)
 - [Code Intelligence & Verification](manifest/code-intelligence-verification.md)
 - [AI Transparency & Accountability (Phase 48-49)](manifest/ai-transparency-accountability.md)
 - [AI Compliance Assessors (Phase 48-49 — Additional)](manifest/ai-compliance-assessors.md)

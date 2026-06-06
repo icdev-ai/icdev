@@ -1110,6 +1110,20 @@ coherence:
     max_fixture_mismatches: 0
     coherence_required: true
 
+# AI Code-Optimization Gate (keep generated code lean, reuse-first, no placeholders)
+# Enforced by tools/workflow/coherence_checker.py checks no_placeholders + duplicate_code.
+# Scoped to changed, non-test source files (ANVIL VERIFY / pre-commit).
+codegen_quality:
+  description: "AI-generated code must be minimal, reuse existing code, and contain zero placeholders/stubs"
+  blocking:
+    - placeholder_in_changed_code   # any TODO/FIXME/pass-only/NotImplementedError/ellipsis/placeholder-return
+  warning:
+    - duplicate_code_detected       # changed function is a verbatim copy of an existing tools/ function
+  thresholds:
+    max_placeholder_ratio: 0.0      # zero-tolerance on changed source
+    max_duplicate_similarity: 1.0   # exact normalized-body match flags a duplicate (warn)
+    exclude_tests: true             # test scaffolding is permitted
+
 # Engineering Review Board Gate (Phase 67, D-RB-1 through D-RB-7)
 review_board:
   description: "Continuous multi-persona engineering analysis — SRE, QA, Security, Perf, UX, Docs, Product"

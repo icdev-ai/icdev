@@ -276,6 +276,20 @@ python tools/testing/goveval.py --project-id "sparkpilot" --compare --model-a "q
 # LSP-over-MCP Server (LeanStral lean-lsp-mcp adapted, D-VL-7)
 python tools/mcp/lsp_server.py                                                            # Start MCP server (stdio)
 python tools/mcp/lsp_server.py --check --json                                             # Check available LSP servers
+
+# Codegen Guardrails — keep AI-generated code lean, reuse-first, no placeholders
+# Pre-generation: find existing symbols to reuse before writing new code
+python tools/codegen/reuse_scout.py --intent "open a database connection" --json
+python tools/codegen/reuse_scout.py --intent "<summary>" --symbols a,b --markdown
+python tools/codegen/reuse_scout.py --spec specs/<plan>.md --json
+# Post-generation: zero-tolerance placeholder gate + duplicate-code warn (changed files)
+python tools/workflow/coherence_checker.py --check no_placeholders,duplicate_code --changed-files "<f1>,<f2>" --gate
+
+# Call-Flow Graph + PR Impact (graphify-adapted, over the existing self-awareness KG)
+python tools/awareness/callflow.py --stats                                                # function/module call graph counts
+python tools/awareness/callflow.py --export-html .tmp/callflow.html                       # standalone call-flow HTML
+python tools/awareness/callflow.py --scan                                                 # persist module 'calls' edges to kg_edges
+python tools/awareness/change_impact.py --changed-files "tools/db/storage.py" --markdown  # PR blast radius + communities
 ```
 
 ---
