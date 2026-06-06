@@ -335,6 +335,33 @@
     to { transform: rotate(360deg); }
 }
 
+/* Background-job 'running in background' notice (content_type='pending') */
+.msg-bubble--pending {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border-bottom-left-radius: 2px;
+    font-size: 0.85rem;
+    font-style: italic;
+}
+
+.pending-spinner {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(128, 128, 128, 0.3);
+    border-top-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: sendSpin 0.8s linear infinite;
+}
+
+.pending-notice {
+    line-height: 1.4;
+}
+
 /* ===================================================================
    Intervention Bar
    =================================================================== */
