@@ -51,6 +51,26 @@
   .strip-add:hover { background: #25365a; }
   #props textarea { background: #141d30; color: var(--text); border: 1px solid #2a3a5c; border-radius: 5px;
     padding: 6px 8px; font-size: 13px; font-family: inherit; resize: vertical; }
+  /* builder modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 200;
+    display: none; align-items: center; justify-content: center; }
+  .modal-box { background: #11192a; border: 1px solid var(--dark); border-radius: 10px; width: min(820px, 94vw);
+    max-height: 90vh; overflow: auto; padding: 20px; box-shadow: 0 12px 48px rgba(0,0,0,.6); }
+  .modal-box h3 { color: var(--accent); margin: 0 0 14px; }
+  .mb-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .mb-row label { color: var(--subtext); font-size: 12px; }
+  .mb-row input, .mb-row select { background: #141d30; color: var(--text); border: 1px solid #2a3a5c;
+    border-radius: 5px; padding: 5px 8px; font-size: 13px; }
+  .grid-tbl { border-collapse: collapse; margin: 8px 0; }
+  .grid-tbl th, .grid-tbl td { border: 1px solid #2a3a5c; padding: 0; }
+  .grid-tbl input { width: 90px; background: #0f1626; color: var(--text); border: 0; padding: 6px 8px; font-size: 13px; }
+  .grid-tbl th input { color: var(--accent); font-weight: 700; }
+  .grid-tbl .rmbtn { background: none; border: 0; color: #e07a7a; cursor: pointer; width: 22px; }
+  .mb-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+  .mb-actions button { padding: 7px 14px; border-radius: 6px; cursor: pointer; border: 1px solid #2a3a5c; background: #1b2740; color: var(--text); }
+  .mb-actions .primary { background: var(--accent); color: #0d1320; border-color: var(--accent); font-weight: 700; }
+  .mb-addbtn { background: #1b2740; color: var(--text); border: 1px dashed #2a3a5c; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-size: 12px; margin-right: 6px; }
+  #mb-preview { background: var(--bg); border: 1px solid var(--dark); border-radius: 8px; padding: 10px; min-height: 200px; margin-top: 10px; }
   #stagewrap { position: fixed; top: 68px; left: 150px; right: 300px; bottom: 0; display: flex;
     align-items: center; justify-content: center; overflow: auto; background: #0a0f1a; }
   #surface { position: relative; background: var(--bg); box-shadow: 0 8px 40px rgba(0,0,0,.5);
@@ -92,6 +112,8 @@
   <span class="title" id="deck-title">{{ deck.title }}</span>
   <div class="grp">
     <button id="add-text">+ Text</button>
+    <button id="add-chart">+ Chart</button>
+    <button id="add-table">+ Table</button>
     <button id="add-image">+ Image</button>
     <button id="add-canvas" title="Add a design/chart from a canvas">+ From Canvas</button>
   </div>
@@ -109,6 +131,7 @@
 <div id="strip"></div>
 <div id="stagewrap"><div id="surface"></div></div>
 <div id="props"><div class="empty">Select an element to edit its properties, or use the toolbar to add one.</div></div>
+<div id="viz-modal" class="modal-overlay"><div class="modal-box"><div id="modal-body"></div></div></div>
 
 <script>window.__DECK = {{ deck_json | safe }}; window.__DECK_ID = {{ deck.deck_id }};</script>
 <script src="/static/js/charts.js"></script>

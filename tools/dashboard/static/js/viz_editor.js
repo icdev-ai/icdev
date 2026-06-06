@@ -101,12 +101,14 @@
     } else if (e.type === "chart") {
       var cid = uid("chart"); var h = el("div"); h.id = cid; h.style.cssText = "width:100%;height:100%;";
       body.appendChild(h); renderChart(cid, e.payload);
+      body.addEventListener("dblclick", function (ev) { ev.stopPropagation(); chartEditor(e); });
     } else if (e.type === "table") {
       var p = e.payload || {}, html = "<table><thead><tr>";
       (p.headers || []).forEach(function (x) { html += "<th>" + esc(x) + "</th>"; });
       html += "</tr></thead><tbody>";
       (p.rows || []).forEach(function (r) { html += "<tr>" + r.map(function (c) { return "<td>" + esc(c) + "</td>"; }).join("") + "</tr>"; });
       body.innerHTML = html + "</tbody></table>";
+      body.addEventListener("dblclick", function (ev) { ev.stopPropagation(); tableEditor(e); });
     } else if (e.type === "kpis") {
       var wrap = el("div"); wrap.style.cssText = "display:flex;gap:8px;height:100%;align-items:center;";
       (e.payload.tiles || []).slice(0, 4).forEach(function (t) {
@@ -317,6 +319,95 @@
     cur = to; renderAll(); reorderSlides();
   }
 
+  /* ---- chart & table builders (data-entry, no JSON) ---- */
+  function openModal() { $("#viz-modal").style.display = "flex"; }
+  function closeModal() { $("#viz-modal").style.display = "none"; $("#modal-body").innerHTML = ""; }
+
+  function chartEditor(existing) {
+    var spec = existing ? JSON.parse(JSON.stringify(existing.payload)) :
+      { kind: "chart", chart_type: "column", title: "New Chart", unit: "",
+        categories: ["A", "B", "C"], series: [{ name: "Series 1", values: [10, 20, 15] }] };
+    var body = $("#modal-body");
+    function preview() {
+      var pv = $("#mb-preview"); if (!pv) return;
+      pv.innerHTML = "<div id='ce-prev' style='width:100%;height:240px'></div>"; renderChart("ce-prev", spec);
+    }
+    function render() {
+      var types = ["column", "bar", "line", "area", "pie", "donut", "gauge"];
+      var h = "<h3>" + (existing ? "Edit" : "Insert") + " Chart</h3><div class='mb-row'>" +
+        "<label>Type <select id='ce-type'>" + types.map(function (t) {
+          return "<option" + (t === spec.chart_type ? " selected" : "") + ">" + t + "</option>"; }).join("") + "</select></label>" +
+        "<label>Title <input id='ce-title' value='" + esc(spec.title || "") + "'></label>" +
+        "<label>Unit <input id='ce-unit' value='" + esc(spec.unit || "") + "' style='width:60px'></label></div>";
+      h += "<table class='grid-tbl'><thead><tr><th>Category</th>";
+      spec.series.forEach(function (s, si) { h += "<th><input data-sname='" + si + "' value='" + esc(s.name) + "'></th>"; });
+      h += "<th></th></tr></thead><tbody>";
+      spec.categories.forEach(function (cat, ci) {
+        h += "<tr><td><input data-cat='" + ci + "' value='" + esc(cat) + "'></td>";
+        spec.series.forEach(function (s, si) { h += "<td><input data-v='" + ci + "_" + si + "' value='" + (s.values[ci] != null ? s.values[ci] : 0) + "'></td>"; });
+        h += "<td><button class='rmbtn' data-rmrow='" + ci + "'>✕</button></td></tr>";
+      });
+      h += "</tbody></table><div><button class='mb-addbtn' id='ce-addrow'>+ Category</button>" +
+        "<button class='mb-addbtn' id='ce-addser'>+ Series</button></div><div id='mb-preview'></div>" +
+        "<div class='mb-actions'><button id='ce-cancel'>Cancel</button>" +
+        "<button class='primary' id='ce-insert'>" + (existing ? "Update" : "Insert") + "</button></div>";
+      body.innerHTML = h;
+      $("#ce-type").addEventListener("change", function () { spec.chart_type = this.value; preview(); });
+      $("#ce-title").addEventListener("input", function () { spec.title = this.value; });
+      $("#ce-unit").addEventListener("input", function () { spec.unit = this.value; });
+      body.querySelectorAll("[data-cat]").forEach(function (i) { i.addEventListener("input", function () { spec.categories[+this.dataset.cat] = this.value; }); });
+      body.querySelectorAll("[data-sname]").forEach(function (i) { i.addEventListener("input", function () { spec.series[+this.dataset.sname].name = this.value; preview(); }); });
+      body.querySelectorAll("[data-v]").forEach(function (i) { i.addEventListener("input", function () { var p = this.dataset.v.split("_"); spec.series[+p[1]].values[+p[0]] = parseFloat(this.value) || 0; preview(); }); });
+      body.querySelectorAll("[data-rmrow]").forEach(function (b) { b.addEventListener("click", function () { var ci = +this.dataset.rmrow; spec.categories.splice(ci, 1); spec.series.forEach(function (s) { s.values.splice(ci, 1); }); render(); }); });
+      $("#ce-addrow").addEventListener("click", function () { spec.categories.push("New"); spec.series.forEach(function (s) { s.values.push(0); }); render(); });
+      $("#ce-addser").addEventListener("click", function () { spec.series.push({ name: "Series " + (spec.series.length + 1), values: spec.categories.map(function () { return 0; }) }); render(); });
+      $("#ce-cancel").addEventListener("click", closeModal);
+      $("#ce-insert").addEventListener("click", function () {
+        if (existing) { snapshot(); existing.payload = spec; setDirty(true); renderSurface(); }
+        else { addElement({ type: "chart", x: 0.15, y: 0.2, w: 0.7, h: 0.62, payload: spec }); }
+        closeModal();
+      });
+      preview();
+    }
+    render(); openModal();
+  }
+
+  function tableEditor(existing) {
+    var spec = existing ? JSON.parse(JSON.stringify(existing.payload)) :
+      { kind: "table", title: "New Table", headers: ["Column A", "Column B"], rows: [["", ""], ["", ""]] };
+    var body = $("#modal-body");
+    function render() {
+      var h = "<h3>" + (existing ? "Edit" : "Insert") + " Table</h3>" +
+        "<div class='mb-row'><label>Title <input id='te-title' value='" + esc(spec.title || "") + "'></label></div>" +
+        "<table class='grid-tbl'><thead><tr>";
+      spec.headers.forEach(function (hd, hi) { h += "<th><input data-h='" + hi + "' value='" + esc(hd) + "'></th>"; });
+      h += "<th></th></tr></thead><tbody>";
+      spec.rows.forEach(function (row, ri) {
+        h += "<tr>";
+        spec.headers.forEach(function (_, ci) { h += "<td><input data-c='" + ri + "_" + ci + "' value='" + esc(row[ci] || "") + "'></td>"; });
+        h += "<td><button class='rmbtn' data-rmrow='" + ri + "'>✕</button></td></tr>";
+      });
+      h += "</tbody></table><div><button class='mb-addbtn' id='te-addrow'>+ Row</button>" +
+        "<button class='mb-addbtn' id='te-addcol'>+ Column</button></div>" +
+        "<div class='mb-actions'><button id='te-cancel'>Cancel</button>" +
+        "<button class='primary' id='te-insert'>" + (existing ? "Update" : "Insert") + "</button></div>";
+      body.innerHTML = h;
+      $("#te-title").addEventListener("input", function () { spec.title = this.value; });
+      body.querySelectorAll("[data-h]").forEach(function (i) { i.addEventListener("input", function () { spec.headers[+this.dataset.h] = this.value; }); });
+      body.querySelectorAll("[data-c]").forEach(function (i) { i.addEventListener("input", function () { var p = this.dataset.c.split("_"); spec.rows[+p[0]][+p[1]] = this.value; }); });
+      body.querySelectorAll("[data-rmrow]").forEach(function (b) { b.addEventListener("click", function () { spec.rows.splice(+this.dataset.rmrow, 1); render(); }); });
+      $("#te-addrow").addEventListener("click", function () { spec.rows.push(spec.headers.map(function () { return ""; })); render(); });
+      $("#te-addcol").addEventListener("click", function () { spec.headers.push("Column " + String.fromCharCode(65 + spec.headers.length)); spec.rows.forEach(function (r) { r.push(""); }); render(); });
+      $("#te-cancel").addEventListener("click", closeModal);
+      $("#te-insert").addEventListener("click", function () {
+        if (existing) { snapshot(); existing.payload = spec; setDirty(true); renderSurface(); }
+        else { addElement({ type: "table", x: 0.1, y: 0.2, w: 0.8, h: 0.6, payload: spec }); }
+        closeModal();
+      });
+    }
+    render(); openModal();
+  }
+
   function uploadImage(file) {
     var fd = new FormData(); fd.append("image", file);
     fetch("/slides/api/" + DECK_ID + "/upload-image", { method: "POST", body: fd })
@@ -346,6 +437,8 @@
 
   function init() {
     $("#add-text").addEventListener("click", addText);
+    $("#add-chart").addEventListener("click", function () { chartEditor(); });
+    $("#add-table").addEventListener("click", function () { tableEditor(); });
     $("#add-image").addEventListener("click", function () { $("#file-input").click(); });
     $("#file-input").addEventListener("change", function () { if (this.files[0]) uploadImage(this.files[0]); this.value = ""; });
     $("#add-canvas").addEventListener("click", function () { window.location.href = "/slides/" + DECK_ID + "/add-from-canvas"; });
