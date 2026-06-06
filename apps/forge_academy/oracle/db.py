@@ -8,7 +8,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from tools.db.storage import get_connection
+# fa_oracle_* tables are internal academy analytics with no tenant/classification
+# scoping in their schema (apps/forge_academy/db.py). The stray `classification`
+# column auto-added by a blanket migration makes get_connection()'s RLS predicate
+# inject `classification = ?`, which mis-binds non-string params (e.g. LIMIT 200)
+# and raises `character varying = integer` on PostgreSQL. Use the RLS-disabled
+# canvas connection — the documented remedy for non-tenant-scoped tables.
+from tools.db.storage import get_canvas_connection as get_connection
 
 
 def _utcnow() -> str:
