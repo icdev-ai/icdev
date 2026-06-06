@@ -17,13 +17,14 @@ Public API:
 
 from __future__ import annotations
 
-import logging
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-logger = logging.getLogger("icdev.aadc.agent_layer")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.aadc.agent_layer")
 
 
 # ---------------------------------------------------------------------------

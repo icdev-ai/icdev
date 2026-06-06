@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 import json
-import logging
 from datetime import datetime, timezone
 
 from flask import Blueprint, render_template, request, jsonify
@@ -13,8 +12,9 @@ from tools.zta.lac_simulator import PrincipalContext, ResourceMetadata, simulate
 from tools.zta.lac_scenarios import list_scenarios, get_scenario
 from tools.zta.db.init_db import init_db
 from tools.db.storage import get_canvas_connection, sql_placeholder
+from tools.logging.icdev_logger import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 bp = Blueprint("zta", __name__, template_folder="../../tools/dashboard/templates")
 

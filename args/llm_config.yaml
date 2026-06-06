@@ -1191,7 +1191,7 @@ chain_orchestration:
       # debater_pool_role -> get_diverse_models picks 4 distinct cloud models; the legacy
       # debater_models list is the fallback if the pool resolves empty.
       capability_deliberation:
-        num_debaters: 4
+        num_debaters: 5
         debate_rounds: 2
         debater_pool_role: acf_deliberation_debaters
         judge_role: acf_deliberation_judge
@@ -1201,6 +1201,7 @@ chain_orchestration:
           - qwen3next-cloud
           - deepseek-cloud
           - kimi-cloud
+          - minimax-m3
 
 # -----------------------------------------------------------------------
 # Reasoned Codegen (tools/llm/reasoned_codegen.py)

@@ -18,12 +18,9 @@ import json as _json
 import os
 from typing import Any, Dict, Optional
 
-try:
-    from tools.logging.icdev_logger import get_logger
-    logger = get_logger(__name__)
-except Exception:
-    import logging
-    logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 24
 

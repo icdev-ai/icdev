@@ -12,7 +12,6 @@ LLM anomaly assessment is opt-in via aiify_config.yaml
 IMPLEMENTATION_STATUS = "full"
 
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -20,7 +19,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
