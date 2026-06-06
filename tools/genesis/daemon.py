@@ -97,6 +97,7 @@ REFLEX_NAMES = [
     "slides",
     "aidp_monitor",
     "integrity_monitor",
+    "foundry_cycle",
 ]
 
 # Backward-compat aliases for module-level access used by other code

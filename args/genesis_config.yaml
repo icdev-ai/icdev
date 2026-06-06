@@ -816,6 +816,23 @@ reflexes:
       threshold: 0
       operator: gte         # 0 new capabilities = clean; >0 surfaces real drift (always succeeds)
 
+  # ── Foundry Cycle (ACF — Autonomous Capability Foundry, 0→1 product factory) ──
+
+  foundry_cycle:
+    timeout_seconds: 600     # heavy reflex — harvest→synth→novelty-gate→score→CoD→SIPA→seed
+    enabled: true
+    risk_tier: green
+    schedule: "every 12h"
+    interval_seconds: 43200  # 12 hours — a full ACF cycle is expensive (LLM synth + scoring)
+    cooldown_minutes: 120
+    description: "ACF: run one Autonomous Capability Foundry cycle on cadence; clean no-op when ICDEV_FOUNDRY_ENABLED is off. Delegates to tools.foundry.engine.run_cycle (novelty gate + CoD go/no-go + SIPA self-vet + kanban seed)"
+    dry_run: false           # when true, compute a cycle without persisting / seeding
+    max_concepts: 5          # per-cycle rate limit on concepts proposed (passed to the engine)
+    success_metric:
+      name: foundry_tasks_emitted
+      threshold: 0
+      operator: gte          # 0 emitted = nothing novel passed the gates (healthy); >0 = net-new capability seeded
+
   # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
 
   oracle_triage:
