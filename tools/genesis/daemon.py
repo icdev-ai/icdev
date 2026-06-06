@@ -98,6 +98,7 @@ REFLEX_NAMES = [
     "aidp_monitor",
     "integrity_monitor",
     "pr_watcher",
+    "done_artifact_audit",
 ]
 
 # Backward-compat aliases for module-level access used by other code

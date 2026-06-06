@@ -820,6 +820,22 @@ reflexes:
       threshold: 0
       operator: gte         # 0 new capabilities = clean; >0 surfaces real drift (always succeeds)
 
+  # ── Done-Artifact Audit (verify 'done' tasks actually shipped) ──────────────
+
+  done_artifact_audit:
+    timeout_seconds: 300     # disk-existence sweep across projects-in-flight
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours
+    cooldown_minutes: 60
+    use_git: false           # disk-existence only; git ls-files per path is too slow under watchdog
+    description: "Verify 'done' Kanban tasks across projects-in-flight actually have their claimed artifacts on the working tree (the ACE 42/42-done-but-unbuilt failure). Reports only — never mutates status."
+    success_metric:
+      name: done_tasks_missing_artifacts
+      threshold: 0
+      operator: gte          # >0 surfaces real divergence but the reflex always succeeds
+
   # ── PR Watcher (OPT-70 autonomous PR → resume/merge feedback loop) ──────────
 
   pr_watcher:

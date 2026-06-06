@@ -79,6 +79,8 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("synthesize",  SUPPORT, 6.0,  "Cross-domain signal synthesis"),
     ReflexEntry("kanban",      SUPPORT, 0.25, "Kanban scheduler — advance ready tasks"),
     ReflexEntry("quality",     SUPPORT, 6.0,  "Code and artifact quality gate"),
+    ReflexEntry("done_artifact_audit", SUPPORT, 6.0,
+                "Verify 'done' tasks across projects-in-flight actually shipped their claimed artifacts (reports only)"),
     ReflexEntry("goal_learner",       SUPPORT, 12.0, "Learn from goal execution outcomes"),
     ReflexEntry("remediation_lens",   SUPPORT, 4.0,  "Surface remediation opportunities"),
     ReflexEntry("failure_triage",     SUPPORT, 2.0,  "Triage and route failure events"),

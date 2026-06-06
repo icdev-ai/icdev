@@ -45,12 +45,22 @@ SOURCE_DIRS = (
     ".claude",
 )
 
-# A concrete repo-relative file path: rooted in a known source dir, containing
-# at least one '/', ending in a short extension. `[\w./-]` deliberately excludes
-# '<' '>' so placeholder paths like tools/manifest/<topic>.md never match, and
-# excludes '.' runs in dotted module imports (no slash → no match).
+# Real source-file extensions. The allowlist is what separates a file path from
+# a dotted module.function reference: `tools/aiify/scorer.score_opportunity` must
+# NOT be read as a file just because `.score_` looks extension-shaped.
+_FILE_EXTS = (
+    "py", "md", "yaml", "yml", "html", "htm", "json", "js", "ts", "tsx", "jsx",
+    "sql", "txt", "sh", "css", "toml", "ini", "cfg", "env", "csv", "xml", "rst",
+)
+
+# A concrete repo-relative file path: rooted in a known source dir, one or more
+# path segments, a filename ending in an allowlisted extension. The char class
+# `[\w.\-]` excludes '<' '>' so placeholders like tools/manifest/<topic>.md never
+# match; the non-greedy filename + extension allowlist + trailing lookahead stop
+# `module.function(...)` references from being mistaken for files.
 _PATH_RE = re.compile(
-    r"(?<![\w./-])(" + "|".join(SOURCE_DIRS) + r")(/[\w.\-]+)+\.\w{1,6}"
+    r"(?<![\w./-])(?:" + "|".join(SOURCE_DIRS) + r")"
+    r"/(?:[\w.\-]+/)*[\w.\-]+?\.(?:" + "|".join(_FILE_EXTS) + r")(?![\w])"
 )
 
 # Text following a "Verify:" marker, up to the next sentence-ish boundary.

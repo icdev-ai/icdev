@@ -42,6 +42,22 @@ def test_extract_ignores_placeholders_and_module_imports():
     assert aud.extract_artifact_paths(desc) == []
 
 
+def test_extract_ignores_module_function_refs():
+    # module.function references look extension-shaped but are NOT files.
+    desc = (
+        "Call tools/aiify/opportunity_scorer.score_opportunity() and "
+        "tools/integrity/pr_gates.assess(pr). The real file is tools/integrity/pr_gates.py."
+    )
+    paths = aud.extract_artifact_paths(desc)
+    assert "tools/integrity/pr_gates.py" in paths
+    assert "tools/aiify/opportunity_scorer.score_opportunity" not in paths
+    assert not any(p.endswith(".score_opportunity") or p.endswith(".assess") for p in paths)
+
+
+def test_extract_handles_yaml_path():
+    assert aud.extract_artifact_paths("Register in args/projects.yaml.") == ["args/projects.yaml"]
+
+
 def test_extract_strips_trailing_punctuation():
     desc = "Create goals/ace_coworker.md, then stop."
     assert "goals/ace_coworker.md" in aud.extract_artifact_paths(desc)
