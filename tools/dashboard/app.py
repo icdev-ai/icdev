@@ -165,9 +165,10 @@ _CANVAS_DEFS = [
     ("slides", "ICDEV_SLIDES_ENABLED", "tools.slides.blueprint", "slides_bp"),
     ("ace", "ICDEV_ACE_ENABLED", "icdev.tools.ace.blueprint", "ace_bp"),
     ("aisg", "ICDEV_AISG_ENABLED", "tools.aisg.blueprint", "bp"),
+    ("integrity", "ICDEV_INTEGRITY_ENABLED", "tools.integrity.blueprint", "create_integrity_blueprint"),
 ]
 
-_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc"}
+_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity"}
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
     _default = "true" if _key in _CANVAS_DEFAULTS_TRUE else "false"
@@ -2195,6 +2196,7 @@ def create_app() -> Flask:
         "pmc": "",
         "ccc": "",
         "dsoc": "",
+        "integrity": "",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
@@ -2242,6 +2244,11 @@ def create_app() -> Flask:
         app.logger.info("Supply Chain blueprint registered at /supply_chain")
     except Exception as _exc:
         app.logger.warning("Supply Chain blueprint failed to register: %s", _exc)
+
+    # ---- SIPA Software Integrity & Provenance Assessor Blueprint ----
+    # Registered via the _CANVAS_DEFS loop above (key "integrity", empty url_prefix
+    # in _CANVAS_ROUTES so the blueprint's explicit /integrity + /api/integrity
+    # paths are not double-prefixed). No manual registration here.
 
     # ---- Strategos Blueprint ----
     if _HAS_STRATEGOS:
@@ -3433,6 +3440,7 @@ def create_app() -> Flask:
             "aiify":            ("tools.iqe.adapters.aiify", ["aiify.opportunities", "aiify.scans", "aiify.roadmaps", "aiify.posture"]),
             "aisg":             ("tools.iqe.adapters.aisg",  ["aisg.roadmaps", "aisg.skills", "aisg.roi", "aisg.patterns"]),
             "dic":              ("tools.iqe.adapters.dic",   ["dic.drift_events", "dic.regen_queue", "dic.ssp_fragments"]),
+            "integrity":        ("tools.iqe.adapters.integrity", ["integrity.assessments", "integrity.capabilities", "integrity.findings", "integrity.verdicts"]),
             "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
             "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
             "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),

@@ -19,11 +19,12 @@ Usage:
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-logger = logging.getLogger("icdev.aadc.model_layer")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.aadc.model_layer")
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-﻿# CUI // SP-CTI
+# CUI // SP-CTI
 """Event-driven notification service for ICDEVâ„¢ platform events.
 
 Centralises Kanban task events, Genesis daemon milestones, and Oracle

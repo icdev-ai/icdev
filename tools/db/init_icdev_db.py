@@ -199,7 +199,8 @@ CREATE TABLE IF NOT EXISTS audit_trail (
         'auto_resolution_failed', 'auto_resolution_escalated',
         'critique_session_created', 'critique_completed',
         'critique_revision_requested',
-        'pir_alert_generated'
+        'pir_alert_generated',
+        'integrity_promoted', 'integrity_rejected'
     )),
     actor TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -10620,6 +10621,109 @@ CREATE TABLE IF NOT EXISTS requirements (
 CREATE INDEX IF NOT EXISTS idx_requirements_status   ON requirements (status);
 CREATE INDEX IF NOT EXISTS idx_requirements_priority ON requirements (priority);
 CREATE INDEX IF NOT EXISTS idx_requirements_created  ON requirements (created_at);
+
+-- ============================================================
+-- SIPA — Software Integrity & Provenance Assessor (sipa-db-03)
+-- Sensitive findings tables (RLS-aware: tenant_id + classification on every
+-- table). Canonical DDL lives in tools/integrity/db/init_db.py; mirrored here
+-- (SQLite-flavored) so a fresh icdev.db carries the schema. CHECK values are
+-- derived from tools/integrity/constants.py — keep the two in lock-step.
+-- integrity_assessments is the mutable root row (HITL updates status/verdict);
+-- its child tables are protected (see APPEND_ONLY_TABLES in pre_tool_use.py).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS integrity_assessments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type     TEXT NOT NULL CHECK(source_type IN ('local', 'git', 'unc', 'uri')),
+    source_ref      TEXT NOT NULL,
+    mode            TEXT NOT NULL CHECK(mode IN ('provenance_aware', 'provenance_blind', 'auto')),
+    project_id      TEXT,
+    session_id      TEXT,
+    dir_digest      TEXT,
+    status          TEXT NOT NULL DEFAULT 'quarantine'
+                        CHECK(status IN ('quarantine', 'assessed', 'approved', 'rejected')),
+    verdict         TEXT CHECK(verdict IN ('allow', 'review', 'quarantine') OR verdict IS NULL),
+    risk_score      REAL DEFAULT 0,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_by      TEXT NOT NULL DEFAULT 'system',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_integrity_assessments_tenant  ON integrity_assessments(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_integrity_assessments_project ON integrity_assessments(project_id);
+
+-- append-only (NIST AU): findings/capability rows are evidence, never mutated.
+CREATE TABLE IF NOT EXISTS integrity_capabilities (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    file_path       TEXT NOT NULL,
+    function_name   TEXT,
+    capability_type TEXT NOT NULL CHECK(capability_type IN (
+                        'network_egress', 'filesystem', 'process_exec', 'dynamic_code',
+                        'crypto', 'env_secret', 'serialization', 'obfuscation')),
+    evidence        TEXT,
+    line_start      INTEGER,
+    line_end        INTEGER,
+    risk_weight     REAL DEFAULT 0,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_integrity_capabilities_assessment ON integrity_capabilities(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_integrity_capabilities_tenant     ON integrity_capabilities(tenant_id);
+
+-- append-only (NIST AU): scanner findings are immutable evidence.
+CREATE TABLE IF NOT EXISTS integrity_findings (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    source_scanner  TEXT NOT NULL CHECK(source_scanner IN (
+                        'sast', 'secrets', 'deps', 'formal', 'container', 'semgrep',
+                        'capability', 'reconciliation', 'tamper')),
+    finding_type    TEXT NOT NULL CHECK(finding_type IN (
+                        'dangerous_api', 'secret', 'vuln_dependency', 'unauthorized_capability',
+                        'undisclosed_capability', 'tamper_mismatch', 'known_bad_signature')),
+    severity        TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'medium', 'low', 'info')),
+    file_path       TEXT,
+    line            INTEGER,
+    detail          TEXT,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_integrity_findings_assessment ON integrity_findings(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_integrity_findings_tenant     ON integrity_findings(tenant_id);
+
+-- append-only (NIST AU): each verdict is a permanent decision record.
+CREATE TABLE IF NOT EXISTS integrity_verdicts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    verdict         TEXT NOT NULL CHECK(verdict IN ('allow', 'review', 'quarantine')),
+    risk_score      REAL DEFAULT 0,
+    rationale       TEXT,
+    decided_by      TEXT NOT NULL DEFAULT 'system',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_integrity_verdicts_assessment ON integrity_verdicts(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_integrity_verdicts_tenant     ON integrity_verdicts(tenant_id);
+
+-- append-only (NIST AU): HITL authorization decisions are immutable evidence.
+CREATE TABLE IF NOT EXISTS integrity_authorizations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    capability_id   INTEGER REFERENCES integrity_capabilities(id) ON DELETE CASCADE,
+    requirement_id  TEXT,
+    claim_ref       TEXT,
+    authorized      INTEGER NOT NULL DEFAULT 0,
+    reason          TEXT,
+    reviewed_by     TEXT,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_integrity_authorizations_assessment ON integrity_authorizations(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_integrity_authorizations_tenant     ON integrity_authorizations(tenant_id);
 
 """
 
