@@ -10,8 +10,11 @@ Pipeline (a thin orchestration over the existing SIPA building blocks — nothin
 here re-implements scanning):
 
   1. ``git diff --name-only <base>...HEAD`` (or ``--cached`` for the staged index)
-     and keep the changed ``*.py`` paths that still exist on disk (a deleted file
-     cannot be assessed).
+     and keep the changed ``*.py`` paths plus any changed dependency manifest
+     (requirements.txt, package.json, go.mod, …) that still exists on disk (a
+     deleted file cannot be assessed). Staging the changed manifest — and only the
+     changed manifest — keeps the deps / SCA scanner scoped to the PR instead of
+     auditing the ambient repo environment.
   2. Copy just those files into a throw-away subtree under the quarantine root,
      **preserving their repo-relative paths** so intra-package imports still
      resolve and every finding's ``file_path`` maps back to the real PR path.
@@ -62,6 +65,37 @@ DEFAULT_BASE = "origin/main"
 # Fixed timeout for the name-only diff; a hung git is killed, not left running.
 _DIFF_TIMEOUT = 60
 
+# Dependency manifests we stage alongside the changed *.py files so the deps /
+# SCA scanner stays scoped to the *changed subset*: a PR that bumps a dependency
+# has its manifest assessed, but a benign code-only change stages no manifest and
+# the deps scanner finds nothing (rather than auditing the ambient repo
+# environment). Basenames are matched case-sensitively; ``*.csproj`` by suffix.
+_DEP_MANIFESTS = {
+    "requirements.txt",
+    "pyproject.toml",
+    "setup.py",
+    "package.json",
+    "package-lock.json",
+    "go.mod",
+    "go.sum",
+    "Cargo.toml",
+    "Cargo.lock",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+}
+
+
+def _is_dep_manifest(name: str) -> bool:
+    """True when ``name`` (a repo-relative path) is a dependency manifest.
+
+    Matches the known manifest basenames plus ``*.csproj`` (C# project files);
+    ``setup.py`` is intentionally included even though it ends in ``.py`` so the
+    intent is explicit (it is staged either way).
+    """
+    base = name.replace("\\", "/").rsplit("/", 1)[-1]
+    return base in _DEP_MANIFESTS or base.endswith(".csproj")
+
 
 class GitDiffError(RuntimeError):
     """Raised when the ``git diff`` that drives the gate cannot be computed."""
@@ -107,18 +141,23 @@ def _git_changed_files(base: str, cached: bool, repo_root: Path) -> list[str]:
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
-def _changed_python_files(base: str, cached: bool, repo_root: Path) -> list[str]:
-    """The changed ``*.py`` paths that still exist on disk (assessable subset).
+def _changed_assessable_files(base: str, cached: bool, repo_root: Path) -> list[str]:
+    """The changed ``*.py`` paths + dependency manifests that still exist on disk.
 
-    Deleted / renamed-away files are dropped — there is nothing on disk to stage
-    and assess. Paths are returned repo-relative (git's native ``--name-only``
-    form), with forward slashes preserved so they round-trip back to PR paths.
+    The assessable subset is the changed Python files (for the SAST / secret /
+    signature scanners) plus any changed dependency manifest (for the deps / SCA
+    scanner) — so the deps scan stays scoped to what the PR actually touched
+    instead of auditing the ambient repo environment. Deleted / renamed-away files
+    are dropped — there is nothing on disk to stage and assess. Paths are returned
+    repo-relative (git's native ``--name-only`` form), with forward slashes
+    preserved so they round-trip back to PR paths.
     """
     changed = _git_changed_files(base, cached, repo_root)
     return [
         name
         for name in changed
-        if name.endswith(".py") and (repo_root / name).is_file()
+        if (name.endswith(".py") or _is_dep_manifest(name))
+        and (repo_root / name).is_file()
     ]
 
 
@@ -163,9 +202,9 @@ def assess_changed_files(
     """Run a SIPA assessment over the Python files changed on the branch.
 
     Diffs the branch against ``base`` (or the staged index when ``cached``), keeps
-    the changed ``*.py`` files, stages just those into a path-preserving subtree,
-    and runs the existing SIPA pipeline (ingest -> scan_all -> capability extract
-    -> score) over the subset.
+    the changed ``*.py`` files and any changed dependency manifest, stages just
+    those into a path-preserving subtree, and runs the existing SIPA pipeline
+    (ingest -> scan_all -> capability extract -> score) over the subset.
 
     Args:
         base: base ref to diff against (default ``origin/main``); ignored when
@@ -183,17 +222,20 @@ def assess_changed_files(
 
     Returns:
         ``{"verdict", "risk_score", "findings", "files_assessed", "assessment_id",
-        "mode"}``. With no changed ``*.py`` files this short-circuits to an ALLOW
-        with an empty ``findings`` / ``files_assessed`` and ``assessment_id=None``
-        (nothing is staged or written).
+        "mode"}``. With no changed ``*.py`` files or dependency manifests this
+        short-circuits to an ALLOW with an empty ``findings`` / ``files_assessed``
+        and ``assessment_id=None`` (nothing is staged or written).
 
     Never executes the changed code — every stage is static-only.
     """
     repo_root = Path(repo_root) if repo_root else BASE_DIR
-    py_files = _changed_python_files(base, cached, repo_root)
+    changed_files = _changed_assessable_files(base, cached, repo_root)
 
-    if not py_files:
-        logger.info("assess_changed_files: no changed *.py files (base=%s, cached=%s)", base, cached)
+    if not changed_files:
+        logger.info(
+            "assess_changed_files: no changed *.py / dependency-manifest files "
+            "(base=%s, cached=%s)", base, cached,
+        )
         return {
             "assessment_id": None,
             "verdict": "allow",
@@ -208,7 +250,7 @@ def assess_changed_files(
     # the resolved mode is recorded for provenance but does not branch the flow.
     resolved_mode = engine.resolve_mode(mode, None, None)
 
-    subtree, staged_rel = _build_subset_tree(py_files, repo_root)
+    subtree, staged_rel = _build_subset_tree(changed_files, repo_root)
 
     own_conn = conn is None
     if own_conn:

@@ -222,6 +222,48 @@ def test_only_changed_files_assessed(repo, conn, deterministic_scanners):
 
 
 # --------------------------------------------------------------------------- #
+# Dependency-manifest scoping — a changed manifest IS staged + assessed, and a
+# benign code-only change stages NO manifest (so the deps scanner can never audit
+# the ambient repo environment). Regression: eqo-sipa-s2.
+# --------------------------------------------------------------------------- #
+def test_changed_dependency_manifest_is_assessed(repo, conn, deterministic_scanners):
+    """A PR that touches requirements.txt stages the manifest for the deps scan."""
+    _write(repo.dir, "requirements.txt", "flask==0.12.2\n")
+    _write(repo.dir, "pkg/app.py", _BENIGN_PY)
+    _commit(repo.dir, "bump deps + code")
+
+    result = pr_gates.assess_changed_files(base=repo.base_sha, conn=conn, repo_root=repo.dir)
+
+    assert "requirements.txt" in result["files_assessed"]
+    assert "pkg/app.py" in result["files_assessed"]
+
+
+def test_benign_code_change_stages_no_manifest(repo, conn, deterministic_scanners):
+    """A benign code-only change stages only the *.py file — no dep manifest.
+
+    With no manifest in the staged subtree the deps scanner has nothing to audit,
+    so it cannot pull in ambient/repo-wide CVEs (the over-blocking defect).
+    """
+    # A pre-existing requirements.txt on the base branch (NOT part of the PR).
+    _write(repo.dir, "requirements.txt", "flask==0.12.2\n")
+    base_with_reqs = _commit(repo.dir, "pre-existing requirements")
+
+    # The PR changes only a benign .py file.
+    _write(repo.dir, "pkg/tinylog.py", _BENIGN_PY)
+    _commit(repo.dir, "add tinylog")
+
+    result = pr_gates.assess_changed_files(base=base_with_reqs, conn=conn, repo_root=repo.dir)
+
+    assert result["files_assessed"] == ["pkg/tinylog.py"]
+    assert not any(_is_manifest(f) for f in result["files_assessed"])
+    assert result["verdict"] == "allow"
+
+
+def _is_manifest(rel):
+    return pr_gates._is_dep_manifest(rel)
+
+
+# --------------------------------------------------------------------------- #
 # --cached — staged-index diff path
 # --------------------------------------------------------------------------- #
 def test_cached_diff_path(repo, conn, deterministic_scanners):
