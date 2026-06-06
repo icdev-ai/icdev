@@ -33,4 +33,31 @@
 | FathomDesk Snapshot Builder | tools/trading/market_intel/snapshot_builder.py | FathomDesk — materializes `ad_market_snapshot` and `ad_ticker_performance` tables so `/api/market/latest` and `/api/market/performance` read from cache instead of recomputing. Refreshed by the `snapshot_refresher` reflex. | `--build-snapshot`, `--build-performance`, `--json` | Row counts + timing |
 | Network PDF Import | tools/network/pdf_import.py | Network Design Canvas — PDF import for network diagrams. Two-tier extraction: vector path (pdfplumber) for Visio/drawio/Lucidchart exports, vision-LLM fallback for raster PDFs. Returns topology graph compatible with `export_import.to_drawio` / `visio_export.export_vsdx`. | `--file <pdf>` `[--vision-fallback]` `[--output <file>]` `[--json]` | Topology graph JSON `{nodes, edges, _source, _method}` |
 
+## Manifest Gap Fill — registration sweep (issue #14)
+
+Registers tools flagged by the gap detector's `tool_not_in_manifest` rule (8-point checklist, point 1).
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Agentic AI IaC Generator | tools/aadc/iac_generator.py | Agentic AI Design Canvas (AADC) — Infrastructure-as-Code generator (workflow step 3). | `--design-id`, `--json` | IaC artifact |
+| AI Game Engine Agent | tools/ai_game_engine/agent.py | AI Game Engine — agent wrapper with optional Chain-of-Thought / Chain-of-Debate routing. | (library) | Agent response |
+| AI Trace Mixin | tools/ai_trace/ai_trace_mixin.py | AI Trace mixin — canonical re-export from `tools.canvas.ai_trace_mixin`. | (library) | Trace-instrumented class |
+| AI-ify Compliance Posture | tools/aiify/posture.py | AI-ify Canvas — compliance posture scoring engine. | `--assess`, `--json` | Posture report |
+| AI/ML IaC Generator | tools/aimc/iac_generator.py | AI/ML Design Canvas (AIMC) — Infrastructure-as-Code generator (workflow step 3). | `--design-id`, `--json` | IaC artifact |
+| ANVIL Build | tools/anvil/build.py | ANVIL `build` command — headless wrapper (OPT-42). | `-- "<args>"`, `--json` | Build result |
+| ANVIL Fix | tools/anvil/fix.py | ANVIL `fix` command — headless wrapper (OPT-42). | `-- "<args>"`, `--json` | Fix result |
+| ANVIL Research | tools/anvil/research.py | ANVIL `research` command — headless wrapper (OPT-42). | `-- "<args>"`, `--json` | Research result |
+| Boundary IaC Generator | tools/bdc/iac_generator.py | Boundary Design Canvas (BDC) — Infrastructure-as-Code generator (workflow step 3). | `--design-id`, `--json` | IaC artifact |
+| Canvas KG Blueprint | tools/canvas/blueprint.py | Canvas Knowledge Graph — REST API blueprint for cross-canvas KG queries. | (Flask blueprint) | KG query API |
+| Canvas Provenance | tools/canvas/provenance.py | Central canvas provenance helper — registers design + assessment hashes. | (library) | Provenance records |
+| Data IaC Generator | tools/data/iac_generator.py | Data Design Canvas (DDC) — Infrastructure-as-Code generator (workflow step 3). | `--design-id`, `--json` | IaC artifact |
+| Migration Planner | tools/data/migration_planner.py | Data Design Canvas (DDC) — data migration planner (workflow step 3). | `--design-id`, `--json` | Migration plan |
+| Data Mesh CSP Sync | tools/data_canvas/csp.py | Data Mesh — Cloud Service Provider sync (AWS DataZone, Azure Purview, GCP Dataplex). | `--sync`, `--provider`, `--json` | Sync status |
+| Data Mesh Governance Engine | tools/data_canvas/governance_engine.py | Data Mesh — governance engine: policy management, OPA-style access control, scoring. | `--json` | Governance report |
+| GameDay League DB | tools/gameday/db.py | AI GameDay League — database helpers for the `gd_ai_*` tables. | (library) | DB rows |
+| GameDay Adversarial Pack | tools/gameday/pack.py | AI GameDay League — Cyber Adversarial scenario/content pack. | (library) | Pack data |
+| Genesis Launch | tools/genesis/launch.py | Cross-platform ICDEV services entry point — launches dashboard/daemon/scheduler subprocesses. | `--<service>` | Launch status |
+| CPMP DB Init | tools/govcon/init_db.py | GovCon/CPMP — initialize CPMP DB tables (idempotent, startup-safe). | (library) | Schema init |
+| Risk Manager | tools/govcon/risk_manager.py | GovCon/CPMP — risk manager: CRUD for `cpmp_risks`. | `--json` | Risk records |
+
 
