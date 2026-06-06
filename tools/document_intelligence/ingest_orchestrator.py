@@ -936,6 +936,210 @@ def _ai_extract_identifiers(text: str) -> list[dict] | None:
 
 
 # --------------------------------------------------------------------------- #
+# LLM taxonomy classification (aiify-opp-6043: manual_classification_ui ->
+# llm_generation). The external scan flagged paperless-ngx
+# src/documents/models.py — the Correspondent / DocumentType / Tag models and
+# their ``matching_algorithm`` (ANY / ALL / LITERAL / REGEX / FUZZY / AUTO) +
+# ``match`` fields. Those back the manual-classification UI: a user hand-curates
+# a taxonomy of labels and writes per-label matching rules so new documents are
+# filed under an *existing* category. The repo is ephemeral, so per the
+# established aiify-opp pattern the augmentation lands in the analogous ICDEV
+# subsystem (DIC).
+#
+# This is deliberately distinct from the open-vocabulary metadata extraction in
+# aiify-opp-6086: that proposes *new* metadata (a document_type from a fixed
+# module-level enum, free topic tags, a date). This helper instead models the
+# ``matching_algorithm = AUTO`` behaviour — soft classification of a document
+# into a *caller-supplied, user-curated taxonomy of existing labels*. The model
+# may only SELECT from the labels it is given; it can never invent one, and it
+# returns "unmatched" when nothing fits (the manual-filing fallback). It is the
+# LLM-generation replacement for hand-written per-label match rules.
+#
+# Grounding + safety (mirrors the 6086/5988 design & ICDEV AI-security posture):
+#   - the candidate labels are passed verbatim and the result is intersected
+#     back against that exact set — any label not offered is dropped, so the
+#     model cannot fabricate a category.
+#   - single-label mode keeps only the top selection; multi-label mode (the Tag
+#     analog) is de-duplicated and count-capped.
+#   - a confidence score gates the whole suggestion: below
+#     _CLASSIFY_MIN_CONFIDENCE it is discarded (HITL / manual fallback), as is an
+#     explicit "unmatched"/empty selection.
+#   - only the leading _CLASSIFY_INPUT_CHARS of text are sent (cheap, bounded).
+#   - the result is surfaced as a *proposal* under IngestOutcome.metadata
+#     ["classification"] — never silently written to dic_documents — so a human
+#     confirms the filing before it sticks.
+#   - any failure / unavailability degrades to None (air-gap safe); the caller
+#     proceeds with ingestion unchanged.
+# --------------------------------------------------------------------------- #
+
+# Only the leading slice carries the classification signal; keep the call cheap
+# and bounded regardless of document size.
+_CLASSIFY_INPUT_CHARS = 6000
+
+# Below this confidence the whole suggestion is dropped for the manual path.
+_CLASSIFY_MIN_CONFIDENCE = 0.70
+
+# Bound how large a taxonomy we will offer the model, and how many labels a
+# multi-label classification may return.
+_CLASSIFY_MAX_LABELS = 60
+_CLASSIFY_LABEL_MAX_LEN = 80
+_CLASSIFY_MAX_SELECTED = 5
+
+# Sentinel the model is told to use when no candidate label fits.
+_CLASSIFY_UNMATCHED = "unmatched"
+
+_CLASSIFY_SYSTEM_PROMPT = (
+    "You file a single ingested document into an existing, user-curated "
+    "taxonomy for a document-management index. You are given a fixed list of "
+    "candidate labels and the document text. Choose ONLY from the candidate "
+    "labels exactly as written — never invent, rename, merge, or split a label. "
+    "Ground every choice in the provided text; do not guess from the filename. "
+    f'If no candidate label fits, return "{_CLASSIFY_UNMATCHED}". Respond with a '
+    "strict JSON object and nothing else, of the form "
+    '{"labels": ["<labels chosen verbatim from the candidates, or '
+    f'{_CLASSIFY_UNMATCHED}>"], "confidence": <0..1 overall confidence>}}. '
+    "Return low confidence rather than forcing a poor match."
+)
+
+
+def _normalize_taxonomy(taxonomy) -> list[str]:
+    """Clean a caller-supplied taxonomy: trim, drop blanks, length-cap, de-dupe.
+
+    Order is preserved (first occurrence wins) and the list is bounded to
+    ``_CLASSIFY_MAX_LABELS`` so an unbounded taxonomy can never blow up the
+    prompt. Returns an empty list when nothing usable remains.
+    """
+    labels: list[str] = []
+    seen: set[str] = set()
+    for raw in taxonomy or []:
+        label = str(raw).strip()
+        if not label or len(label) > _CLASSIFY_LABEL_MAX_LEN:
+            continue
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        labels.append(label)
+        if len(labels) >= _CLASSIFY_MAX_LABELS:
+            break
+    return labels
+
+
+def _ai_classify_into_taxonomy(
+    text: str, taxonomy, *, multi_label: bool = False, filename: str = ""
+) -> dict | None:
+    """Classify a document into a caller-supplied taxonomy of existing labels.
+
+    The LLM-generation analog of paperless ``matching_algorithm = AUTO``: rather
+    than hand-written per-label match rules, the model softly files the document
+    under one (or, in ``multi_label`` mode, several) of the *existing* labels the
+    caller passes in. It can only SELECT from those labels — never invent one —
+    and returns ``None`` when nothing fits or confidence is too low, leaving the
+    document for the manual / HITL path.
+
+    Args:
+        text: full extracted document text; only the leading
+            ``_CLASSIFY_INPUT_CHARS`` are sent to the model (cheap, bounded).
+        taxonomy: iterable of candidate label strings (the user's curated
+            categories — e.g. existing correspondents / document types / tags).
+            Normalized, de-duplicated and bounded before use.
+        multi_label: when False (default) keep only the single best label (the
+            Correspondent / DocumentType analog); when True keep a de-duplicated,
+            count-capped set (the Tag analog).
+        filename: weak context only; the model is told to ground on the text.
+
+    Returns:
+        ``{"labels": list[str], "confidence": float}`` where every entry of
+        ``labels`` is drawn verbatim from ``taxonomy``, or ``None`` when there is
+        no usable taxonomy, empty text, unusable model output, an "unmatched"
+        result, or confidence below ``_CLASSIFY_MIN_CONFIDENCE``. Callers MUST
+        treat ``None`` as "no classification" and proceed unchanged — this is a
+        best-effort HITL proposal, never persisted automatically.
+    """
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    labels = _normalize_taxonomy(taxonomy)
+    if not labels:
+        return None
+    snippet = snippet[:_CLASSIFY_INPUT_CHARS]
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        candidate_block = "\n".join(f"- {label}" for label in labels)
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Filename: {filename}\n"
+                        "Candidate labels (choose only from these, verbatim):\n"
+                        f"{candidate_block}\n\n"
+                        "Document text (leading excerpt):\n"
+                        f"{snippet}\n\n"
+                        "Produce the classification JSON."
+                    ),
+                }
+            ],
+            system_prompt=_CLASSIFY_SYSTEM_PROMPT,
+            max_tokens=256,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+
+        # Confidence gate: drop the whole suggestion below threshold (HITL).
+        try:
+            confidence = float(parsed.get("confidence"))
+        except (TypeError, ValueError):
+            return None
+        if confidence < _CLASSIFY_MIN_CONFIDENCE:
+            return None
+
+        # Membership guard: intersect the model's picks back against the exact
+        # taxonomy (case-insensitive), restoring the caller's canonical casing.
+        # Anything not offered — including the "unmatched" sentinel — is dropped,
+        # so the model can never fabricate a category.
+        canonical = {label.casefold(): label for label in labels}
+        selected: list[str] = []
+        seen: set[str] = set()
+        for item in parsed.get("labels") or []:
+            key = str(item).strip().casefold()
+            if not key or key == _CLASSIFY_UNMATCHED or key not in canonical:
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            selected.append(canonical[key])
+            if not multi_label or len(selected) >= _CLASSIFY_MAX_SELECTED:
+                break
+
+        # An empty / "unmatched" selection is the manual-filing fallback.
+        if not selected:
+            return None
+
+        return {"labels": selected, "confidence": round(confidence, 4)}
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
@@ -952,6 +1156,8 @@ def ingest_file(
     clean_ocr: bool = True,
     extract_metadata: bool = True,
     extract_identifiers: bool = True,
+    classify_taxonomy: list[str] | None = None,
+    classify_multi_label: bool = False,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -985,6 +1191,18 @@ def ingest_file(
             result is confidence gated. Surfaced as a HITL proposal under
             ``IngestOutcome.metadata["identifiers"]``; never silently persisted.
             Failures degrade silently to no identifiers.
+        classify_taxonomy: optional list of existing, user-curated category
+            labels (correspondents / document types / tags). When supplied,
+            best-effort LLM classification of the document into that exact
+            taxonomy — the ``matching_algorithm = AUTO`` analog (aiify-opp-6043).
+            The model may only select from the labels given (never invent one)
+            and returns nothing when none fit. Default ``None`` leaves the
+            feature off (no taxonomy → no classification). Surfaced as a HITL
+            proposal under ``IngestOutcome.metadata["classification"]``; never
+            silently persisted. Failures degrade silently to no classification.
+        classify_multi_label: when True, ``classify_taxonomy`` may return several
+            labels (the Tag analog); when False (default) only the single best
+            label is kept (the Correspondent / DocumentType analog).
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -1054,6 +1272,19 @@ def ingest_file(
         ids = _ai_extract_identifiers(text)
         if ids:
             ai_metadata = {**ai_metadata, "identifiers": ids}
+
+    # LLM taxonomy classification (best-effort): file the document under one (or
+    # several, when multi-label) of the caller's existing curated labels — the
+    # matching_algorithm=AUTO analog. The model may only pick from the offered
+    # taxonomy; surfaced as a HITL proposal under metadata["classification"],
+    # never silently written. Off unless a taxonomy is supplied. (aiify-opp-6043)
+    if classify_taxonomy and text.strip():
+        _emit("classifying", "Classifying into taxonomy…", 9)
+        cls_result = _ai_classify_into_taxonomy(
+            text, classify_taxonomy, multi_label=classify_multi_label, filename=p.name
+        )
+        if cls_result:
+            ai_metadata = {**ai_metadata, "classification": cls_result}
 
     # ── Duplicate detection + bookkeeping ─────────────────────────────────────
     # Open a single DB connection (or reuse caller's) for dedup + writes.
