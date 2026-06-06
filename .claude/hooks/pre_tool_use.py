@@ -487,6 +487,15 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # EQO Centralized Logging (eqo-log-01, NIST AU — log rows are immutable
         # evidence; retention via bulk time-window pruning, never row mutation)
         "centralized_logs",
+        # ACF — Autonomous Capability Foundry (acf-db-, NIST AU — cycle/signal/spec/
+        # emission/outcome history is immutable evidence of autonomous decisions.
+        # foundry_concepts is intentionally EXCLUDED: it allows UPDATE for status
+        # transitions, matching creative_competitors / research_sessions.)
+        "foundry_runs",
+        "foundry_signals",
+        "foundry_specs",
+        "foundry_tasks_emitted",
+        "foundry_outcomes",
     ]
 
     if tool_name == "Bash":
