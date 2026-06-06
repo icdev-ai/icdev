@@ -42,7 +42,7 @@ def run(trigger_data=None, context=None):
     try:
         from tools.db.storage import get_connection
         conn = get_connection()
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: background reflex, no Flask request/tenant context; cpmp tables use CUI universally
         active = conn.execute(
             "SELECT id, contract_number, title FROM cpmp_contracts WHERE status = 'active'"
         ).fetchall()
@@ -204,7 +204,7 @@ def _suggest_kanban_card(
     import uuid as _uuid
     from tools.db.storage import get_connection
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: background reflex; kanban_tasks has no classification/tenant_id columns
     try:
         # Dedup: skip if same title + same source already open
         existing = conn.execute(

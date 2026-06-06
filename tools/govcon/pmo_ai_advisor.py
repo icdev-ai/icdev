@@ -37,7 +37,7 @@ _RATING_LABELS = {
 
 def _get_db():
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: govcon service-layer; govcon tables lack tenant_id/classification columns
     return conn
 
 
