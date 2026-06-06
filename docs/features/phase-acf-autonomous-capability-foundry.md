@@ -50,9 +50,10 @@ that bridge.
 | `constants.py` | enums (source_engine, concept_status, outcome), score weights, thresholds, rate limits, `ICDEV_FOUNDRY_ENABLED` |
 | `db/init_db.py` | PG-first dual schema; 6 RLS tables (tenant_id/classification; append-only where noted) |
 | `harvester.py` | pull signals from innovation/creative/research stores + genesis predictions + introspective telemetry → `foundry_signals` |
-| `synthesizer.py` | cluster signals → coherent concept candidates (deterministic co-occurrence + optional LLM-assist w/ fallback) |
+| `synthesizer.py` | cluster signals → coherent concept candidates (deterministic co-occurrence + optional CoT assist w/ fallback) |
 | `novelty_gate.py` | dedup vs capability catalog → novelty score; reject duplicates/incremental |
 | `scorer.py` | composite scoring + thresholds + reject reasons |
+| `deliberator.py` | **CoT/CoD decision layer** (wraps `tools/llm/chain_orchestrator`): CoD go/no-go approval gate (market/feasibility/compliance/novelty debaters → judge) + CoT synthesis assist; deterministic-first, defers to score gate on fallback |
 | `spec_generator.py` | concept → spec markdown + canvas contract (reuse creative/innovation generators) |
 | `task_graph.py` | **canonical canvas-epic templater**: concept → atomic db→core→engine→dash(8-comp)→mcp→reflex→doc→vv task list |
 | `seeder.py` | emit tasks to `kanban_tasks` (scheduled) + `kanban_project_sync` + `foundry_tasks_emitted` + register in `args/projects.yaml` |
@@ -72,6 +73,8 @@ Genesis reflex (cadence)
   → synthesizer → concept candidates
   → novelty_gate (reject incremental/duplicate)
   → scorer (threshold)            ── rejected concepts logged with reason
+  → deliberator CoD go/no-go      ── multi-LLM debate on score-passing survivors only
+                                     (build / reject / defer; deterministic fallback)
   → spec_generator → canvas contract
   → task_graph → atomic task list
   → seeder → kanban_tasks (scheduled)  ── rate-limited, circuit-breaker-gated
@@ -82,7 +85,7 @@ Genesis reflex (cadence)
 
 ## Build
 
-Seeded as Kanban project `acf` (prefix `acf-`, 27 atomic tasks, root `acf-db-01`,
+Seeded as Kanban project `acf` (prefix `acf-`, 28 atomic tasks, root `acf-db-01`,
 final gate `acf-vv-04`) via `tools/kanban/seed_foundry.py` → built autonomously by the
 dispatcher. Once `ICDEV_FOUNDRY_ENABLED=true` and the reflex is registered, ACF begins
 proposing and building net-new capabilities on its own.
