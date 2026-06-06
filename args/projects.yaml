@@ -4,6 +4,50 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: acf
+  name: Acf Project
+  description: Auto-registered project for tasks with prefix 'acf-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: acf-
+  default_open: true
+  briefs: []
+  epics:
+  - key: dash
+    title: DASH
+    priority: medium
+  - key: db
+    title: DB
+    priority: medium
+  - key: deliberate
+    title: DELIBERATE
+    priority: medium
+  - key: design
+    title: DESIGN
+    priority: medium
+  - key: doc
+    title: DOC
+    priority: medium
+  - key: engine
+    title: ENGINE
+    priority: medium
+  - key: harvest
+    title: HARVEST
+    priority: medium
+  - key: learn
+    title: LEARN
+    priority: medium
+  - key: mcp
+    title: MCP
+    priority: medium
+  - key: reflex
+    title: REFLEX
+    priority: medium
+  - key: synth
+    title: SYNTH
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: plh
   name: Plh Project
   description: Auto-registered project for tasks with prefix 'plh-'. Update name and

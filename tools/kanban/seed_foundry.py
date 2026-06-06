@@ -66,11 +66,16 @@ TASKS = [
             "(min_novelty, min_composite). Add RATE_LIMITS (max_concepts_per_cycle=1, "
             "max_active_projects=2) and CIRCUIT (vv_fail_rate, window). Add FEATURE_FLAG = "
             "'ICDEV_FOUNDRY_ENABLED'. Derive CHECK_* helper strings (e.g. CHECK_CONCEPT_STATUS = "
-            "\"','\".join(...)) for db/init_db.py to consume. Pure-stdlib, no side effects on import."
+            "\"','\".join(...)) for db/init_db.py to consume. Pure-stdlib, no side effects on import. "
+            "NOTE: this ACF root is gated on SIPA's final gate (sipa-vv-04) because ACF self-vets its "
+            "autonomously-generated code via SIPA (tools/integrity/engine.py) at acf-engine-03 — SIPA "
+            "must exist first."
         ),
         "task_type": "build",
         "priority": "critical",
-        "depends_on_task_id": None,
+        # Cross-project dependency: ACF builds after SIPA (its self-vet engine). sipa-vv-04 is SIPA's
+        # final V&V gate; the dispatcher gates on parent done/decomposed regardless of project.
+        "depends_on_task_id": "sipa-vv-04",
     },
     {
         "id": "acf-db-02",
