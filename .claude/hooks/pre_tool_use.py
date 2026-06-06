@@ -477,6 +477,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "slides_audit",
         # ACE (Autonomous Collaborative Engine) — step execution audit trail (NIST AU, append-only)
         "ace_audit_log",
+        # SIPA Software Integrity & Provenance Assessor (sipa-, NIST AU — assessment evidence is immutable)
+        "integrity_capabilities",
+        "integrity_findings",
+        "integrity_verdicts",
+        "integrity_authorizations",
     ]
 
     if tool_name == "Bash":

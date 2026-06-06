@@ -1,0 +1,3 @@
+foreach c in integrity.capabilities
+  where c.capability_type == "network_egress"
+  select c.id, c.assessment_id, c.file_path, c.function_name, c.risk_weight
