@@ -186,8 +186,12 @@ function renderOverview(d) {
     var colors = {high:'background:#2e0505;border:1px solid #5a1a1a;color:#f87171;',medium:'background:#2e2205;border:1px solid #5a4010;color:#fbbf24;',low:'background:#052e16;border:1px solid #1a5a30;color:#4ade80;'};
     alertEl.style.cssText = colors[anom.severity]||colors.low;
     var s = anom.summary||{};
-    alertEl.innerHTML = '⚠ Anomaly Severity: <strong>'+anom.severity.toUpperCase()+'</strong> — '+
-      s.orphan_count+' orphans · '+s.single_source_count+' tribal knowledge gaps · '+s.contradiction_count+' contradictions · '+s.stale_doc_count+' docs with no KG nodes';
+    var badge = anom.severity_source === 'ai'
+      ? '<span style="background:#1e3a5f;color:#7dd3fc;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;" title="Graded by anomaly-detection LLM">AI</span>'
+      : '<span style="background:#27303f;color:#94a3b8;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;" title="Deterministic threshold baseline">heuristic</span>';
+    alertEl.innerHTML = '⚠ Anomaly Severity: <strong>'+anom.severity.toUpperCase()+'</strong>'+badge+' — '+
+      s.orphan_count+' orphans · '+s.single_source_count+' tribal knowledge gaps · '+s.contradiction_count+' contradictions · '+s.stale_doc_count+' docs with no KG nodes'+
+      (anom.severity_rationale ? '<div style="margin-top:5px;opacity:0.85;font-style:italic;">'+escHtml(anom.severity_rationale)+'</div>' : '');
   }
 
   // Top entities bar chart (text-based)
