@@ -91,3 +91,37 @@ cross-epic prerequisites named in each task description.
 - Companion sync (**foreground**) + `health_check`.
 - **Playwright E2E**: assess a planted-backdoor fixture → verdict `QUARANTINE`; benign → `ALLOW`;
   IQE seed query returns rows; screenshots → `playwright/screenshots/integrity-*.png`.
+
+## PR-diff gate fix — deps scan scoped to changed subset (eqo-sipa-s2)
+
+From `eqo-vv-01` V&V: a benign 1-line staged `*.py` change was gated to
+`QUARANTINE` (risk 100) by ~49 repo-wide `vuln_dependency` findings (ambient
+aiohttp CVEs) — **zero** of which were introduced by the changed file. The PR gate
+therefore failed "passes-on-benign": it blocked *every* change.
+
+**Root cause.** `tools/security/dependency_auditor.py::audit_python` invoked
+`pip-audit` with **no `--requirement`** when the project path held no
+`requirements.txt` / `pyproject.toml`. Bare `pip-audit` audits the *entire
+installed Python environment*, not the target. The SIPA PR-diff gate stages only
+the changed `*.py` files (a manifest-less subtree), so every run fell through to
+the whole-environment audit and surfaced ambient CVEs unrelated to the diff.
+
+**Fix (two parts, both bounded to the deps path):**
+1. `audit_python` now **skips cleanly** (zero findings, `success=True`) when the
+   project path carries no Python dependency manifest, instead of auditing the
+   whole environment. A "scan THIS project" call can no longer silently pivot to
+   "scan the whole machine". Mirrored to `icdev/tools/security/dependency_auditor.py`.
+2. `tools/integrity/pr_gates.py` now also stages **changed dependency manifests**
+   (`requirements.txt`, `pyproject.toml`, `setup.py`, `package.json`, `go.mod`,
+   `Cargo.toml`, `pom.xml`, `*.csproj`, …) alongside the changed `*.py` files. A PR
+   that genuinely bumps a dependency has *that manifest* audited — scoped to the
+   changed subset — while a code-only change stages no manifest and the deps
+   scanner has nothing to audit.
+
+**Net effect:** benign code-only changes → deps scanner finds nothing → no false
+`QUARANTINE`; dependency bumps → the changed manifest is still assessed.
+
+**Tests:** `tests/test_dependency_auditor.py` (manifest-less skip never invokes
+pip-audit; with `requirements.txt` the audit is pinned to it) and
+`tests/test_integrity_pr_gates.py::test_changed_dependency_manifest_is_assessed`
+/ `::test_benign_code_change_stages_no_manifest`.
