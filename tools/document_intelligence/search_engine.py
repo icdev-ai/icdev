@@ -389,6 +389,277 @@ _ACCESS_SYSTEM_PROMPT = (
 )
 
 
+# --------------------------------------------------------------------------- #
+# Search-relevance anomaly detection (aiify-opp-6052: hardcoded_threshold ->
+# anomaly_detection, modeled on the result-ranking backend of a fulltext search
+# engine). A classic search backend keeps a *hardcoded relevance cutoff* — show
+# any hit above score X, drop the rest — which is blind to two failure modes the
+# absolute number can't see: (1) a query that found NO strong match (the whole
+# top_k is weak noise), and (2) a relevance *cliff* where the result set is
+# strong up to a point and then drops off a statistical edge into noise. This
+# layer lifts the implicit cutoff into named relevance bands AND adds a
+# score-distribution outlier pass over the returned results. The statistical
+# detection is ALWAYS authoritative and LLM-free (air-gap safe); the optional
+# LLM severity grade is best-effort enrichment that degrades silently to None.
+# It NEVER changes which results search() returns — it only annotates quality.
+# --------------------------------------------------------------------------- #
+
+# Absolute relevance bands. These replace the single magic "min score" cutoff a
+# search backend would hardcode: score >= _RELEVANCE_STRONG → "strong";
+# >= _RELEVANCE_WEAK → "moderate"; below → "weak" (likely noise). Centralizing
+# them means tuning relevance happens in one place, not scattered comparisons.
+_RELEVANCE_STRONG = 0.60
+_RELEVANCE_WEAK = 0.30
+
+# ── Anomaly detection (result-set-relative outliers) ──────────────────────────
+# The absolute bands grade each hit against a fixed yardstick. They miss a hit
+# that is anomalous *for this query's result set*: the noise tail past a sharp
+# relevance cliff. The anomaly layer flags results whose score sits more than
+# _ANOMALY_STDEV_K standard deviations BELOW the result-set mean (low outliers)
+# and that are not themselves still-strong (abs ceiling). Pure statistics, no I/O.
+_ANOMALY_STDEV_K = 1.5            # outlier if score < mean - k * stdev
+_ANOMALY_MIN_RESULTS = 4         # need a real distribution before flagging outliers
+_ANOMALY_ABS_CEIL = _RELEVANCE_STRONG  # never flag a result that is itself strong
+_ANOMALY_SAMPLE = 5              # bound how many concrete outliers the LLM sees
+
+# Deterministic severity cutoffs on the weak fraction of the result set.
+_ANOMALY_SEV_HIGH_FRACTION = 0.50
+_ANOMALY_SEV_MEDIUM_FRACTION = 0.25
+
+_SEARCH_ANOMALY_SYSTEM_PROMPT = (
+    "You are a search-quality analyst grading how poorly a document-search query "
+    "performed. You are given the query, the number of results, their relevance "
+    "score distribution, whether the top result itself is weak (low_confidence), "
+    "the results that are low-relevance statistical outliers (the noise tail past "
+    "a relevance cliff), and a deterministic baseline severity. A query whose best "
+    "hit is weak, or whose results are mostly noise, is the most severe. You may "
+    "agree with or adjust the baseline, but justify any change. Respond ONLY with "
+    'a JSON object: {"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<short phrase naming the main relevance problem>"}. Never '
+    "invent results beyond those provided and never answer the query itself."
+)
+
+
+def _classify_relevance(score: float) -> str:
+    """Map a search-result score to a relevance band using the named thresholds.
+
+    Pure function: ``score >= _RELEVANCE_STRONG`` → ``"strong"``,
+    ``>= _RELEVANCE_WEAK`` → ``"moderate"``, otherwise ``"weak"``.
+    """
+    if score >= _RELEVANCE_STRONG:
+        return "strong"
+    if score >= _RELEVANCE_WEAK:
+        return "moderate"
+    return "weak"
+
+
+def _heuristic_search_anomaly_severity(weak_count: int, total: int, low_confidence: bool) -> str:
+    """Deterministic search-anomaly severity — the always-available baseline.
+
+    Pure function of how large a fraction of the result set is weak/outlier noise,
+    escalated one notch when the *top* result is itself weak (``low_confidence``),
+    since a query with no strong hit at all is the worst case. Used directly when
+    the LLM grade is unavailable and handed to the model as the reference baseline.
+    """
+    if total <= 0:
+        return "low"
+    fraction = (weak_count / total) if total else 0.0
+    if low_confidence or fraction >= _ANOMALY_SEV_HIGH_FRACTION:
+        return "high"
+    if fraction >= _ANOMALY_SEV_MEDIUM_FRACTION:
+        return "medium"
+    return "low"
+
+
+def _compute_search_anomalies(results: list["DICSearchResult"]) -> dict:
+    """Pure statistical outlier pass over a result set — the authoritative heuristic.
+
+    A *low outlier* is a result whose score is below ``mean - _ANOMALY_STDEV_K *
+    stdev`` AND not itself strong (``score < _ANOMALY_ABS_CEIL``) — the noise tail
+    past a relevance cliff. ``low_confidence`` is True when even the top result's
+    score is below ``_RELEVANCE_WEAK`` (the query found no good match at all).
+    Below ``_ANOMALY_MIN_RESULTS`` the distribution is too small to be meaningful,
+    so only ``low_confidence`` is evaluated and no outliers are reported. No I/O,
+    no LLM — safe to call anywhere (air-gap).
+
+    Returns the count summary, the ranked outlier list, the ``low_confidence``
+    flag, and the deterministic ``severity`` baseline.
+    """
+    scores = [r.score for r in results]
+    total = len(scores)
+    top_score = max(scores) if scores else 0.0
+    low_confidence = bool(scores) and top_score < _RELEVANCE_WEAK
+
+    if total < _ANOMALY_MIN_RESULTS:
+        weak = [r for r in results if r.score < _RELEVANCE_WEAK]
+        return {
+            "anomaly_count": 0,
+            "mean": round(sum(scores) / total, 3) if total else 0.0,
+            "stdev": 0.0,
+            "threshold": 0.0,
+            "top_score": round(top_score, 3),
+            "low_confidence": low_confidence,
+            "anomalies": [],
+            "weak_count": len(weak),
+            "severity": _heuristic_search_anomaly_severity(len(weak), total, low_confidence),
+            "total": total,
+        }
+
+    mean = sum(scores) / total
+    variance = sum((s - mean) ** 2 for s in scores) / total
+    stdev = variance ** 0.5
+    threshold = mean - _ANOMALY_STDEV_K * stdev
+
+    anomalies: list[dict] = []
+    weak_count = 0
+    for r in results:
+        if r.score < _RELEVANCE_WEAK:
+            weak_count += 1
+        if r.score < threshold and r.score < _ANOMALY_ABS_CEIL:
+            z = round((r.score - mean) / stdev, 3) if stdev > 0 else 0.0
+            anomalies.append({
+                "chunk_id": r.chunk_id,
+                "doc_id": r.doc_id,
+                "doc_title": r.doc_title,
+                "score": round(r.score, 4),
+                "z_score": z,
+                "relevance": _classify_relevance(r.score),
+            })
+    anomalies.sort(key=lambda a: a["score"])
+
+    return {
+        "anomaly_count": len(anomalies),
+        "mean": round(mean, 3),
+        "stdev": round(stdev, 3),
+        "threshold": round(threshold, 3),
+        "top_score": round(top_score, 3),
+        "low_confidence": low_confidence,
+        "anomalies": anomalies,
+        "weak_count": weak_count,
+        "severity": _heuristic_search_anomaly_severity(weak_count, total, low_confidence),
+        "total": total,
+    }
+
+
+def detect_search_anomalies(query: str, results: list["DICSearchResult"], use_llm: bool = True) -> dict:
+    """Flag a query's result set for a relevance cliff / low-confidence retrieval.
+
+    Complements the absolute strong/moderate/weak bands: a result set can contain
+    individually acceptable hits yet expose a sharp relevance cliff (a noise tail
+    of low outliers), or fail outright (its best hit is itself weak).
+
+    The statistical detection (:func:`_compute_search_anomalies`) and the
+    deterministic ``severity`` baseline are ALWAYS authoritative and never depend
+    on the LLM. The returned ``ai_grade`` is best-effort severity enrichment and is
+    ``None`` when the model is unavailable, ``use_llm`` is False, or there is
+    nothing to grade.
+
+    Args:
+        query: The originating search query (for grounding the LLM grade only).
+        results: The :class:`DICSearchResult` set returned by :meth:`search`.
+        use_llm: When False, skip the optional LLM grade entirely (air-gap / cost).
+
+    Returns:
+        {
+          "anomaly_count": int,
+          "mean": float, "stdev": float, "threshold": float, "top_score": float,
+          "low_confidence": bool,
+          "weak_count": int,
+          "anomalies": [{"chunk_id","doc_id","doc_title","score","z_score","relevance"}],
+          "severity": "low|medium|high",   # authoritative deterministic baseline
+          "ai_grade": {...} | None,        # optional LLM refinement
+        }
+    """
+    out = _compute_search_anomalies(results)
+    ai_grade = None
+    if use_llm:
+        ai_grade = _ai_search_anomaly_severity(
+            query,
+            {"result_count": out["total"], "mean": out["mean"], "stdev": out["stdev"],
+             "top_score": out["top_score"], "low_confidence": out["low_confidence"],
+             "weak_count": out["weak_count"], "anomaly_count": out["anomaly_count"],
+             "baseline_severity": out["severity"]},
+            out["anomalies"],
+        )
+    out.pop("total", None)
+    out["ai_grade"] = ai_grade
+    return out
+
+
+def _ai_search_anomaly_severity(query: str, summary: dict, anomalies: list[dict]) -> dict | None:
+    """Grade search-relevance-anomaly severity with the LLM, grounded on real data.
+
+    Args:
+        query: The user's search query — sent so the model can judge whether the
+            weak result set is a real retrieval failure. Injection scanning stays
+            ON (``skip_injection_scan`` is NOT set) because the query is
+            user-provided.
+        summary: Distribution facts — result_count, mean, stdev, top_score,
+            low_confidence, weak_count, anomaly_count, and the deterministic
+            ``baseline_severity``.
+        anomalies: The concrete low-outlier results. Only the leading
+            ``_ANOMALY_SAMPLE`` are sent, keeping the call cheap and bounded
+            regardless of result-set size.
+
+    Returns:
+        ``{"severity": "low|medium|high", "rationale": str, "top_concern": str}``
+        on success, or ``None`` when there is nothing to grade (no anomalies and a
+        confident top hit), the model is unavailable, or the output is
+        missing/blank/malformed/out-of-range. Callers MUST treat ``None`` as "use
+        the deterministic heuristic" — this is best-effort enrichment, never a
+        hard dependency.
+    """
+    if not anomalies and not summary.get("low_confidence"):
+        return None
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        lines = [
+            f"Query: {(query or '').strip()[:300]}",
+            f"Result-set facts: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {summary.get('baseline_severity')}",
+            "Low-relevance outlier results:",
+        ]
+        for a in anomalies[:_ANOMALY_SAMPLE]:
+            lines.append(f"- {_json.dumps(a, default=str)}")
+
+        req = LLMRequest(
+            messages=[
+                {"role": "user", "content": "\n".join(lines) + "\n\nGrade the severity."}
+            ],
+            system_prompt=_SEARCH_ANOMALY_SYSTEM_PROMPT,
+            max_tokens=200,
+            temperature=0.1,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("dic_search_anomaly_severity", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+        severity = str(parsed.get("severity") or "").strip().lower()
+        if severity not in {"low", "medium", "high"}:
+            return None
+        return {
+            "severity": severity,
+            "rationale": str(parsed.get("rationale") or "").strip()[:200],
+            "top_concern": str(parsed.get("top_concern") or "").strip()[:80],
+        }
+    except Exception:
+        return None
+
+
 class DICSearchEngine:
     """Grounded search over DIC collections.
 
@@ -479,6 +750,30 @@ class DICSearchEngine:
             conn.close()
 
         return out
+
+    def search_with_quality(
+        self,
+        query: str,
+        collection_id: str | None = None,
+        top_k: int = 10,
+        mode: str = "grounded",
+        clearance: str | None = None,
+        use_llm: bool = True,
+    ) -> tuple[list[DICSearchResult], dict]:
+        """Run :meth:`search` and annotate the result set with a relevance-anomaly report.
+
+        Identical retrieval and access control to :meth:`search` — the returned
+        result list is exactly what :meth:`search` would return; the second
+        element is the deterministic relevance-anomaly report from
+        :func:`detect_search_anomalies` (low-confidence / relevance-cliff flags
+        plus an optional best-effort LLM severity grade). Quality assessment never
+        changes which results are returned.
+        """
+        results = self.search(
+            query, collection_id=collection_id, top_k=top_k, mode=mode, clearance=clearance,
+        )
+        report = detect_search_anomalies(query, results, use_llm=use_llm)
+        return results, report
 
     def _rag_search(self, query: str, top_k: int, mode: str):
         try:
