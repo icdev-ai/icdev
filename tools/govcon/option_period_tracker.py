@@ -42,7 +42,7 @@ STATUS_VALUES = ("pending", "exercised", "lapsed", "waived")
 
 def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: govcon service-layer; govcon tables lack tenant_id/classification columns
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
