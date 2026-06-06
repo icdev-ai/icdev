@@ -58,12 +58,18 @@ test.describe('E2E Lifecycle: Middle East Conflict Intelligence (7-fix validatio
   // CI stays green while the tests still run locally where the fixture exists.
   test.beforeEach(async ({ request }) => {
     const r = await request.get(`${BASE_URL}/api/intake/prd/${SEED_SESSION_ID}`);
-    let prdPresent = false;
+    let fixturePresent = false;
     if (r.ok()) {
       const d = await r.json().catch(() => ({}));
-      prdPresent = !!d.prd_markdown;
+      // CI seeds a bare placeholder session row (see app.py "E2E demo session
+      // seed"), so /prd returns a PRD shell with zero requirements. The real
+      // local fixture carries the Middle East conflict requirements. Only run
+      // when the full fixture is present — a non-empty PRD AND requirements —
+      // otherwise these tests time out on UI elements the empty session never
+      // renders. The placeholder alone must still skip the suite.
+      fixturePresent = !!d.prd_markdown && (d.total_requirements || 0) > 0;
     }
-    test.skip(!prdPresent, `Seed session ${SEED_SESSION_ID} not present in this environment`);
+    test.skip(!fixturePresent, `Seed fixture for ${SEED_SESSION_ID} not present in this environment`);
   });
 
   test('FIX 1 + FIX 2 + FIX 4: Traceability, AI Boost speed, button states', async ({ page }) => {
