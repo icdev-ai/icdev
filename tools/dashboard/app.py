@@ -3454,6 +3454,7 @@ def create_app() -> Flask:
             "cpmp":           ("tools.iqe.adapters.cpmp",              ["cpmp.contracts", "cpmp.deliverables", "cpmp.clins", "cpmp.cpars", "cpmp.evm"]),
             "ace":            ("icdev.tools.iqe.adapters.ace",          ["ace.coworkers", "ace.sessions", "ace.suggestions"]),
             "logs":           ("tools.iqe.adapters.logs",               ["logs.entries"]),
+            "foundry":        ("tools.iqe.adapters.foundry",            ["foundry.concepts", "foundry.signals", "foundry.runs", "foundry.outcomes"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
