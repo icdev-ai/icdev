@@ -49,6 +49,7 @@ def write_todos(
     default_task_type: str = "research",
     default_status: str = "suggested",
     source_prediction_id: Optional[str] = None,
+    default_project_id: Optional[str] = None,
     actor: str = "agent_toolkit",
 ) -> dict:
     """Persist a list of task dicts to kanban_tasks.
@@ -109,11 +110,27 @@ def write_todos(
             tid = t.get("id") or _gen_id()
             ids.append(tid)
             sid = t.get("source_prediction_id") or source_prediction_id
+            dep = t.get("depends_on_task_id")
+            # Attribute the card to a project so it shows on the right board.
+            # Explicit per-task value wins; else the caller default; else
+            # inherit the parent task's project (best-effort) so spawned
+            # defect/blocker cards aren't stranded with project_id=NULL.
+            project_id = t.get("project_id") or default_project_id
+            if not project_id and dep:
+                try:
+                    prow = conn.execute(
+                        "SELECT project_id FROM kanban_tasks WHERE id = ?", (dep,)
+                    ).fetchone()
+                    if prow:
+                        project_id = dict(prow).get("project_id")
+                except Exception:
+                    project_id = None
             conn.execute(
                 "INSERT INTO kanban_tasks "
                 "(id, title, description, task_type, priority, status, "
-                "source_prediction_id, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "source_prediction_id, depends_on_task_id, project_id, "
+                "created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     tid,
                     t["title"],
@@ -122,6 +139,8 @@ def write_todos(
                     t.get("priority", default_priority),
                     t.get("status", default_status),
                     sid,
+                    dep,
+                    project_id,
                     now,
                     now,
                 ),
