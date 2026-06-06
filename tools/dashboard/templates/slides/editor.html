@@ -73,6 +73,11 @@
   #mb-preview { background: var(--bg); border: 1px solid var(--dark); border-radius: 8px; padding: 10px; min-height: 200px; margin-top: 10px; }
   #stagewrap { position: fixed; top: 68px; left: 150px; right: 300px; bottom: 0; display: flex;
     align-items: center; justify-content: center; overflow: auto; background: #0a0f1a; }
+  #zoombar { position: fixed; bottom: 12px; left: 162px; z-index: 30; display: flex; align-items: center; gap: 4px;
+    background: #11192a; border: 1px solid var(--dark); border-radius: 8px; padding: 4px 8px; }
+  #zoombar button { background: #1b2740; color: var(--text); border: 1px solid #2a3a5c; border-radius: 5px;
+    width: 26px; height: 24px; cursor: pointer; font-size: 14px; padding: 0; }
+  #zoombar #zoom-label { color: var(--subtext); font-size: 12px; min-width: 42px; text-align: center; }
   #surface { position: relative; background: var(--bg); box-shadow: 0 8px 40px rgba(0,0,0,.5);
     overflow: hidden; }
   .el { position: absolute; cursor: move; outline: 1px dashed transparent; }
@@ -127,6 +132,7 @@
     <button id="add-chart">+ Chart</button>
     <button id="add-table">+ Table</button>
     <button id="add-shape">+ Shape</button>
+    <button id="add-icon">+ Icon</button>
     <button id="add-image">+ Image</button>
     <button id="add-canvas" title="Add a design/chart from a canvas">+ From Canvas</button>
   </div>
@@ -143,6 +149,12 @@
 </div>
 <div id="strip"></div>
 <div id="stagewrap"><div id="surface"></div></div>
+<div id="zoombar">
+  <button id="zoom-out" title="Zoom out">−</button>
+  <span id="zoom-label">Fit</span>
+  <button id="zoom-in" title="Zoom in">+</button>
+  <button id="zoom-fit" title="Fit to screen">⤢</button>
+</div>
 <div id="rightbar">
   <div id="layers"><div class="lay-head">LAYERS</div><div id="layers-list"></div></div>
   <div id="props"><div class="empty">Select an element to edit its properties, or use the toolbar to add one.</div></div>

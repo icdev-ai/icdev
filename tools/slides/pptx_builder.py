@@ -434,14 +434,17 @@ def _el_text(s, el, palette) -> None:
     color = _hex_rgb(style.get("color", "#FFFFFF"))
     size = int(style.get("fontSize", 18) or 18)
     fam = style.get("fontFamily", "Segoe UI")
+    listkind = style.get("list", "none")
     for idx, line in enumerate(str(el.payload.get("text", "")).split("\n")):
         p = tf.paragraphs[0] if idx == 0 else tf.add_paragraph()
         p.alignment = align
+        prefix = ("• " if listkind == "bullet" else f"{idx + 1}. " if listkind == "number" else "")
         run = p.add_run()
-        run.text = line
+        run.text = prefix + line
         run.font.size = Pt(size)
         run.font.bold = bool(style.get("bold"))
         run.font.italic = bool(style.get("italic"))
+        run.font.underline = bool(style.get("underline"))
         run.font.color.rgb = color
         try:
             run.font.name = fam

@@ -227,9 +227,14 @@
         (st.color || "#fff") + ";font-weight:" + (st.bold ? 700 : 400) + ";font-style:" +
         (st.italic ? "italic" : "normal") + ";text-align:" + (st.align || "left") + ";" +
         (st.underline ? "text-decoration:underline;" : "");
-      d.textContent = p.text || "";
+      var raw = p.text || "";
+      if (st.list && st.list !== "none") {
+        d.innerHTML = raw.split("\n").map(function (l, i) {
+          return esc((st.list === "number" ? (i + 1) + ". " : "• ") + l); }).join("<br>");
+      } else { d.textContent = raw; }
       body.appendChild(d);
     } else if (el.type === "image" || el.type === "icon") {
+      if (el.type === "icon") body.style.color = st.color || (COLORS.accent || "#C8A951");
       if (p.svg) { body.innerHTML = p.svg; }
       else { var img = document.createElement("img"); img.src = p.src || "";
         img.style.cssText = "width:100%;height:100%;object-fit:contain;"; body.appendChild(img); }
