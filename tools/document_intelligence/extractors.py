@@ -1358,3 +1358,360 @@ def ocr_image_with_quality(img, use_llm: bool = True) -> "tuple[str, dict]":
         text = _ocr_image(img)
     report = detect_ocr_confidence_anomalies(words, use_llm=use_llm)
     return text, report
+
+
+# --------------------------------------------------------------------------- #
+# Text decode-quality anomaly detection (aiify-opp-6113: hardcoded_threshold ->
+# anomaly_detection, modeled on the plain-text parser of a document-management
+# backend). A text-parser keeps a single *hardcoded charset-confidence cutoff* —
+# accept a decoding whose detector confidence is above N, otherwise fall back to
+# a lossy utf-8 read — which is blind to two silent decode-quality failure modes
+# the absolute number can't see: (1) a file that decoded WITHOUT raising (our
+# ``_extract_text`` uses ``errors="replace"``) yet came back as mostly U+FFFD
+# replacement characters or non-printable control bytes — a binary file or a
+# wrong-charset file misread as text, which still yields plenty of "characters"
+# so a length/yield check (see :func:`detect_extraction_anomalies`) reads it as
+# "fine"; and (2) a decode-quality *cliff* across an ingested batch where most
+# files decoded into clean text and a pocket collapsed into replacement-char
+# noise that the absolute cutoff alone never surfaces relative to the rest. This
+# layer lifts the implicit charset cutoff into named per-record clean-character
+# bands AND adds a clean-ratio-distribution outlier pass over the batch. The
+# statistical detection is ALWAYS authoritative and LLM-free (air-gap safe); the
+# optional LLM severity grade is best-effort enrichment that degrades silently to
+# None. It NEVER changes what text was decoded — it only annotates decode quality.
+#
+# Distinct from the two sibling layers: 6059 grades text *quantity* (chars per
+# page — a near-empty extraction), 6105 grades OCR engine *confidence*; this
+# grades the *character validity* of plain-text decoding (replacement-char /
+# control-byte density), the one failure mode a yield check and an OCR-confidence
+# check both miss because the bytes decoded to a full-length string of garbage.
+# --------------------------------------------------------------------------- #
+
+# Per-record clean-character ratio bands (fraction of a record's characters that
+# are printable/whitespace rather than decode noise). These replace the single
+# magic charset-confidence cutoff a parser would hardcode: clean_ratio >=
+# _TEXT_CLEAN_HIGH → "clean"; >= _TEXT_CLEAN_LOW → "suspect"; below → "corrupt"
+# (the decoding is effectively garbage). Centralizing them means tuning the
+# notion of "too much noise" happens in one place, not scattered char checks.
+_TEXT_CLEAN_HIGH = 0.98
+_TEXT_CLEAN_LOW = 0.85
+
+# ── Anomaly detection (batch-relative clean-ratio outliers) ───────────────────
+# The absolute bands grade each record against a fixed yardstick. They miss a
+# record that is anomalous *for this batch*: the noisy tail past a sharp
+# clean-ratio cliff. The anomaly layer flags records whose clean ratio sits more
+# than _TEXT_ANOMALY_STDEV_K standard deviations BELOW the batch mean (low
+# outliers) and that are not themselves already clean (abs ceiling). Pure
+# statistics, no I/O.
+_TEXT_ANOMALY_STDEV_K = 1.5            # outlier if clean_ratio < mean - k * stdev
+_TEXT_ANOMALY_MIN_DOCS = 4            # need a real distribution before flagging outliers
+_TEXT_ANOMALY_ABS_CEIL = _TEXT_CLEAN_HIGH  # never flag a record that is itself clean
+_TEXT_ANOMALY_SAMPLE = 5             # bound how many concrete outliers the LLM sees
+
+# Deterministic severity cutoffs on the suspect / corrupt fractions of the batch.
+# A stray replacement char in one file is normal; severity is driven by the
+# *fraction* of the batch that is suspect/corrupt, with corrupt (mostly-garbage)
+# records weighing more heavily than merely suspect ones.
+_TEXT_SEV_HIGH_SUSPECT_FRACTION = 0.50
+_TEXT_SEV_MEDIUM_SUSPECT_FRACTION = 0.25
+_TEXT_SEV_HIGH_CORRUPT_FRACTION = 0.25
+_TEXT_SEV_MEDIUM_CORRUPT_FRACTION = 0.10
+
+# Unicode replacement character — what a lossy decode (errors="replace") emits for
+# every byte it could not map. A high density of these is the signature of a
+# binary/wrong-charset file misread as text.
+_REPLACEMENT_CHAR = "�"
+
+_TEXT_DECODE_ANOMALY_SYSTEM_PROMPT = (
+    "You are a text-decoding-quality analyst grading how badly a batch of "
+    "plain-text records decoded. You are given the number of records, their "
+    "per-record clean-character-ratio distribution (1.0 = all printable text, "
+    "lower = more replacement/control-byte noise), how many records are suspect "
+    "or corrupt, the lowest-ratio outlier records (the noisy tail past a decode "
+    "cliff — likely binary or wrong-charset files misread as text), and a "
+    "deterministic baseline severity. A batch where records decoded into mostly "
+    "replacement-character noise, or where a large share is corrupt, is the most "
+    "severe — that text cannot be trusted. You may agree with or adjust the "
+    "baseline, but justify any change. "
+    'Respond ONLY with a JSON object: {"severity": "low|medium|high", "rationale": '
+    '"<=160 chars", "top_concern": "<short phrase naming the main quality problem>"}. '
+    "Never invent records beyond those provided."
+)
+
+
+def _text_clean_ratio(text: str) -> "tuple[float, int, int]":
+    """Return (clean_ratio, noise_count, total) for a decoded string.
+
+    A *noise* character is the Unicode replacement character (the lossy-decode
+    sentinel) or a non-printable control byte — anything with ``ord < 32`` that is
+    not common whitespace (tab/newline/carriage-return/form-feed/vertical-tab),
+    plus DEL (127) and the C1 control range (128–159). ``clean_ratio`` is the
+    fraction of characters that are NOT noise; an empty string is treated as fully
+    clean (1.0) since emptiness is a *yield* problem, not a decode problem. Pure
+    function, no I/O.
+    """
+    total = len(text)
+    if total == 0:
+        return 1.0, 0, 0
+    _ALLOWED_WS = {"\t", "\n", "\r", "\f", "\v"}
+    noise = 0
+    for ch in text:
+        if ch == _REPLACEMENT_CHAR:
+            noise += 1
+            continue
+        o = ord(ch)
+        if (o < 32 and ch not in _ALLOWED_WS) or o == 127 or 128 <= o <= 159:
+            noise += 1
+    return (total - noise) / total, noise, total
+
+
+def _text_decode_fields(item: "Extraction | dict") -> dict:
+    """Read the decode-quality-relevant fields off an Extraction or its dict form.
+
+    Pure accessor that tolerates both :class:`Extraction` instances and plain
+    dicts (already-serialised records), so the detector works on freshly extracted
+    objects and on records reloaded from storage alike. Computes the clean ratio,
+    replacement/control-byte noise count, and total length off the record's text.
+    """
+    if isinstance(item, dict):
+        text = item.get("text") or ""
+        provider = item.get("provider") or ""
+        content_type = item.get("content_type") or ""
+        title = item.get("title") or ""
+    else:
+        text = getattr(item, "text", "") or ""
+        provider = getattr(item, "provider", "") or ""
+        content_type = getattr(item, "content_type", "") or ""
+        title = getattr(item, "title", "") or ""
+    clean_ratio, noise, total = _text_clean_ratio(str(text))
+    return {
+        "title": title,
+        "provider": provider,
+        "content_type": content_type,
+        "chars": total,
+        "noise_chars": noise,
+        "clean_ratio": clean_ratio,
+    }
+
+
+def _classify_text_decode(clean_ratio: float) -> str:
+    """Map a record's clean-character ratio to a band using the named thresholds.
+
+    Pure function: ``clean_ratio >= _TEXT_CLEAN_HIGH`` → ``"clean"``,
+    ``>= _TEXT_CLEAN_LOW`` → ``"suspect"``, otherwise ``"corrupt"``.
+    """
+    if clean_ratio >= _TEXT_CLEAN_HIGH:
+        return "clean"
+    if clean_ratio >= _TEXT_CLEAN_LOW:
+        return "suspect"
+    return "corrupt"
+
+
+def _heuristic_text_decode_severity(suspect_count: int, corrupt_count: int, total: int) -> str:
+    """Deterministic text-decode-anomaly severity — the always-available baseline.
+
+    Pure function of how large a fraction of the batch's records are suspect or
+    corrupt. Corrupt (mostly-garbage) records weigh more heavily than merely
+    suspect ones, since a high corrupt share means the decoded text cannot be
+    trusted. Used directly when the LLM grade is unavailable and handed to the
+    model as the reference baseline.
+    """
+    if total <= 0:
+        return "low"
+    suspect_fraction = suspect_count / total
+    corrupt_fraction = corrupt_count / total
+    if (corrupt_fraction >= _TEXT_SEV_HIGH_CORRUPT_FRACTION
+            or suspect_fraction >= _TEXT_SEV_HIGH_SUSPECT_FRACTION):
+        return "high"
+    if (corrupt_fraction >= _TEXT_SEV_MEDIUM_CORRUPT_FRACTION
+            or suspect_fraction >= _TEXT_SEV_MEDIUM_SUSPECT_FRACTION):
+        return "medium"
+    return "low"
+
+
+def _compute_text_decode_anomalies(records: "list[Extraction | dict]") -> dict:
+    """Pure statistical outlier pass over a batch of records — the authoritative heuristic.
+
+    A *low outlier* is a record whose clean-character ratio is below ``mean -
+    _TEXT_ANOMALY_STDEV_K * stdev`` AND not itself clean (``clean_ratio <
+    _TEXT_ANOMALY_ABS_CEIL``) — the noisy tail past a decode cliff. ``suspect_count``
+    counts records below the "clean" band; ``corrupt_count`` counts records in the
+    "corrupt" band (decoding effectively garbage). Below ``_TEXT_ANOMALY_MIN_DOCS``
+    the distribution is too small to be meaningful, so only the band classification
+    is evaluated and no statistical outliers are reported. No I/O, no LLM — safe to
+    call anywhere (air-gap).
+
+    Returns the count summary, the ranked outlier list, the suspect/corrupt counts,
+    and the deterministic ``severity`` baseline.
+    """
+    recs = [_text_decode_fields(r) for r in records]
+    ratios = [r["clean_ratio"] for r in recs]
+    total = len(ratios)
+
+    suspect_count = sum(1 for r in recs if r["clean_ratio"] < _TEXT_CLEAN_HIGH)
+    corrupt_count = sum(1 for r in recs if r["clean_ratio"] < _TEXT_CLEAN_LOW)
+
+    if total < _TEXT_ANOMALY_MIN_DOCS:
+        return {
+            "anomaly_count": 0,
+            "mean": round(sum(ratios) / total, 4) if total else 1.0,
+            "stdev": 0.0,
+            "threshold": 0.0,
+            "suspect_count": suspect_count,
+            "corrupt_count": corrupt_count,
+            "anomalies": [],
+            "severity": _heuristic_text_decode_severity(suspect_count, corrupt_count, total),
+            "total": total,
+        }
+
+    mean = sum(ratios) / total
+    variance = sum((x - mean) ** 2 for x in ratios) / total
+    stdev = variance ** 0.5
+    threshold = mean - _TEXT_ANOMALY_STDEV_K * stdev
+
+    anomalies: list[dict] = []
+    for r in recs:
+        ratio = r["clean_ratio"]
+        if ratio < threshold and ratio < _TEXT_ANOMALY_ABS_CEIL:
+            z = round((ratio - mean) / stdev, 3) if stdev > 0 else 0.0
+            anomalies.append({
+                "title": r["title"],
+                "provider": r["provider"],
+                "content_type": r["content_type"],
+                "chars": r["chars"],
+                "noise_chars": r["noise_chars"],
+                "clean_ratio": round(ratio, 4),
+                "z_score": z,
+                "band": _classify_text_decode(ratio),
+            })
+    anomalies.sort(key=lambda a: a["clean_ratio"])
+
+    return {
+        "anomaly_count": len(anomalies),
+        "mean": round(mean, 4),
+        "stdev": round(stdev, 4),
+        "threshold": round(threshold, 4),
+        "suspect_count": suspect_count,
+        "corrupt_count": corrupt_count,
+        "anomalies": anomalies,
+        "severity": _heuristic_text_decode_severity(suspect_count, corrupt_count, total),
+        "total": total,
+    }
+
+
+def _ai_text_decode_severity(summary: dict, anomalies: list[dict]) -> dict | None:
+    """Grade text-decode-quality-anomaly severity with the LLM, grounded on real data.
+
+    Args:
+        summary: Distribution facts — record_count, mean, stdev, suspect_count,
+            corrupt_count, anomaly_count, and the deterministic
+            ``baseline_severity``.
+        anomalies: The concrete low-clean-ratio outlier records (titles, providers,
+            content types, clean ratios). Only the leading ``_TEXT_ANOMALY_SAMPLE``
+            are sent, keeping the call cheap and bounded regardless of batch size.
+            Injection scanning stays ON (``skip_injection_scan`` is NOT set)
+            because record titles are derived from arbitrary ingested files.
+
+    Returns:
+        ``{"severity": "low|medium|high", "rationale": str, "top_concern": str}``
+        on success, or ``None`` when there is nothing to grade (no outliers and no
+        corrupt records), the model is unavailable, or the output is
+        missing/blank/malformed/out-of-range. Callers MUST treat ``None`` as "use
+        the deterministic heuristic" — this is best-effort enrichment, never a
+        hard dependency.
+    """
+    if not anomalies and not summary.get("corrupt_count"):
+        return None
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        lines = [
+            f"Batch facts: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {summary.get('baseline_severity')}",
+            "Low-clean-ratio outlier records:",
+        ]
+        for a in anomalies[:_TEXT_ANOMALY_SAMPLE]:
+            lines.append(f"- {_json.dumps(a, default=str)}")
+
+        req = LLMRequest(
+            messages=[
+                {"role": "user", "content": "\n".join(lines) + "\n\nGrade the severity."}
+            ],
+            system_prompt=_TEXT_DECODE_ANOMALY_SYSTEM_PROMPT,
+            max_tokens=200,
+            temperature=0.1,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("dic_text_decode_anomaly_severity", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+        severity = str(parsed.get("severity") or "").strip().lower()
+        if severity not in {"low", "medium", "high"}:
+            return None
+        return {
+            "severity": severity,
+            "rationale": str(parsed.get("rationale") or "").strip()[:200],
+            "top_concern": str(parsed.get("top_concern") or "").strip()[:80],
+        }
+    except Exception:
+        return None
+
+
+def detect_text_decode_anomalies(records: "list[Extraction | dict]", use_llm: bool = True) -> dict:
+    """Flag a batch of decoded text records for replacement-char noise / a decode cliff.
+
+    Complements the absolute clean/suspect/corrupt bands: a batch can read as
+    acceptable on its absolute counts yet expose a sharp decode cliff (a noisy tail
+    of low outliers), or degrade outright (a large corrupt share — binary or
+    wrong-charset files misread as text — that makes the decoded text
+    untrustworthy). This is the one failure mode the yield detector
+    (:func:`detect_extraction_anomalies`) misses, because a binary file misread as
+    text still produces a full-length string of replacement-character garbage.
+
+    The statistical detection (:func:`_compute_text_decode_anomalies`) and the
+    deterministic ``severity`` baseline are ALWAYS authoritative and never depend
+    on the LLM. The returned ``ai_grade`` is best-effort severity enrichment and is
+    ``None`` when the model is unavailable, ``use_llm`` is False, or there is
+    nothing to grade.
+
+    Args:
+        records: The :class:`Extraction` records (or their dict form) from a batch
+            ingest.
+        use_llm: When False, skip the optional LLM grade entirely (air-gap / cost).
+
+    Returns:
+        {
+          "anomaly_count": int,
+          "mean": float, "stdev": float, "threshold": float,
+          "suspect_count": int, "corrupt_count": int,
+          "anomalies": [{"title","provider","content_type","chars","noise_chars",
+                         "clean_ratio","z_score","band"}],
+          "severity": "low|medium|high",   # authoritative deterministic baseline
+          "ai_grade": {...} | None,        # optional LLM refinement
+        }
+    """
+    out = _compute_text_decode_anomalies(records)
+    ai_grade = None
+    if use_llm:
+        ai_grade = _ai_text_decode_severity(
+            {"record_count": out["total"], "mean": out["mean"], "stdev": out["stdev"],
+             "suspect_count": out["suspect_count"], "corrupt_count": out["corrupt_count"],
+             "anomaly_count": out["anomaly_count"], "baseline_severity": out["severity"]},
+            out["anomalies"],
+        )
+    out.pop("total", None)
+    out["ai_grade"] = ai_grade
+    return out
