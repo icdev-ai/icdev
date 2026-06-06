@@ -261,6 +261,7 @@
     surf.style.cssText = "position:relative;width:" + w + "px;height:" + h + "px;background:" +
       (COLORS.bg || "#0A1628") + ";overflow:hidden;";
     (s.elements || []).slice().sort(function (a, b) { return (a.z || 0) - (b.z || 0); }).forEach(function (el) {
+      if (el.hidden) return;
       var d = document.createElement("div");
       d.style.cssText = "position:absolute;left:" + (el.x * 100) + "%;top:" + (el.y * 100) +
         "%;width:" + (el.w * 100) + "%;height:" + (el.h * 100) + "%;overflow:hidden;opacity:" +

@@ -507,6 +507,8 @@ def _build_element_slide(prs, slide_data, n, palette, theme) -> None:
     _bg(s, _rgb(palette, "bg"))
     els = _elements.elements_from_dicts(slide_data.get("elements", []))
     for el in sorted(els, key=lambda e: e.z):
+        if el.hidden:
+            continue
         left, top, w, h = _el_box(el)
         try:
             if el.type == "text":

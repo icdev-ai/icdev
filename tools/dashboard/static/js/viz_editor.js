@@ -163,6 +163,7 @@
     var s = $("#surface"); s.innerHTML = "";
     var list = els().slice().sort(function (a, b) { return (a.z || 0) - (b.z || 0); });
     list.forEach(function (e) {
+      if (e.hidden) return;  // hidden elements live only in the layers panel
       var d = el("div", "el" + (e.id === selId ? " sel" : ""));
       d.dataset.id = e.id;
       d.style.left = (e.x * 100) + "%"; d.style.top = (e.y * 100) + "%";
@@ -208,8 +209,9 @@
   /* ---- drag + resize ---- */
   function onPointerDown(ev) {
     var node = ev.currentTarget; var id = node.dataset.id;
-    selId = id; renderProps();
+    selId = id; renderProps(); renderLayers();
     document.querySelectorAll(".el").forEach(function (n) { n.classList.toggle("sel", n.dataset.id === id); });
+    if (selEl() && selEl().locked) { ev.preventDefault(); return; }  // locked: select only, no drag/resize
     if (ev.target.classList.contains("handle")) {
       snapshot();
       gesture = { mode: "resize", dir: ev.target.dataset.dir };
@@ -296,7 +298,7 @@
   }
   function clearGuides() { document.querySelectorAll(".snap-guide").forEach(function (g) { g.remove(); }); }
 
-  function onPointerUp() { document.removeEventListener("pointermove", onPointerMove); gesture = null; clearGuides(); setDirty(true); renderProps(); }
+  function onPointerUp() { document.removeEventListener("pointermove", onPointerMove); gesture = null; clearGuides(); setDirty(true); renderProps(); renderLayers(); }
 
   /* ---- properties panel ---- */
   function renderProps() {
@@ -554,7 +556,30 @@
     }).catch(function (err) { $("#save").textContent = "Save"; if (!isAuto) alert("Save error: " + err.message); });
   }
 
-  function renderAll() { sizeSurface(); renderStrip(); renderSurface(); renderProps(); }
+  function renderLayers() {
+    var list = $("#layers-list"); if (!list) return; list.innerHTML = "";
+    els().slice().sort(function (a, b) { return (b.z || 0) - (a.z || 0); }).forEach(function (e) {
+      var label = e.type === "text" ? ((e.payload && e.payload.text) || "Text")
+        : (e.payload && e.payload.title) ? e.payload.title : e.type;
+      var item = el("div", "lay-item" + (e.id === selId ? " sel" : "") + (e.hidden ? " hidden-el" : ""));
+      item.innerHTML = "<span class='lay-type'>" + esc(e.type.slice(0, 4)) + "</span>" +
+        "<span class='lay-label'>" + esc(String(label).slice(0, 22)) + "</span>" +
+        "<button class='ly-up' title='Bring forward'>↑</button>" +
+        "<button class='ly-dn' title='Send back'>↓</button>" +
+        "<button class='ly-eye' title='Show/Hide'>" + (e.hidden ? "🚫" : "👁") + "</button>" +
+        "<button class='ly-lock' title='Lock/Unlock'>" + (e.locked ? "🔒" : "🔓") + "</button>";
+      item.addEventListener("click", function (ev) {
+        if (ev.target.tagName === "BUTTON") return; selId = e.id; renderSurface(); renderProps(); renderLayers();
+      });
+      item.querySelector(".ly-up").addEventListener("click", function (ev) { ev.stopPropagation(); selId = e.id; layer(1); renderLayers(); });
+      item.querySelector(".ly-dn").addEventListener("click", function (ev) { ev.stopPropagation(); selId = e.id; layer(-1); renderLayers(); });
+      item.querySelector(".ly-eye").addEventListener("click", function (ev) { ev.stopPropagation(); snapshot(); e.hidden = !e.hidden; setDirty(true); renderSurface(); renderLayers(); });
+      item.querySelector(".ly-lock").addEventListener("click", function (ev) { ev.stopPropagation(); e.locked = !e.locked; setDirty(true); renderLayers(); });
+      list.appendChild(item);
+    });
+  }
+
+  function renderAll() { sizeSurface(); renderStrip(); renderSurface(); renderProps(); renderLayers(); }
 
   function init() {
     $("#add-text").addEventListener("click", addText);
@@ -584,7 +609,7 @@
     window.addEventListener("beforeunload", function (e) { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
     window.addEventListener("resize", function () { sizeSurface(); renderSurface(); });
     // click empty surface clears selection
-    $("#surface").addEventListener("pointerdown", function (e) { if (e.target.id === "surface") { selId = null; renderSurface(); renderProps(); } });
+    $("#surface").addEventListener("pointerdown", function (e) { if (e.target.id === "surface") { selId = null; renderSurface(); renderProps(); renderLayers(); } });
     renderAll();
   }
 

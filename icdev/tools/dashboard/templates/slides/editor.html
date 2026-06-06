@@ -91,8 +91,20 @@
   .el .body img { width: 100%; height: 100%; object-fit: contain; }
   .txt[contenteditable] { outline: none; white-space: pre-wrap; word-break: break-word; }
   /* properties */
-  #props { position: fixed; top: 68px; right: 0; bottom: 0; width: 300px; background: #0f1626;
-    border-left: 1px solid var(--dark); overflow-y: auto; padding: 14px; z-index: 20; font-size: 13px; }
+  #rightbar { position: fixed; top: 68px; right: 0; bottom: 0; width: 300px; background: #0f1626;
+    border-left: 1px solid var(--dark); z-index: 20; display: flex; flex-direction: column; }
+  #layers { flex: 0 0 auto; max-height: 42%; overflow-y: auto; border-bottom: 1px solid var(--dark); padding: 10px 12px; }
+  .lay-head { color: var(--subtext); font-size: 11px; letter-spacing: .06em; margin-bottom: 8px; }
+  .lay-item { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 5px; cursor: pointer;
+    font-size: 12px; color: var(--subtext); }
+  .lay-item:hover { background: rgba(255,255,255,.04); }
+  .lay-item.sel { background: rgba(200,169,81,.14); color: var(--text); }
+  .lay-item .lay-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lay-item .lay-type { color: var(--accent); font-weight: 700; text-transform: uppercase; font-size: 10px; }
+  .lay-item button { background: none; border: 0; color: var(--subtext); cursor: pointer; padding: 2px; font-size: 12px; }
+  .lay-item button:hover { color: var(--accent); }
+  .lay-item.hidden-el .lay-label { opacity: .45; text-decoration: line-through; }
+  #props { flex: 1 1 auto; overflow-y: auto; padding: 14px; font-size: 13px; }
   #props h4 { color: var(--accent); margin: 0 0 10px; font-size: 13px; letter-spacing: .04em; }
   #props .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
   #props label { color: var(--subtext); }
@@ -131,7 +143,10 @@
 </div>
 <div id="strip"></div>
 <div id="stagewrap"><div id="surface"></div></div>
-<div id="props"><div class="empty">Select an element to edit its properties, or use the toolbar to add one.</div></div>
+<div id="rightbar">
+  <div id="layers"><div class="lay-head">LAYERS</div><div id="layers-list"></div></div>
+  <div id="props"><div class="empty">Select an element to edit its properties, or use the toolbar to add one.</div></div>
+</div>
 <div id="viz-modal" class="modal-overlay"><div class="modal-box"><div id="modal-body"></div></div></div>
 
 <script>window.__DECK = {{ deck_json | safe }}; window.__DECK_ID = {{ deck.deck_id }};</script>

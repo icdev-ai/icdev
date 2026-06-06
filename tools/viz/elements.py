@@ -43,6 +43,8 @@ class Element:
     payload: dict[str, Any] = field(default_factory=dict)
     style: dict[str, Any] = field(default_factory=dict)
     id: str = ""
+    hidden: bool = False
+    locked: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -51,6 +53,7 @@ class Element:
             "w": round(self.w, 4), "h": round(self.h, 4),
             "z": self.z, "rotation": self.rotation,
             "payload": self.payload, "style": self.style,
+            "hidden": self.hidden, "locked": self.locked,
         }
 
     @classmethod
@@ -67,6 +70,8 @@ class Element:
             payload=dict(d.get("payload", {}) or {}),
             style=dict(d.get("style", {}) or {}),
             id=str(d.get("id", "")),
+            hidden=bool(d.get("hidden", False)),
+            locked=bool(d.get("locked", False)),
         )
 
 
