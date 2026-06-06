@@ -127,6 +127,38 @@ class DICAccessExplanation:
 
 
 @dataclass
+class DICQueryExpansion:
+    """An LLM-suggested broadening of a fulltext query to improve match recall.
+
+    Models the *matching* side of a fulltext search: the LLM proposes additional
+    search keywords / synonyms (never answers the question, never invents facts)
+    so that documents phrased differently than the query still match. The
+    expansion is purely additive — ``terms`` are extra keywords, and
+    ``expanded_query`` is the original query with those terms appended. When the
+    LLM is unavailable the object degrades to the original query with no extra
+    terms (``llm_used`` False, ``refusal_reason`` set), so search behavior is
+    never worse than the un-expanded baseline.
+    """
+
+    original_query: str = ""
+    terms: list[str] = field(default_factory=list)
+    expanded_query: str = ""
+    llm_used: bool = False
+    refusal_reason: str = ""
+    origin: str = "ai_generated"
+
+    def to_dict(self) -> dict:
+        return {
+            "original_query": self.original_query,
+            "terms": self.terms,
+            "expanded_query": self.expanded_query,
+            "llm_used": self.llm_used,
+            "refusal_reason": self.refusal_reason,
+            "origin": self.origin,
+        }
+
+
+@dataclass
 class DICSearchResult:
     chunk_id: str = ""
     doc_id: str = ""
@@ -255,6 +287,39 @@ _ANSWER_REFUSAL_SENTINEL = "INSUFFICIENT_EVIDENCE"
 # protected material. A deterministic template is used whenever the LLM is
 # unavailable, so an explanation is always returned.
 # --------------------------------------------------------------------------- #
+
+# --------------------------------------------------------------------------- #
+# Query expansion (aiify-opp-6039: fulltext_search_engine -> llm_generation,
+# modeled on the document-matching module of a fulltext search engine). DIC
+# matches a query to chunks via BM25 + KG with NO LLM by default. This OPT-IN
+# layer asks the LLM to propose additional search keywords / synonyms so a
+# document phrased differently than the query still matches (better recall). It
+# NEVER answers the question and NEVER invents facts — it only emits search
+# terms. The query is user-provided, so injection scanning stays ON. When the
+# LLM is unavailable it degrades to the original query (no extra terms), so
+# matching is never worse than the un-expanded baseline.
+# --------------------------------------------------------------------------- #
+
+# Hard cap on how many expansion terms are accepted from the model — bounds the
+# query size and stops a runaway model from flooding the search with noise.
+_EXPANSION_MAX_TERMS = 8
+
+# Reject any single "term" longer than this — guards against the model returning
+# a sentence/explanation instead of a keyword.
+_EXPANSION_MAX_TERM_LEN = 40
+
+_EXPANSION_SYSTEM_PROMPT = (
+    "You expand search queries for a document repository. Given a user's query, "
+    "output ONLY a comma-separated list of additional search keywords or synonyms "
+    "that would help retrieve relevant documents phrased differently than the "
+    "query. Output keywords only — no sentences, no explanations, no numbering, "
+    "and do NOT answer the user's question. Do NOT invent proper nouns, product "
+    "names, numbers, or facts; emit only general synonyms and closely related "
+    "terms. If you cannot suggest useful keywords, output exactly: NONE."
+)
+
+# Sentinel the model emits when it has no useful expansion terms.
+_EXPANSION_NONE_SENTINEL = "NONE"
 
 _ACCESS_SYSTEM_PROMPT = (
     "You are an access-control assistant for a classified document repository. "
@@ -490,6 +555,89 @@ class DICSearchEngine:
             grounded=True,
             citations=[r.citation for r in used],
             result_count=len(results),
+        )
+
+    def expand_query(self, query: str, max_terms: int = _EXPANSION_MAX_TERMS) -> DICQueryExpansion:
+        """Suggest extra search keywords to broaden fulltext match recall.
+
+        OPT-IN layer that asks the LLM for synonyms / related keywords for the
+        query, then appends them to it. The model is constrained to emit keywords
+        only — it never answers the question and never invents proper nouns or
+        facts (see :data:`_EXPANSION_SYSTEM_PROMPT`). Returned terms are
+        de-duplicated against the query's own words, length-bounded, and capped
+        at ``max_terms``.
+
+        Args:
+            query: Natural language query (user-provided — injection-scanned).
+            max_terms: Maximum number of expansion terms to keep.
+
+        Returns:
+            A :class:`DICQueryExpansion`. ``expanded_query`` always falls back to
+            the original ``query`` (with ``llm_used`` False and a
+            ``refusal_reason``) when the query is empty, the LLM is unavailable,
+            or the model returns no usable terms — so callers can always search
+            with it safely.
+        """
+        q = (query or "").strip()
+        if not q:
+            return DICQueryExpansion(
+                original_query="", expanded_query="", refusal_reason="empty_query",
+            )
+
+        base_terms = set(_extract_terms(q))
+
+        try:
+            from tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+
+            req = LLMRequest(
+                messages=[{"role": "user", "content": f"Query: {q}\n\nExpansion keywords:"}],
+                system_prompt=_EXPANSION_SYSTEM_PROMPT,
+                max_tokens=120,
+                temperature=0.2,
+                classification="CUI",
+            )
+            resp = LLMRouter().invoke("summarization", req)
+        except Exception:
+            return DICQueryExpansion(
+                original_query=q, expanded_query=q, refusal_reason="llm_unavailable",
+            )
+
+        if not resp or not resp.content or not resp.content.strip():
+            return DICQueryExpansion(
+                original_query=q, expanded_query=q, refusal_reason="llm_unavailable",
+            )
+
+        raw = resp.content.strip()
+        if _EXPANSION_NONE_SENTINEL in raw.upper().split():
+            return DICQueryExpansion(
+                original_query=q, expanded_query=q, llm_used=True, refusal_reason="no_terms",
+            )
+
+        # Parse the model's comma-separated keywords. Reject overlong "terms"
+        # (a returned sentence), strip noise, and drop words already in the query
+        # so the expansion is strictly additive.
+        terms: list[str] = []
+        seen = set(base_terms)
+        for piece in raw.replace("\n", ",").split(","):
+            term = piece.strip().strip(".;:\"'()[]").lower()
+            if not term or len(term) > _EXPANSION_MAX_TERM_LEN:
+                continue
+            if term in seen:
+                continue
+            seen.add(term)
+            terms.append(term)
+            if len(terms) >= max_terms:
+                break
+
+        if not terms:
+            return DICQueryExpansion(
+                original_query=q, expanded_query=q, llm_used=True, refusal_reason="no_terms",
+            )
+
+        expanded = f"{q} {' '.join(terms)}"
+        return DICQueryExpansion(
+            original_query=q, terms=terms, expanded_query=expanded, llm_used=True,
         )
 
     def access_explanation(
