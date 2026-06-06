@@ -312,20 +312,22 @@ def inject_row_predicate(
         new_sql = sql[:pos] + " " + predicate + " AND" + sql[pos:]
         return new_sql, tuple(extra_params), n_before
 
-    # No WHERE — inject before ORDER BY / GROUP BY / LIMIT; all existing params
-    # come before these clauses so n_params_before = total existing params count.
-    # Compute from original sql (caller will provide the count at merge time).
-    # We return n_before = _count_params_before(sql, len(sql)) which equals the
-    # total placeholder count — meaning "insert after all existing params".
-    n_total = _count_params_before(sql, len(sql))
+    # No WHERE — inject before ORDER BY / GROUP BY / LIMIT. The injected WHERE
+    # sits BEFORE these clauses, so n_params_before is the count of placeholders
+    # that appear before the injection point — NOT the whole-statement total.
+    # A trailing "LIMIT ?" / "ORDER BY x ?" param comes AFTER the injection and
+    # must not be counted; otherwise its value gets bound into the injected
+    # predicate (e.g. "classification IN (20, 'CUI')" — the LIMIT 20 leaking in).
     for pattern in (_RE_GROUP_BY, _RE_ORDER_BY, _RE_LIMIT):
         m = pattern.search(sql)
         if m:
             pos = m.start()
+            n_before = _count_params_before(sql, pos)
             new_sql = sql[:pos] + " WHERE " + predicate + " " + sql[pos:]
-            return new_sql, tuple(extra_params), n_total
+            return new_sql, tuple(extra_params), n_before
 
-    # No WHERE, no ORDER/GROUP/LIMIT — append at end
+    # No WHERE, no ORDER/GROUP/LIMIT — append at end; all existing params precede it.
+    n_total = _count_params_before(sql, len(sql))
     new_sql = sql.rstrip().rstrip(";") + " WHERE " + predicate
     return new_sql, tuple(extra_params), n_total
 
