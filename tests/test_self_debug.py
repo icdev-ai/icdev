@@ -13,7 +13,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 
-from tools.workflow.self_debug import _heuristic_diagnosis
+from tools.workflow.self_debug import _heuristic_diagnosis, _traceback_diagnosis
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +94,110 @@ class TestPhantomWorktreeHeuristic:
         assert diag["recommendation"] == "rebuild_worktree", (
             "cwd_exists=False must override the timeout heuristic branch"
         )
+
+
+# ---------------------------------------------------------------------------
+# _heuristic_diagnosis — traceback localization (kills the conf-0.30 cliff)
+# ---------------------------------------------------------------------------
+
+_ASSERT_TB = (
+    "Traceback (most recent call last):\n"
+    '  File "tools/workflow/foo.py", line 42, in do_thing\n'
+    "    assert x == y\n"
+    "AssertionError: x != y\n"
+)
+_IMPORT_TB = (
+    "Traceback (most recent call last):\n"
+    '  File "tools/workflow/bar.py", line 7, in <module>\n'
+    "    import nope\n"
+    "ModuleNotFoundError: No module named 'nope'\n"
+)
+_TIMEOUT_TB = (
+    "Traceback (most recent call last):\n"
+    '  File "tools/net/client.py", line 88, in fetch\n'
+    "    sock.recv()\n"
+    "TimeoutError: timed out\n"
+)
+_EXTERNAL_ONLY_TB = (
+    "Traceback (most recent call last):\n"
+    '  File "/usr/lib/python3.11/site-packages/lib/thing.py", line 10, in run\n'
+    "    do()\n"
+    "ValueError: bad\n"
+)
+
+
+def _tb_snap(reason):
+    """Snapshot that bypasses the infra branches and carries a traceback."""
+    return {
+        "cwd_exists": True,
+        "is_worktree_path": False,
+        "worktree_registered": True,
+        "task_id": "tb-task",
+        "reason": reason,
+    }
+
+
+class TestTracebackLocalization:
+    """When a traceback yields an in-repo suspect, return a real diagnosis."""
+
+    def test_assertion_error_routes_to_patch(self):
+        diag = _heuristic_diagnosis(_tb_snap(_ASSERT_TB))
+        assert diag["recommendation"] == "patch"
+        assert diag["suspect_files"] == ["tools/workflow/foo.py:42"]
+        assert "AssertionError" in diag["root_cause"]
+        assert "do_thing" in diag["root_cause"]
+        assert diag["_source"] == "heuristic_traceback"
+
+    def test_confidence_in_calibrated_band(self):
+        diag = _heuristic_diagnosis(_tb_snap(_ASSERT_TB))
+        assert 0.55 <= diag["confidence"] <= 0.65
+        # Below the 0.85 auto-apply bar → routes to a card, not applied blind.
+        assert diag["confidence"] < 0.85
+        # Above the old conf-0.30 floor.
+        assert diag["confidence"] > 0.30
+
+    def test_import_error_routes_to_patch(self):
+        diag = _heuristic_diagnosis(_tb_snap(_IMPORT_TB))
+        assert diag["recommendation"] == "patch"
+        assert diag["suspect_files"] == ["tools/workflow/bar.py:7"]
+        assert "ModuleNotFoundError" in diag["root_cause"]
+
+    def test_timeout_error_routes_to_quarantine(self):
+        diag = _heuristic_diagnosis(_tb_snap(_TIMEOUT_TB))
+        assert diag["recommendation"] == "quarantine"
+        assert diag["suspect_files"] == ["tools/net/client.py:88"]
+        assert 0.55 <= diag["confidence"] <= 0.65
+
+    def test_external_only_traceback_falls_through_to_unknown(self):
+        """No first-party suspect → keep the conf-0.30 manual-review fallback."""
+        diag = _heuristic_diagnosis(_tb_snap(_EXTERNAL_ONLY_TB))
+        assert diag["confidence"] == 0.30
+        assert diag["recommendation"] == "quarantine"
+        assert diag["_source"] == "heuristic"
+
+    def test_no_traceback_falls_through_to_unknown(self):
+        diag = _heuristic_diagnosis(_tb_snap("some unstructured failure blurb"))
+        assert diag["confidence"] == 0.30
+        assert diag["_source"] == "heuristic"
+
+    def test_infra_rules_take_priority_over_traceback(self):
+        """A traceback in the reason must NOT override cwd_exists=False."""
+        snap = _tb_snap(_ASSERT_TB)
+        snap["cwd_exists"] = False
+        diag = _heuristic_diagnosis(snap)
+        assert diag["recommendation"] == "rebuild_worktree"
+        assert diag["_source"] == "heuristic"
+
+    def test_traceback_from_log_tail(self):
+        """Traceback present only in log_tail is still parsed."""
+        snap = _tb_snap("opaque reason")
+        snap["log_tail"] = _ASSERT_TB.splitlines()
+        diag = _traceback_diagnosis(snap)
+        assert diag is not None
+        assert diag["suspect_files"] == ["tools/workflow/foo.py:42"]
+
+    def test_traceback_diagnosis_returns_none_without_exception(self):
+        assert _traceback_diagnosis(_tb_snap("no traceback here")) is None
 
 
 # ---------------------------------------------------------------------------
