@@ -6414,6 +6414,37 @@ TOOL_REGISTRY = {
             },
         },
     },
+    # ============================================================
+    # ANVIL CO-WORKER ENGINE (ACE) — 2 tools
+    # ============================================================
+    "ace_launch": {
+        "category": "ace",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_launch",
+        "description": "Launch an ACE co-worker session for a given problem. Returns instance_id and initial state.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "problem_text": {"type": "string", "description": "Problem or requirements text to solve"},
+                "trigger_source": {"type": "string", "default": "api", "description": "Source of the trigger (api, chat, cli)"},
+                "trigger_ref": {"type": "string", "default": "", "description": "Originating reference (task id, chat id, etc.)"},
+            },
+            "required": ["problem_text"],
+        },
+    },
+    "ace_status": {
+        "category": "ace",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_status",
+        "description": "Return full status of an ACE co-worker instance including per-co-worker states.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "instance_id": {"type": "string", "description": "ACE instance ID returned by ace_launch"},
+            },
+            "required": ["instance_id"],
+        },
+    },
 }
 
 
@@ -7026,3 +7057,12 @@ RESOURCE_REGISTRY = {
         },
     },
 }
+
+
+def list_tools() -> list:
+    """Return all registered MCP tool names from both registries."""
+    names = list(TOOL_REGISTRY.keys())
+    for key, entry in RESOURCE_REGISTRY.items():
+        if "input_schema" in entry and key not in names:
+            names.append(key)
+    return names
