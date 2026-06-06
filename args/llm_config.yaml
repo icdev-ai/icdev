@@ -795,22 +795,22 @@ routing:
     chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro]
     effort: high
 
-  # ── ACF (Autonomous Capability Foundry) deliberation — Ollama-cloud-diverse ──
-  # All entries are provider 'ollama_cloud' (distinct model families). Because every
-  # entry shares the provider family, get_diverse_models() pass-1 picks one then pass-2
-  # fills remaining slots with other DISTINCT cloud models — so an N-debater run uses N
-  # different Ollama-cloud models. Local qwen3 tail = air-gap / no-key fallback.
+  # ── ACF (Autonomous Capability Foundry) deliberation — ALL Ollama-cloud ──
+  # CLOUD-ONLY (no local models). All entries are provider 'ollama_cloud' with distinct
+  # model families; get_diverse_models() returns N distinct cloud models per debate.
+  # If cloud is unavailable (no key / air-gap), the deliberator's deterministic score-gate
+  # fallback (defer_to_score_on_fallback) handles it — no local debaters by design.
   acf_deliberation_debaters:
-    chain: [glm5-cloud, qwen3next-cloud, deepseek-cloud, kimi-cloud, minimax-m3, mistral-large-cloud, nemotron-cloud, gemini3-cloud, gpt-oss-cloud, cogito-cloud, qwen3-local]
+    chain: [glm5-cloud, qwen3next-cloud, deepseek-cloud, kimi-cloud, minimax-m3, mistral-large-cloud, nemotron-cloud, gemini3-cloud, gpt-oss-cloud, cogito-cloud]
     effort: medium
 
   acf_deliberation_judge:
-    chain: [glm5-cloud, kimi-cloud, deepseek-cloud, claude-sonnet, qwen3-local]
+    chain: [glm5-cloud, kimi-cloud, deepseek-cloud, minimax-m3]
     effort: high
 
-  # Plain router.invoke() fallback for the deliberation function (non-chain path)
+  # Plain router.invoke() fallback for the deliberation function (non-chain path) — cloud-only
   capability_deliberation:
-    chain: [glm5-cloud, kimi-cloud, deepseek-cloud, qwen3-local]
+    chain: [glm5-cloud, kimi-cloud, deepseek-cloud, minimax-m3]
     effort: medium
 
   default:
