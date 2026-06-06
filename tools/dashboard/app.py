@@ -2258,6 +2258,40 @@ def create_app() -> Flask:
             if _sg_api_bp:
                 app.register_blueprint(_sg_api_bp, url_prefix="/api/strategos")
                 app.logger.info("Strategos API blueprint registered at /api/strategos")
+
+            # Canonical DAT aliases (issue #18) — the Diplomatic Activity Tracker
+            # is implemented under Strategos; expose the issue's documented paths
+            # (/dat, /api/dat/dti) without duplicating the engine/page logic.
+            def _dat_page_alias():
+                from flask import redirect, request as _rq
+                qs = _rq.query_string.decode()
+                return redirect("/strategos/dat" + (f"?{qs}" if qs else ""))
+
+            def _dat_dti_api():
+                from flask import jsonify, make_response, request as _rq
+                from tools.strategos.dat import (
+                    compute_dti, ensure_tables, get_dti_history, get_latest_dti,
+                )
+                ensure_tables()
+                theater = _rq.args.get("theater", "global")
+                score = get_latest_dti(theater) or compute_dti(theater)
+                try:
+                    limit = min(int(_rq.args.get("limit", 48)), 200)
+                except (TypeError, ValueError):
+                    limit = 48
+                history = get_dti_history(theater, limit=limit)
+                resp = make_response(jsonify({
+                    "theater": theater,
+                    "dti": score,
+                    "history": history,
+                    "total": len(history),
+                }))
+                resp.headers["X-Classification"] = "CUI"
+                return resp
+
+            app.add_url_rule("/dat", "dat_page_alias", _dat_page_alias)
+            app.add_url_rule("/api/dat/dti", "dat_dti_api", _dat_dti_api)
+            app.logger.info("DAT aliases registered at /dat and /api/dat/dti")
         except Exception as _exc:
             app.logger.warning("Strategos blueprint failed to register: %s", _exc)
     else:
