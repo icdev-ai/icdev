@@ -101,7 +101,7 @@ def build_template_only_canvas(root: Path, name: str, template_names, *, mirror:
             _write(root / "icdev" / "tools" / "dashboard" / "templates" / name / t, text)
 
 
-def run_check(root: Path, monkeypatch, whitelist: Path = None):
+def run_check(root: Path, monkeypatch, whitelist: Path = None, exemptions: Path = None):
     """Invoke check_new_page_completeness against the synthetic root.
 
     Shim-aware: patch + call on the SAME canonical module object so the
@@ -111,12 +111,19 @@ def run_check(root: Path, monkeypatch, whitelist: Path = None):
     from tools.workflow import coherence_checker as cc
 
     monkeypatch.setattr(cc, "PROJECT_ROOT", root)
-    # Default to a non-existent path → loader returns an empty set (nothing
-    # grandfathered). Tests that need a whitelist pass an explicit file.
+    # Default both config paths to non-existent files → loader returns an empty
+    # set (nothing grandfathered/exempt). These module constants are bound to the
+    # REAL repo root at import time, so they must be patched explicitly to keep
+    # synthetic tests isolated from the live args/ files.
     monkeypatch.setattr(
         cc,
         "_PAGE_COMPLETENESS_WHITELIST_CONFIG",
         whitelist if whitelist is not None else (root / "no_such_whitelist.yaml"),
+    )
+    monkeypatch.setattr(
+        cc,
+        "_COMPLETION_EXEMPTIONS_CONFIG",
+        exemptions if exemptions is not None else (root / "no_such_exemptions.yaml"),
     )
     return cc.check_new_page_completeness()
 
@@ -232,6 +239,56 @@ class TestHardenedCompleteness:
         assert result_wl.missing == []
         # the whitelist note is surfaced in the actual/expected lines
         assert "whitelisted" in result_wl.actual[0]
+
+    def test_completion_exemptions_buckets_skip_canvas(self, tmp_path, monkeypatch):
+        """args/completion_exemptions.yaml (tch-fix-04): canvases in the
+        iqe_exempt / iqe_wired_via_alias / iqe_partial buckets are skipped, but
+        iqe_required canvases are NOT — they keep failing the gate."""
+        root = make_root(tmp_path)
+        write_base_html(root)
+        # Three broken canvases, one per skip bucket, plus one required.
+        for name in ("util_page", "alias_page", "partial_page", "needs_iqe"):
+            build_page_canvas(root, name, complete=False, mirror=False)
+            build_template_only_canvas(root, name, ["extra.html"], mirror=False)
+
+        # Without exemptions every broken canvas fails.
+        result_none = run_check(root, monkeypatch)
+        assert result_none.status == "fail", result_none.actual
+
+        exemptions = tmp_path / "completion_exemptions.yaml"
+        exemptions.write_text(
+            "iqe_exempt:\n"
+            "  util_page: utility\n"
+            "iqe_wired_via_alias:\n"
+            "  alias_page: wired via xyz\n"
+            "iqe_partial:\n"
+            "  partial_page: needs dispatch\n"
+            "iqe_required:\n"
+            "  needs_iqe: data-bearing backfill target\n",
+            encoding="utf-8",
+        )
+        result = run_check(root, monkeypatch, exemptions=exemptions)
+
+        # Still fails because the required canvas is NOT skipped.
+        assert result.status == "fail", result.actual
+        missing = [_norm(m) for m in result.missing]
+        # The three skip-bucket canvases are gone from the violations.
+        for skipped in ("util_page", "alias_page", "partial_page"):
+            assert not any(skipped in m for m in missing), (skipped, missing)
+        # The required canvas is still flagged.
+        assert any("needs_iqe" in m for m in missing), missing
+
+    def test_completion_exemptions_list_form_supported(self, tmp_path, monkeypatch):
+        """A bucket given as a plain list (not a mapping) is still honoured."""
+        root = make_root(tmp_path)
+        write_base_html(root)
+        build_page_canvas(root, "listed", complete=False, mirror=False)
+
+        exemptions = tmp_path / "completion_exemptions.yaml"
+        exemptions.write_text("iqe_exempt:\n  - listed\n", encoding="utf-8")
+        result = run_check(root, monkeypatch, exemptions=exemptions)
+
+        assert result.status == "pass", result.missing
 
     def test_no_canvases_passes(self, tmp_path, monkeypatch):
         """An empty templates tree is vacuously complete (guards the

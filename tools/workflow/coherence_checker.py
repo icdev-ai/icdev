@@ -839,6 +839,13 @@ def check_import_usage(changed_files: Optional[List[Path]] = None) -> CoherenceC
 _RUFF_GATE_RULES = ("F401", "F811", "F841")
 _RUFF_GATE_CONFIG = PROJECT_ROOT / "args" / "ruff_gate.yaml"
 _PAGE_COMPLETENESS_WHITELIST_CONFIG = PROJECT_ROOT / "args" / "page_completeness_whitelist.yaml"
+# IQE triage (tch-fix-04): canvases excused from the IQE/completeness gate because
+# they are utility/legacy, already wired under an abbreviated _CANVAS_MAP key, or
+# only need a small dispatch/seed backfill. The `iqe_required` bucket is NOT
+# skipped — those still fail the gate until backfilled.
+_COMPLETION_EXEMPTIONS_CONFIG = PROJECT_ROOT / "args" / "completion_exemptions.yaml"
+# Buckets unioned into the skip set; `iqe_required` is intentionally excluded.
+_COMPLETION_EXEMPTION_SKIP_BUCKETS = ("iqe_exempt", "iqe_wired_via_alias", "iqe_partial")
 
 
 def _load_ruff_gate_whitelist() -> Dict[str, Set[str]]:
@@ -891,22 +898,50 @@ def _load_page_completeness_whitelist() -> Set[str]:
         whitelisted_canvases:
           - canvas_name  # reason (task-id)
 
-    Returns a set of canvas names to skip. Missing/malformed file → empty set.
+    Additionally unions the IQE-triage exemptions from
+    args/completion_exemptions.yaml (tch-fix-04): the `iqe_exempt`,
+    `iqe_wired_via_alias`, and `iqe_partial` buckets are skipped; `iqe_required`
+    is intentionally NOT skipped so those canvases still fail the gate until
+    their IQE backfill lands.
+
+    Returns a set of canvas names to skip. Missing/malformed files → ignored.
     """
-    if not _PAGE_COMPLETENESS_WHITELIST_CONFIG.exists():
-        return set()
     try:
         import yaml  # type: ignore
     except ImportError:
         return set()
-    try:
-        raw = yaml.safe_load(_PAGE_COMPLETENESS_WHITELIST_CONFIG.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return set()
-    canvases = raw.get("whitelisted_canvases") or []
-    if not isinstance(canvases, list):
-        return set()
-    return {str(c).strip() for c in canvases if c}
+
+    skip: Set[str] = set()
+
+    # 1. Legacy grandfathered whitelist.
+    if _PAGE_COMPLETENESS_WHITELIST_CONFIG.exists():
+        try:
+            raw = yaml.safe_load(
+                _PAGE_COMPLETENESS_WHITELIST_CONFIG.read_text(encoding="utf-8")
+            ) or {}
+            canvases = raw.get("whitelisted_canvases")
+            if isinstance(canvases, list):
+                skip.update(str(c).strip() for c in canvases if c)
+        except Exception:
+            pass
+
+    # 2. IQE triage exemptions (tch-fix-04).
+    if _COMPLETION_EXEMPTIONS_CONFIG.exists():
+        try:
+            raw = yaml.safe_load(
+                _COMPLETION_EXEMPTIONS_CONFIG.read_text(encoding="utf-8")
+            ) or {}
+            for bucket in _COMPLETION_EXEMPTION_SKIP_BUCKETS:
+                entries = raw.get(bucket)
+                # Tolerate either {canvas: rationale} mappings or [canvas] lists.
+                if isinstance(entries, dict):
+                    skip.update(str(c).strip() for c in entries if c)
+                elif isinstance(entries, list):
+                    skip.update(str(c).strip() for c in entries if c)
+        except Exception:
+            pass
+
+    return skip
 
 
 def _run_ruff_lint(
