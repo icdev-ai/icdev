@@ -78,6 +78,28 @@ scoring:
   # Minimum composite score [0..1] required to advance a concept to the CoD gate.
   min_composite: 0.6
 
+# ── Spec generation ──────────────────────────────────────────────────────────
+# tools/foundry/spec_generator.py turns one approved concept into a feature spec
+# (markdown) + a canvas contract (the structured dict the task-graph templater
+# consumes). Generation is deterministic by default; the canvas contract always
+# carries >=1 table and >=1 route so the downstream skeleton is always buildable.
+spec:
+  llm_assist:
+    # When false, the spec prose is purely template-driven (air-gap safe). Flip to
+    # true to let the LLM Router enrich the architecture sketch — it NEVER blocks
+    # and falls back to the deterministic template on any failure. Default OFF.
+    enabled: false
+    function: code_generation     # LLM Router function name (llm_config.yaml)
+    max_tokens: 600
+  # Keywords whose presence in a concept's prose flips the contract booleans:
+  # needs_mcp -> emit an MCP adapter module; needs_reflex -> emit a Genesis reflex
+  # + a per-cycle runs table.
+  mcp_keywords:
+    [agent, tool, orchestrat, integrat, automat, api, pipeline, workflow, mcp]
+  reflex_keywords:
+    [continuous, monitor, schedule, periodic, autonomous, detect, watch, poll,
+     recurring, drift, anomaly]
+
 # ── Rate limits ────────────────────────────────────────────────────────────
 # Hard caps so a noisy harvest can't flood the board with autonomous work.
 rate_limits:
