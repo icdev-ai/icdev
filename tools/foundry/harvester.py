@@ -1,8 +1,8 @@
 # CUI // SP-CTI
-"""harvester.py — ACF signal harvester (acf-harvest-01).
+"""harvester.py — ACF signal harvester (acf-harvest-01 + acf-harvest-02).
 
 Pulls raw capability signals from the stores that ICDEV's EXISTING discovery
-engines already populate — it does NOT re-scan the web. The three engines wired
+engines already populate — it does NOT re-scan the web. The five engines wired
 here, with the public modules that own each store:
 
   * innovation — ``tools/innovation/signal_ranker`` (``innovation_signals``) +
@@ -11,11 +11,19 @@ here, with the public modules that own each store:
     (``creative_pain_points``, ``creative_feature_gaps``)
   * research   — ``tools/research/challenge_scorer`` (``research_challenges``) +
     ``tools/research/dossier_generator`` (``research_dossiers``)
+  * genesis    — Oracle lens predictions + Internal Awareness gap nodes, both
+    persisted in ``oracle_predictions`` (gap nodes carry
+    ``lens_name='internal_awareness'`` / ``prediction_type='gap::<rule>'``).
+  * telemetry  — ``tools/innovation/introspective_analyzer`` read-only analyses
+    (gate failures, unused tools, slow pipelines, knowledge gaps). The analyses
+    only SELECT from audit/knowledge stores and return findings; the harvester
+    never calls ``generate_introspective_signals`` (which would append).
 
 Reading the engines' persisted stores (rather than invoking their scoring entry
 points) keeps the harvest deterministic, air-gap safe and side-effect free: those
 entry points re-score and append to their own append-only tables, which a harvest
-must never trigger.
+must never trigger. The telemetry source follows the same rule by invoking only
+the analyzer's pure read functions.
 
 Each source row is normalized into the ``foundry_signals`` shape —
 ``(source_engine, source_ref, theme, raw_score, keywords)`` — and persisted
@@ -24,6 +32,12 @@ the active security context. Per-source caps come from ``args/foundry_config.yam
 (``sources.<engine>.enabled`` + ``sources.<engine>.max_signals``) so one noisy
 store can't dominate a cycle. Reads are best-effort: a disabled, empty or
 not-yet-migrated source contributes zero signals, never an error.
+
+Cross-source dedup (acf-harvest-02): after per-source caps are applied, signals
+are collapsed by a SHA-256 of their normalized ``theme`` + sorted ``keywords`` so
+the SAME capability surfaced by two engines (e.g. an innovation signal and a
+research challenge naming the same gap) is persisted once. The highest-scoring
+representative wins; first-seen order is preserved.
 
 Public API
 ----------
@@ -36,6 +50,7 @@ CLI
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -151,7 +166,25 @@ _SOURCES: tuple[dict, ...] = (
         "keywords_col": None,
         "tag_cols": (),
     },
+    # Genesis: Oracle lens predictions AND Internal Awareness gap nodes both live
+    # in oracle_predictions (gap_detector writes gaps as oracle_predictions rows
+    # under lens_name='internal_awareness'). confidence [0..1] is the raw score;
+    # prediction_type ('gap::route_not_listed', 'risk::…', …) + severity become
+    # the clustering keywords.
+    {
+        "engine": "genesis",
+        "table": "oracle_predictions",
+        "theme_col": "prediction_text",
+        "score_col": "confidence",
+        "keywords_col": None,
+        "tag_cols": ("prediction_type", "severity"),
+    },
 )
+
+# Engines harvested each cycle, in deterministic order. innovation/creative/
+# research/genesis are table-backed (``_SOURCES`` descriptors); telemetry is
+# computed from the introspective analyzer's read-only analyses.
+_ENGINES: tuple[str, ...] = ("innovation", "creative", "research", "genesis", "telemetry")
 
 
 def _caller_context() -> tuple[str, str]:
@@ -241,6 +274,124 @@ def _harvest_source(conn: Any, spec: dict, cap: int) -> list[dict]:
     return signals
 
 
+# =========================================================================
+# TELEMETRY SOURCE (introspective analyzer — read-only analyses)
+# =========================================================================
+# The four internal-telemetry analyses the foundry harvests. Each is a PURE READ
+# (SELECTs audit_trail / knowledge_patterns, returns findings) — none of them
+# persists, so invoking them keeps the harvest side-effect free. We deliberately
+# skip generate_introspective_signals(), which WOULD append to innovation_signals.
+_TELEMETRY_ANALYSES: tuple[str, ...] = (
+    "gate_failures",
+    "unused_tools",
+    "slow_pipelines",
+    "knowledge_gaps",
+)
+
+# Finding fields (in priority order) that make good cluster keywords per analysis
+# type. The analysis type itself is always the first keyword.
+_TELEMETRY_TAG_FIELDS: tuple[str, ...] = (
+    "gate_event_type",
+    "event_type",
+    "stage",
+    "pattern_type",
+    "check",
+)
+
+
+def _finding_ref(atype: str, finding: dict) -> str:
+    """Stable, unique source_ref for one telemetry finding (hash of its payload
+    so re-running the same analysis maps to the same ref)."""
+    payload = json.dumps(finding, sort_keys=True, default=str)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+    return f"introspective:{atype}:{digest}"
+
+
+def _telemetry_keywords(atype: str, finding: dict) -> list[str]:
+    """Cluster keywords for a telemetry finding: the analysis type plus any
+    salient string tags present on the finding."""
+    out = [atype]
+    for field in _TELEMETRY_TAG_FIELDS:
+        val = finding.get(field)
+        if val is not None and str(val).strip():
+            out.append(str(val).strip())
+    return out
+
+
+def _harvest_telemetry(cap: int) -> list[dict]:
+    """Normalize internal-telemetry findings into foundry_signals.
+
+    Invokes the introspective analyzer's read-only analyses and reuses its own
+    ``_signal_title`` / ``_signal_score`` so telemetry signals are scored exactly
+    as they would be in the innovation pipeline. Best-effort: a missing module,
+    missing DB or skipped analysis contributes zero signals, never an error.
+    """
+    try:
+        from tools.innovation import introspective_analyzer as ia
+    except Exception as exc:  # noqa: BLE001 - analyzer may be absent in slim envs
+        logger.debug("telemetry skip (analyzer unavailable): %s", exc)
+        return []
+
+    signals: list[dict] = []
+    for atype in _TELEMETRY_ANALYSES:
+        fn = getattr(ia, f"analyze_{atype}", None)
+        if fn is None:
+            continue
+        try:
+            result = fn()
+        except Exception as exc:  # noqa: BLE001 - one analysis failing must not abort
+            logger.debug("telemetry analysis %s skip: %s", atype, exc)
+            continue
+        if not result or result.get("skipped"):
+            continue
+        for finding in result.get("findings", []):
+            if not isinstance(finding, dict):
+                continue
+            try:
+                theme = ia._signal_title(atype, finding)
+                score = ia._signal_score(atype, finding)
+            except Exception:  # noqa: BLE001 - skip a malformed finding, keep the rest
+                continue
+            signals.append(
+                {
+                    "source_engine": "telemetry",
+                    "source_ref": _finding_ref(atype, finding),
+                    "theme": theme,
+                    "raw_score": _coerce_score(score),
+                    "keywords": _telemetry_keywords(atype, finding),
+                }
+            )
+    return signals
+
+
+# =========================================================================
+# CROSS-SOURCE DEDUP
+# =========================================================================
+def _dedupe_key(sig: dict) -> str:
+    """SHA-256 of the normalized theme + sorted keywords. Two signals with the
+    same key describe the same capability regardless of which engine found it."""
+    theme = (str(sig.get("theme") or "")).strip().lower()
+    kws = sorted({str(k).strip().lower() for k in sig.get("keywords") or [] if str(k).strip()})
+    payload = theme + "\x1f" + ",".join(kws)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _dedupe_cross_source(signals: list[dict]) -> list[dict]:
+    """Collapse signals sharing a dedup key to one, keeping the highest-scoring
+    representative. First-seen order is preserved so output stays deterministic."""
+    best: dict[str, dict] = {}
+    order: list[str] = []
+    for sig in signals:
+        key = _dedupe_key(sig)
+        existing = best.get(key)
+        if existing is None:
+            best[key] = sig
+            order.append(key)
+        elif sig["raw_score"] > existing["raw_score"]:
+            best[key] = sig
+    return [best[k] for k in order]
+
+
 _INSERT_SQL = (
     "INSERT INTO foundry_signals "
     "(run_id, source_engine, source_ref, theme, raw_score, keywords, "
@@ -274,40 +425,51 @@ def harvest(
 
     tenant_id, classification = _caller_context()
     run_id_str = str(run_id)
-    harvested: list[dict] = []
+    collected: list[dict] = []
 
     try:
-        # Collect per engine so the cap is applied across that engine's stores.
-        for engine in ("innovation", "creative", "research"):
+        # Collect per engine so the cap is applied across that engine's stores
+        # BEFORE cross-source dedup — one noisy store can't dominate a cycle.
+        for engine in _ENGINES:
             sc = _source_cfg(cfg, engine)
             if not sc["enabled"]:
                 logger.debug("harvest: source '%s' disabled", engine)
                 continue
             cap = sc["max_signals"]
-            engine_signals: list[dict] = []
-            for spec in _SOURCES:
-                if spec["engine"] != engine:
-                    continue
-                engine_signals.extend(_harvest_source(conn, spec, cap))
+            if engine == "telemetry":
+                engine_signals = _harvest_telemetry(cap)
+            else:
+                engine_signals = []
+                for spec in _SOURCES:
+                    if spec["engine"] != engine:
+                        continue
+                    engine_signals.extend(_harvest_source(conn, spec, cap))
             # Strongest signals first, then enforce the hard per-source cap.
             engine_signals.sort(key=lambda s: s["raw_score"], reverse=True)
-            engine_signals = engine_signals[:cap]
+            collected.extend(engine_signals[:cap])
 
-            for sig in engine_signals:
-                conn.execute(
-                    _INSERT_SQL,
-                    (
-                        run_id_str,
-                        sig["source_engine"],
-                        sig["source_ref"],
-                        sig["theme"],
-                        sig["raw_score"],
-                        json.dumps(sig["keywords"]),
-                        tenant_id,
-                        classification,
-                    ),
-                )
-            harvested.extend(engine_signals)
+        # Cross-source dedup: the same capability surfaced by two engines collapses
+        # to one row (highest score wins). Applied AFTER per-source caps so dedup
+        # never lets one source eat another's budget.
+        before = len(collected)
+        harvested = _dedupe_cross_source(collected)
+        if before != len(harvested):
+            logger.debug("harvest dedup: %d -> %d signals", before, len(harvested))
+
+        for sig in harvested:
+            conn.execute(
+                _INSERT_SQL,
+                (
+                    run_id_str,
+                    sig["source_engine"],
+                    sig["source_ref"],
+                    sig["theme"],
+                    sig["raw_score"],
+                    json.dumps(sig["keywords"]),
+                    tenant_id,
+                    classification,
+                ),
+            )
 
         conn.commit()
     finally:
