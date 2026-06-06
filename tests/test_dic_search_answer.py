@@ -114,6 +114,8 @@ def test_to_dict_shape(monkeypatch):
         "result_count",
         "refusal_reason",
         "origin",
+        "grounding_quality",
+        "weak_grounding",
     }
     assert isinstance(d["citations"], list)
     assert d["citations"][0]["doc_id"] == "doc-1"
@@ -225,3 +227,63 @@ def test_none_llm_response_degrades(monkeypatch):
     ans = se.DICSearchEngine().answer("q")
     assert ans.grounded is False
     assert ans.refusal_reason == "llm_unavailable"
+
+
+# --------------------------------------------------------------------------- #
+# Grounding-quality anomaly assessment (aiify-opp-6123:
+# hardcoded_threshold -> anomaly_detection). The chat path no longer trusts the
+# top-k blindly — it scores the actual excerpts with the deterministic
+# relevance-anomaly detector and surfaces a weak-grounding flag.
+# --------------------------------------------------------------------------- #
+
+def _weak_result(i):
+    # Best hit is itself weak (score below _RELEVANCE_WEAK = 0.30).
+    return se.DICSearchResult(
+        chunk_id=f"chunk-{i}",
+        doc_id=f"doc-{i}",
+        doc_title=f"Doc {i}",
+        content="Marginally related text.",
+        score=0.10 - i * 0.01,
+        citation=se.Citation(doc_id=f"doc-{i}", doc_title=f"Doc {i}", chunk_id=f"chunk-{i}"),
+    )
+
+
+def test_strong_grounding_not_flagged(monkeypatch):
+    # _result(1)=0.9, _result(2)=0.8 — a strong best hit, no relevance cliff.
+    _patch_search(monkeypatch, [_result(1), _result(2)])
+    _patch_router(monkeypatch)
+    ans = se.DICSearchEngine().answer("q")
+    assert ans.weak_grounding is False
+    assert ans.grounding_quality["severity"] == "low"
+    assert ans.grounding_quality["low_confidence"] is False
+    assert ans.grounding_quality["top_score"] >= se._RELEVANCE_STRONG
+
+
+def test_weak_grounding_flagged(monkeypatch):
+    # All hits below the weak band -> low_confidence -> weak_grounding True.
+    _patch_search(monkeypatch, [_weak_result(i) for i in range(5)])
+    _patch_router(monkeypatch)
+    ans = se.DICSearchEngine().answer("q")
+    assert ans.weak_grounding is True
+    assert ans.grounding_quality["low_confidence"] is True
+    assert ans.grounding_quality["top_score"] < se._RELEVANCE_WEAK
+    # Grounding is assessed on the same evidence that is cited / synthesized.
+    assert ans.grounded is True  # the LLM still answered; the flag is advisory
+
+
+def test_grounding_assessed_on_refusal_with_evidence(monkeypatch):
+    # Even when the model declines, the grounding signal is still reported.
+    _patch_search(monkeypatch, [_weak_result(i) for i in range(5)])
+    _patch_router(monkeypatch, content="INSUFFICIENT_EVIDENCE")
+    ans = se.DICSearchEngine().answer("q")
+    assert ans.refusal_reason == "insufficient_evidence"
+    assert ans.weak_grounding is True
+
+
+def test_no_evidence_has_empty_grounding(monkeypatch):
+    _patch_search(monkeypatch, [])
+    _patch_router(monkeypatch)
+    ans = se.DICSearchEngine().answer("q")
+    assert ans.refusal_reason == "no_evidence"
+    assert ans.grounding_quality == {}
+    assert ans.weak_grounding is False
