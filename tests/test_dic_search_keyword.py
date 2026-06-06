@@ -1,7 +1,11 @@
 """Tests for embedding-based keyword-list search in the DIC search engine.
 
-aiify-opp-6091: keyword_list_search -> embedding_search. A classic keyword-list
-filter matches a document only when it contains one of an exact list of keywords.
+aiify-opp-6091 (also covers the duplicate aiify-opp-6064, the serialisers.py
+sibling of the same paperless-ngx src/documents keyword filter — the single
+``keyword_search`` capability below, with ``DICKeywordSearchResult.to_dict()``
+serialization, covers both): keyword_list_search -> embedding_search. A classic
+keyword-list filter matches a document only when it contains one of an exact list
+of keywords.
 ``DICSearchEngine.keyword_search`` upgrades this to semantic embedding search: the
 keywords are embedded and matched against chunk embeddings, so a document is
 retrieved when it is semantically related to the keywords even without the literal
