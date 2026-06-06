@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS slides_decks (
     pptx_path     TEXT,
     slide_count   INTEGER DEFAULT 0,
     error_message TEXT,
+    tags          TEXT DEFAULT '',
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at  TIMESTAMP
 );
@@ -105,6 +106,7 @@ CREATE TABLE IF NOT EXISTS slides_decks (
     pptx_path     TEXT,
     slide_count   INTEGER DEFAULT 0,
     error_message TEXT,
+    tags          TEXT DEFAULT '',
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     completed_at  DATETIME
 );
@@ -162,6 +164,15 @@ def _migrate_viz_columns(conn) -> None:
                 conn.rollback()
             except Exception:
                 pass
+    # Deck-level additive columns (H5: tags for search/organize).
+    try:
+        conn.execute("ALTER TABLE slides_decks ADD COLUMN tags TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
 
 def init_db() -> None:

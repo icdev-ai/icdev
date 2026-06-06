@@ -63,8 +63,7 @@ def index():
     conn = _conn()
     try:
         rows = conn.execute(
-            "SELECT deck_id, title, deck_type, theme, status, slide_count, "
-            "created_at, completed_at FROM slides_decks ORDER BY created_at DESC LIMIT 50"
+            "SELECT * FROM slides_decks ORDER BY created_at DESC LIMIT 100"
         ).fetchall()
         decks = [dict(row) for row in rows]
     except Exception:
@@ -183,6 +182,76 @@ def present(deck_id: int):
 
 
 # ── API Routes ───────────────────────────────────────────────────────────────
+
+@slides_bp.route("/api/<int:deck_id>/rename", methods=["POST"])
+def api_rename(deck_id: int):
+    """Rename a deck and/or set its tags. Body: {title?, tags?}."""
+    data = request.get_json(silent=True) or {}
+    sets, params = [], []
+    if "title" in data:
+        sets.append("title = ?"); params.append(str(data["title"])[:255] or "Untitled")
+    if "tags" in data:
+        sets.append("tags = ?"); params.append(str(data["tags"])[:300])
+    if not sets:
+        return jsonify({"error": "nothing to update"}), 400
+    conn = _conn()
+    try:
+        conn.execute(f"UPDATE slides_decks SET {', '.join(sets)} WHERE deck_id = ?", (*params, deck_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True})
+
+
+@slides_bp.route("/api/<int:deck_id>/duplicate-deck", methods=["POST"])
+def api_duplicate_deck(deck_id: int):
+    """Clone a deck and all its slides. Returns the new deck_id."""
+    conn = _conn()
+    try:
+        d = conn.execute("SELECT * FROM slides_decks WHERE deck_id = ?", (deck_id,)).fetchone()
+        if not d:
+            return jsonify({"error": "deck not found"}), 404
+        d = dict(d)
+        cur = conn.execute(
+            "INSERT INTO slides_decks (title, deck_type, theme, status, source_types, slide_count) "
+            "VALUES (?, ?, ?, ?, ?, ?) RETURNING deck_id",
+            ((str(d.get("title", "Deck")) + " (copy)")[:255], d.get("deck_type", "custom"),
+             d.get("theme", "midnight_executive"), "completed",
+             d.get("source_types", "[]"), d.get("slide_count", 0)),
+        )
+        new_id = int(cur.fetchone()[0])
+        rows = conn.execute(
+            "SELECT * FROM slides_slides WHERE deck_id = ? ORDER BY position", (deck_id,)
+        ).fetchall()
+        for r in rows:
+            r = dict(r)
+            conn.execute(
+                "INSERT INTO slides_slides (deck_id, position, slide_type, title, bullets, speaker_notes, "
+                "image_path, chart_json, table_json, diagram_json, kpis_json, dashboard_json, elements_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (new_id, r.get("position"), r.get("slide_type", "content"), r.get("title", ""),
+                 r.get("bullets", "[]"), r.get("speaker_notes", ""), r.get("image_path"),
+                 r.get("chart_json"), r.get("table_json"), r.get("diagram_json"),
+                 r.get("kpis_json"), r.get("dashboard_json"), r.get("elements_json")),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "deck_id": new_id})
+
+
+@slides_bp.route("/api/<int:deck_id>", methods=["DELETE"])
+def api_delete_deck(deck_id: int):
+    """Delete a deck and all its slides."""
+    conn = _conn()
+    try:
+        conn.execute("DELETE FROM slides_slides WHERE deck_id = ?", (deck_id,))
+        conn.execute("DELETE FROM slides_decks WHERE deck_id = ?", (deck_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True})
+
 
 @slides_bp.route("/api/templates/new", methods=["POST"])
 def api_template_new():
