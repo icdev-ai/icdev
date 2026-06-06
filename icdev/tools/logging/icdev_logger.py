@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
@@ -56,6 +57,59 @@ class _JsonFormatter(logging.Formatter):
         )
 
 
+class _SafeTimedRotatingFileHandler(TimedRotatingFileHandler):
+    """TimedRotatingFileHandler whose rollover never crashes logging — on any OS.
+
+    The stdlib rollover is rename-based and can raise ``OSError`` whenever
+    the move can't complete: another process holding the file open (on
+    Windows this is ``PermissionError [WinError 32]``; on POSIX it can be a
+    permission/cross-device/transient FS error), a read-only mount, etc.
+    The default handler lets that propagate out of ``emit()`` as a
+    "--- Logging error ---" traceback. Here we degrade to best-effort on
+    every platform: reopen the current file and push ``rolloverAt`` forward
+    so we keep appending (and don't retry the failing move on every emit)
+    until the next interval. No platform-specific code paths.
+    """
+
+    def doRollover(self):  # noqa: N802 (stdlib name)
+        try:
+            super().doRollover()
+        except OSError:
+            if self.stream is None:
+                try:
+                    self.stream = self._open()
+                except OSError:
+                    pass
+            try:
+                cur = int(time.time())
+                new_at = self.computeRollover(cur)
+                while new_at <= cur:
+                    new_at += self.interval
+                self.rolloverAt = new_at
+            except Exception:
+                pass
+
+
+class _SafeRotatingFileHandler(RotatingFileHandler):
+    """RotatingFileHandler whose size-based rollover never crashes logging — on any OS.
+
+    Same cross-platform rename hazard as ``_SafeTimedRotatingFileHandler``
+    (a held file handle, permission, cross-device, or transient FS error).
+    On failure, reopen the current file and keep appending (best-effort);
+    rotation is retried on a later emit. No platform-specific code paths.
+    """
+
+    def doRollover(self):  # noqa: N802 (stdlib name)
+        try:
+            super().doRollover()
+        except OSError:
+            if self.stream is None:
+                try:
+                    self.stream = self._open()
+                except OSError:
+                    pass
+
+
 def _load_config() -> Dict[str, Any]:
     global _CONFIG_CACHE
     if _CONFIG_CACHE is not None:
@@ -83,9 +137,12 @@ def _build_handlers(component: str, cfg: Dict[str, Any]) -> list:
     fmt = _JsonFormatter()
     handlers = []
 
-    # Time-based rotation (daily at midnight, 30-day retention)
+    # Time-based rotation (daily at midnight, 30-day retention).
+    # OS-agnostic safe subclass: a rollover failure (e.g. another process
+    # holding the file open, as commonly happens on Windows) degrades to
+    # best-effort on any platform instead of crashing logging.
     timed_path = log_dir / f"{component}.ndjson"
-    timed = TimedRotatingFileHandler(
+    timed = _SafeTimedRotatingFileHandler(
         timed_path,
         when=rotation.get("when", "midnight"),
         backupCount=int(rotation.get("retention_days", 30)),
@@ -94,9 +151,9 @@ def _build_handlers(component: str, cfg: Dict[str, Any]) -> list:
     timed.setFormatter(fmt)
     handlers.append(timed)
 
-    # Size-based rotation (10 MB, 5 backups)
+    # Size-based rotation (10 MB, 5 backups) — same OS-agnostic safe subclass.
     sized_path = log_dir / f"{component}_size.ndjson"
-    sized = RotatingFileHandler(
+    sized = _SafeRotatingFileHandler(
         sized_path,
         maxBytes=int(rotation.get("max_bytes", 10_485_760)),
         backupCount=5,

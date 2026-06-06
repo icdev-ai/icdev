@@ -71,8 +71,22 @@ def _parse_task_id(task_id: str) -> Optional[tuple[str, str]]:
     return prefix, epic
 
 
-def _load_yaml_raw() -> tuple[dict, str]:
-    """Load projects.yaml, return (parsed_dict, original_text)."""
+def _load_yaml_raw() -> tuple[Optional[dict], str]:
+    """Load projects.yaml, return (parsed_dict, original_text).
+
+    Returns ``(None, text)`` when the file exists but is malformed YAML.
+    A malformed file is logged loudly (with line/column) and the caller
+    must skip the sync WITHOUT writing — overwriting would clobber the
+    human's in-progress edit.
+
+    Why this matters: ``projects.yaml`` is hand-editable (name/description/
+    briefs are human-owned) and the real caller (api/kanban.py) runs
+    ``sync_projects`` in a *daemon thread*. Before this guard, a single
+    unquoted-colon hand-edit raised inside that thread where the exception
+    is invisible — so project auto-registration silently stopped for every
+    task created afterward, and the tool could not self-heal (it could not
+    load the file to re-dump the corrected quoting).
+    """
     try:
         import yaml
     except ImportError:
@@ -80,7 +94,27 @@ def _load_yaml_raw() -> tuple[dict, str]:
     if not _PROJECTS_YAML.exists():
         return {"projects": []}, ""
     text = _PROJECTS_YAML.read_text(encoding="utf-8")
-    data = yaml.safe_load(text) or {}
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        loc = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
+        logger.error(
+            "kanban_project_sync: %s is malformed YAML%s — skipping sync; no "
+            "projects will be registered until it is fixed. Common cause: a "
+            "hand-edited name/description/brief containing an unquoted ': ' "
+            "(colon-space) — wrap that value in single quotes. Parser said: %s",
+            _PROJECTS_YAML, loc, getattr(exc, "problem", exc),
+        )
+        return None, text
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        logger.error(
+            "kanban_project_sync: %s did not parse to a mapping (got %s) — "
+            "skipping sync.", _PROJECTS_YAML, type(data).__name__,
+        )
+        return None, text
     if "projects" not in data:
         data["projects"] = []
     return data, text
@@ -175,6 +209,16 @@ def sync_projects(dry_run: bool = False) -> dict:
         return {"new_projects": [], "updated_projects": [], "unchanged": 0, "written": False}
 
     data, _ = _load_yaml_raw()
+    if data is None:
+        # Malformed projects.yaml — already logged with line/column by
+        # _load_yaml_raw. Honor the documented "best-effort, never raises"
+        # contract (the api/kanban.py caller runs us in a daemon thread) and
+        # do NOT write, so the human's broken edit is preserved for repair.
+        return {
+            "new_projects": [], "updated_projects": [], "unchanged": 0,
+            "written": False, "dry_run": dry_run,
+            "error": "projects_yaml_malformed",
+        }
     projects: list = data.get("projects", [])
 
     # Build lookup: prefix -> project entry (by REFERENCE, not index). Indices
