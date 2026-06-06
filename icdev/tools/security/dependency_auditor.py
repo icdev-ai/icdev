@@ -92,6 +92,28 @@ def audit_python(
         "raw_output": "",
     }
 
+    # A "scan THIS project" call must never silently audit the whole installed
+    # Python environment. pip-audit invoked with no --requirement does exactly
+    # that, surfacing ambient/repo-wide CVEs unrelated to the target. So when the
+    # project path carries no Python dependency manifest, skip cleanly with zero
+    # findings instead of scanning the environment. (Regression: SIPA's PR-diff
+    # gate stages only the changed *.py files — a manifest-less subtree — and was
+    # quarantining benign changes on ambient CVEs that no changed file introduced.)
+    if not (root / "requirements.txt").exists() and not (root / "pyproject.toml").exists():
+        result["raw_output"] = (
+            "No requirements.txt or pyproject.toml in project path; skipping "
+            "pip-audit (a manifest-less audit would scan the whole environment)."
+        )
+        result["summary"] = {
+            "total": 0,
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "unknown": 0,
+        }
+        return result
+
     # Check if pip-audit is available
     try:
         version_check = subprocess.run(

@@ -760,13 +760,14 @@ def _detect_signatures(staged: Path) -> Optional[list[dict]]:
 
     This is a monkeypatch seam: tests replace it to drive either branch
     deterministically without depending on the Semgrep binary.
+
+    ``no_git_ignore=True`` is mandatory here: the quarantine staging tree lives
+    under ``.tmp/`` (gitignored), so without it Semgrep walks up to the repo
+    ``.gitignore``, skips every staged file, and returns ``[]`` — silently
+    disabling the malware-signature scan (eqo-sipa-s1).
     """
     from tools.aiify.pattern_classifier import run_semgrep
 
-    # ``no_git_ignore=True`` is mandatory here: the quarantine tree lives under a
-    # gitignored path (``.tmp/integrity_quarantine``). Without it Semgrep honors
-    # .gitignore, scans zero files, and returns ``[]`` — a *clean* result that
-    # silently masks real malware (eqo-sipa-s1).
     raw = run_semgrep(str(staged), _SIGNATURE_RULES_DIR, no_git_ignore=True)
     if raw is None:
         return None

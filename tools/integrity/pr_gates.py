@@ -1,274 +1,303 @@
 # CUI // SP-CTI
-"""SIPA — Software Integrity & Provenance Assessor — Pre-merge / PR gate (eqo-sipa-01).
+"""SIPA — Software Integrity & Provenance Assessor — PR diff gate.
 
-``assess_changed_files(base='origin/main', ...)`` runs a SIPA assessment over **only
-the Python files a branch changed** (``git diff`` against ``base``), so a code-quality
-/ pre-merge gate can block a PR that introduces a known-bad signature or a high-risk
-behavioral footprint — without re-scanning the whole repository every time.
+``assess_changed_files(base, mode, conn)`` runs a SIPA assessment over **only the
+Python files changed on a branch** (the ``git diff`` against a base ref), so a
+pre-merge / CI hook can block a pull request that introduces unauthorized or
+malicious code without re-scanning the whole tree on every push.
 
-It is a thin orchestration over the existing SIPA engine building blocks — it does
-NOT reimplement scanning:
+Pipeline (a thin orchestration over the existing SIPA building blocks — nothing
+here re-implements scanning):
 
-  1. ``git diff --name-only <base>...HEAD`` (or ``--cached``) -> changed ``*.py``
-     paths that still exist on disk.
-  2. Assemble just those files into a throwaay source tree, **preserving their
-     repo-relative paths** (with parent dirs) so intra-package imports still resolve
-     for the AST capability extractor, then hand that subset to
-     :func:`tools.integrity.ingest.stage` — which quarantines it under
-     ``.tmp/integrity_quarantine/<assessment_id>/`` exactly like any other artifact.
-  3. ``scanners.scan_all`` (SAST / secrets / deps / malicious-signature) +
-     ``capability_extractor.extract_and_persist`` (AST behavioral manifest) +
-     ``scoring.score`` over the staged subset — the same stages and thresholds the
-     full ``engine.assess`` pipeline uses.
-  4. Return the verdict (``allow`` / ``review`` / ``quarantine``) + risk score +
-     findings; the CLI maps the verdict to an exit code via
-     :func:`tools.integrity.engine.gate_exit_code` (exit 1 on a blocking verdict).
+  1. ``git diff --name-only <base>...HEAD`` (or ``--cached`` for the staged index)
+     and keep the changed ``*.py`` paths plus any changed dependency manifest
+     (requirements.txt, package.json, go.mod, …) that still exists on disk (a
+     deleted file cannot be assessed). Staging the changed manifest — and only the
+     changed manifest — keeps the deps / SCA scanner scoped to the PR instead of
+     auditing the ambient repo environment.
+  2. Copy just those files into a throw-away subtree under the quarantine root,
+     **preserving their repo-relative paths** so intra-package imports still
+     resolve and every finding's ``file_path`` maps back to the real PR path.
+  3. ``ingest.stage`` the subtree (quarantine-first staging + assessment row) ->
+     ``scanners.scan_all`` -> ``capability_extractor.extract_and_persist`` ->
+     ``scoring.score`` over that staged subset.
+  4. Return ``{verdict, risk_score, findings, files_assessed}``; the CLI maps the
+     verdict to an exit code via the shared ``engine.gate_exit_code`` (exit 1 on a
+     blocking verdict — QUARANTINE by default — exit 0 otherwise).
 
-SECURITY INVARIANTS (inherited from the engine stages — the SIPA static-only contract):
-  * **Never executes the changed code.** The subset is *copied* into quarantine and
-    analyzed statically (isolated scanner subprocesses + AST parsing). The only
-    subprocess here is a fixed-arg, ``shell=False`` ``git diff`` (read-only); nothing
-    imports, ``exec``-es, or runs the changed files. ``shell=True`` is banned across
-    ``tools/integrity/`` (enforced by ``test_integrity_no_shell_exec.py``).
-  * **All DB access via the threaded RLS-aware connection** (or one opened internally).
+SECURITY INVARIANTS (inherited from every reused stage — the SIPA static-only
+contract): the changed files are only *copied* into quarantine and analyzed
+statically (isolated scanner subprocesses + AST parsing). Nothing here imports,
+``exec``-es, or runs the changed code. The single ``subprocess`` call is a
+fixed-arg, ``shell=False`` ``git diff`` that reads file *names* only.
 
-The feature flag ``ICDEV_INTEGRITY_ENABLED`` (``engine.is_enabled``) gates the *CLI /
-automatic* invocation (a disabled canvas no-ops to a pass); ``assess_changed_files``
-itself is the explicit primitive and runs whenever a caller invokes it directly,
-mirroring ``engine.assess``.
+The feature flag ``ICDEV_INTEGRITY_ENABLED`` gates the *CLI* (so a CI hook no-ops
+to a pass when the canvas is toggled off); :func:`assess_changed_files` is the
+explicit primitive and runs whenever a caller invokes it directly (mirrors
+``engine.assess``).
 """
 from __future__ import annotations
 
 import shutil
-# subprocess is used ONLY for a fixed-arg, shell=False ``git diff`` (read-only);
-# the changed files are never executed. shell=True is banned under tools/integrity/.
+# subprocess is used ONLY for a fixed-arg, shell=False ``git diff --name-only``
+# (file names only); the changed code is never executed.
 import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
-from tools.integrity import capability_extractor, engine, ingest, scanners, scoring
-from tools.integrity.db.init_db import init_db
-
+from tools.integrity import (
+    capability_extractor,
+    engine,
+    ingest,
+    scanners,
+    scoring,
+)
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.integrity.pr_gates")
 
 BASE_DIR = Path(__file__).resolve().parents[2]  # tools/integrity/pr_gates.py -> repo root
 
+# Default base ref the branch is diffed against (the integration target).
+DEFAULT_BASE = "origin/main"
 
-# --------------------------------------------------------------------------- #
-# Changed-file discovery (git diff — fixed-arg, shell=False, read-only)
-# --------------------------------------------------------------------------- #
-def changed_py_files(
-    base: str = "origin/main",
-    cached: bool = False,
-    repo_root: Optional[Path] = None,
-) -> list[str]:
-    """Return the repo-relative ``*.py`` paths a branch changed, that still exist.
+# Fixed timeout for the name-only diff; a hung git is killed, not left running.
+_DIFF_TIMEOUT = 60
 
-    Runs ``git diff --name-only <base>...HEAD`` (three-dot: changes on HEAD since the
-    merge-base with ``base``) or, when ``cached`` is set, ``git diff --cached
-    --name-only`` (the staged index). The result is filtered to ``.py`` files that are
-    still present on disk — a deleted/renamed-away file cannot be staged for scanning.
+# Dependency manifests we stage alongside the changed *.py files so the deps /
+# SCA scanner stays scoped to the *changed subset*: a PR that bumps a dependency
+# has its manifest assessed, but a benign code-only change stages no manifest and
+# the deps scanner finds nothing (rather than auditing the ambient repo
+# environment). Basenames are matched case-sensitively; ``*.csproj`` by suffix.
+_DEP_MANIFESTS = {
+    "requirements.txt",
+    "pyproject.toml",
+    "setup.py",
+    "package.json",
+    "package-lock.json",
+    "go.mod",
+    "go.sum",
+    "Cargo.toml",
+    "Cargo.lock",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+}
 
-    Args:
-        base: the ref to diff against (default ``origin/main``); ignored when ``cached``.
-        cached: diff the staged index instead of ``base...HEAD``.
-        repo_root: the git working tree to run in (default: the ICDEV repo root). Tests
-            point this at a throwaway repo.
 
-    Returns:
-        Sorted list of repo-relative POSIX-style paths (e.g. ``tools/foo/bar.py``).
-        Empty when nothing Python changed.
+def _is_dep_manifest(name: str) -> bool:
+    """True when ``name`` (a repo-relative path) is a dependency manifest.
+
+    Matches the known manifest basenames plus ``*.csproj`` (C# project files);
+    ``setup.py`` is intentionally included even though it ends in ``.py`` so the
+    intent is explicit (it is staged either way).
     """
-    root = Path(repo_root) if repo_root else BASE_DIR
+    base = name.replace("\\", "/").rsplit("/", 1)[-1]
+    return base in _DEP_MANIFESTS or base.endswith(".csproj")
+
+
+class GitDiffError(RuntimeError):
+    """Raised when the ``git diff`` that drives the gate cannot be computed."""
+
+
+# --------------------------------------------------------------------------- #
+# Changed-file discovery
+# --------------------------------------------------------------------------- #
+def _git_changed_files(base: str, cached: bool, repo_root: Path) -> list[str]:
+    """Repo-relative paths changed on the branch, via a fixed-arg ``git diff``.
+
+    ``--cached`` diffs the staged index against HEAD (``git diff --cached``);
+    otherwise the branch is diffed against ``base`` with the three-dot
+    ``<base>...HEAD`` form (changes since the merge-base, i.e. what the PR adds).
+    ``shell=False`` and a fixed arg list — the refs are never interpolated into a
+    shell string.
+    """
     git = shutil.which("git") or "git"
     if cached:
         args = [git, "diff", "--cached", "--name-only"]
     else:
-        # Three-dot: only the changes HEAD introduced since branching off base.
         args = [git, "diff", "--name-only", f"{base}...HEAD"]
 
     try:
-        # Fixed arg list, shell=False, read-only diff — safe by construction.
-        proc = subprocess.run(  # nosec B603
+        proc = subprocess.run(  # nosec B603 — fixed arg list, shell=False, names only
             args,
-            cwd=str(root),
+            cwd=str(repo_root),
             shell=False,
             capture_output=True,
             text=True,
+            timeout=_DIFF_TIMEOUT,
             check=False,
         )
-    except FileNotFoundError:
-        logger.warning("changed_py_files: git executable not found on PATH")
-        return []
+    except FileNotFoundError as exc:  # git binary absent
+        raise GitDiffError("git executable not found on PATH; cannot diff") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise GitDiffError(f"git diff timed out after {_DIFF_TIMEOUT}s") from exc
 
     if proc.returncode != 0:
-        logger.warning(
-            "changed_py_files: git diff failed (exit %s): %s",
-            proc.returncode, (proc.stderr or "").strip(),
-        )
-        return []
+        detail = (proc.stderr or proc.stdout or "").strip()
+        raise GitDiffError(f"git diff failed (exit {proc.returncode}): {detail}")
 
-    files: list[str] = []
-    for line in proc.stdout.splitlines():
-        rel = line.strip()
-        if not rel or not rel.endswith(".py"):
-            continue
-        if (root / rel).is_file():
-            files.append(rel.replace("\\", "/"))
-    return sorted(set(files))
+    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
-def _assemble_subset(files: list[str], repo_root: Path, dest_root: Path) -> int:
-    """Copy each changed file into ``dest_root`` preserving its repo-relative path.
+def _changed_assessable_files(base: str, cached: bool, repo_root: Path) -> list[str]:
+    """The changed ``*.py`` paths + dependency manifests that still exist on disk.
 
-    Preserving the relative layout (with parent dirs) keeps intra-package import
-    structure intact so the AST capability extractor resolves the subset the same way
-    it sits in the tree. Returns the number of files actually copied.
+    The assessable subset is the changed Python files (for the SAST / secret /
+    signature scanners) plus any changed dependency manifest (for the deps / SCA
+    scanner) — so the deps scan stays scoped to what the PR actually touched
+    instead of auditing the ambient repo environment. Deleted / renamed-away files
+    are dropped — there is nothing on disk to stage and assess. Paths are returned
+    repo-relative (git's native ``--name-only`` form), with forward slashes
+    preserved so they round-trip back to PR paths.
     """
-    copied = 0
-    for rel in files:
+    changed = _git_changed_files(base, cached, repo_root)
+    return [
+        name
+        for name in changed
+        if (name.endswith(".py") or _is_dep_manifest(name))
+        and (repo_root / name).is_file()
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# Staging — copy just the changed files into a path-preserving subtree
+# --------------------------------------------------------------------------- #
+def _build_subset_tree(py_files: list[str], repo_root: Path) -> tuple[Path, list[str]]:
+    """Copy the changed files into a temp subtree under the quarantine root.
+
+    The subtree mirrors each file's repo-relative path (parent dirs created) so
+    intra-package imports still resolve and every finding's ``file_path`` maps
+    back to the PR path. Lives under the SIPA quarantine root (honoring the
+    ``ICDEV_INTEGRITY_QUARANTINE_DIR`` override) so it shares the canvas's
+    disposable scratch area. Returns ``(subtree_dir, staged_rel_paths)``.
+    """
+    quarantine_base = ingest._quarantine_base(ingest._load_config())
+    quarantine_base.mkdir(parents=True, exist_ok=True)
+    subtree = Path(tempfile.mkdtemp(prefix="pr_subset_", dir=str(quarantine_base)))
+
+    staged_rel: list[str] = []
+    for rel in py_files:
         src = repo_root / rel
         if not src.is_file():
             continue
-        target = dest_root / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, target)
-        copied += 1
-    return copied
-
-
-# --------------------------------------------------------------------------- #
-# Findings read-back
-# --------------------------------------------------------------------------- #
-def _fetch_findings(conn: Any, assessment_id: int) -> list[dict]:
-    """Return the append-only ``integrity_findings`` rows for an assessment as dicts."""
-    sql = (
-        "SELECT source_scanner, finding_type, severity, file_path, line, detail "
-        "FROM integrity_findings WHERE assessment_id = ? ORDER BY id"
-    )
-    sql = engine._q(conn, sql)
-    rows = conn.execute(sql, (assessment_id,)).fetchall()
-    cols = ("source_scanner", "finding_type", "severity", "file_path", "line", "detail")
-    out: list[dict] = []
-    for row in rows:
-        if hasattr(row, "keys"):
-            out.append({c: row[c] for c in cols})
-        else:
-            out.append(dict(zip(cols, row)))
-    return out
-
-
-def _empty_result(verdict: str = "allow") -> dict:
-    """The no-op disposition for an empty change set (nothing Python to assess)."""
-    return {
-        "verdict": verdict,
-        "risk_score": 0.0,
-        "findings": [],
-        "files_assessed": [],
-        "assessment_id": None,
-    }
+        dest = subtree / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        staged_rel.append(rel)
+    return subtree, staged_rel
 
 
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
 def assess_changed_files(
-    base: str = "origin/main",
+    base: str = DEFAULT_BASE,
     mode: str = "auto",
-    cached: bool = False,
-    repo_root: Optional[Path] = None,
     conn: Any = None,
+    cached: bool = False,
+    repo_root: Any = None,
 ) -> dict:
-    """Run a SIPA assessment over only the ``*.py`` files a branch changed.
+    """Run a SIPA assessment over the Python files changed on the branch.
 
-    Discovers the changed Python files (see :func:`changed_py_files`), stages just
-    that subset into quarantine via :func:`ingest.stage`, then runs the standard
-    SIPA stages (``scan_all`` -> ``extract_and_persist`` -> ``score``) over the staged
-    copy. Reuses the engine's verdict thresholds verbatim — no scanning is
-    reimplemented here.
+    Diffs the branch against ``base`` (or the staged index when ``cached``), keeps
+    the changed ``*.py`` files and any changed dependency manifest, stages just
+    those into a path-preserving subtree, and runs the existing SIPA pipeline
+    (ingest -> scan_all -> capability extract -> score) over the subset.
 
     Args:
-        base: git ref to diff ``HEAD`` against (default ``origin/main``).
-        mode: assessment mode (``auto`` / ``provenance_aware`` / ``provenance_blind``);
-            validated + stamped onto the assessment row. PR gating is behavior-only
-            (no claim/RTM reconciliation), so the verdict is driven by scanner +
-            signature + capability signals.
-        cached: diff the staged index (``git diff --cached``) instead of ``base...HEAD``.
-        repo_root: git working tree to scan (default: the ICDEV repo root).
-        conn: optional existing RLS-aware connection to reuse (engine / tests); when
+        base: base ref to diff against (default ``origin/main``); ignored when
+            ``cached`` is set.
+        mode: ``'auto'`` (default), ``'provenance_aware'``, or
+            ``'provenance_blind'`` — resolved via :func:`engine.resolve_mode` and
+            stamped onto the assessment row. With no provenance handle ``auto``
+            resolves to ``provenance_blind`` (the diff-gate default).
+        conn: optional existing RLS-aware connection to reuse (CLI / tests); when
             ``None`` one is opened and closed internally.
+        cached: diff the staged index (``git diff --cached``) instead of
+            ``<base>...HEAD`` — for a pre-commit hook.
+        repo_root: repository root to run ``git diff`` in (default: the ICDEV repo
+            root containing this module).
 
     Returns:
-        ``{"verdict", "risk_score", "findings", "files_assessed", "assessment_id"}``.
-        ``verdict`` is the canonical lowercase token (``constants.VERDICTS``). An empty
-        change set returns the no-op ``allow`` disposition with ``assessment_id=None``.
+        ``{"verdict", "risk_score", "findings", "files_assessed", "assessment_id",
+        "mode"}``. With no changed ``*.py`` files or dependency manifests this
+        short-circuits to an ALLOW with an empty ``findings`` / ``files_assessed``
+        and ``assessment_id=None`` (nothing is staged or written).
 
-    Raises:
-        ValueError: an invalid ``mode`` (via :func:`engine.resolve_mode`).
-
-    Never executes the changed code — staging copies bytes and every stage is
-    static-only (isolated scanner subprocesses, AST parsing).
+    Never executes the changed code — every stage is static-only.
     """
-    resolved_mode = engine.resolve_mode(mode, None, None)
-    root = Path(repo_root) if repo_root else BASE_DIR
+    repo_root = Path(repo_root) if repo_root else BASE_DIR
+    changed_files = _changed_assessable_files(base, cached, repo_root)
 
-    files = changed_py_files(base, cached=cached, repo_root=root)
-    if not files:
-        logger.info("assess_changed_files: no changed .py files vs %s — pass", base)
-        return _empty_result()
+    if not changed_files:
+        logger.info(
+            "assess_changed_files: no changed *.py / dependency-manifest files "
+            "(base=%s, cached=%s)", base, cached,
+        )
+        return {
+            "assessment_id": None,
+            "verdict": "allow",
+            "risk_score": 0.0,
+            "findings": [],
+            "files_assessed": [],
+            "mode": engine.resolve_mode(mode, None, None),
+        }
+
+    # PR gate carries no provenance handle, so 'auto' -> provenance_blind. We run
+    # the static scanners + capability/score subset (no reconciliation stage), so
+    # the resolved mode is recorded for provenance but does not branch the flow.
+    resolved_mode = engine.resolve_mode(mode, None, None)
+
+    subtree, staged_rel = _build_subset_tree(changed_files, repo_root)
 
     own_conn = conn is None
     if own_conn:
         from tools.db.storage import get_connection
 
         conn = get_connection()
-
-    # Throwaway source tree holding the changed subset (copied into quarantine by
-    # ingest.stage; removed once staged so it does not linger).
-    subset_dir = Path(tempfile.mkdtemp(prefix="sipa_pr_"))
     try:
-        init_db(conn)  # idempotent: CREATE TABLE IF NOT EXISTS
-
-        copied = _assemble_subset(files, root, subset_dir)
-        if copied == 0:
-            logger.info("assess_changed_files: changed files vanished before staging — pass")
-            return _empty_result()
-
-        # 1. Stage the subset into quarantine (records the integrity_assessments row).
-        staged = ingest.stage(str(subset_dir), conn=conn)
+        # 1. Ingest — quarantine-first staging of the changed-file subtree.
+        staged = ingest.stage(str(subtree), conn=conn)
         assessment_id = staged["assessment_id"]
         staged_path = staged["staged_path"]
         engine._set_mode(conn, assessment_id, resolved_mode)
         logger.info(
-            "assess_changed_files: staged %d changed file(s) -> assessment %s (%s)",
-            copied, assessment_id, resolved_mode,
+            "assess_changed_files: staged %d changed file(s) -> assessment %s at %s",
+            len(staged_rel), assessment_id, staged_path,
         )
 
-        # 2. Scanners + capability manifest + score (the engine stages, reused).
+        # 2. Scanners — SAST / secrets / deps / malicious-signature over the subset.
         scanners.scan_all(assessment_id, staged_path=staged_path, conn=conn)
+
+        # 3. Capabilities — AST behavioral manifest of the subset.
         capability_extractor.extract_and_persist(assessment_id, staged_path, conn=conn)
+
+        # 4. Scoring — combine the subset's signals into a risk score + verdict.
         score_result = scoring.score(assessment_id, conn=conn)
 
-        findings = _fetch_findings(conn, assessment_id)
+        # Findings (detail parsed) for the caller's report, reusing the scorer's reader.
+        findings = scoring._fetch_findings(conn, assessment_id)
     finally:
-        shutil.rmtree(subset_dir, ignore_errors=True)
         if own_conn:
             conn.close()
+        # The path-preserving subtree was a copy into scratch; the authoritative
+        # staged tree lives at <quarantine>/<assessment_id>/. Drop the subtree.
+        shutil.rmtree(subtree, ignore_errors=True)
 
     logger.info(
-        "assess_changed_files: assessment %s -> %s (%.1f) | %d file(s), %d finding(s)",
+        "assess_changed_files: assessment %s -> %s (%.1f) over %d file(s), %d finding(s)",
         assessment_id, score_result["verdict"], score_result["risk_score"],
-        len(files), len(findings),
+        len(staged_rel), len(findings),
     )
     return {
+        "assessment_id": assessment_id,
         "verdict": score_result["verdict"],
         "risk_score": score_result["risk_score"],
         "findings": findings,
-        "files_assessed": files,
-        "assessment_id": assessment_id,
+        "files_assessed": staged_rel,
+        "mode": resolved_mode,
     }
 
 
@@ -279,17 +308,23 @@ def main(argv: Optional[list] = None, conn: Any = None) -> int:
     """SIPA PR-gate CLI entrypoint.
 
     ``python tools/integrity/pr_gates.py --base origin/main [--cached]
-    [--mode auto|provenance_aware|provenance_blind] [--gate] [--json]``
+    [--mode auto|provenance_aware|provenance_blind] [--repo-root .] [--gate]
+    [--json]``
 
-    ``--gate`` maps the verdict to a CI / pre-merge exit code via
-    :func:`engine.gate_exit_code` (non-zero on ``gate.block_on`` — QUARANTINE by
-    default — zero otherwise) so it can fail a build. Honors
-    ``ICDEV_INTEGRITY_ENABLED``: when the canvas is disabled the gate no-ops to a
-    pass (exit 0) rather than scanning.
+    ``--gate`` maps the verdict to a CI / pre-merge exit code via the shared
+    ``engine.gate_exit_code`` (exit 1 on ``gate.block_on`` — QUARANTINE by default
+    — exit 0 otherwise). Honors ``ICDEV_INTEGRITY_ENABLED``: when the canvas is
+    toggled off the gate no-ops to a pass (exit 0) so a CI hook stays green.
+
+    Args:
+        argv: optional argument vector (defaults to ``sys.argv[1:]``); passed by
+            tests to drive the CLI without touching the process args.
+        conn: optional DB connection threaded into :func:`assess_changed_files`
+            (tests inject in-memory SQLite); ``None`` opens one internally.
 
     Returns:
-        The process exit code (also raised via ``SystemExit``): the gate exit code
-        when ``--gate``, else ``0``.
+        The process exit code (also raised via ``SystemExit``): ``GATE_BLOCK`` (1)
+        when ``--gate`` and the verdict is blocking, else ``GATE_OK`` (0).
     """
     import argparse
     import json
@@ -297,51 +332,54 @@ def main(argv: Optional[list] = None, conn: Any = None) -> int:
 
     parser = argparse.ArgumentParser(
         prog="pr_gates.py",
-        description="SIPA pre-merge gate — assess only the Python files a branch "
-        "changed (git diff vs a base ref) and emit a risk score + ALLOW / REVIEW / "
-        "QUARANTINE verdict. Static-only: the changed code is never executed.",
+        description="SIPA PR diff gate — assess only the Python files changed on a "
+        "branch (git diff vs a base ref) and emit an ALLOW / REVIEW / QUARANTINE "
+        "verdict. Static-only: the changed code is never executed.",
     )
-    parser.add_argument("--base", default="origin/main", help="git ref to diff HEAD against")
-    parser.add_argument(
-        "--cached",
-        action="store_true",
-        help="diff the staged index (git diff --cached) instead of base...HEAD",
-    )
+    parser.add_argument("--base", default=DEFAULT_BASE, help=f"base ref to diff against (default: {DEFAULT_BASE})")
+    parser.add_argument("--cached", action="store_true", help="diff the staged index (git diff --cached) instead of <base>...HEAD")
     parser.add_argument(
         "--mode",
         default="auto",
         choices=["auto", engine.PROVENANCE_AWARE, engine.PROVENANCE_BLIND],
-        help="assessment mode (default: auto)",
+        help="provenance strategy (default: auto)",
     )
+    parser.add_argument("--repo-root", default=None, help="repository root to diff in (default: the ICDEV repo root)")
     parser.add_argument(
         "--gate",
         action="store_true",
-        help="exit non-zero on a blocking verdict (gate.block_on; QUARANTINE by default)",
+        help="exit non-zero on a blocking verdict (gate.block_on; QUARANTINE by default) for CI / pre-merge",
     )
     parser.add_argument("--json", action="store_true", help="emit JSON")
     args = parser.parse_args(argv)
 
-    # Honor the feature flag for the automatic / CLI invocation: a disabled canvas
-    # no-ops to a pass rather than scanning.
+    # Honor the feature flag at the CLI seam: a toggled-off canvas no-ops to a pass.
     if not engine.is_enabled():
-        result = _empty_result()
-        result["skipped"] = "ICDEV_INTEGRITY_ENABLED is not set"
+        result = {
+            "assessment_id": None,
+            "verdict": "allow",
+            "risk_score": 0.0,
+            "findings": [],
+            "files_assessed": [],
+            "skipped": True,
+            "reason": f"{engine.FEATURE_FLAG} is off; PR gate skipped",
+        }
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print("SIPA PR gate skipped — ICDEV_INTEGRITY_ENABLED is not set")
+            print(f"SIPA PR gate skipped — {engine.FEATURE_FLAG} is off")
         sys.exit(engine.GATE_OK)
 
     result = assess_changed_files(
         base=args.base,
         mode=args.mode,
-        cached=args.cached,
         conn=conn,
+        cached=args.cached,
+        repo_root=args.repo_root,
     )
 
     verdict = str(result["verdict"]).lower()
     block_set, warn_set = engine._gate_verdicts()
-    code = engine.gate_exit_code(verdict) if args.gate else engine.GATE_OK
 
     if args.json:
         payload = dict(result)
@@ -349,18 +387,21 @@ def main(argv: Optional[list] = None, conn: Any = None) -> int:
             payload["gate"] = {
                 "blocked": verdict in block_set,
                 "warned": verdict in warn_set,
-                "exit_code": code,
+                "exit_code": engine.gate_exit_code(verdict),
             }
         print(json.dumps(payload, indent=2))
     else:
-        print(f"SIPA PR gate — {len(result['files_assessed'])} changed .py file(s)")
-        print(f"  verdict:    {verdict.upper()}")
-        print(f"  risk_score: {result['risk_score']}")
-        print(f"  findings:   {len(result['findings'])}")
-        if result.get("assessment_id") is not None:
-            print(f"  assessment: {result['assessment_id']}")
+        print(f"SIPA PR gate — {result['mode']}")
+        print(f"  verdict:        {result['verdict'].upper()}")
+        print(f"  risk_score:     {result['risk_score']}")
+        print(f"  files_assessed: {len(result['files_assessed'])}")
+        print(f"  findings:       {len(result['findings'])}")
+        for rel in result["files_assessed"]:
+            print(f"    - {rel}")
 
+    code = engine.GATE_OK
     if args.gate:
+        code = engine.gate_exit_code(verdict)
         if verdict in block_set:
             print(f"GATE: BLOCKED - verdict {verdict.upper()} is blocking", file=sys.stderr)
         elif verdict in warn_set:

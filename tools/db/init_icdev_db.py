@@ -7913,6 +7913,24 @@ CREATE INDEX IF NOT EXISTS idx_cf_siem_sev ON cf_siem_events(severity);
 CREATE INDEX IF NOT EXISTS idx_cf_siem_time ON cf_siem_events(event_time);
 
 -- ============================================================
+-- SIEM EVENTS (append-only) — agentic AI safety_layer forwarder sink
+-- Mirrors public.siem_events in pg_consolidated.sql; written best-effort
+-- by tools/agentic_ai_canvas/safety_layer.py::_forward_siem
+-- ============================================================
+CREATE TABLE IF NOT EXISTS siem_events (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    severity TEXT DEFAULT 'INFO' NOT NULL CHECK(severity IN ('INFO','LOW','MEDIUM','HIGH','CRITICAL')),
+    detail TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_siem_events_source ON siem_events(source);
+CREATE INDEX IF NOT EXISTS idx_siem_events_severity ON siem_events(severity);
+CREATE INDEX IF NOT EXISTS idx_siem_events_created ON siem_events(created_at);
+
+-- ============================================================
 -- CLOUDFORGE: SHIFT EMULATOR SESSIONS (D-CF-6)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS cf_shift_sessions (
@@ -10724,6 +10742,31 @@ CREATE TABLE IF NOT EXISTS integrity_authorizations (
 );
 CREATE INDEX IF NOT EXISTS idx_integrity_authorizations_assessment ON integrity_authorizations(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_integrity_authorizations_tenant     ON integrity_authorizations(tenant_id);
+
+-- ============================================================
+-- EQO — Centralized logging (eqo-log-01)
+-- Global append-only log sink (NOT a canvas table): carries tenant_id +
+-- classification so the RLS-aware get_connection() applies the standard
+-- row-level predicate. Append-only (NIST AU) — log rows are immutable evidence;
+-- retention is enforced by bulk time-window pruning, never row mutation.
+-- Registered in APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py.
+-- Mirror of migration 181_centralized_logs — keep the two in lock-step.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS centralized_logs (
+    id              TEXT PRIMARY KEY,
+    ts              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    component       TEXT NOT NULL,
+    level           TEXT NOT NULL DEFAULT 'INFO',
+    message         TEXT NOT NULL DEFAULT '',
+    trace_id        TEXT,
+    session_id      TEXT,
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    extra_json      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_component ON centralized_logs(component);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_ts        ON centralized_logs(ts);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_level     ON centralized_logs(level);
 
 """
 

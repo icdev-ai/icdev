@@ -145,6 +145,11 @@ python tools/security/encryption_at_rest.py --rotate --classification TS --json
 python tools/security/mtls_integration.py --verify --json
 python tools/security/security_middleware.py --init-app --json
 python tools/security/audit_posture.py --json
+
+# SIPA Software Integrity PR gate (eqo-sipa) — assess only the *.py files changed on a branch
+python tools/integrity/pr_gates.py --base origin/main --json            # preview verdict over branch diff
+python tools/integrity/pr_gates.py --cached --json                      # assess the staged index (pre-commit)
+python tools/integrity/pr_gates.py --base origin/main --gate            # CI gate: exit 1 on a blocking (QUARANTINE) verdict
 ```
 
 ---
@@ -242,6 +247,17 @@ python tools/observability/shap/agent_shap.py --project-id "sparkpilot" --last-n
 python tools/observability/provenance/prov_query.py --entity-id "<id>" --direction backward --json
 python tools/observability/provenance/prov_export.py --project-id "sparkpilot" --json
 python tools/compliance/xai_assessor.py --project-id "sparkpilot" --json
+```
+
+---
+
+## EQO Centralized Logging Commands (eqo-log)
+```bash
+# Query the append-only centralized_logs sink (RLS-aware, newest first)
+python tools/logging/log_query.py --component genesis --level ERROR --json
+python tools/logging/log_query.py --contains timeout --since 2026-06-06 --limit 50
+# Dashboard: /logs  |  JSON API: GET /api/logs?component=&level=&since=&contains=&limit=
+# IQE: POST /logs/api/iqe-query {question}  (collection logs.entries)
 ```
 
 ---

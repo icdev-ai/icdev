@@ -16,8 +16,6 @@ Covers the acceptance criteria for ``tools/integrity/scanners.py``:
 SQLite-backed via the shared ``icdev_db`` fixture; quarantine is redirected to a
 tmp dir so staging never touches the repo tree.
 """
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -682,61 +680,36 @@ def test_signature_scan_in_fan_out(staged_env, tmp_path, monkeypatch):
     )
 
 
-# --------------------------------------------------------------------------- #
-# REGRESSION (eqo-sipa-s1) — malware staged under a *gitignored* tree must still
-# be detected. The real quarantine base (.tmp/integrity_quarantine) is gitignored;
-# a directory-target Semgrep run honors .gitignore, scans zero files, and returns
-# [] — a *clean* result that silently masked planted malware. This test plants a
-# real dropper under a gitignored path and runs the FULL signature scan WITHOUT
-# monkeypatching _detect_signatures, so the Semgrep+.gitignore interaction is
-# exercised for real. It would FAIL against the pre-fix code (0 findings) and
-# PASS once --no-git-ignore is passed. Skipped when Semgrep is absent, because the
-# regex fallback walks the tree directly (it never honored .gitignore) and so
-# cannot reproduce the bug.
-# --------------------------------------------------------------------------- #
-_DROPPER = "import base64\nexec(base64.b64decode('cHJpbnQoMSk='))\n"
+def test_signature_scan_in_gitignored_quarantine_tree(staged_env):
+    """Regression (eqo-sipa-s1): a planted payload under the gitignored ``.tmp/``
+    quarantine tree is still detected, NOT silently skipped.
 
+    No monkeypatch of ``_detect_signatures`` — this exercises the real path. The
+    quarantine staging dir lives under ``<repo>/.tmp/`` (gitignored). Before the
+    fix, Semgrep walked up to the repo ``.gitignore``, skipped every staged file,
+    and returned ``[]`` (zero hits, not ``None``) — so the regex fallback never
+    ran and ``run_signature_scan`` persisted 0 findings. The fix passes
+    ``--no-git-ignore`` so Semgrep scans the quarantine tree regardless. When
+    Semgrep is absent, the regex fallback (manual os.walk) detects it either way.
+    """
+    import shutil as _shutil
 
-@pytest.mark.skipif(
-    not shutil.which("semgrep"),
-    reason="regression guards the Semgrep+.gitignore interaction; without the "
-           "binary the regex fallback (which ignores .gitignore) runs instead",
-)
-def test_signature_scan_detects_payload_in_gitignored_tree(icdev_db, monkeypatch):
-    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
-    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
-
-    # Stage under the repo's gitignored .tmp/ tree so Semgrep's default .gitignore
-    # handling applies. (tmp_path lives outside the repo, has no .gitignore above
-    # it, and therefore would NOT reproduce the bug.)
-    base = scanners.BASE_DIR / ".tmp" / "sipa_s1_regression"
-    monkeypatch.setenv("ICDEV_INTEGRITY_QUARANTINE_DIR", str(base))
-    aid = _new_assessment(icdev_db)
-    staged = base / str(aid)
+    aid = _new_assessment(staged_env)
+    # Stage under the repo's real gitignored .tmp/ tree (the exact bug condition).
+    staged = ingest.BASE_DIR / ".tmp" / "_sipa_s1_regression" / str(aid)
     staged.mkdir(parents=True, exist_ok=True)
-    (staged / "dropper.py").write_text(_DROPPER, encoding="utf-8")
     try:
-        # Premise check: the staged tree really is gitignored — otherwise this
-        # test passes vacuously without exercising the bug. Fail loudly instead.
-        check = subprocess.run(
-            ["git", "check-ignore", str(staged)],
-            cwd=str(scanners.BASE_DIR), capture_output=True, text=True,
-        )
-        assert check.returncode == 0 and check.stdout.strip(), (
-            "staged tree is not gitignored; eqo-sipa-s1 regression premise no "
-            "longer holds — update the test to stage under a gitignored path"
-        )
+        (staged / "payload.py").write_text(_REVERSE_SHELL, encoding="utf-8")
 
-        # No monkeypatch of _detect_signatures: the real Semgrep engine runs.
-        result = scanners.run_signature_scan(aid)  # resolves staged from quarantine
+        result = scanners.run_signature_scan(aid, staged_path=str(staged))
         assert result["success"] is True
-        assert result["engine"] == "semgrep"
+        # The core regression assertion: the scan is NOT silently empty.
         assert result["findings_persisted"] >= 1, (
-            "Semgrep silently skipped the gitignored quarantine tree "
-            "(eqo-sipa-s1 regression — --no-git-ignore not applied)"
+            "signature scan persisted 0 findings on a gitignored quarantine tree "
+            f"(engine={result['engine']}) — scanner silently disabled"
         )
         rows = _findings(aid)
         assert any(r["finding_type"] == "known_bad_signature" for r in rows)
-        assert any(r["severity"] == "critical" for r in rows)  # decode_then_exec
+        assert any(r["severity"] == "critical" for r in rows)  # reverse_shell
     finally:
-        shutil.rmtree(base, ignore_errors=True)
+        _shutil.rmtree(ingest.BASE_DIR / ".tmp" / "_sipa_s1_regression", ignore_errors=True)

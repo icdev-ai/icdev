@@ -45,6 +45,9 @@ env:
   AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-gov-west-1' }}
   # Tell Playwright the dashboard is managed by this workflow — don't spawn a second instance.
   ICDEV_NO_SERVER: "1"
+  # SIPA integrity gate — active by default so every kanban task PR is integrity
+  # checked; set the repo variable ICDEV_INTEGRITY_ENABLED=false to disable.
+  ICDEV_INTEGRITY_ENABLED: ${{ vars.ICDEV_INTEGRITY_ENABLED || 'true' }}
 
 jobs:
   run:
@@ -197,15 +200,28 @@ jobs:
         if: always()
         run: kill $(cat /tmp/dashboard.pid 2>/dev/null) 2>/dev/null || true
 
+      # ── SIPA integrity gate (blocking, pre-PR) ────────────────────────────
+      # Assess the *.py files this task changed for unauthorized / malicious code
+      # BEFORE any PR is opened. ANVIL leaves its changes uncommitted in the work
+      # tree, so stage them and diff the staged index (--cached). Static-only —
+      # the changed code is never executed. A QUARANTINE verdict exits non-zero
+      # and fails the job, so the downstream PR step (no `if: always()`) is
+      # skipped and no PR is opened. Honors ICDEV_INTEGRITY_ENABLED (set in the
+      # workflow env): when off the gate no-ops to a pass.
+      - name: SIPA integrity gate
+        run: |
+          git add -A
+          python tools/integrity/pr_gates.py --cached --gate --json
+
       # ── Branch + PR for EVERY task (branch→V&V→MR discipline) ─────────────
       # Runs only when the agent step succeeded (a failed run falls through to
       # the scheduler's resilience path: failure_count → needs_decomposition →
       # auto-decompose). Commits the agent's changes to a per-task branch, pushes,
-      # and opens a PR against main. The PR's OWN CI (icdev-ci.yml on
-      # pull_request) is the V&V gate; pr_watcher (OPT-70) reads it to auto-merge
-      # low-risk types (chore/test/fix) or route feature/bug to human review.
-      # ci-fix-* tasks keep their dedicated ci-autofix/* branch + label.
-      # Guard: only opens a PR when git finds staged changes — avoids empty PRs.
+      # and opens a PR against main. The per-task `case` below routes ci-fix-* to a
+      # ci-autofix/* branch and every other task to kanban/<id>. The PR's OWN CI
+      # (icdev-ci.yml on pull_request) is the V&V gate; pr_watcher (OPT-70) reads
+      # it to auto-merge low-risk types (chore/test/fix) or route feature/bug to
+      # human review. Guard: only opens a PR when git finds staged changes.
       - name: Commit and open PR
         if: success()
         env:

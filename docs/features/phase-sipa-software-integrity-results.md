@@ -171,4 +171,39 @@ and no Mode B `undisclosed_capability` findings are emitted.
 - Fixture: `tests/e2e/fixtures/integrity_backdoor_pkg/` (`README.md` +
   `formatter.py`).
 
+---
+
+## 6. V&V remediation — eqo-sipa-s1 (signature scanner silently disabled)
+
+**Defect (from eqo-vv-01):** `run_signature_scan` persisted **0** findings on real
+assessments. The quarantine staging tree lives under `<repo>/.tmp/integrity_quarantine`
+(gitignored — `.gitignore:19`). `_detect_signatures` handed Semgrep a *directory*
+target; Semgrep walks up to the repo `.gitignore`, **skips every staged file**, and
+returns `[]` (zero hits, **not** `None`). Because the result was an empty list rather
+than `None`, the regex fallback never ran — the malware-signature scan was silently
+disabled on every assessment. Unit tests missed it because they monkeypatch
+`_detect_signatures`.
+
+**Repro (verified):** plant `exec(base64.b64decode(...))` under a gitignored `.tmp/`
+tree → `semgrep --config <rules> <dir>` reports `results: 0, scanned: 0`; the same
+run with `--no-git-ignore` reports `results: 1, scanned: 1`.
+
+**Fix:**
+- `tools/aiify/pattern_classifier.py::run_semgrep` — new keyword-only param
+  `no_git_ignore: bool = False`; when set, appends `--no-git-ignore` to the CLI so
+  Semgrep scans every file under the target regardless of any discovered `.gitignore`.
+  Default `False` keeps all existing callers unchanged.
+- `tools/integrity/scanners.py::_detect_signatures` — calls `run_semgrep(...,
+  no_git_ignore=True)`. SIPA's target is always its own controlled quarantine tree, so
+  gitignore filtering is never wanted here.
+
+**Regression test (non-monkeypatched):**
+`tests/test_integrity_scanners.py::test_signature_scan_in_gitignored_quarantine_tree`
+stages a reverse-shell payload under the real `<repo>/.tmp/` gitignored tree and runs
+`run_signature_scan` with **no** monkeypatch of `_detect_signatures`. Asserts
+`findings_persisted >= 1` with a `critical known_bad_signature`. This fails on the
+pre-fix code when Semgrep is present (0 findings) and passes after the fix; with
+Semgrep absent the regex fallback (manual `os.walk`, gitignore-agnostic) detects it
+either way.
+
 **CUI // SP-CTI**

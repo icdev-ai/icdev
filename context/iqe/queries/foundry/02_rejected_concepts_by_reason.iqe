@@ -1,0 +1,5 @@
+// IQE-FOUNDRY-002: Rejected concepts by reason — what the novelty gate / scorer / CoD filtered out
+// Surfaces reject_reason so operators can see why a candidate did not advance to build.
+foreach c in foundry.concepts
+where c.status == "rejected"
+select c.id, c.name, c.reject_reason, c.novelty_score, c.market_score, c.composite_score, c.created_at

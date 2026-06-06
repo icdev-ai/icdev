@@ -1,0 +1,5 @@
+// IQE-FOUNDRY-001: Approved concepts — net-new capabilities cleared for autonomous build
+// These are the concepts the seeder turns into kanban tasks (highest composite score = strongest).
+foreach c in foundry.concepts
+where c.status == "approved"
+select c.id, c.name, c.slug, c.problem_statement, c.composite_score, c.novelty_score, c.created_at

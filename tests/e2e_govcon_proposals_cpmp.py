@@ -246,8 +246,7 @@ def test_live_banner_cpmp_deliverables(results: TestResult) -> None:
 
 
 def test_live_banner_cpmp_reports(results: TestResult) -> None:
-    # Covers route /cpmp/reports (Flask: cpmp_reports_page).
-    # Weekly PMO Brief archive viewer / exportable contract performance reports.
+    # Covers route /cpmp/reports (PMO Weekly Brief archive viewer).
     try:
         r = requests.get(f"{BASE_URL}/cpmp/reports", headers=_ADMIN_HEADERS, timeout=15)
         assert r.status_code == 200, f"cpmp/reports returned {r.status_code}"
@@ -488,7 +487,7 @@ def test_cpmp_deliverables_browser(results: TestResult, driver: webdriver.Chrome
 
 def test_cpmp_reports_browser(results: TestResult, driver: webdriver.Chrome) -> None:
     # Covers route /cpmp/reports (Flask: cpmp_reports_page).
-    # Weekly PMO Brief archive viewer — exportable contract performance reports.
+    # PMO Weekly Brief Archive — list + iframe viewer for AI-generated portfolio briefs.
     try:
         driver.get(f"{BASE_URL}/cpmp/reports")
         time.sleep(2)

@@ -16,6 +16,7 @@
 - [Audit Trail](manifest/audit-trail.md)
 - [MCP Servers](manifest/mcp-servers.md)
 - [Innovation Engine (Phase 35 — D199-D208)](manifest/innovation-engine.md)
+- [Autonomous Capability Foundry (ACF)](manifest/autonomous-capability-foundry.md)
 - [A2A Protocol](manifest/a2a-protocol.md)
 - [Project Management](manifest/project-management.md)
 - [DX Companion — Universal AI Coding Tool Support (D194-D198)](manifest/dx-companion-universal-ai-coding-tool-support.md)

@@ -297,11 +297,11 @@ def run_semgrep(
     path — reuses the same CLI invocation but lets any consumer supply its own
     ``rules_dir``. ``rules_dir`` may be absolute or repo-root-relative.
 
-    Set ``no_git_ignore=True`` to add ``--no-git-ignore`` so Semgrep scans files
-    that match a ``.gitignore`` rule. Security scanners that point at a staged /
-    quarantined tree under a gitignored path (e.g. SIPA's
-    ``.tmp/integrity_quarantine``) MUST set this — otherwise Semgrep silently
-    skips every file and returns ``[]`` (a clean result), masking real malware.
+    ``no_git_ignore`` adds ``--no-git-ignore`` so Semgrep scans every file under
+    ``target_path`` regardless of any ``.gitignore`` it discovers while walking up
+    from the target. Callers scanning a deliberately gitignored staging tree (e.g.
+    SIPA's quarantine under ``.tmp/``) MUST set this — otherwise Semgrep silently
+    skips all files and returns ``[]`` (zero hits, not ``None``), masking the scan.
 
     Returns a list of hit dicts (``rule_id``, ``path``, ``start_line``,
     ``end_line``, ``severity``, ``message``, ``metadata``), or ``None`` when
