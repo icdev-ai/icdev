@@ -85,6 +85,31 @@ model (`tools/viz/deck_model.py`). Charts render via the vendored `charts.js`
 - Bug fixed during V&V: charts rendered into detached DOM nodes (empty); `viz_story.js`
   now defers rendering to `requestAnimationFrame` after the slide is committed.
 
+## Epic G — Freeform editor + canvas bridge (WYSIWYG)
+
+A positioned **element model** (`tools/viz/elements.py`) is now the single source of
+truth: `elements: [{type, x, y, w, h, z, payload, style}]` with **fractional 16:9
+geometry**, so the same numbers drive the web editor (CSS) and python-pptx
+(`Inches(x*13.33)`). Stored in an additive `elements_json` column; auto-layout
+converts any existing slide into editable elements.
+
+- **Freeform editor** `/slides/<id>/edit` (`tools/dashboard/static/js/viz_editor.js`):
+  drag, resize (corner handles), select, layer, delete; **custom text boxes with
+  font size / family / color / bold / italic / align**; live chart/table/KPI/diagram
+  element rendering. Saves the element model; verified add→save→reload persistence
+  and 0 console errors in a real browser.
+- **Image import** (`POST /slides/api/<id>/upload-image`): upload → stored asset →
+  draggable/resizable `image` element → `add_picture` in PPTX.
+- **WYSIWYG PPTX**: `pptx_builder` renders a freeform slide by absolute coordinates
+  for every element type; **download re-renders from current elements**, so the
+  PowerPoint always matches the editor (verified: edited element layout → downloaded
+  PPTX has the positioned chart).
+- **Canvas bridge** (`tools/slides/canvas_bridge.py`): enumerates designs across 9
+  canvases (`graph_json` → native `DiagramSpec`); `/slides/<id>/add-from-canvas`
+  picker (curate) + `POST /slides/api/aggregate-canvases` (auto-overview) + a generic
+  `POST /slides/api/<id>/capture` (native graph/chart, or **image fallback** from a
+  client-serialized card). "+ From Canvas" in the editor opens the picker.
+
 ## Deferred (documented, intentional)
 - **AI hero imagery** — optional polish; air-gap data-driven charts/diagrams already
   meet the professional bar. Wire `tools/pulse/engine/image_generator.py` SVG fallback later.

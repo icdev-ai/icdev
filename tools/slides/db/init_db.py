@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS slides_slides (
     diagram_json   JSONB,
     kpis_json      JSONB,
     dashboard_json JSONB,
+    elements_json  JSONB,
     created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -123,6 +124,7 @@ CREATE TABLE IF NOT EXISTS slides_slides (
     diagram_json  TEXT,
     kpis_json     TEXT,
     dashboard_json TEXT,
+    elements_json TEXT,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -143,7 +145,8 @@ _INIT_DONE = False
 
 # Additive viz columns (VIZ Epic B). Applied idempotently so already-created
 # slides_slides tables gain them without a separate migration runner.
-_VIZ_COLUMNS = ("chart_json", "table_json", "diagram_json", "kpis_json", "dashboard_json")
+_VIZ_COLUMNS = ("chart_json", "table_json", "diagram_json", "kpis_json",
+                "dashboard_json", "elements_json")
 
 
 def _migrate_viz_columns(conn) -> None:

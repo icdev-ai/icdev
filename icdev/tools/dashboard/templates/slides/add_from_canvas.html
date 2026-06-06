@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Add from Canvas - Slides - ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+<div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><a href="/slides">Slide Decks</a><span class="separator">/</span><a href="/slides/{{ deck_id }}/edit">Edit</a><span class="separator">/</span><span>Add from Canvas</span></div>
+
+<div class="page-header">
+  <h1>Add a Canvas Design</h1>
+  <p class="subtitle">Pull a design from any ICDEV™ canvas into this deck as a native, on-theme diagram slide.</p>
+</div>
+
+<div id="status" class="alert" style="display:none;"></div>
+
+{% if designs %}
+<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:14px;">
+  {% for d in designs %}
+  <div class="card" style="padding:14px;">
+    <div style="font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--accent-blue);">{{ d.canvas_name }}</div>
+    <div style="font-weight:700; font-size:15px; margin:4px 0 12px;">{{ d.name }}</div>
+    <button class="btn btn-primary btn-sm add-btn"
+            data-canvas="{{ d.canvas_key }}" data-design="{{ d.id }}">+ Add to deck</button>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card" style="padding:28px; text-align:center; color:var(--text-secondary);">
+  No canvas designs found yet. Create a design in any canvas, then return here.
+</div>
+{% endif %}
+
+<div style="margin-top:24px; display:flex; gap:12px;">
+  <a href="/slides/{{ deck_id }}/edit" class="btn btn-secondary">← Back to editor</a>
+</div>
+
+<script>
+var DECK_ID = {{ deck_id }};
+function showStatus(msg, ok) {
+  var s = document.getElementById('status');
+  s.textContent = msg; s.style.display = '';
+  s.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger');
+}
+document.querySelectorAll('.add-btn').forEach(function (b) {
+  b.addEventListener('click', function () {
+    b.disabled = true; b.textContent = 'Adding…';
+    fetch('/slides/api/' + DECK_ID + '/capture', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({canvas_key: b.dataset.canvas, design_id: b.dataset.design})
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.ok) { b.textContent = '✓ Added (slide ' + d.position + ')'; showStatus('Added to deck — return to the editor to position it.', true); }
+      else { b.disabled = false; b.textContent = '+ Add to deck'; showStatus('Failed: ' + (d.error || 'unknown'), false); }
+    }).catch(function (e) { b.disabled = false; b.textContent = '+ Add to deck'; showStatus('Error: ' + e.message, false); });
+  });
+});
+</script>
+{% endblock %}

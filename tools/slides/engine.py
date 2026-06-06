@@ -288,8 +288,9 @@ class DeckEngine:
                     conn.execute(
                         "INSERT INTO slides_slides "
                         "(deck_id, position, slide_type, title, bullets, speaker_notes, "
-                        "image_path, image_prompt, chart_json, table_json, diagram_json, kpis_json, dashboard_json) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "image_path, image_prompt, chart_json, table_json, diagram_json, kpis_json, "
+                        "dashboard_json, elements_json) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             deck_id, i + 1,
                             slide_data.get("slide_type", "content"),
@@ -303,6 +304,7 @@ class DeckEngine:
                             _vz(slide_data, "diagram"),
                             _vz(slide_data, "kpis"),
                             _vz(slide_data, "dashboard"),
+                            _vz(slide_data, "elements"),
                         ),
                     )
                 conn.commit()

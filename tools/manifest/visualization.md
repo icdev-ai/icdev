@@ -30,6 +30,18 @@ sources.
 
 Presenter route `GET /slides/<id>/present` (blueprint) builds the deck model and embeds it; an uploaded CSV/JSON in the New-Deck flow triggers the data-story fast path (`engine._run_dataset_story`).
 
+## Freeform Editor + Canvas Bridge (Epic G, WYSIWYG)
+
+| Tool | File | Description |
+|------|------|-------------|
+| Element model | tools/viz/elements.py | `Element` (fractional 16:9 geometry) + `auto_layout(slide)` → editable elements. Single source of truth for editor + PPTX. |
+| Freeform editor | tools/dashboard/static/js/viz_editor.js | Drag/resize/layer/select/delete; custom text (size/font/color/bold/italic/align); live element rendering. Route `GET /slides/<id>/edit`. |
+| Save elements | blueprint `POST /api/<id>/elements` | Persist freeform layouts to `elements_json`. |
+| Image upload | blueprint `POST /api/<id>/upload-image` | Store uploaded image → serve URL → image element. |
+| WYSIWYG PPTX | pptx_builder `_build_element_slide` | Absolute-coordinate render of every element type; `api_download` re-renders from current elements. |
+| Canvas bridge | tools/slides/canvas_bridge.py | Enumerate canvas designs (9 canvases, `graph_json`→native DiagramSpec); `design_to_slide`, `build_overview_slides`. |
+| Add-from-canvas | blueprint `GET /<id>/add-from-canvas` + `POST /api/<id>/capture` + `POST /api/aggregate-canvases` | Curate (picker) + capture (native graph/chart or image fallback) + auto-aggregate overview deck. |
+
 **Multimodal AI assist (tools/llm):** `LLMRequest.images` + router `_apply_vision_routing`
 auto-select vision-capable models (incl. Ollama.com `minimax-m3`) when a request carries
 images. See `tools/llm/provider.py`, `tools/llm/router.py`, `args/llm_config.yaml` (`vision`).

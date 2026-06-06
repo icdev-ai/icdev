@@ -25,6 +25,7 @@
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
         {% if deck.status in ('completed', 'auto') %}
         <a href="/slides/{{ deck.deck_id }}/present" class="btn btn-primary" target="_blank">▶ Present</a>
+        <a href="/slides/{{ deck.deck_id }}/edit" class="btn btn-secondary">✎ Edit</a>
         <a href="/slides/api/{{ deck.deck_id }}/download" class="btn btn-secondary">↓ Download PPTX</a>
         {% endif %}
         <a href="/slides/new" class="btn btn-secondary">+ New Deck</a>

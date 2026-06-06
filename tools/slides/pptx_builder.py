@@ -21,6 +21,10 @@ from pptx.util import Inches, Pt
 from tools.slides.constants import THEME_PALETTES, DEFAULT_THEME
 from tools.viz import render_pptx, render_png
 from tools.viz.spec import ChartSpec, TableSpec, DiagramSpec, KpiSpec, DashboardSpec
+from tools.viz import elements as _elements
+
+_SW_IN = 13.33  # slide width in inches (matches W)
+_SH_IN = 7.5    # slide height in inches (matches H)
 
 # ── Canvas dimensions (16:9 widescreen) ──────────────────────────────────────
 W  = Inches(13.33)
@@ -387,15 +391,144 @@ def _build_quote_slide(prs, slide_data, n, palette, theme) -> None:
         _notes(s, slide_data["speaker_notes"])
 
 
+# ── Freeform element slide (WYSIWYG — absolute positioning) ───────────────────
+
+def _hex_rgb(hexstr: str) -> RGBColor:
+    s = str(hexstr or "#FFFFFF").lstrip("#")
+    if len(s) != 6:
+        s = "FFFFFF"
+    try:
+        return RGBColor(int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+    except ValueError:
+        return RGBColor(0xFF, 0xFF, 0xFF)
+
+
+def _el_box(el) -> tuple:
+    """Fractional element geometry → (left, top, width, height) in EMU."""
+    return (Inches(el.x * _SW_IN), Inches(el.y * _SH_IN),
+            Inches(el.w * _SW_IN), Inches(el.h * _SH_IN))
+
+
+def _resolve_image_path(src: str) -> str | None:
+    """Resolve an element image src (path or /slides/api/image?path=…) to a file."""
+    if not src:
+        return None
+    if "path=" in src:
+        from urllib.parse import unquote, urlparse, parse_qs
+        try:
+            q = parse_qs(urlparse(src).query)
+            src = unquote(q.get("path", [""])[0])
+        except Exception:
+            pass
+    return src if src and Path(src).exists() else None
+
+
+def _el_text(s, el, palette) -> None:
+    left, top, w, h = _el_box(el)
+    style = el.style or {}
+    tb = s.shapes.add_textbox(left, top, w, h)
+    tf = tb.text_frame
+    tf.word_wrap = True
+    align = {"left": PP_ALIGN.LEFT, "center": PP_ALIGN.CENTER,
+             "right": PP_ALIGN.RIGHT}.get(style.get("align", "left"), PP_ALIGN.LEFT)
+    color = _hex_rgb(style.get("color", "#FFFFFF"))
+    size = int(style.get("fontSize", 18) or 18)
+    fam = style.get("fontFamily", "Segoe UI")
+    for idx, line in enumerate(str(el.payload.get("text", "")).split("\n")):
+        p = tf.paragraphs[0] if idx == 0 else tf.add_paragraph()
+        p.alignment = align
+        run = p.add_run()
+        run.text = line
+        run.font.size = Pt(size)
+        run.font.bold = bool(style.get("bold"))
+        run.font.italic = bool(style.get("italic"))
+        run.font.color.rgb = color
+        try:
+            run.font.name = fam
+        except (AttributeError, ValueError):
+            pass
+
+
+def _el_kpis(s, el, palette) -> None:
+    left, top, w, h = _el_box(el)
+    spec = KpiSpec.from_dict(el.payload)
+    tiles = spec.tiles[:4]
+    if not tiles:
+        return
+    gap = Inches(0.2)
+    tw = (w - gap * (len(tiles) - 1)) / len(tiles)
+    accent = _rgb(palette, "accent")
+    subtext = _rgb(palette, "subtext")
+    for j, t in enumerate(tiles):
+        tl = left + (tw + gap) * j
+        _rect(s, tl, top, tw, h, _rgb(palette, "dark"), accent)
+        hb = s.shapes.add_textbox(tl + Inches(0.12), top + Inches(0.12), tw - Inches(0.24), Inches(0.4))
+        hb.text_frame.word_wrap = True
+        r = hb.text_frame.paragraphs[0].add_run()
+        r.text = t.label.upper()
+        r.font.size = Pt(11)
+        r.font.color.rgb = subtext
+        vb = s.shapes.add_textbox(tl + Inches(0.12), top + Inches(0.5), tw - Inches(0.24), h - Inches(0.6))
+        vb.text_frame.word_wrap = True
+        rv = vb.text_frame.paragraphs[0].add_run()
+        rv.text = f"{t.value}{t.unit}"
+        rv.font.size = Pt(28)
+        rv.font.bold = True
+        rv.font.color.rgb = accent
+
+
+def _build_element_slide(prs, slide_data, n, palette, theme) -> None:
+    """Render a freeform positioned-element slide (WYSIWYG with the web editor)."""
+    s = _blank(prs)
+    _bg(s, _rgb(palette, "bg"))
+    els = _elements.elements_from_dicts(slide_data.get("elements", []))
+    for el in sorted(els, key=lambda e: e.z):
+        left, top, w, h = _el_box(el)
+        try:
+            if el.type == "text":
+                _el_text(s, el, palette)
+            elif el.type == "image":
+                p = _resolve_image_path(el.payload.get("src", ""))
+                if p:
+                    s.shapes.add_picture(p, left, top, w, h)
+            elif el.type == "chart":
+                render_pptx.add_chart(s, ChartSpec.from_dict(el.payload), left, top, w, h, theme)
+            elif el.type == "table":
+                render_pptx.add_table(s, TableSpec.from_dict(el.payload), left, top, w, h, theme)
+            elif el.type == "kpis":
+                _el_kpis(s, el, palette)
+            elif el.type in ("diagram", "dashboard"):
+                # Render to PNG and place (dashboards: first chart tile if present).
+                spec_dict = el.payload
+                if el.type == "dashboard":
+                    charts = [t.get("spec") for t in spec_dict.get("tiles", [])
+                              if isinstance(t.get("spec"), dict) and t["spec"].get("kind") == "chart"]
+                    if charts:
+                        render_pptx.add_chart(s, ChartSpec.from_dict(charts[0]), left, top, w, h, theme)
+                    continue
+                png = render_png.diagram_to_png(DiagramSpec.from_dict(spec_dict), theme=theme)
+                if png and Path(png).exists():
+                    s.shapes.add_picture(png, left, top, w, h)
+        except Exception:
+            continue
+    _footer(s, n, palette)
+    if slide_data.get("speaker_notes"):
+        _notes(s, slide_data["speaker_notes"])
+
+
 def _render_slide(prs, slide_data, i, total, palette, theme) -> None:
     """Dispatch a single slide to the right builder.
 
-    Order matters: explicit viz payloads win over generic slide_type so a
-    data-driven slide always renders its chart/table/diagram/KPIs.
+    A slide with an explicit ``elements`` list is freeform (WYSIWYG) and takes
+    precedence; otherwise explicit viz payloads win over generic slide_type.
     """
     n = i + 1
     stype = slide_data.get("slide_type", "content")
     image_path = slide_data.get("image_path")
+
+    if slide_data.get("elements"):
+        _build_element_slide(prs, slide_data, n, palette, theme)
+        return
 
     if stype == "title" or i == 0:
         _build_title_slide(prs, slide_data, n, palette)

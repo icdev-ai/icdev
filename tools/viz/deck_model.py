@@ -87,6 +87,31 @@ def build_slide_model(slide: dict, theme: str) -> dict[str, Any]:
     elif slide.get("image_path"):
         model["image"] = "/slides/api/image?path=" + slide["image_path"]
 
+    # Freeform positioned elements: stored (editor-authored) or an auto-layout
+    # starting point so any slide opens editable in the composer.
+    from tools.viz import elements as _elements
+    stored = slide.get("elements")
+    if stored:
+        model["elements"] = stored
+        model["freeform"] = True
+    else:
+        model["elements"] = _elements.elements_to_dicts(_elements.auto_layout(slide))
+        model["freeform"] = False
+
+    # Enrich diagram elements with pre-rendered SVG so the web editor/presenter
+    # can display them (PPTX ignores this and renders from the spec → PNG).
+    for el in model["elements"]:
+        if el.get("type") == "diagram":
+            pl = el.get("payload") or {}
+            if "svg" not in pl and pl.get("nodes"):
+                try:
+                    from tools.viz.render_svg import diagram_to_svg
+                    from tools.viz.spec import DiagramSpec
+                    pl = dict(pl, svg=diagram_to_svg(DiagramSpec.from_dict(pl), theme))
+                    el["payload"] = pl
+                except Exception:
+                    pass
+
     return model
 
 
