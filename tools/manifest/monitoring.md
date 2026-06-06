@@ -18,3 +18,11 @@
 | WATCHCON Tiers | tools/monitor/watchcon.py | Three-tier alert classification: WATCHCON 4 (routine/info), WATCHCON 3 (elevated/warning), WATCHCON 2 (high/critical); insert, query, backfill, summarize | --tier, --json | Alert tier records + summary |
 | Monitor Constants | tools/monitor/constants.py | WATCHCON tier constants, severity↔tier mappings | (import only) | Module-level constants |
 
+## EQO Centralized Logging (eqo-log)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Log Query | tools/logging/log_query.py | Query the append-only centralized_logs sink (RLS via get_connection); shared by /logs page, GET /api/logs, and the logs.entries IQE collection | --component, --level, --since, --contains, --limit, --json | Log rows (newest first) |
+| Logs Blueprint | tools/logging/blueprint.py | /logs dashboard page + GET /api/logs + POST /logs/api/iqe-query; create_logs_blueprint() gated by ICDEV_LOGS_ENABLED | (Flask factory) | Blueprint or None |
+| Logs IQE Adapter | tools/iqe/adapters/logs.py | Registers the logs.entries IQE collection over centralized_logs | (import only) | Collection registration |
+| Logging Constants | tools/logging/constants.py | LOG_LEVELS, LEVEL_RANK, DEFAULT/MAX_LIMIT, LOGS_TABLE, FEATURE_FLAG | (import only) | Module-level constants |
+
