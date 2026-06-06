@@ -324,6 +324,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # CloudForge (D-CF-10, D-CF-15, D-CF-20, D-CF-21 — all append-only)
         "cf_provision_log",
         "cf_siem_events",
+        # Agentic AI safety_layer SIEM forwarder sink (append-only security events)
+        "siem_events",
         "cf_runbook_executions",
         "cf_runbook_task_log",
         # Phase 67 — Engineering Review Board (D-RB-2, D-RB-10 — audit + findings + remediation append-only)

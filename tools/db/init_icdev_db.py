@@ -7913,6 +7913,24 @@ CREATE INDEX IF NOT EXISTS idx_cf_siem_sev ON cf_siem_events(severity);
 CREATE INDEX IF NOT EXISTS idx_cf_siem_time ON cf_siem_events(event_time);
 
 -- ============================================================
+-- SIEM EVENTS (append-only) — agentic AI safety_layer forwarder sink
+-- Mirrors public.siem_events in pg_consolidated.sql; written best-effort
+-- by tools/agentic_ai_canvas/safety_layer.py::_forward_siem
+-- ============================================================
+CREATE TABLE IF NOT EXISTS siem_events (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    severity TEXT DEFAULT 'INFO' NOT NULL CHECK(severity IN ('INFO','LOW','MEDIUM','HIGH','CRITICAL')),
+    detail TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_siem_events_source ON siem_events(source);
+CREATE INDEX IF NOT EXISTS idx_siem_events_severity ON siem_events(severity);
+CREATE INDEX IF NOT EXISTS idx_siem_events_created ON siem_events(created_at);
+
+-- ============================================================
 -- CLOUDFORGE: SHIFT EMULATOR SESSIONS (D-CF-6)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS cf_shift_sessions (
