@@ -226,6 +226,17 @@
   </table>
   <div id="inv-empty" class="empty-state" style="display:none">No devices found matching filters.</div>
 </div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "migration" %}
+{% set iqe_api_route = "/migration-canvas/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Network Migration" %}
+{% set iqe_examples = [
+  {"label": "All devices", "query": "foreach d in mc.designs select d.name, d.migration_type, d.classification"},
+  {"label": "High-risk waves", "query": "foreach w in mc.waves where w.risk_score > 7 select w.design_name, w.wave_number, w.strategy, w.risk_score"},
+  {"label": "Low readiness scores", "query": "foreach a in mc.assessments where a.readiness_score < 50 select a.design_name, a.grade, a.readiness_score"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
 {% endblock %}
 
 {% block scripts %}

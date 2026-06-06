@@ -33,6 +33,7 @@ are still written and the failure is reported in the result, never raised.
 from __future__ import annotations
 
 import hashlib
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -749,6 +750,192 @@ def _ai_metadata_extraction(text: str, filename: str) -> dict | None:
 
 
 # --------------------------------------------------------------------------- #
+# LLM identifier extraction (aiify-opp-5988: ocr_extraction_pipeline ->
+# llm_generation). The external scan flagged paperless-ngx
+# src/documents/barcodes.py — the barcode/QR reader that scans a page image for
+# machine-readable codes to (a) split a multi-page scan at separator barcodes
+# and (b) assign an Archive Serial Number (ASN) from a barcode value. The repo
+# is ephemeral, so per the established aiify-opp pattern the augmentation lands
+# in the analogous ICDEV subsystem (DIC). Many ingested documents carry no
+# physical barcode, yet the same identifiers a barcode would encode (ASN,
+# invoice/contract/PO/reference numbers, control/tracking/case/serial numbers)
+# are printed in the text. This optional helper extracts those structured
+# identifiers from the document's own text — the LLM-generation analog of the
+# barcode reader.
+#
+# Grounding + safety (mirrors the 6086/6098/6118 designs & ICDEV AI-security
+# posture):
+#   - kind is constrained to a fixed enum — values outside it are dropped, so
+#     the model cannot invent a free-text identifier class.
+#   - value must match a compact identifier shape (alphanumerics + - / . #),
+#     never free prose, and its alphanumeric core MUST literally appear in the
+#     source text — a hard anti-hallucination guard so the model can only
+#     surface identifiers actually printed on the document.
+#   - a per-item confidence gates each identifier; the whole call is dropped
+#     below _IDENTIFIER_MIN_CONFIDENCE overall.
+#   - results are surfaced as a *proposal* under IngestOutcome.metadata —
+#     never silently written to dic_documents — so a human confirms (HITL).
+# --------------------------------------------------------------------------- #
+
+# Identifier classes DIC recognizes — the kinds of machine-readable codes a
+# barcode/label would carry. Constrains the model to a closed set so it cannot
+# emit a hallucinated free-text class; anything else is dropped.
+_IDENTIFIER_KINDS = (
+    "asn", "invoice_number", "contract_number", "po_number",
+    "reference_number", "document_number", "tracking_number",
+    "control_number", "case_number", "serial_number",
+)
+
+# Only the leading slice carries the identifier signal (codes are printed in
+# headers/footers/cover pages); keep the call cheap and bounded.
+_IDENTIFIER_INPUT_CHARS = 6000
+
+# Below this overall confidence the whole suggestion is dropped (HITL fallback).
+_IDENTIFIER_MIN_CONFIDENCE = 0.70
+
+_IDENTIFIER_MAX_ITEMS = 8
+_IDENTIFIER_VALUE_MAX_LEN = 64
+
+# A barcode-style identifier is a compact alphanumeric token (letters, digits
+# and the common separators - / . #), never a sentence. Reject anything else so
+# the model cannot smuggle prose into an "identifier" field.
+_IDENTIFIER_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9\-/.#]{0,62}[A-Za-z0-9]$")
+
+_IDENTIFIER_SYSTEM_PROMPT = (
+    "You extract structured document identifiers for a single ingested "
+    "document, for a document-management index. These are the machine-readable "
+    "codes a barcode or label would carry — e.g. an Archive Serial Number, "
+    "invoice/contract/purchase-order/reference/document/tracking/control/case/"
+    "serial numbers. Use ONLY the provided text — never invent, complete, or "
+    "guess a code not printed verbatim in it. Respond with a strict JSON object "
+    "and nothing else, of the form "
+    '{"identifiers": [{"kind": "<one of: '
+    + ", ".join(_IDENTIFIER_KINDS)
+    + '>", "value": "<the code exactly as printed>", "confidence": <0..1>}], '
+    '"confidence": <0..1 overall confidence>}. '
+    "Each value must be a compact code copied character-for-character from the "
+    "text, not a description. Return an empty identifiers list and low overall "
+    "confidence rather than guessing."
+)
+
+
+def _ai_extract_identifiers(text: str) -> list[dict] | None:
+    """Extract structured document identifiers from ``text`` via the LLM.
+
+    The LLM-generation analog of paperless' barcode reader (aiify-opp-5988):
+    surfaces the codes a barcode would carry (ASN, invoice/contract/PO/etc.
+    numbers) when they are printed in the document text rather than encoded in a
+    physical barcode.
+
+    Args:
+        text: The full extracted document text. Only the leading
+            ``_IDENTIFIER_INPUT_CHARS`` characters are sent to the model,
+            keeping the call cheap and bounded regardless of document size.
+
+    Returns:
+        A list of ``{"kind": str, "value": str, "confidence": float}`` items on
+        success, or ``None`` when extraction is unavailable, the text is empty,
+        the model output is unusable, the overall confidence is below
+        ``_IDENTIFIER_MIN_CONFIDENCE``, or nothing survives the grounding
+        guards. Callers MUST treat ``None``/empty as "no identifiers" and
+        proceed with ingestion unchanged — this is a best-effort, HITL proposal,
+        never a hard dependency, and is never silently persisted.
+    """
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    snippet = snippet[:_IDENTIFIER_INPUT_CHARS]
+    # Alphanumeric-only, case-folded form of the source used for the membership
+    # guard so an identifier still matches its printed core regardless of stray
+    # OCR spacing or differing separators (- / . #).
+    haystack = "".join(ch for ch in snippet if ch.isalnum()).lower()
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Document text (leading excerpt):\n"
+                        f"{snippet}\n\n"
+                        "Produce the identifiers JSON."
+                    ),
+                }
+            ],
+            system_prompt=_IDENTIFIER_SYSTEM_PROMPT,
+            max_tokens=384,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+
+        # Confidence gate: drop the whole suggestion below threshold (HITL).
+        try:
+            overall = float(parsed.get("confidence"))
+        except (TypeError, ValueError):
+            return None
+        if overall < _IDENTIFIER_MIN_CONFIDENCE:
+            return None
+
+        identifiers: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for item in parsed.get("identifiers") or []:
+            if not isinstance(item, dict):
+                continue
+            kind = str(item.get("kind") or "").strip().lower()
+            if kind not in _IDENTIFIER_KINDS:
+                continue
+            value = str(item.get("value") or "").strip()
+            if not value or len(value) > _IDENTIFIER_VALUE_MAX_LEN:
+                continue
+            # Shape guard: must be a compact code, not prose.
+            if not _IDENTIFIER_VALUE_RE.match(value):
+                continue
+            # Grounding guard: the code's alphanumeric core must literally
+            # appear in the source text (anti-hallucination).
+            core = "".join(ch for ch in value if ch.isalnum()).lower()
+            if not core or core not in haystack:
+                continue
+            # Per-item confidence gate.
+            try:
+                item_conf = float(item.get("confidence"))
+            except (TypeError, ValueError):
+                item_conf = overall
+            if item_conf < _IDENTIFIER_MIN_CONFIDENCE:
+                continue
+            key = (kind, value.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            identifiers.append(
+                {"kind": kind, "value": value, "confidence": round(item_conf, 4)}
+            )
+            if len(identifiers) >= _IDENTIFIER_MAX_ITEMS:
+                break
+
+        return identifiers or None
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
@@ -764,6 +951,7 @@ def ingest_file(
     summarize: bool = True,
     clean_ocr: bool = True,
     extract_metadata: bool = True,
+    extract_identifiers: bool = True,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -788,6 +976,15 @@ def ingest_file(
             document date (aiify-opp-6086) — grounded in the text and confidence
             gated. Surfaced as a HITL proposal on ``IngestOutcome.metadata``;
             never silently persisted. Failures degrade silently to no metadata.
+        extract_identifiers: when True, best-effort LLM extraction of structured
+            document identifiers — the codes a barcode/label would carry (ASN,
+            invoice/contract/PO/reference/document/tracking/control/case/serial
+            numbers) when printed in the text rather than encoded in a physical
+            barcode (aiify-opp-5988). Each value is shape-validated and must
+            appear verbatim in the source text (anti-hallucination), and the
+            result is confidence gated. Surfaced as a HITL proposal under
+            ``IngestOutcome.metadata["identifiers"]``; never silently persisted.
+            Failures degrade silently to no identifiers.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -846,6 +1043,17 @@ def ingest_file(
         md = _ai_metadata_extraction(text, p.name)
         if md:
             ai_metadata = md
+
+    # LLM identifier extraction (best-effort): the codes a barcode would carry
+    # (ASN, invoice/contract/PO/etc. numbers), extracted from the text when no
+    # physical barcode is present. Shape- + membership-guarded and confidence
+    # gated; surfaced as a HITL proposal under metadata["identifiers"], never
+    # silently written. (aiify-opp-5988)
+    if extract_identifiers and text.strip():
+        _emit("identifiers", "Extracting document identifiers…", 9)
+        ids = _ai_extract_identifiers(text)
+        if ids:
+            ai_metadata = {**ai_metadata, "identifiers": ids}
 
     # ── Duplicate detection + bookkeeping ─────────────────────────────────────
     # Open a single DB connection (or reuse caller's) for dedup + writes.
