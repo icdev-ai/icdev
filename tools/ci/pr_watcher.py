@@ -140,13 +140,13 @@ def list_pr_tasks(
     try:
         if task_id:
             rows = conn.execute(
-                "SELECT id, title, description, status, executor_url "
+                "SELECT id, title, description, status, executor_url, task_type "
                 "FROM kanban_tasks WHERE id = ?",
                 (task_id,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, title, description, status, executor_url "
+                "SELECT id, title, description, status, executor_url, task_type "
                 "FROM kanban_tasks WHERE status IN "
                 "('in_progress', 'scheduled')"
             ).fetchall()
@@ -166,6 +166,7 @@ def list_pr_tasks(
             "description": row["description"] or "",
             "status": row["status"],
             "executor_url": row["executor_url"] or "",
+            "task_type": (row["task_type"] if "task_type" in row.keys() else "") or "",
         }
         pr_url = _parse_pr_url(data["executor_url"]) or _parse_pr_url(
             data["description"]
@@ -485,6 +486,15 @@ class PRWatcher:
         require_approval = bool(
             self.config.get("auto_merge_require_approval", True)
         )
+        # Hybrid auto-merge policy: when this allowlist is non-empty, only tasks
+        # whose task_type is in it are eligible for auto-merge (e.g. chore/test/
+        # fix). Other types (feature/bug) get classification 'wait' so a human
+        # merges the PR. Empty/absent list = no per-type restriction.
+        auto_merge_task_types = {
+            str(t).strip().lower()
+            for t in (self.config.get("auto_merge_task_types") or [])
+            if str(t).strip()
+        }
 
         for task in tasks:
             report.tasks_checked += 1
@@ -528,26 +538,45 @@ class PRWatcher:
                         resume_cycle=cycle,
                     )
                 else:
-                    approved_ok = (
-                        not require_approval
-                        or ec.is_approved_and_passing(state)
+                    task_type = (task.get("task_type") or "").lower()
+                    type_ok = (
+                        not auto_merge_task_types
+                        or task_type in auto_merge_task_types
                     )
-                    if approved_ok and self._auto_merge(pr_url):
-                        action = WatcherAction(
-                            task_id=task["id"], pr_url=pr_url,
-                            classification="done",
-                            action="merge",
-                            reason="auto-merge ok",
-                            resume_cycle=cycle,
-                        )
-                    else:
+                    if not type_ok:
+                        # Hybrid policy: this task_type is not auto-mergeable
+                        # (e.g. feature/bug) — leave the PR for a human.
                         action = WatcherAction(
                             task_id=task["id"], pr_url=pr_url,
                             classification="done",
                             action="wait",
-                            reason="approval required or merge blocked",
+                            reason=(
+                                f"task_type '{task_type or 'unknown'}' requires "
+                                f"human merge (not in auto_merge_task_types)"
+                            ),
                             resume_cycle=cycle,
                         )
+                    else:
+                        approved_ok = (
+                            not require_approval
+                            or ec.is_approved_and_passing(state)
+                        )
+                        if approved_ok and self._auto_merge(pr_url):
+                            action = WatcherAction(
+                                task_id=task["id"], pr_url=pr_url,
+                                classification="done",
+                                action="merge",
+                                reason="auto-merge ok",
+                                resume_cycle=cycle,
+                            )
+                        else:
+                            action = WatcherAction(
+                                task_id=task["id"], pr_url=pr_url,
+                                classification="done",
+                                action="wait",
+                                reason="approval required or merge blocked",
+                                resume_cycle=cycle,
+                            )
                 report.actions.append(action)
                 self._audit(action)
                 continue

@@ -3373,6 +3373,134 @@ def _dispatch_github_actions(task_id: str, task_desc: str, task_type: str) -> bo
 _ga_last_polled: dict = {}  # task_id -> datetime of last poll
 
 
+def _ga_failure_reason(repo: str, run_id: str, hdrs: dict, conclusion: str) -> str:
+    """Build a concise failure reason for a failed GitHub Actions run.
+
+    Reuses the failed-job/step + error-line extraction pattern from
+    _detect_and_queue_ci_failures so that GA failures fed into
+    _record_failure_and_maybe_flag (and, after decomposition, into the
+    autofix prompt) carry real error context — not just "conclusion=failure".
+
+    Best-effort: returns a short string even if the jobs/logs API is
+    unreachable. Capped at ~2000 chars so it fits last_failure_reason.
+    """
+    reason = f"GitHub Actions run {run_id} conclusion={conclusion}."
+    try:
+        import requests as _req  # noqa: PLC0415
+    except ImportError:
+        return reason
+    try:
+        _jobs_resp = _req.get(
+            f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs",
+            headers=hdrs, timeout=10,
+        )
+        if _jobs_resp.status_code != 200:
+            return reason
+        _failed = [j for j in _jobs_resp.json().get("jobs", []) if j.get("conclusion") == "failure"]
+        parts = [reason]
+        for _job in _failed[:2]:
+            _jname = _job.get("name", "unknown job")
+            _fsteps = [s for s in _job.get("steps", []) if s.get("conclusion") == "failure"]
+            _step_names = ", ".join(s.get("name", "") for s in _fsteps[:3])
+            parts.append(f"Job '{_jname}' failed at: {_step_names}")
+            try:
+                _log_resp = _req.get(
+                    f"https://api.github.com/repos/{repo}/actions/jobs/{_job['id']}/logs",
+                    headers=hdrs, timeout=15, allow_redirects=True,
+                )
+                if _log_resp.status_code == 200:
+                    _err_lines = [
+                        ln for ln in _log_resp.text.splitlines()
+                        if any(kw in ln for kw in (
+                            "Error", "ERROR", "FAILED", "failed", "exit code",
+                            "ModuleNotFoundError", "ImportError", "SyntaxError",
+                            "cannot import", "Traceback", "AssertionError",
+                        ))
+                    ]
+                    if _err_lines:
+                        parts.append("\n".join(_err_lines[:20]))
+            except Exception:
+                pass
+        return "\n".join(parts)[:2000]
+    except Exception:
+        return reason
+
+
+def _ga_pr_flow_enabled() -> bool:
+    """True when the branch->V&V->MR PR flow is enabled for the GitHub Executor."""
+    import os as _os  # noqa: PLC0415
+    return _os.environ.get("ICDEV_KANBAN_PR_FLOW", "").lower() in ("1", "true", "yes")
+
+
+def _ga_link_pr_and_handoff(task_id: str, repo: str, hdrs: dict) -> bool:
+    """On a successful GA run, find the PR the runner opened for branch
+    kanban/<task_id> and hand the task off to pr_watcher (OPT-70).
+
+    Sets executor_url to the PR URL and keeps the task in_progress (records a
+    pr_opened workflow_state for forensics). pr_watcher then owns merge/resume.
+
+    Returns True if a PR was found and linked (caller leaves the task
+    in_progress); False if no PR exists (caller falls back to marking done).
+    """
+    try:
+        import requests as _req  # noqa: PLC0415
+    except ImportError:
+        return False
+    owner = repo.split("/")[0] if "/" in repo else repo
+    branch = f"kanban/{task_id}"
+    try:
+        resp = _req.get(
+            f"https://api.github.com/repos/{repo}/pulls",
+            headers=hdrs,
+            params={"head": f"{owner}:{branch}", "state": "open", "per_page": 5},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return False
+        prs = resp.json() or []
+        if not prs:
+            return False
+        pr_url = prs[0].get("html_url") or ""
+        if not pr_url:
+            return False
+    except Exception as exc:
+        logger.warning("kanban: PR lookup failed for %s: %s", task_id, exc)
+        return False
+
+    import json as _json  # noqa: PLC0415
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE kanban_tasks SET executor_url = ?, updated_at = ? WHERE id = ?",
+                (pr_url, now, task_id),
+            )
+            # Best-effort forensic workflow_state=pr_opened row (pr_watcher reads
+            # status+executor_url to find the task; this row is for audit only).
+            try:
+                conn.execute(
+                    "INSERT INTO audit_trail "
+                    "(created_at, event_type, actor, action, details) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        now, "agent_task_submitted", "kanban_ga_poll",
+                        "kanban.transition.pr_opened",
+                        _json.dumps({
+                            "task_id": task_id, "from_state": "in_progress",
+                            "to_state": "pr_opened", "workflow_state": "pr_opened",
+                            "db_status": "in_progress", "pr_url": pr_url,
+                        }),
+                    ),
+                )
+            except Exception:
+                pass
+    except Exception as exc:
+        logger.warning("kanban: PR hand-off DB write failed for %s: %s", task_id, exc)
+        return False
+    logger.info("kanban: %s GA success → PR %s (handed to pr_watcher)", task_id, pr_url)
+    return True
+
+
 def _poll_github_actions_completions() -> None:
     """Check GA API for completed runs and move tasks to done/backlog.
 
@@ -3457,13 +3585,31 @@ def _poll_github_actions_completions() -> None:
             if _data.get("status") == "completed":
                 _conclusion = _data.get("conclusion", "")
                 if _conclusion == "success":
-                    logger.info("kanban: GA run %s for %s succeeded → done", run_id, task_id)
-                    _move_task(task_id, "done")
+                    # PR flow: a successful run pushed kanban/<id> and opened a
+                    # PR. Link it and let pr_watcher (OPT-70) own merge/resume
+                    # instead of marking done blind. Falls back to done if the
+                    # flow is off or no PR was produced (e.g. no-op task).
+                    if _ga_pr_flow_enabled() and _ga_link_pr_and_handoff(task_id, repo, _hdrs):
+                        logger.info(
+                            "kanban: GA run %s for %s succeeded → PR review", run_id, task_id
+                        )
+                    else:
+                        logger.info("kanban: GA run %s for %s succeeded → done", run_id, task_id)
+                        _move_task(task_id, "done")
                 else:
+                    # Resilience parity with the claude_cli path: route GA
+                    # failures through the failure-count engine so a task that
+                    # keeps failing auto-decomposes after
+                    # MAX_FAILURES_BEFORE_DECOMPOSITION, instead of looping
+                    # backlog→dispatch→fail forever. _auto_decompose_stalled_tasks
+                    # (already in the scheduler cycle) then splits it.
+                    _reason = _ga_failure_reason(repo, run_id, _hdrs, _conclusion)
+                    _new_status = _record_failure_and_maybe_flag(task_id, _reason)
                     logger.warning(
-                        "kanban: GA run %s for %s conclusion=%s → backlog", run_id, task_id, _conclusion
+                        "kanban: GA run %s for %s conclusion=%s → %s",
+                        run_id, task_id, _conclusion, _new_status,
                     )
-                    _move_task(task_id, "backlog")
+                    _move_task(task_id, _new_status)
                 _ga_last_polled.pop(task_id, None)
         except Exception as _exc:
             logger.warning("kanban: GA poll error for %s: %s", task_id, _exc)

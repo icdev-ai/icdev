@@ -97,6 +97,7 @@ REFLEX_NAMES = [
     "slides",
     "aidp_monitor",
     "integrity_monitor",
+    "pr_watcher",
 ]
 
 # Backward-compat aliases for module-level access used by other code

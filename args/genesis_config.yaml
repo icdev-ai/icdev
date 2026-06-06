@@ -816,6 +816,21 @@ reflexes:
       threshold: 0
       operator: gte         # 0 new capabilities = clean; >0 surfaces real drift (always succeeds)
 
+  # ── PR Watcher (OPT-70 autonomous PR → resume/merge feedback loop) ──────────
+
+  pr_watcher:
+    timeout_seconds: 180     # bounded gh/network calls per poll
+    enabled: true
+    risk_tier: green         # merges require an approving review (see config)
+    schedule: "every 5m"
+    interval_seconds: 300    # poll open kanban PRs frequently for responsiveness
+    cooldown_minutes: 0
+    description: "OPT-70 PR watcher — poll open kanban PRs; inject resume context on CI-fail/changes-requested (autofix) or auto-merge green low-risk types (chore/test/fix) per args/pr_watcher_config.yaml"
+    success_metric:
+      name: pr_watcher_errors
+      threshold: 0
+      operator: eq
+
   # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
 
   oracle_triage:
