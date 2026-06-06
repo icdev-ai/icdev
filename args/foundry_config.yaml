@@ -1,0 +1,25 @@
+# CUI // SP-CTI
+# args/foundry_config.yaml — ACF (Autonomous Capability Foundry) configuration.
+#
+# The Genesis `foundry_cycle` reflex reads this file to decide its cadence and the
+# per-cycle rate limits it passes through to `tools.foundry.engine.run_cycle()`.
+# Behaviour can be tuned here WITHOUT editing the reflex (FORGE: args over code).
+#
+# The canvas itself is gated by the ICDEV_FOUNDRY_ENABLED feature flag (.env), NOT
+# by this file — when the flag is off the reflex is a clean no-op regardless of
+# what is configured below.
+
+foundry_cycle:
+  # Target run interval for the Genesis daemon (advisory; mirrored in
+  # genesis_config.yaml reflexes.foundry_cycle.interval_seconds and in
+  # tools/genesis/reflex_registry.py). 12h — a full harvest→synth→novelty-gate→
+  # score→CoD→SIPA cycle is expensive, so it runs a couple of times a day.
+  cadence_hours: 12
+
+  # Rate limit: hard cap on concepts proposed in a single cycle, passed straight
+  # to the engine so a noisy harvest can't flood the board with kanban tasks.
+  max_concepts_per_cycle: 5
+
+  # When true the reflex asks the engine to compute a cycle WITHOUT persisting
+  # concepts or seeding kanban tasks (useful for smoke tests / dry runs).
+  dry_run: false

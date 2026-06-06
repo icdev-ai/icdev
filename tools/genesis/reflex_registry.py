@@ -67,6 +67,9 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("socmint",                    DOMAIN, 6.0,  "SOCMINT harvester — Telegram milblog → sg_socmint_signals"),
     ReflexEntry("aadc_compliance",            DOMAIN, 4.0,  "AADC compliance scoring — NIST/OWASP/ATLAS node coverage",
                 on_demand=True),
+    ReflexEntry("foundry_cycle",              DOMAIN, 12.0,
+                "ACF: run one Autonomous Capability Foundry cycle (harvest→synth→novelty-gate→"
+                "score→CoD→SIPA→seed); clean no-op when ICDEV_FOUNDRY_ENABLED is off"),
 
     # ── SUPPORT ───────────────────────────────────────────────────────────────
     ReflexEntry("audit",       SUPPORT, 6.0,  "Compliance and security audit sweep"),
