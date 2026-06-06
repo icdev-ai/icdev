@@ -238,3 +238,105 @@ class TestDiagnostics:
         diag = manager.get_diagnostics()
         assert diag["total_contexts"] == 1
         assert diag["active_contexts"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Job-aware CLI bridge — deferred (background) chat responses (uclb-async-01)
+# ---------------------------------------------------------------------------
+
+
+import importlib
+
+from tools.llm.cli_bridge.cli_provider import CLIJobDeferred
+from tools.llm.router import LLMUnavailableError
+
+_CM = importlib.import_module("tools.dashboard.chat_manager")
+
+
+def _make_ctx(manager, **kw):
+    """Build an active context on the manager without starting its thread."""
+    res = manager.create_context("user-1", **kw)
+    return manager._contexts[res["context_id"]]
+
+
+@pytest.fixture
+def quiet_pipeline(monkeypatch):
+    """Stub the pre-invoke enrichment helpers so _process_message is hermetic."""
+    monkeypatch.setattr(_CM, "_build_full_constitution", lambda ctx: "")
+    monkeypatch.setattr(_CM, "_get_recent_corrections", lambda cid: "")
+    monkeypatch.setattr(_CM, "_rag_retrieve", lambda **kw: [])
+    monkeypatch.setattr(_CM, "_kg_context_retrieve", lambda q: "")
+    monkeypatch.setattr(_CM, "_live_compliance_context", lambda q: "")
+    monkeypatch.setattr(_CM, "_check_inception_needed", lambda ctx, q: False)
+
+
+def _patch_router(monkeypatch, invoke_fn):
+    """Patch the lazily-imported LLMRouter so .invoke() runs invoke_fn."""
+    router_mod = importlib.import_module("tools.llm.router")
+
+    class _Router:
+        def invoke(self, function, request):
+            return invoke_fn(function, request)
+
+    monkeypatch.setattr(router_mod, "LLMRouter", _Router)
+
+
+class TestPendingPlaceholder:
+    def test_persist_pending_placeholder_returns_dict(self, manager):
+        ctx = _make_ctx(manager)
+        result = manager._persist_pending_placeholder(ctx, "job-123")
+
+        assert result["status"] == "pending"
+        assert result["job_id"] == "job-123"
+        assert "background" in result["message"].lower()
+        # Placeholder persisted as an assistant message with job metadata
+        manager._db_insert_message.assert_called_once()
+        args, kwargs = manager._db_insert_message.call_args
+        assert args[2] == "assistant"
+        assert kwargs["content_type"] == "pending"
+        assert kwargs["metadata"]["job_id"] == "job-123"
+        assert kwargs["metadata"]["status"] == "pending"
+
+    def test_process_message_defers_on_cli_job(self, manager, monkeypatch, quiet_pipeline):
+        ctx = _make_ctx(manager)
+        manager.get_messages = MagicMock(return_value=[])
+
+        def _defer(function, request):
+            raise CLIJobDeferred("still running", job_id="job-xyz")
+
+        _patch_router(monkeypatch, _defer)
+
+        result = manager._process_message(ctx, {"content": "hi", "role": "user"})
+
+        assert isinstance(result, dict)
+        assert result["status"] == "pending"
+        assert result["job_id"] == "job-xyz"
+        manager._db_insert_message.assert_called_once()
+
+    def test_process_message_normal_completion_unchanged(self, manager, monkeypatch, quiet_pipeline):
+        ctx = _make_ctx(manager)
+        manager.get_messages = MagicMock(return_value=[])
+
+        def _ok(function, request):
+            resp = MagicMock()
+            resp.content = "hello there"
+            return resp
+
+        _patch_router(monkeypatch, _ok)
+
+        result = manager._process_message(ctx, {"content": "hi", "role": "user"})
+        assert result == "hello there"
+
+    def test_process_message_echo_fallback_when_unavailable(self, manager, monkeypatch, quiet_pipeline):
+        ctx = _make_ctx(manager)
+        manager.get_messages = MagicMock(return_value=[])
+
+        def _dead(function, request):
+            raise LLMUnavailableError("no provider")
+
+        _patch_router(monkeypatch, _dead)
+
+        result = manager._process_message(ctx, {"content": "hi", "role": "user"})
+        assert isinstance(result, str)
+        assert result.startswith("[Agent ")
+        assert "Acknowledged" in result
