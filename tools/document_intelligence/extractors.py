@@ -662,3 +662,330 @@ def extract_file(path: str | Path) -> Extraction:
             title=p.stem,
             warnings=[f"File read failed: {exc}"],
         )
+
+
+# --------------------------------------------------------------------------- #
+# Extraction-quality anomaly detection (aiify-opp-6059: hardcoded_threshold ->
+# anomaly_detection, modeled on the document-record serialisation/validation
+# layer of a document-management backend). A serialiser-style validator keeps a
+# single *hardcoded threshold* — accept any record whose text length is above N,
+# reject the rest — which is blind to two silent-failure modes the absolute
+# number can't see: (1) a record that came back structurally valid (a real
+# page_count, no library error) yet yielded near-empty text — a scanned PDF
+# whose OCR produced nothing, a DOCX whose body never decoded; and (2) a yield
+# *cliff* where most of an ingested batch extracted richly and a few records
+# fell off a statistical edge into near-empty noise. This layer lifts the
+# implicit length cutoff into named per-page text-yield bands AND adds a
+# yield-distribution outlier pass over the batch. The statistical detection is
+# ALWAYS authoritative and LLM-free (air-gap safe); the optional LLM severity
+# grade is best-effort enrichment that degrades silently to None. It NEVER
+# changes which records were extracted — it only annotates ingestion quality.
+# --------------------------------------------------------------------------- #
+
+# Per-page text-yield bands (characters of extracted text per page). These
+# replace the single magic "min length" cutoff a serialiser would hardcode:
+# chars_per_page >= _YIELD_RICH → "rich"; >= _YIELD_SPARSE → "sparse"; below →
+# "empty" (extraction effectively failed). Centralizing them means tuning the
+# notion of "too little text" happens in one place, not scattered len() checks.
+_YIELD_RICH = 200.0
+_YIELD_SPARSE = 40.0
+
+# ── Anomaly detection (batch-relative outliers) ───────────────────────────────
+# The absolute bands grade each record against a fixed yardstick. They miss a
+# record that is anomalous *for this batch*: the near-empty tail past a sharp
+# yield cliff. The anomaly layer flags records whose per-page yield sits more
+# than _ANOMALY_STDEV_K standard deviations BELOW the batch mean (low outliers)
+# and that are not themselves already rich (abs ceiling). Pure statistics, no I/O.
+_ANOMALY_STDEV_K = 1.5            # outlier if yield < mean - k * stdev
+_ANOMALY_MIN_DOCS = 4            # need a real distribution before flagging outliers
+_ANOMALY_ABS_CEIL = _YIELD_RICH  # never flag a record that is itself rich
+_ANOMALY_SAMPLE = 5             # bound how many concrete outliers the LLM sees
+
+# Deterministic severity cutoffs on the sparse/empty fraction of the batch.
+_ANOMALY_SEV_HIGH_FRACTION = 0.50
+_ANOMALY_SEV_MEDIUM_FRACTION = 0.25
+
+_EXTRACTION_ANOMALY_SYSTEM_PROMPT = (
+    "You are an ingestion-quality analyst grading how badly a batch of extracted "
+    "document records came out. You are given the number of records, their "
+    "per-page text-yield distribution, whether any record came back structurally "
+    "valid yet near-empty (empty_extraction — a likely silent OCR/parse failure), "
+    "the records that are low-yield statistical outliers (the near-empty tail past "
+    "a yield cliff), and a deterministic baseline severity. A batch where records "
+    "extracted to (almost) no text, or where most records are sparse, is the most "
+    "severe. You may agree with or adjust the baseline, but justify any change. "
+    'Respond ONLY with a JSON object: {"severity": "low|medium|high", "rationale": '
+    '"<=160 chars", "top_concern": "<short phrase naming the main quality problem>"}. '
+    "Never invent records beyond those provided."
+)
+
+
+def _extraction_fields(item: "Extraction | dict") -> dict:
+    """Read the quality-relevant fields off an Extraction or its dict form.
+
+    Pure accessor that tolerates both :class:`Extraction` instances and plain
+    dicts (already-serialised records), so the detector works on freshly
+    extracted objects and on records reloaded from storage alike. ``page_count``
+    is floored at 1 to keep the per-page divisor safe even for a failed read
+    that reported 0 pages.
+    """
+    if isinstance(item, dict):
+        text = item.get("text") or ""
+        provider = item.get("provider") or ""
+        content_type = item.get("content_type") or ""
+        page_count = item.get("page_count") or 0
+        title = item.get("title") or ""
+    else:
+        text = getattr(item, "text", "") or ""
+        provider = getattr(item, "provider", "") or ""
+        content_type = getattr(item, "content_type", "") or ""
+        page_count = getattr(item, "page_count", 0) or 0
+        title = getattr(item, "title", "") or ""
+    try:
+        pages = max(int(page_count), 1)
+    except (TypeError, ValueError):
+        pages = 1
+    chars = len(text)
+    return {
+        "title": title,
+        "provider": provider,
+        "content_type": content_type,
+        "page_count": pages,
+        "chars": chars,
+        "chars_per_page": chars / pages,
+    }
+
+
+def _classify_yield(chars_per_page: float) -> str:
+    """Map a record's per-page text yield to a band using the named thresholds.
+
+    Pure function: ``chars_per_page >= _YIELD_RICH`` → ``"rich"``,
+    ``>= _YIELD_SPARSE`` → ``"sparse"``, otherwise ``"empty"``.
+    """
+    if chars_per_page >= _YIELD_RICH:
+        return "rich"
+    if chars_per_page >= _YIELD_SPARSE:
+        return "sparse"
+    return "empty"
+
+
+def _heuristic_extraction_anomaly_severity(sparse_count: int, total: int, has_empty: bool) -> str:
+    """Deterministic extraction-anomaly severity — the always-available baseline.
+
+    Pure function of how large a fraction of the batch is sparse/empty noise,
+    escalated one notch when ANY record came back structurally valid yet
+    near-empty (``has_empty``), since a silent total extraction failure is the
+    worst case. Used directly when the LLM grade is unavailable and handed to the
+    model as the reference baseline.
+    """
+    if total <= 0:
+        return "low"
+    fraction = (sparse_count / total) if total else 0.0
+    if has_empty or fraction >= _ANOMALY_SEV_HIGH_FRACTION:
+        return "high"
+    if fraction >= _ANOMALY_SEV_MEDIUM_FRACTION:
+        return "medium"
+    return "low"
+
+
+def _compute_extraction_anomalies(extractions: "list[Extraction | dict]") -> dict:
+    """Pure statistical outlier pass over a batch of records — the authoritative heuristic.
+
+    A *low outlier* is a record whose per-page text yield is below ``mean -
+    _ANOMALY_STDEV_K * stdev`` AND not itself rich (``chars_per_page <
+    _ANOMALY_ABS_CEIL``) — the near-empty tail past a yield cliff. ``has_empty``
+    is True when any record fell into the ``"empty"`` band (extraction
+    effectively produced no text). Below ``_ANOMALY_MIN_DOCS`` the distribution
+    is too small to be meaningful, so only the band classification is evaluated
+    and no statistical outliers are reported. No I/O, no LLM — safe to call
+    anywhere (air-gap).
+
+    Returns the count summary, the ranked outlier list, the ``has_empty`` flag,
+    and the deterministic ``severity`` baseline.
+    """
+    recs = [_extraction_fields(e) for e in extractions]
+    yields = [r["chars_per_page"] for r in recs]
+    total = len(yields)
+
+    sparse_count = sum(1 for r in recs if r["chars_per_page"] < _YIELD_RICH)
+    has_empty = any(r["chars_per_page"] < _YIELD_SPARSE for r in recs)
+
+    if total < _ANOMALY_MIN_DOCS:
+        return {
+            "anomaly_count": 0,
+            "mean": round(sum(yields) / total, 2) if total else 0.0,
+            "stdev": 0.0,
+            "threshold": 0.0,
+            "has_empty": has_empty,
+            "anomalies": [],
+            "sparse_count": sparse_count,
+            "severity": _heuristic_extraction_anomaly_severity(sparse_count, total, has_empty),
+            "total": total,
+        }
+
+    mean = sum(yields) / total
+    variance = sum((y - mean) ** 2 for y in yields) / total
+    stdev = variance ** 0.5
+    threshold = mean - _ANOMALY_STDEV_K * stdev
+
+    anomalies: list[dict] = []
+    for r in recs:
+        cpp = r["chars_per_page"]
+        if cpp < threshold and cpp < _ANOMALY_ABS_CEIL:
+            z = round((cpp - mean) / stdev, 3) if stdev > 0 else 0.0
+            anomalies.append({
+                "title": r["title"],
+                "provider": r["provider"],
+                "content_type": r["content_type"],
+                "page_count": r["page_count"],
+                "chars": r["chars"],
+                "chars_per_page": round(cpp, 2),
+                "z_score": z,
+                "band": _classify_yield(cpp),
+            })
+    anomalies.sort(key=lambda a: a["chars_per_page"])
+
+    return {
+        "anomaly_count": len(anomalies),
+        "mean": round(mean, 2),
+        "stdev": round(stdev, 2),
+        "threshold": round(threshold, 2),
+        "has_empty": has_empty,
+        "anomalies": anomalies,
+        "sparse_count": sparse_count,
+        "severity": _heuristic_extraction_anomaly_severity(sparse_count, total, has_empty),
+        "total": total,
+    }
+
+
+def detect_extraction_anomalies(extractions: "list[Extraction | dict]", use_llm: bool = True) -> dict:
+    """Flag a batch of extracted records for silent extraction failure / a yield cliff.
+
+    Complements the absolute rich/sparse/empty bands: a batch can contain
+    individually acceptable records yet expose a sharp yield cliff (a near-empty
+    tail of low outliers), or fail outright (a record that came back valid but
+    produced no text).
+
+    The statistical detection (:func:`_compute_extraction_anomalies`) and the
+    deterministic ``severity`` baseline are ALWAYS authoritative and never depend
+    on the LLM. The returned ``ai_grade`` is best-effort severity enrichment and
+    is ``None`` when the model is unavailable, ``use_llm`` is False, or there is
+    nothing to grade.
+
+    Args:
+        extractions: The :class:`Extraction` records (or their dict form) from a
+            batch ingest.
+        use_llm: When False, skip the optional LLM grade entirely (air-gap / cost).
+
+    Returns:
+        {
+          "anomaly_count": int,
+          "mean": float, "stdev": float, "threshold": float,
+          "has_empty": bool,
+          "sparse_count": int,
+          "anomalies": [{"title","provider","content_type","page_count","chars",
+                         "chars_per_page","z_score","band"}],
+          "severity": "low|medium|high",   # authoritative deterministic baseline
+          "ai_grade": {...} | None,        # optional LLM refinement
+        }
+    """
+    out = _compute_extraction_anomalies(extractions)
+    ai_grade = None
+    if use_llm:
+        ai_grade = _ai_extraction_anomaly_severity(
+            {"record_count": out["total"], "mean": out["mean"], "stdev": out["stdev"],
+             "has_empty": out["has_empty"], "sparse_count": out["sparse_count"],
+             "anomaly_count": out["anomaly_count"], "baseline_severity": out["severity"]},
+            out["anomalies"],
+        )
+    out.pop("total", None)
+    out["ai_grade"] = ai_grade
+    return out
+
+
+def _ai_extraction_anomaly_severity(summary: dict, anomalies: list[dict]) -> dict | None:
+    """Grade extraction-quality-anomaly severity with the LLM, grounded on real data.
+
+    Args:
+        summary: Distribution facts — record_count, mean, stdev, has_empty,
+            sparse_count, anomaly_count, and the deterministic
+            ``baseline_severity``.
+        anomalies: The concrete low-yield outlier records (titles, providers,
+            content types, per-page yields). Only the leading ``_ANOMALY_SAMPLE``
+            are sent, keeping the call cheap and bounded regardless of batch size.
+            Injection scanning stays ON (``skip_injection_scan`` is NOT set)
+            because record titles are derived from arbitrary ingested files.
+
+    Returns:
+        ``{"severity": "low|medium|high", "rationale": str, "top_concern": str}``
+        on success, or ``None`` when there is nothing to grade (no outliers and no
+        empty extraction), the model is unavailable, or the output is
+        missing/blank/malformed/out-of-range. Callers MUST treat ``None`` as "use
+        the deterministic heuristic" — this is best-effort enrichment, never a
+        hard dependency.
+    """
+    if not anomalies and not summary.get("has_empty"):
+        return None
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        lines = [
+            f"Batch facts: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {summary.get('baseline_severity')}",
+            "Low-yield outlier records:",
+        ]
+        for a in anomalies[:_ANOMALY_SAMPLE]:
+            lines.append(f"- {_json.dumps(a, default=str)}")
+
+        req = LLMRequest(
+            messages=[
+                {"role": "user", "content": "\n".join(lines) + "\n\nGrade the severity."}
+            ],
+            system_prompt=_EXTRACTION_ANOMALY_SYSTEM_PROMPT,
+            max_tokens=200,
+            temperature=0.1,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("dic_extraction_anomaly_severity", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+        severity = str(parsed.get("severity") or "").strip().lower()
+        if severity not in {"low", "medium", "high"}:
+            return None
+        return {
+            "severity": severity,
+            "rationale": str(parsed.get("rationale") or "").strip()[:200],
+            "top_concern": str(parsed.get("top_concern") or "").strip()[:80],
+        }
+    except Exception:
+        return None
+
+
+def extract_batch_with_quality(
+    paths: "list[str | Path]", use_llm: bool = True
+) -> "tuple[list[Extraction], dict]":
+    """Extract a batch of files and annotate it with an extraction-quality report.
+
+    Identical extraction to calling :func:`extract_file` on each path — the
+    returned record list is exactly what those calls would produce; the second
+    element is the deterministic extraction-quality report from
+    :func:`detect_extraction_anomalies` (silent-failure / yield-cliff flags plus
+    an optional best-effort LLM severity grade). Quality assessment never changes
+    what was extracted.
+    """
+    extractions = [extract_file(p) for p in paths]
+    report = detect_extraction_anomalies(extractions, use_llm=use_llm)
+    return extractions, report
