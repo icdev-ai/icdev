@@ -678,3 +678,38 @@ def test_signature_scan_in_fan_out(staged_env, tmp_path, monkeypatch):
     assert any(
         r["finding_type"] == "known_bad_signature" for r in _findings(aid)
     )
+
+
+def test_signature_scan_in_gitignored_quarantine_tree(staged_env):
+    """Regression (eqo-sipa-s1): a planted payload under the gitignored ``.tmp/``
+    quarantine tree is still detected, NOT silently skipped.
+
+    No monkeypatch of ``_detect_signatures`` — this exercises the real path. The
+    quarantine staging dir lives under ``<repo>/.tmp/`` (gitignored). Before the
+    fix, Semgrep walked up to the repo ``.gitignore``, skipped every staged file,
+    and returned ``[]`` (zero hits, not ``None``) — so the regex fallback never
+    ran and ``run_signature_scan`` persisted 0 findings. The fix passes
+    ``--no-git-ignore`` so Semgrep scans the quarantine tree regardless. When
+    Semgrep is absent, the regex fallback (manual os.walk) detects it either way.
+    """
+    import shutil as _shutil
+
+    aid = _new_assessment(staged_env)
+    # Stage under the repo's real gitignored .tmp/ tree (the exact bug condition).
+    staged = ingest.BASE_DIR / ".tmp" / "_sipa_s1_regression" / str(aid)
+    staged.mkdir(parents=True, exist_ok=True)
+    try:
+        (staged / "payload.py").write_text(_REVERSE_SHELL, encoding="utf-8")
+
+        result = scanners.run_signature_scan(aid, staged_path=str(staged))
+        assert result["success"] is True
+        # The core regression assertion: the scan is NOT silently empty.
+        assert result["findings_persisted"] >= 1, (
+            "signature scan persisted 0 findings on a gitignored quarantine tree "
+            f"(engine={result['engine']}) — scanner silently disabled"
+        )
+        rows = _findings(aid)
+        assert any(r["finding_type"] == "known_bad_signature" for r in rows)
+        assert any(r["severity"] == "critical" for r in rows)  # reverse_shell
+    finally:
+        _shutil.rmtree(ingest.BASE_DIR / ".tmp" / "_sipa_s1_regression", ignore_errors=True)

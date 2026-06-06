@@ -289,12 +289,19 @@ def run_semgrep(
     *,
     timeout: int | None = None,
     metrics: str | None = None,
+    no_git_ignore: bool = False,
 ) -> list[dict] | None:
     """Run an arbitrary Semgrep rules dir over ``target_path`` and return raw hits.
 
     Generic, metadata-agnostic counterpart to :func:`detect_patterns`'s Semgrep
     path — reuses the same CLI invocation but lets any consumer supply its own
     ``rules_dir``. ``rules_dir`` may be absolute or repo-root-relative.
+
+    ``no_git_ignore`` adds ``--no-git-ignore`` so Semgrep scans every file under
+    ``target_path`` regardless of any ``.gitignore`` it discovers while walking up
+    from the target. Callers scanning a deliberately gitignored staging tree (e.g.
+    SIPA's quarantine under ``.tmp/``) MUST set this — otherwise Semgrep silently
+    skips all files and returns ``[]`` (zero hits, not ``None``), masking the scan.
 
     Returns a list of hit dicts (``rule_id``, ``path``, ``start_line``,
     ``end_line``, ``severity``, ``message``, ``metadata``), or ``None`` when
@@ -315,8 +322,10 @@ def run_semgrep(
         "--json",
         "--config", str(rules_path),
         "--metrics", metrics or _SEMGREP_METRICS,
-        str(target_path),
     ]
+    if no_git_ignore:
+        cmd.append("--no-git-ignore")
+    cmd.append(str(target_path))
     try:
         proc = subprocess.run(
             cmd,
