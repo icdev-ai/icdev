@@ -10,7 +10,34 @@ from tools.security.security_context import (
     clear_security_context,
     from_request,
     _get_clearance_order,
+    classifications_dominated_by,
 )
+
+
+class TestClassificationsDominatedBy:
+    """Bell-LaPadula read-down: a clearance dominates lower classifications,
+    never higher ones. Guards the RLS predicate (classification IN <set>)."""
+
+    def test_read_down_only(self):
+        assert classifications_dominated_by("CUI") == {"PUBLIC", "CUI"}
+
+    def test_secret_reads_down_not_up(self):
+        s = classifications_dominated_by("SECRET")
+        assert "CUI" in s and "SECRET" in s
+        assert "TOP SECRET" not in s and "TOP SECRET//SCI" not in s
+
+    def test_top_secret_sci_reads_all(self):
+        assert {"PUBLIC", "CUI", "SECRET", "TOP SECRET", "TOP SECRET//SCI"} <= classifications_dominated_by(
+            "TOP SECRET//SCI"
+        )
+
+    def test_no_read_up(self):
+        # The crux of the RLS bug: a lower clearance must never see a higher row.
+        assert "TOP SECRET" not in classifications_dominated_by("CUI")
+
+    def test_empty_when_no_classification(self):
+        assert classifications_dominated_by(None) == set()
+        assert classifications_dominated_by("") == set()
 
 
 class TestSecurityContext:
