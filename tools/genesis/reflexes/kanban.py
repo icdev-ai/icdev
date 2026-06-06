@@ -2450,6 +2450,83 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         pass  # SSE is best-effort
 
 
+def _reconcile_limbo_tasks(conn: Any = None) -> list[str]:
+    """Heal tasks stuck in a non-dispatchable limbo state. Self-healing backstop.
+
+    The dispatcher selects work via two queries (``_get_due_tasks``): the
+    *scheduled* query requires ``status='scheduled' AND scheduled_at IS NOT NULL
+    AND scheduled_at <= now()``; the *backlog* query requires ``status='backlog'``.
+    A row with ``status='scheduled'`` but ``scheduled_at IS NULL`` matches NEITHER
+    — it never dispatches and deadlocks every task that depends on it. Several
+    seeders historically produced exactly this (see plan
+    serialized-squishing-dawn / [[kanban-autonomous-seeding-workflow]]).
+
+    This sweep runs every cycle (cheap) and converts ``scheduled``+NULL rows to
+    ``backlog`` (their true intent: dep-gated, dispatch ASAP). Even manual SQL or
+    an un-migrated seeder self-corrects within one cycle. Dependency references
+    to non-existent task ids are logged (not auto-deleted) so the gap is visible.
+
+    Returns the list of task ids healed (scheduled->backlog).
+    """
+    own = conn is None
+    healed: list[str] = []
+    try:
+        _conn = conn or get_connection()
+    except Exception as exc:
+        logger.warning("limbo reconcile: DB connect error %s", exc)
+        return []
+    try:
+        rows = _conn.execute(
+            "SELECT id, project_id FROM kanban_tasks "
+            "WHERE status = 'scheduled' AND scheduled_at IS NULL"
+        ).fetchall()
+        candidates = [dict(r) for r in rows]
+        # Heal via _move_task so the transition is audited
+        # (_record_status_transition) and consistent with the orphan sweep.
+        # scheduled->backlog is a clean status update (no guards, no cascade).
+        for d in candidates:
+            _move_task(
+                d["id"], "backlog",
+                actor="limbo_reconcile",
+                reason="scheduled with NULL scheduled_at — undispatchable; healed to backlog",
+            )
+            healed.append(d["id"])
+            logger.warning(
+                "LIMBO reconcile: %s was scheduled with NULL scheduled_at "
+                "(undispatchable) — healed to backlog [project=%s]",
+                d["id"], d.get("project_id"),
+            )
+
+        # Visibility only: deps that point at ids which no longer exist.
+        try:
+            dangling = _conn.execute(
+                "SELECT t.id AS id, t.depends_on_task_id AS parent "
+                "FROM kanban_tasks t "
+                "WHERE t.depends_on_task_id IS NOT NULL "
+                "  AND t.status IN ('backlog', 'scheduled') "
+                "  AND NOT EXISTS (SELECT 1 FROM kanban_tasks p "
+                "                  WHERE p.id = t.depends_on_task_id)"
+            ).fetchall()
+            for r in dangling:
+                d = dict(r)
+                logger.warning(
+                    "DANGLING dep: %s depends on missing task %r — will never "
+                    "dispatch until the parent exists or the dep is cleared",
+                    d["id"], d.get("parent"),
+                )
+        except Exception:
+            pass
+    except Exception as exc:
+        logger.warning("limbo reconcile: DB error %s", exc)
+    finally:
+        if own:
+            try:
+                _conn.close()
+            except Exception:
+                pass
+    return healed
+
+
 def _detect_orphan_done_tasks() -> list[dict]:
     """Find done tasks whose parent isn't done and roll them back.
 
@@ -7131,6 +7208,21 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             )
     except Exception as _osw_exc:
         logger.warning("orphan-done sweep failed: %s", _osw_exc)
+
+    # 0a-2. Limbo reconcile — heal tasks stuck in a non-dispatchable state
+    # (status='scheduled' with NULL scheduled_at match neither dispatcher query
+    # and deadlock their whole dependency chain). Self-healing backstop so a bad
+    # seeder or manual SQL self-corrects within one cycle. See plan
+    # serialized-squishing-dawn / [[kanban-autonomous-seeding-workflow]].
+    try:
+        _limbo = _reconcile_limbo_tasks()
+        if _limbo:
+            print(
+                f"  Kanban: limbo reconcile healed {len(_limbo)} "
+                f"scheduled->backlog: {_limbo[:10]}"
+            )
+    except Exception as _lim_exc:
+        logger.warning("limbo reconcile failed: %s", _lim_exc)
 
     # 0b. Startup-recovery sweep — on the very first cycle after a restart,
     # reset any tasks still in_progress (they were orphaned when the scheduler

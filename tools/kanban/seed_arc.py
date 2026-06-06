@@ -36,19 +36,13 @@ _BASE = Path(__file__).resolve().parents[2]
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
 
 NOW = datetime.now(timezone.utc).isoformat()
 
 
 def seed():
-    conn = get_connection()
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-    except Exception:
-        pass  # PG backend — PRAGMA is a no-op / unsupported
-
     tasks = [
         # ── Epic ev: deep evidence collector (WS1) — the foundation ──────────
         {
@@ -423,33 +417,9 @@ def seed():
         },
     ]
 
-    seeded = 0
-    for t in tasks:
-        existing = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE id=?", (t["id"],)
-        ).fetchone()
-        if existing:
-            print(f"  SKIP (exists): {t['id']}")
-            continue
-        conn.execute(
-            """INSERT INTO kanban_tasks
-               (id, title, description, task_type, priority, status,
-                created_at, updated_at, depends_on_task_id, classification)
-               VALUES (?, ?, ?, ?, ?, 'backlog', ?, ?, ?, ?)""",
-            (
-                t["id"], t["title"], t["description"],
-                t["task_type"], t["priority"],
-                NOW, NOW,
-                t.get("depends_on_task_id"),
-                "CUI // SP-CTI",
-            ),
-        )
-        print(f"  SEEDED: {t['id']} — {t['title'][:60]}")
-        seeded += 1
-
-    conn.commit()
-    conn.close()
-    print(f"\nDone. {seeded} tasks seeded to BACKLOG for project arc-*")
+    report = create_tasks("arc", tasks, strict=False, register_project=False)
+    print(report.summary())
+    print(f"\nDone. {len(report.seeded)} tasks seeded to BACKLOG for project arc-*")
 
 
 if __name__ == "__main__":

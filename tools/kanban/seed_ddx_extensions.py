@@ -12,9 +12,8 @@ _BASE = Path(__file__).resolve().parents[2]
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
-conn = get_connection()
 NOW = datetime.now(timezone.utc).isoformat()
 
 TASKS = [
@@ -510,36 +509,13 @@ TASKS = [
     },
 ]
 
-def insert_task(t):
-    conn.execute(
-        """INSERT OR IGNORE INTO kanban_tasks
-           (id, title, description, task_type, priority, status,
-            scheduled_at, created_at, updated_at, depends_on_task_id)
-           VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?)""",
-        (
-            t["id"], t["title"], t["description"],
-            t["task_type"], t["priority"],
-            NOW, NOW, NOW,
-            t.get("depends_on_task_id"),
-        ),
-    )
-
-inserted = 0
-skipped = 0
+# These tasks are genuinely time-deferred: status 'scheduled' WITH a real
+# scheduled_at (NOW) — schedule immediately. Stamp both on every task.
 for t in TASKS:
-    existing = conn.execute(
-        "SELECT id FROM kanban_tasks WHERE id=?", (t["id"],)
-    ).fetchone()
-    if existing:
-        skipped += 1
-        print(f"  skip  {t['id']}")
-    else:
-        insert_task(t)
-        inserted += 1
-        print(f"  seed  {t['id']} — {t['title'][:60]}")
+    t["status"] = "scheduled"
+    t["scheduled_at"] = NOW
 
-conn.commit()
-conn.close()
+report = create_tasks("ddx", TASKS, strict=False, register_project=False)
 print(f"\n{'='*60}")
-print(f"Seeded {inserted} tasks, skipped {skipped} duplicates.")
+print(report.summary())
 print("Project: ddx | Epics: an, pii, cli, fr, mcp, vv | Tasks: 26")

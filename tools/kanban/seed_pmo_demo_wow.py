@@ -46,7 +46,7 @@ _BASE = Path(__file__).resolve().parents[2]
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
 _NOW = datetime.now(timezone.utc).isoformat()
 PROJECT_PREFIX = "pmodemo-"
@@ -62,10 +62,6 @@ PROJECT_DESCRIPTION = (
     "reflexes. Reference plan: C:/Users/schuo/.claude/plans/"
     "i-m-giving-a-demo-vivid-pinwheel.md"
 )
-
-
-def _conn():
-    return get_connection()
 
 
 TASKS: list[dict] = [
@@ -699,10 +695,6 @@ TASKS.append({  # noqa: F821  -  appended after literal definition above
 
 def seed(dry_run: bool = False) -> None:
     """Insert all 18 tasks. Idempotent  -  skips existing IDs."""
-    conn = _conn()
-    inserted = 0
-    skipped = 0
-
     print("\n  PMO Demo Wow-Factor Seeder")
     print(f"  Project: {PROJECT_KEY} ({PROJECT_PREFIX})")
     print(f"  Tasks:   {len(TASKS)}\n")
@@ -713,60 +705,19 @@ def seed(dry_run: bool = False) -> None:
             print(f"  [DRY] {t['id']:25s} -> deps on {t.get('depends_on_task_id') or '(root)'}  {t['title'][:60]}")
         return
 
-    try:
-        for t in TASKS:
-            existing = conn.execute(
-                "SELECT id FROM kanban_tasks WHERE id = ?", (t["id"],)
-            ).fetchone()
-            if existing:
-                print(f"  SKIP  {t['id']} (already exists)")
-                skipped += 1
-                continue
+    # The factory writes the scalar depends_on_task_id AND the kanban_task_deps
+    # junction row (read by the board UI for multi-parent dep graphs) — so the
+    # previous manual junction insert is no longer needed.
+    report = create_tasks(PROJECT_KEY, TASKS, strict=False, register_project=False)
+    print(report.summary())
+    print(f"\n  Done: {len(report.seeded)} added, {len(report.skipped)} skipped.")
 
-            conn.execute(
-                """INSERT INTO kanban_tasks
-                   (id, title, description, task_type, priority,
-                    status, scheduled_at, depends_on_task_id,
-                    executor_type, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    t["id"],
-                    t["title"],
-                    t.get("description", ""),
-                    t.get("task_type", "build"),
-                    t.get("priority", "high"),
-                    t.get("status", "backlog"),
-                    t.get("scheduled_at"),
-                    t.get("depends_on_task_id"),
-                    "claude_cli",
-                    _NOW,
-                    _NOW,
-                ),
-            )
-            print(f"  ADD   {t['id']:25s} [deps={t.get('depends_on_task_id') or 'root':25s}]  {t['title'][:60]}")
-            inserted += 1
-            # Also write to junction table (kanban_task_deps) for the dep-graph
-            # visualization on the kanban board. The scalar depends_on_task_id
-            # column is read by the scheduler for cycle detection; the junction
-            # table is read by the UI for multi-parent dep graphs.
-            if t.get("depends_on_task_id"):
-                conn.execute(
-                    "INSERT INTO kanban_task_deps (task_id, depends_on_id, created_at) "
-                    "VALUES (?, ?, ?) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
-                    (t["id"], t["depends_on_task_id"], _NOW),
-                )
-
-        conn.commit()
-        print(f"\n  Done: {inserted} added, {skipped} skipped.")
-
-        # Print dep graph summary
-        print("\n  Dep chain visualization:")
-        for t in TASKS:
-            if t.get("depends_on_task_id"):
-                arrow = f"  {t['depends_on_task_id']} -> {t['id']}"
-                print(arrow)
-    finally:
-        conn.close()
+    # Print dep graph summary
+    print("\n  Dep chain visualization:")
+    for t in TASKS:
+        if t.get("depends_on_task_id"):
+            arrow = f"  {t['depends_on_task_id']} -> {t['id']}"
+            print(arrow)
 
 
 if __name__ == "__main__":

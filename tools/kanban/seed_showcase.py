@@ -18,6 +18,7 @@ if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
 _NOW = datetime.now(timezone.utc).isoformat()
 
@@ -385,48 +386,20 @@ INFRA_TASKS = [
 
 def seed():
     conn = _conn()
-    cur = conn.cursor()
 
     all_tasks = []
     all_tasks.extend(INFRA_TASKS)
     for slug, category, description in APPS:
         all_tasks.extend(_app_tasks(slug, category, description))
 
-    inserted = 0
-    skipped = 0
+    report = create_tasks(
+        "sc", all_tasks, conn=conn, strict=False, register_project=False
+    )
 
-    for task in all_tasks:
-        row = cur.execute(
-            "SELECT id FROM kanban_tasks WHERE id = ?", (task["id"],)
-        ).fetchone()
-        if row:
-            skipped += 1
-            continue
-
-        cur.execute(
-            """
-            INSERT INTO kanban_tasks
-                (id, title, description, task_type, priority, status,
-                 scheduled_at, created_at, updated_at, depends_on_task_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                task["id"],
-                task["title"],
-                task["description"],
-                task.get("task_type", "build"),
-                task.get("priority", "high"),
-                task.get("status", "backlog"),
-                task.get("scheduled_at"),
-                _NOW,
-                _NOW,
-                task.get("depends_on_task_id"),
-            ),
-        )
-        inserted += 1
-
-    conn.commit()
     conn.close()
+    inserted = len(report.seeded)
+    skipped = len(report.skipped)
+    print(report.summary())
     print(f"Inserted {inserted} tasks, skipped {skipped} existing.")
     return {"inserted": inserted, "skipped": skipped}
 

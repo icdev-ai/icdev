@@ -48,6 +48,8 @@ def _make_db(tmp_path):
         ("created_at", "TEXT"),
         ("project_id", "TEXT"),
         ("affected_files", "TEXT"),
+        ("action", "TEXT"),          # mirror_to_audit_trail writes these
+        ("classification", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE audit_trail ADD COLUMN {col_def[0]} {col_def[1]}")

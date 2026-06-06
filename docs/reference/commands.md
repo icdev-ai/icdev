@@ -2137,6 +2137,27 @@ python tools/kanban/done_artifact_auditor.py --project ace --git
 # claimed file paths + Verify: commands and checks they exist on the working tree.
 ```
 
+## Kanban Task Seeding (factory + validator — the only correct way to queue work)
+
+```bash
+# Slash command (preferred): decompose -> validate -> seed only on PASS
+/seed-tasks <project_key> <decomposition...>
+
+# Validate a seed batch before creating it (structural + content + LLM rubric)
+python tools/kanban/seed_validator.py --gate --file .tmp/seed_myproj.json
+python tools/kanban/seed_validator.py --gate --project myproj          # validate live DB rows
+python tools/kanban/seed_validator.py --gate --file spec.json --no-llm  # air-gap (deterministic only)
+
+# Create tasks programmatically (validated, deadlock-safe; status defaults to backlog)
+python -c "from tools.kanban.task_factory import TaskSpec, create_tasks; \
+  print(create_tasks('myproj', [TaskSpec(id='myproj-db-01', title='...', description='...')]).summary())"
+
+# Why: seeders that INSERT status='scheduled' with NULL scheduled_at deadlock the dispatcher
+# (scheduled query needs scheduled_at IS NOT NULL). The factory makes that unconstructable;
+# _reconcile_limbo_tasks() in the kanban reflex heals any that slip through each cycle.
+# Source of truth: tools/kanban/SEEDING.md
+```
+
 ## SRE Tools — SLO Manager, Runbook Executor, Incident Commander
 
 ```bash

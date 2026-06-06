@@ -16,7 +16,7 @@ _BASE = Path(__file__).resolve().parents[2]
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
 
 def _now() -> str:
@@ -491,43 +491,17 @@ TASKS = [
 
 
 def seed():
-    conn = get_connection()
-    now = _now()
-    inserted = 0
-    skipped = 0
-
+    # Two epics with distinct prefixes (ai-* / am-*) share this batch; tag each
+    # task with its own project_id so the project cards split correctly.
+    tasks = []
     for t in TASKS:
-        existing = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE id=?", (t["id"],)
-        ).fetchone()
-        if existing:
-            skipped += 1
-            continue
+        t = dict(t)
+        t["project_id"] = "am" if t["id"].startswith("am-") else "ai"
+        tasks.append(t)
 
-        conn.execute(
-            """INSERT INTO kanban_tasks
-               (id, title, description, task_type, priority, status,
-                scheduled_at, created_at, updated_at, depends_on_task_id)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (
-                t["id"],
-                t["title"],
-                t["description"],
-                t.get("task_type", "implementation"),
-                t.get("priority", 3),
-                "scheduled",
-                now,
-                now,
-                now,
-                t.get("depends_on_task_id"),
-            ),
-        )
-        inserted += 1
-
-    conn.commit()
-    conn.close()
-    print(f"Seeded {inserted} tasks, skipped {skipped} existing.")
-    return inserted
+    report = create_tasks("ai", tasks, strict=False, register_project=False)
+    print(report.summary())
+    return len(report.seeded)
 
 
 if __name__ == "__main__":

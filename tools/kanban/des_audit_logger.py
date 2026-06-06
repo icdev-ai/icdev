@@ -7,7 +7,6 @@ gate_override events. Inserts only — never UPDATE/DELETE (NIST AU).
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import json
 import sys
@@ -15,10 +14,14 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Bootstrap sys.path BEFORE any first-party (tools.*) import so this script runs
+# as a standalone subprocess without PYTHONPATH set (the CLI tests do exactly
+# this). A tools.* import above this block raises ModuleNotFoundError.
 BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
 
 log = get_logger(__name__)

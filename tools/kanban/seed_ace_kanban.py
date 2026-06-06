@@ -29,7 +29,7 @@ _BASE = Path(__file__).resolve().parents[2]
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
 PROJECT_ID = "ace"
 
@@ -886,52 +886,10 @@ TASKS = [
 
 
 def seed(dry_run: bool = False) -> None:
-    conn = get_connection()
-    cur = conn.cursor()
-    ts = _now()
-
-    inserted = 0
-    skipped = 0
-
-    for task in TASKS:
-        cur.execute("SELECT id FROM kanban_tasks WHERE id = %s", (task["id"],))
-        if cur.fetchone():
-            skipped += 1
-            continue
-
-        if not dry_run:
-            cur.execute(
-                """
-                INSERT INTO kanban_tasks
-                    (id, title, description, task_type, priority, status,
-                     depends_on_task_id, project_id, created_at, updated_at,
-                     classification)
-                VALUES
-                    (%s, %s, %s, %s, %s, 'backlog',
-                     %s, %s, %s, %s, 'CUI')
-                """,
-                (
-                    task["id"],
-                    task["title"],
-                    task.get("description", ""),
-                    task.get("task_type", "feature"),
-                    task.get("priority", "medium"),
-                    task.get("depends_on_task_id"),
-                    PROJECT_ID,
-                    ts,
-                    ts,
-                ),
-            )
-        print(f"{'[DRY]' if dry_run else '[OK]':6s} {task['id']:35s} {task['title'][:55]}")
-        inserted += 1
-
-    if not dry_run:
-        conn.commit()
-
-    print(
-        f"\n{'Dry-run' if dry_run else 'Seeded'}: {inserted} new tasks, "
-        f"{skipped} already existed. Project: {PROJECT_ID}"
+    report = create_tasks(
+        PROJECT_ID, TASKS, dry_run=dry_run, strict=False, register_project=False
     )
+    print(report.summary())
 
 
 if __name__ == "__main__":

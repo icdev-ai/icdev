@@ -10,7 +10,7 @@ _BASE = Path(__file__).resolve().parents[2]
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
 
 NOW = datetime.now(timezone.utc).isoformat()
@@ -18,9 +18,6 @@ SCHED = NOW  # schedule immediately
 
 
 def seed():
-    conn = get_connection()
-    conn.execute("PRAGMA journal_mode=WAL")
-
     tasks = [
         # ── Epic 1: Data Profiler (/data/explore) ──────────────────────────
         {
@@ -336,29 +333,14 @@ def seed():
         },
     ]
 
+    # These tasks are genuinely time-deferred: status 'scheduled' WITH a real
+    # scheduled_at (SCHED) — schedule immediately. Stamp both on every task.
     for t in tasks:
-        existing = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE id=?", (t["id"],)
-        ).fetchone()
-        if existing:
-            print(f"  SKIP (exists): {t['id']}")
-            continue
-        conn.execute(
-            """INSERT INTO kanban_tasks
-               (id, title, description, task_type, priority, status,
-                scheduled_at, created_at, updated_at, depends_on_task_id)
-               VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?)""",
-            (
-                t["id"], t["title"], t["description"],
-                t["task_type"], t["priority"],
-                SCHED, NOW, NOW,
-                t.get("depends_on_task_id"),
-            ),
-        )
-        print(f"  SEEDED: {t['id']} — {t['title'][:60]}")
+        t["status"] = "scheduled"
+        t["scheduled_at"] = SCHED
 
-    conn.commit()
-    conn.close()
+    report = create_tasks("dds", tasks, strict=False, register_project=False)
+    print(report.summary())
     print("\nDone. 19 tasks seeded for project dds-*")
 
 

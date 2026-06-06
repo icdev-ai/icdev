@@ -18,15 +18,10 @@ _BASE = Path(__file__).resolve().parents[2]
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
 
 _NOW = datetime.now(timezone.utc).isoformat()
-
-
-def _conn():
-    c = get_connection()
-    return c
 
 
 TASKS = [
@@ -891,47 +886,9 @@ TASKS = [
 
 
 def seed():
-    conn = _conn()
-    now = _NOW
-
-    inserted = 0
-    skipped = 0
-    for t in TASKS:
-        existing = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE id=?", (t["id"],)
-        ).fetchone()
-        if existing:
-            skipped += 1
-            print(f"  SKIP (exists): {t['id']}")
-            continue
-
-        conn.execute(
-            """INSERT INTO kanban_tasks
-               (id, title, description, task_type, priority, status,
-                scheduled_at, created_at, updated_at, depends_on_task_id,
-                dispatch_source)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                t["id"],
-                t["title"],
-                t["description"],
-                t.get("task_type", "build"),
-                t.get("priority", "high"),
-                t["status"],
-                t.get("scheduled_at"),
-                now,
-                now,
-                t.get("depends_on_task_id"),
-                "seed:mce",
-            ),
-        )
-        inserted += 1
-        dep = t.get("depends_on_task_id")
-        print(f"  INSERTED: {t['id']} [{t['status']}] dep={dep}")
-
-    conn.commit()
-    conn.close()
-    print(f"\nDone — {inserted} inserted, {skipped} skipped.")
+    report = create_tasks("mce", TASKS, strict=False, register_project=False)
+    print(report.summary())
+    print(f"\nDone — {len(report.seeded)} inserted, {len(report.skipped)} skipped.")
     print(f"Entry point 'mce-fnd-01' is status=scheduled, scheduled_at={_NOW}")
     print("Run genesis kanban scheduler to pick up: python -m tools.genesis.kanban_scheduler --once")
 

@@ -85,7 +85,9 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     files_changed         INTEGER DEFAULT 0,
     lines_added           INTEGER DEFAULT 0,
     lines_removed         INTEGER DEFAULT 0,
-    completed_via_bypass  INTEGER DEFAULT 0
+    completed_via_bypass  INTEGER DEFAULT 0,
+    project_id            TEXT,
+    classification        TEXT DEFAULT 'CUI'
 );
 CREATE TABLE IF NOT EXISTS kanban_task_deps (
     task_id         TEXT NOT NULL,
@@ -224,7 +226,7 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     resource TEXT,
     details TEXT,
     classification TEXT DEFAULT 'CUI',
-    recorded_at TEXT NOT NULL
+    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,

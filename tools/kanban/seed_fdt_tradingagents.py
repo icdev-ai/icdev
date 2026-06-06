@@ -19,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
 NOW = datetime.now(timezone.utc).isoformat()
 SCHEDULED = NOW  # all tasks are immediately schedulable if deps are met
@@ -702,63 +702,21 @@ EXTRA_DEPS: list[tuple[str, str]] = [
 
 
 def seed() -> None:
-    conn = get_connection()
-    cur = conn.cursor()
-
-    inserted = 0
-    skipped = 0
-    for t in TASKS:
-        cur.execute("SELECT id FROM kanban_tasks WHERE id = %s", (t["id"],))
-        if cur.fetchone():
-            print(f"  SKIP (exists): {t['id']}")
-            skipped += 1
-            continue
-
-        cur.execute(
-            """
-            INSERT INTO kanban_tasks
-              (id, title, description, task_type, priority, status,
-               scheduled_at, depends_on_task_id, created_at, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """,
-            (
-                t["id"],
-                t["title"],
-                t["description"],
-                t["task_type"],
-                t["priority"],
-                t["status"],
-                NOW,  # scheduled_at — required for scheduler to pick up
-                t["depends_on_task_id"],
-                NOW,
-                NOW,
-            ),
-        )
-        print(f"  INSERT: {t['id']}")
-        inserted += 1
-
-    # Extra multi-parent deps
-    dep_inserted = 0
-    dep_skipped = 0
+    # Fold the EXTRA_DEPS junction rows into each task's depends_on list so the
+    # factory writes both the scalar parent and the multi-parent junction rows.
+    extra_by_task: dict[str, list[str]] = {}
     for task_id, dep_id in EXTRA_DEPS:
-        cur.execute(
-            "SELECT task_id FROM kanban_task_deps WHERE task_id=%s AND depends_on_id=%s",
-            (task_id, dep_id),
-        )
-        if cur.fetchone():
-            dep_skipped += 1
-            continue
-        cur.execute(
-            "INSERT INTO kanban_task_deps (task_id, depends_on_id, created_at) VALUES (%s,%s,%s)",
-            (task_id, dep_id, NOW),
-        )
-        dep_inserted += 1
+        extra_by_task.setdefault(task_id, []).append(dep_id)
+    # These tasks are genuinely time-deferred: status 'scheduled' WITH a real
+    # scheduled_at (NOW) — required for the scheduler to pick them up. Stamp
+    # scheduled_at + the extra deps on every task.
+    for t in TASKS:
+        t["scheduled_at"] = NOW
+        if t["id"] in extra_by_task:
+            t["depends_on"] = extra_by_task[t["id"]]
 
-    conn.commit()
-    print(
-        f"\nDone — tasks: {inserted} inserted / {skipped} skipped | "
-        f"extra deps: {dep_inserted} inserted / {dep_skipped} skipped"
-    )
+    report = create_tasks("fdt", TASKS, strict=False, register_project=False)
+    print(report.summary())
 
 
 if __name__ == "__main__":

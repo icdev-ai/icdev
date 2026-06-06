@@ -3378,6 +3378,90 @@ def check_duplicate_code(
     )
 
 
+def check_kanban_seed_integrity() -> CoherenceCheck:
+    """Every tools/kanban/seed_*.py must create tasks through the shared
+    task_factory — never a raw ``INSERT INTO kanban_tasks``.
+
+    Rationale (plan serialized-squishing-dawn): hand-rolled inserts repeatedly
+    produced ``status='scheduled'`` rows with NULL ``scheduled_at`` that match
+    neither dispatcher query and deadlock their whole dependency chain. Routing
+    all seeders through ``tools.kanban.task_factory.create_tasks`` makes that
+    state unconstructable (status defaults to backlog; scheduled requires a
+    scheduled_at). This gate fails if any seeder still inserts directly, and
+    warns if live DB rows are stuck in the limbo state.
+    """
+    seed_dir = PROJECT_ROOT / "tools" / "kanban"
+    dangerous = []   # hard fail — reintroduces the deadlock bug
+    unmigrated = []  # warn — should route through the factory (consistency)
+    if seed_dir.exists():
+        _insert_re = re.compile(r"INSERT(?:\s+OR\s+\w+)?\s+INTO\s+kanban_tasks", re.I)
+        for path in sorted(seed_dir.glob("seed_*.py")):
+            body = path.read_text(encoding="utf-8", errors="replace")
+            if not _insert_re.search(body) or "task_factory" in body:
+                continue
+            unmigrated.append(f"tools/kanban/{path.name}")
+            # The actual deadlock pattern: inserts a 'scheduled' status literal
+            # but never references scheduled_at -> the row is undispatchable.
+            if ("'scheduled'" in body or '"scheduled"' in body) and "scheduled_at" not in body:
+                dangerous.append(f"tools/kanban/{path.name}")
+
+    # Best-effort live-DB limbo count (informational only).
+    limbo_note = ""
+    try:
+        from tools.db.storage import get_connection
+        with get_connection() as _c:
+            n = _c.execute(
+                "SELECT COUNT(*) AS n FROM kanban_tasks "
+                "WHERE status='scheduled' AND scheduled_at IS NULL"
+            ).fetchone()
+            n = dict(n)["n"] if hasattr(n, "keys") else n[0]
+            if n:
+                limbo_note = (f" NOTE: {n} live task(s) are scheduled+NULL "
+                              f"(the reconcile sweep heals these each cycle).")
+    except Exception:
+        pass
+
+    if dangerous:
+        return CoherenceCheck(
+            check_id="kanban_seed_integrity",
+            check_name="Kanban Seed Integrity",
+            status="fail",
+            expected=["No seeder inserts status='scheduled' without scheduled_at"],
+            actual=[f"{len(dangerous)} seeder(s) with the deadlock pattern"],
+            missing=dangerous,
+            extra=unmigrated,
+            message=(f"DEADLOCK PATTERN — {len(dangerous)} seeder(s) INSERT a "
+                     f"'scheduled' status with no scheduled_at (undispatchable): "
+                     f"{dangerous}. Migrate to task_factory.create_tasks (defaults "
+                     f"to backlog)." + limbo_note),
+        )
+
+    if unmigrated:
+        return CoherenceCheck(
+            check_id="kanban_seed_integrity",
+            check_name="Kanban Seed Integrity",
+            status="warn",
+            expected=["All seed_*.py use tools.kanban.task_factory.create_tasks"],
+            actual=[f"{len(unmigrated)} seeder(s) not yet migrated"],
+            missing=[],
+            extra=unmigrated,
+            message=(f"{len(unmigrated)} seeder(s) still raw-INSERT (no deadlock "
+                     f"pattern detected, but should route through task_factory "
+                     f"for consistency): {unmigrated}." + limbo_note),
+        )
+
+    return CoherenceCheck(
+        check_id="kanban_seed_integrity",
+        check_name="Kanban Seed Integrity",
+        status="pass",
+        expected=["All seed_*.py use tools.kanban.task_factory.create_tasks"],
+        actual=["No raw INSERT INTO kanban_tasks in seeders"],
+        missing=[],
+        extra=[],
+        message="All Kanban seeders route through task_factory." + limbo_note,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
@@ -3409,6 +3493,7 @@ CHECK_REGISTRY = {
     "new_page_completeness": check_new_page_completeness,
     "no_placeholders": check_no_placeholders,
     "duplicate_code": check_duplicate_code,
+    "kanban_seed_integrity": check_kanban_seed_integrity,
 }
 
 

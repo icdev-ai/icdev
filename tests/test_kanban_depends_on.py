@@ -135,7 +135,22 @@ def kanban_flask_client(tmp_path, monkeypatch):
             execution_id       TEXT,
             executor_url       TEXT,
             source_prediction_id TEXT,
-            depends_on_task_id TEXT
+            depends_on_task_id TEXT,
+            start_date         TEXT,
+            target_date        TEXT,
+            completed_via_bypass INTEGER DEFAULT 0
+        );
+        CREATE TABLE kanban_task_deps (
+            task_id       TEXT NOT NULL,
+            depends_on_id TEXT NOT NULL,
+            created_at    TEXT,
+            PRIMARY KEY (task_id, depends_on_id)
+        );
+        CREATE TABLE kanban_verifications (
+            id            TEXT PRIMARY KEY,
+            task_id       TEXT,
+            phantom_ratio REAL,
+            verified_at   TEXT
         );
         CREATE TABLE oracle_predictions (
             id              TEXT PRIMARY KEY,
@@ -150,9 +165,11 @@ def kanban_flask_client(tmp_path, monkeypatch):
     conn.close()
 
     # Patch get_connection inside the kanban module to point at our temp DB.
+    # Use a dict row_factory (not sqlite3.Row) so rows expose .get(), matching
+    # the production StorageConnection rows the endpoint code expects.
     def _fake_conn():
         c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
+        c.row_factory = lambda cur, row: {d[0]: row[i] for i, d in enumerate(cur.description)}
         return c
 
     from icdev.tools.dashboard.api import kanban as kanban_mod
@@ -294,6 +311,12 @@ class TestListenerDependencyGating:
                 last_failure_reason  TEXT,
                 last_failure_at      TEXT,
                 dispatch_source      TEXT DEFAULT 'unknown'
+            );
+            CREATE TABLE kanban_task_deps (
+                task_id       TEXT NOT NULL,
+                depends_on_id TEXT NOT NULL,
+                created_at    TEXT,
+                PRIMARY KEY (task_id, depends_on_id)
             );
             """
         )

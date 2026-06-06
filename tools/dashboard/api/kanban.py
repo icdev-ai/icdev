@@ -251,7 +251,8 @@ def list_tasks():
     except (ValueError, TypeError):
         backlog_limit = 100
     conn = get_connection()
-    conn.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
     try:
         # Execution queue ordering: within the same priority, tasks that
         # will run first appear first. For `backlog` (queued for
@@ -535,7 +536,8 @@ def create_task():
     dep_ids = list(dict.fromkeys(d for d in dep_ids if d))  # dedupe, preserve order
 
     conn = get_connection()
-    conn.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
     try:
         # Validate all deps via DFS cycle detection
         ok, err = _check_dependency_cycle_dfs(task_id, dep_ids, conn)
@@ -1054,7 +1056,8 @@ def move_task(task_id):
 
     now = _utcnow()
     conn = get_connection()
-    conn.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
     try:
         existing = conn.execute("SELECT status, title FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:

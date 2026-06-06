@@ -35,7 +35,7 @@ _BASE = Path(__file__).resolve().parents[2]
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
 PROJECT_ID = "sipa"
 
@@ -673,47 +673,28 @@ TASKS = [
 
 
 def seed(dry_run: bool = False) -> int:
-    conn = get_connection()
     now = _now()
-    inserted = 0
-    skipped = 0
-    try:
-        for t in TASKS:
-            existing = conn.execute(
-                "SELECT id FROM kanban_tasks WHERE id=?", (t["id"],)
-            ).fetchone()
-            if existing:
-                skipped += 1
-                continue
-            if dry_run:
-                inserted += 1
-                continue
-            conn.execute(
-                """INSERT INTO kanban_tasks
-                   (id, title, description, task_type, priority, status,
-                    scheduled_at, created_at, updated_at, depends_on_task_id,
-                    project_id, classification)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    t["id"],
-                    t["title"],
-                    t["description"],
-                    t.get("task_type", "build"),
-                    t.get("priority", "medium"),
-                    "scheduled",
-                    now,
-                    now,
-                    now,
-                    t.get("depends_on_task_id"),
-                    PROJECT_ID,
-                    "CUI",
-                ),
-            )
-            inserted += 1
-        if not dry_run:
-            conn.commit()
-    finally:
-        conn.close()
+    # All SIPA tasks are time-deferred: status='scheduled' WITH a real
+    # scheduled_at timestamp, project_id='sipa', classification='CUI'.
+    specs = [
+        {
+            **t,
+            "status": "scheduled",
+            "scheduled_at": now,
+            "project_id": PROJECT_ID,
+            "classification": "CUI",
+        }
+        for t in TASKS
+    ]
+    report = create_tasks(
+        PROJECT_ID,
+        specs,
+        dry_run=dry_run,
+        strict=False,
+        register_project=False,
+    )
+    inserted = len(report.seeded) if not dry_run else (len(TASKS) - len(report.skipped))
+    skipped = len(report.skipped)
     verb = "Would seed" if dry_run else "Seeded"
     print(f"{verb} {inserted} tasks, skipped {skipped} existing (total defined: {len(TASKS)}).")
     return inserted

@@ -43,6 +43,7 @@ if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
 _NOW = datetime.now(timezone.utc).isoformat()
 PROJECT_PREFIX = "wgint-"
@@ -811,51 +812,24 @@ def seed(dry_run: bool = False) -> None:
         return
 
     try:
+        # The factory writes both the scalar depends_on_task_id and the
+        # kanban_task_deps junction rows (for the board dep-graph viz).
+        report = create_tasks(
+            PROJECT_KEY, TASKS, conn=conn, strict=False, register_project=False
+        )
+        inserted = len(report.seeded)
+        skipped = len(report.skipped)
+        for tid in report.skipped:
+            print(f"  SKIP  {tid} (already exists)")
         for t in TASKS:
-            existing = conn.execute(
-                "SELECT id FROM kanban_tasks WHERE id = ?", (t["id"],)
-            ).fetchone()
-            if existing:
-                print(f"  SKIP  {t['id']} (already exists)")
-                skipped += 1
-                continue
-
-            conn.execute(
-                """INSERT INTO kanban_tasks
-                   (id, title, description, task_type, priority,
-                    status, scheduled_at, depends_on_task_id,
-                    executor_type, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    t["id"],
-                    t["title"],
-                    t.get("description", ""),
-                    t.get("task_type", "build"),
-                    t.get("priority", "high"),
-                    t.get("status", "backlog"),
-                    t.get("scheduled_at"),
-                    t.get("depends_on_task_id"),
-                    "claude_cli",
-                    _NOW,
-                    _NOW,
-                ),
-            )
-            dep = t.get("depends_on_task_id") or "root"
-            print(
-                f"  ADD   {t['id']:30s} "
-                f"[deps={dep:30s}]  "
-                f"{t['title'][:55]}"
-            )
-            inserted += 1
-            # Also write to junction table for the dep-graph visualization on the board.
-            if t.get("depends_on_task_id"):
-                conn.execute(
-                    "INSERT INTO kanban_task_deps (task_id, depends_on_id, created_at) "
-                    "VALUES (?, ?, ?) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
-                    (t["id"], t["depends_on_task_id"], _NOW),
+            if t["id"] in report.seeded:
+                dep = t.get("depends_on_task_id") or "root"
+                print(
+                    f"  ADD   {t['id']:30s} "
+                    f"[deps={dep:30s}]  "
+                    f"{t['title'][:55]}"
                 )
 
-        conn.commit()
         print(f"\n  Done: {inserted} added, {skipped} skipped.")
 
         print("\n  Dep chain visualization:")

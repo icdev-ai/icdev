@@ -16,13 +16,9 @@ _BASE = Path(__file__).resolve().parents[2]
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 
 _NOW = datetime.now(timezone.utc).isoformat()
-
-
-def _conn():
-    return get_connection()
 
 
 TASKS = [
@@ -863,45 +859,9 @@ TASKS = [
 
 
 def seed():
-    conn = _conn()
-    now = _NOW
-
-    inserted = 0
-    skipped = 0
-    for task in TASKS:
-        try:
-            conn.execute(
-                """INSERT INTO kanban_tasks
-                   (id, title, description, task_type, priority, status,
-                    scheduled_at, created_at, updated_at, depends_on_task_id,
-                    dispatch_source)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    task["id"],
-                    task["title"],
-                    task["description"],
-                    task.get("task_type", "build"),
-                    task.get("priority", "high"),
-                    task["status"],
-                    task.get("scheduled_at"),
-                    now,
-                    now,
-                    task.get("depends_on_task_id"),
-                    "seed:ohc",
-                ),
-            )
-            inserted += 1
-            dep = task.get("depends_on_task_id")
-            print(f"  INSERTED: {task['id']} [{task['status']}] dep={dep}")
-        except Exception as e:
-            if "UNIQUE constraint" in str(e) or "duplicate key" in str(e).lower():
-                skipped += 1
-            else:
-                print(f"  ERROR on {task['id']}: {e}")
-
-    conn.commit()
-    conn.close()
-    print(f"OHC seed: {inserted} inserted, {skipped} skipped (already exist)")
+    report = create_tasks("ohc", TASKS, strict=False, register_project=False)
+    print(report.summary())
+    print(f"OHC seed: {len(report.seeded)} inserted, {len(report.skipped)} skipped (already exist)")
 
 
 if __name__ == "__main__":
