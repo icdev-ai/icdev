@@ -345,3 +345,59 @@ generation call**, so they remain deterministic and out of scope:
 | `tools/ndc/migration_document_generator.py` | **trusted-first-party** | Orchestrates deterministic NDC tools (`eol_scanner`, `replacement_recommender`, `network_migration`, `config_alignment_analyzer`) to assemble a Jinja2-rendered Markdown runbook. All inputs are internal DB rows or first-party tool outputs. No user-supplied code execution. Templates live under `tools/ndc/templates/migration_runbook/` (first-party, code-reviewed). |
 | `tools/ndc/eol_scanner.py` | **trusted-first-party** | Reads from `ni_devices` and `nc_hardware_profiles`. Pure SQL + arithmetic scoring. No external input, no code execution. |
 | `tools/ndc/replacement_recommender.py` | **trusted-first-party** | Reads hardware profiles from DB, scores via deterministic arithmetic. Optional RAG retrieval returns text-only SOP excerpts. No code execution of external content. |
+
+### Gap 16 — SIPA Ingest: git clone / UNC share / file:// URI fetch (`tools/integrity/ingest.py`)
+
+**Module:** `tools/integrity/` (ingest seam: `tools/integrity/ingest.py`)
+
+**Ingress path:** SIPA (Software Integrity & Provenance Assessor) assesses an
+*untrusted target* supplied by an operator: a local path, a UNC share
+(`\\host\share`), a `file://` URI, or a git clone URL
+(`https://github.com/...` / `https://gitlab.com/...`). `stage()` copies the
+target bytes (local/UNC/`file://`) or shallow-clones the repo (git) into an
+isolated quarantine directory (`<quarantine_dir>/<assessment_id>/`) and records
+an `integrity_assessments` row in `status='quarantine'`. Every downstream
+scanner then runs against the *staged copy as data* — the target is read, hashed
+(SHA-256 tamper baseline), and statically analyzed, **never executed**.
+
+- **Decision:** **bypass-documented** (safe by construction — never executes the fetched target)
+- **Rationale:** SIPA is static-only. The fetch path performs exactly two kinds
+  of action against untrusted input: (1) **copy bytes** (`shutil.copy2` /
+  `shutil.copytree`) for local/UNC/`file://` sources, and (2) a single
+  **fixed-arg, `shell=False` `git clone`** (`subprocess.run([...], shell=False)`)
+  for git sources. `git clone` fires no repository hooks, and the cloned/copied
+  tree is treated as inert data — it is never imported, `exec`-ed, `eval`-ed, or
+  run as a subprocess. The scanner fan-out (`tools/integrity/scanners.py`) runs
+  *first-party* analyzers (SAST/secrets/deps/Semgrep) in their own fixed-arg,
+  `shell=False` subprocesses with the staged tree as a **read-only input path**,
+  not as an executable. No module under `tools/integrity/` calls `exec`, `eval`,
+  `compile`, `__import__`, `os.system`, `os.popen`, `os.exec*`, `os.spawn*`,
+  `runpy.run_*`, `importlib.import_module`, or `pty.spawn` on target data (the
+  string literals `exec`/`eval`/`__import__` that appear in `scanners.py` and
+  `capability_extractor.py` are *detection signatures* for malicious code in the
+  assessed target, not calls).
+- **Guardrails:**
+  - **No `shell=True`** anywhere under `tools/integrity/` — all subprocess
+    invocations use a fixed argument list with `shell=False`.
+  - **Scheme allowlist** (`args/integrity_config.yaml` → `scheme_allowlist`) is
+    enforced *before* any row is written or any byte copied; disallowed schemes
+    (`smb://`, `ftp://`, bare non-repo `http(s)`, custom URIs) are refused with a
+    clear `IngestRejected` error.
+  - **Git URL allowlist** — git sources must be `https://` to an allowlisted host
+    (`github.com` / `gitlab.com`) or a local `file://` repo; the URL is validated
+    before any subprocess runs, `--` terminates git option parsing (argument-
+    injection defence), `GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=true` prevent
+    interactive hangs, and embedded credentials are redacted from every log line.
+  - **Quarantine-first** — staging lands in `<quarantine_dir>/<assessment_id>/`;
+    a SHA-256 directory digest baselines the tree and `reverify()` re-checks it to
+    detect tampering between stage and assess. A HITL gate releases or rejects.
+  - **Regression test** `tests/test_integrity_no_shell_exec.py` fails the build if
+    any module under `tools/integrity/` introduces `shell=True` or a call that
+    executes fetched code (`exec`/`eval`/`compile`/`__import__`/`execfile`,
+    `os.system`/`os.popen`/`os.exec*`/`os.spawn*`, `runpy.run_*`,
+    `importlib.import_module`, `pty.spawn`). Detection is AST-based, so the
+    scanner's string/regex *signatures* for these patterns are not false-positives.
+- **Revisit if:** SIPA ever adds a step that imports, `exec`s, or `subprocess`-runs
+  the staged target (e.g. dynamic-analysis sandboxing) → re-decide as **sandboxed**
+  (route through `tools/security/sandbox_executor.py`); or if a non-`https`/non-
+  allowlisted transport is added to the fetch path.

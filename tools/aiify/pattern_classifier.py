@@ -246,6 +246,96 @@ def _map_semgrep_results(hits: list[dict], max_per_file: int = 5) -> list[dict]:
     return results
 
 
+# ── Generic Semgrep engine (reusable by non-aiify consumers) ──────────────────
+#
+# detect_patterns() above is aiify-specific: it filters Semgrep hits on the
+# ``aiify_pattern`` metadata key and folds in aiify AST/language fallbacks. Other
+# subsystems (e.g. SIPA's malicious-signature scan, tools/integrity/scanners.py)
+# need the same proven Semgrep CLI invocation but pointed at *their own* rules dir
+# and *their own* metadata convention — without inheriting aiify's pattern filter.
+#
+# ``run_semgrep`` is that generalized core: the same subprocess shape as
+# _detect_via_semgrep (fixed arg list, --json, timeout, metrics off), but it
+# returns raw normalized hits (rule id + path + line + severity + message +
+# metadata) for *every* rule that matches, leaving interpretation to the caller.
+# Returns None when Semgrep is unavailable / the run fails — the caller's signal
+# to use its own deterministic fallback.
+
+def _map_semgrep_raw(hits: list[dict]) -> list[dict]:
+    """Map raw Semgrep result objects to a metadata-agnostic hit shape.
+
+    Unlike :func:`_map_semgrep_results`, this performs no ``aiify_pattern``
+    filtering and no per-file cap — it surfaces every rule match so a caller with
+    its own rules dir (and its own metadata key) gets the full result set.
+    """
+    out: list[dict] = []
+    for hit in hits:
+        extra = hit.get("extra", {}) or {}
+        out.append({
+            "rule_id": hit.get("check_id", ""),
+            "path": hit.get("path", ""),
+            "start_line": hit.get("start", {}).get("line", 0),
+            "end_line": hit.get("end", {}).get("line", 0),
+            "severity": extra.get("severity", ""),
+            "message": extra.get("message", ""),
+            "metadata": extra.get("metadata", {}) or {},
+        })
+    return out
+
+
+def run_semgrep(
+    target_path: str,
+    rules_dir: str,
+    *,
+    timeout: int | None = None,
+    metrics: str | None = None,
+) -> list[dict] | None:
+    """Run an arbitrary Semgrep rules dir over ``target_path`` and return raw hits.
+
+    Generic, metadata-agnostic counterpart to :func:`detect_patterns`'s Semgrep
+    path — reuses the same CLI invocation but lets any consumer supply its own
+    ``rules_dir``. ``rules_dir`` may be absolute or repo-root-relative.
+
+    Returns a list of hit dicts (``rule_id``, ``path``, ``start_line``,
+    ``end_line``, ``severity``, ``message``, ``metadata``), or ``None`` when
+    Semgrep is not installed, the rules dir is missing, or the run fails — the
+    caller's cue to fall back to its own detector.
+    """
+    if not shutil.which("semgrep"):
+        return None
+
+    rules_path = pathlib.Path(rules_dir)
+    if not rules_path.is_absolute():
+        rules_path = _REPO_ROOT / rules_dir
+    if not rules_path.exists():
+        return None
+
+    cmd = [
+        "semgrep",
+        "--json",
+        "--config", str(rules_path),
+        "--metrics", metrics or _SEMGREP_METRICS,
+        str(target_path),
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=timeout or _SEMGREP_TIMEOUT,
+        )
+    except (FileNotFoundError, PermissionError, OSError):
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+
+    try:
+        data = json.loads(proc.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+    return _map_semgrep_raw(data.get("results", []))
+
+
 # ── AST fallback (Python only) ────────────────────────────────────────────────
 
 # Constants for AST detection

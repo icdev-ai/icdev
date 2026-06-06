@@ -1,0 +1,176 @@
+# CUI // SP-CTI
+"""Tests for the Genesis ``integrity_monitor`` reflex (sipa-reflex-01).
+
+The reflex runs the SIPA engine over a source tree (Mode A / provenance-aware) and
+opens a Kanban remediation card for each NEW high-risk / ``unauthorized_capability``
+finding versus the last baseline assessment of the same source — deduping so it
+never re-alerts.
+
+The full SIPA pipeline runs for real against an in-memory SQLite connection; the
+two subprocess-backed scanner seams are stubbed for determinism (same pattern as
+``test_integrity_engine.py``), and the RTM coverage-gap pass is stubbed so the
+in-memory test stays hermetic.
+
+Core acceptance (per the task): a seeded unauthorized capability produces EXACTLY
+one card — and a re-run produces none (dedupe).
+"""
+import sqlite3
+
+import pytest
+
+from tools.integrity import scanners, intent_reconciler
+from tools.integrity.db import init_db as init_db_mod
+from tools.genesis.reflexes import integrity_monitor
+
+
+# A file exercising exactly ONE high-risk capability (network_egress) and nothing
+# else — so reconciliation emits a single unauthorized_capability finding.
+_NET_PY = '''\
+import socket
+
+
+def beacon():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect(("10.0.0.1", 4444))
+    return s
+'''
+
+# A file with NO capabilities at all — a clean baseline (no findings).
+_CLEAN_PY = '''\
+"""Pure-compute helper — exercises no network/fs/process capability."""
+
+VALUE = 41
+
+
+def compute():
+    return VALUE + 1
+'''
+
+
+def _write(base, name, content):
+    base.mkdir(parents=True, exist_ok=True)
+    (base / name).write_text(content, encoding="utf-8")
+
+
+# Minimal kanban_tasks table carrying the columns the reflex reads/writes.
+_KANBAN_DDL = """
+CREATE TABLE IF NOT EXISTS kanban_tasks (
+    id               TEXT PRIMARY KEY,
+    title            TEXT NOT NULL,
+    description      TEXT,
+    task_type        TEXT DEFAULT 'build',
+    priority         TEXT DEFAULT 'high',
+    status           TEXT DEFAULT 'backlog',
+    executor_type    TEXT DEFAULT 'claude_cli',
+    dispatch_source  TEXT DEFAULT 'unknown',
+    created_at       TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TEXT DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+
+@pytest.fixture
+def conn():
+    c = sqlite3.connect(":memory:")
+    c.row_factory = sqlite3.Row
+    init_db_mod.init_db(c)          # SIPA integrity tables
+    c.execute(_KANBAN_DDL)         # board the reflex writes cards to
+    c.commit()
+    yield c
+    c.close()
+
+
+@pytest.fixture
+def deterministic_scanners(monkeypatch, tmp_path):
+    """Make scan_all deterministic + fast, isolate quarantine, hermetic RTM."""
+    monkeypatch.setenv("ICDEV_INTEGRITY_QUARANTINE_DIR", str(tmp_path / "quarantine"))
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setattr(scanners, "_invoke_scanner", lambda cmd, timeout: (0, "{}", ""))
+    monkeypatch.setattr(scanners, "_detect_signatures", lambda staged: None)
+    # The Mode A coverage-gap pass builds the full RTM against the real DB — stub it.
+    monkeypatch.setattr(intent_reconciler, "_coverage_gaps", lambda *a, **k: [])
+
+
+def _count_cards(conn):
+    return conn.execute("SELECT COUNT(*) AS n FROM kanban_tasks").fetchone()["n"]
+
+
+# --------------------------------------------------------------------------- #
+# Helper / unit coverage
+# --------------------------------------------------------------------------- #
+def test_rel_path_strips_quarantine_prefix():
+    # <quarantine>/<assessment_id>/<relpath> -> <relpath>
+    assert integrity_monitor._rel_path("/q/dir/7/net.py", 7) == "net.py"
+    assert integrity_monitor._rel_path("/q/dir/7/sub/x.py", 7) == "sub/x.py"
+    # No marker -> basename fallback.
+    assert integrity_monitor._rel_path("/somewhere/else/y.py", 99) == "y.py"
+    assert integrity_monitor._rel_path("", 1) == ""
+
+
+# --------------------------------------------------------------------------- #
+# Acceptance: a seeded unauthorized capability produces EXACTLY one card
+# --------------------------------------------------------------------------- #
+def test_seeded_unauthorized_capability_opens_exactly_one_card(
+    conn, deterministic_scanners, tmp_path
+):
+    src = tmp_path / "selfcode"
+
+    # 1. First run over a clean tree: establishes the baseline silently (no cards).
+    _write(src, "ok.py", _CLEAN_PY)
+    r1 = integrity_monitor.run({"target": str(src), "mode": "aware"}, conn)
+    assert r1["success"] is True
+    assert r1["details"]["baseline_established"] is True
+    assert r1["flagged"] == 0
+    assert _count_cards(conn) == 0
+
+    # 2. A new unauthorized capability appears -> exactly one remediation card.
+    _write(src, "evil.py", _NET_PY)
+    r2 = integrity_monitor.run({"target": str(src), "mode": "aware"}, conn)
+    assert r2["status"] == "ok"
+    assert r2["success"] is True
+    assert r2["details"]["baseline_established"] is False
+    assert r2["flagged"] == 1, r2["details"]
+    assert _count_cards(conn) == 1
+
+    card = conn.execute(
+        "SELECT title, status, task_type, dispatch_source FROM kanban_tasks"
+    ).fetchone()
+    assert card["status"] == "suggested"
+    assert card["task_type"] == "fix"
+    assert card["dispatch_source"] == "integrity_monitor"
+    assert "evil.py" in card["title"]
+    assert "network_egress" in card["title"]
+
+
+def test_rerun_does_not_realert_same_capability(conn, deterministic_scanners, tmp_path):
+    src = tmp_path / "selfcode"
+    _write(src, "ok.py", _CLEAN_PY)
+    integrity_monitor.run({"target": str(src), "mode": "aware"}, conn)  # baseline
+
+    _write(src, "evil.py", _NET_PY)
+    integrity_monitor.run({"target": str(src), "mode": "aware"}, conn)  # one card
+    assert _count_cards(conn) == 1
+
+    # 3. Re-run with no new capability: baseline now contains the signature AND an
+    #    open card already exists -> zero new cards (dedupe, no re-alert).
+    r3 = integrity_monitor.run({"target": str(src), "mode": "aware"}, conn)
+    assert r3["flagged"] == 0
+    assert _count_cards(conn) == 1
+
+
+def test_dry_run_opens_no_cards(conn, deterministic_scanners, tmp_path):
+    src = tmp_path / "selfcode"
+    _write(src, "ok.py", _CLEAN_PY)
+    integrity_monitor.run({"target": str(src), "mode": "aware"}, conn)  # baseline
+
+    _write(src, "evil.py", _NET_PY)
+    r = integrity_monitor.run({"target": str(src), "mode": "aware", "dry_run": True}, conn)
+    assert r["details"]["cards"], "dry-run should still report the would-be card"
+    assert all(c.get("dry_run") for c in r["details"]["cards"])
+    assert _count_cards(conn) == 0
+
+
+def test_reflex_has_cadence_and_status_contract():
+    # Follows the ndc_topology_drift contract: CADENCE_HOURS + run() -> status dict.
+    assert isinstance(integrity_monitor.CADENCE_HOURS, int)
+    assert integrity_monitor.IMPLEMENTATION_STATUS == "full"
