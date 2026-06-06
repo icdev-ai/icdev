@@ -1,10 +1,11 @@
 """Initialize ZTA LAC Simulator database tables."""
 
 from __future__ import annotations
-import logging
 import os
 
-log = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+log = get_logger(__name__)
 
 _BACKEND = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
 

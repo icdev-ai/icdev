@@ -799,6 +799,23 @@ reflexes:
           noise_max: 4
           anomalous_min: 5
 
+  # ── Integrity Monitor (SIPA self-assessment of ICDEV's own tools/) ──────────
+
+  integrity_monitor:
+    timeout_seconds: 900     # heavy reflex — AST-scans the whole tools/ tree
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — ICDEV's own code changes slowly
+    cooldown_minutes: 120
+    description: "SIPA self-assessment of ICDEV tools/ (Mode A) — open a Kanban card per NEW unauthorized/high-risk capability vs the last baseline; deduped so it never re-alerts"
+    target: tools            # path to assess (repo-relative); blank => <repo>/tools
+    mode: aware              # provenance-aware Mode A vs the platform RTM
+    success_metric:
+      name: integrity_cards_opened
+      threshold: 0
+      operator: gte         # 0 new capabilities = clean; >0 surfaces real drift (always succeeds)
+
   # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
 
   oracle_triage:

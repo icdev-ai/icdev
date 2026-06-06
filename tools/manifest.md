@@ -987,3 +987,4 @@
 | Seed Aisg Ship | tools\kanban\seed_aisg_ship.py | Auto-registered: kanban/seed_aisg_ship.py | --json | JSON |
 | Seed Appendix Initiatives | tools\kanban\seed_appendix_initiatives.py | Auto-registered: kanban/seed_appendix_initiatives.py | --json | JSON |
 | Seed Sipa Integrity | tools\kanban\seed_sipa_integrity.py | Auto-registered: kanban/seed_sipa_integrity.py | --json | JSON |
+| Integrity Monitor | tools\genesis\reflexes\integrity_monitor.py | Auto-registered: reflexes/integrity_monitor.py | --json | JSON |

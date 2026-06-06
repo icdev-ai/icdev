@@ -1,0 +1,90 @@
+# SIPA — Software Integrity & Provenance Assessor Configuration
+# CUI // SP-CTI
+#
+# Behavior settings for tools/integrity/ (route /integrity, project prefix sipa-).
+# Static-only assessor: never executes target code. Quarantine-first with a HITL
+# blocking gate. See plan + docs/features/phase-sipa-software-integrity.md.
+#
+# NOTE: capability_type / verdict / severity keys below MUST stay in lock-step
+# with the canonical constants in tools/integrity/constants.py
+# (CAPABILITY_TYPES, VERDICTS, SEVERITY). Constants are the source of truth;
+# this file only assigns weights/toggles to those keys.
+
+# ---------------------------------------------------------------------------
+# Ingest — accepted source schemes (allowlist; everything else is refused).
+# ---------------------------------------------------------------------------
+scheme_allowlist:
+  - https      # remote git over HTTPS (GitHub / GitLab)
+  - git        # git+ssh / git protocol clone refs
+  - file       # file:// local path
+  - unc        # \\host\share UNC path (Windows)
+
+# Hosts permitted for https/git clone sources (remote ingest only).
+host_allowlist:
+  - github.com
+  - gitlab.com
+
+# Remote git clone — shallow by design. The clone uses a FIXED arg list with
+# shell=False (never string-interpolated into a shell); the cloned tree is data
+# only and is NEVER executed. clone_depth=1 fetches just the current tip;
+# clone_timeout kills a hung/slow clone instead of leaving it running.
+clone_depth: 1
+clone_timeout: 120
+
+# ---------------------------------------------------------------------------
+# Capability risk weights — per capability_type contribution to risk score.
+# Keys MUST match CAPABILITY_TYPES in tools/integrity/constants.py.
+# Range 0.0–1.0; higher = more dangerous when present without authorization.
+# ---------------------------------------------------------------------------
+risk_weights:
+  network_egress: 0.85   # outbound sockets / HTTP — exfil + C2 surface
+  process_exec: 0.90     # subprocess / os.system — arbitrary command execution
+  dynamic_code: 0.95     # eval / exec / compile / __import__ — code-from-data
+  obfuscation: 0.90      # base64/hex-then-exec — intent concealment
+  serialization: 0.70    # pickle / marshal — deserialization RCE
+  filesystem: 0.50       # arbitrary fs read/write
+  env_secret: 0.60       # environment / credential access
+  crypto: 0.40           # crypto primitives (ransomware / token signing)
+
+# ---------------------------------------------------------------------------
+# Verdict thresholds — 0–100 risk score → ALLOW / REVIEW / QUARANTINE.
+#   score <  review_at      -> ALLOW
+#   review_at <= score < quarantine_at -> REVIEW
+#   score >= quarantine_at  -> QUARANTINE
+# ---------------------------------------------------------------------------
+thresholds:
+  review_at: 40
+  quarantine_at: 70
+
+# ---------------------------------------------------------------------------
+# Scanner fan-out toggles — which existing scanners participate in assessment.
+# ---------------------------------------------------------------------------
+scanners:
+  sast: true        # tools/security/sast_runner.py
+  secrets: true     # tools/security/secret_detector.py
+  deps: true        # tools/supply_chain/dependency_auditor.py
+  formal: false     # tools/verification/formal_verifier.py (opt-in; slow)
+  container: false  # container image scan (opt-in; requires image source)
+  semgrep: true     # tools/aiify/pattern_classifier.py (multi-language manifest)
+
+# ---------------------------------------------------------------------------
+# Optional LLM assist for intent reconciliation. Deterministic rule-based
+# result is ALWAYS computed first as the fallback; LLM only augments rationale.
+# ---------------------------------------------------------------------------
+llm_assist:
+  enabled: false
+  function_key: intent_reconciliation   # LLMRouter routing key
+
+# ---------------------------------------------------------------------------
+# Quarantine staging area — ingested targets staged here before assessment.
+# Mirrors the OpenClaw QUARANTINE_DIR pattern in
+# tools/marketplace/openclaw_bridge.py.
+# ---------------------------------------------------------------------------
+quarantine_dir: ".tmp/integrity_quarantine"
+
+# Gate behavior — exit non-zero on these verdicts when invoked with --gate.
+gate:
+  block_on:
+    - QUARANTINE
+  warn_on:
+    - REVIEW

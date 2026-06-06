@@ -266,6 +266,9 @@ VALID_EVENT_TYPES = (
     "pipeline.confidence_gate_failed",
     "pipeline.output_validated",
     "pipeline.output_rejected",
+    # SIPA — software integrity HITL promote/reject events
+    "integrity_promoted",
+    "integrity_rejected",
 )
 
 

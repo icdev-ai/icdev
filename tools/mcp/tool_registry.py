@@ -42,8 +42,9 @@ Categories:
     canvas (8)
     system_graph (3)
     intelligence (3)
+    integrity (2)
 
-Total: 267 tools, 6 resources
+Total: 269 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -6349,6 +6350,68 @@ TOOL_REGISTRY = {
                 "src_topology_id": {"type": "string", "description": "Source topology ID to ingest nodes from"},
             },
             "required": ["src_topology_id"],
+        },
+    },
+    # ============================================================
+    # INTEGRITY — SIPA Software Integrity & Provenance Assessor (2 tools)
+    # ============================================================
+    "integrity_assess": {
+        "category": "integrity",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_integrity_assess",
+        "description": (
+            "Run a static SIPA integrity assessment of a source artifact (local path, UNC share, "
+            "file:// URI, or allowlisted git clone URL). Detects unauthorized/malicious capabilities "
+            "vs claimed purpose (Mode B) or RTM-authorized requirements (Mode A). Static-only — never "
+            "executes the target. Returns assessment_id, verdict (allow/review/quarantine), risk_score, "
+            "findings_count, capabilities_count, status."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": "Local path, UNC share, file:// URI, or allowlisted git clone URL",
+                },
+                "mode": {
+                    "type": "string",
+                    "description": "Assessment mode (auto resolves to provenance_aware when project_id/session_id supplied)",
+                    "enum": ["auto", "provenance_aware", "provenance_blind"],
+                    "default": "auto",
+                },
+                "project_id": {"type": "string", "description": "Provenance handle (selects Mode A under auto)"},
+                "session_id": {"type": "string", "description": "Provenance handle (selects Mode A under auto)"},
+                "declared_purpose": {
+                    "type": "string",
+                    "description": "Optional free-text purpose claim folded into the Mode B claimed-capability set",
+                },
+            },
+            "required": ["source"],
+        },
+    },
+    "integrity_list_assessments": {
+        "category": "integrity",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_integrity_list_assessments",
+        "description": (
+            "List SIPA integrity assessments (read-only, RLS-aware) with optional status / verdict "
+            "filters. Returns id, source, mode, status, verdict, and risk_score per assessment."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "Filter by assessment status",
+                    "enum": ["quarantine", "assessed", "approved", "rejected"],
+                },
+                "verdict": {
+                    "type": "string",
+                    "description": "Filter by verdict",
+                    "enum": ["allow", "review", "quarantine"],
+                },
+                "limit": {"type": "integer", "description": "Max rows to return", "default": 50},
+            },
         },
     },
 }

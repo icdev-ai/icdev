@@ -1,4 +1,4 @@
-﻿# CUI // SP-CTI
+# CUI // SP-CTI
 # Classification: CUI â€” Controlled Unclassified Information
 # Distribution: Authorized ICDEVâ„¢ personnel only
 # Codebase Indexer â€” Phase 69, D-CA-1, D-CA-2

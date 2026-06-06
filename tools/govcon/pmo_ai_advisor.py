@@ -10,12 +10,12 @@ Functions:
 """
 
 import json
-import logging
 from datetime import date, timedelta
 
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────
 

@@ -404,7 +404,7 @@
 
             <!-- ── Compliance ────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/oscal','/prod-audit','/ai-transparency','/ai-accountability','/sbd','/cato','/compliance-debt','/ato-package','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost','/provenance','/traces','/xai'] or request.path.startswith('/security') or request.path.startswith('/security/zig') %}active{% endif %}">Compliance ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/oscal','/prod-audit','/ai-transparency','/ai-accountability','/sbd','/cato','/compliance-debt','/ato-package','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost','/provenance','/traces','/xai'] or request.path.startswith('/security') or request.path.startswith('/security/zig') or request.path.startswith('/integrity') %}active{% endif %}">Compliance ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li class="nav-section-label">Risk &amp; ATO</li>
                     <li><a href="/poam">POA&amp;M Findings</a></li>
@@ -424,6 +424,7 @@
                     <li><a href="/security/" style="color:#e94560;">Security Canvas</a></li>
                     <li><a href="/security/demo" style="color:#27ae60;">SDC Demo Runner</a></li>
                     <li><a href="/security-scan">Security Scans</a></li>
+                    <li><a href="/integrity">Software Integrity (SIPA)</a></li>
                     <li><a href="/stig-manager">STIG Manager</a></li>
                     <li><a href="/pr-intel">PR Intelligence</a></li>
                     <li><a href="/sre">SRE Operations</a></li>

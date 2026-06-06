@@ -1,0 +1,347 @@
+<!-- CUI // SP-CTI — SIPA Software Integrity & Provenance Assessor — Assessment Detail -->
+{% extends "base.html" %}
+{% block title %}Assessment #{{ assessment_id }} — Software Integrity — ICDEV{% endblock %}
+{% block content %}
+{#
+  Context (from tools/integrity/blueprint.py :: integrity_detail):
+    assessment_id : int
+    assessment    : id, source_type, source_ref, mode, project_id, session_id,
+                    dir_digest, status, verdict, risk_score, classification,
+                    created_by, created_at, updated_at
+    capabilities  : [{id, file_path, function_name, capability_type, evidence,
+                      line_start, line_end, risk_weight}]
+    findings      : [{id, source_scanner, finding_type, severity, file_path, line, detail}]
+    verdict       : {id, verdict, risk_score, rationale, decided_by, created_at} | None
+    authorizations: [{id, capability_id, requirement_id, claim_ref, authorized,
+                      reason, reviewed_by, created_at}]
+    is_terminal   : bool   (status in approved / rejected)
+    verdicts      : VERDICTS
+#}
+<style>
+  .sipa-d { padding: 20px 30px 30px; }
+  .sipa-back { font-size:12px; color:#5a9fd4; text-decoration:none; }
+  .sipa-back:hover { text-decoration:underline; }
+  .sipa-d h1 { font-size:21px; margin:8px 0 2px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .sipa-d-src { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; color:#9fc0e0; word-break:break-all; }
+
+  .vbadge, .sbadge, .sev { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.05em; padding:3px 9px; border-radius:4px; text-transform:uppercase; }
+  .vbadge.allow      { background:#0c2417; color:#66bb6a; border:1px solid #2e7d32; }
+  .vbadge.review     { background:#2a1f05; color:#ffb300; border:1px solid #b8860b; }
+  .vbadge.quarantine { background:#2a0c0c; color:#ef5350; border:1px solid #c62828; }
+  .vbadge.none       { background:#1a2438; color:#6a86b0; border:1px solid #2a3e60; }
+  .vbadge.lg         { font-size:13px; padding:5px 14px; }
+  .sbadge.quarantine { background:#2a0c0c; color:#ef9a9a; }
+  .sbadge.assessed   { background:#0a1830; color:#7aa8d8; }
+  .sbadge.approved   { background:#0c2417; color:#81c784; }
+  .sbadge.rejected   { background:#241a0c; color:#bcaaa4; }
+  .sbadge.unknown    { background:#1a2438; color:#6a86b0; }
+  .sev.critical { background:#2a0c0c; color:#ff5252; border:1px solid #c62828; }
+  .sev.high     { background:#2a1505; color:#ff8a65; border:1px solid #d84315; }
+  .sev.medium   { background:#2a1f05; color:#ffb300; border:1px solid #b8860b; }
+  .sev.low      { background:#222a05; color:#d4e157; border:1px solid #9e9d24; }
+  .sev.info     { background:#0a1830; color:#79c0ff; border:1px solid #1e4d80; }
+
+  /* Summary meta grid */
+  .sipa-meta { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px; margin:16px 0 22px; }
+  .sipa-mc { background:#16213e; border:1px solid #1e3a6e; border-radius:7px; padding:11px 14px; }
+  .sipa-mc .k { font-size:10px; color:#5a6e8c; text-transform:uppercase; letter-spacing:.05em; font-weight:700; margin-bottom:5px; }
+  .sipa-mc .vv { font-size:13px; color:#cfe2f5; word-break:break-all; }
+  .digest { font-family:ui-monospace,monospace; font-size:11px; color:#8aa0c0; }
+
+  /* Verdict banner */
+  .sipa-verdict { display:flex; align-items:flex-start; gap:16px; background:#0f1e36; border:1px solid #1e3a6e; border-radius:8px; padding:16px 18px; margin-bottom:22px; border-left-width:4px; }
+  .sipa-verdict.allow      { border-left-color:#66bb6a; }
+  .sipa-verdict.review     { border-left-color:#ffb300; }
+  .sipa-verdict.quarantine { border-left-color:#e53935; }
+  .sipa-verdict.none       { border-left-color:#3a5680; }
+  .sipa-verdict .vbody { flex:1; }
+  .sipa-verdict .vhead { display:flex; align-items:center; gap:12px; margin-bottom:8px; flex-wrap:wrap; }
+  .sipa-verdict .vrisk { font-size:12px; color:#8aa0c0; }
+  .sipa-verdict .vrat { font-size:12.5px; color:#b8cce4; line-height:1.55; }
+  .sipa-verdict .vrat ul { margin:6px 0 0; padding-left:18px; }
+  .sipa-verdict .vrat li { margin:2px 0; }
+  .vmeta { font-size:11px; color:#5a6e8c; margin-top:8px; }
+
+  /* HITL controls */
+  .sipa-hitl { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .hitl-btn { padding:9px 18px; border:none; border-radius:6px; font-size:12.5px; font-weight:700; cursor:pointer; transition:filter .15s; }
+  .hitl-btn:hover { filter:brightness(1.12); }
+  .hitl-btn:disabled { opacity:.5; cursor:not-allowed; }
+  .hitl-promote { background:#1b5e20; color:#c8f0cc; }
+  .hitl-reject  { background:#7f1d1d; color:#fcd5d5; }
+  .hitl-reason  { background:#050d1f; border:1px solid #1e3a6e; border-radius:5px; color:#cfe2f5; font-size:12px; padding:8px 11px; min-width:240px; flex:1; font-family:inherit; }
+  .hitl-reason:focus { outline:none; border-color:#2a6aad; }
+  .hitl-note { font-size:11px; color:#5a6e8c; margin-top:8px; }
+  .hitl-status { margin-top:10px; font-size:12px; padding:7px 11px; border-radius:5px; display:none; }
+  .hitl-status.ok  { background:#0c2417; color:#66bb6a; border:1px solid #1b5e20; }
+  .hitl-status.err { background:#2a0c0c; color:#ef5350; border:1px solid #b71c1c; }
+  .hitl-status.busy{ background:#0a1830; color:#7a9cc0; border:1px solid #1e3a6e; }
+  .terminal-note { font-size:12px; color:#8aa0c0; background:#0a1830; border:1px solid #1e3a6e; border-radius:6px; padding:9px 13px; }
+
+  /* Section + tables */
+  .sipa-sec { margin-bottom:26px; }
+  .sipa-sec h2 { font-size:15px; color:#eaeaea; margin:0 0 4px; display:flex; align-items:center; gap:9px; }
+  .sipa-sec h2 .count { font-size:11px; font-weight:700; color:#5a9fd4; background:#0d2545; border:1px solid #1a4070; border-radius:11px; padding:1px 9px; }
+  .sipa-sec .sub { font-size:11.5px; color:#7a8cb0; margin:0 0 10px; }
+  .tbl { width:100%; border-collapse:collapse; font-size:12px; }
+  .tbl th { background:#0f1e36; color:#6a86b0; text-align:left; padding:8px 11px; border-bottom:1px solid #1e3a6e; font-weight:600; white-space:nowrap; }
+  .tbl td { padding:8px 11px; border-bottom:1px solid #13233f; color:#c4d6ec; vertical-align:top; }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px; color:#9fc0e0; word-break:break-all; }
+  .pill { display:inline-block; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#5a9fd4; background:#0d2545; border:1px solid #1a4070; border-radius:3px; padding:1px 6px; }
+  .riskw { display:inline-block; min-width:34px; text-align:right; font-variant-numeric:tabular-nums; font-size:11px; }
+  .evidence { color:#8aa0c0; font-size:11px; white-space:pre-wrap; word-break:break-word; max-width:380px; margin:0; }
+  .empty { color:#7a8cb0; font-size:12.5px; padding:14px 0; }
+
+  /* Scanner group */
+  .scan-group { margin-bottom:14px; border:1px solid #1e3a6e; border-radius:7px; overflow:hidden; }
+  .scan-head { display:flex; align-items:center; gap:10px; padding:8px 13px; background:#0f1e36; }
+  .scan-head .nm { font-size:12.5px; font-weight:700; color:#cfe2f5; text-transform:uppercase; letter-spacing:.04em; }
+  .scan-head .cnt { font-size:10px; color:#7a8cb0; }
+  .scan-group .tbl td { border-bottom:1px solid #102036; }
+  .scan-group .tbl tr:last-child td { border-bottom:none; }
+</style>
+
+<div class="sipa-d">
+  <a class="sipa-back" href="/integrity">&larr; All assessments</a>
+
+  {% set v = (assessment.verdict or 'none')|lower %}
+  {% set st = (assessment.status or 'unknown')|lower %}
+  <h1>
+    Assessment #{{ assessment.id }}
+    <span class="vbadge lg {{ v if v in ['allow','review','quarantine'] else 'none' }}">{{ (assessment.verdict or 'pending')|upper }}</span>
+    <span class="sbadge {{ st if st in ['quarantine','assessed','approved','rejected'] else 'unknown' }}">{{ assessment.status or '—' }}</span>
+  </h1>
+  <div class="sipa-d-src">{{ assessment.source_type or '?' }} :: {{ assessment.source_ref or '—' }}</div>
+
+  <!-- Meta grid -->
+  <div class="sipa-meta">
+    <div class="sipa-mc"><div class="k">Mode</div><div class="vv">{{ (assessment.mode or '—').replace('_', ' ') }}</div></div>
+    <div class="sipa-mc"><div class="k">Risk Score</div><div class="vv">{% set rs = assessment.risk_score if assessment.risk_score is not none else 0 %}{{ ((rs*100) if rs <= 1 else rs)|round(0)|int }}</div></div>
+    <div class="sipa-mc"><div class="k">Classification</div><div class="vv">{{ assessment.classification or 'CUI//SP-CTI' }}</div></div>
+    <div class="sipa-mc"><div class="k">Project</div><div class="vv">{{ assessment.project_id or '—' }}</div></div>
+    <div class="sipa-mc"><div class="k">Session</div><div class="vv">{{ assessment.session_id or '—' }}</div></div>
+    <div class="sipa-mc"><div class="k">Created By</div><div class="vv">{{ assessment.created_by or '—' }}</div></div>
+    <div class="sipa-mc"><div class="k">Created</div><div class="vv">{{ (assessment.created_at[:19] if assessment.created_at is string else assessment.created_at.strftime('%Y-%m-%d %H:%M:%S')) if assessment.created_at else '—' }}</div></div>
+    <div class="sipa-mc"><div class="k">Dir Digest</div><div class="vv digest">{{ (assessment.dir_digest[:24] ~ '…') if assessment.dir_digest and assessment.dir_digest|length > 24 else (assessment.dir_digest or '—') }}</div></div>
+  </div>
+
+  <!-- Verdict + rationale -->
+  <div class="sipa-verdict {{ v if v in ['allow','review','quarantine'] else 'none' }}">
+    <div class="vbody">
+      <div class="vhead">
+        <span class="vbadge {{ v if v in ['allow','review','quarantine'] else 'none' }}">{{ (assessment.verdict or 'pending')|upper }}</span>
+        {% if verdict and verdict.risk_score is not none %}
+        <span class="vrisk">Weighted risk: {% set vrs = verdict.risk_score %}{{ ((vrs*100) if vrs <= 1 else vrs)|round(0)|int }}/100</span>
+        {% endif %}
+      </div>
+      <div class="vrat">
+        {% set rat = verdict.rationale if verdict else None %}
+        {% if rat is mapping %}
+          {% if rat.summary %}<div>{{ rat.summary }}</div>{% endif %}
+          {% set reasons = rat.reasons or rat.factors or rat.drivers %}
+          {% if reasons %}
+            <ul>{% for r in reasons %}<li>{{ r if r is string else (r.message or r.detail or r) }}</li>{% endfor %}</ul>
+          {% endif %}
+          {% if not rat.summary and not reasons %}<div class="mono">{{ rat }}</div>{% endif %}
+        {% elif rat is iterable and rat is not string %}
+          <ul>{% for r in rat %}<li>{{ r if r is string else (r.message or r.detail or r) }}</li>{% endfor %}</ul>
+        {% elif rat %}
+          <div>{{ rat }}</div>
+        {% else %}
+          <div style="color:#7a8cb0;">No rationale recorded{% if not verdict %} — assessment still pending{% endif %}.</div>
+        {% endif %}
+      </div>
+      {% if verdict %}
+      <div class="vmeta">Decided by {{ verdict.decided_by or 'engine' }}{% if verdict.created_at %} · {{ verdict.created_at[:19] if verdict.created_at is string else verdict.created_at }}{% endif %}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- HITL promote / reject (only for non-terminal quarantine/review items) -->
+  <div class="sipa-sec">
+    <h2>Human Review</h2>
+    {% if is_terminal %}
+      <div class="terminal-note">This assessment is <b>{{ assessment.status }}</b> — the review decision is final and recorded in the audit trail.</div>
+    {% elif v == 'allow' and st == 'assessed' %}
+      <div class="terminal-note">Verdict is <b>ALLOW</b> — no human gate required. You may still reject to quarantine if warranted.</div>
+      <div class="sipa-hitl" style="margin-top:10px;">
+        <input type="text" class="hitl-reason" id="hitl-reason" placeholder="Reason (optional)">
+        <button class="hitl-btn hitl-reject" onclick="sipaHitl('reject')">Reject &amp; Quarantine</button>
+      </div>
+      <div class="hitl-status" id="hitl-status"></div>
+    {% else %}
+      <p class="sub">This item is held in quarantine pending a human decision. Promote to clear it for use, or reject to keep it blocked. The decision is append-only and audited.</p>
+      <div class="sipa-hitl">
+        <input type="text" class="hitl-reason" id="hitl-reason" placeholder="Reason / justification (optional)">
+        <button class="hitl-btn hitl-promote" onclick="sipaHitl('promote')">&#x2713; Promote (Approve)</button>
+        <button class="hitl-btn hitl-reject" onclick="sipaHitl('reject')">&#x2715; Reject (Quarantine)</button>
+      </div>
+      <div class="hitl-note">Reviewer is recorded from your authenticated session.</div>
+      <div class="hitl-status" id="hitl-status"></div>
+    {% endif %}
+  </div>
+
+  <!-- Capability manifest -->
+  <div class="sipa-sec">
+    <h2>Capability Manifest <span class="count">{{ capabilities|length }}</span></h2>
+    <p class="sub">Behavioral capabilities extracted statically from the source (AST + Semgrep taxonomy). Higher risk weight = more dangerous to exercise.</p>
+    {% if capabilities %}
+    <table class="tbl">
+      <thead>
+        <tr><th>Capability</th><th>File</th><th>Function</th><th>Lines</th><th>Evidence</th><th style="text-align:right;">Risk</th></tr>
+      </thead>
+      <tbody>
+        {% for c in capabilities %}
+        <tr>
+          <td><span class="pill">{{ (c.capability_type or '—').replace('_', ' ') }}</span></td>
+          <td class="mono">{{ c.file_path or '—' }}</td>
+          <td class="mono">{{ c.function_name or '—' }}</td>
+          <td class="mono">{% if c.line_start %}{{ c.line_start }}{% if c.line_end and c.line_end != c.line_start %}–{{ c.line_end }}{% endif %}{% else %}—{% endif %}</td>
+          <td>
+            {% set ev = c.evidence %}
+            {% if ev is mapping %}
+              <pre class="evidence">{{ ev.get('snippet') or ev.get('detail') or ev.get('match') or ev }}</pre>
+            {% elif ev is iterable and ev is not string %}
+              <pre class="evidence">{{ ev|join('\n') }}</pre>
+            {% else %}
+              <pre class="evidence">{{ ev or '—' }}</pre>
+            {% endif %}
+          </td>
+          <td style="text-align:right;"><span class="riskw">{% set rw = c.risk_weight if c.risk_weight is not none else 0 %}{{ ((rw*100) if rw <= 1 else rw)|round(0)|int }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No capabilities extracted.</div>
+    {% endif %}
+  </div>
+
+  <!-- Findings grouped by scanner, severity-sorted within -->
+  {% set sev_rank = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4} %}
+  <div class="sipa-sec">
+    <h2>Findings <span class="count">{{ findings|length }}</span></h2>
+    <p class="sub">Grouped by scanner; ordered by severity within each group.</p>
+    {% if findings %}
+      {% set scanners = findings|map(attribute='source_scanner')|list %}
+      {% set seen = [] %}
+      {% for f in findings %}{% if f.source_scanner not in seen %}{% set _ = seen.append(f.source_scanner) %}{% endif %}{% endfor %}
+      {% for scanner in seen %}
+        {% set group = findings|selectattr('source_scanner', 'equalto', scanner)|list %}
+        {% set group = group|sort(attribute='severity', reverse=False) %}
+        <div class="scan-group">
+          <div class="scan-head">
+            <span class="nm">{{ scanner or 'unknown' }}</span>
+            <span class="cnt">{{ group|length }} finding{{ 's' if group|length != 1 else '' }}</span>
+          </div>
+          <table class="tbl">
+            <thead>
+              <tr><th>Severity</th><th>Type</th><th>File</th><th>Line</th><th>Detail</th></tr>
+            </thead>
+            <tbody>
+              {% for f in group %}
+              {% set sv = (f.severity or 'info')|lower %}
+              <tr>
+                <td><span class="sev {{ sv if sv in ['critical','high','medium','low','info'] else 'info' }}">{{ f.severity or 'info' }}</span></td>
+                <td>{{ (f.finding_type or '—').replace('_', ' ') }}</td>
+                <td class="mono">{{ f.file_path or '—' }}</td>
+                <td class="mono">{{ f.line if f.line is not none else '—' }}</td>
+                <td>
+                  {% set d = f.detail %}
+                  {% if d is mapping %}
+                    <pre class="evidence">{{ d.get('message') or d.get('detail') or d.get('description') or d }}</pre>
+                  {% elif d is iterable and d is not string %}
+                    <pre class="evidence">{{ d|join('\n') }}</pre>
+                  {% else %}
+                    <pre class="evidence">{{ d or '—' }}</pre>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endfor %}
+    {% else %}
+    <div class="empty">No findings recorded.</div>
+    {% endif %}
+  </div>
+
+  <!-- Authorizations (intent reconciliation results) -->
+  {% if authorizations %}
+  <div class="sipa-sec">
+    <h2>Intent Reconciliation <span class="count">{{ authorizations|length }}</span></h2>
+    <p class="sub">How each exercised capability reconciles against authorized requirements (Mode A) or claimed purpose (Mode B).</p>
+    <table class="tbl">
+      <thead>
+        <tr><th>Capability ID</th><th>Requirement</th><th>Claim</th><th>Authorized</th><th>Reason</th><th>Reviewed By</th></tr>
+      </thead>
+      <tbody>
+        {% for au in authorizations %}
+        <tr>
+          <td class="mono">{{ au.capability_id if au.capability_id is not none else '—' }}</td>
+          <td class="mono">{{ au.requirement_id or '—' }}</td>
+          <td class="mono">{{ au.claim_ref or '—' }}</td>
+          <td>{% if au.authorized %}<span class="sev low">authorized</span>{% else %}<span class="sev high">unauthorized</span>{% endif %}</td>
+          <td><pre class="evidence">{{ au.reason or '—' }}</pre></td>
+          <td class="mono">{{ au.reviewed_by or 'engine' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- IQE Query Widget -->
+  {% set iqe_canvas = "integrity" %}
+  {% set iqe_api_route = "/integrity/api/iqe-query" %}
+  {% set iqe_title = "IQE Query — This Assessment" %}
+  {% set iqe_examples = [
+    {"label": "Findings for this assessment", "query": "foreach f in integrity.findings where f.assessment_id == " ~ assessment_id ~ " select f.source_scanner, f.severity, f.finding_type"},
+    {"label": "Capabilities for this assessment", "query": "foreach c in integrity.capabilities where c.assessment_id == " ~ assessment_id ~ " select c.capability_type, c.file_path, c.risk_weight"}
+  ] %}
+  {% include "includes/iqe_query_widget.html" %}
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function sipaHitl(action) {
+  var statusEl = document.getElementById('hitl-status');
+  var reasonEl = document.getElementById('hitl-reason');
+  var buttons = document.querySelectorAll('.hitl-btn');
+  var reason = reasonEl ? (reasonEl.value || '').trim() : '';
+
+  function setStatus(cls, msg) {
+    statusEl.className = 'hitl-status ' + cls;
+    statusEl.style.display = '';
+    statusEl.textContent = msg;
+  }
+
+  if (action === 'reject' && !confirm('Reject this assessment and keep it quarantined?')) return;
+
+  buttons.forEach(function(b) { b.disabled = true; });
+  setStatus('busy', action === 'promote' ? 'Promoting…' : 'Rejecting…');
+
+  fetch('/api/integrity/assessment/{{ assessment_id }}/' + action, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({reason: reason || null})
+  })
+  .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, status: r.status, data: d}; }); })
+  .then(function(res) {
+    if (!res.ok || res.data.error) {
+      setStatus('err', '⚠ ' + (res.data.error || ('Decision failed (HTTP ' + res.status + ')')));
+      buttons.forEach(function(b) { b.disabled = false; });
+      return;
+    }
+    setStatus('ok', '✓ ' + (action === 'promote' ? 'Promoted — cleared for use.' : 'Rejected — kept in quarantine.') + ' Reloading…');
+    setTimeout(function() { location.reload(); }, 800);
+  })
+  .catch(function(e) {
+    setStatus('err', '⚠ Network error: ' + e.message);
+    buttons.forEach(function(b) { b.disabled = false; });
+  });
+}
+</script>
+{% endblock %}

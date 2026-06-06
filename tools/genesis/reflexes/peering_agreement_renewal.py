@@ -11,19 +11,17 @@ so they can be tuned without code changes. Module-level values below are default
 
 Air-gap safe: LLM calls are optional and degrade gracefully to the static threshold.
 """
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+
+IMPLEMENTATION_STATUS = "full"
 
 import json as _json
 import os
 from typing import Any, Dict, Optional
 
-try:
-    from tools.logging.icdev_logger import get_logger
-    logger = get_logger(__name__)
-except Exception:
-    import logging
-    logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 24
 
