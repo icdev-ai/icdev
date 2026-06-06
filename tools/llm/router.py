@@ -109,6 +109,7 @@ class LLMRouter:
         self._cache_ttl: float = 1800.0
 
         self._load_config()
+        self._maybe_activate_cli_bridge()
         self._load_degraded_tier2_state()
 
     # -------------------------------------------------------------------
@@ -204,6 +205,21 @@ class LLMRouter:
         except Exception as exc:
             logger.error("Failed to load LLM config: %s", exc)
             self._config = {}
+
+    def _maybe_activate_cli_bridge(self):
+        """Prepend the local Claude CLI provider to routing chains when enabled.
+
+        Auto-on when air-gapped or no cloud API key is configured; gated by the
+        ``ICDEV_CLI_BRIDGE`` env var (false = hard-disable, true = force-enable).
+        Idempotent and failure-tolerant — never disrupts routing if anything
+        goes wrong (e.g. cli_bridge package missing).
+        """
+        try:
+            from tools.llm.cli_bridge.activate import maybe_activate
+
+            self._config = maybe_activate(self._config)
+        except Exception as exc:
+            logger.debug("CLI bridge hook skipped: %s", exc)
 
     # -------------------------------------------------------------------
     # Tier2 auto-degradation helpers (D-AUTO-DEGRADE)
