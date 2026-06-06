@@ -145,6 +145,11 @@ python tools/security/encryption_at_rest.py --rotate --classification TS --json
 python tools/security/mtls_integration.py --verify --json
 python tools/security/security_middleware.py --init-app --json
 python tools/security/audit_posture.py --json
+
+# SIPA Software Integrity PR gate (eqo-sipa) — assess only the *.py files changed on a branch
+python tools/integrity/pr_gates.py --base origin/main --json            # preview verdict over branch diff
+python tools/integrity/pr_gates.py --cached --json                      # assess the staged index (pre-commit)
+python tools/integrity/pr_gates.py --base origin/main --gate            # CI gate: exit 1 on a blocking (QUARANTINE) verdict
 ```
 
 ---
