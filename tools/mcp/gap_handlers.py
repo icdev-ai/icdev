@@ -1955,6 +1955,56 @@ def dsoc_overview(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+# ============================================================
+# ANVIL CO-WORKER ENGINE (ACE)
+# ============================================================
+
+
+def handle_ace_launch(args: dict) -> dict:
+    """Launch an ACE co-worker session via ACEController.launch()."""
+    problem_text = args.get("problem_text", "")
+    trigger_source = args.get("trigger_source", "api")
+    trigger_ref = args.get("trigger_ref", "")
+    if not problem_text:
+        return {"error": "problem_text is required"}
+    try:
+        from icdev.tools.ace.controller import ACEController
+
+        controller = ACEController.get_instance()
+        instance_id = controller.launch(problem_text, trigger_source, trigger_ref)
+        return {"instance_id": instance_id, "state": "assembling"}
+    except ImportError:
+        return {
+            "error": "ACEController not yet available (ace-runtime not shipped)",
+            "instance_id": None,
+            "state": "unavailable",
+        }
+    except Exception as exc:
+        logger.warning("handle_ace_launch: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_ace_status(args: dict) -> dict:
+    """Return full status of an ACE co-worker instance including co-worker states."""
+    instance_id = args.get("instance_id", "")
+    if not instance_id:
+        return {"error": "instance_id is required"}
+    try:
+        from icdev.tools.ace.controller import ACEController
+
+        controller = ACEController.get_instance()
+        return controller.status(instance_id)
+    except ImportError:
+        return {
+            "error": "ACEController not yet available (ace-runtime not shipped)",
+            "instance_id": instance_id,
+            "state": "unavailable",
+        }
+    except Exception as exc:
+        logger.warning("handle_ace_status: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_cod_invoke(args: dict) -> dict:
     """Invoke Chain of Debate via ChainOrchestrator."""
     try:
