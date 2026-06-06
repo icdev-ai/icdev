@@ -217,12 +217,77 @@
     renderTiles();
   }
 
+  /* ---- Freeform element rendering (read-only; mirrors the editor) ------- */
+  function renderElementBody(el, body) {
+    var p = el.payload || {}, st = el.style || {};
+    if (el.type === "text") {
+      var d = document.createElement("div");
+      d.style.cssText = "width:100%;height:100%;white-space:pre-wrap;word-break:break-word;font-size:" +
+        (st.fontSize || 18) + "px;font-family:'" + (st.fontFamily || "Segoe UI") + "';color:" +
+        (st.color || "#fff") + ";font-weight:" + (st.bold ? 700 : 400) + ";font-style:" +
+        (st.italic ? "italic" : "normal") + ";text-align:" + (st.align || "left") + ";" +
+        (st.underline ? "text-decoration:underline;" : "");
+      d.textContent = p.text || "";
+      body.appendChild(d);
+    } else if (el.type === "image" || el.type === "icon") {
+      if (p.svg) { body.innerHTML = p.svg; }
+      else { var img = document.createElement("img"); img.src = p.src || "";
+        img.style.cssText = "width:100%;height:100%;object-fit:contain;"; body.appendChild(img); }
+    } else if (el.type === "chart") {
+      var cid = uid("ffc"); var h = document.createElement("div");
+      h.id = cid; h.style.cssText = "width:100%;height:100%;"; body.appendChild(h); renderChart(cid, p);
+    } else if (el.type === "table") {
+      body.appendChild(tableEl(p));
+    } else if (el.type === "kpis") {
+      body.appendChild(kpiCards(p));
+    } else if (el.type === "diagram") {
+      body.innerHTML = p.svg || "";
+    } else if (el.type === "shape") {
+      var sh = document.createElement("div");
+      sh.style.cssText = "width:100%;height:100%;background:" + (st.fill || COLORS.dark || "#1e3a5f") +
+        ";border:" + (st.strokeWidth || 0) + "px solid " + (st.stroke || "transparent") +
+        ";border-radius:" + (p.shape === "ellipse" ? "50%" : (st.cornerRadius || 0) + "px") + ";";
+      body.appendChild(sh);
+    }
+  }
+
+  function renderFreeform(slideEl, s) {
+    slideEl.style.cssText = "height:100%;display:flex;align-items:center;justify-content:center;";
+    var stage = $("viz-stage");
+    var availW = stage.clientWidth, availH = stage.clientHeight;
+    var w = availW, h = w * 9 / 16;
+    if (h > availH) { h = availH; w = h * 16 / 9; }
+    var surf = document.createElement("div");
+    surf.style.cssText = "position:relative;width:" + w + "px;height:" + h + "px;background:" +
+      (COLORS.bg || "#0A1628") + ";overflow:hidden;";
+    (s.elements || []).slice().sort(function (a, b) { return (a.z || 0) - (b.z || 0); }).forEach(function (el) {
+      var d = document.createElement("div");
+      d.style.cssText = "position:absolute;left:" + (el.x * 100) + "%;top:" + (el.y * 100) +
+        "%;width:" + (el.w * 100) + "%;height:" + (el.h * 100) + "%;overflow:hidden;opacity:" +
+        ((el.style && el.style.opacity != null) ? el.style.opacity : 1) + ";";
+      renderElementBody(el, d);
+      surf.appendChild(d);
+    });
+    slideEl.appendChild(surf);
+  }
+
   /* ---- Slide rendering -------------------------------------------------- */
   function renderSlide(s) {
     var stage = $("viz-stage");
     stage.innerHTML = "";
     var slide = document.createElement("section");
     slide.className = "viz-slide";
+
+    if (s.freeform && s.elements && s.elements.length) {
+      renderFreeform(slide, s);
+      stage.appendChild(slide);
+      var insF = $("viz-insight");
+      if (s.insight) { insF.innerHTML = '<span class="i-dot"></span>' + esc(s.insight); insF.style.display = "block"; }
+      else { insF.style.display = "none"; }
+      $("viz-notes-body").textContent = s.notes || "";
+      updateChrome(); highlightRail();
+      return;
+    }
 
     if (s.type === "title") {
       slide.innerHTML = '<div class="hero"><h1>' + esc(s.title) + "</h1>" +

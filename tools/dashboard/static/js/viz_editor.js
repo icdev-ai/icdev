@@ -14,6 +14,7 @@
   var COLORS = DECK.colors || {};
   var FONTS = ["Segoe UI", "Arial", "Georgia", "Times New Roman", "Courier New", "Verdana", "Tahoma"];
   var cur = 0, selId = null, dirty = false, _id = 0, gesture = null;
+  var undoStack = [], redoStack = [], saveTimer = null;
 
   function $(s, r) { return (r || document).querySelector(s); }
   function el(tag, cls) { var e = document.createElement(tag); if (cls) e.className = cls; return e; }
@@ -23,7 +24,33 @@
   function curSlide() { return SLIDES[cur] || { elements: [] }; }
   function els() { return curSlide().elements || (curSlide().elements = []); }
   function selEl() { return els().filter(function (e) { return e.id === selId; })[0] || null; }
-  function setDirty(v) { dirty = v; $("#dirty").textContent = v ? "● unsaved" : ""; }
+  function setDirty(v) {
+    dirty = v;
+    $("#dirty").textContent = v ? "● unsaved" : "✓ saved";
+    if (v) { var s = curSlide(); if (s) s.freeform = true; scheduleSave(); }
+  }
+  function scheduleSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { save(true); }, 1500);  // debounced autosave
+  }
+
+  /* ---- undo / redo (full-deck element snapshots) ---- */
+  function serialize() {
+    return JSON.stringify({ cur: cur, slides: SLIDES.map(function (s) { return s.elements || []; }) });
+  }
+  function snapshot() {
+    undoStack.push(serialize());
+    if (undoStack.length > 60) undoStack.shift();
+    redoStack = [];
+  }
+  function restore(str) {
+    var d = JSON.parse(str);
+    d.slides.forEach(function (els, i) { if (SLIDES[i]) SLIDES[i].elements = els; });
+    cur = Math.min(d.cur, SLIDES.length - 1);
+    selId = null; renderAll();
+  }
+  function undo() { if (undoStack.length) { redoStack.push(serialize()); restore(undoStack.pop()); setDirty(true); } }
+  function redo() { if (redoStack.length) { undoStack.push(serialize()); restore(redoStack.pop()); setDirty(true); } }
 
   function whenCharts(cb) {
     function go() { (window.requestAnimationFrame || function (f) { setTimeout(f, 0); })(cb); }
@@ -63,7 +90,7 @@
         (st.italic ? "italic" : "normal") + ";text-align:" + (st.align || "left") + ";width:100%;height:100%;";
       d.textContent = (e.payload && e.payload.text) || "";
       d.addEventListener("dblclick", function () {
-        d.contentEditable = "true"; d.focus();
+        snapshot(); d.contentEditable = "true"; d.focus();
         d.addEventListener("blur", function () {
           d.contentEditable = "false"; e.payload.text = d.innerText; setDirty(true);
         }, { once: true });
@@ -131,10 +158,27 @@
     var strip = $("#strip"); strip.innerHTML = "";
     SLIDES.forEach(function (sl, i) {
       var t = el("div", "thumb" + (i === cur ? " active" : ""));
-      t.innerHTML = "<span class='tn'>" + (i + 1) + "</span> " + esc(sl.title || ("Slide " + (i + 1)));
-      t.addEventListener("click", function () { cur = i; selId = null; renderAll(); });
+      t.draggable = true; t.dataset.idx = i;
+      t.innerHTML = "<span class='tn'>" + (i + 1) + "</span> <span class='tl'>" +
+        esc(sl.title || ("Slide " + (i + 1))) + "</span>" +
+        "<span class='thumb-actions'><button class='dup' title='Duplicate'>⧉</button>" +
+        "<button class='del' title='Delete'>✕</button></span>";
+      t.addEventListener("click", function (e) {
+        if (e.target.tagName === "BUTTON") return; cur = i; selId = null; renderAll();
+      });
+      t.querySelector(".dup").addEventListener("click", function (e) { e.stopPropagation(); duplicateSlide(i); });
+      t.querySelector(".del").addEventListener("click", function (e) { e.stopPropagation(); deleteSlide(i); });
+      t.addEventListener("dragstart", function (e) { e.dataTransfer.setData("text/plain", String(i)); });
+      t.addEventListener("dragover", function (e) { e.preventDefault(); t.classList.add("drop"); });
+      t.addEventListener("dragleave", function () { t.classList.remove("drop"); });
+      t.addEventListener("drop", function (e) {
+        e.preventDefault(); t.classList.remove("drop");
+        moveSlide(parseInt(e.dataTransfer.getData("text/plain"), 10), i);
+      });
       strip.appendChild(t);
     });
+    var add = el("button", "strip-add"); add.textContent = "+ Add slide";
+    add.addEventListener("click", addSlide); strip.appendChild(add);
   }
 
   /* ---- drag + resize ---- */
@@ -143,9 +187,11 @@
     selId = id; renderProps();
     document.querySelectorAll(".el").forEach(function (n) { n.classList.toggle("sel", n.dataset.id === id); });
     if (ev.target.classList.contains("handle")) {
+      snapshot();
       gesture = { mode: "resize", dir: ev.target.dataset.dir };
     } else {
       if (ev.target.isContentEditable) return;  // let text editing happen
+      snapshot();
       gesture = { mode: "move" };
     }
     var e = selEl(); var s = $("#surface").getBoundingClientRect();
@@ -179,7 +225,18 @@
   /* ---- properties panel ---- */
   function renderProps() {
     var p = $("#props"); var e = selEl();
-    if (!e) { p.innerHTML = "<div class='empty'>Select an element to edit its properties.</div>"; return; }
+    if (!e) {
+      var sl = curSlide();
+      p.innerHTML = "<h4>SLIDE " + (cur + 1) + " OF " + SLIDES.length + "</h4>" +
+        "<div class='row' style='display:block'><label>Speaker notes</label>" +
+        "<textarea id='p-notes' rows='5' style='width:100%;margin-top:6px;'>" +
+        esc((sl && sl.notes) || "") + "</textarea></div>" +
+        "<div class='hint'>Select an element to edit it. Drag to move, corner handles to resize, " +
+        "double-click text to edit. Ctrl+Z undo.</div>";
+      var nt = $("#p-notes");
+      if (nt) nt.addEventListener("input", function () { var s = curSlide(); if (s) { s.notes = this.value; setDirty(true); } });
+      return;
+    }
     var rows = "<h4>" + e.type.toUpperCase() + " ELEMENT</h4>";
     if (e.type === "text") {
       var st = e.style || (e.style = {});
@@ -210,11 +267,55 @@
   function refresh() { setDirty(true); renderSurface(); }
 
   /* ---- toolbar actions ---- */
-  function addElement(e) { e.id = uid(e.type); e.z = (els().reduce(function (m, x) { return Math.max(m, x.z || 0); }, 0)) + 1; els().push(e); selId = e.id; setDirty(true); renderAll(); }
+  function addElement(e) { snapshot(); e.id = uid(e.type); e.z = (els().reduce(function (m, x) { return Math.max(m, x.z || 0); }, 0)) + 1; els().push(e); selId = e.id; setDirty(true); renderAll(); }
   function addText() { addElement({ type: "text", x: 0.3, y: 0.4, w: 0.4, h: 0.12, payload: { text: "New text" },
     style: { fontSize: 24, fontFamily: "Segoe UI", color: COLORS.text || "#ffffff", bold: false, italic: false, align: "left" } }); }
-  function layer(dir) { var e = selEl(); if (!e) return; e.z = (e.z || 0) + dir; setDirty(true); renderSurface(); }
-  function del() { var e = selEl(); if (!e) return; curSlide().elements = els().filter(function (x) { return x.id !== e.id; }); selId = null; setDirty(true); renderAll(); }
+  function layer(dir) { var e = selEl(); if (!e) return; snapshot(); e.z = (e.z || 0) + dir; setDirty(true); renderSurface(); }
+  function del() { var e = selEl(); if (!e) return; snapshot(); curSlide().elements = els().filter(function (x) { return x.id !== e.id; }); selId = null; setDirty(true); renderAll(); }
+
+  /* ---- slide CRUD ---- */
+  function reorderSlides() {
+    fetch("/slides/api/" + DECK_ID + "/slides/reorder", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slide_ids: SLIDES.map(function (s) { return s.slideId; }) })
+    });
+  }
+  function addSlide() {
+    snapshot();
+    fetch("/slides/api/" + DECK_ID + "/slides/add", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) return alert("Add slide failed");
+        SLIDES.splice(cur + 1, 0, { slideId: d.slide_id, type: "content", title: "New Slide",
+          elements: [], freeform: true, notes: "" });
+        cur += 1; selId = null; renderAll(); reorderSlides();
+      });
+  }
+  function duplicateSlide(idx) {
+    var src = SLIDES[idx]; if (!src) return; snapshot();
+    fetch("/slides/api/" + DECK_ID + "/slides/" + src.slideId + "/duplicate", { method: "POST" })
+      .then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) return alert("Duplicate failed");
+        var copy = JSON.parse(JSON.stringify(src));
+        copy.slideId = d.slide_id; copy.title = (src.title || "Slide") + " (copy)"; copy.freeform = true;
+        SLIDES.splice(idx + 1, 0, copy); cur = idx + 1; selId = null; renderAll();
+        reorderSlides(); setDirty(true);  // persist the copy's current (possibly unsaved) elements
+      });
+  }
+  function deleteSlide(idx) {
+    if (SLIDES.length <= 1) return alert("A deck needs at least one slide.");
+    var sl = SLIDES[idx]; if (!confirm("Delete this slide?")) return; snapshot();
+    fetch("/slides/api/" + DECK_ID + "/slides/" + sl.slideId, { method: "DELETE" })
+      .then(function (r) { return r.json(); }).then(function () {
+        SLIDES.splice(idx, 1); if (cur >= SLIDES.length) cur = SLIDES.length - 1;
+        selId = null; renderAll(); reorderSlides();
+      });
+  }
+  function moveSlide(from, to) {
+    if (from === to || from == null) return; snapshot();
+    var s = SLIDES.splice(from, 1)[0]; SLIDES.splice(to, 0, s);
+    cur = to; renderAll(); reorderSlides();
+  }
 
   function uploadImage(file) {
     var fd = new FormData(); fd.append("image", file);
@@ -226,14 +327,19 @@
       }).catch(function (err) { alert("Upload error: " + err.message); });
   }
 
-  function save() {
-    var payload = { slides: SLIDES.map(function (sl, i) { return { position: i + 1, elements: sl.elements || [] }; }) };
-    $("#save").textContent = "Saving…";
+  function save(isAuto) {
+    var payload = { slides: SLIDES.map(function (sl, i) {
+      return { slide_id: sl.slideId, position: i + 1, elements: sl.elements || [],
+               speaker_notes: sl.notes || "" };
+    }) };
+    if (!isAuto) $("#save").textContent = "Saving…";
     fetch("/slides/api/" + DECK_ID + "/elements", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
     }).then(function (r) { return r.json(); }).then(function (d) {
-      $("#save").textContent = "Save"; if (d.ok) setDirty(false); else alert("Save failed");
-    }).catch(function (err) { $("#save").textContent = "Save"; alert("Save error: " + err.message); });
+      $("#save").textContent = "Save";
+      if (d.ok) { dirty = false; $("#dirty").textContent = "✓ saved"; }
+      else if (!isAuto) alert("Save failed");
+    }).catch(function (err) { $("#save").textContent = "Save"; if (!isAuto) alert("Save error: " + err.message); });
   }
 
   function renderAll() { sizeSurface(); renderStrip(); renderSurface(); renderProps(); }
@@ -248,8 +354,15 @@
     $("#delete-el").addEventListener("click", del);
     $("#save").addEventListener("click", save);
     document.addEventListener("keydown", function (e) {
-      if ((e.key === "Delete" || e.key === "Backspace") && selId && !e.target.isContentEditable) { del(); }
-      if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
+      if (e.target.isContentEditable || e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") {
+        if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && selId) { del(); }
+      else if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
+      else if (e.key.toLowerCase() === "z" && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if ((e.key.toLowerCase() === "z" && (e.ctrlKey || e.metaKey) && e.shiftKey) ||
+               (e.key.toLowerCase() === "y" && (e.ctrlKey || e.metaKey))) { e.preventDefault(); redo(); }
     });
     window.addEventListener("beforeunload", function (e) { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
     window.addEventListener("resize", function () { sizeSurface(); renderSurface(); });

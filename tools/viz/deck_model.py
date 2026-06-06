@@ -60,6 +60,7 @@ def build_slide_model(slide: dict, theme: str) -> dict[str, Any]:
     """Convert one (viz-parsed) DB slide dict into a runtime slide model."""
     stype = _slide_type(slide)
     model: dict[str, Any] = {
+        "slideId": slide.get("slide_id"),
         "type": stype,
         "title": slide.get("title", ""),
         "notes": slide.get("speaker_notes", ""),

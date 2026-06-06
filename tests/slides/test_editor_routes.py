@@ -105,3 +105,63 @@ def test_upload_rejects_non_image(client):
                   data={"image": (io.BytesIO(b"x"), "evil.exe")},
                   content_type="multipart/form-data")
     assert resp.status_code == 400
+
+
+# ── H1: slide CRUD + notes ────────────────────────────────────────────────────
+
+def _count(db):
+    conn = sqlite3.connect(db)
+    n = conn.execute("SELECT COUNT(*) FROM slides_slides WHERE deck_id=1").fetchone()[0]
+    conn.close()
+    return n
+
+
+def test_slide_add(client):
+    c, db = client
+    assert _count(db) == 2
+    resp = c.post("/slides/api/1/slides/add", json={})
+    j = resp.get_json()
+    assert resp.status_code == 200 and j["ok"] and j["slide_id"]
+    assert _count(db) == 3
+
+
+def test_slide_duplicate(client):
+    c, db = client
+    resp = c.post("/slides/api/1/slides/1/duplicate", json={})
+    j = resp.get_json()
+    assert resp.status_code == 200 and j["ok"]
+    assert _count(db) == 3
+    conn = sqlite3.connect(db)
+    title = conn.execute("SELECT title FROM slides_slides WHERE slide_id=?", (j["slide_id"],)).fetchone()[0]
+    conn.close()
+    assert "(copy)" in title
+
+
+def test_slide_delete(client):
+    c, db = client
+    resp = c.delete("/slides/api/1/slides/2")
+    assert resp.status_code == 200 and resp.get_json()["ok"]
+    assert _count(db) == 1
+
+
+def test_slide_reorder(client):
+    c, db = client
+    resp = c.post("/slides/api/1/slides/reorder", json={"slide_ids": [2, 1]})
+    assert resp.status_code == 200 and resp.get_json()["count"] == 2
+    conn = sqlite3.connect(db)
+    pos = dict(conn.execute("SELECT slide_id, position FROM slides_slides WHERE deck_id=1").fetchall())
+    conn.close()
+    assert pos[2] == 1 and pos[1] == 2   # swapped
+
+
+def test_save_elements_with_notes_by_slide_id(client):
+    c, db = client
+    els = [{"id": "t", "type": "text", "x": 0.1, "y": 0.1, "w": 0.5, "h": 0.1, "payload": {"text": "hi"}}]
+    resp = c.post("/slides/api/1/elements",
+                  json={"slides": [{"slide_id": 2, "elements": els, "speaker_notes": "my notes"}]})
+    assert resp.status_code == 200 and resp.get_json()["ok"]
+    conn = sqlite3.connect(db)
+    row = conn.execute("SELECT elements_json, speaker_notes FROM slides_slides WHERE slide_id=2").fetchone()
+    conn.close()
+    assert json.loads(row[0])[0]["payload"]["text"] == "hi"
+    assert row[1] == "my notes"

@@ -352,7 +352,8 @@ def edit(deck_id: int):
 
 @slides_bp.route("/api/<int:deck_id>/elements", methods=["POST"])
 def api_save_elements(deck_id: int):
-    """Persist freeform element layouts. Body: {slides:[{position, elements:[...]}]}."""
+    """Persist freeform per-slide content. Body: {slides:[{slide_id|position,
+    elements, title?, speaker_notes?}]}. Targets by slide_id when present."""
     data = request.get_json(silent=True) or {}
     updates = data.get("slides", [])
     if not isinstance(updates, list):
@@ -362,19 +363,128 @@ def api_save_elements(deck_id: int):
     try:
         saved = 0
         for u in updates:
-            pos = u.get("position")
             els = u.get("elements")
-            if pos is None or els is None:
+            if els is None:
+                continue
+            sets = ["elements_json = ?"]
+            params: list = [json.dumps(els)]
+            if "title" in u:
+                sets.append("title = ?"); params.append(str(u["title"])[:255])
+            if "speaker_notes" in u:
+                sets.append("speaker_notes = ?"); params.append(str(u["speaker_notes"]))
+            if u.get("slide_id") is not None:
+                where, wparam = "slide_id = ?", int(u["slide_id"])
+            elif u.get("position") is not None:
+                where, wparam = "position = ?", int(u["position"])
+            else:
                 continue
             conn.execute(
-                "UPDATE slides_slides SET elements_json = ? WHERE deck_id = ? AND position = ?",
-                (json.dumps(els), deck_id, int(pos)),
+                f"UPDATE slides_slides SET {', '.join(sets)} WHERE deck_id = ? AND {where}",
+                (*params, deck_id, wparam),
             )
             saved += 1
         conn.commit()
     finally:
         conn.close()
     return jsonify({"ok": True, "slides_saved": saved})
+
+
+def _renumber(conn, deck_id: int) -> None:
+    conn.execute(
+        "UPDATE slides_decks SET slide_count = "
+        "(SELECT COUNT(*) FROM slides_slides WHERE deck_id = ?) WHERE deck_id = ?",
+        (deck_id, deck_id),
+    )
+
+
+@slides_bp.route("/api/<int:deck_id>/slides/add", methods=["POST"])
+def api_slide_add(deck_id: int):
+    """Insert a blank content slide at the end. Returns its slide_id + position."""
+    data = request.get_json(silent=True) or {}
+    title = str(data.get("title", "New Slide"))[:255]
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(position), 0) FROM slides_slides WHERE deck_id = ?", (deck_id,)
+        ).fetchone()
+        pos = int((row[0] if row else 0) or 0) + 1
+        cur = conn.execute(
+            "INSERT INTO slides_slides (deck_id, position, slide_type, title, bullets, "
+            "speaker_notes, elements_json) VALUES (?, ?, 'content', ?, '[]', '', '[]') RETURNING slide_id",
+            (deck_id, pos, title),
+        )
+        sid = int(cur.fetchone()[0])
+        _renumber(conn, deck_id)
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "slide_id": sid, "position": pos})
+
+
+@slides_bp.route("/api/<int:deck_id>/slides/<int:slide_id>/duplicate", methods=["POST"])
+def api_slide_duplicate(deck_id: int, slide_id: int):
+    """Duplicate a slide (all columns) to the end. Returns the new slide_id."""
+    conn = _conn()
+    try:
+        src = conn.execute(
+            "SELECT * FROM slides_slides WHERE slide_id = ? AND deck_id = ?", (slide_id, deck_id)
+        ).fetchone()
+        if not src:
+            return jsonify({"error": "slide not found"}), 404
+        src = dict(src)
+        row = conn.execute(
+            "SELECT COALESCE(MAX(position), 0) FROM slides_slides WHERE deck_id = ?", (deck_id,)
+        ).fetchone()
+        pos = int((row[0] if row else 0) or 0) + 1
+        cur = conn.execute(
+            "INSERT INTO slides_slides (deck_id, position, slide_type, title, bullets, speaker_notes, "
+            "image_path, chart_json, table_json, diagram_json, kpis_json, dashboard_json, elements_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING slide_id",
+            (deck_id, pos, src.get("slide_type", "content"),
+             (str(src.get("title", "")) + " (copy)")[:255],
+             src.get("bullets", "[]"), src.get("speaker_notes", ""), src.get("image_path"),
+             src.get("chart_json"), src.get("table_json"), src.get("diagram_json"),
+             src.get("kpis_json"), src.get("dashboard_json"), src.get("elements_json")),
+        )
+        sid = int(cur.fetchone()[0])
+        _renumber(conn, deck_id)
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "slide_id": sid, "position": pos})
+
+
+@slides_bp.route("/api/<int:deck_id>/slides/<int:slide_id>", methods=["DELETE"])
+def api_slide_delete(deck_id: int, slide_id: int):
+    """Delete a slide."""
+    conn = _conn()
+    try:
+        conn.execute("DELETE FROM slides_slides WHERE slide_id = ? AND deck_id = ?", (slide_id, deck_id))
+        _renumber(conn, deck_id)
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True})
+
+
+@slides_bp.route("/api/<int:deck_id>/slides/reorder", methods=["POST"])
+def api_slide_reorder(deck_id: int):
+    """Set slide positions from an ordered list of slide_ids. Body: {slide_ids:[...]}."""
+    data = request.get_json(silent=True) or {}
+    ids = data.get("slide_ids", [])
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "slide_ids list required"}), 400
+    conn = _conn()
+    try:
+        for i, sid in enumerate(ids):
+            conn.execute(
+                "UPDATE slides_slides SET position = ? WHERE slide_id = ? AND deck_id = ?",
+                (i + 1, int(sid), deck_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "count": len(ids)})
 
 
 @slides_bp.route("/api/<int:deck_id>/upload-image", methods=["POST"])
