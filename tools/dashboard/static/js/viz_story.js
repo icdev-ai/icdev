@@ -10,6 +10,7 @@
   "use strict";
   var DECK = window.__DECK || { slides: [], colors: {} };
   var SLIDES = DECK.slides || [];
+  var READONLY = !!(window.__READONLY);  // share view: don't expose the edit URL
   var COLORS = DECK.colors || {};
   var cur = 0;
   var notesOn = false;
@@ -361,15 +362,67 @@
   function updateChrome() {
     $("viz-counter").textContent = (cur + 1) + " / " + SLIDES.length;
     $("viz-progress").style.width = ((cur + 1) / SLIDES.length * 100) + "%";
+    updateNext();
   }
   function go(d) {
     var n = Math.max(0, Math.min(SLIDES.length - 1, cur + d));
     if (n !== cur) { cur = n; renderSlide(SLIDES[cur]); }
   }
 
+  /* ---- Presenter aids: elapsed timer, next-slide preview, slide sorter ---- */
+  var _elapsed = 0, _timerEl = null, _nextEl = null;
+  function _fmtTime(s) { var m = Math.floor(s / 60), ss = s % 60; return (m < 10 ? "0" : "") + m + ":" + (ss < 10 ? "0" : "") + ss; }
+  function buildPresenterAids() {
+    var C = DECK.colors || {};
+    _timerEl = document.createElement("div");
+    _timerEl.style.cssText = "position:fixed;top:12px;right:16px;z-index:60;font:600 14px monospace;color:" +
+      (C.subtext || "#9fb0c8") + ";background:rgba(0,0,0,.4);padding:4px 10px;border-radius:6px;";
+    _timerEl.textContent = "00:00";
+    document.body.appendChild(_timerEl);
+    setInterval(function () { _elapsed += 1; _timerEl.textContent = _fmtTime(_elapsed); }, 1000);
+
+    _nextEl = document.createElement("div");
+    _nextEl.style.cssText = "position:fixed;bottom:14px;right:16px;z-index:60;max-width:280px;font-size:12px;color:" +
+      (C.subtext || "#9fb0c8") + ";background:rgba(0,0,0,.4);padding:6px 12px;border-radius:8px;border-left:3px solid " +
+      (C.accent || "#C8A951") + ";";
+    document.body.appendChild(_nextEl);
+    updateNext();
+  }
+  function updateNext() {
+    if (!_nextEl) return;
+    if (cur + 1 < SLIDES.length) {
+      _nextEl.innerHTML = "<span style='opacity:.6'>Next →</span> " + esc(SLIDES[cur + 1].title || ("Slide " + (cur + 2)));
+    } else { _nextEl.innerHTML = "<span style='opacity:.6'>End of deck</span>"; }
+  }
+  function buildSorter() {
+    var C = DECK.colors || {};
+    var ov = document.createElement("div"); ov.id = "viz-sorter";
+    ov.style.cssText = "position:fixed;inset:0;z-index:100;background:rgba(5,8,15,.96);display:none;overflow:auto;padding:32px;";
+    var grid = document.createElement("div");
+    grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;";
+    SLIDES.forEach(function (s, i) {
+      var card = document.createElement("button");
+      card.style.cssText = "text-align:left;min-height:118px;border:1px solid " + (C.dark || "#243044") +
+        ";border-radius:8px;background:" + (C.bg || "#0a0f1a") + ";color:" + (C.text || "#fff") +
+        ";padding:12px;cursor:pointer;overflow:hidden;";
+      card.innerHTML = "<div style='font-size:11px;color:" + (C.accent || "#C8A951") + "'>" + (i + 1) + "</div>" +
+        "<div style='font-weight:700;font-size:14px;margin-top:6px;'>" + esc(s.title || ("Slide " + (i + 1))) + "</div>";
+      card.addEventListener("click", function () { cur = i; renderSlide(SLIDES[cur]); toggleSorter(false); });
+      grid.appendChild(card);
+    });
+    ov.appendChild(grid); document.body.appendChild(ov);
+  }
+  function toggleSorter(force) {
+    var ov = $("viz-sorter"); if (!ov) return;
+    var show = (force === undefined) ? (ov.style.display === "none") : force;
+    ov.style.display = show ? "block" : "none";
+  }
+
   function init() {
     if (!SLIDES.length) return;
     buildRail();
+    buildPresenterAids();
+    buildSorter();
     renderSlide(SLIDES[0]);
 
     document.addEventListener("keydown", function (e) {
@@ -377,14 +430,17 @@
       else if (e.key === "ArrowLeft" || e.key === "PageUp") { go(-1); }
       else if (e.key === "Home") { cur = 0; renderSlide(SLIDES[0]); }
       else if (e.key === "End") { cur = SLIDES.length - 1; renderSlide(SLIDES[cur]); }
+      else if (e.key === "g" || e.key === "G") { toggleSorter(); }
       else if (e.key === "s" || e.key === "S" || e.key === "n" || e.key === "N") {
         notesOn = !notesOn; $("viz-notes").classList.toggle("show", notesOn);
       } else if (e.key === "f" || e.key === "F") {
         if (!document.fullscreenElement) document.documentElement.requestFullscreen();
         else document.exitFullscreen();
       } else if (e.key === "Escape") {
-        if (document.fullscreenElement) document.exitFullscreen();
-        else if (DECK.deckId != null) window.location.href = "/slides/" + DECK.deckId;
+        var sorter = $("viz-sorter");
+        if (sorter && sorter.style.display !== "none") { toggleSorter(false); }
+        else if (document.fullscreenElement) document.exitFullscreen();
+        else if (!READONLY && DECK.deckId != null) window.location.href = "/slides/" + DECK.deckId;
       } else if (e.key === "r" || e.key === "R") { $("viz-rail").classList.toggle("open"); }
     });
 

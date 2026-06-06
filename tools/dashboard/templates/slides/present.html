@@ -116,7 +116,7 @@
 </div>
 <div id="viz-notes"><h4>SPEAKER NOTES</h4><div id="viz-notes-body"></div></div>
 
-<script>window.__DECK = {{ deck_json | safe }};</script>
+<script>window.__DECK = {{ deck_json | safe }}; window.__READONLY = {{ 'true' if readonly else 'false' }};</script>
 <script src="/static/js/charts.js"></script>
 <script src="/static/js/viz_story.js"></script>
 </body>
