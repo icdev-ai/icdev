@@ -1715,6 +1715,311 @@ def assess_document_dates(text: str, now_iso: str | None = None) -> dict | None:
 
 
 # --------------------------------------------------------------------------- #
+# Duplicate-content anomaly detection (aiify-opp-5984: hardcoded_threshold ->
+# anomaly_detection). The external scan flagged paperless-ngx
+# docker/rootfs/usr/local/bin/deduplicate.py — the helper that strips duplicate
+# content out of a scanned document — and recommended an anomaly-detection
+# paradigm over its fixed dedup rules. The repo is ephemeral, so per the
+# established aiify-opp pattern the augmentation lands in the analogous ICDEV
+# subsystem (DIC).
+#
+# DIC already dedups *whole files* across a collection by exact content hash
+# (the idempotency check below). That misses the *intra*-document case a
+# page-deduper targets: the same paragraph or page repeated WITHIN one file — a
+# scanner double-feed, a duplicated insert, a copy-paste artifact, an OCR pass
+# that emitted a page twice. This complementary layer segments the incoming
+# document's own text into content blocks and flags blocks that recur
+# anomalously often, the way duplicate pages would.
+#
+# Design (mirrors the date-anomaly sibling, aiify-opp-6048):
+#   - the deterministic detector is the ALWAYS-authoritative baseline: pure
+#     block segmentation + named-threshold / statistical-outlier rules, offline.
+#   - the named thresholds below are exactly the "hardcoded_threshold" the scan
+#     called out, lifted out of inline literals into one tunable place.
+#   - short blocks (page numbers, a "CONFIDENTIAL" banner, running headers) are
+#     excluded by a minimum-length floor — those recur legitimately on every
+#     page and are not duplication anomalies.
+#   - the optional LLM layer only grades *severity* and explains the flagged
+#     blocks; it degrades silently to the heuristic severity and is never a hard
+#     dependency.
+#   - results are surfaced as a *proposal* under
+#     IngestOutcome.metadata["duplicate_blocks"] — never silently dropped or
+#     auto-deduped — so a human confirms before anything sticks.
+# --------------------------------------------------------------------------- #
+
+# Only the leading slice of a document is segmented — keeps the pass cheap and
+# bounded regardless of document size.
+_DUP_INPUT_CHARS = 200000
+
+# A normalized block shorter than this many characters is ignored: page numbers,
+# banners, and running headers/footers recur legitimately and are not the
+# repeated *content* a deduper targets. Substantial paragraphs/pages are.
+_DUP_BLOCK_MIN_CHARS = 64
+
+# A block must appear at least this many times to count as duplicated content.
+_DUP_BLOCK_MIN_REPEATS = 2
+
+# A block whose repeat count is more than this many standard deviations above
+# the document's per-block mean is an over-repetition outlier (escalated reason).
+# Kept at 2.0 in step with the date-anomaly sibling (_DATE_ANOMALY_STDEV_K).
+_DUP_ANOMALY_STDEV_K = 2.0
+
+# Need at least this many distinct significant blocks before the repeat-count
+# distribution is meaningful enough to call any block a statistical outlier.
+_DUP_ANOMALY_MIN_SAMPLE = 4
+
+# Bound how many duplicate clusters the optional LLM severity pass is shown.
+_DUP_LLM_SAMPLE = 6
+
+# Deterministic severity cutoffs on the duplicated fraction of document content.
+_DUP_SEV_HIGH_FRACTION = 0.34
+_DUP_SEV_MEDIUM_FRACTION = 0.10
+
+# Block boundaries: a form-feed (page break) or a blank line. Extractors join
+# pages on one or the other, so this catches both duplicate paragraphs and
+# duplicate pages.
+_DUP_BLOCK_SPLIT = re.compile(r"\f|\n[ \t]*\n")
+
+_DUP_BLOCK_SYSTEM_PROMPT = (
+    "You are a records-management analyst grading how concerning the duplicated "
+    "content in a single document is. You are given how many content blocks the "
+    "document has, which blocks recurred and how many times, what fraction of "
+    "the document is redundant, and a deterministic baseline severity. A whole "
+    "page or large paragraph repeated many times (a scanner double-feed or a "
+    "duplicated insert) is most concerning; one paragraph quoted twice is minor. "
+    "You may agree with or adjust the baseline, but justify any change. Respond "
+    "ONLY with a JSON object: {\"severity\": \"low|medium|high\", \"rationale\": "
+    "\"<=160 chars\", \"top_concern\": \"<the most-repeated snippet, <=60 chars>\"}. "
+    "Never invent blocks beyond those provided."
+)
+
+
+def _segment_blocks(text: str) -> list[dict]:
+    """Split ``text`` into normalized significant content blocks (deterministic).
+
+    Segments the leading ``_DUP_INPUT_CHARS`` on page breaks / blank lines,
+    normalizes each block (whitespace collapsed, lower-cased) so cosmetic
+    re-flow differences do not hide a duplicate, and keeps only blocks of at
+    least ``_DUP_BLOCK_MIN_CHARS`` so running headers/footers and page numbers
+    are not mistaken for duplicated content.
+
+    Returns:
+        A list of ``{"norm": <normalized text>, "raw": <first 200 raw chars>,
+        "len": int}`` in document order. Empty when nothing qualifies.
+    """
+    if not text:
+        return []
+    window = text[:_DUP_INPUT_CHARS]
+    out: list[dict] = []
+    for raw in _DUP_BLOCK_SPLIT.split(window):
+        norm = " ".join(raw.split()).lower()
+        if len(norm) < _DUP_BLOCK_MIN_CHARS:
+            continue
+        out.append({"norm": norm, "raw": raw.strip()[:200], "len": len(norm)})
+    return out
+
+
+def _heuristic_dup_severity(dup_fraction: float, cluster_count: int) -> str:
+    """Deterministic duplicate-content severity — the always-available baseline.
+
+    Pure function of how large a fraction of the document is redundant.
+    """
+    if cluster_count <= 0:
+        return "low"
+    if dup_fraction >= _DUP_SEV_HIGH_FRACTION:
+        return "high"
+    if dup_fraction >= _DUP_SEV_MEDIUM_FRACTION:
+        return "medium"
+    return "low"
+
+
+def _detect_duplicate_blocks(blocks: list[dict]) -> dict:
+    """Flag content blocks that recur within a document (deterministic, authoritative).
+
+    Clusters ``blocks`` by normalized content and flags any that appear at least
+    ``_DUP_BLOCK_MIN_REPEATS`` times. A cluster whose repeat count is more than
+    ``_DUP_ANOMALY_STDEV_K`` standard deviations above the document's per-block
+    mean (only with at least ``_DUP_ANOMALY_MIN_SAMPLE`` distinct blocks and a
+    non-degenerate spread) is escalated from ``duplicate_block`` to
+    ``anomalous_repeat``.
+
+    Args:
+        blocks: output of :func:`_segment_blocks`.
+
+    Returns:
+        ``{"total_blocks", "distinct_blocks", "duplicate_clusters",
+           "anomaly_count", "clusters": [...], "duplicate_fraction",
+           "mean_repeats", "stdev_repeats", "baseline_severity"}``. ``clusters``
+        items carry ``{"snippet", "repeats", "chars", "reason"}`` sorted by
+        repeat count, where reason is ``duplicate_block`` or ``anomalous_repeat``.
+    """
+    total_blocks = len(blocks)
+    empty = {
+        "total_blocks": total_blocks, "distinct_blocks": 0,
+        "duplicate_clusters": 0, "anomaly_count": 0, "clusters": [],
+        "duplicate_fraction": 0.0, "mean_repeats": 0.0, "stdev_repeats": 0.0,
+        "baseline_severity": "low",
+    }
+    if total_blocks == 0:
+        return empty
+
+    # Cluster by normalized content, preserving first-seen order and raw sample.
+    groups: dict[str, dict] = {}
+    order: list[str] = []
+    for b in blocks:
+        g = groups.get(b["norm"])
+        if g is None:
+            groups[b["norm"]] = {"raw": b["raw"], "count": 1, "len": b["len"]}
+            order.append(b["norm"])
+        else:
+            g["count"] += 1
+
+    counts = [groups[n]["count"] for n in order]
+    distinct = len(counts)
+    mean = sum(counts) / distinct
+    variance = sum((c - mean) ** 2 for c in counts) / distinct
+    stdev = variance ** 0.5
+    total_chars = sum(groups[n]["len"] * groups[n]["count"] for n in order) or 1
+
+    clusters: list[dict] = []
+    dup_chars = 0
+    for n in order:
+        g = groups[n]
+        if g["count"] < _DUP_BLOCK_MIN_REPEATS:
+            continue
+        dup_chars += (g["count"] - 1) * g["len"]  # redundant copies only
+        reason = "duplicate_block"
+        if (
+            distinct >= _DUP_ANOMALY_MIN_SAMPLE
+            and stdev > 0
+            and (g["count"] - mean) > _DUP_ANOMALY_STDEV_K * stdev
+        ):
+            reason = "anomalous_repeat"
+        clusters.append(
+            {"snippet": g["raw"], "repeats": g["count"], "chars": g["len"], "reason": reason}
+        )
+    clusters.sort(key=lambda c: c["repeats"], reverse=True)
+
+    return {
+        "total_blocks": total_blocks,
+        "distinct_blocks": distinct,
+        "duplicate_clusters": len(clusters),
+        "anomaly_count": sum(1 for c in clusters if c["reason"] == "anomalous_repeat"),
+        "clusters": clusters,
+        "duplicate_fraction": round(dup_chars / total_chars, 4),
+        "mean_repeats": round(mean, 2),
+        "stdev_repeats": round(stdev, 2),
+        "baseline_severity": _heuristic_dup_severity(dup_chars / total_chars, len(clusters)),
+    }
+
+
+def _ai_dup_block_assessment(summary: dict, clusters: list[dict]) -> dict | None:
+    """Grade duplicate-content severity with the LLM, grounded on real counts.
+
+    Best-effort enrichment only. Returns
+    ``{"severity": "low|medium|high", "rationale": str, "top_concern": str}`` on
+    success, or ``None`` when there is nothing to grade, the model is
+    unavailable, or the output is missing/blank/malformed/out-of-range. Callers
+    MUST treat ``None`` as "use the deterministic baseline".
+    """
+    if not clusters or summary.get("duplicate_clusters", 0) <= 0:
+        return None
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        lines = [
+            f"Document duplication facts: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {summary.get('baseline_severity')}",
+            "Duplicated blocks:",
+        ]
+        for c in clusters[:_DUP_LLM_SAMPLE]:
+            lines.append(f"- {_json.dumps(c, default=str)}")
+
+        req = LLMRequest(
+            messages=[
+                {"role": "user", "content": "\n".join(lines) + "\n\nGrade the severity."}
+            ],
+            system_prompt=_DUP_BLOCK_SYSTEM_PROMPT,
+            max_tokens=200,
+            temperature=0.1,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("dic_duplicate_block_assessment", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+        severity = str(parsed.get("severity") or "").strip().lower()
+        if severity not in {"low", "medium", "high"}:
+            return None
+        return {
+            "severity": severity,
+            "rationale": str(parsed.get("rationale") or "").strip()[:200],
+            "top_concern": str(parsed.get("top_concern") or "").strip()[:60],
+        }
+    except Exception:
+        return None
+
+
+def assess_duplicate_blocks(text: str) -> dict | None:
+    """Detect duplicated content blocks in a document (HITL proposal).
+
+    Orchestrates :func:`_segment_blocks` + :func:`_detect_duplicate_blocks`
+    (always authoritative) and layers best-effort LLM severity grading on top.
+
+    Args:
+        text: the document's extracted text.
+
+    Returns:
+        ``None`` when no block recurs (nothing to surface), else
+        ``{"clusters": [...], "total_blocks": int, "distinct_blocks": int,
+           "duplicate_clusters": int, "anomaly_count": int,
+           "duplicate_fraction": float, "severity": str, "rationale": str,
+           "top_concern": str}``. ``severity`` is the LLM grade when available,
+        otherwise the deterministic baseline.
+    """
+    blocks = _segment_blocks(text or "")
+    summary = _detect_duplicate_blocks(blocks)
+    if summary["duplicate_clusters"] <= 0:
+        return None
+
+    ai = _ai_dup_block_assessment(
+        {
+            "total_blocks": summary["total_blocks"],
+            "distinct_blocks": summary["distinct_blocks"],
+            "duplicate_clusters": summary["duplicate_clusters"],
+            "anomaly_count": summary["anomaly_count"],
+            "duplicate_fraction": summary["duplicate_fraction"],
+            "baseline_severity": summary["baseline_severity"],
+        },
+        summary["clusters"],
+    )
+    severity = ai["severity"] if ai else summary["baseline_severity"]
+    return {
+        "clusters": summary["clusters"],
+        "total_blocks": summary["total_blocks"],
+        "distinct_blocks": summary["distinct_blocks"],
+        "duplicate_clusters": summary["duplicate_clusters"],
+        "anomaly_count": summary["anomaly_count"],
+        "duplicate_fraction": summary["duplicate_fraction"],
+        "severity": severity,
+        "rationale": (ai or {}).get("rationale", ""),
+        "top_concern": (ai or {}).get("top_concern", ""),
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
@@ -1735,6 +2040,7 @@ def ingest_file(
     classify_multi_label: bool = False,
     extract_correspondence: bool = True,
     detect_date_anomalies: bool = True,
+    detect_duplicate_blocks: bool = True,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -1798,6 +2104,17 @@ def ingest_file(
             Surfaced as a HITL proposal under
             ``IngestOutcome.metadata["date_anomalies"]`` only when at least one
             anomaly is found; never silently persisted. Degrades silently.
+        detect_duplicate_blocks: when True, segment the document's text into
+            content blocks and flag blocks (paragraphs/pages) that recur within
+            the file — a scanner double-feed, duplicated insert, or copy-paste
+            artifact (aiify-opp-5984), the anomaly-detection analog of
+            paperless's page deduper. Complements the cross-file exact-hash dedup
+            (which only catches whole-file duplicates). Short blocks (headers,
+            page numbers) are excluded by a length floor. The detector is offline
+            and always authoritative; an optional best-effort LLM pass only
+            grades severity. Surfaced as a HITL proposal under
+            ``IngestOutcome.metadata["duplicate_blocks"]`` only when a block
+            recurs; never silently deduped. Degrades silently.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -1902,6 +2219,19 @@ def ingest_file(
         da = assess_document_dates(text)
         if da:
             ai_metadata = {**ai_metadata, "date_anomalies": da}
+
+    # Duplicate-content anomaly detection (deterministic + best-effort LLM
+    # severity): segment the text and flag blocks (paragraphs/pages) that recur
+    # within the document the way a scanner double-feed or duplicated insert
+    # would. Complements the cross-file exact-hash dedup below, which only
+    # catches whole-file duplicates. Always-authoritative offline baseline;
+    # surfaced as a HITL proposal under metadata["duplicate_blocks"] only when a
+    # block recurs. (aiify-opp-5984)
+    if detect_duplicate_blocks and text.strip():
+        _emit("duplicate_blocks", "Scanning for duplicated content…", 9)
+        dup = assess_duplicate_blocks(text)
+        if dup:
+            ai_metadata = {**ai_metadata, "duplicate_blocks": dup}
 
     # ── Duplicate detection + bookkeeping ─────────────────────────────────────
     # Open a single DB connection (or reuse caller's) for dedup + writes.
