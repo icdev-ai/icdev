@@ -119,6 +119,7 @@
 - [Research Engine (Additional)](manifest/research-engine.md)
 - [Security (Additional)](manifest/security.md)
 - [Linting](manifest/linting.md)
+- [Quality Gates](manifest/quality.md)
 - [Testing (Additional)](manifest/testing.md)
 - [WriteGuard — Writing Quality Analysis](manifest/writeguard-writing-quality-analysis.md)
 - [Pulse AI Blog Engine](manifest/pulse-ai-blog-engine.md)

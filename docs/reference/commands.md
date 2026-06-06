@@ -731,6 +731,11 @@ python tools/workflow/coherence_checker.py --all --fix --json                   
 python tools/workflow/coherence_checker.py --all --gate                                             # Gate evaluation (exit 0=pass, 1=fail)
 python tools/workflow/coherence_checker.py --check schema_code --json                               # Single check
 python tools/workflow/coherence_checker.py --changed-files "tools/foo.py,tests/test_foo.py" --json  # Scope to changed files
+
+# Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
+python tools/quality/completion_auditor.py                                                           # Human table to stdout
+python tools/quality/completion_auditor.py --json                                                   # Machine-readable scorecard
+python tools/quality/completion_auditor.py --md                                                      # Write docs/quality/completion-scorecard.md (sorted least->most complete)
 ```
 
 ---
