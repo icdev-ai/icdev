@@ -1,4 +1,4 @@
-﻿# CUI // SP-CTI
+# CUI // SP-CTI
 """Handler-layer notification service for ICDEVâ„¢ â€” pure dbâ†’renderâ†’notify chains.
 
 Each function follows the single-concern pattern: query the DB for context,
