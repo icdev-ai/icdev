@@ -941,6 +941,79 @@ _SYNTHESIS_KEYWORDS = frozenset([
 ])
 
 
+# ── Match-confidence gate (aiify-opp-6034: hardcoded_threshold -> anomaly_detection)
+# The chat path originally decided "is the top retrieval a confident direct-lookup
+# match?" with a single hardcoded magic number (``top_score >= 0.4``) — the same
+# fixed-cutoff matching pattern flagged in the paperless ``src/documents/matching.py``
+# source opportunity. A fixed cutoff ignores the *shape* of the candidate score
+# distribution: a 0.41 top score that barely edges out a field of 0.40s is a weak
+# match, while a 0.38 top score that towers over a field of ~0.10s is a clear winner.
+# Following the sibling treatment in analytics_engine.detect_anomalies (aiify-opp-6090),
+# we keep the floor as the authoritative, always-available baseline and layer a
+# deterministic high-side outlier (anomaly) test on top. Pure stdlib statistics — no
+# LLM call, so the gate stays air-gap safe and never depends on model availability.
+_MATCH_SCORE_FLOOR = float(os.environ.get("DIC_MATCH_SCORE_FLOOR", "0.4"))
+# Minimum z-score above the mean of the trailing candidates for the top score to
+# count as a high-side outlier (clear winner) even when it sits below the floor.
+_MATCH_OUTLIER_Z = float(os.environ.get("DIC_MATCH_OUTLIER_Z", "1.5"))
+# Minimum ABSOLUTE margin the top score must clear above the trailing mean. The
+# z-score alone is fooled by a tight cluster (a 0.39 top over a field of 0.38s has a
+# huge z because the variance is tiny) — a trivially-separated weak match is not a
+# confident one. Both the z-score AND this absolute margin must hold.
+_MATCH_OUTLIER_MIN_GAP = float(os.environ.get("DIC_MATCH_OUTLIER_MIN_GAP", "0.1"))
+# Absolute hard floor: never treat the top score as a confident match below this, no
+# matter how separated it is from the field — guards against a tight cluster of weak
+# scores where one happens to be a statistical outlier of an already-poor match set.
+_MATCH_ABS_FLOOR = float(os.environ.get("DIC_MATCH_ABS_FLOOR", "0.25"))
+
+
+def _is_confident_match(scores: list[float]) -> bool:
+    """Anomaly-detection match gate: is the top retrieval a confident match?
+
+    Replaces the original hardcoded ``top_score >= 0.4`` cutoff (aiify-opp-6034,
+    hardcoded_threshold -> anomaly_detection). The configured floor
+    (:data:`_MATCH_SCORE_FLOOR`) is retained as the authoritative baseline and
+    augmented with a deterministic high-side outlier test so that a top score which
+    decisively separates from the rest of the candidate field counts as confident
+    even just under the floor, while a top score barely ahead of a tight cluster does
+    not get a free pass. Pure stdlib statistics; never calls the LLM (air-gap safe).
+
+    Args:
+        scores: Candidate match scores in descending rank order (``scores[0]`` is
+            the top result). Empty list → not confident.
+
+    Returns:
+        ``True`` when the top score clears the floor, or sits in
+        ``[_MATCH_ABS_FLOOR, _MATCH_SCORE_FLOOR)`` while standing out as a high-side
+        outlier (z-score ≥ :data:`_MATCH_OUTLIER_Z`) versus the trailing candidates.
+    """
+    if not scores:
+        return False
+    top = scores[0]
+    # Clears the configured floor → confident, exactly as the original cutoff did.
+    if top >= _MATCH_SCORE_FLOOR:
+        return True
+    # Below the absolute hard floor → never confident regardless of separation.
+    if top < _MATCH_ABS_FLOOR:
+        return False
+    rest = scores[1:]
+    # Need at least a small trailing field to judge separation meaningfully.
+    if len(rest) < 2:
+        return False
+    mean = sum(rest) / len(rest)
+    gap = top - mean
+    # Absolute-margin guard: a trivially-separated top score is never confident,
+    # however small the trailing variance makes its z-score look.
+    if gap < _MATCH_OUTLIER_MIN_GAP:
+        return False
+    std = (sum((s - mean) ** 2 for s in rest) / len(rest)) ** 0.5
+    if std == 0:
+        # Degenerate: identical trailing scores. The absolute-margin guard above is
+        # the only meaningful test, and it has already passed → clear winner.
+        return True
+    return gap / std >= _MATCH_OUTLIER_Z
+
+
 def _needs_synthesis(query: str) -> bool:
     q = query.lower()
     return any(kw in q for kw in _SYNTHESIS_KEYWORDS)
@@ -1023,10 +1096,11 @@ def api_chat():
             })
 
         citations = [r.citation.to_dict() for r in results[:5]]
-        top_score = results[0].score if results else 0.0
 
         # ── Path 1: High-confidence direct lookup — NO LLM ──────────────────
-        if top_score >= 0.4 and not _needs_synthesis(message):
+        # Confidence is decided by the anomaly-detection match gate rather than a
+        # hardcoded score cutoff (aiify-opp-6034). Scores arrive in descending rank.
+        if _is_confident_match([r.score for r in results]) and not _needs_synthesis(message):
             answer = _compile_grounded_answer(results, message)
             return jsonify({
                 "answer": answer,
