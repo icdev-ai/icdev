@@ -245,6 +245,20 @@ def test_live_banner_cpmp_deliverables(results: TestResult) -> None:
         results.fail("live_cpmp_deliverables_cui_banner", exc)
 
 
+def test_live_banner_cpmp_reports(results: TestResult) -> None:
+    # Covers route /cpmp/reports (Flask: cpmp_reports_page).
+    # Weekly PMO Brief archive viewer / exportable contract performance reports.
+    try:
+        r = requests.get(f"{BASE_URL}/cpmp/reports", headers=_ADMIN_HEADERS, timeout=15)
+        assert r.status_code == 200, f"cpmp/reports returned {r.status_code}"
+        html = r.text
+        assert "design-classification-banner" in html, "/cpmp/reports: banner element missing"
+        assert CUI_CLASS in html, f"/cpmp/reports: {CUI_CLASS} not in HTML"
+        results.ok("live_cpmp_reports_cui_banner")
+    except Exception as exc:
+        results.fail("live_cpmp_reports_cui_banner", exc)
+
+
 # ---------------------------------------------------------------------------
 # Suite 3: Role-scoped access assertions
 # ---------------------------------------------------------------------------
@@ -472,6 +486,38 @@ def test_cpmp_deliverables_browser(results: TestResult, driver: webdriver.Chrome
         results.fail("browser_cpmp_deliverables_screenshot", exc)
 
 
+def test_cpmp_reports_browser(results: TestResult, driver: webdriver.Chrome) -> None:
+    # Covers route /cpmp/reports (Flask: cpmp_reports_page).
+    # Weekly PMO Brief archive viewer — exportable contract performance reports.
+    try:
+        driver.get(f"{BASE_URL}/cpmp/reports")
+        time.sleep(2)
+        assert driver.title, "empty title"
+        results.ok("browser_cpmp_reports_loads", driver.title[:60])
+    except Exception as exc:
+        results.fail("browser_cpmp_reports_loads", exc)
+        return
+
+    try:
+        assert _browser_has_cui_banner(driver), "CUI banner not found on /cpmp/reports"
+        results.ok("browser_cpmp_reports_cui_banner")
+    except Exception as exc:
+        results.fail("browser_cpmp_reports_cui_banner", exc)
+
+    try:
+        js_errors = check_js_errors(driver)
+        assert not js_errors, f"SEVERE JS: {js_errors}"
+        results.ok("browser_cpmp_reports_no_js_errors")
+    except Exception as exc:
+        results.fail("browser_cpmp_reports_no_js_errors", exc)
+
+    try:
+        path = _screenshot(driver, "cpmp_reports")
+        results.ok("browser_cpmp_reports_screenshot", str(path))
+    except Exception as exc:
+        results.fail("browser_cpmp_reports_screenshot", exc)
+
+
 def test_proposals_language_browser(results: TestResult, driver: webdriver.Chrome) -> None:
     # Covers route /proposals//language (Flask: /proposals/<opp_id>/language)
     # Proposal Language Settings — glossary, wall of truth, taxonomy, style templates.
@@ -514,6 +560,7 @@ def run_tests() -> int:
     test_live_banner_proposals(results)
     test_live_banner_cpmp(results)
     test_live_banner_cpmp_deliverables(results)
+    test_live_banner_cpmp_reports(results)
 
     print("\n=== Suite 3: Role-scoped access ===")
     test_role_scoped_govcon_page(results)
@@ -526,6 +573,7 @@ def run_tests() -> int:
         test_proposals_browser(results, driver)
         test_cpmp_browser(results, driver)
         test_cpmp_deliverables_browser(results, driver)
+        test_cpmp_reports_browser(results, driver)
         test_pwin_ptw_browser(results, driver)
         test_proposals_language_browser(results, driver)
     finally:
