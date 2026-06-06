@@ -19,6 +19,20 @@
     // real assistant answer is posted, at which point it replaces this notice.
     var PENDING_NOTICE_TEXT = 'Running in background — the result will be posted here when ready.';
 
+    // Friendly labels for cli_synthesis emit_progress phases (subprocess_backend._emit).
+    // The pending bubble's notice text is updated live as the job moves through them.
+    var CLI_PHASE_LABELS = {
+        queued: 'Queued — waiting for a CLI slot…',
+        running: 'Calling Claude CLI…',
+        synthesizing: 'Synthesizing answer…',
+        done: 'Finishing up…'
+    };
+
+    // Active EventSource subscribed to /api/events/progress for the in-flight CLI job,
+    // plus the job_id it is tracking. Only one deferred job is tracked at a time.
+    var _progressES = null;
+    var _progressJobId = null;
+
     var _activeContextId = null;
     var _contextVersions = {};
     var _pollTimer = null;
@@ -170,6 +184,8 @@
     }
 
     function switchContext(ctxId) {
+        // Drop any in-flight CLI progress subscription tied to the prior context.
+        closeJobProgress();
         _activeContextId = ctxId;
         if (!_contextVersions[ctxId]) _contextVersions[ctxId] = 0;
 
@@ -322,6 +338,7 @@
             _activeContextId = null;
             _activeIntakeSessionId = null;
             stopPolling();
+            closeJobProgress();
             stopRicoasTimers();
             hideRicoasSidebar();
             var stream = document.getElementById('message-stream');
@@ -369,8 +386,13 @@
                     appendMessage({
                         role: 'assistant',
                         content: res.message || PENDING_NOTICE_TEXT,
-                        content_type: 'pending'
+                        content_type: 'pending',
+                        job_id: res.job_id
                     });
+                    // Subscribe the pending bubble to live cli_synthesis progress so
+                    // the spinner label tracks queued -> calling CLI -> synthesizing.
+                    // Falls back silently to message polling if SSE is unavailable.
+                    if (res.job_id) subscribeJobProgress(res.job_id);
                 }
                 // Keep the poll loop alive so a late assistant message (whether
                 // posted now or after a deferred job completes) is rendered in place.
@@ -398,6 +420,84 @@
             }
         }
         if (inp) inp.disabled = isProcessing;
+    }
+
+    // -------------------------------------------------------------------
+    // Deferred CLI job progress (cli_synthesis emit_progress over SSE)
+    // -------------------------------------------------------------------
+
+    function _findPendingBubble(jobId) {
+        var stream = document.getElementById('message-stream');
+        if (!stream) return null;
+        // Prefer the bubble tagged with this job_id; fall back to the last
+        // untagged pending bubble (older render path before data-job-id).
+        var tagged = stream.querySelector('.msg-bubble--pending[data-job-id="' + jobId + '"]');
+        if (tagged) return tagged;
+        var all = stream.querySelectorAll('.msg-bubble--pending');
+        return all.length ? all[all.length - 1] : null;
+    }
+
+    function _updatePendingLabel(jobId, evt) {
+        var bubble = _findPendingBubble(jobId);
+        if (!bubble) return;
+        var notice = bubble.querySelector('.pending-notice');
+        if (!notice) return;
+        var label = CLI_PHASE_LABELS[evt.phase] || evt.detail || PENDING_NOTICE_TEXT;
+        if (typeof evt.percent === 'number' && evt.percent > 0 && evt.percent < 100) {
+            label += ' (' + Math.round(evt.percent) + '%)';
+        }
+        notice.textContent = label;
+    }
+
+    function closeJobProgress() {
+        if (_progressES) {
+            try { _progressES.close(); } catch (e) {}
+        }
+        _progressES = null;
+        _progressJobId = null;
+    }
+
+    function subscribeJobProgress(jobId) {
+        // Graceful fallback: if the browser/proxy can't do SSE, the existing
+        // /<id>/messages poll loop still renders the answer when it lands.
+        if (typeof window.EventSource === 'undefined' || !jobId) return;
+
+        // Only track one deferred job at a time — drop any prior subscription.
+        closeJobProgress();
+        _progressJobId = jobId;
+
+        try {
+            _progressES = new EventSource('/api/events/progress');
+        } catch (e) {
+            _progressES = null;
+            return;  // fall back to plain message polling
+        }
+
+        _progressES.addEventListener('progress', function (e) {
+            var evt;
+            try { evt = JSON.parse(e.data); } catch (err) { return; }
+            // Only react to this job's cli_synthesis events.
+            if (!evt || evt.operation_type !== 'cli_synthesis') return;
+            if (evt.operation_id !== _progressJobId) return;
+
+            _updatePendingLabel(_progressJobId, evt);
+
+            // Terminal states: stop streaming. The message poll loop renders the
+            // real answer (success) and drops the pending bubble.
+            if (evt.status === 'completed' || evt.status === 'failed') {
+                if (evt.status === 'failed') {
+                    var bubble = _findPendingBubble(_progressJobId);
+                    var notice = bubble && bubble.querySelector('.pending-notice');
+                    if (notice) notice.textContent = 'Background job failed' + (evt.detail ? ': ' + evt.detail : '.');
+                    var spin = bubble && bubble.querySelector('.pending-spinner');
+                    if (spin) spin.style.display = 'none';
+                }
+                closeJobProgress();
+            }
+        });
+
+        // On stream error just close — polling keeps the UI correct.
+        _progressES.onerror = function () { closeJobProgress(); };
     }
 
     function sendIntakeMessage(content) {
@@ -1553,7 +1653,8 @@
 
         // Deferred-job placeholder: inline 'running in background' notice + spinner.
         if (ct === 'pending') {
-            return '<div class="msg-bubble msg-bubble--pending" data-pending="true">'
+            var jobAttr = msg.job_id ? ' data-job-id="' + escAttr(msg.job_id) + '"' : '';
+            return '<div class="msg-bubble msg-bubble--pending" data-pending="true"' + jobAttr + '>'
                 + '<span class="pending-spinner"></span>'
                 + '<span class="pending-notice">' + escHtml(msg.content || PENDING_NOTICE_TEXT) + '</span>'
                 + '</div>';
