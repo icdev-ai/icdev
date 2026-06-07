@@ -369,6 +369,10 @@ Dual storage: markdown files (human-readable) + database (searchable, SQLite or 
 4. **Goals are living docs** -- Update when better approaches emerge.  Never modify/create goals without explicit permission.
 5. **When stuck** -- Explain what is missing and what you need.  Do not guess or invent capabilities.
 
+### Database Rule (PostgreSQL is native)
+
+PostgreSQL is the native runtime backend.  Author all SQL/data access for PG and honor `ICDEV_STORAGE_BACKEND`.  Get connections via `get_connection()` (the bundled storage helper) -- do NOT call `sqlite3.connect()` for runtime data access.  Never use SQLite-only constructs in runtime code: `conn.executescript(...)`, `SELECT ... FROM sqlite_master` (use a backend-aware table-list helper), or `json_extract`/`json_each`/`json_array_length` (use PG `jsonb` operators, or compute in Python).  **SQLite is a fallback ONLY at initialization when PG is unreachable; the running app must never silently switch backends.**
+
 ### Session Start Protocol
 
 1. Read `memory/MEMORY.md` for long-term context
@@ -1503,6 +1507,10 @@ def _build_operate_section() -> str:
 3. **When tools fail** -- Read the error, fix the tool, update the goal with what you learned (rate limits, batching, timing).
 4. **Goals are living docs** -- Update when better approaches emerge.  Never modify/create goals without explicit permission.
 5. **When stuck** -- Explain what is missing and what you need.  Do not guess or invent capabilities.
+
+### Database Rule (PostgreSQL is native)
+
+PostgreSQL is the native runtime backend.  Author all SQL/data access for PG and honor `ICDEV_STORAGE_BACKEND`.  Get connections via `get_connection()` (the bundled storage helper) -- do NOT call `sqlite3.connect()` for runtime data access.  Never use SQLite-only constructs in runtime code: `conn.executescript(...)`, `SELECT ... FROM sqlite_master` (use a backend-aware table-list helper), or `json_extract`/`json_each`/`json_array_length` (use PG `jsonb` operators, or compute in Python).  **SQLite is a fallback ONLY at initialization when PG is unreachable; the running app must never silently switch backends.**
 
 ### Session Start Protocol
 

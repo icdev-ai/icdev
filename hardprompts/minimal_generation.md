@@ -20,6 +20,17 @@
 4. **Bound scope.** Touch only what the task requires. No drive-by refactors.
 5. **Match the surrounding code.** Reuse existing naming, imports, error handling,
    and config conventions from the files you're editing.
+6. **PostgreSQL is the native runtime backend — author SQL for PG.** Get a
+   connection via `from tools.db.storage import get_connection` (or the child
+   app's scaffolded portable helper) and honor `ICDEV_STORAGE_BACKEND`. NEVER
+   emit SQLite-only constructs in runtime code: `sqlite3.connect()` for data
+   access, `conn.executescript(...)`, `SELECT ... FROM sqlite_master`, or the
+   JSON1 builtins `json_extract` / `json_each` / `json_array_length` (use PG
+   `jsonb` operators, or compute in Python). To list tables, use a backend-aware
+   helper, not `sqlite_master`. SQLite is a fallback ONLY at INITIALIZATION when
+   PG is unreachable — runtime must never silently switch backends. For
+   canvas/app-local tables that lack `tenant_id`/`classification`, use an
+   RLS-disabled connection (`get_canvas_connection()` / `set_security_context(None)`).
 
 ## Hydration slots (filled by reuse_scout)
 

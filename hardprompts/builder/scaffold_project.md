@@ -56,6 +56,15 @@ Given a project name and type, generate the complete directory structure with al
 - Initial test must be a health check that FAILS (RED phase ready)
 - compliance/ directory must exist with empty subdirs
 - README must include CUI marking, project description, setup instructions
+- **Database: PostgreSQL is native.** The DB-init script and all data access must
+  be authored for PostgreSQL and honor `ICDEV_STORAGE_BACKEND`. Import a
+  connection helper (do NOT call `sqlite3.connect()` for runtime access), execute
+  DDL statement-by-statement (no `conn.executescript`), and list tables with a
+  backend-aware helper (NOT `SELECT ... FROM sqlite_master`). Avoid JSON1 builtins
+  (`json_extract`/`json_each`/`json_array_length`) — use PG `jsonb` or Python.
+  SQLite is a fallback ONLY at initialization when PostgreSQL is unreachable; the
+  running app must never silently switch backends. (`cli` projects may default to
+  SQLite but must still avoid the non-portable idioms above.)
 
 ## Input
 - Project name: {{project_name}}

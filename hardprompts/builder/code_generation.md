@@ -13,6 +13,14 @@ Given a failing test file, analyze the test assertions and generate implementati
 4. Implement ONLY what the tests require — nothing more
 5. Run tests to verify GREEN state
 
+### Database rule (PostgreSQL is native)
+Author all data access for PostgreSQL. Use `from tools.db.storage import get_connection`
+and honor `ICDEV_STORAGE_BACKEND`. Do NOT write SQLite-only constructs in runtime
+code: `sqlite3.connect()` for data access, `conn.executescript(...)`,
+`SELECT ... FROM sqlite_master`, or `json_extract`/`json_each`/`json_array_length`
+(use PG `jsonb` operators or compute in Python). SQLite is an init-time fallback
+only; runtime must never silently switch backends.
+
 ### Code Template
 ```python
 # CUI // SP-CTI
