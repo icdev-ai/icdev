@@ -4,10 +4,11 @@
 {% block content %}
 {#
   Context (from tools/foundry/blueprint.py :: foundry_detail):
-    concept        : dict — full foundry_concepts row (+ decoded cluster_signal_ids)
+    concept        : dict — full foundry_concepts row (+ decoded cluster_signal_ids list)
     spec           : dict|None — foundry_specs (spec_md, canvas_contract, task_count)
-    tasks_emitted  : list[dict] — foundry_tasks_emitted (kanban_task_id, epic, seq)
-    outcomes       : list[dict] — foundry_outcomes (outcome, metric, detail)
+    tasks_emitted  : list[dict] — foundry_tasks_emitted (kanban_task_id, epic, seq,
+                     + live kanban_status enriched by the blueprint)
+    outcomes       : list[dict] — foundry_outcomes (outcome, metric, detail, created_at)
     statuses       : CONCEPT_STATUSES
 #}
 <style>
@@ -27,7 +28,10 @@
   .acfd-mcard { background:#1a163e; border:1px solid #2e1e6e; border-radius:8px; padding:12px 14px; }
   .acfd-mcard .lbl { font-size:10px; color:#8c8ab0; text-transform:uppercase; letter-spacing:.05em; }
   .acfd-mcard .val { font-size:22px; font-weight:700; color:#cfc6f5; margin-top:4px; font-variant-numeric:tabular-nums; }
-  .acfd-mcard.composite .val { color:#b388ff; }
+  .acfd-mcard .bar { height:4px; background:#1c1740; border-radius:2px; margin-top:8px; overflow:hidden; }
+  .acfd-mcard .bar > i { display:block; height:100%; background:#5e35b1; border-radius:2px; }
+  .acfd-mcard.composite .val { color:#b388ff; } .acfd-mcard.composite .bar > i { background:#b388ff; }
+  .acfd-mcard.novelty .bar > i { background:#4dd0e1; }
   .acfd-panel { background:#150f30; border:1px solid #2e1e6e; border-radius:8px; padding:16px 18px; margin-bottom:18px; }
   .acfd-panel h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:#cfc6f5; margin:0 0 12px; }
   .acfd-field { margin-bottom:12px; }
@@ -40,6 +44,34 @@
   .acfd-tbl a { color:#82b1ff; text-decoration:none; }
   .acfd-tbl a:hover { text-decoration:underline; }
   .acfd-empty { color:#8c8ab0; font-size:13px; }
+
+  /* Clustered signals */
+  .acfd-chips { display:flex; flex-wrap:wrap; gap:7px; }
+  .acfd-chip { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:#cfc6f5; background:#1a163e; border:1px solid #2e1e6e; border-radius:14px; padding:4px 11px; }
+  .acfd-chip .dot { width:6px; height:6px; border-radius:50%; background:#26c6da; }
+
+  /* Live kanban status badges (enriched in blueprint via kanban_tasks.status) */
+  .kbadge { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.04em; padding:2px 8px; border-radius:4px; text-transform:uppercase; }
+  .kbadge.done                          { background:#0c2417; color:#81c784; }
+  .kbadge.in_progress, .kbadge.in_review{ background:#2a1f05; color:#ffb300; }
+  .kbadge.ready, .kbadge.backlog        { background:#0a1830; color:#7aa8d8; }
+  .kbadge.blocked, .kbadge.failed       { background:#2a0f0f; color:#ef9a9a; }
+  .kbadge.suggested, .kbadge.scheduled  { background:#1c1235; color:#b39ddb; }
+  .kbadge.unknown                       { background:#1a2438; color:#6a86b0; }
+
+  /* Outcomes timeline */
+  .acfd-timeline { list-style:none; margin:0; padding:0 0 0 6px; border-left:2px solid #2a2050; }
+  .acfd-tl-item { position:relative; padding:0 0 16px 18px; }
+  .acfd-tl-item:last-child { padding-bottom:0; }
+  .acfd-tl-item::before { content:''; position:absolute; left:-7px; top:3px; width:10px; height:10px; border-radius:50%; background:#5e35b1; border:2px solid #150f30; }
+  .acfd-tl-item.shipped::before    { background:#66bb6a; }
+  .acfd-tl-item.failed::before     { background:#ef5350; }
+  .acfd-tl-item.measured::before   { background:#26c6da; }
+  .acfd-tl-row { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .acfd-tl-outcome { font-size:13px; font-weight:600; color:#ede7ff; text-transform:capitalize; }
+  .acfd-tl-metric { font-size:12px; color:#b388ff; font-variant-numeric:tabular-nums; }
+  .acfd-tl-when { font-size:11px; color:#6a6a9c; white-space:nowrap; }
+  .acfd-tl-detail { font-size:12px; color:#9b97c4; margin-top:3px; white-space:pre-wrap; }
 </style>
 
 <div class="acfd-wrap">
@@ -51,15 +83,15 @@
   </div>
   {% if concept.proposed_capability %}<div class="acfd-sub">{{ concept.proposed_capability }}</div>{% endif %}
 
-  <!-- Score metrics -->
+  <!-- Sub-scores -->
+  {% macro pct(x) %}{{ ((x*100) if (x is not none and x <= 1) else (x or 0))|round(0)|int }}{% endmacro %}
   <div class="acfd-grid">
-    {% macro pct(x) %}{{ ((x*100) if (x is not none and x <= 1) else (x or 0))|round(0)|int }}{% endmacro %}
-    <div class="acfd-mcard composite"><div class="lbl">Composite</div><div class="val">{{ pct(concept.composite_score) }}</div></div>
-    <div class="acfd-mcard"><div class="lbl">Novelty</div><div class="val">{{ pct(concept.novelty_score) }}</div></div>
-    <div class="acfd-mcard"><div class="lbl">Market</div><div class="val">{{ pct(concept.market_score) }}</div></div>
-    <div class="acfd-mcard"><div class="lbl">Fit</div><div class="val">{{ pct(concept.fit_score) }}</div></div>
-    <div class="acfd-mcard"><div class="lbl">Effort</div><div class="val">{{ pct(concept.effort_estimate) }}</div></div>
-    <div class="acfd-mcard"><div class="lbl">Compliance risk</div><div class="val">{{ pct(concept.compliance_risk) }}</div></div>
+    <div class="acfd-mcard composite"><div class="lbl">Composite</div><div class="val">{{ pct(concept.composite_score) }}</div><div class="bar"><i style="width:{{ pct(concept.composite_score) }}%;"></i></div></div>
+    <div class="acfd-mcard novelty"><div class="lbl">Novelty</div><div class="val">{{ pct(concept.novelty_score) }}</div><div class="bar"><i style="width:{{ pct(concept.novelty_score) }}%;"></i></div></div>
+    <div class="acfd-mcard"><div class="lbl">Market</div><div class="val">{{ pct(concept.market_score) }}</div><div class="bar"><i style="width:{{ pct(concept.market_score) }}%;"></i></div></div>
+    <div class="acfd-mcard"><div class="lbl">Fit</div><div class="val">{{ pct(concept.fit_score) }}</div><div class="bar"><i style="width:{{ pct(concept.fit_score) }}%;"></i></div></div>
+    <div class="acfd-mcard"><div class="lbl">Effort</div><div class="val">{{ pct(concept.effort_estimate) }}</div><div class="bar"><i style="width:{{ pct(concept.effort_estimate) }}%;"></i></div></div>
+    <div class="acfd-mcard"><div class="lbl">Compliance risk</div><div class="val">{{ pct(concept.compliance_risk) }}</div><div class="bar"><i style="width:{{ pct(concept.compliance_risk) }}%;"></i></div></div>
   </div>
 
   <!-- Concept -->
@@ -69,6 +101,21 @@
     {% if concept.target_users %}<div class="acfd-field"><div class="k">Target users</div><div class="v">{{ concept.target_users }}</div></div>{% endif %}
     {% if st == 'rejected' and concept.reject_reason %}<div class="acfd-field"><div class="k">Reject reason</div><div class="v" style="color:#bcaaa4;">{{ concept.reject_reason }}</div></div>{% endif %}
     <div class="acfd-field"><div class="k">Run</div><div class="v">{{ concept.run_id or '—' }}</div></div>
+  </div>
+
+  <!-- Clustered signals -->
+  <div class="acfd-panel">
+    <h2>Clustered Signals{% if concept.cluster_signal_ids %} · {{ concept.cluster_signal_ids|length }}{% endif %}</h2>
+    {% if concept.cluster_signal_ids %}
+      <div class="acfd-field" style="margin-bottom:8px;"><div class="k">Harvested signals clustered into this concept</div></div>
+      <div class="acfd-chips">
+        {% for sid in concept.cluster_signal_ids %}
+        <span class="acfd-chip"><span class="dot"></span>signal&nbsp;#{{ sid }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="acfd-empty">No source signals recorded for this concept.</div>
+    {% endif %}
   </div>
 
   <!-- Spec -->
@@ -81,18 +128,26 @@
     {% endif %}
   </div>
 
-  <!-- Emitted Kanban tasks -->
+  <!-- Emitted Kanban tasks (with live status) -->
   <div class="acfd-panel">
-    <h2>Emitted Kanban Tasks</h2>
+    <h2>Emitted Kanban Tasks{% if tasks_emitted %} · {{ tasks_emitted|length }}{% endif %}</h2>
     {% if tasks_emitted %}
     <table class="acfd-tbl">
-      <thead><tr><th>Seq</th><th>Epic</th><th>Task</th></tr></thead>
+      <thead><tr><th>Seq</th><th>Epic</th><th>Task</th><th>Live status</th></tr></thead>
       <tbody>
         {% for t in tasks_emitted %}
+        {% set ks = (t.kanban_status or 'unknown')|lower %}
         <tr>
           <td style="color:#6a6a9c;">{{ t.seq if t.seq is not none else '—' }}</td>
           <td>{{ t.epic or '—' }}</td>
           <td><a href="/kanban#{{ t.kanban_task_id }}">{{ t.kanban_task_id }}</a></td>
+          <td>
+            {% if t.kanban_status %}
+              <span class="kbadge {{ ks if ks in ['done','in_progress','in_review','ready','backlog','blocked','failed','suggested','scheduled'] else 'unknown' }}">{{ t.kanban_status }}</span>
+            {% else %}
+              <span class="kbadge unknown">—</span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -102,23 +157,32 @@
     {% endif %}
   </div>
 
-  <!-- Outcomes -->
-  {% if outcomes %}
+  <!-- Outcomes timeline -->
   <div class="acfd-panel">
     <h2>Outcomes</h2>
-    <table class="acfd-tbl">
-      <thead><tr><th>Outcome</th><th>Metric</th><th>When</th></tr></thead>
-      <tbody>
-        {% for o in outcomes %}
-        <tr>
-          <td>{{ o.outcome or '—' }}</td>
-          <td style="font-variant-numeric:tabular-nums;">{{ o.metric if o.metric is not none else '—' }}</td>
-          <td style="color:#8c8ab0;white-space:nowrap;">{{ (o.created_at[:16] if o.created_at is string else o.created_at.strftime('%Y-%m-%d %H:%M')) if o.created_at else '—' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% if outcomes %}
+    <ul class="acfd-timeline">
+      {% for o in outcomes %}
+      {% set ot = (o.outcome or '')|lower %}
+      <li class="acfd-tl-item {{ ot if ot in ['shipped','failed','measured'] else '' }}">
+        <div class="acfd-tl-row">
+          <span class="acfd-tl-outcome">{{ o.outcome or '—' }}</span>
+          {% if o.metric is not none %}<span class="acfd-tl-metric">{{ o.metric }}</span>{% endif %}
+          <span class="acfd-tl-when">{{ (o.created_at[:16] if o.created_at is string else o.created_at.strftime('%Y-%m-%d %H:%M')) if o.created_at else '—' }}</span>
+        </div>
+        {% if o.detail %}
+          {% if o.detail is mapping %}
+            <div class="acfd-tl-detail">{% for k, v in o.detail.items() %}{{ k }}: {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</div>
+          {% else %}
+            <div class="acfd-tl-detail">{{ o.detail }}</div>
+          {% endif %}
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="acfd-empty">No outcomes recorded yet{% if st == 'approved' %} — builds in flight{% endif %}.</div>
+    {% endif %}
   </div>
-  {% endif %}
 </div>
 {% endblock %}
