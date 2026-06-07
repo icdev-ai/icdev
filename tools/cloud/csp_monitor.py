@@ -706,12 +706,13 @@ class CSPMonitor:
                 conn.close()
                 return {"status": "warning", "message": "innovation_signals table not found"}
 
-            # Count signals by CSP
+            # Count signals by CSP. Portable: read the raw metadata column and
+            # group/extract metadata.csp in Python rather than json_extract() —
+            # runtime SQL is authored for PG; the translator is only a SQLite
+            # init-fallback. See PGP / pgp-tx-02.
             rows = conn.execute(
-                "SELECT json_extract(metadata, '$.csp') as csp, "
-                "source_type, status, COUNT(*) as cnt "
-                "FROM innovation_signals WHERE source = 'csp_monitor' "
-                "GROUP BY csp, source_type, status"
+                "SELECT metadata, source_type, status "
+                "FROM innovation_signals WHERE source = 'csp_monitor'"
             ).fetchall()
 
             # Most recent scan
@@ -725,11 +726,14 @@ class CSPMonitor:
             by_csp = {}
             total = 0
             for row in rows:
-                csp = row["csp"] or "unknown"
+                metadata = json.loads(row["metadata"] or "{}")
+                csp = metadata.get("csp") or "unknown"
+                source_type = row["source_type"]
+                status = row["status"]
                 by_csp.setdefault(csp, {})
-                by_csp[csp].setdefault(row["source_type"], {})
-                by_csp[csp][row["source_type"]][row["status"]] = row["cnt"]
-                total += row["cnt"]
+                by_csp[csp].setdefault(source_type, {})
+                by_csp[csp][source_type][status] = by_csp[csp][source_type].get(status, 0) + 1
+                total += 1
 
             return {
                 "status": "ok",

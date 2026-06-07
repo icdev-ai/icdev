@@ -387,26 +387,34 @@ def _cross_register_to_innovation(db_path=None):
 
     conn = _get_db(db_path)
     try:
-        # Find pain points above threshold that haven't been cross-registered
+        # Gather already cross-registered pain-point ids. Portable: parse the
+        # metadata JSON in Python rather than json_extract() in a subquery —
+        # runtime SQL is authored for PG; the translator is only a SQLite
+        # init-fallback. See PGP / pgp-tx-02.
         try:
-            rows = conn.execute(
-                """SELECT id, title, description, composite_score, category,
-                          keywords, metadata
-                   FROM creative_pain_points
-                   WHERE composite_score >= ?
-                   AND id NOT IN (
-                       SELECT json_extract(metadata, '$.creative_pain_point_id')
-                       FROM innovation_signals
-                       WHERE source = 'creative_engine'
-                       AND json_extract(metadata, '$.creative_pain_point_id') IS NOT NULL
-                   )
-                   ORDER BY composite_score DESC
-                   LIMIT 50""",
-                (min_score,),
+            sig_rows = conn.execute(
+                "SELECT metadata FROM innovation_signals WHERE source = 'creative_engine'"
             ).fetchall()
         except sqlite3.OperationalError:
             # innovation_signals table may not exist
             return
+        registered_ids = set()
+        for sig in sig_rows:
+            meta = json.loads(sig["metadata"] or "{}")
+            pp_id = meta.get("creative_pain_point_id")
+            if pp_id is not None:
+                registered_ids.add(pp_id)
+
+        # Find pain points above threshold that haven't been cross-registered
+        candidates = conn.execute(
+            """SELECT id, title, description, composite_score, category,
+                      keywords, metadata
+               FROM creative_pain_points
+               WHERE composite_score >= ?
+               ORDER BY composite_score DESC""",
+            (min_score,),
+        ).fetchall()
+        rows = [r for r in candidates if r["id"] not in registered_ids][:50]
 
         registered = 0
         for row in rows:

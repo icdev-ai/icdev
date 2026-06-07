@@ -819,6 +819,17 @@ def _cross_register_to_innovation(conn, detected_trends):
     except sqlite3.OperationalError:
         return
 
+    # Gather already cross-registered research-trend ids. Portable: parse the
+    # metadata JSON in Python rather than json_extract() per-trend — runtime SQL
+    # is authored for PG; the translator is only a SQLite init-fallback.
+    # See PGP / pgp-tx-02.
+    registered_trend_ids = set()
+    for sig in conn.execute("SELECT metadata FROM innovation_signals").fetchall():
+        meta = json.loads(sig["metadata"] or "{}")
+        rt_id = meta.get("research_trend_id")
+        if rt_id is not None:
+            registered_trend_ids.add(rt_id)
+
     registered = 0
     for trend in detected_trends:
         # Use velocity as a proxy score (normalized against threshold)
@@ -828,12 +839,7 @@ def _cross_register_to_innovation(conn, detected_trends):
         trend_id = trend["id"]
 
         # Check for existing cross-registration
-        existing = conn.execute(
-            """SELECT id FROM innovation_signals
-               WHERE json_extract(metadata, '$.research_trend_id') = ?""",
-            (trend_id,),
-        ).fetchone()
-        if existing:
+        if trend_id in registered_trend_ids:
             continue
 
         sig_id = f"isig-{uuid.uuid4().hex[:12]}"

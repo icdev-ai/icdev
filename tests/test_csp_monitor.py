@@ -809,6 +809,127 @@ class TestRegistryContent:
 # ── CONFIG TESTS ────────────────────────────────────────────────────────
 
 
+class TestPGPortableJSON:
+    """Regression: csp metadata is extracted/grouped in Python, not via
+    json_extract() relying on translate_sql (PGP / pgp-tx-02)."""
+
+    def _seed(self, db_path, signals):
+        from datetime import datetime, timezone
+
+        conn = sqlite3.connect(str(db_path))
+        now = datetime.now(timezone.utc).isoformat()
+        for i, (csp, src_type, status) in enumerate(signals):
+            conn.execute(
+                "INSERT INTO innovation_signals "
+                "(id, source, source_type, title, metadata, content_hash, "
+                " discovered_at, status) VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    f"sig-{i}",
+                    "csp_monitor",
+                    src_type,
+                    f"signal {i}",
+                    json.dumps({"csp": csp}),
+                    f"hash-{i}",
+                    now,
+                    status,
+                ),
+            )
+        conn.commit()
+        conn.close()
+
+    def test_get_status_groups_by_csp(self, tmp_config, tmp_registry, tmp_db):
+        from tools.cloud.csp_monitor import CSPMonitor
+
+        self._seed(
+            tmp_db,
+            [
+                ("aws", "new_service", "new"),
+                ("aws", "new_service", "new"),
+                ("azure", "compliance_scope_change", "reviewed"),
+            ],
+        )
+        monitor = CSPMonitor(
+            config_path=str(tmp_config),
+            registry_path=str(tmp_registry),
+            db_path=str(tmp_db),
+        )
+        result = monitor.get_status()
+        assert result["status"] == "ok"
+        assert result["total_signals"] == 3
+        # Two aws/new_service/new signals collapse to a count of 2.
+        assert result["by_csp"]["aws"]["new_service"]["new"] == 2
+        assert result["by_csp"]["azure"]["compliance_scope_change"]["reviewed"] == 1
+
+    def test_get_status_missing_csp_is_unknown(self, tmp_config, tmp_registry, tmp_db):
+        from datetime import datetime, timezone
+
+        from tools.cloud.csp_monitor import CSPMonitor
+
+        conn = sqlite3.connect(str(tmp_db))
+        conn.execute(
+            "INSERT INTO innovation_signals "
+            "(id, source, source_type, title, metadata, content_hash, "
+            " discovered_at, status) VALUES (?,?,?,?,?,?,?,?)",
+            (
+                "sig-x",
+                "csp_monitor",
+                "new_service",
+                "no csp key",
+                json.dumps({}),  # metadata without 'csp'
+                "hash-x",
+                datetime.now(timezone.utc).isoformat(),
+                "new",
+            ),
+        )
+        conn.commit()
+        conn.close()
+        monitor = CSPMonitor(
+            config_path=str(tmp_config),
+            registry_path=str(tmp_registry),
+            db_path=str(tmp_db),
+        )
+        result = monitor.get_status()
+        assert result["by_csp"]["unknown"]["new_service"]["new"] == 1
+
+    def test_fetch_signals_csp_filter_in_python(self, tmp_db):
+        from datetime import datetime, timezone
+
+        from tools.cloud.csp_changelog import fetch_signals
+
+        conn = sqlite3.connect(str(tmp_db))
+        now = datetime.now(timezone.utc).isoformat()
+        for i, csp in enumerate(["aws", "azure", "aws"]):
+            conn.execute(
+                "INSERT INTO innovation_signals "
+                "(id, source, source_type, title, description, url, metadata, "
+                " community_score, content_hash, discovered_at, status, category) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    f"sig-{i}",
+                    "csp_monitor",
+                    "new_service",
+                    f"signal {i}",
+                    "desc",
+                    "",
+                    json.dumps({"csp": csp}),
+                    0.5,
+                    f"hash-{i}",
+                    now,
+                    "new",
+                    "infrastructure",
+                ),
+            )
+        conn.commit()
+        conn.close()
+
+        all_entries = fetch_signals(tmp_db, days=30)
+        assert len(all_entries) == 3
+
+        aws_only = fetch_signals(tmp_db, days=30, csp="aws")
+        assert len(aws_only) == 2
+        assert all(e["csp"] == "aws" for e in aws_only)
+
+
 class TestConfigLoader:
     """Test config loading."""
 
