@@ -5,7 +5,6 @@
 Does not affect existing KG nodes/edges.
 """
 
-import sqlite3
 
 
 def down(conn) -> dict:
