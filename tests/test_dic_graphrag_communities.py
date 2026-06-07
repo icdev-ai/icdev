@@ -500,6 +500,81 @@ def precompute_communities(conn, *, model_version: str = PRECOMPUTE_MODEL_VERSIO
 
 
 # --------------------------------------------------------------------------- #
+# Corpus-level query (-d3): aggregate community summaries into a global answer
+# --------------------------------------------------------------------------- #
+
+def query_corpus(conn, query: str) -> dict:
+    """Answer a *global* ("corpus-level") question over the precomputed graph.
+
+    GraphRAG's map-reduce answer path: instead of retrieving a handful of
+    chunks, a corpus-level query fans out across **all** precomputed community
+    summaries and reduces them into one aggregated answer. Because every
+    community summary is itself grounded + cited (see
+    :func:`precompute_communities`), the aggregated answer inherits citations
+    spanning every contributing source document — that traceability is the whole
+    point of the corpus-level path.
+
+    Returns a dict with:
+
+    * ``query`` — the question, echoed back for provenance.
+    * ``answer`` — the aggregated summary text (community summaries joined in a
+      stable order), populated only from grounded community text (NO-LLM).
+    * ``citations`` — the flattened, de-duplicated citation list across every
+      community, each entry traceable to a ``doc_id`` + ``chunk_id``.
+    * ``communities`` — the community ids that contributed, in stable order.
+    * ``source_doc_ids`` — the distinct source documents the answer draws on.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT community_id, summary_text, citations_list
+        FROM dic_community_summaries
+        ORDER BY community_id
+        """
+    )
+    rows = cur.fetchall()
+
+    answer_parts: list[str] = []
+    citations: list[dict] = []
+    seen_citations: set[tuple] = set()
+    contributing: list[str] = []
+    source_doc_ids: list[str] = []
+    seen_docs: set[str] = set()
+
+    for community_id, summary_text, citations_json in (
+        (r[0], r[1], r[2]) for r in rows
+    ):
+        text = (summary_text or "").strip()
+        if not text:
+            continue
+        contributing.append(community_id)
+        answer_parts.append(text)
+        try:
+            community_citations = json.loads(citations_json) if citations_json else []
+        except (TypeError, ValueError):
+            community_citations = []
+        for citation in community_citations:
+            doc_id = citation.get("doc_id")
+            chunk_id = citation.get("chunk_id")
+            key = (doc_id, chunk_id)
+            if key in seen_citations:
+                continue
+            seen_citations.add(key)
+            citations.append({"doc_id": doc_id, "chunk_id": chunk_id})
+            if doc_id and doc_id not in seen_docs:
+                seen_docs.add(doc_id)
+                source_doc_ids.append(doc_id)
+
+    return {
+        "query": query,
+        "answer": " ".join(answer_parts).strip(),
+        "citations": citations,
+        "communities": contributing,
+        "source_doc_ids": source_doc_ids,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Fixture
 # --------------------------------------------------------------------------- #
 
@@ -676,5 +751,67 @@ def test_precompute_is_idempotent(setup_corpus):
         )
         # Still exactly one row per community after two runs.
         assert cur.fetchone()[0] == len(corpus.community_ids)
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------- #
+# Corpus-level query step (-d3): global question over the precomputed graph
+# --------------------------------------------------------------------------- #
+
+def test_corpus_level_query(setup_corpus):
+    """A global community-seed query returns an aggregated, multi-source answer.
+
+    Drives the full corpus-level path: seed → precompute → ask a *global*
+    question. Asserts the response:
+
+      * carries an aggregated summary text (not a single chunk),
+      * is grounded in — and aggregates across — *both* communities, and
+      * is populated by citations spanning multiple source documents, so the
+        global answer stays traceable to every document it draws on.
+    """
+    corpus = setup_corpus
+
+    conn = get_connection()
+    try:
+        # Build the community index so the global query has something to reduce.
+        written = precompute_communities(conn)
+        assert sorted(written) == corpus.community_ids
+
+        # Send the global, corpus-level seed query.
+        result = query_corpus(
+            conn, "Summarize the program's budget and security posture."
+        )
+
+        # An aggregated answer drawn from *every* community, in stable order.
+        assert result["communities"] == corpus.community_ids
+        answer = result["answer"]
+        assert answer.strip(), "corpus-level answer must not be empty"
+
+        # The answer aggregates text from both communities — i.e. every source
+        # document's actual content is present, proving it is a reduction over
+        # the whole corpus rather than a single community / chunk.
+        content_by_doc = {d["doc_id"]: d["content"] for d in corpus.documents}
+        for doc_id, content in content_by_doc.items():
+            assert content.strip() in answer, (
+                f"corpus-level answer is missing content from {doc_id}"
+            )
+
+        # Citations span multiple source documents — the aggregation pulls
+        # provenance from across the corpus, not a single document.
+        citations = result["citations"]
+        assert citations, "aggregated answer must carry citations"
+        assert all(c.get("doc_id") and c.get("chunk_id") for c in citations), (
+            "every citation must be traceable to a doc + chunk"
+        )
+        cited_docs = {c["doc_id"] for c in citations}
+        assert cited_docs == set(corpus.doc_ids), (
+            "citations must cover every source document in the corpus"
+        )
+        assert len(cited_docs) > 1, "aggregation must span multiple documents"
+
+        # The convenience source-doc list matches the citation provenance,
+        # de-duplicated and covering the whole corpus.
+        assert sorted(result["source_doc_ids"]) == sorted(corpus.doc_ids)
     finally:
         conn.close()
