@@ -228,6 +228,93 @@ for i, (mod, route) in enumerate(_SQLITE_DEFAULT_CANVASES, start=1):
         deps="pgp-res-02",
     ))
 
+# ── Epic CA: child-app generator DB portability ────────────────────────────────
+# Generated child apps (tools/builder/) are a SEPARATE surface from in-tree
+# canvases: db_init_generator emits get_connection() WITHOUT importing it
+# (NameError), uses SQLite-only idioms (conn.executescript, SELECT ... FROM
+# sqlite_master), targets a standalone data/<app>.db, and forge_validator never
+# checks DB portability — so any child app run on PG breaks.
+TASKS.append(_task(
+    "pgp-ca-01",
+    "PGP: Fix child-app DB-init generator to emit consistent, PG-portable DB code",
+    "Files: tools/builder/db_init_generator.py (generate_init_script ~L1712-1965), "
+    "tools/builder/child_app_generator.py (step_05 fallback ~L1514-1556)\n\n"
+    "The emitted init script imports only sqlite3/argparse/sys/pathlib but calls "
+    "get_connection() (NameError at runtime), uses conn.executescript(CORE_SQL) and "
+    "SELECT name FROM sqlite_master — both SQLite-only and broken on PG. Fix the generator to "
+    "emit code that: (1) imports its connection helper correctly, (2) executes DDL statement-"
+    "by-statement (no executescript), (3) lists tables portably (information_schema on PG, "
+    "sqlite_master on SQLite) via a helper, (4) follows the platform backend policy from "
+    "pgp-res-01 (PG primary, SQLite fallback at INIT only). The inline step_05 fallback must "
+    "be fixed identically.\n\n"
+    "Acceptance: a freshly generated child app's init script runs clean on BOTH PG and SQLite "
+    "(no NameError, no sqlite_master/executescript failure) and creates its tables.\n"
+    "Test: tests/builder/test_db_init_generator_portable.py generates a script and executes it "
+    "against PG and SQLite fixtures.",
+    deps="pgp-res-01",
+))
+TASKS.append(_task(
+    "pgp-ca-02",
+    "PGP: Give generated child apps a portable connection helper honoring the backend policy",
+    "Files: tools/builder/db_init_generator.py, tools/builder/scaffolder.py, child-app templates\n\n"
+    "Generated child apps emit get_connection() but don't ship a connection module that resolves "
+    "it. Either (a) scaffold a small tools/db/storage shim into each child app that mirrors the "
+    "parent policy (PG primary; SQLite fallback at INIT only; RLS-disabled for app-local tables), "
+    "or (b) make the generated code import the parent storage layer explicitly. Decide and "
+    "implement one, documented in the child-app README the generator writes.\n\n"
+    "Acceptance: a generated child app connects to PG when ICDEV_STORAGE_BACKEND=postgresql and "
+    "falls back to its SQLite db ONLY when PG is unreachable at init; runtime never silently "
+    "switches.\n"
+    "Test: tests/builder/test_child_app_connection.py asserts backend resolution + init-only "
+    "fallback in a generated sample.",
+    deps="pgp-ca-01",
+))
+TASKS.append(_task(
+    "pgp-ca-03",
+    "PGP: Add a DB-portability gate to forge_validator for generated child apps",
+    "File: tools/builder/forge_validator.py (validate())\n\n"
+    "forge_validator currently only checks that an init_db file EXISTS (~L707/736); it never "
+    "checks DB portability. Add a check that scans the generated child app for PG-unsafe DB code: "
+    "conn.executescript, SELECT ... FROM sqlite_master, direct sqlite3.connect for runtime "
+    "access, unimported get_connection, and json_each / nested json_array_length. Fail the "
+    "--gate on any finding so a non-portable child app cannot pass validation.\n\n"
+    "Acceptance: forge_validator --gate fails a child app containing executescript/sqlite_master "
+    "and passes one using the portable helper from pgp-ca-01/02.\n"
+    "Test: tests/builder/test_forge_validator_db_portability.py with a portable + non-portable "
+    "fixture app.",
+    deps="pgp-ca-01",
+))
+TASKS.append(_task(
+    "pgp-ca-04",
+    "PGP: Audit existing generated child apps + child-app templates for SQLite-isms",
+    "Files: child_app_registry (DB), tools/builder/templates/* (and any copied canvas templates)\n\n"
+    "Enumerate already-generated child apps via child_app_registry and scan child-app TEMPLATES "
+    "the generator copies, for the same anti-patterns (executescript, sqlite_master, "
+    "json_extract/json_array_length, sqlite3.connect runtime, .db-hardcoded paths). Produce a "
+    "remediation report; fix the templates so future generations are clean and flag any shipped "
+    "app needing a patch.\n\n"
+    "Acceptance: a report lists every affected template/app with severity; templates are "
+    "remediated so a regeneration is portable.\n"
+    "Test: re-run pg_portability_linter (pgp-tx-03) over tools/builder/templates — zero high-"
+    "severity findings.",
+    deps="pgp-ca-01",
+))
+TASKS.append(_task(
+    "pgp-ca-05",
+    "PGP: End-to-end — generate a sample child app and verify it runs on PostgreSQL",
+    "File: docs/features/phase-pgp-child-apps.md (new)\n\n"
+    "Generate a representative child app via child_app_generator + forge_validator --gate with "
+    "ICDEV_STORAGE_BACKEND=postgresql, run its init_db, exercise its core route(s), and confirm "
+    "no sqlite_master/executescript/NameError/UndefinedTable failures. Then repeat with PG "
+    "unreachable to confirm the init-only SQLite fallback. Document results + any deferred "
+    "follow-ups.\n\n"
+    "Acceptance: the generated app initializes and serves on PG; init-only fallback verified; "
+    "feature doc written.\n"
+    "Test: the generate+init+smoke run is the test; attach output.",
+    deps="pgp-ca-03",
+    task_type="test",
+))
+
 # ── Epic VV: end-to-end verification ───────────────────────────────────────────
 TASKS.append(_task(
     "pgp-vv-01",
@@ -250,10 +337,15 @@ def main():
     ap = argparse.ArgumentParser(description="Seed PGP — PostgreSQL Primary Remediation")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-llm", action="store_true")
+    ap.add_argument("--epic", help="seed only tasks whose id is pgp-<epic>-* (e.g. 'ca')")
     args = ap.parse_args()
+    tasks = TASKS
+    if args.epic:
+        prefix = f"pgp-{args.epic}-"
+        tasks = [t for t in TASKS if t["id"].startswith(prefix)]
     from tools.kanban.task_factory import create_tasks
     report = create_tasks(
-        PROJECT_KEY, TASKS,
+        PROJECT_KEY, tasks,
         dry_run=args.dry_run, strict=True,
         register_project=True, llm_grade=not args.no_llm,
     )
