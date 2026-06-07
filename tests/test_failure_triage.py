@@ -456,3 +456,128 @@ class TestAutomergeSwitch:
     def test_automerge_env_on(self, ft, monkeypatch):
         monkeypatch.setenv(ft.AUTOMERGE_ENV, "true")
         assert ft.automerge_enabled() is True
+
+
+# ---------------------------------------------------------------------------
+# Structured NDJSON recovery events (WS3.2 / arc-obs-02)
+# ---------------------------------------------------------------------------
+
+class TestStructuredEvents:
+    """Each triage decision emits a structured event via get_logger that
+    lands in .logs/ now and flows to centralized_logs once log_ingest lands.
+    We capture the underlying logger calls instead of touching the filesystem.
+    """
+
+    @pytest.fixture
+    def captured(self, ft, monkeypatch):
+        """Capture every (level, event_type, payload) passed to _events.log."""
+        events = []
+
+        def fake_log(level, msg, *args, **kwargs):
+            payload = (kwargs.get("extra") or {}).get("extra", {})
+            events.append((level, msg, payload))
+
+        monkeypatch.setattr(ft._events, "log", fake_log)
+        return events
+
+    def test_emit_event_drops_none_fields(self, ft, captured):
+        ft._emit_event(
+            "diagnosis_made", task_id="t1", signature="sig1",
+            confidence=0.9, recommendation=None,
+        )
+        assert len(captured) == 1
+        _level, msg, payload = captured[0]
+        assert msg == "diagnosis_made"
+        assert payload["event_type"] == "diagnosis_made"
+        assert payload["task_id"] == "t1"
+        assert payload["signature"] == "sig1"
+        assert payload["confidence"] == 0.9
+        assert "recommendation" not in payload  # None dropped
+
+    def test_emit_event_never_raises(self, ft, monkeypatch):
+        def boom(*a, **k):
+            raise RuntimeError("logging exploded")
+        monkeypatch.setattr(ft._events, "log", boom)
+        # Must swallow — logging cannot break the triage pipeline.
+        ft._emit_event("gate_decision", task_id="t", signature="s")
+
+    def test_suggested_card_path_emits_diagnosis_gate_and_outcome(self, ft, monkeypatch, captured):
+        task = {
+            "id": "t-ev", "title": "t", "description": "",
+            "task_type": "fix", "last_failure_reason": "boom",
+        }
+        monkeypatch.setattr(ft, "find_recent_failures", lambda **k: [task])
+        monkeypatch.setattr(ft, "diagnose_task", lambda t: {
+            "root_cause": "unclear", "recommendation": "quarantine",
+            "confidence": 0.4, "_source": "heuristic",
+        })
+        monkeypatch.setattr(ft, "_create_diagnostic_card", lambda t, d: "diag-1")
+
+        ft.triage_once(apply=True)
+
+        types = [p["event_type"] for (_l, _m, p) in captured]
+        assert types == ["diagnosis_made", "gate_decision", "apply_outcome"]
+        outcome_evt = captured[-1][2]
+        assert outcome_evt["outcome"] == "suggested_card_created"
+        assert outcome_evt["task_id"] == "t-ev"
+        assert outcome_evt["signature"] == ft._sig("boom")
+
+    def test_apply_path_emits_full_event_sequence(self, ft, monkeypatch, captured):
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        task = {
+            "id": "t-go", "title": "t", "description": "regular task",
+            "task_type": "fix", "last_failure_reason": "AttributeError: _x",
+        }
+        monkeypatch.setattr(ft, "find_recent_failures", lambda **k: [task])
+        monkeypatch.setattr(ft, "diagnose_task", lambda t: {
+            "root_cause": "typo", "recommendation": "patch",
+            "confidence": 0.95, "suspect_files": ["tools/foo.py"], "_source": "llm",
+        })
+        monkeypatch.setattr(ft, "generate_patch", lambda t, d: {
+            "files": [{"path": "tools/foo.py", "old_string": "old", "new_string": "new"}],
+            "verification_command": "python -m pytest tests/test_foo.py",
+        })
+        monkeypatch.setattr(ft, "apply_patch_in_worktree",
+                            lambda t, d, p: {"applied": True, "outcome": "applied_verified_committed"})
+        monkeypatch.setattr(ft, "_create_diagnostic_card_with_patch", lambda t, d, p: "diag-1")
+
+        ft.triage_once(apply=True)
+
+        types = [p["event_type"] for (_l, _m, p) in captured]
+        # apply_patch_in_worktree is mocked so verify_result fires inside it
+        # only in the real path; here we assert the orchestrator-level events.
+        assert types == ["diagnosis_made", "gate_decision", "patch_generated", "apply_outcome"]
+        patch_evt = next(p for (_l, _m, p) in captured if p["event_type"] == "patch_generated")
+        assert patch_evt["generated"] is True
+        assert patch_evt["files"] == ["tools/foo.py"]
+
+    def test_verify_result_emitted_in_worktree_on_failure(self, ft, monkeypatch, tmp_path, captured):
+        """apply_patch_in_worktree emits verify_result with the rc/outcome."""
+        monkeypatch.setattr(ft, "AUDIT_DIR", tmp_path / "audit")
+        monkeypatch.setattr(ft, "record_apply", lambda ts=None: None)
+        monkeypatch.setattr(ft, "_create_autofix_worktree",
+                            lambda tid, sig: (tmp_path / "wt", "autofix/x"))
+        # Make the file edit a no-op and force verification to fail (rc=1).
+        (tmp_path / "wt").mkdir(parents=True)
+        monkeypatch.setattr(ft, "_run", lambda *a, **k: (1, "boom"))
+        monkeypatch.setattr(ft, "_cleanup_autofix_worktree", lambda *a, **k: None)
+        monkeypatch.setattr(ft, "_validate_verification_command", lambda c: (True, "ok"))
+        monkeypatch.setattr(ft, "_validate_patch_files", lambda p, d: (True, "ok"))
+
+        # Patch file edit: the loop reads/writes via Path — stub the file.
+        target = tmp_path / "wt" / "tools" / "foo.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("old", encoding="utf-8")
+
+        ft.apply_patch_in_worktree(
+            {"id": "t-vf", "last_failure_reason": "x", "title": "t"},
+            {"suspect_files": ["tools/foo.py"], "confidence": 0.9, "recommendation": "patch"},
+            {"files": [{"path": "tools/foo.py", "old_string": "old", "new_string": "new"}],
+             "verification_command": "python -m pytest tests/test_foo.py"},
+        )
+
+        verify_evts = [p for (_l, _m, p) in captured if p["event_type"] == "verify_result"]
+        assert len(verify_evts) == 1
+        assert verify_evts[0]["verification_rc"] == 1
+        assert verify_evts[0]["passed"] is False
+        assert verify_evts[0]["outcome"] == "verify_failed"
