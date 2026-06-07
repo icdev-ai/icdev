@@ -836,7 +836,14 @@ def api_search():
         results = engine.search(
             effective_query, collection_id=collection_id, top_k=top_k, mode=mode, clearance=clearance,
         )
-        payload = {"results": [r.to_dict() for r in results], "count": len(results)}
+        # Results are ordered through the attribution lens (strongly-supporting
+        # evidence first); citation_quality is the per-answer sufficiency score.
+        from tools.document_intelligence.search_engine import _citation_quality
+        payload = {
+            "results": [r.to_dict() for r in results],
+            "count": len(results),
+            "citation_quality": round(_citation_quality(results), 4),
+        }
         if expansion is not None:
             payload["expansion"] = expansion.to_dict()
         # Opt-in: embedding-based search over a literal keyword list. Semantic
