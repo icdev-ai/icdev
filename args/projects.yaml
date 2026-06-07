@@ -4,37 +4,90 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: ucb
+  name: Ucb Project
+  description: Auto-registered project for tasks with prefix 'ucb-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: ucb-
+  default_open: true
+  briefs: []
+  epics:
+  - key: audit
+    title: AUDIT
+    priority: medium
+  - key: be
+    title: BE
+    priority: medium
+  - key: dic
+    title: DIC
+    priority: medium
+  - key: roll
+    title: ROLL
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+  - key: widget
+    title: WIDGET
+    priority: medium
+- key: pgp
+  name: Pgp Project
+  description: Auto-registered project for tasks with prefix 'pgp-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: pgp-
+  default_open: true
+  briefs: []
+  epics:
+  - key: ca
+    title: CA
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: res
+    title: RES
+    priority: medium
+  - key: sch
+    title: SCH
+    priority: medium
+  - key: tx
+    title: TX
+    priority: medium
+  - key: vfy
+    title: VFY
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: arc
   name: Autonomous Recovery v2 (ARC)
-  description: 'Deepens the Genesis failure_triage/self_debug autonomous-recovery loop
-    from shallow infra-pattern RCA into a genuine code-logic debugger, and wires it
-    into the existing logging + observability + visibility stack. Root cause of the
-    shallowness is evidence starvation: the diagnoser reads only the truncated
-    last_failure_reason while the platform already captures build.ndjson, the
-    kanban_verifications gate matrix, centralized_logs, otel_spans, and code_lens it
-    never consumes. ARC adds a deep evidence collector, traceback localization, an
-    iterative hypothesis->repro debugger loop, self-consistency + expanded
-    verification, recovery tracing/structured-events/panel enrichment, and a
-    calibration feedback loop (triage_outcomes precision) that EARNS
+  description: 'Deepens the Genesis failure_triage/self_debug autonomous-recovery
+    loop from shallow infra-pattern RCA into a genuine code-logic debugger, and wires
+    it into the existing logging + observability + visibility stack. Root cause of
+    the shallowness is evidence starvation: the diagnoser reads only the truncated
+    last_failure_reason while the platform already captures build.ndjson, the kanban_verifications
+    gate matrix, centralized_logs, otel_spans, and code_lens it never consumes. ARC
+    adds a deep evidence collector, traceback localization, an iterative hypothesis->repro
+    debugger loop, self-consistency + expanded verification, recovery tracing/structured-events/panel
+    enrichment, and a calibration feedback loop (triage_outcomes precision) that EARNS
     calibration-gated ff-only auto-merge for low-risk task types — permanent ceilings
-    on deploy/migrations/security/hooks/config retained. Design doc:
-    docs/features/autonomous-recovery-v2-design.md.'
+    on deploy/migrations/security/hooks/config retained. Design doc: docs/features/autonomous-recovery-v2-design.md.'
   task_prefix: arc-
   default_open: true
   briefs:
   - 'ev: deep evidence collector — traceback_analyzer + evidence_collector joining
     build.ndjson/kanban_verifications/centralized_logs/otel_spans/diff, wired into
     self_debug + heuristic upgrade — arc-ev-01..05'
-  - 'obs: observability of recovery — @traced spans + structured NDJSON events +
-    enriched /api/autonomy/status panel with root_cause/diff/trace links — arc-obs-01..04'
+  - 'obs: observability of recovery — @traced spans + structured NDJSON events + enriched
+    /api/autonomy/status panel with root_cause/diff/trace links — arc-obs-01..04'
   - 'dbg: deep code-logic debugger — static-on-diff (code_lens) + bounded iterative
     hypothesis->repro loop + opt-in post-mortem locals — arc-dbg-01..04'
   - 'dec: harden the decision — N-sample self-consistency confidence + verification
     beyond the LLM''s own command (orig test + ruff + coherence) — arc-dec-01..03'
   - 'cal: calibration feedback loop — triage_runs/triage_outcomes append-only tables
     + patch-held resolution + rolling per-cohort precision — arc-cal-01..03'
-  - 'am: calibration-gated autonomy — should_auto_merge cohort gate (precision +
-    min-samples, ff-only) + adaptive revocation + revert watch + dashboard — arc-am-01..04'
+  - 'am: calibration-gated autonomy — should_auto_merge cohort gate (precision + min-samples,
+    ff-only) + adaptive revocation + revert watch + dashboard — arc-am-01..04'
   - 'vv: end-to-end V&V — ruff + pytest + coherence + live recovery trace/panel/outcome
     check — arc-vv-01'
   epics:
@@ -244,6 +297,30 @@ projects:
     priority: medium
   - key: vv
     title: VV
+    priority: medium
+  - key: ada
+    title: ADA
+    priority: medium
+  - key: com
+    title: COM
+    priority: medium
+  - key: hoo
+    title: HOO
+    priority: medium
+  - key: mig
+    title: MIG
+    priority: medium
+  - key: nav
+    title: NAV
+    priority: medium
+  - key: reg
+    title: REG
+    priority: medium
+  - key: sch
+    title: SCH
+    priority: medium
+  - key: tst
+    title: TST
     priority: medium
 - key: plh
   name: Plh Project
@@ -779,6 +856,9 @@ projects:
     priority: medium
   - key: handoff
     title: HANDOFF
+    priority: medium
+  - key: adapt
+    title: ADAPT
     priority: medium
 - key: ci
   name: Ci Project

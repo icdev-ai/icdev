@@ -1164,7 +1164,7 @@ CREATE TABLE IF NOT EXISTS ace_instances (
 );
 CREATE TABLE IF NOT EXISTS ace_coworkers (
     id              TEXT PRIMARY KEY,
-    instance_id     TEXT NOT NULL,
+    instance_id     TEXT NOT NULL REFERENCES ace_instances(id) ON DELETE CASCADE,
     role_id         TEXT NOT NULL,
     display_name    TEXT NOT NULL DEFAULT '',
     state           TEXT NOT NULL DEFAULT 'idle',
@@ -1175,7 +1175,7 @@ CREATE TABLE IF NOT EXISTS ace_coworkers (
 );
 CREATE TABLE IF NOT EXISTS ace_messages (
     id              TEXT PRIMARY KEY,
-    instance_id     TEXT NOT NULL,
+    instance_id     TEXT NOT NULL REFERENCES ace_instances(id) ON DELETE CASCADE,
     coworker_id     TEXT,
     message_type    TEXT NOT NULL DEFAULT 'info',
     role            TEXT NOT NULL DEFAULT 'user',
@@ -1185,7 +1185,7 @@ CREATE TABLE IF NOT EXISTS ace_messages (
 );
 CREATE TABLE IF NOT EXISTS ace_artifacts (
     id              TEXT PRIMARY KEY,
-    instance_id     TEXT NOT NULL,
+    instance_id     TEXT NOT NULL REFERENCES ace_instances(id) ON DELETE CASCADE,
     coworker_id     TEXT,
     artifact_type   TEXT NOT NULL DEFAULT 'document',
     title           TEXT NOT NULL DEFAULT '',
@@ -1196,7 +1196,7 @@ CREATE TABLE IF NOT EXISTS ace_artifacts (
 );
 CREATE TABLE IF NOT EXISTS ace_agent_workflows (
     id              TEXT PRIMARY KEY,
-    instance_id     TEXT NOT NULL,
+    instance_id     TEXT NOT NULL REFERENCES ace_instances(id) ON DELETE CASCADE,
     name            TEXT NOT NULL DEFAULT '',
     state           TEXT NOT NULL DEFAULT 'pending',
     config_json     TEXT NOT NULL DEFAULT '{}',

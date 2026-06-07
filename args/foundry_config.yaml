@@ -1,0 +1,72 @@
+# ACF — Autonomous Capability Foundry
+# Behavior settings for the autonomous 0→1 product factory.
+# Tuned here; no code changes needed.
+
+foundry:
+  # How often the Foundry cycle runs (hours)
+  cadence_hours: 24
+
+  # Signal sources — each toggles ingestion from a canvas/subsystem
+  sources:
+    innovation:
+      enabled: true
+      max_signals: 50
+    creative:
+      enabled: true
+      max_signals: 50
+    research:
+      enabled: true
+      max_signals: 50
+    genesis:
+      enabled: true
+      max_signals: 50
+    telemetry:
+      enabled: true
+      max_signals: 100
+
+  # Synthesis — clustering and LLM assist for concept generation
+  synthesis:
+    min_cluster_size: 3
+    llm_assist:
+      enabled: false
+
+  # Novelty — deduplication against existing catalogs
+  novelty:
+    catalog_sources:
+      - canvas_registry
+      - manifests
+      - goals
+    min_novelty: 0.3
+
+  # Scoring — composite go/no-go score
+  scoring:
+    weights:
+      novelty: 0.25
+      feasibility: 0.25
+      strategic_fit: 0.25
+      market_timing: 0.25
+    min_composite: 0.6
+
+  # Rate limits — throttle concept generation
+  rate_limits:
+    max_concepts_per_cycle: 10
+    max_active_projects: 5
+
+  # Circuit breaker — pause if V&V failure rate spikes
+  circuit:
+    vv_fail_rate: 0.5
+    window: 5
+
+  # Self-vet — mandatory gates before a concept may proceed
+  self_vet:
+    require_integrity_gate: true
+    require_security_gate: true
+
+  # Deliberation — CoD/CoT approval for high-stakes concepts
+  deliberation:
+    enabled: true
+    approval_mode: "cod"
+    synthesis_mode: "cot"
+    function: "capability_deliberation"
+    min_confidence: 0.7
+    defer_to_score_on_fallback: true

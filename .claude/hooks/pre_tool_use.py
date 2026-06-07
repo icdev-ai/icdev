@@ -482,8 +482,12 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "integrity_findings",
         "integrity_verdicts",
         "integrity_authorizations",
-        # ACF Autonomous Capability Foundry (acf-, append-only signal/concept/spec ledger)
+        # ACF Autonomous Capability Foundry (acf-, append-only signal/concept/spec/ledger)
+        "foundry_runs",
         "foundry_signals",
+        "foundry_specs",
+        "foundry_tasks_emitted",
+        "foundry_outcomes",
         # EQO Centralized Logging (eqo-log-01, migration 181) — log rows are immutable evidence (NIST AU)
         "centralized_logs",
     ]

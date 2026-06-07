@@ -369,6 +369,11 @@
                     <li class="nav-section-label">Supply Chain</li>
                     <li><a href="/supply_chain" style="color:#f0883e;">SCRM Dashboard</a></li>
                     <li class="nav-dropdown-divider"></li>
+                    {% if cwk_enabled %}
+                    <li class="nav-section-label">Co-Workers</li>
+                    <li><a href="/coworkers/" style="color:#4f8ef7;">Roster</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
                     <li class="nav-section-label">Cross-Canvas</li>
                     <li><a href="/canvas-compliance">Canvas Posture</a></li>
                     {% if canvas_kg_enabled %}<li><a href="/canvas-kg">Canvas KG</a></li>{% endif %}

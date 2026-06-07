@@ -1,0 +1,1935 @@
+<!-- CUI // SP-CTI — ACF Autonomous Capability Foundry — Pipeline Board -->
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Capability Foundry — ICDEV</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/ux.css">
+    <link rel="stylesheet" href="/static/vendor/hljs/github-dark.min.css">
+    <link rel="stylesheet" href="/static/css/assistant-widget.css">
+    
+    
+    <script>
+    // Apply theme before render to prevent FOUC
+    (function() {
+        var serverTheme = document.documentElement.getAttribute('data-theme');
+        var stored = localStorage.getItem('icdev-theme');
+        var theme = serverTheme && serverTheme !== 'dark' ? serverTheme : (stored || 'dark');
+        document.documentElement.setAttribute('data-theme', theme);
+    })();
+    </script>
+    <style>
+    /* ExplainPanel — collapsible slide-out (aisg-a3-01) */
+    #explain-panel {
+        position: fixed;
+        top: 0;
+        right: -440px;
+        width: 420px;
+        height: 100vh;
+        background: var(--bg-secondary, #1a1a2e);
+        border-left: 1px solid var(--border-color, #2a2a4a);
+        box-shadow: -4px 0 24px rgba(0,0,0,.4);
+        z-index: 1050;
+        display: flex;
+        flex-direction: column;
+        transition: right 0.3s ease;
+        overflow: hidden;
+    }
+    #explain-panel.open { right: 0; }
+    #explain-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-color, #2a2a4a);
+        flex-shrink: 0;
+        background: var(--bg-tertiary, #12122a);
+    }
+    #explain-panel-header h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        color: var(--text-primary, #e0e0e0);
+    }
+    #explain-panel-close {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary, #888);
+        font-size: 1.25rem;
+        cursor: pointer;
+        padding: 2px 8px;
+        border-radius: 4px;
+        line-height: 1;
+    }
+    #explain-panel-close:hover {
+        background: var(--border-color, #2a2a4a);
+        color: var(--text-primary, #e0e0e0);
+    }
+    #explain-panel-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        color: var(--text-primary, #e0e0e0);
+        font-size: 0.875rem;
+        line-height: 1.6;
+    }
+    #explain-panel-loading {
+        display: none;
+        text-align: center;
+        padding: 32px 0;
+        color: var(--text-secondary, #888);
+        font-style: italic;
+    }
+    #explain-panel-content pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: var(--bg-tertiary, #12122a);
+        padding: 10px 12px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+    }
+    .btn-explain {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        border: 1px solid var(--accent-blue-light, #8ab4ff);
+        color: var(--accent-blue-light, #8ab4ff);
+        border-radius: 4px;
+        padding: 2px 8px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+    .btn-explain:hover {
+        background: var(--accent-blue-light, #8ab4ff);
+        color: #0a0a1a;
+    }
+    /* sec-cvs-08: per-design classification banner color coding */
+    .design-classification-banner {
+        display: flex; align-items: center; gap: 8px;
+        padding: 3px 12px; font-size: 11px; font-weight: 700;
+        letter-spacing: 0.04em; border-bottom: 1px solid transparent;
+    }
+    .design-classification-banner .readonly-badge {
+        margin-left: auto; font-size: 10px; opacity: 0.8;
+        border: 1px solid currentColor; border-radius: 3px; padding: 0 4px;
+    }
+    .design-classification-banner .compartment-badge { opacity: 0.85; }
+    .cls-PUBLIC        { background:#0d3b1e; color:#4caf50; border-color:#2e7d32; }
+    .cls-UNCLASSIFIED  { background:#0d3b1e; color:#4caf50; border-color:#2e7d32; }
+    .cls-CUI           { background:#0d2b4e; color:#4fc3f7; border-color:#1565c0; }
+    .cls-SECRET        { background:#3e1a00; color:#ff9800; border-color:#e65100; }
+    .cls-TOP-SECRET    { background:#3b0a0a; color:#ef5350; border-color:#b71c1c; }
+    .cls-TOP-SECRET--SCI { background:#2a0a3b; color:#ce93d8; border-color:#6a1b9a; }
+    /* list-view classification badges */
+    .badge-PUBLIC, .badge-UNCLASSIFIED { background:#0d3b1e; color:#4caf50; }
+    .badge-CUI         { background:#0d2b4e; color:#4fc3f7; }
+    .badge-SECRET      { background:#3e1a00; color:#ff9800; }
+    .badge-TOP-SECRET  { background:#3b0a0a; color:#ef5350; }
+    .badge-TOP-SECRET--SCI { background:#2a0a3b; color:#ce93d8; }
+    .badge-compartment { font-size: 9px; opacity: 0.8; margin-left: 4px; }
+    </style>
+</head>
+<body data-auto-refresh="true">
+    <!-- Skip to main content (accessibility) -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <!-- CUI Banner Top (D173 — toggle via ICDEV_CUI_BANNER_ENABLED) -->
+    
+    
+    <div class="cui-banner" role="banner" aria-label="Classification marking">CUI // SP-CTI</div>
+    
+    
+
+    <!-- Navigation -->
+    <nav class="navbar" role="navigation" aria-label="Main navigation">
+        <a class="navbar-brand" href="/">ICDEV™</a>
+        <button id="nav-hamburger" aria-label="Toggle navigation" aria-expanded="false" onclick="ICDEV.toggleMobileNav()">&#9776;</button>
+        <ul class="navbar-nav" id="navbar-nav">
+
+            <li><a href="/" class="">Home</a></li>
+
+            <!-- ── Ops ──────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">Ops ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">DevOps</li>
+                    <li><a href="/projects">Projects</a></li>
+                    <li><a href="/agents">Agents</a></li>
+                    <li><a href="/coworker/">Co-Worker Teams</a></li>
+                    <li><a href="/kanban">Task Board</a></li>
+                    <li><a href="/cicd">CI/CD</a></li>
+                    <li><a href="/orchestration">Orchestration</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Monitor</li>
+                    <li><a href="/monitoring">Monitoring</a></li>
+                    <li><a href="/platform-health">Platform Health</a></li>
+                    <li><a href="/cache-savings">Cache Savings</a></li>
+                    <li><a href="/activity">Activity</a></li>
+                    <li><a href="/il5">IL5 Ingestion</a></li>
+                    <li><a href="/batch">Batch</a></li>
+                    <li><a href="/simulate/chat">Simulate Chat</a></li>
+                    <li><a href="/simulate/chat?canvas=cam" title="AI migration path advisor — COAs, deprecated code detection, refactor dispatch">Migration Chat</a></li>
+                </ul>
+            </li>
+
+            <!-- ── Build ─────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">Build ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/chat">Chat</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">AI Enablement</li>
+                    <li><a href="/ai-wizard">AI Strategy Wizard</a></li>
+                    <li><a href="/ai-patterns">AI Pattern Library</a></li>
+                    <li><a href="/ai-builder">Visual Agent Builder</a></li>
+                    <li><a href="/ai-learning">Learning Paths</a></li>
+                    <li><a href="/ai-roi">AI ROI Dashboard</a></li>
+                    <li><a href="/ai-skills">Skills Tracker</a></li>
+                    <li><a href="/ai-handoff">Knowledge Handoff</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Role Views</li>
+                    <li><a href="/dashboard/executive-view">CIO / Executive</a></li>
+                    <li><a href="/dashboard/compliance-view">Compliance Officer</a></li>
+                    <li><a href="/dashboard/pm-view">Product Manager</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Dev Tools</li>
+                    <li><a href="/dev-profiles">Dev Profiles</a></li>
+                    <li><a href="/finetune">Fine-Tuning</a></li>
+                    <li><a href="/diagrams">Diagrams</a></li>
+                    <li><a href="/connector-forge">Connector Forge</a></li>
+                    <li><a href="/translations">Translations</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Presentations</li>
+                    <li><a href="/slides">Slide Deck Generator</a></li>
+                </ul>
+            </li>
+
+            <!-- ── Canvases ──────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">Canvases ▾</a>
+                <ul class="nav-dropdown-menu">
+                    
+                    <li class="nav-section-label">Network</li>
+                    <li><a href="/network/">Dashboard</a></li>
+                    <li><a href="/network/canvas/new">New Topology</a></li>
+                    <li><a href="/network/templates">Templates</a></li>
+                    <li><a href="/network/ipam">IPAM</a></li>
+                    <li><a href="/network/fcc">FCC Compliance</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">DevOps</li>
+                    <li><a href="/devops/">Dashboard</a></li>
+                    <li><a href="/devops/canvas/new">New Pipeline</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Infrastructure</li>
+                    <li><a href="/infra/">Dashboard</a></li>
+                    <li><a href="/infra/canvas/new">New Design</a></li>
+                    <li><a href="/infra/templates">Templates</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Data</li>
+                    <li><a href="/data/">Dashboard</a></li>
+                    <li><a href="/data/canvas/new">New Design</a></li>
+                    <li><a href="/data/templates">Templates</a></li>
+                    <li><a href="/data/mesh">Data Mesh</a></li>
+                    <li><a href="/data/mapping/" style="color:#ce93d8;">&#9889; AI Mapping</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Boundary</li>
+                    <li><a href="/boundary/">Dashboard</a></li>
+                    <li><a href="/boundary/canvas/new">New Design</a></li>
+                    <li><a href="/boundary/isa-tracker">ISA Tracker</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Migration</li>
+                    <li><a href="/migration-canvas/">Design Canvas</a></li>
+                    <li><a href="/migration-canvas/network-migration/">Network Migration</a></li>
+                    <li><a href="/migration-canvas/server-migration/">Server Migration</a></li>
+                    <li><a href="/migration-canvas/projects">Cloud App Projects</a></li>
+                    <li><a href="/simulate/chat?canvas=cam">Migration Chat</a></li>
+                    <li><a href="/migration-intel/">Intelligence Engine</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Observability</li>
+                    <li><a href="/observability/">Dashboard</a></li>
+                    <li><a href="/observability/canvas/new">New Design</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">QA/QC</li>
+                    <li><a href="/quality/">Dashboard</a></li>
+                    <li><a href="/quality/canvas/new">New Design</a></li>
+                    <li><a href="/quality/runbooks">Runbooks</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Agentic AI</li>
+                    
+                    <li><a href="/agentic-ai/" style="color:#a5b4fc;">Dashboard</a></li>
+                    <li><a href="/agentic-ai/canvas/new">New Design</a></li>
+                    <li><a href="/agentic-ai/impact-graph">Impact Graph</a></li>
+                    
+                    
+                    <li><a href="/demo-runner/" style="color:#f59e0b;">&#9654; Demo Runner</a></li>
+                    
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">AI/ML</li>
+                    <li><a href="/ai-ml/" style="color:#818cf8;">Dashboard</a></li>
+                    <li><a href="/ai-ml/canvas/new">New Design</a></li>
+                    <li><a href="/ai-ml/model-catalog">Model Catalog</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Operations</li>
+                    <li><a href="/ops" style="color:#7dd3fc;">Ops Hub</a></li>
+                    <li><a href="/ops/llm">LLMOps</a></li>
+                    <li><a href="/ops/models">MLOps</a></li>
+                    <li><a href="/ops/slos">SLOs</a></li>
+                    <li><a href="/ops/incidents">Incidents</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">NOC Operations</li>
+                    <li><a href="/noc" style="color:#f97316;">NOC Overview</a></li>
+                    <li><a href="/noc/alarms">Alarms</a></li>
+                    <li><a href="/noc/incidents">Incidents</a></li>
+                    <li><a href="/noc/rfcs">RFCs</a></li>
+                    <li><a href="/noc/maintenance">Maintenance</a></li>
+                    <li><a href="/noc/sla">SLA</a></li>
+                    <li><a href="/noc/looking-glass">Looking Glass</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Peering Management</li>
+                    <li><a href="/pmc" style="color:#38bdf8;">Peering Canvas</a></li>
+                    <li><a href="/pmc/peers">BGP Peers</a></li>
+                    <li><a href="/pmc/ix">Internet Exchanges</a></li>
+                    <li><a href="/pmc/rpki">RPKI Validation</a></li>
+                    <li><a href="/pmc/policies">Route Policies</a></li>
+                    <li><a href="/pmc/requests">Peering Requests</a></li>
+                    <li><a href="/pmc/transit">Transit Pricing</a></li>
+                    <li><a href="/network/partners">Partner Registry</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Circuit &amp; Capacity</li>
+                    <li><a href="/ccc" style="color:#38bdf8;">CCC Overview</a></li>
+                    <li><a href="/ccc/circuits">Circuits</a></li>
+                    <li><a href="/ccc/cross-connects">Cross-Connects</a></li>
+                    <li><a href="/ccc/loa">LOA Requests</a></li>
+                    <li><a href="/ccc/orders">Orders</a></li>
+                    <li><a href="/ccc/capacity">Capacity Plans</a></li>
+                    <li><a href="/ccc/dwdm">DWDM Spans</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">DDoS &amp; Security Ops</li>
+                    <li><a href="/dsoc" style="color:#f87171;">DSOC Overview</a></li>
+                    <li><a href="/dsoc/flowspec">Flowspec Rules</a></li>
+                    <li><a href="/dsoc/rtbh">RTBH Blackholes</a></li>
+                    <li><a href="/dsoc/scrubbing">Scrubbing Centers</a></li>
+                    <li><a href="/dsoc/threats">Threats</a></li>
+                    <li><a href="/dsoc/mitigations">Mitigations</a></li>
+                    <li><a href="/dsoc/bgp-security">BGP Security</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">AI-ify</li>
+                    <li><a href="/ai-ify/" style="color:#6ee7b7;">AI-ify</a></li>
+                    <li><a href="/ai-ify/posture">Compliance Posture</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Document Intelligence</li>
+                    <li><a href="/document-intelligence/" style="color:#7ab3f0;">DIC Overview</a></li>
+                    <li><a href="/document-intelligence/collections">Collections</a></li>
+                    <li><a href="/document-intelligence/search">Search &amp; Chat</a></li>
+                    <li><a href="/document-intelligence/analytics">Analytics</a></li>
+                    <li><a href="/document-intelligence/review">HITL Review</a></li>
+                    <li><a href="/document-intelligence/generate">AI-Assist</a></li>
+                    <li><a href="/document-intelligence/acoic">ACOIC</a></li>
+                    <li><a href="/document-intelligence/freshness">Freshness</a></li>
+                    <li><a href="/document-intelligence/explorer">Explorer</a></li>
+                    <li><a href="/document-intelligence/handoff">Handoff</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Cloud Migration</li>
+                    <li><a href="/govlift" style="color:#34d399;">GovLift</a></li>
+                    <li><a href="/govlift/workloads">Workloads</a></li>
+                    <li><a href="/govlift/waves">Waves</a></li>
+                    <li><a href="/govlift/executor">Executor</a></li>
+                    <li><a href="/govlift/stig">STIG</a></li>
+                    <li><a href="/govlift/audit">Audit</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Mission Control</li>
+                    <li><a href="/mission-canvas/" style="color:#00bcd4;">Dashboard</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    <li class="nav-section-label">Supply Chain</li>
+                    <li><a href="/supply_chain" style="color:#f0883e;">SCRM Dashboard</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Cross-Canvas</li>
+                    <li><a href="/canvas-compliance">Canvas Posture</a></li>
+                    <li><a href="/canvas-kg">Canvas KG</a></li>
+                </ul>
+            </li>
+
+            <!-- ── Intelligence ──────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">Intelligence ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">Awareness</li>
+                    <li><a href="/system-graph" style="color:#42a5f5;">System Graph</a></li>
+                    <li><a href="/components-map">Component Map</a></li>
+                    <li><a href="/ask-icdev">Ask ICDEV</a></li>
+                    <li><a href="/ai-observatory" style="color:#a78bfa;">AI Observatory</a></li>
+                    <li><a href="/ontology" style="color:#34d399;">Ontology Explorer</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Research</li>
+                    
+                    <li><a href="/research">Research</a></li>
+                    <li><a href="/autoresearch">Autoresearch</a></li>
+                    
+                    <li><a href="/knowledge-search">Knowledge Search</a></li>
+                    <li><a href="/code-quality">Code Quality</a></li>
+                    <li><a href="/writeguard">WriteGuard</a></li>
+                    
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Publish</li>
+                    <li><a href="/pulse">Pulse Blog</a></li>
+                    <li><a href="/clawhub">ClawHub Skills</a></li>
+                    
+                </ul>
+            </li>
+
+            <!-- ── Compliance ────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">Compliance ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">Risk &amp; ATO</li>
+                    <li><a href="/poam">POA&amp;M Findings</a></li>
+                    <li><a href="/compliance">Compliance Hub</a></li>
+                    <li><a href="/oscal">OSCAL</a></li>
+                    <li><a href="/cato">Continuous ATO</a></li>
+                    <li><a href="/ato-package">ATO Package Builder</a></li>
+                    <li><a href="/mosa">MOSA</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Zero Trust (NSA ZIG)</li>
+                    <li><a href="/security/zig/" style="color:#e94560;font-weight:600;">&#x1f6e1; ZIG Dashboard</a></li>
+                    <li><a href="/security/zig/phase" style="color:#aaa;">&#x1f4c5; Phase Tracker</a></li>
+                    <li><a href="/security/zig/assessment" style="color:#aaa;">&#x1f4ca; Assessment</a></li>
+                    <li><a href="/security/zig/roadmap" style="color:#aaa;">&#x1f5fa; FY2027 Roadmap</a></li>
+                    <li><a href="/zta/lac-simulator" style="color:#aaa;">&#x1f512; LAC / ECI / COI Simulator</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Security</li>
+                    <li><a href="/security/" style="color:#e94560;">Security Canvas</a></li>
+                    <li><a href="/security/demo" style="color:#27ae60;">SDC Demo Runner</a></li>
+                    <li><a href="/security-scan">Security Scans</a></li>
+                    <li><a href="/integrity">Software Integrity (SIPA)</a></li>
+                    <li><a href="/stig-manager">STIG Manager</a></li>
+                    <li><a href="/pr-intel">PR Intelligence</a></li>
+                    <li><a href="/sre">SRE Operations</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">AI &amp; Policy</li>
+                    <li><a href="/sbd">Secure by Design</a></li>
+                    <li><a href="/ai-transparency">AI Transparency</a></li>
+                    <li><a href="/ai-accountability">AI Accountability</a></li>
+                    <li><a href="/control-inheritance">Control Inheritance</a></li>
+                    <li><a href="/compliance-debt">Compliance Debt</a></li>
+                    <li><a href="/prod-audit">Production Audit</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Observability</li>
+                    <li><a href="/traces">Traces</a></li>
+                    <li><a href="/provenance">Provenance</a></li>
+                    <li><a href="/xai">XAI</a></li>
+                </ul>
+            </li>
+
+            <!-- ── Strategos ─────────────────────────────────────────────────── -->
+            
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger " style="color:#f59e0b;">Strategos ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">Command</li>
+                    <li><a href="/strategos">Overview</a></li>
+                    <li><a href="/strategos/map" style="color:#f59e0b;">Map Dashboard</a></li>
+                    <li><a href="/strategos/commander" style="color:#e94560;font-weight:600;">Commander Dashboard</a></li>
+                    <li><a href="/strategos/war-council" style="color:#f59e0b;">War Council</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Intel</li>
+                    <li><a href="/strategos/intel-brief" style="color:#a855f7;font-weight:700;">&#9889; Predictive Intel Brief</a></li>
+                    <li><a href="/strategos/leadership-brief" style="color:#a855f7;">Leadership Brief</a></li>
+                    <li><a href="/strategos/oracle" style="color:#f59e0b;">Oracle Assessment</a></li>
+                    <li><a href="/strategos/pir" style="color:#fb923c;">PIR / CCIR / EEI</a></li>
+                    <li><a href="/strategos/intsum" style="color:#06b6d4;">INTSUM Generator</a></li>
+                    <li><a href="/strategos/indicators" style="color:#f59e0b;">I&amp;W Indicators</a></li>
+                    <li><a href="/strategos/briefs" style="color:#a78bfa;">Intel Briefs
+                        <span id="nav-briefs-pending" style="display:none;background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle"></span>
+                    </a></li>
+                    <li><a href="/strategos/kg">Knowledge Graph</a></li>
+                    <li><a href="/strategos/osint">OSINT Panel</a></li>
+                    <li><a href="/strategos/ghost">Ghost Signals</a></li>
+                    <li><a href="/strategos/darkweb" style="color:#a855f7;">Dark Web Monitor</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Ops</li>
+                    <li><a href="/strategos/orbat">ORBAT Tracker</a></li>
+                    <li><a href="/strategos/wargame">Wargame</a></li>
+                    <li><a href="/strategos/iw">IW Effects</a></li>
+                    <li><a href="/strategos/f3ead" style="color:#e94560;">F3EAD Targeting</a></li>
+                    <li><a href="/strategos/bda" style="color:#10b981;">BDA</a></li>
+                    <li><a href="/strategos/red-cell" style="color:#e94560;">Red Cell</a></li>
+                    <li><a href="/strategos/opord" style="color:#8b5cf6;">OPORD Generator</a></li>
+                    <li><a href="/strategos/mett-tc" style="color:#06b6d4;">METT-TC</a></li>
+                    <li><a href="/strategos/sync-matrix" style="color:#f97316;">Sync Matrix</a></li>
+                    <li><a href="/strategos/isr-planner" style="color:#a855f7;">ISR Planner</a></li>
+                    <li><a href="/strategos/ipb" style="color:#3b82f6;">IPB Canvas</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Domain</li>
+                    <li><a href="/strategos/maritime" style="color:#22d3ee;">Maritime Tracking</a></li>
+                    <li><a href="/strategos/airspace" style="color:#3b82f6;">Multi-Domain COP</a></li>
+                    <li><a href="/strategos/cyber" style="color:#ef4444;">Cyber Dashboard</a></li>
+                    <li><a href="/strategos/supply" style="color:#e94560;">DIB Supply Chain</a></li>
+                    <li><a href="/strategos/sources" style="color:#34d399;">Source Registry</a></li>
+                    <li><a href="/strategos/simulate">Simulate</a></li>
+                    <li><a href="/strategos/hitl">HITL Queue</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li><a href="#" onclick="if(typeof openStratChat!=='undefined')openStratChat();return false;" style="color:#f59e0b;font-weight:600;">Intelligence Chat</a></li>
+                </ul>
+            </li>
+            
+
+            <!-- ── Platforms ─────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger active">Platforms ▾</a>
+                <ul class="nav-dropdown-menu">
+                    
+                    <li class="nav-section-label">Market &amp; AI</li>
+                    <li><a href="/fathomdesk" style="color:#8ab4ff;">FathomDesk</a></li>
+                    <li><a href="/fathomdesk/trap-events" style="color:#f87171;">&#9888; Trap Events</a></li>
+                    <li><a href="/genesis">Genesis</a></li>
+                    <li><a href="/oracle">Oracle</a></li>
+                    <li><a href="/foundry" style="color:#b388ff;">Foundry (ACF)</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    <li class="nav-section-label">Geospatial</li>
+                    <li><a href="/geosigint/" style="color:#06b6d4;">GeoSIGINT</a></li>
+                    <li><a href="/geosigint/a2ad">A2/AD Zone Mapper</a></li>
+                    <li><a href="/geosigint/strait-crossing">Strait Crossing</a></li>
+                    <li><a href="/geosigint/island-chain">Island Chain Defense</a></li>
+                    <li><a href="/geosigint/amphibious">Amphibious Assessment</a></li>
+                    <li><a href="/geosigint/militia">Militia Classifier</a></li>
+                    <li><a href="/geosigint/semiconductor">Semiconductor Chain</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Info Ops</li>
+                    <li><a href="/info-ops/" style="color:#a78bfa;">Info Ops Platform</a></li>
+                    <li><a href="/info-ops/dashboard">Dashboard</a></li>
+                    <li><a href="/info-ops/analysis">Analysis</a></li>
+                    <li><a href="/info-ops/osint">OSINT</a></li>
+                    
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">GovCon</li>
+                    <li><a href="/proposals">Proposals</a></li>
+                    <li><a href="/govcon">Intelligence</a></li>
+                    <li><a href="/cpmp">Program Mgmt (CPMP)</a></li>
+                    <li><a href="/cpmp/deliverables">All Deliverables</a></li>
+                    
+                    
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Training</li>
+                    <li><a href="/gameday" style="color:#f59e0b;">GameDay</a></li>
+                    <li><a href="/academy" style="color:#10b981;">FORGE Academy</a></li>
+                    
+                </ul>
+            </li>
+
+            <!-- ── Studio ────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger " style="color:var(--accent-blue-light);">Studio ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/studio/app-builder">App Builder</a></li>
+                    <li><a href="/studio/workflows">Workflow Builder</a></li>
+                    <li><a href="/studio/forms">Form Builder</a></li>
+                    <li><a href="/studio/cases">Case Management</a></li>
+                    <li><a href="/studio/automations">Automations</a></li>
+                    <li><a href="/studio/dashboards">Dashboard Builder</a></li>
+                    
+                    <li><a href="/studio/marketplace">Marketplace</a></li>
+                    
+                </ul>
+            </li>
+
+            <!-- ── More ──────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">More ▾</a>
+                <ul class="nav-dropdown-menu">
+                    
+                    <li class="nav-section-label">Workflow</li>
+                    <li><a href="/workflow/">HITL Queue</a></li>
+                    <li><a href="/workflow/teams">Teams &amp; Assignments</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    <li class="nav-section-label">Account</li>
+                    <li><a href="/profile">Profile &amp; Settings</a></li>
+                    <li><a href="/notifications">Notifications</a></li>
+                    <li><a href="/usage">Usage</a></li>
+                    <li><a href="/analytics">Analytics</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Help</li>
+                    <li><a href="/wizard" style="color:var(--accent-blue-light);">Get Started</a></li>
+                    <li><a href="/quick-paths">Quick Paths</a></li>
+                    
+                    <li class="nav-dropdown-divider"></li>
+                    <li><a href="/admin/users">Admin</a></li>
+                    
+                </ul>
+            </li>
+
+        </ul>
+        <div class="navbar-right" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            
+            
+<div id="cli-bridge-indicator" style="position:relative;">
+  <button type="button" id="cli-bridge-pill"
+          aria-haspopup="true" aria-expanded="false"
+          title="Local CLI bridge status — click for per-page toggle"
+          style="display:flex;align-items:center;gap:6px;background:transparent;
+                 border:1px solid var(--border-color);color:var(--text-secondary);
+                 border-radius:999px;padding:3px 10px;font-size:0.72rem;cursor:pointer;
+                 white-space:nowrap;line-height:1.4;">
+    <span id="cli-bridge-dot"
+          style="width:8px;height:8px;border-radius:50%;background:#9ca3af;
+                 box-shadow:0 0 0 2px rgba(0,0,0,0.04);flex:0 0 auto;"></span>
+    <span id="cli-bridge-label">CLI</span>
+  </button>
+  <div id="cli-bridge-popover" role="dialog" aria-label="CLI bridge controls" hidden
+       style="position:absolute;right:0;top:calc(100% + 6px);z-index:1200;min-width:240px;
+              background:var(--bg-secondary,#1e293b);border:1px solid var(--border-color,#334155);
+              border-radius:8px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,0.28);
+              font-size:0.78rem;color:var(--text-primary,#e2e8f0);">
+    <div style="font-weight:600;margin-bottom:6px;">Local CLI Bridge</div>
+    <div id="cli-bridge-status-text" style="color:var(--text-secondary,#94a3b8);margin-bottom:10px;">
+      Checking&hellip;
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" id="cli-bridge-toggle" style="cursor:pointer;">
+      <span>Use local CLI for this page</span>
+    </label>
+    <div id="cli-bridge-provider" style="margin-top:10px;color:var(--text-secondary,#94a3b8);
+         font-size:0.72rem;"></div>
+  </div>
+</div>
+<script>
+if (!window.icdevCliBridgeRefresh) {
+  (function () {
+    var COLORS = { active: '#16a34a', missing: '#f59e0b', off: '#9ca3af' };
+    var LABELS = { active: 'CLI on', missing: 'CLI missing', off: 'CLI off' };
+
+    function $(id) { return document.getElementById(id); }
+
+    function getCookie(name) {
+      var m = document.cookie.match('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)');
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+    function setCookie(name, value) {
+      // Session cookie, root path so every page (canvas pages included) sees it.
+      document.cookie = name + '=' + encodeURIComponent(value) + '; path=/; SameSite=Lax';
+    }
+
+    function applyState(data) {
+      data = data || {};
+      var state = data.state || 'off';
+      var dot = $('cli-bridge-dot');
+      var label = $('cli-bridge-label');
+      var statusText = $('cli-bridge-status-text');
+      var providerEl = $('cli-bridge-provider');
+      if (dot) dot.style.background = COLORS[state] || COLORS.off;
+      if (label) label.textContent = LABELS[state] || LABELS.off;
+      if (statusText) {
+        if (state === 'active') statusText.textContent = 'Active — local Claude CLI is fronting LLM requests.';
+        else if (state === 'missing') statusText.textContent = 'Enabled, but the claude CLI binary was not found on this host.';
+        else statusText.textContent = 'Off — cloud/local model providers are serving requests.';
+      }
+      if (providerEl) {
+        if (data.last_provider) {
+          var who = data.last_provider + (data.last_model ? ' (' + data.last_model + ')' : '');
+          providerEl.textContent = 'Last served by: ' + who;
+        } else {
+          providerEl.textContent = 'No provider served yet.';
+        }
+      }
+    }
+
+    function refresh() {
+      return fetch('/api/cli-bridge/status', { headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) { if (data) applyState(data); return data; })
+        .catch(function () { /* leave last-known state on transient failure */ });
+    }
+    window.icdevCliBridgeRefresh = refresh;
+
+    function syncToggleFromCookie() {
+      var toggle = $('cli-bridge-toggle');
+      if (!toggle) return;
+      var cookie = getCookie('icdev_cli_bridge');
+      // Tri-state cookie: 'on'/'off'/absent. Checkbox reflects an explicit 'on'.
+      toggle.checked = (cookie === 'on' || cookie === 'true' || cookie === '1');
+      toggle.indeterminate = (cookie === null);
+    }
+
+    function init() {
+      var pill = $('cli-bridge-pill');
+      var popover = $('cli-bridge-popover');
+      var toggle = $('cli-bridge-toggle');
+      if (!pill || !popover) return;
+
+      pill.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var open = popover.hidden;
+        popover.hidden = !open;
+        pill.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) { syncToggleFromCookie(); refresh(); }
+      });
+      // Close when clicking outside the indicator.
+      document.addEventListener('click', function (e) {
+        if (!popover.hidden && !$('cli-bridge-indicator').contains(e.target)) {
+          popover.hidden = true;
+          pill.setAttribute('aria-expanded', 'false');
+        }
+      });
+
+      if (toggle) {
+        toggle.addEventListener('change', function () {
+          toggle.indeterminate = false;
+          setCookie('icdev_cli_bridge', toggle.checked ? 'on' : 'off');
+          // Re-poll so the dot color reflects the new effective state immediately.
+          refresh();
+        });
+      }
+
+      syncToggleFromCookie();
+      refresh();
+      setInterval(refresh, 30000);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  })();
+}
+</script>
+            
+            <a href="/profile" class="user-badge" title="admin@icdev.local">
+                <span class="user-badge-name">Admin</span>
+                <span class="user-badge-role">admin</span>
+            </a>
+            <a href="/logout" class="btn-logout" title="Sign out">Logout</a>
+            
+            <button id="theme-toggle" onclick="ICDEV.toggleTheme()" title="Toggle light/dark theme"
+                    style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">
+                <span id="theme-icon">☀</span>
+            </button>
+            <button onclick="if(ICDEV.startTour)ICDEV.startTour()" title="Restart onboarding tour"
+                    style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">Tour</button>
+            <label for="role-select" class="text-muted" style="font-size: 0.8rem; white-space: nowrap;">View as:</label>
+            <select id="role-select" aria-label="Select dashboard view role"
+                    onchange="window.location.search = this.value ? '?role=' + this.value : ''"
+                    style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem;">
+                <option value="" selected>All (Full View)</option>
+                
+                <option value="pm" >Program Manager</option>
+                
+                <option value="developer" >Developer / Architect</option>
+                
+                <option value="isso" >ISSO / Security Officer</option>
+                
+                <option value="co" >Contracting Officer</option>
+                
+                <option value="analyst" >Analyst</option>
+                
+                <option value="solutions_architect" >Solutions Architect</option>
+                
+                <option value="sales_engineer" >Sales Engineer</option>
+                
+                <option value="innovator" >Innovator</option>
+                
+                <option value="biz_dev" >Business Development</option>
+                
+                <option value="cor" >Contracting Officer Representative</option>
+                
+            </select>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content" id="main-content" role="main">
+        
+
+<style>
+  .acf-hero { padding: 20px 30px 6px; }
+  .acf-hero h1 { font-size: 22px; margin: 0 0 4px; display:flex; align-items:center; gap:10px; }
+  .acf-hero h1 .acf-tag { font-size:10px; font-weight:700; letter-spacing:.08em; background:#1b0d4e; color:#b388ff; border:1px solid #4527a0; border-radius:4px; padding:2px 7px; }
+  .acf-hero p { color: #8c8ab0; font-size: 13px; margin: 0; max-width: 900px; }
+
+  .acf-rollup { display:flex; gap:14px; padding:16px 30px 4px; flex-wrap:wrap; }
+  .acf-rcard { flex:1; min-width:140px; background:#1a163e; border:1px solid #2e1e6e; border-radius:8px; padding:14px 16px; border-left-width:4px; }
+  .acf-rcard .val { font-size:30px; font-weight:700; line-height:1; }
+  .acf-rcard .lbl { font-size:11px; color:#8c8ab0; text-transform:uppercase; letter-spacing:.06em; margin-top:6px; }
+  .acf-rcard.total     { border-left-color:#b388ff; } .acf-rcard.total     .val { color:#b388ff; }
+  .acf-rcard.proposed  { border-left-color:#4fc3f7; } .acf-rcard.proposed  .val { color:#4fc3f7; }
+  .acf-rcard.scored    { border-left-color:#ffb300; } .acf-rcard.scored    .val { color:#ffb300; }
+  .acf-rcard.approved  { border-left-color:#66bb6a; } .acf-rcard.approved  .val { color:#66bb6a; }
+  .acf-rcard.rejected  { border-left-color:#bcaaa4; } .acf-rcard.rejected  .val { color:#bcaaa4; }
+  .acf-rcard.signals   { border-left-color:#26c6da; } .acf-rcard.signals   .val { color:#26c6da; }
+
+  .acf-runbar { display:flex; align-items:center; gap:16px; margin:18px 30px 4px; background:#150f30; border:1px solid #2e1e6e; border-radius:8px; padding:14px 18px; flex-wrap:wrap; }
+  .acf-runbar .meta { color:#9b97c4; font-size:12px; }
+  .acf-runbar .meta b { color:#cfc6f5; }
+  .acf-btn { background:#4527a0; color:#ede7ff; border:1px solid #5e35b1; border-radius:5px; font-size:13px; font-weight:600; padding:9px 16px; cursor:pointer; font-family:inherit; }
+  .acf-btn:hover { background:#5e35b1; }
+  .acf-btn:disabled { opacity:.5; cursor:default; }
+  .acf-status { color:#9b97c4; font-size:12px; margin-left:6px; }
+
+  .acf-section-title { font-size:13px; font-weight:700; color:#cfc6f5; text-transform:uppercase; letter-spacing:.06em; padding:18px 30px 6px; display:flex; align-items:center; gap:10px; }
+  .acf-section-title .hint { font-weight:400; text-transform:none; letter-spacing:0; color:#6a6a9c; font-size:11px; }
+
+  /* Kanban-style pipeline board */
+  .acf-board { display:grid; grid-template-columns: repeat(4, 1fr); gap:14px; padding:4px 30px 6px; align-items:start; }
+  @media (max-width: 1100px) { .acf-board { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px)  { .acf-board { grid-template-columns: 1fr; } }
+  .acf-col { background:#150f30; border:1px solid #2a2050; border-radius:8px; min-height:90px; }
+  .acf-col-head { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #241c52; border-top-left-radius:8px; border-top-right-radius:8px; }
+  .acf-col-head .name { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+  .acf-col-head .cnt { font-size:11px; font-weight:700; color:#cfc6f5; background:#241c52; border-radius:10px; padding:1px 8px; min-width:20px; text-align:center; }
+  .acf-col.proposed .acf-col-head { border-top:3px solid #4fc3f7; } .acf-col.proposed .name { color:#7aa8d8; }
+  .acf-col.scored   .acf-col-head { border-top:3px solid #ffb300; } .acf-col.scored   .name { color:#ffb300; }
+  .acf-col.approved .acf-col-head { border-top:3px solid #66bb6a; } .acf-col.approved .name { color:#81c784; }
+  .acf-col.rejected .acf-col-head { border-top:3px solid #bcaaa4; } .acf-col.rejected .name { color:#bcaaa4; }
+  .acf-col-body { padding:10px; display:flex; flex-direction:column; gap:9px; }
+  .acf-card { display:block; text-decoration:none; background:#1a163e; border:1px solid #2e1e6e; border-radius:7px; padding:11px 12px; transition:border-color .12s, transform .12s; }
+  .acf-card:hover { border-color:#5e35b1; transform:translateY(-1px); }
+  .acf-card .nm { font-size:13px; font-weight:600; color:#ede7ff; line-height:1.25; }
+  .acf-card .cap { font-size:11.5px; color:#9b97c4; margin-top:4px; line-height:1.35; }
+  .acf-card .reason { font-size:11px; color:#bcaaa4; margin-top:5px; }
+  .acf-badges { display:flex; gap:6px; margin-top:9px; flex-wrap:wrap; }
+  .scorebadge { display:inline-flex; align-items:baseline; gap:4px; font-size:10px; font-weight:700; letter-spacing:.03em; padding:2px 7px; border-radius:4px; text-transform:uppercase; }
+  .scorebadge .v { font-size:12px; font-variant-numeric:tabular-nums; }
+  .scorebadge.comp    { background:#1b0d4e; color:#b388ff; border:1px solid #3b2a73; }
+  .scorebadge.novelty { background:#0a1f24; color:#4dd0e1; border:1px solid #1d4750; }
+  .acf-col-empty { color:#5d5a85; font-size:12px; padding:14px 12px; text-align:center; }
+
+  /* Recent runs table */
+  .acf-tbl-wrap { margin:0 30px; }
+  .acf-tbl { width:100%; border-collapse:collapse; }
+  .acf-tbl th { text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:#6a6a9c; border-bottom:1px solid #2a2050; padding:8px 10px; }
+  .acf-tbl td { padding:10px; border-bottom:1px solid #1c1740; font-size:13px; color:#d6d2ee; vertical-align:top; font-variant-numeric:tabular-nums; }
+  .acf-tbl td.name { font-variant-numeric:normal; }
+  .rbadge { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.04em; padding:2px 8px; border-radius:4px; text-transform:uppercase; }
+  .rbadge.completed { background:#0c2417; color:#81c784; }
+  .rbadge.running   { background:#2a1f05; color:#ffb300; }
+  .rbadge.failed    { background:#2a0f0f; color:#ef9a9a; }
+  .rbadge.unknown   { background:#1a2438; color:#6a86b0; }
+  .acf-empty { color:#8c8ab0; padding:24px 30px; font-size:13px; }
+</style>
+
+<div class="acf-hero">
+  <h1>Autonomous Capability Foundry <span class="acf-tag">ACF</span></h1>
+  <p>A 0&rarr;1 product factory: it harvests innovation, creative, research, Genesis, and
+     telemetry signals, clusters them into <b>net-new</b> capability concepts, gates them through
+     a novelty check and a Chain-of-Debate go/no-go, self-vets the plan with SIPA, and seeds the
+     approved ones as autonomous Kanban builds. Distinct from Oracle/Genesis, which improve existing work.</p>
+</div>
+
+<!-- Concept status roll-up -->
+
+<div class="acf-rollup">
+  <div class="acf-rcard total"><div class="val">4</div><div class="lbl">Concepts</div></div>
+  <div class="acf-rcard proposed"><div class="val">1</div><div class="lbl">Proposed</div></div>
+  <div class="acf-rcard scored"><div class="val">1</div><div class="lbl">Scored</div></div>
+  <div class="acf-rcard approved"><div class="val">1</div><div class="lbl">Approved</div></div>
+  <div class="acf-rcard rejected"><div class="val">1</div><div class="lbl">Rejected</div></div>
+  <div class="acf-rcard signals"><div class="val">1268</div><div class="lbl">Signals</div></div>
+</div>
+
+<!-- Run controls -->
+<div class="acf-runbar">
+  <button class="acf-btn" id="acf-run-btn" onclick="acfRun()">&#9889; Run Cycle</button>
+  <span class="acf-status" id="acf-status"></span>
+  <span class="meta" style="margin-left:auto;">
+    
+      Last cycle <b>2026-06-07 13:59</b>
+      · harvested <b>121</b>
+      · proposed <b>0</b>
+      · approved <b>0</b>
+      · tasks <b>0</b>
+    
+  </span>
+</div>
+
+<!-- Pipeline board: concepts grouped by lifecycle status -->
+<div class="acf-section-title">Pipeline <span class="hint">concepts by stage — click a card for scores, spec &amp; emitted tasks</span></div>
+
+  
+  
+  
+    
+    
+  
+    
+    
+  
+    
+    
+  
+    
+    
+  
+  <div class="acf-board">
+    
+    <div class="acf-col proposed">
+      <div class="acf-col-head"><span class="name">proposed</span><span class="cnt">1</span></div>
+      <div class="acf-col-body">
+        
+          
+          
+          
+          
+          <a class="acf-card" href="/foundry/6b3bde6cc19b4792bafca5a2eb7f2bc2">
+            <div class="nm">[VV-04 FIXTURE] Continuous ATO Drift Sentinel</div>
+            <div class="cap">Continuously diff live config against the approved control baseline.</div>
+            
+            <div class="acf-badges">
+              <span class="scorebadge comp">C<span class="v">0</span></span>
+              <span class="scorebadge novelty">N<span class="v">74</span></span>
+            </div>
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="acf-col scored">
+      <div class="acf-col-head"><span class="name">scored</span><span class="cnt">1</span></div>
+      <div class="acf-col-body">
+        
+          
+          
+          
+          
+          <a class="acf-card" href="/foundry/1545f34c5c1240feaf12571ba5654217">
+            <div class="nm">[VV-04 FIXTURE] Cross-Canvas Threat Narrative Synth</div>
+            <div class="cap">Auto-compose a cited threat narrative from correlated signals.</div>
+            
+            <div class="acf-badges">
+              <span class="scorebadge comp">C<span class="v">66</span></span>
+              <span class="scorebadge novelty">N<span class="v">68</span></span>
+            </div>
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="acf-col approved">
+      <div class="acf-col-head"><span class="name">approved</span><span class="cnt">1</span></div>
+      <div class="acf-col-body">
+        
+          
+          
+          
+          
+          <a class="acf-card" href="/foundry/28f3bec2fecd486a9cb5f195ecf16d49">
+            <div class="nm">[VV-04 FIXTURE] Air-Gapped Model Provenance Ledger</div>
+            <div class="cap">Append-only, hash-chained ledger recording dataset, weights, and eval lineage per model release.</div>
+            
+            <div class="acf-badges">
+              <span class="scorebadge comp">C<span class="v">81</span></span>
+              <span class="scorebadge novelty">N<span class="v">82</span></span>
+            </div>
+          </a>
+        
+      </div>
+    </div>
+    
+    <div class="acf-col rejected">
+      <div class="acf-col-head"><span class="name">rejected</span><span class="cnt">1</span></div>
+      <div class="acf-col-body">
+        
+          
+          
+          
+          
+          <a class="acf-card" href="/foundry/ec2e896b526d46a7bf4d827eea411a69">
+            <div class="nm">[VV-04 FIXTURE] Yet Another Dashboard Dark-Mode Toggle</div>
+            <div class="cap">Add a theme toggle to the dashboard chrome.</div>
+            <div class="reason">&#10005; low_novelty</div>
+            <div class="acf-badges">
+              <span class="scorebadge comp">C<span class="v">18</span></span>
+              <span class="scorebadge novelty">N<span class="v">11</span></span>
+            </div>
+          </a>
+        
+      </div>
+    </div>
+    
+  </div>
+
+
+<!-- Recent runs -->
+<div class="acf-section-title">Recent Cycles</div>
+<div class="acf-tbl-wrap">
+  
+  <table class="acf-tbl">
+    <thead>
+      <tr><th>Cycle</th><th>Harvested</th><th>Proposed</th><th>Approved</th><th>Tasks</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      
+      
+      <tr>
+        <td class="name" style="white-space:nowrap;">2026-06-07 13:59</td>
+        <td>121</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td><span class="rbadge completed">completed</span></td>
+      </tr>
+      
+      
+      <tr>
+        <td class="name" style="white-space:nowrap;">2026-06-07 13:48</td>
+        <td>121</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td><span class="rbadge completed">completed</span></td>
+      </tr>
+      
+      
+      <tr>
+        <td class="name" style="white-space:nowrap;">2026-06-07 13:37</td>
+        <td>121</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td><span class="rbadge completed">completed</span></td>
+      </tr>
+      
+      
+      <tr>
+        <td class="name" style="white-space:nowrap;">2026-06-07 13:25</td>
+        <td>121</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td><span class="rbadge completed">completed</span></td>
+      </tr>
+      
+      
+      <tr>
+        <td class="name" style="white-space:nowrap;">2026-06-07 11:30</td>
+        <td>121</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td><span class="rbadge completed">completed</span></td>
+      </tr>
+      
+      
+      <tr>
+        <td class="name" style="white-space:nowrap;">2026-06-07 04:40</td>
+        <td>121</td>
+        <td>4</td>
+        <td>1</td>
+        <td>2</td>
+        <td><span class="rbadge completed">completed</span></td>
+      </tr>
+      
+      
+      <tr>
+        <td class="name" style="white-space:nowrap;">2026-06-07 04:31</td>
+        <td>121</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td><span class="rbadge completed">completed</span></td>
+      </tr>
+      
+      
+      <tr>
+        <td class="name" style="white-space:nowrap;">2026-06-07 00:47</td>
+        <td>121</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td><span class="rbadge completed">completed</span></td>
+      </tr>
+      
+      
+      <tr>
+        <td class="name" style="white-space:nowrap;">2026-06-07 00:46</td>
+        <td>121</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td><span class="rbadge completed">completed</span></td>
+      </tr>
+      
+    </tbody>
+  </table>
+  
+</div>
+
+<!-- IQE Query Widget -->
+
+
+
+
+<!-- CUI // SP-CTI — IQE Query Widget Partial (IQE Full Integration) -->
+
+
+
+
+
+
+
+<div class="iqe-widget" id="iqew_foundry" data-api="/foundry/api/iqe-query">
+  <div class="iqe-widget__header" onclick="icdevIQEToggle('iqew_foundry')">
+    <span class="iqe-widget__icon">&#x1F50E;</span>
+    <span class="iqe-widget__title">IQE Query — Foundry Concepts &amp;amp; Cycles</span>
+    <span class="iqe-badge">IQE</span>
+    <span class="iqe-widget__toggle" id="iqew_foundry_tog">&#x25BC;</span>
+  </div>
+  <div class="iqe-widget__body" id="iqew_foundry_body" style="display:none;">
+    
+    <div class="iqe-widget__chips">
+      
+      <button class="iqe-chip" onclick="icdevIQEFill('iqew_foundry',"foreach c in foundry.concepts where c.status == \"approved\" select c.name, c.composite_score, c.proposed_capability")" title="foreach c in foundry.concepts where c.status == &#34;approved&#34; select c.name, c.composite_score, c.proposed_capability">Approved concepts</button>
+      
+      <button class="iqe-chip" onclick="icdevIQEFill('iqew_foundry',"foreach c in foundry.concepts where c.status == \"rejected\" select c.name, c.novelty_score, c.reject_reason")" title="foreach c in foundry.concepts where c.status == &#34;rejected&#34; select c.name, c.novelty_score, c.reject_reason">Rejected (low novelty)</button>
+      
+      <button class="iqe-chip" onclick="icdevIQEFill('iqew_foundry',"foreach r in foundry.runs select r.cycle_at, r.harvested, r.concepts_approved, r.tasks_emitted")" title="foreach r in foundry.runs select r.cycle_at, r.harvested, r.concepts_approved, r.tasks_emitted">Recent cycles</button>
+      
+    </div>
+    
+    <div class="iqe-input-row">
+      <textarea id="iqew_foundry_ta" class="iqe-ta" rows="2" placeholder="Ask a plain-English question, e.g. &quot;show all open findings&quot;…"></textarea>
+      <button class="iqe-run-btn" id="iqew_foundry_btn" onclick="icdevIQERun('iqew_foundry')">&#x25B6; Run</button>
+    </div>
+    <div id="iqew_foundry_status" class="iqe-status" style="display:none;"></div>
+    <div id="iqew_foundry_preview" class="iqe-preview" style="display:none;">
+      <div class="iqe-label">Generated IQE Query</div>
+      <pre id="iqew_foundry_iqestr" class="iqe-pre"></pre>
+    </div>
+    <div id="iqew_foundry_results" style="display:none;"></div>
+  </div>
+</div>
+
+<script>
+if (!window.icdevIQERun) {
+  (function() {
+    window.icdevIQEToggle = function(id) {
+      var body = document.getElementById(id + '_body');
+      var tog  = document.getElementById(id + '_tog');
+      if (!body) return;
+      var open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : '';
+      if (tog) tog.textContent = open ? '▶' : '▼';
+    };
+    window.icdevIQEFill = function(id, q) {
+      var ta = document.getElementById(id + '_ta');
+      if (ta) { ta.value = q; ta.focus(); }
+      var body = document.getElementById(id + '_body');
+      if (body) body.style.display = '';
+      var tog = document.getElementById(id + '_tog');
+      if (tog) tog.textContent = '▼';
+    };
+    window.icdevIQERun = async function(id) {
+      var widget    = document.getElementById(id);
+      var ta        = document.getElementById(id + '_ta');
+      var statusEl  = document.getElementById(id + '_status');
+      var previewEl = document.getElementById(id + '_preview');
+      var iqestrEl  = document.getElementById(id + '_iqestr');
+      var resultsEl = document.getElementById(id + '_results');
+      var btn       = document.getElementById(id + '_btn');
+      if (!ta || !widget) return;
+      var question = ta.value.trim();
+      if (!question) { ta.focus(); return; }
+      var apiRoute = widget.dataset.api;
+      if (!apiRoute) {
+        if (statusEl) { statusEl.textContent = '⚠ IQE endpoint not configured for this page'; statusEl.className = 'iqe-status iqe-error'; statusEl.style.display = ''; }
+        return;
+      }
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+      if (statusEl) { statusEl.style.display = ''; statusEl.className = 'iqe-status'; statusEl.textContent = 'Translating to IQE…'; }
+      if (previewEl) previewEl.style.display = 'none';
+      if (resultsEl) { resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; }
+      try {
+        var resp = await fetch(apiRoute, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({question: question, execute: true})
+        });
+        var data = await resp.json();
+        if (data.error) {
+          if (statusEl) { statusEl.textContent = '⚠ ' + data.error; statusEl.className = 'iqe-status iqe-error'; }
+          if (data.iqe && iqestrEl) { iqestrEl.textContent = data.iqe; if (previewEl) previewEl.style.display = ''; }
+        } else {
+          var rc = data.row_count !== undefined ? data.row_count : (data.results || []).length;
+          var msg = data.explanation || ('Returned ' + rc + ' row' + (rc !== 1 ? 's' : ''));
+          if (statusEl) { statusEl.textContent = msg; statusEl.className = 'iqe-status iqe-ok'; }
+          if (iqestrEl && data.iqe) { iqestrEl.textContent = data.iqe; if (previewEl) previewEl.style.display = ''; }
+          if (resultsEl) {
+            var rows = data.results || [];
+            if (!rows.length) {
+              resultsEl.innerHTML = '<div class="iqe-empty">No rows matched</div>';
+            } else {
+              var cols = Object.keys(rows[0]);
+              var html = '<div class="iqe-tbl-wrap"><table class="iqe-tbl"><thead><tr>' +
+                cols.map(function(c) { return '<th>' + _iqeEsc(c) + '</th>'; }).join('') +
+                '</tr></thead><tbody>';
+              var limit = Math.min(rows.length, 200);
+              for (var i = 0; i < limit; i++) {
+                html += '<tr>' + cols.map(function(c) {
+                  var v = rows[i][c];
+                  if (v === null || v === undefined) return '<td class="iqe-null">null</td>';
+                  var s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                  return '<td>' + _iqeEsc(s) + '</td>';
+                }).join('') + '</tr>';
+              }
+              html += '</tbody></table></div>';
+              if (rows.length > 200) html += '<div class="iqe-empty">Showing 200 of ' + rows.length + ' rows</div>';
+              resultsEl.innerHTML = html;
+            }
+            resultsEl.style.display = '';
+          }
+        }
+      } catch(e) {
+        if (statusEl) { statusEl.textContent = '⚠ Network error: ' + e.message; statusEl.className = 'iqe-status iqe-error'; }
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '&#x25B6; Run'; }
+      }
+    };
+    function _iqeEsc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+  })();
+}
+</script>
+
+<style>
+.iqe-widget{background:#0b1726;border:1px solid #1a3560;border-radius:8px;margin:16px 0;overflow:hidden;font-family:inherit;}
+.iqe-widget__header{display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;user-select:none;background:#08112a;transition:background .15s;}
+.iqe-widget__header:hover{background:#0f1e3d;}
+.iqe-widget__icon{font-size:13px;}
+.iqe-widget__title{flex:1;font-size:13px;font-weight:600;color:#9bb8d8;}
+.iqe-badge{font-size:9px;font-weight:700;background:#0f3460;color:#5a9fd4;border:1px solid #1a5080;border-radius:3px;padding:1px 5px;letter-spacing:.06em;}
+.iqe-widget__toggle{font-size:10px;color:#3a6090;}
+.iqe-widget__body{padding:12px 14px;}
+.iqe-widget__chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;}
+.iqe-chip{padding:3px 9px;font-size:11px;background:#0d2545;color:#6aA8d8;border:1px solid #1a4070;border-radius:4px;cursor:pointer;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.iqe-chip:hover{background:#163060;color:#90c8f8;}
+.iqe-input-row{display:flex;gap:8px;align-items:flex-start;}
+.iqe-ta{flex:1;background:#050d1f;border:1px solid #1a3560;border-radius:5px;color:#b8d0e8;font-size:12px;padding:7px 10px;resize:vertical;min-height:38px;font-family:inherit;}
+.iqe-ta:focus{outline:none;border-color:#2a6aad;}
+.iqe-run-btn{padding:8px 14px;background:#133a6a;color:#80c0f0;border:1px solid #1a5090;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap;transition:background .15s;}
+.iqe-run-btn:hover{background:#1a4e8a;}
+.iqe-run-btn:disabled{opacity:.45;cursor:not-allowed;}
+.iqe-status{margin-top:8px;font-size:11px;color:#6a9aba;padding:4px 8px;background:#060f22;border-radius:4px;}
+.iqe-ok{color:#5aaa80;}
+.iqe-error{color:#e05050;background:#1a0808;}
+.iqe-preview{margin-top:10px;}
+.iqe-label{font-size:10px;font-weight:700;color:#3a6080;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
+.iqe-pre{background:#050d1f;border:1px solid #1a3560;border-radius:4px;padding:6px 10px;font-size:11px;color:#60a8e0;white-space:pre-wrap;word-break:break-all;margin:0;}
+.iqe-tbl-wrap{overflow-x:auto;margin-top:10px;}
+.iqe-tbl{width:100%;border-collapse:collapse;font-size:11px;}
+.iqe-tbl th{background:#060f22;color:#6090b0;padding:5px 8px;text-align:left;border-bottom:1px solid #1a3560;font-weight:600;white-space:nowrap;}
+.iqe-tbl td{padding:4px 8px;color:#a8c8e0;border-bottom:1px solid #0d1e30;vertical-align:top;word-break:break-word;max-width:300px;}
+.iqe-tbl tr:hover td{background:#0a1830;}
+.iqe-null{color:#2a5070 !important;font-style:italic;}
+.iqe-empty{color:#3a6080;font-size:12px;text-align:center;padding:14px;}
+</style>
+
+
+    </div>
+
+    <!-- CUI Banner Bottom (D173) -->
+    
+    <div class="cui-banner bottom" role="contentinfo" aria-label="Classification marking">CUI // SP-CTI</div>
+    
+
+    <!-- Notification container for toasts -->
+    <div class="notification-container" id="notification-container" aria-live="polite"></div>
+
+    <!-- ExplainPanel — collapsible slide-out (aisg-a3-01) -->
+    <div id="explain-panel" role="complementary" aria-label="Event explanation panel" aria-hidden="true">
+        <div id="explain-panel-header">
+            <h3>&#10067; Explain</h3>
+            <button id="explain-panel-close" onclick="window.closeExplain()" aria-label="Close explanation panel">&times;</button>
+        </div>
+        <div id="explain-panel-body">
+            <div id="explain-panel-loading">Loading explanation&hellip;</div>
+            <div id="explain-panel-content"></div>
+        </div>
+    </div>
+
+    <!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
+    <!-- CUI // SP-CTI -->
+<!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
+<!-- Floating chat widget for codebase Q&A on every dashboard page. -->
+
+<!-- Collapsed FAB button -->
+<button id="assistant-fab" class="assistant-fab" title="Codebase Assistant" aria-label="Open codebase assistant">
+    <span class="assistant-fab__icon">?</span>
+    <span id="assistant-fab-badge" class="assistant-fab__badge" style="display:none;">0</span>
+</button>
+
+<!-- Expanded widget panel -->
+<div id="assistant-widget" class="assistant-widget" style="display:none;">
+    <!-- Header -->
+    <div class="assistant-widget__header">
+        <div class="assistant-widget__header-left">
+            <span class="assistant-widget__avatar">?</span>
+            <span class="assistant-widget__title">Codebase Assistant</span>
+        </div>
+        <div class="assistant-widget__header-right">
+            <button id="assistant-clear" class="assistant-widget__btn" title="New chat">&#x21BA;</button>
+            <button id="assistant-fullscreen" class="assistant-widget__btn" title="Open in full screen">&#x2197;</button>
+            <button id="assistant-close" class="assistant-widget__btn" title="Close">&times;</button>
+        </div>
+    </div>
+
+    <!-- Scope bar -->
+    <div class="assistant-widget__scope">
+        <span class="assistant-widget__scope-label">Scope:</span>
+        <select id="assistant-scope" class="assistant-widget__scope-select">
+            <option value="">All (Global)</option>
+        </select>
+    </div>
+
+    <!-- Messages -->
+    <div id="assistant-messages" class="assistant-widget__messages">
+        <!-- Empty state with suggestions -->
+        <div id="assistant-empty" class="assistant-widget__empty">
+            <p>Ask me anything about the ICDEV™ codebase.</p>
+            <div id="assistant-suggestions" class="assistant-widget__suggestions"></div>
+        </div>
+    </div>
+
+    <!-- Typing indicator -->
+    <div id="assistant-typing" class="assistant-widget__typing" style="display:none;">
+        <div class="typing-dots">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+        </div>
+        <span class="typing-label">Searching codebase...</span>
+    </div>
+
+    <!-- Input -->
+    <div class="assistant-widget__input-area">
+        <input type="text" id="assistant-input" class="assistant-widget__input" placeholder="Ask about this module..." autocomplete="off">
+        <button id="assistant-send" class="assistant-widget__send" title="Send" aria-label="Send question">&#x2192;</button>
+    </div>
+
+    <!-- Status bar -->
+    <div class="assistant-widget__status">
+        <span id="assistant-status-text" class="assistant-widget__status-text">Ready</span>
+    </div>
+</div>
+    <!-- Interactive CLI-bridge prompt panel — slide-out (ucb-widget-02) -->
+    <!-- CUI // SP-CTI — Interactive CLI-bridge prompt panel (slide-out, ucb-widget-02).
+   Cloned from includes/iqe_query_widget.html (collapsible header, textarea, Run
+   button, status line, results area). Fixed bottom-left slide-out so it never
+   collides with the bottom-right Codebase Assistant FAB or the navbar CLI pill.
+
+   On Run, icdevCliRun() POSTs {prompt, function, force_bridge} to
+   /api/cli-bridge/prompt and renders data.content plus a footer
+   'served by {provider}/{model} in {duration_ms}ms'.
+
+   - function   — derived from the current path via window.ROUTE_MODULE_MAP
+                  (falls back to "codebase_query"; unknown fns route to default).
+   - force_bridge — the per-page toggle state read from the icdev_cli_bridge
+                  cookie set by the CLI-bridge indicator (ucb-widget-01):
+                  on→true, off→false, absent→null (no override).
+   Degrades gracefully: when the CLI is absent the router falls through to
+   cloud/local providers, and a hard failure shows the server error message. -->
+
+<div class="clib-panel" id="clibp">
+  <div class="clib-panel__header" onclick="icdevCliToggle('clibp')"
+       role="button" tabindex="0" aria-expanded="false"
+       onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();icdevCliToggle('clibp');}">
+    <span class="clib-panel__icon">&#x2328;</span>
+    <span class="clib-panel__title">CLI Prompt</span>
+    <span class="clib-badge">BRIDGE</span>
+    <span class="clib-panel__toggle" id="clibp_tog">&#x25B2;</span>
+  </div>
+  <div class="clib-panel__body" id="clibp_body" style="display:none;">
+    <div class="clib-input-row">
+      <textarea id="clibp_ta" class="clib-ta" rows="3"
+                placeholder="Ask the local CLI bridge anything, e.g. &quot;summarize what this page does&quot;…"
+                onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();icdevCliRun('clibp');}"></textarea>
+    </div>
+    <div class="clib-actions">
+      <span class="clib-hint" id="clibp_fn"></span>
+      <button class="clib-run-btn" id="clibp_btn" onclick="icdevCliRun('clibp')">&#x25B6; Run</button>
+    </div>
+    <div id="clibp_status" class="clib-status" style="display:none;"></div>
+    <div id="clibp_results" class="clib-results" style="display:none;"></div>
+    <div id="clibp_footer" class="clib-footer" style="display:none;"></div>
+  </div>
+</div>
+
+<script>
+if (!window.icdevCliRun) {
+  (function () {
+    function $(id) { return document.getElementById(id); }
+
+    window.icdevCliToggle = function (id) {
+      var body = $(id + '_body');
+      var tog = $(id + '_tog');
+      var hdr = body ? body.previousElementSibling : null;
+      if (!body) return;
+      var open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : '';
+      if (tog) tog.innerHTML = open ? '&#x25B2;' : '&#x25BC;';
+      if (hdr) hdr.setAttribute('aria-expanded', open ? 'false' : 'true');
+      if (!open) { var ta = $(id + '_ta'); if (ta) { ta.focus(); icdevCliShowFn(id); } }
+    };
+
+    // Read the per-page CLI toggle cookie (icdev_cli_bridge) set by the
+    // CLI-bridge indicator. Returns true/false/null (tri-state, no override).
+    function readToggle() {
+      var m = document.cookie.match(/(?:^|; )icdev_cli_bridge=([^;]*)/);
+      if (!m) return null;
+      var v = decodeURIComponent(m[1]).trim().toLowerCase();
+      if (['on', 'true', '1', 'yes'].indexOf(v) >= 0) return true;
+      if (['off', 'false', '0', 'no'].indexOf(v) >= 0) return false;
+      return null;
+    }
+
+    // Derive a routing-function hint from the current path via ROUTE_MODULE_MAP.
+    // Picks the longest matching route prefix; unknown fns route to default
+    // server-side, so any leaf name is safe. Falls back to "codebase_query".
+    function deriveFunction() {
+      var map = window.ROUTE_MODULE_MAP || {};
+      var path = window.location.pathname || '/';
+      var bestRoute = '', bestMod = '';
+      for (var route in map) {
+        if (!Object.prototype.hasOwnProperty.call(map, route)) continue;
+        if ((path === route || path.indexOf(route) === 0) && route.length > bestRoute.length) {
+          bestRoute = route;
+          bestMod = map[route];
+        }
+      }
+      if (bestMod) {
+        var leaf = String(bestMod).replace(/\/+$/, '').split('/').pop();
+        if (leaf) return leaf;
+      }
+      return 'codebase_query';
+    }
+
+    function icdevCliShowFn(id) {
+      var fnEl = $(id + '_fn');
+      if (fnEl) fnEl.textContent = 'fn: ' + deriveFunction();
+    }
+    window.icdevCliShowFn = icdevCliShowFn;
+
+    function esc(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    window.icdevCliRun = async function (id) {
+      var ta = $(id + '_ta');
+      var statusEl = $(id + '_status');
+      var resultsEl = $(id + '_results');
+      var footerEl = $(id + '_footer');
+      var btn = $(id + '_btn');
+      if (!ta) return;
+      var prompt = ta.value.trim();
+      if (!prompt) { ta.focus(); return; }
+
+      var fn = deriveFunction();
+      var force = readToggle();
+
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+      if (statusEl) { statusEl.style.display = ''; statusEl.className = 'clib-status'; statusEl.textContent = 'Running prompt through the LLM router…'; }
+      if (resultsEl) { resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; }
+      if (footerEl) { footerEl.style.display = 'none'; footerEl.textContent = ''; }
+
+      try {
+        var resp = await fetch('/api/cli-bridge/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: prompt, function: fn, force_bridge: force })
+        });
+        var data = await resp.json();
+        if (data.error) {
+          if (statusEl) { statusEl.textContent = '⚠ ' + data.error; statusEl.className = 'clib-status clib-error'; }
+        } else {
+          if (statusEl) { statusEl.style.display = 'none'; }
+          if (resultsEl) {
+            resultsEl.innerHTML = '<div class="clib-answer">' + esc(data.content || '(empty response)') + '</div>';
+            resultsEl.style.display = '';
+          }
+          if (footerEl) {
+            var who = (data.provider || 'unknown') + (data.model ? '/' + data.model : '');
+            footerEl.textContent = 'served by ' + who + ' in ' + (data.duration_ms || 0) + 'ms';
+            footerEl.style.display = '';
+          }
+        }
+      } catch (e) {
+        if (statusEl) { statusEl.textContent = '⚠ Network error: ' + e.message; statusEl.className = 'clib-status clib-error'; }
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '&#x25B6; Run'; }
+      }
+    };
+  })();
+}
+</script>
+
+<style>
+.clib-panel{position:fixed;left:24px;bottom:24px;z-index:8900;width:340px;max-width:calc(100vw - 48px);
+  background:#0b1726;border:1px solid #1a3560;border-radius:8px;overflow:hidden;
+  font-family:inherit;box-shadow:0 6px 22px rgba(0,0,0,0.32);}
+.clib-panel__header{display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;
+  user-select:none;background:#08112a;transition:background .15s;}
+.clib-panel__header:hover{background:#0f1e3d;}
+.clib-panel__icon{font-size:14px;color:#7fb0e8;}
+.clib-panel__title{flex:1;font-size:13px;font-weight:600;color:#9bb8d8;}
+.clib-badge{font-size:9px;font-weight:700;background:#0f3460;color:#5a9fd4;border:1px solid #1a5080;
+  border-radius:3px;padding:1px 5px;letter-spacing:.06em;}
+.clib-panel__toggle{font-size:10px;color:#3a6090;}
+.clib-panel__body{padding:12px 14px;}
+.clib-input-row{display:flex;}
+.clib-ta{flex:1;background:#050d1f;border:1px solid #1a3560;border-radius:5px;color:#b8d0e8;
+  font-size:12px;padding:7px 10px;resize:vertical;min-height:54px;font-family:inherit;}
+.clib-ta:focus{outline:none;border-color:#2a6aad;}
+.clib-actions{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.clib-hint{flex:1;font-size:10px;color:#3a6080;font-family:monospace;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.clib-run-btn{padding:8px 14px;background:#133a6a;color:#80c0f0;border:1px solid #1a5090;
+  border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap;transition:background .15s;}
+.clib-run-btn:hover{background:#1a4e8a;}
+.clib-run-btn:disabled{opacity:.45;cursor:not-allowed;}
+.clib-status{margin-top:8px;font-size:11px;color:#6a9aba;padding:4px 8px;background:#060f22;border-radius:4px;}
+.clib-error{color:#e05050;background:#1a0808;}
+.clib-results{margin-top:10px;max-height:300px;overflow-y:auto;}
+.clib-answer{background:#050d1f;border:1px solid #1a3560;border-radius:5px;padding:8px 11px;
+  font-size:12px;color:#b8d0e8;white-space:pre-wrap;word-break:break-word;line-height:1.5;}
+.clib-footer{margin-top:8px;font-size:10px;color:#3a6080;font-style:italic;text-align:right;}
+</style>
+    <!-- STRATEGOS floating chat panel (only on Strategos pages) -->
+    
+
+    <!-- Route → Module map for widget auto-scoping (D-CA-4) -->
+    <script>window.ROUTE_MODULE_MAP = {"/activity": "tools/project/", "/agents": "tools/agents/", "/ai-accountability": "tools/ai_accountability/", "/ai-transparency": "tools/ai_transparency/", "/autoresearch": "tools/research/", "/batch": "tools/batch/", "/chat": "tools/dashboard/", "/cicd": "tools/cicd/", "/code-quality": "tools/knowledge/", "/cpmp": "tools/govcon/", "/dev-profiles": "tools/builder/", "/diagrams": "tools/diagrams/", "/events": "tools/project/", "/filesync": "tools/filesync/", "/finetune": "tools/finetune/", "/forge-studio": "tools/forge_studio/", "/genesis": "tools/genesis/", "/govcon": "tools/govcon/", "/knowledge-search": "tools/rag/", "/migration-intel": "tools/migration/", "/monitoring": "tools/monitoring/", "/network": "tools/network/", "/orchestration": "tools/orchestration/", "/oscal": "tools/compliance/", "/phases": "tools/project/", "/projects": "tools/project/", "/proposal-genesis": "tools/proposal_genesis/", "/proposals": "tools/govcon/", "/pulse": "tools/pulse/", "/research": "tools/research/", "/review-board": "tools/review/", "/strategos": "tools/strategos/", "/studio": "tools/studio/", "/translations": "tools/translate/", "/wizard": "tools/project/"};</script>
+    <script>
+    // Theme toggle (FDE E1)
+    window.ICDEV = window.ICDEV || {};
+    ICDEV.toggleMobileNav = function() {
+        var nav = document.getElementById('navbar-nav');
+        var btn = document.getElementById('nav-hamburger');
+        if (!nav) return;
+        var isOpen = nav.classList.contains('mobile-open');
+        nav.classList.toggle('mobile-open', !isOpen);
+        if (btn) {
+            btn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
+            btn.textContent = !isOpen ? '✕' : '☰';
+        }
+    };
+    ICDEV.toggleTheme = function() {
+        var html = document.documentElement;
+        var cur = html.getAttribute('data-theme') || 'dark';
+        var next = cur === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('icdev-theme', next);
+        var icon = document.getElementById('theme-icon');
+        if (icon) icon.textContent = next === 'light' ? '🌙' : '☀';
+        fetch('/profile/api/theme', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({theme: next})
+        }).catch(function(){});
+    };
+    document.addEventListener('DOMContentLoaded', function() {
+        var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+        var icon = document.getElementById('theme-icon');
+        if (icon) icon.textContent = theme === 'light' ? '🌙' : '☀';
+    });
+
+    // Nav dropdown click-toggle (works alongside CSS hover)
+    document.addEventListener('DOMContentLoaded', function() {
+        var triggers = document.querySelectorAll('.nav-dropdown-trigger');
+        triggers.forEach(function(trigger) {
+            trigger.addEventListener('click', function(e) {
+                e.preventDefault();
+                var li = trigger.closest('.nav-dropdown');
+                var isOpen = li.classList.contains('open');
+                // Close all
+                document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
+                    el.classList.remove('open');
+                });
+                if (!isOpen) li.classList.add('open');
+            });
+        });
+        // Close dropdowns when clicking outside nav
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.navbar')) {
+                document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
+                    el.classList.remove('open');
+                });
+            }
+        });
+        // Close sub-item nav link: collapse dropdowns AND close mobile drawer
+        document.querySelectorAll('.nav-dropdown-menu a').forEach(function(a) {
+            a.addEventListener('click', function() {
+                document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
+                    el.classList.remove('open');
+                });
+                // Also close mobile drawer on link click
+                var nav = document.getElementById('navbar-nav');
+                var btn = document.getElementById('nav-hamburger');
+                if (nav) nav.classList.remove('mobile-open');
+                if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.textContent = '☰'; }
+            });
+        });
+    });
+    </script>
+
+    <script defer src="/static/js/api.js"></script>
+    <script defer src="/static/js/ux.js"></script>
+    <script defer src="/static/vendor/mermaid/mermaid.min.js"></script>
+    <script defer src="/static/js/mermaid-icdev.js"></script>
+    <script defer src="/static/js/charts.js"></script>
+    <script defer src="/static/js/tables.js"></script>
+    <script defer src="/static/js/tour.js"></script>
+    <script defer src="/static/js/live.js"></script>
+    <script defer src="/static/js/batch.js"></script>
+    <script defer src="/static/js/shortcuts.js"></script>
+    <script defer src="/static/js/kanban.js"></script>
+    
+    <script defer src="/static/js/proposals.js"></script>
+    
+    <!-- Vendor: Markdown + Syntax Highlighting (Phase 69 — D-CU-2) -->
+    <script defer src="/static/vendor/marked/marked.min.js"></script>
+    <script defer src="/static/vendor/hljs/highlight.min.js"></script>
+    <script defer src="/static/js/chat-renderers.js"></script>
+    <!-- Codebase Assistant Widget JS (Phase 69 — D-CA-3) -->
+    <script defer src="/static/js/assistant-widget.js"></script>
+    
+    
+<script>
+async function acfRun() {
+  const btn = document.getElementById('acf-run-btn');
+  const status = document.getElementById('acf-status');
+  btn.disabled = true;
+  status.textContent = 'Running cycle…';
+  try {
+    const resp = await fetch('/api/foundry/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({dry_run: false})
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      status.textContent = (data && data.error) ? ('⚠ ' + data.error) : ('⚠ HTTP ' + resp.status);
+      btn.disabled = false;
+      return;
+    }
+    status.textContent = '✓ Cycle complete — reloading…';
+    setTimeout(() => location.reload(), 900);
+  } catch (e) {
+    status.textContent = '⚠ ' + e;
+    btn.disabled = false;
+  }
+}
+</script>
+
+    
+    <script>
+    // ExplainPanel — aisg-a3-01
+    (function() {
+        var _panel = null;
+        function getPanel() { return _panel || (_panel = document.getElementById('explain-panel')); }
+
+        window.showExplain = function(eventId) {
+            var p = getPanel();
+            if (!p) return;
+            var loading = document.getElementById('explain-panel-loading');
+            var content = document.getElementById('explain-panel-content');
+            if (loading) loading.style.display = 'block';
+            if (content) content.innerHTML = '';
+            p.classList.add('open');
+            p.setAttribute('aria-hidden', 'false');
+            fetch('/api/explain/' + encodeURIComponent(eventId))
+                .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+                .then(function(data) {
+                    if (loading) loading.style.display = 'none';
+                    if (content) content.innerHTML = renderExplanation(data);
+                })
+                .catch(function() {
+                    if (loading) loading.style.display = 'none';
+                    if (content) content.innerHTML = '<p style="color:#e94560">Failed to load explanation.</p>';
+                });
+        };
+
+        window.closeExplain = function() {
+            var p = getPanel();
+            if (!p) return;
+            p.classList.remove('open');
+            p.setAttribute('aria-hidden', 'true');
+        };
+
+        window.showExplainHtml = function(title, htmlContent) {
+            var p = getPanel();
+            if (!p) return;
+            var loading = document.getElementById('explain-panel-loading');
+            var content = document.getElementById('explain-panel-content');
+            var titleEl = document.getElementById('explain-panel-title');
+            if (loading) loading.style.display = 'none';
+            if (titleEl && title) titleEl.textContent = title;
+            if (content) content.innerHTML = htmlContent || '';
+            p.classList.add('open');
+            p.setAttribute('aria-hidden', 'false');
+        };
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') window.closeExplain();
+        });
+    })();
+    </script>
+    <script>
+    (function() {
+        function refreshBriefsBadge() {
+            fetch('/api/strategos/briefs?reviewed=0&limit=1')
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(d) {
+                    var el = document.getElementById('nav-briefs-pending');
+                    if (!el || !d) return;
+                    if (d.total > 0) {
+                        el.textContent = d.total;
+                        el.style.display = 'inline';
+                    } else {
+                        el.style.display = 'none';
+                    }
+                }).catch(function() {});
+        }
+        refreshBriefsBadge();
+        setInterval(refreshBriefsBadge, 120000);
+    })();
+    </script>
+
+    <!-- IQE Global Mini-bar (Ctrl+Shift+Q) -->
+    <div id="iqe-minibar" style="
+        position:fixed; bottom:0; left:0; right:0; z-index:9000;
+        background:var(--bg-secondary,#1a1d27); border-top:2px solid var(--accent,#4f8ef7);
+        box-shadow:0 -4px 24px rgba(0,0,0,0.35); font-family:inherit;
+        transform:translateY(100%); transition:transform 0.22s cubic-bezier(.4,0,.2,1);
+    " aria-label="IQE Global Query Bar" role="complementary">
+      <div style="max-width:1100px; margin:0 auto; padding:0.7rem 1rem;">
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.45rem;">
+          <span style="font-size:0.72rem; font-weight:700; letter-spacing:.05em;
+              color:var(--accent,#4f8ef7); text-transform:uppercase; white-space:nowrap;">IQE</span>
+          <span id="iqe-mb-canvas-badge" style="font-size:0.68rem; padding:1px 7px; border-radius:999px;
+              background:var(--bg-tertiary,#252836); color:var(--text-dim,#8892a4); border:1px solid var(--border,#2e3347);">
+            global
+          </span>
+          <input id="iqe-mb-input" type="text" placeholder="Ask anything… (Ctrl+Shift+Q to toggle)"
+              autocomplete="off" spellcheck="false"
+              style="flex:1; background:var(--bg-input,#13151f); border:1px solid var(--border,#2e3347);
+                  border-radius:6px; padding:0.35rem 0.7rem; color:var(--text-primary,#e2e8f0);
+                  font-size:0.85rem; outline:none; min-width:0;"
+          />
+          <button onclick="icdevMBRun()" style="
+              background:var(--accent,#4f8ef7); color:#fff; border:none; border-radius:6px;
+              padding:0.35rem 1rem; font-size:0.82rem; font-weight:600; cursor:pointer; white-space:nowrap;">
+            Run
+          </button>
+          <button onclick="icdevMBClose()" style="
+              background:transparent; color:var(--text-dim,#8892a4); border:1px solid var(--border,#2e3347);
+              border-radius:6px; padding:0.3rem 0.55rem; font-size:0.82rem; cursor:pointer;" title="Close (Esc)">
+            ✕
+          </button>
+        </div>
+        <div id="iqe-mb-iqe-preview" style="display:none; font-size:0.75rem; font-family:monospace;
+            padding:0.25rem 0.6rem; background:var(--bg-tertiary,#252836); border-radius:4px;
+            color:var(--text-secondary,#a0aec0); margin-bottom:0.3rem; overflow-x:auto;"></div>
+        <div id="iqe-mb-status" style="font-size:0.75rem; color:var(--text-dim,#8892a4); min-height:1rem;"></div>
+        <div id="iqe-mb-results" style="display:none; margin-top:0.4rem; max-height:220px; overflow-y:auto; border-radius:6px;"></div>
+      </div>
+    </div>
+
+    <script>
+    (function() {
+        if (window.location.pathname === '/chat' || window.location.pathname.startsWith('/chat/')) {
+            var _mb = document.getElementById('iqe-minibar');
+            if (_mb) _mb.style.display = 'none';
+        }
+        var bar = document.getElementById('iqe-minibar');
+        var input = document.getElementById('iqe-mb-input');
+        var badge = document.getElementById('iqe-mb-canvas-badge');
+        var status = document.getElementById('iqe-mb-status');
+        var preview = document.getElementById('iqe-mb-iqe-preview');
+        var results = document.getElementById('iqe-mb-results');
+        var _open = false;
+
+        var PATH_CANVAS = [
+            [/^\/network|^\/twin/, 'ndc'],
+            [/^\/zta/, 'zta'],
+            [/^\/security/, 'sdc'],
+            [/^\/devops/, 'pdc'],
+            [/^\/data/, 'ddc'],
+            [/^\/infra/, 'idc'],
+            [/^\/observability/, 'odc'],
+            [/^\/boundary/, 'bdc'],
+            [/^\/simulate\/chat.*canvas=cam/, 'cam'],
+            [/^\/migration-canvas\/projects/, 'cam'],
+            [/^\/migration-canvas/, 'mc'],
+            [/^\/agentic-ai/, 'aadc'],
+            [/^\/ai-ml/, 'aimc'],
+            [/^\/ops/, 'ohc'],
+            [/^\/govlift/, 'govlift'],
+            [/^\/kanban/, 'kanban'],
+            [/^\/compliance/, 'compliance'],
+            [/^\/agents/, 'agents'],
+            [/^\/projects/, 'projects'],
+            [/^\/ai-observatory/, 'ai_observatory'],
+            [/^\/ontology/, 'ontology'],
+            [/^\/cache-savings/, 'cache_savings'],
+            [/^\/strategos/, 'strategos'],
+            [/^\/supply.chain/, 'supply_chain'],
+            [/^\/noc/, 'nocc'],
+            [/^\/pmc/, 'pmc'],
+            [/^\/ccc/, 'ccc'],
+            [/^\/dsoc/, 'dsoc'],
+            [/^\/ai-ify/, 'aiify'],
+            [/^\/document-intelligence/, 'dic'],
+            [/^\/integrity/, 'integrity'],
+            [/^\/foundry/, 'foundry'],
+            [/^\/demo-runner/, 'demo_runner'],
+            [/^\/innovation/, 'innovation'],
+            [/^\/mission-canvas/, 'mission_canvas'],
+            [/^\/proposals/, 'govcon'],
+            [/^\/govcon/, 'govcon'],
+            [/^\/cpmp\/deliverables/, 'govcon'],
+            [/^\/cpmp/, 'govcon'],
+            [/^\/slides/, 'slides'],
+            [/^\/coworker/, 'ace'],
+            [/^\/ai-|^\/dashboard\/.*-view/, 'aisg'],
+        ];
+
+        function detectCanvas() {
+            var p = window.location.pathname;
+            for (var i = 0; i < PATH_CANVAS.length; i++) {
+                if (PATH_CANVAS[i][0].test(p)) return PATH_CANVAS[i][1];
+            }
+            return 'ndc';
+        }
+
+        function open() {
+            _open = true;
+            bar.style.transform = 'translateY(0)';
+            var canvas = detectCanvas();
+            badge.textContent = canvas;
+            setTimeout(function() { input.focus(); }, 60);
+        }
+
+        window.icdevMBClose = function() {
+            _open = false;
+            bar.style.transform = 'translateY(100%)';
+            status.textContent = '';
+            preview.style.display = 'none';
+            results.style.display = 'none';
+            results.innerHTML = '';
+        };
+
+        window.icdevMBRun = function() {
+            var question = input.value.trim();
+            if (!question) return;
+            var canvas = detectCanvas();
+            status.textContent = 'Translating…';
+            preview.style.display = 'none';
+            results.style.display = 'none';
+            results.innerHTML = '';
+            fetch('/api/iqe/dispatch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question: question, canvas: canvas})
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (d.iqe) {
+                    preview.textContent = d.iqe;
+                    preview.style.display = 'block';
+                }
+                if (!d.ok) {
+                    status.textContent = '✗ ' + (d.error || 'Error');
+                    status.style.color = '#f56565';
+                    return;
+                }
+                status.textContent = '✓ ' + d.row_count + ' row' + (d.row_count !== 1 ? 's' : '');
+                status.style.color = 'var(--success, #68d391)';
+                if (d.results && d.results.length > 0) {
+                    var cols = Object.keys(d.results[0]);
+                    var html = '<table style="width:100%;border-collapse:collapse;font-size:0.75rem;">'
+                        + '<thead><tr>' + cols.map(function(c) {
+                            return '<th style="padding:3px 8px;text-align:left;background:var(--bg-tertiary,#252836);'
+                                + 'color:var(--text-dim,#8892a4);border-bottom:1px solid var(--border,#2e3347);">'
+                                + c + '</th>';
+                        }).join('') + '</tr></thead><tbody>';
+                    var show = Math.min(d.results.length, 100);
+                    for (var i = 0; i < show; i++) {
+                        html += '<tr>' + cols.map(function(c) {
+                            var v = d.results[i][c];
+                            return '<td style="padding:3px 8px;border-bottom:1px solid var(--border,#2e3347);'
+                                + 'color:var(--text-secondary,#a0aec0);max-width:200px;overflow:hidden;text-overflow:ellipsis;">'
+                                + (v === null || v === undefined ? '—' : String(v)) + '</td>';
+                        }).join('') + '</tr>';
+                    }
+                    html += '</tbody></table>';
+                    if (d.results.length > 100) {
+                        html += '<div style="font-size:0.7rem;color:var(--text-dim,#8892a4);padding:4px 8px;">showing 100 of ' + d.results.length + '</div>';
+                    }
+                    results.innerHTML = html;
+                    results.style.display = 'block';
+                } else {
+                    results.innerHTML = '<div style="font-size:0.75rem;color:var(--text-dim,#8892a4);padding:4px 8px;">No results</div>';
+                    results.style.display = 'block';
+                }
+            }).catch(function(e) {
+                status.textContent = '✗ ' + e.message;
+                status.style.color = '#f56565';
+            });
+        };
+
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.shiftKey && e.key === 'Q') {
+                e.preventDefault();
+                if (_open) icdevMBClose(); else open();
+            }
+            if (e.key === 'Escape' && _open) icdevMBClose();
+        });
+
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') icdevMBRun();
+        });
+    })();
+    </script>
+</body>
+</html>

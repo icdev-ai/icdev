@@ -1,0 +1,83 @@
+<!-- CUI // SP-CTI — Co-Workers Hub — roster of AI co-workers -->
+{% extends "base.html" %}
+{% block title %}Co-Workers — ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  .cwk-home { padding: 20px 28px; }
+  .cwk-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px; margin-top: 18px;
+  }
+  .cwk-card {
+    background: var(--bg-card, #16213e); border: 1px solid var(--border-color, #2a2a4a);
+    border-radius: 10px; padding: 16px 18px; text-decoration: none; color: inherit;
+    display: flex; flex-direction: column; gap: 10px; transition: border-color .2s, transform .1s;
+  }
+  .cwk-card:hover { border-color: var(--accent-color, #4a90d9); transform: translateY(-1px); }
+  .cwk-head { display: flex; align-items: center; gap: 12px; }
+  .cwk-avatar {
+    width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-weight: 700; font-size: 15px; color: #fff; flex: 0 0 auto;
+  }
+  .cwk-name { font-size: 14px; font-weight: 600; line-height: 1.2; }
+  .cwk-role { font-size: 11px; color: var(--text-secondary, #7a8cb0); }
+  .cwk-desc { font-size: 12px; color: var(--text-secondary, #9aa8c8); line-height: 1.4; min-height: 34px; }
+  .cwk-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    border-top: 1px solid var(--border-color, #2a2a4a); padding-top: 8px; font-size: 11px;
+  }
+  .cwk-kind {
+    font-family: monospace; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--text-secondary, #7a8cb0);
+  }
+  .cwk-chat { color: var(--accent-color, #4a90d9); font-weight: 600; }
+  .cwk-stats { display: flex; gap: 18px; margin-top: 6px; font-size: 12px; color: var(--text-secondary, #7a8cb0); }
+  .cwk-stats b { color: var(--text-primary, #e0e0e0); }
+  .empty-state { text-align: center; padding: 48px 0; color: var(--text-secondary, #555); font-size: 13px; }
+</style>
+
+<div class="cwk-home">
+  <div class="breadcrumbs">
+    <a href="/">Home</a>
+    <span class="separator">/</span>
+    <span>Co-Workers</span>
+  </div>
+
+  <div style="margin-bottom: 6px;">
+    <h1 style="font-size:18px; font-weight:600; margin:0 0 4px;">Co-Workers</h1>
+    <p style="font-size:13px; color:var(--text-secondary,#7a8cb0); margin:0;">
+      Your roster of AI co-workers. Pick one to open the shared chat framed by that
+      persona — RAG context is grounded automatically.
+    </p>
+    <div class="cwk-stats">
+      <span><b>{{ counts.total }}</b> co-workers</span>
+      <span><b>{{ counts.persona }}</b> personas</span>
+      <span><b>{{ counts.ace }}</b> autonomous</span>
+    </div>
+  </div>
+
+  {% if coworkers %}
+  <div class="cwk-grid">
+    {% for cw in coworkers %}
+    <a class="cwk-card" href="{{ cw.chat_link }}" data-coworker-id="{{ cw.id }}">
+      <div class="cwk-head">
+        <div class="cwk-avatar" style="background: {{ cw.accent }};">{{ cw.avatar_initial }}</div>
+        <div>
+          <div class="cwk-name">{{ cw.name }}</div>
+          <div class="cwk-role">{{ cw.role }}</div>
+        </div>
+      </div>
+      <div class="cwk-desc">{{ cw.description or "AI co-worker." }}</div>
+      <div class="cwk-foot">
+        <span class="cwk-kind">{{ cw.kind }}</span>
+        <span class="cwk-chat">Open chat →</span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">No co-workers configured. Add personas to <code>args/chat_personas.yaml</code>.</div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,4 +1,3 @@
-
 from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Quality Design Canvas — Cross-canvas agent hooks.

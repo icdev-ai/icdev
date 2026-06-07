@@ -1,0 +1,3614 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Home - ICDEV™</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/ux.css">
+    <link rel="stylesheet" href="/static/vendor/hljs/github-dark.min.css">
+    <link rel="stylesheet" href="/static/css/assistant-widget.css">
+    
+    
+    <script>
+    // Apply theme before render to prevent FOUC
+    (function() {
+        var serverTheme = document.documentElement.getAttribute('data-theme');
+        var stored = localStorage.getItem('icdev-theme');
+        var theme = serverTheme && serverTheme !== 'dark' ? serverTheme : (stored || 'dark');
+        document.documentElement.setAttribute('data-theme', theme);
+    })();
+    </script>
+    <style>
+    /* ExplainPanel — collapsible slide-out (aisg-a3-01) */
+    #explain-panel {
+        position: fixed;
+        top: 0;
+        right: -440px;
+        width: 420px;
+        height: 100vh;
+        background: var(--bg-secondary, #1a1a2e);
+        border-left: 1px solid var(--border-color, #2a2a4a);
+        box-shadow: -4px 0 24px rgba(0,0,0,.4);
+        z-index: 1050;
+        display: flex;
+        flex-direction: column;
+        transition: right 0.3s ease;
+        overflow: hidden;
+    }
+    #explain-panel.open { right: 0; }
+    #explain-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-color, #2a2a4a);
+        flex-shrink: 0;
+        background: var(--bg-tertiary, #12122a);
+    }
+    #explain-panel-header h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        color: var(--text-primary, #e0e0e0);
+    }
+    #explain-panel-close {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary, #888);
+        font-size: 1.25rem;
+        cursor: pointer;
+        padding: 2px 8px;
+        border-radius: 4px;
+        line-height: 1;
+    }
+    #explain-panel-close:hover {
+        background: var(--border-color, #2a2a4a);
+        color: var(--text-primary, #e0e0e0);
+    }
+    #explain-panel-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        color: var(--text-primary, #e0e0e0);
+        font-size: 0.875rem;
+        line-height: 1.6;
+    }
+    #explain-panel-loading {
+        display: none;
+        text-align: center;
+        padding: 32px 0;
+        color: var(--text-secondary, #888);
+        font-style: italic;
+    }
+    #explain-panel-content pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: var(--bg-tertiary, #12122a);
+        padding: 10px 12px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+    }
+    .btn-explain {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        border: 1px solid var(--accent-blue-light, #8ab4ff);
+        color: var(--accent-blue-light, #8ab4ff);
+        border-radius: 4px;
+        padding: 2px 8px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+    .btn-explain:hover {
+        background: var(--accent-blue-light, #8ab4ff);
+        color: #0a0a1a;
+    }
+    /* sec-cvs-08: per-design classification banner color coding */
+    .design-classification-banner {
+        display: flex; align-items: center; gap: 8px;
+        padding: 3px 12px; font-size: 11px; font-weight: 700;
+        letter-spacing: 0.04em; border-bottom: 1px solid transparent;
+    }
+    .design-classification-banner .readonly-badge {
+        margin-left: auto; font-size: 10px; opacity: 0.8;
+        border: 1px solid currentColor; border-radius: 3px; padding: 0 4px;
+    }
+    .design-classification-banner .compartment-badge { opacity: 0.85; }
+    .cls-PUBLIC        { background:#0d3b1e; color:#4caf50; border-color:#2e7d32; }
+    .cls-UNCLASSIFIED  { background:#0d3b1e; color:#4caf50; border-color:#2e7d32; }
+    .cls-CUI           { background:#0d2b4e; color:#4fc3f7; border-color:#1565c0; }
+    .cls-SECRET        { background:#3e1a00; color:#ff9800; border-color:#e65100; }
+    .cls-TOP-SECRET    { background:#3b0a0a; color:#ef5350; border-color:#b71c1c; }
+    .cls-TOP-SECRET--SCI { background:#2a0a3b; color:#ce93d8; border-color:#6a1b9a; }
+    /* list-view classification badges */
+    .badge-PUBLIC, .badge-UNCLASSIFIED { background:#0d3b1e; color:#4caf50; }
+    .badge-CUI         { background:#0d2b4e; color:#4fc3f7; }
+    .badge-SECRET      { background:#3e1a00; color:#ff9800; }
+    .badge-TOP-SECRET  { background:#3b0a0a; color:#ef5350; }
+    .badge-TOP-SECRET--SCI { background:#2a0a3b; color:#ce93d8; }
+    .badge-compartment { font-size: 9px; opacity: 0.8; margin-left: 4px; }
+    </style>
+</head>
+<body data-auto-refresh="true">
+    <!-- Skip to main content (accessibility) -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <!-- CUI Banner Top (D173 — toggle via ICDEV_CUI_BANNER_ENABLED) -->
+    
+    
+    <div class="cui-banner" role="banner" aria-label="Classification marking">CUI // SP-CTI</div>
+    
+    
+
+    <!-- Navigation -->
+    <nav class="navbar" role="navigation" aria-label="Main navigation">
+        <a class="navbar-brand" href="/">ICDEV™</a>
+        <button id="nav-hamburger" aria-label="Toggle navigation" aria-expanded="false" onclick="ICDEV.toggleMobileNav()">&#9776;</button>
+        <ul class="navbar-nav" id="navbar-nav">
+
+            <li><a href="/" class="active">Home</a></li>
+
+            <!-- ── Ops ──────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">Ops ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">DevOps</li>
+                    <li><a href="/projects">Projects</a></li>
+                    <li><a href="/agents">Agents</a></li>
+                    <li><a href="/coworker/">Co-Worker Teams</a></li>
+                    <li><a href="/kanban">Task Board</a></li>
+                    <li><a href="/cicd">CI/CD</a></li>
+                    <li><a href="/orchestration">Orchestration</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Monitor</li>
+                    <li><a href="/monitoring">Monitoring</a></li>
+                    <li><a href="/platform-health">Platform Health</a></li>
+                    <li><a href="/cache-savings">Cache Savings</a></li>
+                    <li><a href="/activity">Activity</a></li>
+                    <li><a href="/il5">IL5 Ingestion</a></li>
+                    <li><a href="/batch">Batch</a></li>
+                    <li><a href="/simulate/chat">Simulate Chat</a></li>
+                    <li><a href="/simulate/chat?canvas=cam" title="AI migration path advisor — COAs, deprecated code detection, refactor dispatch">Migration Chat</a></li>
+                </ul>
+            </li>
+
+            <!-- ── Build ─────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">Build ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/chat">Chat</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">AI Enablement</li>
+                    <li><a href="/ai-wizard">AI Strategy Wizard</a></li>
+                    <li><a href="/ai-patterns">AI Pattern Library</a></li>
+                    <li><a href="/ai-builder">Visual Agent Builder</a></li>
+                    <li><a href="/ai-learning">Learning Paths</a></li>
+                    <li><a href="/ai-roi">AI ROI Dashboard</a></li>
+                    <li><a href="/ai-skills">Skills Tracker</a></li>
+                    <li><a href="/ai-handoff">Knowledge Handoff</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Role Views</li>
+                    <li><a href="/dashboard/executive-view">CIO / Executive</a></li>
+                    <li><a href="/dashboard/compliance-view">Compliance Officer</a></li>
+                    <li><a href="/dashboard/pm-view">Product Manager</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Dev Tools</li>
+                    <li><a href="/dev-profiles">Dev Profiles</a></li>
+                    <li><a href="/finetune">Fine-Tuning</a></li>
+                    <li><a href="/diagrams">Diagrams</a></li>
+                    <li><a href="/connector-forge">Connector Forge</a></li>
+                    <li><a href="/translations">Translations</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Presentations</li>
+                    <li><a href="/slides">Slide Deck Generator</a></li>
+                </ul>
+            </li>
+
+            <!-- ── Canvases ──────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">Canvases ▾</a>
+                <ul class="nav-dropdown-menu">
+                    
+                    <li class="nav-section-label">Network</li>
+                    <li><a href="/network/">Dashboard</a></li>
+                    <li><a href="/network/canvas/new">New Topology</a></li>
+                    <li><a href="/network/templates">Templates</a></li>
+                    <li><a href="/network/ipam">IPAM</a></li>
+                    <li><a href="/network/fcc">FCC Compliance</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">DevOps</li>
+                    <li><a href="/devops/">Dashboard</a></li>
+                    <li><a href="/devops/canvas/new">New Pipeline</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Infrastructure</li>
+                    <li><a href="/infra/">Dashboard</a></li>
+                    <li><a href="/infra/canvas/new">New Design</a></li>
+                    <li><a href="/infra/templates">Templates</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Data</li>
+                    <li><a href="/data/">Dashboard</a></li>
+                    <li><a href="/data/canvas/new">New Design</a></li>
+                    <li><a href="/data/templates">Templates</a></li>
+                    <li><a href="/data/mesh">Data Mesh</a></li>
+                    <li><a href="/data/mapping/" style="color:#ce93d8;">&#9889; AI Mapping</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Boundary</li>
+                    <li><a href="/boundary/">Dashboard</a></li>
+                    <li><a href="/boundary/canvas/new">New Design</a></li>
+                    <li><a href="/boundary/isa-tracker">ISA Tracker</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Migration</li>
+                    <li><a href="/migration-canvas/">Design Canvas</a></li>
+                    <li><a href="/migration-canvas/network-migration/">Network Migration</a></li>
+                    <li><a href="/migration-canvas/server-migration/">Server Migration</a></li>
+                    <li><a href="/migration-canvas/projects">Cloud App Projects</a></li>
+                    <li><a href="/simulate/chat?canvas=cam">Migration Chat</a></li>
+                    <li><a href="/migration-intel/">Intelligence Engine</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Observability</li>
+                    <li><a href="/observability/">Dashboard</a></li>
+                    <li><a href="/observability/canvas/new">New Design</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">QA/QC</li>
+                    <li><a href="/quality/">Dashboard</a></li>
+                    <li><a href="/quality/canvas/new">New Design</a></li>
+                    <li><a href="/quality/runbooks">Runbooks</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Agentic AI</li>
+                    
+                    <li><a href="/agentic-ai/" style="color:#a5b4fc;">Dashboard</a></li>
+                    <li><a href="/agentic-ai/canvas/new">New Design</a></li>
+                    <li><a href="/agentic-ai/impact-graph">Impact Graph</a></li>
+                    
+                    
+                    <li><a href="/demo-runner/" style="color:#f59e0b;">&#9654; Demo Runner</a></li>
+                    
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">AI/ML</li>
+                    <li><a href="/ai-ml/" style="color:#818cf8;">Dashboard</a></li>
+                    <li><a href="/ai-ml/canvas/new">New Design</a></li>
+                    <li><a href="/ai-ml/model-catalog">Model Catalog</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Operations</li>
+                    <li><a href="/ops" style="color:#7dd3fc;">Ops Hub</a></li>
+                    <li><a href="/ops/llm">LLMOps</a></li>
+                    <li><a href="/ops/models">MLOps</a></li>
+                    <li><a href="/ops/slos">SLOs</a></li>
+                    <li><a href="/ops/incidents">Incidents</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">NOC Operations</li>
+                    <li><a href="/noc" style="color:#f97316;">NOC Overview</a></li>
+                    <li><a href="/noc/alarms">Alarms</a></li>
+                    <li><a href="/noc/incidents">Incidents</a></li>
+                    <li><a href="/noc/rfcs">RFCs</a></li>
+                    <li><a href="/noc/maintenance">Maintenance</a></li>
+                    <li><a href="/noc/sla">SLA</a></li>
+                    <li><a href="/noc/looking-glass">Looking Glass</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Peering Management</li>
+                    <li><a href="/pmc" style="color:#38bdf8;">Peering Canvas</a></li>
+                    <li><a href="/pmc/peers">BGP Peers</a></li>
+                    <li><a href="/pmc/ix">Internet Exchanges</a></li>
+                    <li><a href="/pmc/rpki">RPKI Validation</a></li>
+                    <li><a href="/pmc/policies">Route Policies</a></li>
+                    <li><a href="/pmc/requests">Peering Requests</a></li>
+                    <li><a href="/pmc/transit">Transit Pricing</a></li>
+                    <li><a href="/network/partners">Partner Registry</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Circuit &amp; Capacity</li>
+                    <li><a href="/ccc" style="color:#38bdf8;">CCC Overview</a></li>
+                    <li><a href="/ccc/circuits">Circuits</a></li>
+                    <li><a href="/ccc/cross-connects">Cross-Connects</a></li>
+                    <li><a href="/ccc/loa">LOA Requests</a></li>
+                    <li><a href="/ccc/orders">Orders</a></li>
+                    <li><a href="/ccc/capacity">Capacity Plans</a></li>
+                    <li><a href="/ccc/dwdm">DWDM Spans</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">DDoS &amp; Security Ops</li>
+                    <li><a href="/dsoc" style="color:#f87171;">DSOC Overview</a></li>
+                    <li><a href="/dsoc/flowspec">Flowspec Rules</a></li>
+                    <li><a href="/dsoc/rtbh">RTBH Blackholes</a></li>
+                    <li><a href="/dsoc/scrubbing">Scrubbing Centers</a></li>
+                    <li><a href="/dsoc/threats">Threats</a></li>
+                    <li><a href="/dsoc/mitigations">Mitigations</a></li>
+                    <li><a href="/dsoc/bgp-security">BGP Security</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">AI-ify</li>
+                    <li><a href="/ai-ify/" style="color:#6ee7b7;">AI-ify</a></li>
+                    <li><a href="/ai-ify/posture">Compliance Posture</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Document Intelligence</li>
+                    <li><a href="/document-intelligence/" style="color:#7ab3f0;">DIC Overview</a></li>
+                    <li><a href="/document-intelligence/collections">Collections</a></li>
+                    <li><a href="/document-intelligence/search">Search &amp; Chat</a></li>
+                    <li><a href="/document-intelligence/analytics">Analytics</a></li>
+                    <li><a href="/document-intelligence/review">HITL Review</a></li>
+                    <li><a href="/document-intelligence/generate">AI-Assist</a></li>
+                    <li><a href="/document-intelligence/acoic">ACOIC</a></li>
+                    <li><a href="/document-intelligence/freshness">Freshness</a></li>
+                    <li><a href="/document-intelligence/explorer">Explorer</a></li>
+                    <li><a href="/document-intelligence/handoff">Handoff</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Cloud Migration</li>
+                    <li><a href="/govlift" style="color:#34d399;">GovLift</a></li>
+                    <li><a href="/govlift/workloads">Workloads</a></li>
+                    <li><a href="/govlift/waves">Waves</a></li>
+                    <li><a href="/govlift/executor">Executor</a></li>
+                    <li><a href="/govlift/stig">STIG</a></li>
+                    <li><a href="/govlift/audit">Audit</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    
+                    <li class="nav-section-label">Mission Control</li>
+                    <li><a href="/mission-canvas/" style="color:#00bcd4;">Dashboard</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    <li class="nav-section-label">Supply Chain</li>
+                    <li><a href="/supply_chain" style="color:#f0883e;">SCRM Dashboard</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Cross-Canvas</li>
+                    <li><a href="/canvas-compliance">Canvas Posture</a></li>
+                    <li><a href="/canvas-kg">Canvas KG</a></li>
+                </ul>
+            </li>
+
+            <!-- ── Intelligence ──────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">Intelligence ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">Awareness</li>
+                    <li><a href="/system-graph" style="color:#42a5f5;">System Graph</a></li>
+                    <li><a href="/components-map">Component Map</a></li>
+                    <li><a href="/ask-icdev">Ask ICDEV</a></li>
+                    <li><a href="/ai-observatory" style="color:#a78bfa;">AI Observatory</a></li>
+                    <li><a href="/ontology" style="color:#34d399;">Ontology Explorer</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Research</li>
+                    
+                    <li><a href="/research">Research</a></li>
+                    <li><a href="/autoresearch">Autoresearch</a></li>
+                    
+                    <li><a href="/knowledge-search">Knowledge Search</a></li>
+                    <li><a href="/code-quality">Code Quality</a></li>
+                    <li><a href="/writeguard">WriteGuard</a></li>
+                    
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Publish</li>
+                    <li><a href="/pulse">Pulse Blog</a></li>
+                    <li><a href="/clawhub">ClawHub Skills</a></li>
+                    
+                </ul>
+            </li>
+
+            <!-- ── Compliance ────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">Compliance ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">Risk &amp; ATO</li>
+                    <li><a href="/poam">POA&amp;M Findings</a></li>
+                    <li><a href="/compliance">Compliance Hub</a></li>
+                    <li><a href="/oscal">OSCAL</a></li>
+                    <li><a href="/cato">Continuous ATO</a></li>
+                    <li><a href="/ato-package">ATO Package Builder</a></li>
+                    <li><a href="/mosa">MOSA</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Zero Trust (NSA ZIG)</li>
+                    <li><a href="/security/zig/" style="color:#e94560;font-weight:600;">&#x1f6e1; ZIG Dashboard</a></li>
+                    <li><a href="/security/zig/phase" style="color:#aaa;">&#x1f4c5; Phase Tracker</a></li>
+                    <li><a href="/security/zig/assessment" style="color:#aaa;">&#x1f4ca; Assessment</a></li>
+                    <li><a href="/security/zig/roadmap" style="color:#aaa;">&#x1f5fa; FY2027 Roadmap</a></li>
+                    <li><a href="/zta/lac-simulator" style="color:#aaa;">&#x1f512; LAC / ECI / COI Simulator</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Security</li>
+                    <li><a href="/security/" style="color:#e94560;">Security Canvas</a></li>
+                    <li><a href="/security/demo" style="color:#27ae60;">SDC Demo Runner</a></li>
+                    <li><a href="/security-scan">Security Scans</a></li>
+                    <li><a href="/integrity">Software Integrity (SIPA)</a></li>
+                    <li><a href="/stig-manager">STIG Manager</a></li>
+                    <li><a href="/pr-intel">PR Intelligence</a></li>
+                    <li><a href="/sre">SRE Operations</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">AI &amp; Policy</li>
+                    <li><a href="/sbd">Secure by Design</a></li>
+                    <li><a href="/ai-transparency">AI Transparency</a></li>
+                    <li><a href="/ai-accountability">AI Accountability</a></li>
+                    <li><a href="/control-inheritance">Control Inheritance</a></li>
+                    <li><a href="/compliance-debt">Compliance Debt</a></li>
+                    <li><a href="/prod-audit">Production Audit</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Observability</li>
+                    <li><a href="/traces">Traces</a></li>
+                    <li><a href="/provenance">Provenance</a></li>
+                    <li><a href="/xai">XAI</a></li>
+                </ul>
+            </li>
+
+            <!-- ── Strategos ─────────────────────────────────────────────────── -->
+            
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger " style="color:#f59e0b;">Strategos ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">Command</li>
+                    <li><a href="/strategos">Overview</a></li>
+                    <li><a href="/strategos/map" style="color:#f59e0b;">Map Dashboard</a></li>
+                    <li><a href="/strategos/commander" style="color:#e94560;font-weight:600;">Commander Dashboard</a></li>
+                    <li><a href="/strategos/war-council" style="color:#f59e0b;">War Council</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Intel</li>
+                    <li><a href="/strategos/intel-brief" style="color:#a855f7;font-weight:700;">&#9889; Predictive Intel Brief</a></li>
+                    <li><a href="/strategos/leadership-brief" style="color:#a855f7;">Leadership Brief</a></li>
+                    <li><a href="/strategos/oracle" style="color:#f59e0b;">Oracle Assessment</a></li>
+                    <li><a href="/strategos/pir" style="color:#fb923c;">PIR / CCIR / EEI</a></li>
+                    <li><a href="/strategos/intsum" style="color:#06b6d4;">INTSUM Generator</a></li>
+                    <li><a href="/strategos/indicators" style="color:#f59e0b;">I&amp;W Indicators</a></li>
+                    <li><a href="/strategos/briefs" style="color:#a78bfa;">Intel Briefs
+                        <span id="nav-briefs-pending" style="display:none;background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle"></span>
+                    </a></li>
+                    <li><a href="/strategos/kg">Knowledge Graph</a></li>
+                    <li><a href="/strategos/osint">OSINT Panel</a></li>
+                    <li><a href="/strategos/ghost">Ghost Signals</a></li>
+                    <li><a href="/strategos/darkweb" style="color:#a855f7;">Dark Web Monitor</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Ops</li>
+                    <li><a href="/strategos/orbat">ORBAT Tracker</a></li>
+                    <li><a href="/strategos/wargame">Wargame</a></li>
+                    <li><a href="/strategos/iw">IW Effects</a></li>
+                    <li><a href="/strategos/f3ead" style="color:#e94560;">F3EAD Targeting</a></li>
+                    <li><a href="/strategos/bda" style="color:#10b981;">BDA</a></li>
+                    <li><a href="/strategos/red-cell" style="color:#e94560;">Red Cell</a></li>
+                    <li><a href="/strategos/opord" style="color:#8b5cf6;">OPORD Generator</a></li>
+                    <li><a href="/strategos/mett-tc" style="color:#06b6d4;">METT-TC</a></li>
+                    <li><a href="/strategos/sync-matrix" style="color:#f97316;">Sync Matrix</a></li>
+                    <li><a href="/strategos/isr-planner" style="color:#a855f7;">ISR Planner</a></li>
+                    <li><a href="/strategos/ipb" style="color:#3b82f6;">IPB Canvas</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Domain</li>
+                    <li><a href="/strategos/maritime" style="color:#22d3ee;">Maritime Tracking</a></li>
+                    <li><a href="/strategos/airspace" style="color:#3b82f6;">Multi-Domain COP</a></li>
+                    <li><a href="/strategos/cyber" style="color:#ef4444;">Cyber Dashboard</a></li>
+                    <li><a href="/strategos/supply" style="color:#e94560;">DIB Supply Chain</a></li>
+                    <li><a href="/strategos/sources" style="color:#34d399;">Source Registry</a></li>
+                    <li><a href="/strategos/simulate">Simulate</a></li>
+                    <li><a href="/strategos/hitl">HITL Queue</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li><a href="#" onclick="if(typeof openStratChat!=='undefined')openStratChat();return false;" style="color:#f59e0b;font-weight:600;">Intelligence Chat</a></li>
+                </ul>
+            </li>
+            
+
+            <!-- ── Platforms ─────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">Platforms ▾</a>
+                <ul class="nav-dropdown-menu">
+                    
+                    <li class="nav-section-label">Market &amp; AI</li>
+                    <li><a href="/fathomdesk" style="color:#8ab4ff;">FathomDesk</a></li>
+                    <li><a href="/fathomdesk/trap-events" style="color:#f87171;">&#9888; Trap Events</a></li>
+                    <li><a href="/genesis">Genesis</a></li>
+                    <li><a href="/oracle">Oracle</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    <li class="nav-section-label">Geospatial</li>
+                    <li><a href="/geosigint/" style="color:#06b6d4;">GeoSIGINT</a></li>
+                    <li><a href="/geosigint/a2ad">A2/AD Zone Mapper</a></li>
+                    <li><a href="/geosigint/strait-crossing">Strait Crossing</a></li>
+                    <li><a href="/geosigint/island-chain">Island Chain Defense</a></li>
+                    <li><a href="/geosigint/amphibious">Amphibious Assessment</a></li>
+                    <li><a href="/geosigint/militia">Militia Classifier</a></li>
+                    <li><a href="/geosigint/semiconductor">Semiconductor Chain</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Info Ops</li>
+                    <li><a href="/info-ops/" style="color:#a78bfa;">Info Ops Platform</a></li>
+                    <li><a href="/info-ops/dashboard">Dashboard</a></li>
+                    <li><a href="/info-ops/analysis">Analysis</a></li>
+                    <li><a href="/info-ops/osint">OSINT</a></li>
+                    
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">GovCon</li>
+                    <li><a href="/proposals">Proposals</a></li>
+                    <li><a href="/govcon">Intelligence</a></li>
+                    <li><a href="/cpmp">Program Mgmt (CPMP)</a></li>
+                    <li><a href="/cpmp/deliverables">All Deliverables</a></li>
+                    
+                    
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Training</li>
+                    <li><a href="/gameday" style="color:#f59e0b;">GameDay</a></li>
+                    <li><a href="/academy" style="color:#10b981;">FORGE Academy</a></li>
+                    
+                </ul>
+            </li>
+
+            <!-- ── Studio ────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger " style="color:var(--accent-blue-light);">Studio ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/studio/app-builder">App Builder</a></li>
+                    <li><a href="/studio/workflows">Workflow Builder</a></li>
+                    <li><a href="/studio/forms">Form Builder</a></li>
+                    <li><a href="/studio/cases">Case Management</a></li>
+                    <li><a href="/studio/automations">Automations</a></li>
+                    <li><a href="/studio/dashboards">Dashboard Builder</a></li>
+                    
+                    <li><a href="/studio/marketplace">Marketplace</a></li>
+                    
+                </ul>
+            </li>
+
+            <!-- ── More ──────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger ">More ▾</a>
+                <ul class="nav-dropdown-menu">
+                    
+                    <li class="nav-section-label">Workflow</li>
+                    <li><a href="/workflow/">HITL Queue</a></li>
+                    <li><a href="/workflow/teams">Teams &amp; Assignments</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    
+                    <li class="nav-section-label">Account</li>
+                    <li><a href="/profile">Profile &amp; Settings</a></li>
+                    <li><a href="/notifications">Notifications</a></li>
+                    <li><a href="/usage">Usage</a></li>
+                    <li><a href="/analytics">Analytics</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Help</li>
+                    <li><a href="/wizard" style="color:var(--accent-blue-light);">Get Started</a></li>
+                    <li><a href="/quick-paths">Quick Paths</a></li>
+                    
+                    <li class="nav-dropdown-divider"></li>
+                    <li><a href="/admin/users">Admin</a></li>
+                    
+                </ul>
+            </li>
+
+        </ul>
+        <div class="navbar-right" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            
+            
+            <a href="/profile" class="user-badge" title="admin@icdev.local">
+                <span class="user-badge-name">Admin</span>
+                <span class="user-badge-role">admin</span>
+            </a>
+            <a href="/logout" class="btn-logout" title="Sign out">Logout</a>
+            
+            <button id="theme-toggle" onclick="ICDEV.toggleTheme()" title="Toggle light/dark theme"
+                    style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">
+                <span id="theme-icon">☀</span>
+            </button>
+            <button onclick="if(ICDEV.startTour)ICDEV.startTour()" title="Restart onboarding tour"
+                    style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">Tour</button>
+            <label for="role-select" class="text-muted" style="font-size: 0.8rem; white-space: nowrap;">View as:</label>
+            <select id="role-select" aria-label="Select dashboard view role"
+                    onchange="window.location.search = this.value ? '?role=' + this.value : ''"
+                    style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem;">
+                <option value="" selected>All (Full View)</option>
+                
+                <option value="pm" >Program Manager</option>
+                
+                <option value="developer" >Developer / Architect</option>
+                
+                <option value="isso" >ISSO / Security Officer</option>
+                
+                <option value="co" >Contracting Officer</option>
+                
+                <option value="analyst" >Analyst</option>
+                
+                <option value="solutions_architect" >Solutions Architect</option>
+                
+                <option value="sales_engineer" >Sales Engineer</option>
+                
+                <option value="innovator" >Innovator</option>
+                
+                <option value="biz_dev" >Business Development</option>
+                
+                <option value="cor" >Contracting Officer Representative</option>
+                
+            </select>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content" id="main-content" role="main">
+        
+<div class="page-header">
+    <h1>ICDEV™ Dashboard</h1>
+    <p class="subtitle">Integrated Continuous Development Environment &mdash; Operations Overview
+        <span class="help-icon" data-glossary="ICDEV™" title="Intelligent Certified Development Environment — AI-powered platform for building secure government applications">?</span>
+    </p>
+</div>
+
+<!-- Quick Start Banner -->
+<div style="background: rgba(74, 144, 217, 0.08); border: 1px solid rgba(74, 144, 217, 0.25); border-radius: 10px; padding: 16px 24px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+    <div>
+        <strong style="color: var(--accent-blue-light);">New here?</strong>
+        <span class="text-secondary"> Answer 3 questions and get a personalized workflow recommendation.</span>
+    </div>
+    <a href="/wizard" class="btn btn-primary" style="background: var(--accent-blue); border-color: var(--accent-blue);">Get Started &rarr;</a>
+</div>
+
+<!-- Stat Bar (compact inline stats) -->
+<div class="stat-bar">
+    <div class="stat-bar-item">
+        <div class="stat-bar-value blue">16</div>
+        <div class="stat-bar-label">Total Projects</div>
+    </div>
+    <div class="stat-bar-item">
+        <div class="stat-bar-value green">19</div>
+        <div class="stat-bar-label">Active Agents
+            <span class="text-muted" style="text-transform:none;letter-spacing:0;">(0 idle)</span>
+        </div>
+    </div>
+    <a href="/poam?severity=CAT1" class="stat-bar-item" style="text-decoration:none; color:inherit; cursor:pointer;" title="View open CAT1 canvas findings &rarr;">
+        <div class="stat-bar-value red">79</div>
+        <div class="stat-bar-label">CAT1 Findings</div>
+    </a>
+    <a href="/poam" class="stat-bar-item" style="text-decoration:none; color:inherit; cursor:pointer;" title="View POA&amp;M findings &rarr;">
+        <div class="stat-bar-value yellow">140</div>
+        <div class="stat-bar-label">Open <span data-glossary="POA&amp;M">POA&amp;M</span></div>
+    </a>
+</div>
+
+<!-- Task Kanban Board -->
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <h2 style="margin:0;">Task Board
+        <span id="auto-refresh-countdown" style="font-size:12px; font-weight:normal; color:var(--text-dim); margin-left:8px;"></span>
+    </h2>
+    <div style="display:flex; gap:8px; align-items:center;">
+        <label for="notify-channel-select" style="font-size:12px; color:var(--text-dim); white-space:nowrap;">Notify via</label>
+        <select id="notify-channel-select"
+                style="font-size:12px; padding:4px 8px; background:var(--bg-code,#0d1b30); color:var(--text-primary); border:1px solid var(--border); border-radius:4px;"
+                onchange="setNotifyChannel(this.value)"
+                title="Notification channel for task events (done / failed / in-progress)">
+        </select>
+        <label style="font-size:12px; color:var(--text-dim); white-space:nowrap;">Executor:</label>
+        <select id="kanban-executor-chain" onchange="setExecutorChain(this.value)" title="Global executor fallback chain (affects scheduler dispatch)"
+                style="font-size:12px; padding:4px 8px; background:var(--bg-code,#0d1b30); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; cursor:pointer;">
+            <option value="claude_cli,gitlab,ollama_local">&#129302; Claude CLI &#8594; GitLab &#8594; Ollama</option>
+            <option value="gitlab,ollama_local">&#129418; GitLab &#8594; Ollama (air-gap)</option>
+            <option value="github_actions,ollama_local">&#9881;&#65039; GitHub Actions &#8594; Ollama (air-gap)</option>
+            <option value="ollama_local">&#129433; Ollama Local only</option>
+        </select>
+        <button class="btn" id="schedToggleBtn" onclick="toggleKanbanScheduler()" title="Pause/resume the kanban scheduler" style="padding:6px 12px; font-size:13px;">&#x23f8; Pause Scheduler</button>
+        <button class="btn" id="refresh-btn" onclick="refreshDashboard()" title="Refresh now" style="padding:6px 12px; font-size:13px;">&#x21bb; Refresh</button>
+        <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
+    </div>
+</div>
+<div class="kanban-board" id="kanban-board">
+    
+    
+    <div class="kanban-column" data-status="suggested">
+        <div class="kanban-column-header">
+            <h3>Suggested</h3>
+            <span class="kanban-column-count">0</span>
+            
+            <button class="btn btn-sm" id="btn-promote-all" onclick="promoteAllSuggested()" title="Promote all suggested cards to backlog" style="margin-left:auto; padding:4px 12px; font-size:12px; font-weight:600; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer; display:none; letter-spacing:0.3px;">&#x2714; Promote All</button>
+            
+        </div>
+        <div class="kanban-column-body">
+            <div class="kanban-empty">Loading...</div>
+        </div>
+    </div>
+    
+    <div class="kanban-column" data-status="backlog">
+        <div class="kanban-column-header">
+            <h3>Backlog</h3>
+            <span class="kanban-column-count">0</span>
+            
+        </div>
+        <div class="kanban-column-body">
+            <div class="kanban-empty">Loading...</div>
+        </div>
+    </div>
+    
+    <div class="kanban-column" data-status="scheduled">
+        <div class="kanban-column-header">
+            <h3>Scheduled</h3>
+            <span class="kanban-column-count">0</span>
+            
+        </div>
+        <div class="kanban-column-body">
+            <div class="kanban-empty">Loading...</div>
+        </div>
+    </div>
+    
+    <div class="kanban-column" data-status="in_progress">
+        <div class="kanban-column-header">
+            <h3>In Progress</h3>
+            <span class="kanban-column-count">0</span>
+            
+        </div>
+        <div class="kanban-column-body">
+            <div class="kanban-empty">Loading...</div>
+        </div>
+    </div>
+    
+    <div class="kanban-column" data-status="done">
+        <div class="kanban-column-header">
+            <h3>Done</h3>
+            <span class="kanban-column-count">0</span>
+            
+        </div>
+        <div class="kanban-column-body">
+            <div class="kanban-empty">Loading...</div>
+        </div>
+    </div>
+    
+</div>
+
+
+
+
+<section id="autonomy-status" style="margin-top:1.5rem; display:none;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
+        <h2 style="margin:0; font-size:1.15rem; color:var(--text-primary);">
+            Autonomous Recovery
+            <span id="autonomy-status-tag" style="font-size:0.72rem; padding:0.1rem 0.4rem;
+                  border-radius:3px; margin-left:0.3rem; vertical-align:middle;
+                  background:rgba(76,175,80,0.25); color:#81c784; font-weight:600;">active</span>
+        </h2>
+        <span id="autonomy-summary" style="font-size:0.78rem; color:var(--text-secondary);"></span>
+    </div>
+    <div id="autonomy-container"></div>
+</section>
+
+<style>
+  .auto-card { border: 1px solid var(--border-color, #2a2a40); border-radius: 8px;
+               background: var(--bg-card, #16213e); margin-bottom: 0.6rem;
+               padding: 0.6rem 0.8rem; }
+  .auto-card-head { display:flex; align-items:center; gap:0.5rem;
+                    margin-bottom: 0.3rem; font-size: 0.85rem;
+                    color: var(--text-primary, #e0e0e0); }
+  .auto-card-head .auto-badge { display: inline-block; font-size: 0.7rem;
+                    padding: 0.08rem 0.4rem; border-radius: 3px; font-weight: 600; }
+  .auto-badge-fix      { background: rgba(76,175,80,0.25);  color: #81c784; }
+  .auto-badge-review   { background: rgba(33,150,243,0.25); color: #6db3f8; }
+  .auto-badge-quarantine { background: rgba(255,152,0,0.25); color: #ffb74d; }
+  .auto-badge-block    { background: rgba(244,67,54,0.25);  color: #ff6b7a; }
+  .auto-meta { font-family: monospace; font-size: 0.75rem;
+               color: var(--text-secondary, #a0a0b8); }
+  .auto-reason { font-size: 0.8rem; color: var(--text-secondary);
+                 margin-top: 0.2rem; font-style: italic; }
+  .auto-section-title { font-size: 0.78rem; color: var(--text-muted, #6c6c80);
+                        text-transform: uppercase; letter-spacing: 0.05em;
+                        margin: 0.5rem 0 0.25rem; font-weight: 600; }
+
+  .auto-branch-row { display: flex; justify-content: space-between;
+                     padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--border-color);
+                     font-size: 0.82rem; }
+  .auto-branch-row:last-child { border-bottom: none; }
+  .auto-branch-name { font-family: monospace; color: var(--accent-blue-light, #6db3f8); }
+
+  .auto-failure-row { padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--border-color);
+                      font-size: 0.8rem; }
+  .auto-failure-row:last-child { border-bottom: none; }
+  .auto-failure-head { display: flex; justify-content: space-between;
+                       color: var(--text-primary); margin-bottom: 0.15rem; }
+  .auto-failure-reason { color: #ff8a80; font-family: monospace;
+                         font-size: 0.72rem; word-break: break-word; }
+</style>
+
+<script>
+(function () {
+  if (window.ICDEV_AUTO && window.ICDEV_AUTO._loaded) return;
+  if (!window.ICDEV_AUTO) window.ICDEV_AUTO = {};
+  window.ICDEV_AUTO._loaded = true;
+
+  function escapeHTML(s) {
+    return String(s || '').replace(/[&<>"']/g, function (c) {
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+    });
+  }
+
+  // Map triage outcomes → one-word badge + label.
+  function outcomeBadge(outcome, rec) {
+    outcome = (outcome || '').toLowerCase();
+    rec = (rec || '').toLowerCase();
+    if (outcome.indexOf('applied_') === 0)               return {cls:'auto-badge-fix',        label:'AUTO-FIXED'};
+    if (outcome === 'verification_failed')                return {cls:'auto-badge-block',      label:'VERIFY FAILED'};
+    if (outcome.indexOf('rejected_') === 0)               return {cls:'auto-badge-block',      label:'REJECTED'};
+    if (outcome === 'suggested_card_created' && rec === 'quarantine') return {cls:'auto-badge-quarantine', label:'QUARANTINED'};
+    if (outcome === 'suggested_card_created')             return {cls:'auto-badge-review',     label:'HUMAN REVIEW'};
+    if (outcome === 'apply_failed_fell_through_to_card')  return {cls:'auto-badge-review',     label:'ESCALATED'};
+    if (outcome === 'skipped_already_triaged')            return {cls:'auto-badge-review',     label:'DEDUPED'};
+    return {cls:'auto-badge-review', label: escapeHTML(outcome) || 'review'};
+  }
+
+  function triageCardHTML(t) {
+    var b = outcomeBadge(t.outcome, t.recommendation);
+    var conf = t.confidence != null ? (Math.round(t.confidence*100)/100).toFixed(2) : '—';
+    return ''
+      + '<div class="auto-card">'
+      + '  <div class="auto-card-head">'
+      + '    <span class="auto-badge ' + b.cls + '">' + b.label + '</span>'
+      + '    <span>' + escapeHTML(t.title || t.task_id) + '</span>'
+      + '    <span class="auto-meta" style="margin-left:auto;">'
+      +        escapeHTML(t.task_id) + ' · conf=' + conf
+      + '    </span>'
+      + '  </div>'
+      + '  <div class="auto-reason">' + escapeHTML(t.gate_reason || t.recommendation || '') + '</div>'
+      + '</div>';
+  }
+
+  function branchRowHTML(b) {
+    return ''
+      + '<div class="auto-branch-row">'
+      + '  <span class="auto-branch-name">' + escapeHTML(b.branch) + '</span>'
+      + '  <span class="auto-meta">' + escapeHTML(b.subject || '') + '</span>'
+      + '</div>';
+  }
+
+  function failureRowHTML(f) {
+    return ''
+      + '<div class="auto-failure-row">'
+      + '  <div class="auto-failure-head">'
+      + '    <span>' + escapeHTML(f.title || f.id) + ' <span class="auto-meta">(' + escapeHTML(f.id) + ', status=' + escapeHTML(f.status) + ', fc=' + (f.failure_count || 0) + ')</span></span>'
+      + '  </div>'
+      + '  <div class="auto-failure-reason">' + escapeHTML(f.reason || '') + '</div>'
+      + '</div>';
+  }
+
+  function renderAutonomyStatus(payload) {
+    var section = document.getElementById('autonomy-status');
+    var container = document.getElementById('autonomy-container');
+    var summaryEl = document.getElementById('autonomy-summary');
+    var tagEl = document.getElementById('autonomy-status-tag');
+    if (!section || !container) return;
+
+    if (!payload || !payload.visible) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+
+    var triage = payload.triage_recent || [];
+    var branches = payload.autofix_branches || [];
+    var failures = payload.unresolved_failures || [];
+    var tr = payload.triage_summary || {};
+
+    if (summaryEl) {
+      var bits = [];
+      if ((tr.total || 0) > 0) {
+        bits.push(tr.applied + ' auto-fixed / ' + tr.verification_failed + ' verify-failed / ' + tr.total + ' audited');
+      }
+      if (branches.length) bits.push(branches.length + ' autofix branch' + (branches.length===1?'':'es'));
+      if (failures.length) bits.push(failures.length + ' unresolved');
+      summaryEl.textContent = bits.join(' · ');
+    }
+    // Update tag color based on whether any applied vs only review
+    if (tagEl) {
+      if (tr.applied > 0)   { tagEl.textContent = 'fixing';   tagEl.style.background = 'rgba(76,175,80,0.25)';  tagEl.style.color = '#81c784'; }
+      else if (failures.length > 0) { tagEl.textContent = 'diagnosing'; tagEl.style.background = 'rgba(255,152,0,0.25)'; tagEl.style.color = '#ffb74d'; }
+      else                  { tagEl.textContent = 'watching'; tagEl.style.background = 'rgba(33,150,243,0.25)'; tagEl.style.color = '#6db3f8'; }
+    }
+
+    var html = '';
+    if (triage.length) {
+      html += '<div class="auto-section-title">Recent diagnoses</div>';
+      html += triage.map(triageCardHTML).join('');
+    }
+    if (branches.length) {
+      html += '<div class="auto-section-title">Autofix branches (ready to review)</div>';
+      html += '<div class="auto-card" style="padding:0;">'
+           + branches.map(branchRowHTML).join('')
+           + '</div>';
+    }
+    if (failures.length) {
+      html += '<div class="auto-section-title">Unresolved failures (last hour)</div>';
+      html += '<div class="auto-card" style="padding:0;">'
+           + failures.map(failureRowHTML).join('')
+           + '</div>';
+    }
+    container.innerHTML = html;
+  }
+
+  function refreshAutonomyStatus() {
+    fetch('/api/autonomy/status')
+      .then(function (r) { return r.json(); })
+      .then(renderAutonomyStatus)
+      .catch(function () {
+        // fail silently — panel simply stays hidden
+        var s = document.getElementById('autonomy-status');
+        if (s) s.style.display = 'none';
+      });
+  }
+
+  window.ICDEV_AUTO.refresh = refreshAutonomyStatus;
+  window.ICDEV_AUTO.render = renderAutonomyStatus;
+  window.refreshAutonomyStatus = refreshAutonomyStatus;
+  window.renderAutonomyStatus = renderAutonomyStatus;
+})();
+</script>
+
+
+
+
+<div id="kanban-board-empty" class="kanban-empty-placeholder" style="display:none;">
+    <em>No active tasks on the board. Any in-flight projects appear below.</em>
+</div>
+
+<section id="projects-in-flight" style="margin-top:1.5rem;">
+  
+  <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.75rem;">
+    <span id="pif-scheduler-dot" class="pif-dot pif-dot-unknown" title="Scheduler status"></span>
+    <h2 style="margin:0; font-size:1.05rem; color:var(--text-primary); letter-spacing:0.01em;">
+      Projects in Flight
+    </h2>
+    <span id="pif-scheduler-label" style="font-size:0.75rem; color:var(--text-secondary); margin-left:0.15rem;"></span>
+    <span style="margin-left:auto; font-size:0.72rem; color:var(--text-muted);" id="pif-last-refresh"></span>
+  </div>
+
+  
+  <div id="pif-live-tasks" style="margin-bottom:0.75rem; display:none;"></div>
+
+  
+  <div id="projects-container">
+    <div class="kanban-empty" style="padding:1rem;">Loading projects…</div>
+  </div>
+
+</section>
+
+<style>
+/* ── Scheduler dot ── */
+.pif-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  flex-shrink: 0; display: inline-block;
+}
+.pif-dot-active  { background: #22c55e;
+                   animation: pif-pulse 1.6s ease-in-out infinite;
+                   box-shadow: 0 0 0 0 rgba(34,197,94,0.7); }
+.pif-dot-warning { background: #f59e0b; }
+.pif-dot-stale   { background: #ef4444; }
+.pif-dot-unknown { background: #6b7280; }
+
+@keyframes pif-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.7); }
+  70%  { box-shadow: 0 0 0 7px rgba(34,197,94,0); }
+  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+}
+
+/* ── Live task cards ── */
+.pif-task-card {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 7px;
+  border: 1px solid var(--border-color, #2a2a40);
+  background: var(--bg-card, #16213e);
+  margin-bottom: 0.4rem;
+}
+.pif-task-card:last-child { margin-bottom: 0; }
+.pif-task-card-active  { border-left: 3px solid #22c55e; }
+.pif-task-card-quiet   { border-left: 3px solid #f59e0b; }
+.pif-task-card-suspect { border-left: 3px solid #ef4444; }
+.pif-task-card-new     { border-left: 3px solid #6b7280; }
+
+.pif-task-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.pif-task-dot-active  { background: #22c55e;
+                        animation: pif-pulse 1.6s ease-in-out infinite; }
+.pif-task-dot-quiet   { background: #f59e0b; }
+.pif-task-dot-suspect { background: #ef4444; }
+.pif-task-dot-new     { background: #6b7280; }
+
+.pif-task-title {
+  font-size: 0.86rem; font-weight: 600; color: var(--text-primary, #e0e0e0);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pif-task-meta {
+  font-size: 0.73rem; color: var(--text-secondary, #a0a0b8);
+  margin-top: 0.12rem; display: flex; gap: 0.45rem; flex-wrap: wrap;
+  align-items: center;
+}
+.pif-tag { display: inline-block; padding: 0.07rem 0.3rem; border-radius: 3px;
+           font-size: 0.67rem; font-weight: 600; }
+.pif-tag-critical { background:rgba(220,53,69,0.18); color:#ff6b7a; border:1px solid rgba(220,53,69,0.4); }
+.pif-tag-high     { background:rgba(255,152,0,0.18); color:#ffb74d; border:1px solid rgba(255,152,0,0.4); }
+.pif-tag-medium   { background:rgba(33,150,243,0.18); color:#6db3f8; border:1px solid rgba(33,150,243,0.4); }
+.pif-tag-low      { background:rgba(120,144,156,0.18); color:#b0bec5; border:1px solid rgba(120,144,156,0.35); }
+.pif-tag-warn     { background:rgba(239,68,68,0.15); color:#fca5a5; border:1px solid rgba(239,68,68,0.35); }
+
+.pif-elapsed { font-family:monospace; font-size:0.78rem;
+               color:var(--text-secondary); white-space:nowrap; text-align:right; }
+
+.pif-zombie-banner {
+  padding:0.45rem 0.75rem; border-radius:6px; font-size:0.78rem;
+  background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3);
+  color:#fca5a5; margin-bottom:0.5rem;
+}
+
+/* ── Project progress cards (unchanged) ── */
+.proj-card { border: 1px solid var(--border-color, #2a2a40);
+             border-radius: 8px; background: var(--bg-card, #16213e);
+             margin-bottom: 0.75rem; overflow: hidden; }
+.proj-card > summary { padding: 0.75rem 1rem; cursor: pointer; list-style: none;
+                       display: flex; align-items: center; gap: 0.75rem;
+                       background: var(--bg-secondary, #1a1a2e);
+                       border-bottom: 1px solid var(--border-color, #2a2a40); }
+.proj-card > summary::-webkit-details-marker { display: none; }
+.proj-card > summary::before { content: "\25B6"; font-size: 0.75rem;
+                                color: var(--text-secondary); transition: transform 0.15s; }
+.proj-card[open] > summary::before { transform: rotate(90deg); }
+.proj-title { font-weight: 600; color: var(--text-primary, #e0e0e0);
+              flex: 1; font-size: 1rem; }
+.proj-summary-stats { font-family: monospace; font-size: 0.85rem;
+                      color: var(--text-secondary, #a0a0b8); }
+.proj-body { padding: 0.75rem 1rem; }
+.proj-desc { color: var(--text-secondary, #a0a0b8); margin: 0 0 0.5rem; font-size: 0.88rem; }
+.proj-briefs { margin: 0 0 1rem; font-size: 0.85rem; }
+.proj-briefs a { color: var(--accent-blue-light, #6db3f8); margin-right: 1rem; text-decoration: none; }
+.proj-briefs a:hover { text-decoration: underline; }
+.proj-epic { display: grid; grid-template-columns: 32% 1fr 26%; gap: 0.75rem;
+             padding: 0.5rem 0.75rem; border: 1px solid var(--border-color, #2a2a40);
+             border-radius: 6px; margin-bottom: 0.4rem;
+             background: var(--bg-primary, #0f0f1a); align-items: center; }
+.proj-epic-key { font-weight: 600; color: var(--text-primary); font-size: 0.88rem; }
+.proj-epic-key .pri { display: inline-block; font-size: 0.68rem; padding: 0.1rem 0.4rem;
+                      border-radius: 3px; margin-left: 0.4rem; font-weight: 600; }
+.pri-critical { background:rgba(220,53,69,0.2); color:#ff6b7a; border:1px solid rgba(220,53,69,0.5); }
+.pri-high     { background:rgba(255,152,0,0.2); color:#ffb74d; border:1px solid rgba(255,152,0,0.5); }
+.pri-medium   { background:rgba(33,150,243,0.2); color:#6db3f8; border:1px solid rgba(33,150,243,0.5); }
+.pri-low      { background:rgba(120,144,156,0.2); color:#b0bec5; border:1px solid rgba(120,144,156,0.4); }
+.proj-bar { background:var(--bg-input,#0d1b2a); border-radius:4px; height:14px;
+            overflow:hidden; position:relative; border:1px solid var(--border-color,#2a2a40); }
+.proj-bar-fill { background:linear-gradient(90deg,#4caf50,#66bb6a); height:100%; transition:width 0.3s; }
+.proj-bar-text { position:absolute; top:0; left:0; right:0; text-align:center;
+                 line-height:14px; font-size:0.72rem; color:var(--text-primary);
+                 font-weight:600; text-shadow:0 0 3px rgba(0,0,0,0.7); }
+.proj-counts { font-family:monospace; font-size:0.75rem; color:var(--text-secondary); text-align:right; }
+.proj-badge { display:inline-block; padding:0.08rem 0.3rem; border-radius:3px;
+              margin-left:0.2rem; font-weight:600; font-size:0.72rem; }
+.badge-progress { background:rgba(255,152,0,0.25); color:#ffb74d; }
+.badge-backlog  { background:rgba(120,144,156,0.25); color:#b0bec5; }
+.badge-failed   { background:rgba(244,67,54,0.25); color:#ff6b7a; }
+.badge-needs-decomp { background:rgba(168,85,247,0.25); color:#c084fc; border:1px solid rgba(168,85,247,0.4); }
+
+/* ── Recent Task Events feed ── */
+#pif-events-section > summary::-webkit-details-marker { display:none; }
+#pif-events-section > summary::before { content:"\25B6"; font-size:0.72rem;
+  color:var(--text-secondary); margin-right:0.3rem; transition:transform 0.15s; }
+#pif-events-section[open] > summary::before { transform:rotate(90deg); }
+
+.pif-event-card {
+  display:grid; grid-template-columns:auto 1fr auto;
+  gap:0.5rem; align-items:start;
+  padding:0.45rem 0.7rem; margin-bottom:0.3rem;
+  border-radius:6px; border:1px solid var(--border-color,#2a2a40);
+  background:var(--bg-card,#16213e); font-size:0.82rem;
+}
+.pif-event-card:last-child { margin-bottom:0; }
+.pif-event-icon { font-size:1rem; line-height:1.2; flex-shrink:0; }
+.pif-event-body { min-width:0; }
+.pif-event-title { font-weight:600; color:var(--text-primary,#e0e0e0);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pif-event-type  { font-size:0.7rem; font-weight:700; padding:0.05rem 0.28rem;
+  border-radius:3px; margin-right:0.35rem; display:inline-block; }
+.pif-event-type-done        { background:rgba(34,197,94,0.18);  color:#86efac; }
+.pif-event-type-failed      { background:rgba(239,68,68,0.18);  color:#fca5a5; }
+.pif-event-type-unverified  { background:rgba(245,158,11,0.18); color:#fcd34d; }
+.pif-event-type-in_progress { background:rgba(59,130,246,0.18); color:#93c5fd; }
+.pif-event-type-unknown     { background:rgba(107,114,128,0.18);color:#d1d5db; }
+.pif-event-gates { font-size:0.7rem; color:var(--text-muted,#6b7280);
+  margin-top:0.18rem; white-space:pre; font-family:monospace; }
+.pif-event-ts { font-size:0.68rem; color:var(--text-muted,#6b7280);
+  white-space:nowrap; text-align:right; padding-top:0.1rem; }
+
+.kanban-empty-placeholder { padding:2rem; text-align:center;
+                            color:var(--text-muted,#6c6c80);
+                            border:1px dashed var(--border-color,#2a2a40);
+                            border-radius:8px; background:var(--bg-card,#16213e); }
+</style>
+
+<script>
+(function () {
+  if (window.ICDEV_PIF && window.ICDEV_PIF._loaded) return;
+  if (!window.ICDEV_PIF) window.ICDEV_PIF = {};
+  window.ICDEV_PIF._loaded = true;
+
+  var TASK_TIMEOUT_SECS = 900;  // reaper baseline; per-task budget varies but 900 is the default
+
+  // Polyfill Promise.allSettled for older browsers
+  if (!Promise.allSettled) {
+    Promise.allSettled = function (promises) {
+      return Promise.all(promises.map(function (p) {
+        return Promise.resolve(p).then(
+          function (v) { return { status: 'fulfilled', value: v }; },
+          function (e) { return { status: 'rejected', reason: e }; }
+        );
+      }));
+    };
+  }
+
+  // Live timer + reaper bar intervals — cleared and rebuilt on each refresh
+  var _pifIntervals = [];
+  function _clearPifIntervals() {
+    _pifIntervals.forEach(function (id) { clearInterval(id); });
+    _pifIntervals = [];
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  function fmt(secs) {
+    if (secs == null) return '?';
+    if (secs < 60)   return secs + 's';
+    if (secs < 3600) return Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+    return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
+  }
+
+  // Per-task liveness from agent log file age.
+  function liveness(logAge) {
+    if (logAge == null)            return 'new';
+    if (logAge > TASK_TIMEOUT_SECS) return 'suspect';
+    if (logAge > 300)              return 'quiet';
+    return 'active';
+  }
+
+  // ── Live task cards ──────────────────────────────────────────────
+  function renderLiveTasks(tasks, schSecs) {
+    var container = document.getElementById('pif-live-tasks');
+    var schDot    = document.getElementById('pif-scheduler-dot');
+    var schLabel  = document.getElementById('pif-scheduler-label');
+    var lastRef   = document.getElementById('pif-last-refresh');
+    if (!container) return;
+
+    // Scheduler dot
+    schDot.className = 'pif-dot';
+    if (schSecs == null) {
+      schDot.classList.add('pif-dot-unknown');
+      schLabel.textContent = 'scheduler not started';
+    } else if (schSecs > 600) {
+      schDot.classList.add('pif-dot-stale');
+      schLabel.textContent = 'scheduler silent ' + fmt(schSecs) + ' — possible zombies';
+    } else if (schSecs > 180) {
+      schDot.classList.add('pif-dot-warning');
+      schLabel.textContent = 'scheduler quiet ' + fmt(schSecs);
+    } else {
+      schDot.classList.add('pif-dot-active');
+      schLabel.textContent = 'scheduler active';
+    }
+
+    if (lastRef) lastRef.textContent = 'updated ' + new Date().toLocaleTimeString();
+
+    if (!tasks || tasks.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = '';
+
+    var html = '';
+
+    // Scheduler-level zombie banner
+    if (schSecs != null && schSecs > 600) {
+      html += '<div class="pif-zombie-banner">&#9888; <strong>Scheduler silent ' + fmt(schSecs)
+        + '</strong> &mdash; ' + tasks.length + ' task(s) in_progress with no heartbeat.'
+        + ' Check <code>.tmp/kanban_scheduler.log</code>.</div>';
+    }
+
+    // Per-task zombie banner
+    var suspects = tasks.filter(function (t) { return liveness(t.task_log_age_secs) === 'suspect'; });
+    if (suspects.length > 0 && (schSecs == null || schSecs <= 600)) {
+      html += '<div class="pif-zombie-banner">&#9888; <strong>'
+        + suspects.length + ' possible zombie' + (suspects.length > 1 ? 's' : '') + '</strong>: '
+        + suspects.map(function (t) { return esc(t.id); }).join(', ')
+        + ' &mdash; no agent output in >' + TASK_TIMEOUT_SECS + 's. Stale-reaper will recycle.</div>';
+    }
+
+    _clearPifIntervals();
+    var nowMs = Date.now();
+    tasks.forEach(function (t) {
+      var raw = t.updated_at || t.created_at;
+      var elapsed = raw ? Math.floor((nowMs - new Date(raw).getTime()) / 1000) : null;
+      var liv = liveness(t.task_log_age_secs);
+      var pri = (t.priority || 'medium').toLowerCase();
+
+      var elStyle = elapsed > TASK_TIMEOUT_SECS ? 'color:#ef4444;'
+                  : elapsed > 900              ? 'color:#f59e0b;' : '';
+
+      var outputChip = '';
+      if (t.task_log_age_secs != null) {
+        var chipColor = liv === 'suspect' ? 'color:#fca5a5;font-weight:600;'
+                      : liv === 'quiet'   ? 'color:#fcd34d;' : 'color:#86efac;';
+        outputChip = '<span style="' + chipColor + '">'
+          + (liv === 'suspect'
+              ? '&#9888; zombie? last output ' + fmt(t.task_log_age_secs) + ' ago'
+              : 'output ' + fmt(t.task_log_age_secs) + ' ago')
+          + '</span>';
+      } else {
+        outputChip = '<span style="color:var(--text-muted);">starting up&hellip;</span>';
+      }
+
+      // ── kv-viz: attempt badge + reaper bar + time-in-flight ──────────
+      var attemptBadge = '';
+      var reaperBar = '';
+      var tifLine = '';
+      var ac = t.attempt_count || 0;
+      if (ac >= 2) {
+        var abColor = ac >= 4 ? '#ef4444' : '#f59e0b';
+        attemptBadge = '<span style="background:' + abColor + '20;color:' + abColor
+          + ';font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;" title="Dispatched '
+          + ac + ' times">Attempt ' + ac + '</span>';
+      }
+      if (t.current_attempt_started_at) {
+        reaperBar = '<div style="margin:4px 0 2px 0;background:var(--bg-code,#1a1a2e);border-radius:2px;height:3px;overflow:hidden;" title="Reaper kills at ' + Math.round(TASK_TIMEOUT_SECS/60) + 'm">'
+          + '<div id="pif-bar-' + esc(t.id) + '" style="height:100%;width:0%;background:#22c55e;transition:width 1s linear;"></div></div>';
+        tifLine = '<div id="pif-tif-' + esc(t.id) + '" style="font-size:11px;color:var(--text-muted,#6b7280);margin-top:1px;">Running 0m 0s</div>';
+      }
+
+      var killedLine = '';
+      if (t.last_reaped_reason) {
+        killedLine = '<div style="font-size:10px;color:#f87171;margin-top:2px;">&#9760; '
+          + esc(t.last_reaped_reason.substring(0, 80)) + (t.last_reaped_reason.length > 80 ? '&hellip;' : '') + '</div>';
+      }
+
+      html += '<div class="pif-task-card pif-task-card-' + liv + '">'
+        + '<span class="pif-task-dot pif-task-dot-' + liv + '" title="' + esc(liv) + '"></span>'
+        + '<div style="min-width:0;flex:1;">'
+        + '  <div class="pif-task-title">'
+        + '    <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;margin-right:0.3rem;">' + esc(t.id) + '</span>'
+        + esc(t.title) + attemptBadge
+        + '  </div>'
+        + reaperBar
+        + tifLine
+        + killedLine
+        + '  <div class="pif-task-meta">'
+        + '    <span class="pif-tag pif-tag-' + esc(pri) + '">' + esc(pri) + '</span>'
+        + '    <span>' + esc(t.task_type || 'task') + '</span>'
+        + '    ' + outputChip
+        + (t.failure_count > 0 ? '<span class="pif-tag pif-tag-warn">&#9888; ' + t.failure_count + ' prior failure' + (t.failure_count > 1 ? 's' : '') + '</span>' : '')
+        + '  </div>'
+        + '</div>'
+        + '<div class="pif-elapsed" style="' + elStyle + '">' + fmt(elapsed) + '</div>'
+        + '</div>';
+    });
+
+    container.innerHTML = html;
+
+    // Start live timers for each in-flight task
+    tasks.forEach(function (t) {
+      if (!t.current_attempt_started_at) return;
+      var startMs = new Date(t.current_attempt_started_at).getTime();
+      var barEl = document.getElementById('pif-bar-' + t.id);
+      var tifEl = document.getElementById('pif-tif-' + t.id);
+      if (!barEl && !tifEl) return;
+      var ivId = setInterval(function () {
+        var secsSinceStart = Math.floor((Date.now() - startMs) / 1000);
+        if (tifEl) {
+          var m = Math.floor(secsSinceStart / 60), s = secsSinceStart % 60;
+          tifEl.textContent = 'Running ' + m + 'm ' + s + 's';
+        }
+        if (barEl) {
+          var pct = Math.min(100, Math.round(secsSinceStart / TASK_TIMEOUT_SECS * 100));
+          barEl.style.width = pct + '%';
+          barEl.style.background = pct >= 85 ? '#ef4444' : pct >= 60 ? '#f59e0b' : '#22c55e';
+        }
+      }, 1000);
+      _pifIntervals.push(ivId);
+    });
+  }
+
+  // ── Project progress cards (unchanged logic) ─────────────────────
+  function projectCardHTML(p) {
+    var openAttr = p.default_open ? ' open' : '';
+    var anchor = 'project-' + (p.key || '');
+    var brief = (p.briefs || []).map(function (b) {
+      return '<a href="' + esc(b.path) + '">' + esc(b.label) + '</a>';
+    }).join('');
+    var desc = p.description ? '<p class="proj-desc">' + esc(p.description) + '</p>' : '';
+
+    var epics = (p.epics || []).map(function (e) {
+      var pct = Math.max(0, Math.min(100, e.pct || 0));
+      var pri = esc(e.priority || 'medium');
+      var badges = [];
+      if (e.in_progress)     badges.push('<span class="proj-badge badge-progress">' + e.in_progress + ' in flight</span>');
+      if (e.scheduled)       badges.push('<span class="proj-badge badge-progress">' + e.scheduled + ' scheduled</span>');
+      if (e.backlog)         badges.push('<span class="proj-badge badge-backlog">' + e.backlog + ' queued</span>');
+      if (e.failed)          badges.push('<span class="proj-badge badge-failed">' + e.failed + ' failed</span>');
+      if (e.needs_decomp)    badges.push('<span class="proj-badge badge-needs-decomp" title="Queued for auto-decompose">&#8674; ' + e.needs_decomp + ' decompose</span>');
+      return '<div class="proj-epic">'
+        + '<div class="proj-epic-key">' + esc(e.title || e.key)
+        + '<span class="pri pri-' + pri + '">' + pri + '</span></div>'
+        + '<div class="proj-bar"><div class="proj-bar-fill" style="width:' + pct + '%"></div>'
+        + '<div class="proj-bar-text">' + (e.done || 0) + ' / ' + (e.total || 0) + ' done &middot; ' + pct + '%</div></div>'
+        + '<div class="proj-counts">' + badges.join('') + '</div>'
+        + '</div>';
+    }).join('');
+
+    var overallPct = Math.max(0, Math.min(100, p.overall_pct || 0));
+    return '<details class="proj-card" id="' + esc(anchor) + '"' + openAttr + '>'
+      + '<summary>'
+      + '<div class="proj-title">' + esc(p.name || p.key) + '</div>'
+      + '<div class="proj-summary-stats">' + (p.done_tasks || 0) + ' / ' + (p.total_tasks || 0) + ' &middot; ' + overallPct + '%</div>'
+      + '</summary>'
+      + '<div class="proj-body">' + desc + '<div class="proj-briefs">' + brief + '</div>' + epics + '</div>'
+      + '</details>';
+  }
+
+  function renderProjectCards(payload, pendingCount) {
+    var container = document.getElementById('projects-container');
+    var section   = document.getElementById('projects-in-flight');
+    if (!container) return;
+
+    var projects = (payload && payload.projects) || [];
+    if (projects.length === 0) {
+      if (pendingCount > 0) {
+        // All tracked projects are complete; surface the untracked queue so
+        // the section doesn't silently disappear while tasks remain pending.
+        container.innerHTML = '<div style="padding:0.5rem 0; color:var(--text-secondary); font-size:0.85rem;">'
+          + '<span style="margin-right:0.5rem;">📋</span>'
+          + '<strong>' + pendingCount + '</strong> task' + (pendingCount !== 1 ? 's' : '') + ' queued (scheduled / backlog)'
+          + ' &mdash; no active project tracking. Run <code>kanban_project_sync.py</code> to register them.'
+          + '</div>';
+      } else {
+        container.innerHTML = '';
+      }
+      return;
+    }
+    if (section) section.style.display = '';
+    container.innerHTML = projects.map(projectCardHTML).join('');
+  }
+
+  // ── Event feed: recent task done/failed/unverified/in_progress ────────────
+  var EVENT_ICONS = {
+    'done': '✅', 'failed': '❌', 'unverified': '⚠️',
+    'in_progress': 'ℹ️', 'unknown': '•'
+  };
+  var EVENT_LABELS = {
+    'done': 'done', 'failed': 'failed', 'unverified': 'unverified',
+    'in_progress': 'in progress', 'unknown': 'event'
+  };
+
+  function _relTime(isoStr) {
+    if (!isoStr) return '';
+    var ms = Date.now() - new Date(isoStr).getTime();
+    var s = Math.floor(ms / 1000);
+    if (s < 60)   return s + 's ago';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    return Math.floor(s / 86400) + 'd ago';
+  }
+
+  function _extractGates(message) {
+    // Pull "Validation gates:" block from notification message
+    if (!message) return '';
+    var idx = message.indexOf('Validation gates:');
+    if (idx === -1) return '';
+    return message.substring(idx).replace(/\n/g, '\n');
+  }
+
+  function renderEventFeed(data) {
+    var section  = document.getElementById('pif-events-section');
+    var listEl   = document.getElementById('pif-events-list');
+    var countEl  = document.getElementById('pif-events-count');
+    if (!section || !listEl) return;
+
+    var events = (data && data.events) || [];
+    // Always show the section if there are events (don't auto-hide the accordion)
+    if (events.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    section.open = true;
+    if (countEl) countEl.textContent = '(' + events.length + ')';
+
+    var html = '';
+    events.forEach(function (ev) {
+      var et   = ev.event_type || 'unknown';
+      var icon = EVENT_ICONS[et] || '•';
+      var typeClass = 'pif-event-type-' + et;
+      var gates = _extractGates(ev.message || '');
+      html += '<div class="pif-event-card">'
+        + '<span class="pif-event-icon">' + icon + '</span>'
+        + '<div class="pif-event-body">'
+        + '  <div class="pif-event-title">'
+        + '    <span class="pif-event-type ' + esc(typeClass) + '">' + esc(EVENT_LABELS[et] || et) + '</span>'
+        + esc(ev.title || '')
+        + '  </div>'
+        + (gates ? '<div class="pif-event-gates">' + esc(gates) + '</div>' : '')
+        + '</div>'
+        + '<div class="pif-event-ts">' + _relTime(ev.created_at) + '</div>'
+        + '</div>';
+    });
+    listEl.innerHTML = html;
+  }
+
+  // ── Combined refresh: live-check + projects/progress + events in parallel ──
+  // Uses allSettled so a failing events fetch never kills the live-task or
+  // project-card panels (Promise.all rejects entirely on any single failure).
+  function refreshProjectsInFlight() {
+    var fetches = [
+      fetch('/api/live-check').then(function (r) { return r.json(); }),
+      fetch('/api/projects/progress').then(function (r) { return r.json(); }),
+      fetch('/api/kanban/recent-events').then(function (r) { return r.json(); }),
+    ];
+
+    // allSettled: each result is {status:'fulfilled',value:...} or {status:'rejected'}
+    Promise.allSettled(fetches).then(function (settled) {
+      var liveData    = settled[0].status === 'fulfilled' ? settled[0].value : null;
+      var projectData = settled[1].status === 'fulfilled' ? settled[1].value : null;
+      var eventsData  = settled[2].status === 'fulfilled' ? settled[2].value : null;
+
+      var pendingCount = (liveData && liveData.pending_tasks_count) || 0;
+      renderLiveTasks(
+        (liveData && liveData.tasks) || [],
+        liveData && liveData.scheduler_last_seen_secs != null
+          ? liveData.scheduler_last_seen_secs : null
+      );
+      renderProjectCards(projectData, pendingCount);
+      renderEventFeed(eventsData);
+
+      // Show section if live tasks, queued tasks, active projects, or recent events are present
+      var section = document.getElementById('projects-in-flight');
+      var hasLive    = !!(liveData && liveData.tasks && liveData.tasks.length > 0);
+      var hasPending = !!(liveData && liveData.pending_tasks_count > 0);
+      var hasProj    = !!(projectData && projectData.projects && projectData.projects.length > 0);
+      var hasEvents  = !!(eventsData && eventsData.events && eventsData.events.length > 0);
+      if (section) section.style.display = (hasLive || hasPending || hasProj || hasEvents) ? '' : 'none';
+    });
+  }
+
+  // Task Board auto-hide (unchanged)
+  function checkBoardEmptyAndToggle() {
+    var active = ['suggested', 'backlog', 'scheduled', 'in_progress'];
+    var total = 0;
+    active.forEach(function (s) {
+      var el = document.querySelector('.kanban-column[data-status="' + s + '"] .kanban-column-count');
+      if (el) total += parseInt(el.textContent || '0', 10) || 0;
+    });
+    var board       = document.getElementById('kanban-board');
+    var placeholder = document.getElementById('kanban-board-empty');
+    if (!board) return;
+    if (total === 0) {
+      board.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'block';
+    } else {
+      board.style.display = '';
+      if (placeholder) placeholder.style.display = 'none';
+    }
+  }
+
+  window.ICDEV_PIF.refresh        = refreshProjectsInFlight;
+  window.ICDEV_PIF.render         = renderProjectCards;
+  window.ICDEV_PIF.renderEvents   = renderEventFeed;
+  window.ICDEV_PIF.checkBoardEmpty = checkBoardEmptyAndToggle;
+
+  window.refreshProjectsInFlight  = refreshProjectsInFlight;
+  window.renderProjectsInFlight   = renderProjectCards;
+  window.renderEventFeed          = renderEventFeed;
+  window.checkBoardEmptyAndToggle = checkBoardEmptyAndToggle;
+  // Backward-compat alias for any page that called refreshLiveActivity()
+  window.refreshLiveActivity      = refreshProjectsInFlight;
+
+  // ── Task completion poller — triggers dashboard refresh immediately on any
+  // task moving to "done", without waiting for the 5-minute auto-refresh cycle.
+  // Polls /api/kanban/last-update every 15s (single-row query, negligible cost).
+  var _pifCompletionCursor = null;
+  var _pifCompletionTimer  = null;
+
+  function _pollCompletion() {
+    fetch('/api/kanban/last-update')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.last_update === undefined) return;
+        if (_pifCompletionCursor === null) {
+          // Seed cursor on first poll — no refresh needed yet
+          _pifCompletionCursor = d.last_update;
+          return;
+        }
+        if (d.last_update && d.last_update !== _pifCompletionCursor) {
+          // A task just completed — update cursor and refresh immediately
+          _pifCompletionCursor = d.last_update;
+          refreshProjectsInFlight();
+          // Also refresh the kanban task board if it's on this page
+          if (typeof refreshKanbanTasks === 'function') refreshKanbanTasks();
+          // Reset the 5-min countdown so the next auto-refresh starts fresh
+          if (typeof _refreshCountdown !== 'undefined') {
+            // index.html sets this; reset it so we don't double-refresh
+            if (typeof AUTO_REFRESH_SECONDS !== 'undefined') {
+              window._refreshCountdown = AUTO_REFRESH_SECONDS;
+            }
+          }
+        }
+      })
+      .catch(function () { /* network error — retry next tick */ });
+  }
+
+  // Start poller after a short delay so the page renders first
+  setTimeout(function () {
+    _pollCompletion(); // seed cursor immediately
+    _pifCompletionTimer = setInterval(_pollCompletion, 15000);
+  }, 2000);
+
+  window.ICDEV_PIF.stopCompletionPoller = function () {
+    if (_pifCompletionTimer) { clearInterval(_pifCompletionTimer); _pifCompletionTimer = null; }
+  };
+})();
+</script>
+
+<!-- Add/Edit Task Modal -->
+<div id="task-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:none; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card, #1e293b); border-radius:12px; width:90%; max-width:500px; border:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border);">
+            <h3 id="task-modal-title" style="margin:0;">Add Task</h3>
+            <button class="btn btn-sm" onclick="closeTaskModal()">&times;</button>
+        </div>
+        <div style="padding:20px;">
+            <input type="hidden" id="task-edit-id">
+            <div style="margin-bottom:12px;">
+                <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Title *</label>
+                <input type="text" id="task-title" style="width:100%; padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);" placeholder="e.g. Build notification system">
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Description</label>
+                <textarea id="task-desc" rows="3" style="width:100%; padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); resize:vertical;" placeholder="Optional details..."></textarea>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Type</label>
+                    <select id="task-type" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                        <option value="build">Build</option>
+                        <option value="run">Run</option>
+                        <option value="fix">Fix</option>
+                        <option value="research">Research</option>
+                        <option value="deploy">Deploy</option>
+                        <option value="test">Test</option>
+                        <option value="chore">Chore</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Priority</label>
+                    <select id="task-priority" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Status</label>
+                    <select id="task-status" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                        <option value="backlog">Backlog</option>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="done">Done</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Scheduled For</label>
+                    <input type="datetime-local" id="task-scheduled-at" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                </div>
+            </div>
+        </div>
+        <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
+            <button class="btn" onclick="closeTaskModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveTask()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- OPT-62: mid-run message injection modal -->
+<div id="kanban-message-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1200; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; width:min(480px, 92vw); max-height:90vh; overflow:auto;">
+        <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="margin:0; font-size:16px;">&#128172; Send message to running task</h3>
+            <button class="kanban-move-btn" onclick="closeMessageModal()" title="Close">&#10005;</button>
+        </div>
+        <div style="padding:16px 20px;">
+            <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;" id="kanban-msg-target">Task: —</div>
+            <textarea id="kanban-msg-text" placeholder="e.g. also please run ruff and bandit before finishing" rows="5" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-family:inherit; resize:vertical;"></textarea>
+            <div style="font-size:11px; color:var(--text-dim); margin-top:8px;">The message is queued and delivered at the next LLM call boundary (max 10 iterations per task).</div>
+            <div id="kanban-msg-status" style="font-size:12px; margin-top:8px; min-height:1em;"></div>
+        </div>
+        <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
+            <button class="btn" onclick="closeMessageModal()">Cancel</button>
+            <button class="btn btn-primary" id="kanban-msg-send" onclick="submitMessage()">Send</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function _isoToLocal(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate())
+        + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+function _localToIso(localVal) {
+    if (!localVal) return null;
+    return new Date(localVal).toISOString();
+}
+
+function _formatSchedule(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function openAddTaskModal() {
+    document.getElementById('task-modal-title').textContent = 'Add Task';
+    document.getElementById('task-edit-id').value = '';
+    document.getElementById('task-title').value = '';
+    document.getElementById('task-desc').value = '';
+    document.getElementById('task-type').value = 'build';
+    document.getElementById('task-priority').value = 'medium';
+    document.getElementById('task-status').value = 'backlog';
+    document.getElementById('task-scheduled-at').value = '';
+    document.getElementById('task-modal').style.display = 'flex';
+}
+
+function openEditTaskModal(task) {
+    document.getElementById('task-modal-title').textContent = 'Edit Task';
+    document.getElementById('task-edit-id').value = task.id;
+    document.getElementById('task-title').value = task.title;
+    document.getElementById('task-desc').value = task.description || '';
+    document.getElementById('task-type').value = task.task_type;
+    document.getElementById('task-priority').value = task.priority;
+    document.getElementById('task-status').value = task.status;
+    document.getElementById('task-scheduled-at').value = _isoToLocal(task.scheduled_at);
+    document.getElementById('task-modal').style.display = 'flex';
+}
+
+function closeTaskModal() {
+    document.getElementById('task-modal').style.display = 'none';
+}
+
+function saveTask() {
+    var editId = document.getElementById('task-edit-id').value;
+    var payload = {
+        title: document.getElementById('task-title').value,
+        description: document.getElementById('task-desc').value,
+        task_type: document.getElementById('task-type').value,
+        priority: document.getElementById('task-priority').value,
+        status: document.getElementById('task-status').value,
+        scheduled_at: _localToIso(document.getElementById('task-scheduled-at').value)
+    };
+    if (!payload.title.trim()) { alert('Title is required'); return; }
+
+    var url = editId ? '/api/kanban/tasks/' + editId : '/api/kanban/tasks';
+    var method = editId ? 'PATCH' : 'POST';
+
+    fetch(url, { method: method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+        .then(function(r) { return r.json(); })
+        .then(function() { closeTaskModal(); refreshKanbanTasks(); })
+        .catch(function(e) { alert('Error: ' + e); });
+}
+
+function moveTask(taskId, newStatus) {
+    fetch('/api/kanban/tasks/' + taskId + '/move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ status: newStatus })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function() { refreshKanbanTasks(); })
+    .catch(function(e) { alert('Error: ' + e); });
+}
+
+function deleteTask(taskId) {
+    if (!confirm('Delete this task?')) return;
+    fetch('/api/kanban/tasks/' + taskId, { method: 'DELETE' })
+        .then(function(r) { return r.json(); })
+        .then(function() { refreshKanbanTasks(); })
+        .catch(function(e) { alert('Error: ' + e); });
+}
+
+var _allTasks = [];
+
+// Suggested lane state — sort mode + bulk selection. Persisted in
+// localStorage so a refresh or a dashboard reload does not reset the
+// operator's preferred sort. Selection is deliberately NOT persisted;
+// a fresh page load starts with zero cards selected.
+var _suggestedSort = (function() {
+    try { return localStorage.getItem('icdev.kanban.suggestedSort') || 'value'; }
+    catch (e) { return 'value'; }
+})();
+var _selectedTaskIds = new Set();
+
+function refreshKanbanTasks() {
+    var url = '/api/kanban/tasks?sort=' + encodeURIComponent(_suggestedSort);
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            _allTasks = data.tasks || [];
+            renderTaskKanban(_allTasks);
+            if (window.checkBoardEmptyAndToggle) window.checkBoardEmptyAndToggle();
+        });
+}
+
+function promoteAllSuggested() {
+    if (!confirm('Promote ALL suggested cards to backlog?')) return;
+    var btn = document.getElementById('btn-promote-all');
+    if (btn) { btn.disabled = true; btn.textContent = 'Promoting...'; }
+    fetch('/api/kanban/tasks/promote-all', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (btn) { btn.disabled = false; btn.textContent = '\u2714 Promote All'; }
+            if (data.error) { alert('Error: ' + data.error); return; }
+            refreshKanbanTasks();
+        })
+        .catch(function() {
+            if (btn) { btn.disabled = false; btn.textContent = '\u2714 Promote All'; }
+            alert('Promote all failed');
+        });
+}
+
+// Sort dropdown handler — persists to localStorage + refetches so
+// the server-side sort applies (value and confidence are computed
+// post-fetch in Python, but the API still returns tasks pre-sorted so
+// the client order matches the API order exactly).
+function onSuggestedSortChange(val) {
+    if (!val) return;
+    _suggestedSort = val;
+    try { localStorage.setItem('icdev.kanban.suggestedSort', val); } catch (e) {}
+    refreshKanbanTasks();
+}
+
+// Bulk select preset — clears current selection and reselects rows
+// matching the named threshold. Safe on tasks missing oracle_value
+// or oracle_confidence (both default to 0).
+function applySuggestedSelectPreset(preset) {
+    _selectedTaskIds.clear();
+    if (preset === 'none' || !preset) {
+        renderTaskKanban(_allTasks);
+        return;
+    }
+    var suggestedItems = _allTasks.filter(function(t) { return t.status === 'suggested'; });
+
+    // Rule-based preset — format: "rule::<oracle_lens>". Added 2026-04-11
+    // to let operators bulk-select every card from a noisy rule (e.g.
+    // route_not_listed's 360 false positives) in one click and dismiss
+    // them without touching the real-work rules.
+    if (preset.indexOf('rule::') === 0) {
+        var targetRule = preset.slice(6);
+        suggestedItems.forEach(function(t) {
+            if ((t.oracle_lens || '') === targetRule) {
+                _selectedTaskIds.add(t.id);
+            }
+        });
+        renderTaskKanban(_allTasks);
+        return;
+    }
+
+    suggestedItems.forEach(function(t) {
+        var conf = t.oracle_confidence || 0;
+        var val = t.oracle_value || 0;
+        var prio = (t.priority || '').toLowerCase();
+        var match = false;
+        switch (preset) {
+            case 'all':       match = true; break;
+            case 'conf95':    match = conf >= 0.95; break;
+            case 'conf90':    match = conf >= 0.90; break;
+            case 'value10':   match = val >= 1.0; break;
+            case 'value08':   match = val >= 0.8; break;
+            case 'value_lo':  match = val < 0.6; break;   // noise → dismiss
+            case 'pri_crit':  match = prio === 'critical'; break;
+            case 'pri_high':  match = prio === 'high'; break;
+            case 'pri_med':   match = prio === 'medium'; break;
+            case 'pri_low':   match = prio === 'low'; break;
+        }
+        if (match) _selectedTaskIds.add(t.id);
+    });
+    renderTaskKanban(_allTasks);
+}
+
+function toggleTaskSelected(taskId, ev) {
+    if (ev) ev.stopPropagation();
+    if (_selectedTaskIds.has(taskId)) _selectedTaskIds.delete(taskId);
+    else _selectedTaskIds.add(taskId);
+    // Lightweight: update only the counter badges without full re-render.
+    var countEls = document.querySelectorAll('[data-bulk-count]');
+    for (var i = 0; i < countEls.length; i++) {
+        countEls[i].textContent = _selectedTaskIds.size;
+    }
+}
+
+function bulkMoveSuggested(newStatus, actionLabel) {
+    var ids = Array.from(_selectedTaskIds);
+    if (!ids.length) {
+        alert('No tasks selected. Use the "Select" dropdown to pick a threshold.');
+        return;
+    }
+    if (!confirm(actionLabel + ' ' + ids.length + ' suggested task(s)?')) return;
+    fetch('/api/kanban/tasks/bulk-move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_ids: ids, status: newStatus })
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            _selectedTaskIds.clear();
+            refreshKanbanTasks();
+            if (data && data.failed && data.failed.length) {
+                console.warn('bulk-move partial failures:', data.failed);
+            }
+        })
+        .catch(function(e) { alert('Bulk move failed: ' + e); });
+}
+
+function bulkPromoteSuggested() { bulkMoveSuggested('backlog', 'Promote to backlog'); }
+function bulkDismissSuggested() { bulkMoveSuggested('done',    'Dismiss'); }
+
+// kv-viz-02: live counters for in_progress cards
+var _kvIntervals = {};
+function _clearKvIntervals() {
+    Object.keys(_kvIntervals).forEach(function(id) { clearInterval(_kvIntervals[id]); });
+    _kvIntervals = {};
+}
+function _setupKvCounters(boardEl) {
+    boardEl.querySelectorAll('[data-kv-started]').forEach(function(sentinel) {
+        var taskId = sentinel.getAttribute('data-kv-task-id');
+        var startedAt = sentinel.getAttribute('data-kv-started');
+        var barEl = document.getElementById('kv-bar-' + taskId);
+        var textEl = document.getElementById('kv-tif-' + taskId);
+        if (!textEl || !startedAt) return;
+        var startMs = new Date(startedAt).getTime();
+        function tick() {
+            var elapsed = (Date.now() - startMs) / 1000;
+            var mins = Math.floor(elapsed / 60);
+            var secs = Math.floor(elapsed % 60);
+            textEl.textContent = 'Running ' + mins + 'm ' + secs + 's';
+            if (barEl) {
+                var pct = Math.min(100, (elapsed / 900) * 100);
+                barEl.style.width = pct + '%';
+                barEl.style.background = pct >= 85 ? '#ef4444' : pct >= 60 ? '#f59e0b' : '#22c55e';
+            }
+        }
+        tick();
+        _kvIntervals[taskId] = setInterval(tick, 1000);
+    });
+}
+
+function renderTaskKanban(tasks) {
+    var board = document.getElementById('kanban-board');
+    if (!board) return;
+    _clearKvIntervals();
+
+    var columns = { suggested: [], backlog: [], scheduled: [], in_progress: [], done: [] };
+    tasks.forEach(function(t) {
+        var s = t.status || 'backlog';
+        if (s === 'decomposed' || s === 'needs_decomposition') s = 'done';
+        if (columns[s]) columns[s].push(t);
+        else columns.backlog.push(t);
+    });
+
+    var priorityColors = { critical: '#ef4444', high: '#f97316', medium: '#3b82f6', low: '#6b7280' };
+    var typeIcons = { build: '\u{1F528}', run: '\u25B6', fix: '\u{1F41B}', research: '\u{1F50D}', deploy: '\u{1F680}', test: '\u2705', chore: '\u{1F9F9}' };
+    var nextStatus = { backlog: 'scheduled', scheduled: 'in_progress', in_progress: 'done' };
+    var prevStatus = { scheduled: 'backlog', in_progress: 'scheduled', done: 'in_progress' };
+
+    // Confidence label derived from priority (Oracle maps confidence → priority on insert)
+    var confidenceLabel = { critical: '≥90%', high: '75–89%', medium: '55–74%', low: '<55%' };
+    var executorLabels = {
+        claude_cli:     { icon: '🤖', label: 'Claude',     color: '#7c3aed' },
+        ollama_local:   { icon: '💻', label: 'Local',      color: '#0891b2' },
+        gitlab:         { icon: '🦊', label: 'GitLab',     color: '#e24304' },
+        github_actions: { icon: '⚙️', label: 'GH Actions', color: '#2ea043' }
+    };
+    var llmModeIcons  = { claude: '🧠', ollama: '💻', none: '⚙️' };
+    var llmModeTitles = { claude: 'LLM: Claude', ollama: 'LLM: Ollama (local)', none: 'No LLM' };
+
+    board.querySelectorAll('.kanban-column').forEach(function(colEl) {
+        var status = colEl.getAttribute('data-status');
+        if (!columns[status]) return;
+        var items = columns[status];
+
+        var countEl = colEl.querySelector('.kanban-column-count');
+        if (countEl) countEl.textContent = items.length;
+
+        // Show/hide the Promote All button based on suggested card count
+        if (status === 'suggested') {
+            var promBtn = document.getElementById('btn-promote-all');
+            if (promBtn) promBtn.style.display = items.length > 0 ? 'inline-block' : 'none';
+        }
+
+        var bodyEl = colEl.querySelector('.kanban-column-body');
+        if (!bodyEl) return;
+
+        if (items.length === 0) {
+            bodyEl.innerHTML = '<div class="kanban-empty">No tasks</div>';
+            return;
+        }
+
+        var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || ''); };
+
+        // Suggested-lane toolbar: sort dropdown + bulk select preset +
+        // bulk promote/dismiss buttons. Rendered BEFORE the card list so
+        // it stays at the top of the column. Not rendered for any other
+        // status — the toolbar only makes sense for Oracle-backed
+        // suggestions that want triage.
+        var toolbarHtml = '';
+        if (status === 'suggested') {
+            var selectedCount = _selectedTaskIds.size;
+            // Build the dynamic "Rule: <name> (<count>)" preset options
+            // from whatever rules are currently present in the Suggested
+            // lane. Sorted by count DESC so the noisiest rules surface
+            // first — operators usually want to dismiss those in bulk.
+            var ruleCounts = {};
+            items.forEach(function(t) {
+                var r = t.oracle_lens || '(none)';
+                ruleCounts[r] = (ruleCounts[r] || 0) + 1;
+            });
+            var ruleList = Object.keys(ruleCounts).map(function(r) {
+                return { rule: r, count: ruleCounts[r] };
+            }).sort(function(a, b) { return b.count - a.count; });
+            var ruleOptionsHtml = ruleList.map(function(r) {
+                return '<option value="rule::' + esc(r.rule) + '">Rule: ' + esc(r.rule) + ' (' + r.count + ')</option>';
+            }).join('');
+            toolbarHtml =
+                '<div id="suggested-bulk-bar" style="padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; margin-bottom:8px;">'
+                + '<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">'
+                + '<label style="font-size:11px; color:var(--text-dim); min-width:42px;">Sort:</label>'
+                + '<select onchange="onSuggestedSortChange(this.value)" style="flex:1; font-size:11px; padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);">'
+                + '<option value="value"' + (_suggestedSort==='value'?' selected':'') + '>Value (default)</option>'
+                + '<option value="confidence"' + (_suggestedSort==='confidence'?' selected':'') + '>Confidence</option>'
+                + '<option value="priority"' + (_suggestedSort==='priority'?' selected':'') + '>Priority (critical→low)</option>'
+                + '<option value="created_at"' + (_suggestedSort==='created_at'?' selected':'') + '>Newest first</option>'
+                + '</select>'
+                + '</div>'
+                + '<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">'
+                + '<label style="font-size:11px; color:var(--text-dim); min-width:42px;">Select:</label>'
+                + '<select onchange="applySuggestedSelectPreset(this.value); this.value=\'\'" style="flex:1; font-size:11px; padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);">'
+                + '<option value="">Choose threshold…</option>'
+                + '<option value="all">All</option>'
+                + '<optgroup label="By confidence">'
+                + '<option value="conf95">Confidence ≥ 95%</option>'
+                + '<option value="conf90">Confidence ≥ 90%</option>'
+                + '</optgroup>'
+                + '<optgroup label="By value">'
+                + '<option value="value10">Value ≥ 1.0  (real work)</option>'
+                + '<option value="value08">Value ≥ 0.8</option>'
+                + '<option value="value_lo">Value < 0.6  (noise → dismiss)</option>'
+                + '</optgroup>'
+                + '<optgroup label="By priority">'
+                + '<option value="pri_crit">Priority: CRITICAL</option>'
+                + '<option value="pri_high">Priority: HIGH</option>'
+                + '<option value="pri_med">Priority: MEDIUM</option>'
+                + '<option value="pri_low">Priority: LOW</option>'
+                + '</optgroup>'
+                + (ruleOptionsHtml ? '<optgroup label="By rule (live counts)">' + ruleOptionsHtml + '</optgroup>' : '')
+                + '<option value="none">None</option>'
+                + '</select>'
+                + '</div>'
+                + '<div style="display:flex; gap:6px;">'
+                + '<button class="btn btn-sm btn-primary" style="flex:1; font-size:11px; padding:4px 6px;" onclick="bulkPromoteSuggested()" title="Promote selected to backlog">\u2191 Promote <span data-bulk-count>' + selectedCount + '</span></button>'
+                + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:4px 6px; color:#ef4444;" onclick="bulkDismissSuggested()" title="Dismiss selected (marks oracle_prediction dismissed)">\u2715 Dismiss <span data-bulk-count>' + selectedCount + '</span></button>'
+                + '</div>'
+                + '</div>';
+        }
+
+        bodyEl.innerHTML = toolbarHtml + items.map(function(t) {
+            var icon = typeIcons[t.task_type] || '';
+            var pColor = priorityColors[t.priority] || '#6b7280';
+
+            if (status === 'suggested') {
+                // Prefer exact confidence from oracle_predictions JOIN, fall back to priority-range
+                var confLabel;
+                if (t.oracle_confidence != null) {
+                    confLabel = Math.round(t.oracle_confidence * 100) + '%';
+                } else {
+                    confLabel = confidenceLabel[t.priority] || '';
+                }
+                // Prefer proposed_action from oracle JOIN; fall back to description parse
+                var proposedAction = t.oracle_proposed_action || '';
+                if (!proposedAction && t.description) {
+                    var match = t.description.match(/\*\*Proposed action:\*\*\s*(.+?)(\n|$)/);
+                    if (match) proposedAction = match[1].trim();
+                }
+                var lensLabel = t.oracle_lens ? ' \u00B7 ' + esc(t.oracle_lens) : '';
+                // Value score + duplicate count surfaced on every card
+                // so operators can see the bulk-select rationale at a
+                // glance. Value comes from tools/awareness/value_scorer.py.
+                var valueLabel = (t.oracle_value != null && !isNaN(t.oracle_value))
+                    ? ' \u00B7 value ' + Number(t.oracle_value).toFixed(2)
+                    : '';
+                var dupLabel = (t.oracle_dup_count && t.oracle_dup_count > 1)
+                    ? ' \u00B7 \u00D7' + t.oracle_dup_count
+                    : '';
+                var checked = _selectedTaskIds.has(t.id) ? ' checked' : '';
+
+                return '<div class="kanban-card" style="border-left:3px solid #8b5cf6; cursor:pointer;" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
+                    + '<div style="display:flex; gap:6px; align-items:flex-start;">'
+                    + '<input type="checkbox" class="suggested-checkbox"' + checked + ' onclick="toggleTaskSelected(\'' + t.id + '\', event)" style="margin-top:3px; cursor:pointer;">'
+                    + '<div style="flex:1; min-width:0;">'
+                    + '<div style="display:flex; align-items:center; gap:6px; margin-bottom:4px; flex-wrap:wrap;">'
+                    + '<span style="font-size:11px; background:#8b5cf620; color:#8b5cf6; border-radius:4px; padding:1px 6px; font-weight:600;">\uD83D\uDD2E Oracle</span>'
+                    + (confLabel ? '<span style="font-size:11px; color:var(--text-dim);">conf ' + confLabel + valueLabel + dupLabel + lensLabel + '</span>' : '')
+                    + '</div>'
+                    + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
+                    + (proposedAction ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px; font-style:italic;">' + esc(proposedAction) + '</div>' : '')
+                    + '<div class="kanban-card-meta" style="margin-top:6px;">'
+                    + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
+                    + '<span class="badge" style="background:' + pColor + '20; color:' + pColor + ';">' + esc(t.priority) + '</span>'
+                    + '</div>'
+                    + '<div style="display:flex; gap:6px; margin-top:8px;">'
+                    + '<button class="btn btn-sm btn-primary" style="flex:1; font-size:11px; padding:4px 8px;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'backlog\')" title="Promote to Backlog">\u2191 Promote</button>'
+                    + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:4px 8px; color:#6b7280;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'done\')" title="Dismiss">\u2715 Dismiss</button>'
+                    + '</div>'
+                    + '</div>'
+                    + '</div>'
+                    + '</div>';
+            }
+
+            var arrows = '';
+            if (prevStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + prevStatus[status] + '\')" title="Move left">◀</button>';
+            if (nextStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + nextStatus[status] + '\')" title="Move right">▶</button>';
+
+            var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">' + '\u{1F4C5}' + ' ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
+
+            // Native task dependency badge
+            var blockedBadge = '';
+            var blockedStyle = '';
+            if (t.is_blocked) {
+                var depTitle = t.depends_on_title || t.depends_on_task_id || 'unknown';
+                var depStatus = t.depends_on_status || 'unknown';
+                var tooltip = 'Blocked by ' + depTitle + ' (status: ' + depStatus + ', id: ' + (t.depends_on_task_id || '?') + ')';
+                blockedBadge = '<div style="margin-top:4px;"><span class="badge" title="' + esc(tooltip) + '" style="background:#f59e0b20; color:#f59e0b; font-size:10px;">🔒 blocked by ' + esc(depTitle.length > 28 ? depTitle.slice(0, 28) + '…' : depTitle) + '</span></div>';
+                blockedStyle = ' opacity:0.55;';
+            }
+
+            // Executor badge
+            var execInfo = executorLabels[t.executor_type] || executorLabels['claude_cli'];
+            var execBadge = '<span class="badge" style="background:' + execInfo.color + '20;color:' + execInfo.color + ';font-size:10px;" title="Executor: ' + execInfo.label + '">'
+                + execInfo.icon + ' ' + execInfo.label + '</span>';
+
+            // Execution ID line
+            var execIdLine = '';
+            if (t.execution_id) {
+                var execUrl = t.executor_url || null;
+                if (execUrl) {
+                    execIdLine = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">'
+                        + '🔗 <a href="' + esc(execUrl) + '" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="color:var(--text-dim);text-decoration:underline;">' + esc(t.execution_id) + '</a></div>';
+                } else {
+                    execIdLine = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px;">🆔 ' + esc(t.execution_id) + '</div>';
+                }
+            }
+
+            // LLM mode badge inferred from executor_type
+            var llmMode = (t.executor_type === 'claude_cli') ? 'claude' : (t.executor_type === 'ollama_local' ? 'ollama' : 'none');
+            var llmBadge = '<span title="' + (llmModeTitles[llmMode] || '') + '" style="font-size:11px; cursor:default;">' + (llmModeIcons[llmMode] || '') + '</span>';
+
+            // OPT-62: mid-run message injection button (in_progress only)
+            var msgBtn = '';
+            if (status === 'in_progress') {
+                msgBtn = '<button class="kanban-move-btn" onclick="event.stopPropagation(); openMessageModal(\'' + t.id + '\',' + JSON.stringify(t.title || '').replace(/"/g, '&quot;') + ')" title="Send message to running task">💬</button>';
+            }
+
+            // kv-viz-02: attempt badge + reaper bar + TIF counter + last-killed line
+            var attemptBadge = '';
+            var reaperBar = '';
+            var tifLine = '';
+            var lastKilledLine = '';
+            if (status === 'in_progress') {
+                var ac = t.attempt_count || 0;
+                if (ac > 1) {
+                    var abColor = ac >= 4 ? '#ef4444' : '#f59e0b';
+                    attemptBadge = '<span class="badge" style="background:' + abColor + '20;color:' + abColor + ';font-size:10px;" title="Dispatched ' + ac + ' times">Attempt ' + ac + '</span>';
+                }
+                if (t.current_attempt_started_at) {
+                    reaperBar = '<div style="margin:4px 0 2px 0;background:var(--bg-code);border-radius:2px;height:3px;overflow:hidden;" title="Reaper kills at 15m with no subprocess heartbeat">'
+                        + '<div id="kv-bar-' + esc(t.id) + '" style="height:100%;width:0%;background:#22c55e;"></div></div>';
+                    tifLine = '<div id="kv-tif-' + esc(t.id) + '" style="font-size:11px;color:var(--text-dim);margin-top:2px;">Running 0m 0s</div>'
+                        + '<span data-kv-started="' + esc(t.current_attempt_started_at) + '" data-kv-task-id="' + esc(t.id) + '" style="display:none;"></span>';
+                }
+                if (t.last_reaped_reason) {
+                    var reason = String(t.last_reaped_reason);
+                    var shortReason = reason.length > 80 ? reason.substring(0, 80) + '…' : reason;
+                    lastKilledLine = '<div style="font-size:10px;color:var(--text-dim);margin-top:2px;font-style:italic;" title="' + esc(reason) + '">Last killed: ' + esc(shortReason) + '</div>';
+                }
+            }
+
+            var snapAttr = JSON.stringify(t).replace(/"/g, '&quot;');
+            return '<div class="kanban-card" data-task-id="' + esc(t.id) + '" data-status="' + esc(status) + '" data-snapshot="' + snapAttr + '" style="border-left:3px solid ' + pColor + '; cursor:pointer;' + blockedStyle + '" onclick="openEditTaskModal(' + snapAttr + ')">'
+                + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
+                + reaperBar
+                + '<div class="kanban-card-meta">'
+                + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
+                + '<span class="badge" style="background:' + pColor + '20; color:' + pColor + ';">' + esc(t.priority) + '</span>'
+                + execBadge
+                + llmBadge
+                + attemptBadge
+                + '</div>'
+                + blockedBadge
+                + tifLine
+                + lastKilledLine
+                + schedLine
+                + execIdLine
+                + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
+                + '<div style="display:flex; gap:4px;">' + arrows + msgBtn + '</div>'
+                + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">✕</button>'
+                + '</div>'
+                + '</div>';
+        }).join('');
+    });
+    _setupKvCounters(board);
+}
+
+// OPT-62: mid-run message injection
+var _kanbanMsgTargetId = null;
+function openMessageModal(taskId, title) {
+    _kanbanMsgTargetId = taskId;
+    document.getElementById('kanban-msg-target').textContent = 'Task: ' + (title || taskId);
+    document.getElementById('kanban-msg-text').value = '';
+    document.getElementById('kanban-msg-status').textContent = '';
+    document.getElementById('kanban-msg-status').style.color = 'var(--text-dim)';
+    document.getElementById('kanban-message-modal').style.display = 'flex';
+    setTimeout(function() { document.getElementById('kanban-msg-text').focus(); }, 50);
+}
+
+function closeMessageModal() {
+    document.getElementById('kanban-message-modal').style.display = 'none';
+    _kanbanMsgTargetId = null;
+}
+
+function submitMessage() {
+    if (!_kanbanMsgTargetId) return;
+    var text = document.getElementById('kanban-msg-text').value.trim();
+    if (!text) {
+        document.getElementById('kanban-msg-status').textContent = 'Message cannot be empty.';
+        document.getElementById('kanban-msg-status').style.color = '#ef4444';
+        return;
+    }
+    var btn = document.getElementById('kanban-msg-send');
+    btn.disabled = true;
+    document.getElementById('kanban-msg-status').textContent = 'Sending…';
+    document.getElementById('kanban-msg-status').style.color = 'var(--text-dim)';
+    fetch('/api/kanban/tasks/' + _kanbanMsgTargetId + '/message', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ message: text, sender: 'dashboard' })
+    }).then(function(r) { return r.json().then(function(body) { return { ok: r.ok, status: r.status, body: body }; }); })
+    .then(function(res) {
+        btn.disabled = false;
+        if (res.ok) {
+            document.getElementById('kanban-msg-status').textContent = '👀 Queued — will be delivered at next LLM call.';
+            document.getElementById('kanban-msg-status').style.color = '#10b981';
+            setTimeout(closeMessageModal, 1200);
+        } else {
+            document.getElementById('kanban-msg-status').textContent = 'Failed: ' + (res.body && res.body.error ? res.body.error : ('HTTP ' + res.status));
+            document.getElementById('kanban-msg-status').style.color = '#ef4444';
+        }
+    }).catch(function(e) {
+        btn.disabled = false;
+        document.getElementById('kanban-msg-status').textContent = 'Error: ' + e;
+        document.getElementById('kanban-msg-status').style.color = '#ef4444';
+    });
+}
+
+// Notify-channel: load available channels + current selection
+function loadNotifyChannel() {
+    fetch('/api/kanban/notify-channel')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var sel = document.getElementById('notify-channel-select');
+            if (!sel) return;
+            sel.innerHTML = '';
+            (data.available || []).forEach(function(ch) {
+                var opt = document.createElement('option');
+                opt.value = ch.id;
+                opt.textContent = (ch.configured ? '' : '⚠️ ') + ch.label;
+                opt.title = ch.configured ? ch.label + ' (configured)' : ch.label + ' (not configured — check .env)';
+                if (ch.id === data.current) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        })
+        .catch(function() {
+            // Silently degrade — dropdown stays empty
+        });
+}
+
+window.setNotifyChannel = function(channelId) {
+    if (!channelId) return;
+    fetch('/api/kanban/notify-channel', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ channel: channelId })
+    }).catch(function() {});
+};
+
+window.setExecutorChain = function(value) {
+    fetch('/api/kanban/settings/executor-chain', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({chain: value.split(',')}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            alert('Executor chain update failed: ' + data.error);
+        } else {
+            var el = document.getElementById('auto-refresh-countdown');
+            if (el) {
+                var old = el.textContent;
+                el.textContent = 'Executor updated ✓';
+                setTimeout(function() { el.textContent = old; }, 2000);
+            }
+        }
+    })
+    .catch(function(err) {
+        console.error('setExecutorChain failed:', err);
+    });
+};
+
+// ── Auto-refresh: 5-minute interval with countdown ──────────────────
+var AUTO_REFRESH_SECONDS = 60; // completion poller handles real-time; this is the safety net
+var _refreshCountdown = AUTO_REFRESH_SECONDS;
+var _refreshTimer = null;
+var _countdownTimer = null;
+
+function refreshDashboard() {
+    // Refresh kanban tasks
+    refreshKanbanTasks();
+    // Refresh in-flight projects (reusable partial in _projects_in_flight.html)
+    if (window.refreshProjectsInFlight) window.refreshProjectsInFlight();
+    // Refresh autonomous recovery panel (reusable partial in _autonomy_status.html)
+    if (window.refreshAutonomyStatus) window.refreshAutonomyStatus();
+    // Refresh charts (re-trigger the chart loader in the scripts block)
+    if (window._loadCharts) window._loadCharts();
+    // Refresh monitor tiles
+    if (window.renderSandboxTile) window.renderSandboxTile();
+    if (window.renderOracleTile) window.renderOracleTile();
+    if (window.renderMcpTile) window.renderMcpTile();
+    if (window.renderCacheTile) window.renderCacheTile();
+    // Visual feedback on button
+    var btn = document.getElementById('refresh-btn');
+    if (btn) {
+        btn.textContent = '\u2713 Refreshed';
+        btn.style.color = 'var(--status-green)';
+        setTimeout(function() { btn.innerHTML = '&#x21bb; Refresh'; btn.style.color = ''; }, 1500);
+    }
+    // Reset countdown
+    _refreshCountdown = AUTO_REFRESH_SECONDS;
+}
+
+// Kanban scheduler pause/resume — toggles a sentinel flag the scheduler honors.
+// Auto-pause (an interactive session active) is shown; the button toggles the
+// MANUAL flag only.
+function _renderSchedBtn(s) {
+    var b = document.getElementById('schedToggleBtn');
+    if (!b) return;
+    if (s && s.paused) {
+        if (s.mode === 'auto') {
+            b.innerHTML = '⏸ Auto-paused (' + (s.active_interactive_sessions || 0) + ')';
+            b.title = 'Scheduler auto-paused while an interactive session is active';
+        } else {
+            b.innerHTML = '▶ Resume Scheduler';
+            b.title = 'Click to resume the kanban scheduler';
+        }
+        b.style.background = '#7f1d1d'; b.style.color = '#fecaca';
+        b.dataset.paused = '1'; b.dataset.mode = s.mode || '';
+    } else {
+        b.innerHTML = '⏸ Pause Scheduler';
+        b.style.background = ''; b.style.color = '';
+        b.dataset.paused = '0'; b.dataset.mode = '';
+        b.title = 'Pause the kanban scheduler (stops its git stash/merge cycle)';
+    }
+}
+function toggleKanbanScheduler() {
+    var b = document.getElementById('schedToggleBtn');
+    var manualPaused = b && b.dataset.paused === '1' && b.dataset.mode !== 'auto';
+    var url = '/api/kanban/scheduler/' + (manualPaused ? 'resume' : 'pause');
+    fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({actor: 'dashboard'})})
+        .then(function() { return fetch('/api/kanban/scheduler/status'); })
+        .then(function(r) { return r.json(); })
+        .then(_renderSchedBtn).catch(function() {});
+}
+function _pollSched() {
+    fetch('/api/kanban/scheduler/status').then(function(r) { return r.json(); })
+        .then(_renderSchedBtn).catch(function() {});
+}
+_pollSched();
+setInterval(_pollSched, 15000);
+
+function _updateCountdownDisplay() {
+    var el = document.getElementById('auto-refresh-countdown');
+    if (!el) return;
+    var m = Math.floor(_refreshCountdown / 60);
+    var s = _refreshCountdown % 60;
+    el.textContent = '(auto-refresh in ' + m + ':' + (s < 10 ? '0' : '') + s + ')';
+}
+
+function _startAutoRefresh() {
+    // Countdown tick every second
+    _countdownTimer = setInterval(function() {
+        _refreshCountdown--;
+        _updateCountdownDisplay();
+        if (_refreshCountdown <= 0) {
+            refreshDashboard();
+        }
+    }, 1000);
+    _updateCountdownDisplay();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    refreshKanbanTasks();
+    loadNotifyChannel();
+    fetch('/api/kanban/settings/executor-chain')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var sel = document.getElementById('kanban-executor-chain');
+            if (!sel || !data.chain) return;
+            var chainStr = data.chain.join(',');
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value === chainStr) {
+                    sel.selectedIndex = i;
+                    break;
+                }
+            }
+        })
+        .catch(function() {});
+    if (window.refreshProjectsInFlight) window.refreshProjectsInFlight();
+    if (window.refreshAutonomyStatus)   window.refreshAutonomyStatus();
+    _startAutoRefresh();
+});
+</script>
+
+<style>
+.kanban-move-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer; line-height: 1;
+}
+.kanban-move-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+</style>
+
+<!-- Compliance Posture — full-width section -->
+<div class="card" style="padding: 20px; margin-bottom: 24px; overflow: visible;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+        <div class="card-label" style="margin:0;">
+            Compliance Posture
+            <span class="help-icon" title="Compliance score per canvas assessment">?</span>
+        </div>
+        <a href="/security/posture" style="font-size:11px; color:var(--text-dim); text-decoration:none;">View all →</a>
+    </div>
+    <div id="chart-compliance" style="overflow: visible;"></div>
+    <div id="chart-compliance-trend" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;min-height:24px;"></div>
+</div>
+
+<!-- Monitor Cards Row -->
+<div class="chart-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 24px;">
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Activity Trend (7 days)</div>
+        <div id="chart-alerts" style="min-height: 200px;"></div>
+    </div>
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Task Board Status</div>
+        <div id="chart-projects" style="min-height: 200px;"></div>
+    </div>
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Agent Health</div>
+        <div id="chart-agent-health" style="min-height: 140px;"></div>
+    </div>
+    <!-- Oracle Insights: 4 stat tiles + severity mini-bar over 24h -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Oracle Insights
+            <span class="help-icon" title="Anticipatory predictions from Oracle lenses (24h window)">?</span>
+        </div>
+        <div id="tile-oracle" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
+    <!-- OPT-57: Sandbox liveness tile -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Sandbox</div>
+        <div id="tile-sandbox" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
+    <!-- MCP Monitor tile -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">MCP Monitor
+            <span class="help-icon" title="MCP tool registry: registered tools, categories, wrapper activity">?</span>
+        </div>
+        <div id="tile-mcp" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
+    <!-- Cache Savings tile -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Cache Savings
+            <span class="help-icon" title="LLM response and context cache hit rate, token savings, cost avoided">?</span>
+        </div>
+        <div id="tile-cache" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
+</div>
+
+
+<details id="pif-events-section" style="margin-bottom:24px; display:none;">
+  <summary style="cursor:pointer; list-style:none; display:flex; align-items:center; gap:0.5rem;
+                  padding:0.6rem 0.8rem; background:var(--bg-card,#1e293b); border-radius:8px;
+                  border:1px solid var(--border-color,#2a2a40);">
+    <span style="font-size:0.9rem; font-weight:600; color:var(--text-primary);">Recent Task Events</span>
+    <span id="pif-events-count" style="font-size:0.72rem; color:var(--text-muted); margin-left:0.25rem;"></span>
+    <span style="margin-left:auto; font-size:0.72rem; color:var(--text-muted);">last 24h</span>
+  </summary>
+  <div id="pif-events-list" style="margin-top:0.5rem;"></div>
+</details>
+
+<script>
+// OPT-57: Sandbox liveness tile renderer
+(function () {
+    function renderSandboxTile() {
+        fetch('/api/sandbox/liveness').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-sandbox');
+            if (!el) return;
+            var status = d.status || 'unknown';
+            var color = status === 'healthy' ? '#22c55e'
+                      : status === 'smoke_failed' ? '#f59e0b'
+                      : '#ef4444';
+            var label = status === 'healthy' ? 'OK'
+                      : status === 'smoke_failed' ? 'Smoke failed'
+                      : status === 'degraded' ? 'Degraded'
+                      : 'Unknown';
+            var runtime = (d.health && d.health.runtime) || 'none';
+            var probeAt = d.probe_at ? new Date(d.probe_at) : null;
+            var ageStr = '';
+            if (probeAt) {
+                var hrs = Math.max(0, (Date.now() - probeAt.getTime()) / 3600000);
+                ageStr = hrs < 1 ? '<1h ago' : Math.floor(hrs) + 'h ago';
+            } else {
+                ageStr = 'never';
+            }
+            el.innerHTML =
+                '<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">'
+                + '<span style="width:10px; height:10px; border-radius:50%; background:' + color + '; display:inline-block;"></span>'
+                + '<span style="font-size:16px; font-weight:600; color:var(--text-primary);">' + label + '</span>'
+                + '</div>'
+                + '<div>Runtime: <span style="color:var(--text-primary);">' + runtime + '</span></div>'
+                + '<div>Last probe: <span style="color:var(--text-primary);">' + ageStr + '</span></div>'
+                + '<div>Smoke: <span style="color:var(--text-primary);">' + (d.smoke_passed ? 'ok' : 'fail') + '</span></div>'
+                + '<div style="margin-top:8px;"><a href="/sandbox" class="btn" style="font-size:11px; padding:3px 10px;">View log</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-sandbox');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Sandbox status unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderSandboxTile);
+    window.renderSandboxTile = renderSandboxTile;
+})();
+
+// Oracle Insights tile renderer
+(function () {
+    function renderOracleTile() {
+        fetch('/api/oracle/summary').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-oracle');
+            if (!el) return;
+            var sev = d.severity || {critical:0, high:0, medium:0, low:0};
+            var total = (sev.critical||0) + (sev.high||0) + (sev.medium||0) + (sev.low||0);
+            var stat = function (label, val) {
+                return '<div style="flex:1; min-width:60px;">'
+                    + '<div style="font-size:18px; font-weight:600; color:var(--text-primary);">' + (val == null ? '—' : val) + '</div>'
+                    + '<div style="font-size:11px; color:var(--text-dim);">' + label + '</div>'
+                    + '</div>';
+            };
+            var seg = function (color, n) {
+                if (total === 0 || !n) return '';
+                var pct = (n / total) * 100;
+                return '<span title="' + n + '" style="background:' + color + '; width:' + pct.toFixed(1) + '%; display:inline-block; height:100%;"></span>';
+            };
+            var bar = total > 0
+                ? '<div style="display:flex; width:100%; height:8px; border-radius:4px; overflow:hidden; background:var(--card-bg);">'
+                    + seg('#ef4444', sev.critical)
+                    + seg('#f59e0b', sev.high)
+                    + seg('#eab308', sev.medium)
+                    + seg('#22c55e', sev.low)
+                    + '</div>'
+                    + '<div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-dim); margin-top:4px;">'
+                    + '<span>C ' + (sev.critical||0) + '</span>'
+                    + '<span>H ' + (sev.high||0) + '</span>'
+                    + '<span>M ' + (sev.medium||0) + '</span>'
+                    + '<span>L ' + (sev.low||0) + '</span>'
+                    + '</div>'
+                : '<div style="color:var(--text-dim); font-style:italic;">No predictions in 24h</div>';
+            el.innerHTML =
+                '<div style="display:flex; gap:8px; margin-bottom:12px;">'
+                + stat('Total 24h', d.total_24h)
+                + stat('High-conf pending', d.high_conf_pending)
+                + stat('Convergence', d.unresolved_convergence)
+                + stat('Median horizon (d)', d.median_horizon_days)
+                + '</div>'
+                + bar
+                + '<div style="margin-top:10px;"><a href="/oracle" class="btn" style="font-size:11px; padding:3px 10px;">View all</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-oracle');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Oracle summary unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderOracleTile);
+    window.renderOracleTile = renderOracleTile;
+})();
+
+// MCP Monitor tile renderer
+(function () {
+    function fmtAge(secs) {
+        if (secs == null) return 'never';
+        if (secs < 60)   return secs + 's ago';
+        if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+        return Math.floor(secs / 3600) + 'h ago';
+    }
+    function renderMcpTile() {
+        fetch('/api/mcp/status').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-mcp');
+            if (!el) return;
+            var ageColor = d.log_age_secs == null ? '#6b7280'
+                         : d.log_age_secs < 300  ? '#22c55e'
+                         : d.log_age_secs < 1800 ? '#f59e0b' : '#ef4444';
+            var topCats = (d.top_categories || []).slice(0, 5).map(function (c) {
+                return '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-top:3px;">'
+                    + '<span>' + c.name + '</span>'
+                    + '<span style="color:var(--text-primary);font-weight:600;">' + c.count + '</span>'
+                    + '</div>';
+            }).join('');
+            el.innerHTML =
+                '<div style="display:flex;gap:12px;margin-bottom:10px;">'
+                + '<div style="flex:1;"><div style="font-size:22px;font-weight:700;color:var(--text-primary);">' + (d.tool_count || 0) + '</div><div style="font-size:11px;color:var(--text-dim);">Tools registered</div></div>'
+                + '<div style="flex:1;"><div style="font-size:22px;font-weight:700;color:var(--text-primary);">' + (d.category_count || 0) + '</div><div style="font-size:11px;color:var(--text-dim);">Categories</div></div>'
+                + '<div style="flex:1;"><div style="font-size:22px;font-weight:700;color:var(--text-primary);">' + (d.wrapper_starts_today || 0) + '</div><div style="font-size:11px;color:var(--text-dim);">Starts today</div></div>'
+                + '</div>'
+                + topCats
+                + '<div style="margin-top:8px;display:flex;align-items:center;gap:6px;">'
+                + '<span style="width:8px;height:8px;border-radius:50%;background:' + ageColor + ';display:inline-block;flex-shrink:0;"></span>'
+                + '<span style="font-size:11px;color:var(--text-dim);">Last activity: ' + fmtAge(d.log_age_secs) + '</span>'
+                + (d.error_count > 0 ? '<span style="margin-left:auto;font-size:10px;color:#ef4444;font-weight:600;">⚠ ' + d.error_count + ' errors</span>' : '')
+                + '</div>'
+                + '<div style="margin-top:8px;"><a href="/mcp-wrapper" class="btn" style="font-size:11px;padding:3px 10px;">View registry</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-mcp');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">MCP status unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderMcpTile);
+    window.renderMcpTile = renderMcpTile;
+})();
+
+// Cache Savings tile renderer
+(function () {
+    function renderCacheTile() {
+        fetch('/api/cache-savings/tile').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-cache');
+            if (!el) return;
+            var statusColor = d.enabled ? '#22c55e' : '#ef4444';
+            var statusLabel = d.enabled ? 'Enabled' : 'Disabled';
+            var hitColor = (d.hit_rate_pct >= 50) ? '#22c55e' : (d.hit_rate_pct >= 20) ? '#f59e0b' : '#ef4444';
+            el.innerHTML = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">'
+                + '<span style="width:8px;height:8px;border-radius:50%;background:' + statusColor + ';display:inline-block;flex-shrink:0;"></span>'
+                + '<span style="font-size:11px;color:var(--text-dim);">' + statusLabel + ' &middot; backend: ' + (d.backend || 'unknown') + '</span>'
+                + '</div>'
+                + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
+                + '<div><div style="font-size:20px;font-weight:700;color:' + hitColor + ';">' + (d.hit_rate_pct || 0).toFixed(1) + '%</div><div style="font-size:10px;color:var(--text-dim);">Hit Rate</div></div>'
+                + '<div><div style="font-size:20px;font-weight:700;color:#f59e0b;">$' + (d.cost_usd_saved || 0).toFixed(4) + '</div><div style="font-size:10px;color:var(--text-dim);">Saved (USD)</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + (d.total_entries || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Entries</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:#818cf8;">' + (d.tokens_saved || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Read Tokens</div></div>'
+                + '</div>'
+                + '<div style="margin-top:4px;"><a href="/cache-savings" class="btn" style="font-size:11px;padding:3px 10px;">View dashboard</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-cache');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Cache stats unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderCacheTile);
+    window.renderCacheTile = renderCacheTile;
+})();
+</script>
+
+<!-- Remediation History Timeline (collapsed by default) -->
+<details class="collapsible-section" style="margin-bottom:24px;">
+    <summary style="cursor:pointer; padding:16px 20px; background:var(--card-bg,#0f1e35); border:1px solid var(--card-border,#1e3a6e); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:15px; font-weight:600;">Remediation History</span>
+        <a href="/oracle" class="btn" style="font-size:12px; padding:5px 12px;" onclick="event.stopPropagation();">View All &rarr;</a>
+    </summary>
+    <div class="card" style="padding:20px; margin-top:-1px; border-top:none; border-radius:0 0 6px 6px;">
+        <div id="remediation-history-list">
+            <div style="padding:16px; text-align:center; color:var(--text-dim); font-size:13px;">Loading history...</div>
+        </div>
+    </div>
+</details>
+
+<script>
+function _relativeTime(isoStr) {
+    if (!isoStr) return '';
+    try {
+        var d = new Date(isoStr.replace(' ', 'T'));
+        var diff = Math.floor((Date.now() - d.getTime()) / 1000);
+        if (diff < 60) return diff + 's ago';
+        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+        if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+        return Math.floor(diff / 86400) + 'd ago';
+    } catch (e) { return isoStr; }
+}
+
+var _CANVAS_ICONS = { idc: '&#x26C5;', sdc: '&#x1F512;', bdc: '&#x1F5FA;', ddc: '&#x1F4BE;', odc: '&#x1F50D;', ndc: '&#x1F310;', pdc: '&#x2699;' };
+
+function refreshRemediationHistory() {
+    fetch('/api/oracle/proposals/history?limit=10')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var items = data.history || [];
+            var el = document.getElementById('remediation-history-list');
+            if (!el) return;
+
+            if (items.length === 0) {
+                el.innerHTML = '<div style="padding:16px; text-align:center; color:var(--text-dim); font-size:13px;">No remediation history yet</div>';
+                return;
+            }
+
+            var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+
+            var rows = items.map(function(item, i) {
+                var status = item.status || '';
+                var statusColor, statusLabel;
+                if (status === 'approved' && item.actual_new_score != null) {
+                    statusColor = '#22c55e'; statusLabel = 'executed';
+                } else if (status === 'approved') {
+                    statusColor = '#f59e0b'; statusLabel = 'approved';
+                } else if (status === 'failed') {
+                    statusColor = '#ef4444'; statusLabel = 'failed';
+                } else if (status === 'expired') {
+                    statusColor = '#6b7280'; statusLabel = 'expired';
+                } else if (status === 'rejected') {
+                    statusColor = '#6b7280'; statusLabel = 'rejected';
+                } else if (status === 'pending') {
+                    statusColor = '#f59e0b'; statusLabel = 'pending';
+                } else {
+                    statusColor = '#6b7280'; statusLabel = status;
+                }
+
+                var canvasKey = (item.canvas || '').toLowerCase();
+                var icon = _CANVAS_ICONS[canvasKey] || '&#x25A6;';
+                var canvasLabel = esc(item.canvas_label || item.canvas || '');
+                var title = esc(item.title || canvasLabel + ' remediation');
+
+                var scoreHtml = '';
+                if (item.current_score != null) {
+                    var newScore = item.actual_new_score != null ? item.actual_new_score : item.projected_score;
+                    var newColor = item.actual_new_score != null && item.actual_new_score > item.current_score ? '#22c55e' : 'var(--text-dim)';
+                    scoreHtml = '<span style="color:var(--text-dim); font-size:12px;">'
+                        + item.current_score.toFixed(1) + ' &rarr; <span style="color:' + newColor + ';">' + (newScore != null ? newScore.toFixed(1) : '?') + '</span>'
+                        + '</span>';
+                }
+
+                var ts = _relativeTime(item.executed_at || item.reviewed_at || item.created_at);
+
+                return '<div style="display:flex; align-items:center; gap:12px; padding:10px 0;'
+                    + (i < items.length - 1 ? ' border-bottom:1px solid var(--border);' : '') + '">'
+                    + '<span style="font-size:16px; width:24px; text-align:center;">' + icon + '</span>'
+                    + '<div style="flex:1; min-width:0;">'
+                    + '<div style="font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + title + '</div>'
+                    + '<div style="margin-top:2px;">' + scoreHtml + '</div>'
+                    + '</div>'
+                    + '<span style="font-size:11px; background:' + statusColor + '20; color:' + statusColor + '; border-radius:4px; padding:2px 8px; font-weight:600; white-space:nowrap;">' + esc(statusLabel) + '</span>'
+                    + '<span style="font-size:11px; color:var(--text-dim); white-space:nowrap; min-width:54px; text-align:right;">' + esc(ts) + '</span>'
+                    + '</div>';
+            }).join('');
+
+            el.innerHTML = rows;
+        })
+        .catch(function() {
+            var el = document.getElementById('remediation-history-list');
+            if (el) el.innerHTML = '<div style="padding:14px; color:var(--text-dim); font-size:13px;">History unavailable</div>';
+        });
+}
+
+// Hook into auto-refresh
+(function() {
+    var _orig2 = window.refreshDashboard;
+    window.refreshDashboard = function() { if (_orig2) _orig2(); refreshRemediationHistory(); };
+})();
+
+document.addEventListener('DOMContentLoaded', function() { refreshRemediationHistory(); });
+</script>
+
+<!-- Recent Activity & Findings (collapsed by default) -->
+<details class="collapsible-section" style="margin-bottom:24px;">
+    <summary style="cursor:pointer; padding:16px 20px; background:var(--card-bg,#0f1e35); border:1px solid var(--card-border,#1e3a6e); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:15px; font-weight:600;">Recent Activity &amp; Findings</span>
+        <a href="/monitoring" onclick="event.stopPropagation();">View All</a>
+    </summary>
+    <div class="table-container" style="margin-top:-1px; border-top:none; border-radius:0 0 6px 6px;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Event Type</th>
+                    <th>Source</th>
+                    <th>Details</th>
+                    <th>Severity</th>
+                    <th>When</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>System</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td><span class="badge badge-info">info</span></td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:37:01.959911">Jun 07, 2026 at 3:37 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>System</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td><span class="badge badge-info">info</span></td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:36:30.681940">Jun 07, 2026 at 3:36 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>System</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td><span class="badge badge-info">info</span></td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:35:49.540214">Jun 07, 2026 at 3:35 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>System</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td><span class="badge badge-info">info</span></td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:35:12.196740">Jun 07, 2026 at 3:35 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>System</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td><span class="badge badge-info">info</span></td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:35:03.005711">Jun 07, 2026 at 3:35 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">decomposition_generated</span></td>
+                    <td>System</td>
+                    <td>Decomposed 185 requirements into 382 SAFe items</td>
+                    <td><span class="badge badge-info">info</span></td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:34:58.930423">Jun 07, 2026 at 3:34 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>System</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td><span class="badge badge-info">info</span></td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:34:00.180390">Jun 07, 2026 at 3:34 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">hook_event_logged</span></td>
+                    <td>System</td>
+                    <td>create_wbs</td>
+                    <td><span class="badge badge-info">info</span></td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:31:26.977094">Jun 07, 2026 at 3:31 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">hook_event_logged</span></td>
+                    <td>System</td>
+                    <td>create_wbs</td>
+                    <td><span class="badge badge-info">info</span></td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:30:28.181132">Jun 07, 2026 at 3:30 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">hook_event_logged</span></td>
+                    <td>System</td>
+                    <td>predict_cpars</td>
+                    <td><span class="badge badge-info">info</span></td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:29:42.677637">Jun 07, 2026 at 3:29 AM</td>
+                </tr>
+                
+            </tbody>
+        </table>
+    </div>
+</details>
+
+<!-- Recent Audit Trail (collapsed by default) -->
+<details class="collapsible-section" style="margin-bottom:24px;">
+    <summary style="cursor:pointer; padding:16px 20px; background:var(--card-bg,#0f1e35); border:1px solid var(--card-border,#1e3a6e); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:15px; font-weight:600;">Recent Activity</span>
+    </summary>
+    <div class="table-container" style="margin-top:-1px; border-top:none; border-radius:0 0 6px 6px;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Event Type</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Project</th>
+                    <th>When</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>icdev-requirements-analyst</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td>
+                        
+                        <span class="text-muted">&mdash;</span>
+                        
+                    </td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:37:01.959911" data-timestamp-format="ago">Jun 07, 2026 at 3:37 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>icdev-requirements-analyst</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td>
+                        
+                        <span class="text-muted">&mdash;</span>
+                        
+                    </td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:36:30.681940" data-timestamp-format="ago">Jun 07, 2026 at 3:36 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>icdev-requirements-analyst</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td>
+                        
+                        <span class="text-muted">&mdash;</span>
+                        
+                    </td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:35:49.540214" data-timestamp-format="ago">Jun 07, 2026 at 3:35 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>icdev-requirements-analyst</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td>
+                        
+                        <span class="text-muted">&mdash;</span>
+                        
+                    </td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:35:12.196740" data-timestamp-format="ago">Jun 07, 2026 at 3:35 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>icdev-requirements-analyst</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td>
+                        
+                        <span class="text-muted">&mdash;</span>
+                        
+                    </td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:35:03.005711" data-timestamp-format="ago">Jun 07, 2026 at 3:35 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">decomposition_generated</span></td>
+                    <td>icdev-requirements-analyst</td>
+                    <td>Decomposed 185 requirements into 382 SAFe items</td>
+                    <td>
+                        
+                        <span class="text-muted">&mdash;</span>
+                        
+                    </td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:34:58.930423" data-timestamp-format="ago">Jun 07, 2026 at 3:34 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">readiness_scored</span></td>
+                    <td>icdev-requirements-analyst</td>
+                    <td>Readiness scored for session sess-9cc6891cb548: 85.0%</td>
+                    <td>
+                        
+                        <span class="text-muted">&mdash;</span>
+                        
+                    </td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:34:00.180390" data-timestamp-format="ago">Jun 07, 2026 at 3:34 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">hook_event_logged</span></td>
+                    <td>contract_manager</td>
+                    <td>create_wbs</td>
+                    <td>
+                        
+                        <span class="text-muted">&mdash;</span>
+                        
+                    </td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:31:26.977094" data-timestamp-format="ago">Jun 07, 2026 at 3:31 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">hook_event_logged</span></td>
+                    <td>contract_manager</td>
+                    <td>create_wbs</td>
+                    <td>
+                        
+                        <span class="text-muted">&mdash;</span>
+                        
+                    </td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:30:28.181132" data-timestamp-format="ago">Jun 07, 2026 at 3:30 AM</td>
+                </tr>
+                
+                <tr>
+                    <td><span class="badge badge-info">hook_event_logged</span></td>
+                    <td>cpars_predictor</td>
+                    <td>predict_cpars</td>
+                    <td>
+                        
+                        <span class="text-muted">&mdash;</span>
+                        
+                    </td>
+                    <td class="text-muted" data-timestamp="2026-06-07 03:29:42.677637" data-timestamp-format="ago">Jun 07, 2026 at 3:29 AM</td>
+                </tr>
+                
+            </tbody>
+        </table>
+    </div>
+</details>
+
+    </div>
+
+    <!-- CUI Banner Bottom (D173) -->
+    
+    <div class="cui-banner bottom" role="contentinfo" aria-label="Classification marking">CUI // SP-CTI</div>
+    
+
+    <!-- Notification container for toasts -->
+    <div class="notification-container" id="notification-container" aria-live="polite"></div>
+
+    <!-- ExplainPanel — collapsible slide-out (aisg-a3-01) -->
+    <div id="explain-panel" role="complementary" aria-label="Event explanation panel" aria-hidden="true">
+        <div id="explain-panel-header">
+            <h3>&#10067; Explain</h3>
+            <button id="explain-panel-close" onclick="window.closeExplain()" aria-label="Close explanation panel">&times;</button>
+        </div>
+        <div id="explain-panel-body">
+            <div id="explain-panel-loading">Loading explanation&hellip;</div>
+            <div id="explain-panel-content"></div>
+        </div>
+    </div>
+
+    <!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
+    <!-- CUI // SP-CTI -->
+<!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
+<!-- Floating chat widget for codebase Q&A on every dashboard page. -->
+
+<!-- Collapsed FAB button -->
+<button id="assistant-fab" class="assistant-fab" title="Codebase Assistant" aria-label="Open codebase assistant">
+    <span class="assistant-fab__icon">?</span>
+    <span id="assistant-fab-badge" class="assistant-fab__badge" style="display:none;">0</span>
+</button>
+
+<!-- Expanded widget panel -->
+<div id="assistant-widget" class="assistant-widget" style="display:none;">
+    <!-- Header -->
+    <div class="assistant-widget__header">
+        <div class="assistant-widget__header-left">
+            <span class="assistant-widget__avatar">?</span>
+            <span class="assistant-widget__title">Codebase Assistant</span>
+        </div>
+        <div class="assistant-widget__header-right">
+            <button id="assistant-clear" class="assistant-widget__btn" title="New chat">&#x21BA;</button>
+            <button id="assistant-fullscreen" class="assistant-widget__btn" title="Open in full screen">&#x2197;</button>
+            <button id="assistant-close" class="assistant-widget__btn" title="Close">&times;</button>
+        </div>
+    </div>
+
+    <!-- Scope bar -->
+    <div class="assistant-widget__scope">
+        <span class="assistant-widget__scope-label">Scope:</span>
+        <select id="assistant-scope" class="assistant-widget__scope-select">
+            <option value="">All (Global)</option>
+        </select>
+    </div>
+
+    <!-- Messages -->
+    <div id="assistant-messages" class="assistant-widget__messages">
+        <!-- Empty state with suggestions -->
+        <div id="assistant-empty" class="assistant-widget__empty">
+            <p>Ask me anything about the ICDEV™ codebase.</p>
+            <div id="assistant-suggestions" class="assistant-widget__suggestions"></div>
+        </div>
+    </div>
+
+    <!-- Typing indicator -->
+    <div id="assistant-typing" class="assistant-widget__typing" style="display:none;">
+        <div class="typing-dots">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+        </div>
+        <span class="typing-label">Searching codebase...</span>
+    </div>
+
+    <!-- Input -->
+    <div class="assistant-widget__input-area">
+        <input type="text" id="assistant-input" class="assistant-widget__input" placeholder="Ask about this module..." autocomplete="off">
+        <button id="assistant-send" class="assistant-widget__send" title="Send" aria-label="Send question">&#x2192;</button>
+    </div>
+
+    <!-- Status bar -->
+    <div class="assistant-widget__status">
+        <span id="assistant-status-text" class="assistant-widget__status-text">Ready</span>
+    </div>
+</div>
+    <!-- STRATEGOS floating chat panel (only on Strategos pages) -->
+    
+
+    <!-- Route → Module map for widget auto-scoping (D-CA-4) -->
+    <script>window.ROUTE_MODULE_MAP = {"/activity": "tools/project/", "/agents": "tools/agents/", "/ai-accountability": "tools/ai_accountability/", "/ai-transparency": "tools/ai_transparency/", "/autoresearch": "tools/research/", "/batch": "tools/batch/", "/chat": "tools/dashboard/", "/cicd": "tools/cicd/", "/code-quality": "tools/knowledge/", "/cpmp": "tools/govcon/", "/dev-profiles": "tools/builder/", "/diagrams": "tools/diagrams/", "/events": "tools/project/", "/filesync": "tools/filesync/", "/finetune": "tools/finetune/", "/forge-studio": "tools/forge_studio/", "/genesis": "tools/genesis/", "/govcon": "tools/govcon/", "/knowledge-search": "tools/rag/", "/migration-intel": "tools/migration/", "/monitoring": "tools/monitoring/", "/network": "tools/network/", "/orchestration": "tools/orchestration/", "/oscal": "tools/compliance/", "/phases": "tools/project/", "/projects": "tools/project/", "/proposal-genesis": "tools/proposal_genesis/", "/proposals": "tools/govcon/", "/pulse": "tools/pulse/", "/research": "tools/research/", "/review-board": "tools/review/", "/strategos": "tools/strategos/", "/studio": "tools/studio/", "/translations": "tools/translate/", "/wizard": "tools/project/"};</script>
+    <script>
+    // Theme toggle (FDE E1)
+    window.ICDEV = window.ICDEV || {};
+    ICDEV.toggleMobileNav = function() {
+        var nav = document.getElementById('navbar-nav');
+        var btn = document.getElementById('nav-hamburger');
+        if (!nav) return;
+        var isOpen = nav.classList.contains('mobile-open');
+        nav.classList.toggle('mobile-open', !isOpen);
+        if (btn) {
+            btn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
+            btn.textContent = !isOpen ? '✕' : '☰';
+        }
+    };
+    ICDEV.toggleTheme = function() {
+        var html = document.documentElement;
+        var cur = html.getAttribute('data-theme') || 'dark';
+        var next = cur === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('icdev-theme', next);
+        var icon = document.getElementById('theme-icon');
+        if (icon) icon.textContent = next === 'light' ? '🌙' : '☀';
+        fetch('/profile/api/theme', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({theme: next})
+        }).catch(function(){});
+    };
+    document.addEventListener('DOMContentLoaded', function() {
+        var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+        var icon = document.getElementById('theme-icon');
+        if (icon) icon.textContent = theme === 'light' ? '🌙' : '☀';
+    });
+
+    // Nav dropdown click-toggle (works alongside CSS hover)
+    document.addEventListener('DOMContentLoaded', function() {
+        var triggers = document.querySelectorAll('.nav-dropdown-trigger');
+        triggers.forEach(function(trigger) {
+            trigger.addEventListener('click', function(e) {
+                e.preventDefault();
+                var li = trigger.closest('.nav-dropdown');
+                var isOpen = li.classList.contains('open');
+                // Close all
+                document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
+                    el.classList.remove('open');
+                });
+                if (!isOpen) li.classList.add('open');
+            });
+        });
+        // Close dropdowns when clicking outside nav
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.navbar')) {
+                document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
+                    el.classList.remove('open');
+                });
+            }
+        });
+        // Close sub-item nav link: collapse dropdowns AND close mobile drawer
+        document.querySelectorAll('.nav-dropdown-menu a').forEach(function(a) {
+            a.addEventListener('click', function() {
+                document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
+                    el.classList.remove('open');
+                });
+                // Also close mobile drawer on link click
+                var nav = document.getElementById('navbar-nav');
+                var btn = document.getElementById('nav-hamburger');
+                if (nav) nav.classList.remove('mobile-open');
+                if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.textContent = '☰'; }
+            });
+        });
+    });
+    </script>
+
+    <script defer src="/static/js/api.js"></script>
+    <script defer src="/static/js/ux.js"></script>
+    <script defer src="/static/vendor/mermaid/mermaid.min.js"></script>
+    <script defer src="/static/js/mermaid-icdev.js"></script>
+    <script defer src="/static/js/charts.js"></script>
+    <script defer src="/static/js/tables.js"></script>
+    <script defer src="/static/js/tour.js"></script>
+    <script defer src="/static/js/live.js"></script>
+    <script defer src="/static/js/batch.js"></script>
+    <script defer src="/static/js/shortcuts.js"></script>
+    <script defer src="/static/js/kanban.js"></script>
+    
+    <script defer src="/static/js/proposals.js"></script>
+    
+    <!-- Vendor: Markdown + Syntax Highlighting (Phase 69 — D-CU-2) -->
+    <script defer src="/static/vendor/marked/marked.min.js"></script>
+    <script defer src="/static/vendor/hljs/highlight.min.js"></script>
+    <script defer src="/static/js/chat-renderers.js"></script>
+    <!-- Codebase Assistant Widget JS (Phase 69 — D-CA-3) -->
+    <script defer src="/static/js/assistant-widget.js"></script>
+    
+    
+<script>
+// Auto-show notification toasts for critical alerts on page load.
+// Deferred to DOMContentLoaded so ux.js (defer) has loaded
+// ICDEV.showNotification before we call it.
+document.addEventListener('DOMContentLoaded', function() {
+    var firingCount = 79;
+    var openPoam = 140;
+    if (firingCount > 0 && window.ICDEV && typeof ICDEV.showNotification === 'function') {
+        ICDEV.showNotification(
+            firingCount + ' alert' + (firingCount > 1 ? 's' : '') + ' currently firing \u2014 <a href="/monitoring" style="color:inherit;text-decoration:underline;">view monitoring</a>',
+            'error'
+        );
+    }
+    if (openPoam > 5 && window.ICDEV && typeof ICDEV.showNotification === 'function') {
+        ICDEV.showNotification(
+            openPoam + ' open POA&M items need attention \u2014 <a href="/projects" style="color:inherit;text-decoration:underline;">review projects</a>',
+            'warning'
+        );
+    }
+});
+
+// Load charts from API — exposed as window._loadCharts for auto-refresh
+window._loadCharts = function() {
+    if (!window.ICDEV || !ICDEV.barChart) { console.warn('ICDEV chart namespace not available — charts skipped'); return; }
+    fetch('/api/charts/overview')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            // Compliance posture — multi-canvas bar chart (canvas scores only, no Oracle)
+            if (d.compliance && d.compliance.canvases && d.compliance.canvases.length > 0) {
+                // Separate Oracle entry — it tracks CAT prediction counts, not a 0-100 score
+                var _oracleEntry = null;
+                d.compliance.canvases.forEach(function(c) { if (c.is_oracle) _oracleEntry = c; });
+                var _chartCanvases = d.compliance.canvases.filter(function(c) { return !c.is_oracle; });
+                // Horizontal bar chart — scales naturally with canvas count,
+                // shows "No data" for canvases with empty assessment tables.
+                (function() {
+                    var el = document.getElementById('chart-compliance');
+                    if (!el) return;
+                    var W = el.offsetWidth || 800;
+                    var COLS = 2, BAR_H = 16, GAP = 4, LABEL_W = 80, PAD_R = 38, PAD_T = 4, PAD_B = 4;
+                    var colW = Math.floor(W / COLS);
+                    var plotW = colW - LABEL_W - PAD_R;
+                    var rows = Math.ceil(_chartCanvases.length / COLS);
+                    var svgH = PAD_T + rows * (BAR_H + GAP) + PAD_B;
+                    var parts = ['<svg width="' + W + '" height="' + svgH + '" style="display:block;overflow:visible;" role="img" aria-label="Compliance posture by canvas">'];
+                    _chartCanvases.forEach(function(c, i) {
+                        var col = i % COLS;
+                        var row = Math.floor(i / COLS);
+                        var xOff = col * colW;
+                        var y = PAD_T + row * (BAR_H + GAP);
+                        var barW = c.score > 0 ? Math.max(2, (c.score / 100) * plotW) : 0;
+                        var clr = c.score >= 80 ? '#28a745' : c.score >= 60 ? '#ffc107' : c.score > 0 ? '#dc3545' : '#3a3a4a';
+                        parts.push('<text x="' + (xOff + LABEL_W - 5) + '" y="' + (y + BAR_H / 2 + 4) + '" text-anchor="end" font-size="11" fill="#aaa" font-family="inherit">' + c.name + '</text>');
+                        parts.push('<rect x="' + (xOff + LABEL_W) + '" y="' + y + '" width="' + plotW + '" height="' + BAR_H + '" fill="rgba(255,255,255,0.04)" rx="3"/>');
+                        if (barW > 0) {
+                            parts.push('<rect x="' + (xOff + LABEL_W) + '" y="' + y + '" width="' + barW + '" height="' + BAR_H + '" fill="' + clr + '" rx="3"/>');
+                            parts.push('<text x="' + (xOff + LABEL_W + barW + 5) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="11" fill="#ccc" font-family="inherit">' + c.score + '</text>');
+                        } else {
+                            parts.push('<text x="' + (xOff + LABEL_W + 7) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="10" fill="#555" font-family="inherit">No data</text>');
+                        }
+                    });
+                    parts.push('</svg>');
+                    el.innerHTML = parts.join('');
+                }());
+                // Fetch and render sparkline trend indicators + Oracle CAT breakdown
+                fetch('/api/charts/compliance-trend')
+                    .then(function(r) { return r.json(); })
+                    .then(function(td) {
+                        var trendEl = document.getElementById('chart-compliance-trend');
+                        if (!trendEl || !td.canvases) return;
+                        var html = '';
+                        td.canvases.forEach(function(c) {
+                            var arrow = '—', color = '#888', sign = '';
+                            if (c.direction === 'up') { arrow = '▲'; color = '#28a745'; sign = '+'; }
+                            else if (c.direction === 'down') { arrow = '▼'; color = '#dc3545'; }
+                            var deltaStr = c.delta !== 0 ? (sign + c.delta.toFixed(1)) : '';
+                            html += '<span style="font-size:11px;color:' + color + ';white-space:nowrap;padding:2px 5px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + c.name + ' 30d trend">' +
+                                '<span style="font-size:9px;color:#aaa;margin-right:2px;">' + c.name + '</span>' +
+                                arrow + (deltaStr ? ' ' + deltaStr : '') +
+                                '</span>';
+                        });
+                        // Oracle CAT indicator (forward-looking; high count = more risk)
+                        if (_oracleEntry) {
+                            var _oc = (_oracleEntry.cat1 > 0) ? '#dc3545' : (_oracleEntry.cat2 > 0) ? '#ffc107' : '#28a745';
+                            var _otip = 'Oracle pending compliance-risk predictions — CAT1(critical/high): ' + _oracleEntry.cat1 + ', CAT2(medium): ' + _oracleEntry.cat2 + ', CAT3(low/info): ' + _oracleEntry.cat3;
+                            html += '<span style="font-size:11px;color:' + _oc + ';white-space:nowrap;padding:2px 5px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + _otip + '">' +
+                                '<span style="font-size:9px;color:#aaa;margin-right:2px;">Oracle</span>' +
+                                'C1:' + _oracleEntry.cat1 + ' C2:' + _oracleEntry.cat2 + ' C3:' + _oracleEntry.cat3 +
+                                '</span>';
+                        }
+                        trendEl.innerHTML = html || '';
+                    })
+                    .catch(function() {});
+            } else {
+                document.getElementById('chart-compliance').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No canvas assessments yet</p>';
+            }
+            // Activity trend line chart
+            if (d.activity_trend && d.activity_trend.length > 0) {
+                ICDEV.lineChart('chart-alerts', {
+                    labels: d.activity_trend.map(function(r) { return r.day.slice(5); }),
+                    series: [{ name: 'Activity', data: d.activity_trend.map(function(r) { return r.cnt; }), color: '#4a90d9' }],
+                    height: 180, showLegend: false,
+                });
+            } else {
+                document.getElementById('chart-alerts').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No activity in last 7 days</p>';
+            }
+            // Task board status donut
+            if (d.task_statuses && d.task_statuses.length > 0) {
+                var taskColors = { backlog: '#6c6c80', scheduled: '#ffc107', in_progress: '#4a90d9', done: '#28a745', token_exhausted: '#dc3545' };
+                var total = d.task_statuses.reduce(function(s, r) { return s + r.cnt; }, 0);
+                ICDEV.donutChart('chart-projects', {
+                    segments: d.task_statuses.map(function(r) {
+                        return { label: r.status, value: r.cnt, color: taskColors[r.status] || '#6c6c80' };
+                    }),
+                    size: 160, thickness: 28,
+                    centerLabel: String(total),
+                    centerSubLabel: 'Tasks',
+                    showLegend: true,
+                });
+            } else {
+                document.getElementById('chart-projects').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No tasks yet</p>';
+            }
+            // Agent health gauge
+            if (d.agent_health) {
+                ICDEV.gaugeChart('chart-agent-health', {
+                    value: d.agent_health.ratio,
+                    thresholds: { good: 0.8, warning: 0.5 },
+                    label: d.agent_health.active + ' of ' + d.agent_health.total + ' agents active',
+                    size: 140,
+                });
+            }
+        })
+        .catch(function() {
+            // Graceful fallback if charts API fails
+            ['chart-compliance', 'chart-alerts', 'chart-projects', 'chart-agent-health'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el && !el.innerHTML.trim()) {
+                    el.innerHTML = '<p class="text-muted" style="text-align:center;padding:40px 0;">Chart data unavailable</p>';
+                }
+            });
+        });
+};
+// Initial chart load — wait for DOMContentLoaded so charts.js (defer) is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', window._loadCharts);
+} else {
+    window._loadCharts();
+}
+</script>
+
+    
+    <script>
+    // ExplainPanel — aisg-a3-01
+    (function() {
+        var _panel = null;
+        function getPanel() { return _panel || (_panel = document.getElementById('explain-panel')); }
+
+        window.showExplain = function(eventId) {
+            var p = getPanel();
+            if (!p) return;
+            var loading = document.getElementById('explain-panel-loading');
+            var content = document.getElementById('explain-panel-content');
+            if (loading) loading.style.display = 'block';
+            if (content) content.innerHTML = '';
+            p.classList.add('open');
+            p.setAttribute('aria-hidden', 'false');
+            fetch('/api/explain/' + encodeURIComponent(eventId))
+                .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+                .then(function(data) {
+                    if (loading) loading.style.display = 'none';
+                    if (content) content.innerHTML = renderExplanation(data);
+                })
+                .catch(function() {
+                    if (loading) loading.style.display = 'none';
+                    if (content) content.innerHTML = '<p style="color:#e94560">Failed to load explanation.</p>';
+                });
+        };
+
+        window.closeExplain = function() {
+            var p = getPanel();
+            if (!p) return;
+            p.classList.remove('open');
+            p.setAttribute('aria-hidden', 'true');
+        };
+
+        window.showExplainHtml = function(title, htmlContent) {
+            var p = getPanel();
+            if (!p) return;
+            var loading = document.getElementById('explain-panel-loading');
+            var content = document.getElementById('explain-panel-content');
+            var titleEl = document.getElementById('explain-panel-title');
+            if (loading) loading.style.display = 'none';
+            if (titleEl && title) titleEl.textContent = title;
+            if (content) content.innerHTML = htmlContent || '';
+            p.classList.add('open');
+            p.setAttribute('aria-hidden', 'false');
+        };
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') window.closeExplain();
+        });
+    })();
+    </script>
+    <script>
+    (function() {
+        function refreshBriefsBadge() {
+            fetch('/api/strategos/briefs?reviewed=0&limit=1')
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(d) {
+                    var el = document.getElementById('nav-briefs-pending');
+                    if (!el || !d) return;
+                    if (d.total > 0) {
+                        el.textContent = d.total;
+                        el.style.display = 'inline';
+                    } else {
+                        el.style.display = 'none';
+                    }
+                }).catch(function() {});
+        }
+        refreshBriefsBadge();
+        setInterval(refreshBriefsBadge, 120000);
+    })();
+    </script>
+
+    <!-- IQE Global Mini-bar (Ctrl+Shift+Q) -->
+    <div id="iqe-minibar" style="
+        position:fixed; bottom:0; left:0; right:0; z-index:9000;
+        background:var(--bg-secondary,#1a1d27); border-top:2px solid var(--accent,#4f8ef7);
+        box-shadow:0 -4px 24px rgba(0,0,0,0.35); font-family:inherit;
+        transform:translateY(100%); transition:transform 0.22s cubic-bezier(.4,0,.2,1);
+    " aria-label="IQE Global Query Bar" role="complementary">
+      <div style="max-width:1100px; margin:0 auto; padding:0.7rem 1rem;">
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.45rem;">
+          <span style="font-size:0.72rem; font-weight:700; letter-spacing:.05em;
+              color:var(--accent,#4f8ef7); text-transform:uppercase; white-space:nowrap;">IQE</span>
+          <span id="iqe-mb-canvas-badge" style="font-size:0.68rem; padding:1px 7px; border-radius:999px;
+              background:var(--bg-tertiary,#252836); color:var(--text-dim,#8892a4); border:1px solid var(--border,#2e3347);">
+            global
+          </span>
+          <input id="iqe-mb-input" type="text" placeholder="Ask anything… (Ctrl+Shift+Q to toggle)"
+              autocomplete="off" spellcheck="false"
+              style="flex:1; background:var(--bg-input,#13151f); border:1px solid var(--border,#2e3347);
+                  border-radius:6px; padding:0.35rem 0.7rem; color:var(--text-primary,#e2e8f0);
+                  font-size:0.85rem; outline:none; min-width:0;"
+          />
+          <button onclick="icdevMBRun()" style="
+              background:var(--accent,#4f8ef7); color:#fff; border:none; border-radius:6px;
+              padding:0.35rem 1rem; font-size:0.82rem; font-weight:600; cursor:pointer; white-space:nowrap;">
+            Run
+          </button>
+          <button onclick="icdevMBClose()" style="
+              background:transparent; color:var(--text-dim,#8892a4); border:1px solid var(--border,#2e3347);
+              border-radius:6px; padding:0.3rem 0.55rem; font-size:0.82rem; cursor:pointer;" title="Close (Esc)">
+            ✕
+          </button>
+        </div>
+        <div id="iqe-mb-iqe-preview" style="display:none; font-size:0.75rem; font-family:monospace;
+            padding:0.25rem 0.6rem; background:var(--bg-tertiary,#252836); border-radius:4px;
+            color:var(--text-secondary,#a0aec0); margin-bottom:0.3rem; overflow-x:auto;"></div>
+        <div id="iqe-mb-status" style="font-size:0.75rem; color:var(--text-dim,#8892a4); min-height:1rem;"></div>
+        <div id="iqe-mb-results" style="display:none; margin-top:0.4rem; max-height:220px; overflow-y:auto; border-radius:6px;"></div>
+      </div>
+    </div>
+
+    <script>
+    (function() {
+        if (window.location.pathname === '/chat' || window.location.pathname.startsWith('/chat/')) {
+            var _mb = document.getElementById('iqe-minibar');
+            if (_mb) _mb.style.display = 'none';
+        }
+        var bar = document.getElementById('iqe-minibar');
+        var input = document.getElementById('iqe-mb-input');
+        var badge = document.getElementById('iqe-mb-canvas-badge');
+        var status = document.getElementById('iqe-mb-status');
+        var preview = document.getElementById('iqe-mb-iqe-preview');
+        var results = document.getElementById('iqe-mb-results');
+        var _open = false;
+
+        var PATH_CANVAS = [
+            [/^\/network|^\/twin/, 'ndc'],
+            [/^\/zta/, 'zta'],
+            [/^\/security/, 'sdc'],
+            [/^\/devops/, 'pdc'],
+            [/^\/data/, 'ddc'],
+            [/^\/infra/, 'idc'],
+            [/^\/observability/, 'odc'],
+            [/^\/boundary/, 'bdc'],
+            [/^\/simulate\/chat.*canvas=cam/, 'cam'],
+            [/^\/migration-canvas\/projects/, 'cam'],
+            [/^\/migration-canvas/, 'mc'],
+            [/^\/agentic-ai/, 'aadc'],
+            [/^\/ai-ml/, 'aimc'],
+            [/^\/ops/, 'ohc'],
+            [/^\/govlift/, 'govlift'],
+            [/^\/kanban/, 'kanban'],
+            [/^\/compliance/, 'compliance'],
+            [/^\/agents/, 'agents'],
+            [/^\/projects/, 'projects'],
+            [/^\/ai-observatory/, 'ai_observatory'],
+            [/^\/ontology/, 'ontology'],
+            [/^\/cache-savings/, 'cache_savings'],
+            [/^\/strategos/, 'strategos'],
+            [/^\/supply.chain/, 'supply_chain'],
+            [/^\/noc/, 'nocc'],
+            [/^\/pmc/, 'pmc'],
+            [/^\/ccc/, 'ccc'],
+            [/^\/dsoc/, 'dsoc'],
+            [/^\/ai-ify/, 'aiify'],
+            [/^\/document-intelligence/, 'dic'],
+            [/^\/integrity/, 'integrity'],
+            [/^\/demo-runner/, 'demo_runner'],
+            [/^\/innovation/, 'innovation'],
+            [/^\/mission-canvas/, 'mission_canvas'],
+            [/^\/proposals/, 'govcon'],
+            [/^\/govcon/, 'govcon'],
+            [/^\/cpmp\/deliverables/, 'govcon'],
+            [/^\/cpmp/, 'govcon'],
+            [/^\/slides/, 'slides'],
+            [/^\/coworker/, 'ace'],
+            [/^\/ai-|^\/dashboard\/.*-view/, 'aisg'],
+        ];
+
+        function detectCanvas() {
+            var p = window.location.pathname;
+            for (var i = 0; i < PATH_CANVAS.length; i++) {
+                if (PATH_CANVAS[i][0].test(p)) return PATH_CANVAS[i][1];
+            }
+            return 'ndc';
+        }
+
+        function open() {
+            _open = true;
+            bar.style.transform = 'translateY(0)';
+            var canvas = detectCanvas();
+            badge.textContent = canvas;
+            setTimeout(function() { input.focus(); }, 60);
+        }
+
+        window.icdevMBClose = function() {
+            _open = false;
+            bar.style.transform = 'translateY(100%)';
+            status.textContent = '';
+            preview.style.display = 'none';
+            results.style.display = 'none';
+            results.innerHTML = '';
+        };
+
+        window.icdevMBRun = function() {
+            var question = input.value.trim();
+            if (!question) return;
+            var canvas = detectCanvas();
+            status.textContent = 'Translating…';
+            preview.style.display = 'none';
+            results.style.display = 'none';
+            results.innerHTML = '';
+            fetch('/api/iqe/dispatch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question: question, canvas: canvas})
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (d.iqe) {
+                    preview.textContent = d.iqe;
+                    preview.style.display = 'block';
+                }
+                if (!d.ok) {
+                    status.textContent = '✗ ' + (d.error || 'Error');
+                    status.style.color = '#f56565';
+                    return;
+                }
+                status.textContent = '✓ ' + d.row_count + ' row' + (d.row_count !== 1 ? 's' : '');
+                status.style.color = 'var(--success, #68d391)';
+                if (d.results && d.results.length > 0) {
+                    var cols = Object.keys(d.results[0]);
+                    var html = '<table style="width:100%;border-collapse:collapse;font-size:0.75rem;">'
+                        + '<thead><tr>' + cols.map(function(c) {
+                            return '<th style="padding:3px 8px;text-align:left;background:var(--bg-tertiary,#252836);'
+                                + 'color:var(--text-dim,#8892a4);border-bottom:1px solid var(--border,#2e3347);">'
+                                + c + '</th>';
+                        }).join('') + '</tr></thead><tbody>';
+                    var show = Math.min(d.results.length, 100);
+                    for (var i = 0; i < show; i++) {
+                        html += '<tr>' + cols.map(function(c) {
+                            var v = d.results[i][c];
+                            return '<td style="padding:3px 8px;border-bottom:1px solid var(--border,#2e3347);'
+                                + 'color:var(--text-secondary,#a0aec0);max-width:200px;overflow:hidden;text-overflow:ellipsis;">'
+                                + (v === null || v === undefined ? '—' : String(v)) + '</td>';
+                        }).join('') + '</tr>';
+                    }
+                    html += '</tbody></table>';
+                    if (d.results.length > 100) {
+                        html += '<div style="font-size:0.7rem;color:var(--text-dim,#8892a4);padding:4px 8px;">showing 100 of ' + d.results.length + '</div>';
+                    }
+                    results.innerHTML = html;
+                    results.style.display = 'block';
+                } else {
+                    results.innerHTML = '<div style="font-size:0.75rem;color:var(--text-dim,#8892a4);padding:4px 8px;">No results</div>';
+                    results.style.display = 'block';
+                }
+            }).catch(function(e) {
+                status.textContent = '✗ ' + e.message;
+                status.style.color = '#f56565';
+            });
+        };
+
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.shiftKey && e.key === 'Q') {
+                e.preventDefault();
+                if (_open) icdevMBClose(); else open();
+            }
+            if (e.key === 'Escape' && _open) icdevMBClose();
+        });
+
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') icdevMBRun();
+        });
+    })();
+    </script>
+</body>
+</html>

@@ -164,8 +164,10 @@ _CANVAS_DEFS = [
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
     ("slides", "ICDEV_SLIDES_ENABLED", "tools.slides.blueprint", "slides_bp"),
     ("ace", "ICDEV_ACE_ENABLED", "icdev.tools.ace.blueprint", "ace_bp"),
+    ("cwk", "ICDEV_CWK_ENABLED", "icdev.tools.coworkers.blueprint", "coworkers_bp"),
     ("aisg", "ICDEV_AISG_ENABLED", "tools.aisg.blueprint", "bp"),
     ("integrity", "ICDEV_INTEGRITY_ENABLED", "tools.integrity.blueprint", "create_integrity_blueprint"),
+    ("foundry", "ICDEV_FOUNDRY_ENABLED", "tools.foundry.blueprint", "create_foundry_blueprint"),
 ]
 
 _CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity"}
@@ -2035,6 +2037,7 @@ def create_app() -> Flask:
             "govlift_enabled": _CANVAS_FLAGS.get("govlift", False),
             "info_ops_enabled": _CANVAS_FLAGS.get("iop", False),
             "mission_canvas_enabled": _CANVAS_FLAGS.get("mission_canvas", False),
+            "cwk_enabled": _CANVAS_FLAGS.get("cwk", False),
             "canvas_flags": _CANVAS_FLAGS,
             "hitl_enabled": _APP_FLAGS.get("hitl_workflow", False),
             "academy_enabled": _APP_FLAGS.get("forge_academy", False),
@@ -2207,6 +2210,8 @@ def create_app() -> Flask:
         "ccc": "",
         "dsoc": "",
         "integrity": "",
+        "foundry": "",
+        "cwk": "",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:

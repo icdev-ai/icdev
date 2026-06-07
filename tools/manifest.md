@@ -993,3 +993,36 @@
 | Seed Appendix Initiatives | tools\kanban\seed_appendix_initiatives.py | Auto-registered: kanban/seed_appendix_initiatives.py | --json | JSON |
 | Seed Sipa Integrity | tools\kanban\seed_sipa_integrity.py | Auto-registered: kanban/seed_sipa_integrity.py | --json | JSON |
 | Integrity Monitor | tools\genesis\reflexes\integrity_monitor.py | Auto-registered: reflexes/integrity_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Cross Register | tools\cross_register.py | Auto-registered: tools/cross_register.py | --json | JSON |
+| Chat Memory | tools\document_intelligence\chat_memory.py | Auto-registered: document_intelligence/chat_memory.py | --json | JSON |
+| Cross Canvas Context | tools\document_intelligence\cross_canvas_context.py | Auto-registered: document_intelligence/cross_canvas_context.py | --json | JSON |
+| E2E Lifecycle | tools\document_intelligence\e2e_lifecycle.py | Auto-registered: document_intelligence/e2e_lifecycle.py | --json | JSON |
+| Seed Demo Corpus | tools\document_intelligence\seed_demo_corpus.py | Auto-registered: document_intelligence/seed_demo_corpus.py | --json | JSON |
+| Heuristic Learner | tools\foundry\heuristic_learner.py | Auto-registered: foundry/heuristic_learner.py | --json | JSON |
+| Novelty Gate | tools\foundry\novelty_gate.py | Auto-registered: foundry/novelty_gate.py | --json | JSON |
+| Oracle Verifiers | tools\foundry\oracle_verifiers.py | Auto-registered: foundry/oracle_verifiers.py | --json | JSON |
+| Task Graph | tools\foundry\task_graph.py | Auto-registered: foundry/task_graph.py | --json | JSON |
+| Analyze Backlog | tools\kanban\analyze_backlog.py | Auto-registered: kanban/analyze_backlog.py | --json | JSON |
+| Balance Scheduler | tools\kanban\balance_scheduler.py | Auto-registered: kanban/balance_scheduler.py | --json | JSON |
+| Promote Backlog To Scheduled | tools\kanban\promote_backlog_to_scheduled.py | Auto-registered: kanban/promote_backlog_to_scheduled.py | --json | JSON |
+| Seed Acf Adaptations | tools\kanban\seed_acf_adaptations.py | Auto-registered: kanban/seed_acf_adaptations.py | --json | JSON |
+| Seed Acf Completion | tools\kanban\seed_acf_completion.py | Auto-registered: kanban/seed_acf_completion.py | --json | JSON |
+| Seed Arc | tools\kanban\seed_arc.py | Auto-registered: kanban/seed_arc.py | --json | JSON |
+| Seed Cwk | tools\kanban\seed_cwk.py | Auto-registered: kanban/seed_cwk.py | --json | JSON |
+| Seed Eqo | tools\kanban\seed_eqo.py | Auto-registered: kanban/seed_eqo.py | --json | JSON |
+| Seed Foundry | tools\kanban\seed_foundry.py | Auto-registered: kanban/seed_foundry.py | --json | JSON |
+| Seed Pgp Kanban | tools\kanban\seed_pgp_kanban.py | Auto-registered: kanban/seed_pgp_kanban.py | --json | JSON |
+| Seed Tch | tools\kanban\seed_tch.py | Auto-registered: kanban/seed_tch.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Ucb Kanban | tools\kanban\seed_ucb_kanban.py | Auto-registered: kanban/seed_ucb_kanban.py | --json | JSON |
+| Seed Uclb | tools\kanban\seed_uclb.py | Auto-registered: kanban/seed_uclb.py | --json | JSON |
+| Migration Analysis | tools\network\migration_analysis.py | Auto-registered: network/migration_analysis.py | --json | JSON |

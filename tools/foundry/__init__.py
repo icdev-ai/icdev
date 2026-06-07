@@ -1,13 +1,20 @@
 # CUI // SP-CTI
-# Controlled by: Department of Defense
-# CUI Category: CTI
-# Distribution: D
-# POC: ICDEV™ System Administrator
-"""Autonomous Capability Foundry (ACF) — tools/foundry/.
+"""ACF — Autonomous Capability Foundry (``tools/foundry``).
 
-A 0->1 product factory that invents, designs, decomposes, and ships net-new
-capabilities into the ICDEV™ ecosystem. This package holds the foundry pipeline
-modules (harvester, synthesizer, novelty_gate, scorer, ...).
+A 0->1 product factory that autonomously invents, designs, decomposes, and ships
+brand-new ICDEV capabilities. Distinct from Oracle/Genesis reflexes (which improve
+EXISTING tasks incrementally) — ACF creates net-new products.
 
-See docs/features/phase-acf-autonomous-capability-foundry.md for the full design.
+This package is intentionally side-effect free on import. Submodules:
+
+* ``novelty_gate`` — dedup a candidate concept vs the existing capability catalog
+  (canvas registry + tool manifests + goal workflows) and reject incremental
+  rehashes. THE differentiator from Oracle.
+
+Upstream siblings (``constants``, ``db.init_db``, ``synthesizer`` …) are added by
+their own kanban tasks; ``novelty_gate`` degrades gracefully when they are absent.
 """
+
+from __future__ import annotations
+
+__all__ = ["novelty_gate"]

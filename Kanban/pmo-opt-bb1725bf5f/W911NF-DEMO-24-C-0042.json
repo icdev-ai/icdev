@@ -1,0 +1,47 @@
+{
+  "classification": "CUI // SP-CTI",
+  "contract_number": "W911NF-DEMO-24-C-0042",
+  "contract_id": "fed203f4-6692-41c9-8ffd-530f9d7f604a",
+  "option_period": "Option 1 — Services Continuation",
+  "option_id": "5243c63d-20cb-453a-b158-00889f3ac132",
+  "option_ceiling": 4200000,
+  "exercise_deadline": "2026-06-22",
+  "risk_tier": "CRITICAL",
+  "previous_status": "assessed_with_recommendation",
+  "status": "option_exercised",
+  "assessment_completed": true,
+  "exercise": {
+    "executed": true,
+    "decision_authority": "PMO/KO (sovanna.chuon@gmail.com)",
+    "exercised_date": "2026-06-06",
+    "exercised_by": "PMO/KO (sovanna.chuon@gmail.com)",
+    "backing_function": "tools.govcon.option_period_tracker.exercise_option",
+    "note": "GO recommendation approved by decision authority; option status flipped pending -> exercised; immutable audit row written (action=option_exercised)."
+  },
+  "assessment": {
+    "decision": "ACTION_REQUIRED",
+    "recommendation": "GO — exercise Option 1",
+    "health": "GREEN",
+    "health_score": 94.0,
+    "cpi": 0.9885,
+    "spi": 0.9773,
+    "cpars_rating": "Exceptional",
+    "assessed_at": "2026-06-06T11:37:10Z"
+  },
+  "recommendation_source": {
+    "endpoint": "GET /api/cpmp/options/5243c63d-20cb-453a-b158-00889f3ac132/recommend",
+    "backing_function": "tools.govcon.option_period_tracker.ai_exercise_recommendation",
+    "http_status": "200 OK",
+    "api_response_id": "4a96699ab81e",
+    "recommendation_text": "Contract health is GREEN — recommend exercising this option. Cost performance (CPI 0.99) is healthy.",
+    "assessment_log": "Kanban/pmo-opt-bb1725bf5f/options-assessment.log",
+    "action_ticket": ".claude/tickets/opt-exercise-0042.md"
+  },
+  "assessment_chain": {
+    "parent_task": "pmo-opt-bb1725bf5f",
+    "fetch_task": "pmo-opt-bb1725bf5f-d1",
+    "log_task": "pmo-opt-bb1725bf5f-d2",
+    "ticket_task": "pmo-opt-bb1725bf5f-d3",
+    "status_update_task": "pmo-opt-bb1725bf5f-d4"
+  }
+}

@@ -1,115 +1,208 @@
 # CUI // SP-CTI
-# Controlled by: Department of Defense
-# CUI Category: CTI
-# Distribution: D
-# POC: ICDEV™ System Administrator
-"""Foundry DB schema — foundry_signals (append-only).
+"""ACF — Autonomous Capability Foundry — schema initialization.
 
-The first foundry table the pipeline writes to: normalized signals harvested
-from the innovation/creative/research stores, Genesis predictions, and internal
-telemetry. RLS-aware (tenant_id + classification columns) so it is safe under
-the global row predicate when run against the primary icdev.db.
+Creates the six ``foundry_*`` platform findings tables. These are NOT canvas
+tables: every row carries ``tenant_id`` + ``classification`` so reads/writes go
+through the RLS-aware ``tools.db.storage.get_connection()`` (NEVER
+``get_canvas_connection()``), and the global RLS predicate filters every query to
+the caller's tenant + clearance.
 
-Append-only per the ACF design (docs/features/phase-acf-autonomous-capability-foundry.md):
-rows are INSERTed and never UPDATEd/DELETEd. Cross-source dedup is enforced by a
-UNIQUE constraint on ``dedup_hash`` — the same signal from two engines collapses
-to one row via INSERT-OR-IGNORE rather than an update.
+PG-first dual schema: ``_SCHEMA_SQLITE`` is canonical; ``_SCHEMA_PG`` is derived
+from it with a single ``.replace()`` transform (autoincrement PK). Backend is
+chosen at runtime from ``ICDEV_STORAGE_BACKEND`` (default ``sqlite``).
 
-Dual schema: PostgreSQL-first with a SQLite fallback (per the new-canvas guardrail).
-CHECK constraints are derived from constants, never hardcoded.
+All CHECK constraints are derived from ``tools.foundry.constants`` so SQL and
+Python never drift. ``init_db()`` is idempotent (``CREATE TABLE IF NOT EXISTS``)
+and degrades gracefully (logs a warning, never raises) so a partially migrated
+database does not crash an importer.
+
+Append-only: foundry_runs / foundry_signals / foundry_specs /
+foundry_tasks_emitted / foundry_outcomes (see APPEND_ONLY_TABLES in
+.claude/hooks/pre_tool_use.py). foundry_concepts is mutable (status transitions).
 """
+from __future__ import annotations
 
-import sys
-from pathlib import Path
+import os
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
+from tools.foundry.constants import (
+    CONCEPT_STATUSES,
+    OUTCOME_VALUES,
+    REJECT_REASONS,
+    RUN_STATUSES,
+    SOURCE_ENGINES,
+    sql_in,
+)
+from tools.logging.icdev_logger import get_logger
 
-from tools.db.storage import get_connection  # noqa: E402
-from tools.foundry.constants import SOURCE_ENGINES, SIGNAL_STATUSES  # noqa: E402
+logger = get_logger("icdev.foundry.db")
 
+_INIT_DONE = False
 
-def _check_list(values):
-    """Render a SQL CHECK IN(...) clause from a Python tuple of constants."""
-    return ", ".join(f"'{v}'" for v in values)
+# CHECK predicates derived from constants (single source of truth).
+_CHK_RUN_STATUS = sql_in("status", RUN_STATUSES)
+_CHK_SOURCE_ENGINE = sql_in("source_engine", SOURCE_ENGINES)
+_CHK_CONCEPT_STATUS = sql_in("status", CONCEPT_STATUSES)
+_CHK_REJECT = sql_in("reject_reason", REJECT_REASONS)
+_CHK_OUTCOME = sql_in("outcome", OUTCOME_VALUES)
 
-
-_SRC = _check_list(SOURCE_ENGINES)
-_STATUS = _check_list(SIGNAL_STATUSES)
-
-SCHEMA_SQLITE = f"""
-CREATE TABLE IF NOT EXISTS foundry_signals (
-    id              TEXT PRIMARY KEY,
-    source_engine   TEXT NOT NULL CHECK(source_engine IN ({_SRC})),
-    source_type     TEXT,
-    source_ref      TEXT,
-    theme           TEXT NOT NULL,
-    keywords        TEXT NOT NULL DEFAULT '[]',
-    summary         TEXT,
-    severity        TEXT,
-    weight          REAL NOT NULL DEFAULT 0.5,
-    dedup_hash      TEXT NOT NULL,
-    contributing_engines TEXT NOT NULL DEFAULT '[]',
-    metadata        TEXT DEFAULT '{{}}',
-    status          TEXT NOT NULL DEFAULT 'new' CHECK(status IN ({_STATUS})),
-    tenant_id       TEXT NOT NULL DEFAULT 'default',
-    classification  TEXT NOT NULL DEFAULT 'CUI',
-    discovered_at   TEXT NOT NULL,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(dedup_hash)
+# SQLite-flavored DDL (canonical). JSON payloads stored as TEXT in both backends.
+_SCHEMA_SQLITE = f"""
+CREATE TABLE IF NOT EXISTS foundry_runs (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_at           TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    harvested          INTEGER NOT NULL DEFAULT 0,
+    concepts_proposed  INTEGER NOT NULL DEFAULT 0,
+    concepts_approved  INTEGER NOT NULL DEFAULT 0,
+    tasks_emitted      INTEGER NOT NULL DEFAULT 0,
+    status             TEXT    NOT NULL DEFAULT 'running' CHECK({_CHK_RUN_STATUS}),
+    detail             TEXT    DEFAULT '{{}}',
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_foundry_signals_engine ON foundry_signals(source_engine);
-CREATE INDEX IF NOT EXISTS idx_foundry_signals_status ON foundry_signals(status);
-CREATE INDEX IF NOT EXISTS idx_foundry_signals_hash ON foundry_signals(dedup_hash);
-"""
+CREATE INDEX IF NOT EXISTS idx_foundry_runs_tenant ON foundry_runs(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_foundry_runs_status ON foundry_runs(status);
 
-SCHEMA_PG = f"""
 CREATE TABLE IF NOT EXISTS foundry_signals (
-    id              TEXT PRIMARY KEY,
-    source_engine   TEXT NOT NULL CHECK(source_engine IN ({_SRC})),
-    source_type     TEXT,
-    source_ref      TEXT,
-    theme           TEXT NOT NULL,
-    keywords        TEXT NOT NULL DEFAULT '[]',
-    summary         TEXT,
-    severity        TEXT,
-    weight          DOUBLE PRECISION NOT NULL DEFAULT 0.5,
-    dedup_hash      TEXT NOT NULL,
-    contributing_engines TEXT NOT NULL DEFAULT '[]',
-    metadata        TEXT DEFAULT '{{}}',
-    status          TEXT NOT NULL DEFAULT 'new' CHECK(status IN ({_STATUS})),
-    tenant_id       TEXT NOT NULL DEFAULT 'default',
-    classification  TEXT NOT NULL DEFAULT 'CUI',
-    discovered_at   TEXT NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(dedup_hash)
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id             TEXT    NOT NULL,
+    source_engine      TEXT    NOT NULL CHECK({_CHK_SOURCE_ENGINE}),
+    source_ref         TEXT    NOT NULL,
+    theme              TEXT,
+    raw_score          REAL    DEFAULT 0.0,
+    keywords           TEXT    DEFAULT '[]',
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_foundry_signals_run ON foundry_signals(run_id);
 CREATE INDEX IF NOT EXISTS idx_foundry_signals_engine ON foundry_signals(source_engine);
-CREATE INDEX IF NOT EXISTS idx_foundry_signals_status ON foundry_signals(status);
-CREATE INDEX IF NOT EXISTS idx_foundry_signals_hash ON foundry_signals(dedup_hash);
+CREATE INDEX IF NOT EXISTS idx_foundry_signals_score ON foundry_signals(raw_score);
+CREATE INDEX IF NOT EXISTS idx_foundry_signals_tenant ON foundry_signals(tenant_id);
+
+CREATE TABLE IF NOT EXISTS foundry_concepts (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id             TEXT    NOT NULL,
+    name               TEXT    NOT NULL,
+    slug               TEXT    NOT NULL UNIQUE,
+    problem_statement  TEXT,
+    proposed_capability TEXT,
+    target_users       TEXT,
+    cluster_signal_ids TEXT    DEFAULT '[]',
+    novelty_score      REAL    DEFAULT 0.0,
+    market_score       REAL    DEFAULT 0.0,
+    fit_score          REAL    DEFAULT 0.0,
+    effort_estimate    REAL    DEFAULT 0.0,
+    compliance_risk    REAL    DEFAULT 0.0,
+    composite_score    REAL    DEFAULT 0.0,
+    status             TEXT    NOT NULL DEFAULT 'proposed' CHECK({_CHK_CONCEPT_STATUS}),
+    reject_reason      TEXT    CHECK(reject_reason IS NULL OR {_CHK_REJECT}),
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_by         TEXT    NOT NULL DEFAULT 'system',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_foundry_concepts_run ON foundry_concepts(run_id);
+CREATE INDEX IF NOT EXISTS idx_foundry_concepts_status ON foundry_concepts(status);
+CREATE INDEX IF NOT EXISTS idx_foundry_concepts_score ON foundry_concepts(composite_score);
+CREATE INDEX IF NOT EXISTS idx_foundry_concepts_tenant ON foundry_concepts(tenant_id);
+
+CREATE TABLE IF NOT EXISTS foundry_specs (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    concept_id         INTEGER NOT NULL REFERENCES foundry_concepts(id),
+    spec_md            TEXT    NOT NULL,
+    canvas_contract    TEXT    DEFAULT '{{}}',
+    task_count         INTEGER NOT NULL DEFAULT 0,
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_foundry_specs_concept ON foundry_specs(concept_id);
+CREATE INDEX IF NOT EXISTS idx_foundry_specs_tenant ON foundry_specs(tenant_id);
+
+CREATE TABLE IF NOT EXISTS foundry_tasks_emitted (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    concept_id         INTEGER NOT NULL REFERENCES foundry_concepts(id),
+    kanban_task_id     TEXT    NOT NULL,
+    epic               TEXT,
+    seq                INTEGER NOT NULL DEFAULT 0,
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_foundry_tasks_concept ON foundry_tasks_emitted(concept_id);
+CREATE INDEX IF NOT EXISTS idx_foundry_tasks_tenant ON foundry_tasks_emitted(tenant_id);
+
+CREATE TABLE IF NOT EXISTS foundry_outcomes (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    concept_id         INTEGER NOT NULL REFERENCES foundry_concepts(id),
+    outcome            TEXT    NOT NULL CHECK({_CHK_OUTCOME}),
+    metric             REAL,
+    detail             TEXT    DEFAULT '{{}}',
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_foundry_outcomes_concept ON foundry_outcomes(concept_id);
+CREATE INDEX IF NOT EXISTS idx_foundry_outcomes_tenant ON foundry_outcomes(tenant_id);
 """
 
 
-def init_foundry_db(db_path=None):
-    """Create the foundry_signals table. Idempotent.
+def _to_pg(sqlite_ddl: str) -> str:
+    """Derive the PostgreSQL schema from the SQLite canonical DDL.
 
-    db_path: optional path to a SQLite file (used by tests). When omitted the
-    configured backend (PostgreSQL or SQLite) is used via get_connection().
+    The only backend-specific construct is the autoincrement primary key; every
+    other column type (TEXT / INTEGER / REAL, TEXT-as-JSON, CURRENT_TIMESTAMP
+    defaults) is valid in both backends.
     """
-    conn = get_connection(db_path=db_path) if db_path else get_connection()
-    backend = getattr(conn, "_backend", "sqlite")
-    schema = SCHEMA_PG if backend == "postgresql" else SCHEMA_SQLITE
+    return sqlite_ddl.replace(
+        "INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY"
+    )
+
+
+_SCHEMA_PG = _to_pg(_SCHEMA_SQLITE)
+
+
+def _is_pg() -> bool:
+    return os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower() in (
+        "postgresql",
+        "postgres",
+        "pg",
+    )
+
+
+def init_db(force: bool = False) -> bool:
+    """Idempotently create the six ``foundry_*`` tables. Returns True on success.
+
+    Safe to call repeatedly and from any importer: a failure is logged and
+    swallowed (returns False) so a partially migrated DB never crashes a caller.
+    """
+    global _INIT_DONE
+    if _INIT_DONE and not force:
+        return True
     try:
-        for stmt in (s.strip() for s in schema.split(";")):
-            if stmt:
-                conn.execute(stmt)
-        conn.commit()
-    finally:
-        conn.close()
-    return True
+        from tools.db.storage import get_connection
+
+        schema = _SCHEMA_PG if _is_pg() else _SCHEMA_SQLITE
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            for stmt in schema.split(";"):
+                stmt = stmt.strip()
+                if stmt:
+                    cur.execute(stmt)
+            conn.commit()
+        finally:
+            conn.close()
+        _INIT_DONE = True
+        logger.info("foundry_* schema initialized (6 tables)")
+        return True
+    except Exception as exc:  # noqa: BLE001 - graceful degrade, never raise
+        logger.warning("foundry db init error: %s", exc)
+        return False
 
 
-if __name__ == "__main__":
-    init_foundry_db()
-    print("foundry_signals schema initialized")
+if __name__ == "__main__":  # pragma: no cover - manual invocation
+    ok = init_db(force=True)
+    print("foundry schema:", "ok" if ok else "FAILED")

@@ -1,0 +1,139 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner "Classification marking" [ref=e3]: CUI // SP-CTI
+  - navigation "Main navigation" [ref=e4]:
+    - link "ICDEV™" [ref=e5] [cursor=pointer]:
+      - /url: /
+    - 'status "Real-time connection: connected" [ref=e6]'
+    - list [ref=e7]:
+      - listitem [ref=e8]:
+        - link "Home" [ref=e9] [cursor=pointer]:
+          - /url: /
+      - listitem [ref=e10]:
+        - link "Ops ▾" [ref=e11] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e12]:
+        - link "Build ▾" [ref=e13] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e14]:
+        - link "Canvases ▾" [ref=e15] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e16]:
+        - link "Intelligence ▾" [ref=e17] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e18]:
+        - link "Compliance ▾" [ref=e19] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e20]:
+        - link "Strategos ▾" [ref=e21] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e22]:
+        - link "Platforms ▾" [ref=e23] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e24]:
+        - link "Studio ▾" [ref=e25] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e26]:
+        - link "More ▾" [ref=e27] [cursor=pointer]:
+          - /url: javascript:void(0)
+    - generic [ref=e28]:
+      - link "Admin admin" [ref=e29] [cursor=pointer]:
+        - /url: /profile
+        - generic [ref=e30]: Admin
+        - generic [ref=e31]: admin
+      - link "Logout" [ref=e32] [cursor=pointer]:
+        - /url: /logout
+      - button "☀" [ref=e33] [cursor=pointer]
+      - button "Tour" [ref=e34] [cursor=pointer]
+      - generic [ref=e35]: "View as:"
+      - combobox "Select dashboard view role" [ref=e36]:
+        - option "All (Full View)" [selected]
+        - option "Program Manager"
+        - option "Developer / Architect"
+        - option "ISSO / Security Officer"
+        - option "Contracting Officer"
+        - option "Analyst"
+        - option "Solutions Architect"
+        - option "Sales Engineer"
+        - option "Innovator"
+        - option "Business Development"
+        - option "Contracting Officer Representative"
+  - main [ref=e37]:
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - link "Home" [ref=e40] [cursor=pointer]:
+          - /url: /
+        - generic [ref=e41]: /
+        - link "Co-Worker Engine" [ref=e42] [cursor=pointer]:
+          - /url: /ace/
+        - generic [ref=e43]: /
+        - generic [ref=e44]: ace-d459739ecd42
+      - generic [ref=e46]:
+        - generic [ref=e47]:
+          - heading "ace:e2e_test:playwright-mcp Cancelled YELLOW trust" [level=1] [ref=e48]:
+            - text: ace:e2e_test:playwright-mcp
+            - generic [ref=e49]: Cancelled
+            - generic [ref=e50]: YELLOW trust
+          - generic [ref=e51]: "E2E lifecycle test: verify the full ACE coworker canvas pipeline"
+          - generic [ref=e52]:
+            - generic [ref=e53]:
+              - strong [ref=e54]: "Source:"
+              - text: e2e_test
+            - generic [ref=e55]:
+              - strong [ref=e56]: "Ref:"
+              - text: playwright-mcp
+            - generic [ref=e57]:
+              - strong [ref=e58]: "Started:"
+              - text: 2026-06-07 21:40:32
+        - generic [ref=e62]: Live
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - generic [ref=e65]: "2"
+          - generic [ref=e66]: Co-Workers
+        - generic [ref=e67]:
+          - generic [ref=e68]: "0"
+          - generic [ref=e69]: Messages
+        - generic [ref=e70]:
+          - generic [ref=e71]: "0"
+          - generic [ref=e72]: Artifacts
+        - generic [ref=e73]:
+          - generic [ref=e74]: "0"
+          - generic [ref=e75]: Done
+      - generic [ref=e76]:
+        - heading "Co-Workers (2)" [level=2] [ref=e77]
+        - generic [ref=e78]:
+          - generic [ref=e79]:
+            - generic [ref=e80]: qa_manager
+            - generic [ref=e81]:
+              - generic [ref=e83]: Idle
+              - generic "Trust tier" [ref=e84]: YELLOW
+            - generic "approve_release" [ref=e85]: "Step: approve_release"
+          - generic [ref=e87]:
+            - generic [ref=e88]: ai_developer
+            - generic [ref=e89]:
+              - generic [ref=e91]: Idle
+              - generic "Trust tier" [ref=e92]: YELLOW
+            - generic "update_manifest" [ref=e93]: "Step: update_manifest"
+      - generic [ref=e95]:
+        - button "Messages ● 0" [ref=e96] [cursor=pointer]:
+          - text: Messages
+          - generic [ref=e97]: ● 0
+        - button "Artifacts ● 0" [ref=e98] [cursor=pointer]:
+          - text: Artifacts
+          - generic [ref=e99]: ● 0
+      - generic [ref=e101]: No messages yet. Co-workers will log messages here as the instance runs.
+  - contentinfo "Classification marking" [ref=e102]: CUI // SP-CTI
+  - complementary [ref=e103]:
+    - generic [ref=e104]:
+      - heading [level=3] [ref=e105]: ❓ Explain
+      - button [ref=e106] [cursor=pointer]: ×
+  - button "Open codebase assistant" [ref=e108] [cursor=pointer]:
+    - generic [ref=e109]: "?"
+  - complementary "IQE Global Query Bar" [ref=e110]:
+    - generic [ref=e112]:
+      - generic [ref=e113]: IQE
+      - generic [ref=e114]: global
+      - textbox "Ask anything… (Ctrl+Shift+Q to toggle)" [ref=e115]
+      - button "Run" [ref=e116] [cursor=pointer]
+      - button "✕" [ref=e117] [cursor=pointer]

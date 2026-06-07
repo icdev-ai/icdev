@@ -58,7 +58,7 @@ _CFG_PATH = Path(__file__).resolve().parents[2] / "args" / "qdc_canvas_config.ya
 _QDC_CONFIG: dict = {}
 if _yaml and _CFG_PATH.exists():
     try:
-        with open(_CFG_PATH, "r", encoding="utf-8") as _f:
+        with open(_CFG_PATH, encoding="utf-8") as _f:
             _QDC_CONFIG = _yaml.safe_load(_f) or {}
     except Exception:
         pass
