@@ -2116,3 +2116,53 @@ def handle_integrity_list_assessments(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_integrity_list_assessments: %s", exc)
         return {"error": str(exc), "assessments": []}
+
+
+# ---------------------------------------------------------------------------
+# ACF — Autonomous Capability Foundry (acf-mcp-01)
+# ---------------------------------------------------------------------------
+
+
+def handle_foundry_run(args: dict) -> dict:
+    """Trigger one ACF foundry cycle (harvest -> synth -> novelty -> score -> CoD -> emit).
+
+    Pattern A (direct import) wrapper around tools.foundry.engine.run_cycle.
+    Deterministic, JSON in/out, no shell. Rate limits from
+    args/foundry_config.yaml are enforced inside run_cycle. With dry_run=True the
+    full pipeline runs but the seeder does NOT write to kanban_tasks.
+
+    Returns the engine roll-up: run_id, harvested, concepts_proposed,
+    concepts_approved, tasks_emitted, active_projects, status, dry_run.
+    """
+    try:
+        from tools.foundry import engine
+
+        max_concepts = args.get("max_concepts")
+        result = engine.run_cycle(
+            dry_run=bool(args.get("dry_run", False)),
+            max_concepts=int(max_concepts) if max_concepts is not None else None,
+        )
+        return result
+    except Exception as exc:
+        logger.warning("handle_foundry_run: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_foundry_status(args: dict) -> dict:
+    """Return ACF pipeline status: recent runs, active projects, concept counts.
+
+    Pattern A (direct import) wrapper around tools.foundry.engine.status.
+    Read-only, RLS-aware, JSON in/out, no shell. Returns recent_runs,
+    active_projects, pipeline (concept counts by status), and rate_limits.
+    """
+    try:
+        from tools.foundry import engine
+
+        try:
+            limit = int(args.get("limit", 10))
+        except (TypeError, ValueError):
+            limit = 10
+        return engine.status(limit=limit)
+    except Exception as exc:
+        logger.warning("handle_foundry_status: %s", exc)
+        return {"error": str(exc)}
