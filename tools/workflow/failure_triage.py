@@ -56,6 +56,54 @@ from tools.workflow.git_utils import default_branch
 
 logger = get_logger(__name__)
 
+# Dedicated structured-event logger (WS3.2 / arc-obs-02). Uses a stable
+# component name so recovery events land in .logs/failure_triage.ndjson
+# regardless of whether this module is imported as ``tools.workflow.*`` or
+# ``icdev.tools.workflow.*``. Once the log_ingest/direct-write bridge lands,
+# these NDJSON lines flow into ``centralized_logs`` and become visible on
+# /logs and queryable via IQE. The .tmp marker write (dedup) is unchanged —
+# it stays the source of truth for "already triaged this signature".
+_events = get_logger("failure_triage")
+
+# The discrete recovery-pipeline event types emitted via ``_emit_event``.
+EVENT_DIAGNOSIS_MADE = "diagnosis_made"
+EVENT_GATE_DECISION = "gate_decision"
+EVENT_PATCH_GENERATED = "patch_generated"
+EVENT_VERIFY_RESULT = "verify_result"
+EVENT_APPLY_OUTCOME = "apply_outcome"
+
+
+def _emit_event(
+    event_type: str,
+    *,
+    task_id: Optional[str],
+    signature: Optional[str],
+    level: str = "INFO",
+    **fields: Any,
+) -> None:
+    """Emit one structured NDJSON recovery event through ``get_logger``.
+
+    Every event carries ``event_type``, ``task_id`` and ``signature``; the
+    common recovery fields (``confidence``, ``recommendation``, ``outcome``)
+    are passed through ``fields`` when relevant. ``None`` values are dropped
+    to keep the line compact.
+
+    Best-effort: logging must never break the triage pipeline, so any error
+    here is swallowed.
+    """
+    payload: Dict[str, Any] = {
+        "event_type": event_type,
+        "task_id": task_id,
+        "signature": signature,
+    }
+    payload.update({k: v for k, v in fields.items() if v is not None})
+    try:
+        lvl = getattr(logging, level.upper(), logging.INFO)
+        _events.log(lvl, event_type, extra={"extra": payload})
+    except Exception:  # pragma: no cover - logging must not raise into triage
+        pass
+
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 TRIAGED_DIR = BASE_DIR / ".tmp" / "kanban" / "triaged"
 RATE_FILE = BASE_DIR / ".tmp" / "kanban" / "triage_rate.json"
@@ -695,6 +743,18 @@ def apply_patch_in_worktree(
     rc, out = _run(cmd_parts, cwd=wt, timeout=600)
     record["verification_rc"] = rc
     record["verification_tail"] = out[-1500:]
+    _emit_event(
+        EVENT_VERIFY_RESULT,
+        task_id=task.get("id"),
+        signature=sig,
+        level="INFO" if rc == 0 else "ERROR",
+        confidence=diag.get("confidence"),
+        recommendation=diag.get("recommendation"),
+        verification_command=patch.get("verification_command"),
+        verification_rc=rc,
+        passed=(rc == 0),
+        outcome="verify_passed" if rc == 0 else "verify_failed",
+    )
 
     if rc != 0:
         record["outcome"] = "verification_failed"
@@ -817,9 +877,27 @@ def triage_once(
             "confidence": diag.get("confidence"),
             "source": diag.get("_source"),
         }
+        _emit_event(
+            EVENT_DIAGNOSIS_MADE,
+            task_id=task.get("id"),
+            signature=sig,
+            confidence=diag.get("confidence"),
+            recommendation=diag.get("recommendation"),
+            root_cause=(diag.get("root_cause") or "")[:300],
+            source=diag.get("_source"),
+        )
 
         allow, allow_reason = should_auto_apply(task, diag)
         entry["autofix_gate"] = {"allow": allow, "reason": allow_reason}
+        _emit_event(
+            EVENT_GATE_DECISION,
+            task_id=task.get("id"),
+            signature=sig,
+            confidence=diag.get("confidence"),
+            recommendation=diag.get("recommendation"),
+            allow=allow,
+            reason=allow_reason,
+        )
 
         if allow and apply:
             patch = generate_patch(task, diag)
@@ -828,6 +906,16 @@ def triage_once(
                     "files": [f.get("path") for f in patch.get("files", [])],
                     "verification_command": patch.get("verification_command"),
                 }
+                _emit_event(
+                    EVENT_PATCH_GENERATED,
+                    task_id=task.get("id"),
+                    signature=sig,
+                    confidence=diag.get("confidence"),
+                    recommendation=diag.get("recommendation"),
+                    generated=True,
+                    files=[f.get("path") for f in patch.get("files", [])],
+                    verification_command=patch.get("verification_command"),
+                )
                 apply_result = apply_patch_in_worktree(task, diag, patch)
                 entry["apply_result"] = apply_result
                 if apply_result.get("applied"):
@@ -842,11 +930,30 @@ def triage_once(
                     entry["outcome"] = "apply_failed_fell_through_to_card"
                     _create_diagnostic_card_with_patch(task, diag, patch)
             else:
+                _emit_event(
+                    EVENT_PATCH_GENERATED,
+                    task_id=task.get("id"),
+                    signature=sig,
+                    level="WARNING",
+                    confidence=diag.get("confidence"),
+                    recommendation=diag.get("recommendation"),
+                    generated=False,
+                )
                 entry["outcome"] = "patch_gen_failed_fell_through_to_card"
                 _create_diagnostic_card(task, diag)
         else:
             _create_diagnostic_card(task, diag)
             entry["outcome"] = "suggested_card_created"
+
+        _emit_event(
+            EVENT_APPLY_OUTCOME,
+            task_id=task.get("id"),
+            signature=sig,
+            level="WARNING" if "fail" in (entry.get("outcome") or "") else "INFO",
+            confidence=diag.get("confidence"),
+            recommendation=diag.get("recommendation"),
+            outcome=entry.get("outcome"),
+        )
 
         mark_triaged(task["id"], sig, entry)
         results.append(entry)
