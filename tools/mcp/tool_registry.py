@@ -6415,6 +6415,50 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
+    # FOUNDRY — ACF Autonomous Capability Foundry (2 tools)
+    # ============================================================
+    "foundry_run": {
+        "category": "foundry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_foundry_run",
+        "description": (
+            "Trigger one ACF (Autonomous Capability Foundry) cycle: harvest -> synthesize -> "
+            "novelty-gate -> score -> CoD go/no-go -> spec -> task-graph -> seed. Rate limits "
+            "(max_concepts_per_cycle, max_active_projects) from args/foundry_config.yaml are enforced. "
+            "With dry_run=true the full pipeline runs but no kanban tasks are written. Returns run_id, "
+            "harvested, concepts_proposed, concepts_approved, tasks_emitted, active_projects, status."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "Run the full pipeline but do not seed kanban tasks",
+                    "default": False,
+                },
+                "max_concepts": {
+                    "type": "integer",
+                    "description": "Per-cycle approved-concept cap override (defaults to rate_limits.max_concepts_per_cycle)",
+                },
+            },
+        },
+    },
+    "foundry_status": {
+        "category": "foundry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_foundry_status",
+        "description": (
+            "Get ACF pipeline status (read-only, RLS-aware): recent foundry runs, count of active "
+            "ACF-owned projects, concept pipeline counts by status, and configured rate limits."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Max recent runs to return", "default": 10},
+            },
+        },
+    },
+    # ============================================================
     # ANVIL CO-WORKER ENGINE (ACE) — 2 tools
     # ============================================================
     "ace_launch": {
