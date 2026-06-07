@@ -20,6 +20,12 @@ Given a file path and a collection id this module:
    ``dic_versions(origin='human_authored', status='approved')`` row, plus
    ``dic_chunk_links`` mapping each rag chunk back to the document and its
    page/section.
+5. When a layout-detection backend supplies structured blocks (tables with
+   cell/row structure, figures with caption + bbox, typed text regions) — passed
+   explicitly via ``blocks=`` or carried on ``Extraction.blocks`` — maps each
+   block into a structured ``dic_sections`` row that RETAINS that structure
+   (table grid as JSON; figure caption + bbox kept separately in ``block_json``)
+   instead of flattening it into the text blob (dic-adapt-02-d3).
 
 Every row is stamped with ``tenant_id``/``classification`` taken from the
 caller's security context (Flask ``g.security_context`` when present) or
@@ -33,6 +39,7 @@ are still written and the failure is reported in the result, never raised.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -64,7 +71,15 @@ except Exception:
 
 @dataclass
 class Extraction:
-    """Normalized output of an extractor."""
+    """Normalized output of an extractor.
+
+    ``blocks`` carries structured layout regions (tables with cell/row
+    structure, figures with caption + bbox, typed text regions) when a
+    layout-detection backend produced them. When empty the extractor only
+    yielded a flat ``text`` blob. ``metadata`` is preserved verbatim from the
+    underlying extractor so a downstream consumer can still reach a ``blocks``
+    payload the extractor stashed there.
+    """
 
     text: str
     provider: str
@@ -72,6 +87,7 @@ class Extraction:
     page_count: int = 1
     title: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    blocks: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -90,12 +106,20 @@ def _select_extractor(path: Path) -> Extraction:
             result = _extractors.extract_file(path)
             if result.warnings:
                 logger.warning("dic: extraction warnings for %s: %s", path.name, result.warnings)
+            meta = dict(getattr(result, "metadata", {}) or {})
+            blocks = _coerce_blocks(
+                getattr(result, "blocks", None)
+                or meta.get("blocks")
+                or meta.get("layout_blocks")
+            )
             return Extraction(
                 text=result.text,
                 provider=result.provider,
                 content_type=result.content_type,
                 page_count=result.page_count,
                 title=result.title,
+                metadata=meta,
+                blocks=blocks,
                 warnings=result.warnings,
             )
         except Exception as exc:
@@ -141,12 +165,22 @@ def _try_provider_package(path: Path, ext: str) -> Extraction | None:
         pages = getattr(result, "page_count", None)
         if pages is None and isinstance(result, dict):
             pages = result.get("page_count", 1)
+        meta = getattr(result, "metadata", None)
+        if meta is None and isinstance(result, dict):
+            meta = result.get("metadata")
+        meta = dict(meta or {})
+        raw_blocks = getattr(result, "blocks", None)
+        if raw_blocks is None and isinstance(result, dict):
+            raw_blocks = result.get("blocks")
+        blocks = _coerce_blocks(raw_blocks or meta.get("blocks") or meta.get("layout_blocks"))
         return Extraction(
             text=text or "",
             provider=getattr(provider, "name", provider.__class__.__name__),
             content_type=getattr(result, "content_type", "") or ext.lstrip("."),
             page_count=int(pages or 1),
             title=getattr(result, "title", "") or path.stem,
+            metadata=meta,
+            blocks=blocks,
         )
     except Exception:
         return None
@@ -228,6 +262,8 @@ _SCHEMA = [
         citations_json  TEXT,
         status          TEXT DEFAULT 'draft',
         origin          TEXT DEFAULT 'ai_generated',
+        block_type      TEXT,
+        block_json      TEXT,
         created_at      TEXT NOT NULL,
         created_by      TEXT,
         assigned_to     TEXT,
@@ -255,6 +291,16 @@ _ALTER_MIGRATIONS = [
     ("dic_sections", "reviewed_by", "TEXT"),
     ("dic_sections", "reviewed_at", "TEXT"),
     ("dic_sections", "rev", "INTEGER DEFAULT 1"),
+    # Structured layout blocks (dic-adapt-02-d3): block_type names the region
+    # kind (table / figure / text) and block_json holds its retained structure
+    # (table cell/row grid, or a figure's caption + bounding box) so a section
+    # is not a flattened text blob.
+    ("dic_sections", "block_type", "TEXT"),
+    ("dic_sections", "block_json", "TEXT"),
+    # dic_team_access predates the "all DIC tables carry classification" rule; without
+    # it, RLS errors on every role lookup and silently downgrades users to viewer,
+    # blocking all collaboration mutations. Backfill the column.
+    ("dic_team_access", "classification", "TEXT DEFAULT 'CUI'"),
 ]
 
 
@@ -305,6 +351,263 @@ def _resolve_context(tenant_id: str | None, classification: str | None) -> tuple
     return (tid or "default"), (cls or "UNCLASSIFIED")
 
 
+# --------------------------------------------------------------------------- #
+# Structured layout blocks -> dic_sections (dic-adapt-02-d3)
+#
+# A layout-detection backend (PaddleOCR PP-Structure / DocLayout-YOLO; see
+# extractors.py) yields a document as a list of typed regions ("blocks") instead
+# of one flat text blob: tables (with cell/row structure), figures (with a
+# caption + bounding box), and ordinary text/title regions. Flattening those
+# into a single string destroys the table grid and divorces a figure's caption
+# from its position. These helpers map each incoming block dict into a structured
+# ``dic_sections`` row that RETAINS that structure:
+#   - a table block -> a section whose ``content`` is a JSON grid of rows/cells
+#     (a structured representation, never concatenated prose) and whose
+#     ``block_json`` column carries the same grid plus page/geometry;
+#   - a figure block -> a section whose caption + bounding box live in
+#     ``block_json`` SEPARATELY from the main content block;
+#   - any other typed region -> a text section preserving its reading order and
+#     page/bbox geometry.
+# Blocks may arrive either as an explicit ``blocks=`` argument to ``ingest_file``
+# or on ``Extraction.blocks`` (when the layout backend populated them). Everything
+# here is deterministic, offline, and never raises into the ingest path.
+# --------------------------------------------------------------------------- #
+
+# Block "type" labels (case-folded) treated as tables / figures. Anything else is
+# preserved as a generic text region.
+_BLOCK_TABLE_TYPES = {"table"}
+_BLOCK_FIGURE_TYPES = {"figure", "image", "picture", "chart", "graphic"}
+
+# Bound the structure persisted into a single section so a pathological layout
+# payload can never blow up a row.
+_BLOCK_MAX_ROWS = 500
+_BLOCK_MAX_COLS = 100
+_BLOCK_CELL_MAX_LEN = 1000
+_BLOCK_TEXT_MAX_LEN = 20000
+
+
+def _coerce_blocks(raw) -> list[dict]:
+    """Best-effort coerce an incoming blocks payload into a list of dicts."""
+    if not raw:
+        return []
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        return []
+    return [b for b in raw if isinstance(b, dict)]
+
+
+def _cell_text(value) -> str:
+    """Coerce a cell value (str or ``{"text"/"content": ...}`` dict) to a string."""
+    if isinstance(value, dict):
+        value = value.get("text", value.get("content", ""))
+    return str(value if value is not None else "").strip()[:_BLOCK_CELL_MAX_LEN]
+
+
+def _first_int(d: dict, keys) -> int | None:
+    """Return the first key in ``keys`` that holds a non-bool integer value."""
+    for k in keys:
+        v = d.get(k)
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str) and v.strip().lstrip("-").isdigit():
+            return int(v.strip())
+    return None
+
+
+def _block_page(block: dict) -> int | None:
+    """Pull a 1-based page number from common key spellings, or None."""
+    return _first_int(block, ("page", "page_no", "page_number", "page_index", "page_idx"))
+
+
+def _block_bbox(block: dict) -> list[float] | None:
+    """Pull a bounding box from common key spellings; return list[float] or None."""
+    for key in ("bbox", "box", "bounding_box", "coordinates", "poly"):
+        val = block.get(key)
+        if isinstance(val, (list, tuple)) and val:
+            try:
+                return [round(float(x), 2) for x in val][:8]
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _block_first_str(block: dict, keys) -> str:
+    """First non-empty string value among ``keys``, length-capped."""
+    for key in keys:
+        val = block.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()[:_BLOCK_TEXT_MAX_LEN]
+    return ""
+
+
+def _table_grid(block: dict) -> list[list[str]] | None:
+    """Reconstruct a 2-D grid of cell strings from a table block.
+
+    Supports two common layout-backend shapes:
+      - ``rows``: a list of rows, each a list of cell values (or scalars).
+      - ``cells``: a flat list of ``{"row"/"row_idx", "col"/"col_idx",
+        "text"/"content"}`` dicts, reassembled by their indices.
+    Returns ``None`` when no grid can be recovered (caller falls back to text).
+    """
+    grid: list[list[str]] = []
+
+    rows = block.get("rows")
+    if isinstance(rows, (list, tuple)) and rows:
+        for row in rows[:_BLOCK_MAX_ROWS]:
+            if isinstance(row, (list, tuple)):
+                grid.append([_cell_text(c) for c in row[:_BLOCK_MAX_COLS]])
+            else:
+                grid.append([_cell_text(row)])
+        return grid or None
+
+    cells = block.get("cells")
+    if isinstance(cells, (list, tuple)) and cells:
+        placed: dict[int, dict[int, str]] = {}
+        max_r = max_c = -1
+        for cell in cells:
+            if not isinstance(cell, dict):
+                continue
+            r = _first_int(cell, ("row", "row_idx", "row_index", "start_row", "r"))
+            c = _first_int(cell, ("col", "col_idx", "col_index", "start_col", "c"))
+            if r is None or c is None or r < 0 or c < 0:
+                continue
+            if r >= _BLOCK_MAX_ROWS or c >= _BLOCK_MAX_COLS:
+                continue
+            placed.setdefault(r, {})[c] = _cell_text(cell.get("text", cell.get("content", "")))
+            max_r, max_c = max(max_r, r), max(max_c, c)
+        if max_r < 0:
+            return None
+        for r in range(max_r + 1):
+            row_cells = placed.get(r, {})
+            grid.append([row_cells.get(c, "") for c in range(max_c + 1)])
+        return grid or None
+
+    return None
+
+
+def _layout_block_to_section(block: dict, index: int) -> dict | None:
+    """Map a raw layout-block dict into a structured ``dic_sections`` record.
+
+    Returns a dict with keys ``heading``, ``content``, ``block_type`` and
+    ``block_json`` (a JSON string), or ``None`` for an empty/unusable block.
+    Table structure is retained as a JSON grid in both ``content`` and
+    ``block_json``; a figure's caption + bbox live in ``block_json`` SEPARATELY
+    from the content block.
+    """
+    if not isinstance(block, dict):
+        return None
+    btype = str(
+        block.get("type") or block.get("label") or block.get("category") or "text"
+    ).strip().lower()
+    page = _block_page(block)
+    bbox = _block_bbox(block)
+    page_suffix = f" (page {page})" if page is not None else ""
+
+    if btype in _BLOCK_TABLE_TYPES:
+        grid = _table_grid(block)
+        if grid is None:
+            txt = _block_first_str(block, ("text", "content", "html"))
+            if not txt:
+                return None
+            payload = {"type": "table", "page": page, "bbox": bbox, "text": txt}
+            content = txt
+        else:
+            n_rows = len(grid)
+            n_cols = max((len(r) for r in grid), default=0)
+            payload = {
+                "type": "table", "page": page, "bbox": bbox,
+                "n_rows": n_rows, "n_cols": n_cols, "rows": grid,
+            }
+            # Structured JSON-like representation of cells/rows — NOT prose.
+            content = json.dumps(
+                {"rows": grid, "n_rows": n_rows, "n_cols": n_cols}, ensure_ascii=False
+            )
+        return {
+            "heading": f"Table {index + 1}{page_suffix}",
+            "content": content,
+            "block_type": "table",
+            "block_json": json.dumps(payload, ensure_ascii=False),
+        }
+
+    if btype in _BLOCK_FIGURE_TYPES:
+        caption = _block_first_str(block, ("caption", "title", "label", "text", "content"))
+        # Caption + bbox stored SEPARATELY in block_json, away from the body.
+        payload = {"type": "figure", "page": page, "bbox": bbox, "caption": caption}
+        return {
+            "heading": f"Figure {index + 1}{page_suffix}",
+            "content": caption,
+            "block_type": "figure",
+            "block_json": json.dumps(payload, ensure_ascii=False),
+        }
+
+    # Generic typed text region — preserve reading order + geometry.
+    txt = _block_first_str(block, ("text", "content", "value", "caption"))
+    if not txt:
+        return None
+    payload = {"type": btype or "text", "page": page, "bbox": bbox}
+    return {
+        "heading": (btype.capitalize() if btype else "Text") + page_suffix,
+        "content": txt,
+        "block_type": btype or "text",
+        "block_json": json.dumps(payload, ensure_ascii=False),
+    }
+
+
+def _persist_layout_blocks(
+    cur, blocks, *, doc_id, version_id, now, tid, cls, created_by
+) -> int:
+    """Write structured layout blocks as ``dic_sections`` rows. Returns count written.
+
+    Replaces only the layout-extracted sections for this version
+    (``origin='layout_extracted'``), leaving human/AI-authored sections intact,
+    so re-ingest stays idempotent. Never raises — a bad block is skipped.
+    """
+    records: list[dict] = []
+    for i, block in enumerate(blocks):
+        try:
+            rec = _layout_block_to_section(block, i)
+        except Exception:
+            rec = None
+        if rec:
+            records.append(rec)
+    if not records:
+        return 0
+
+    try:
+        cur.execute(
+            "DELETE FROM dic_sections WHERE version_id = ? AND origin = 'layout_extracted'",
+            (version_id,),
+        )
+    except Exception:
+        pass
+
+    written = 0
+    for i, rec in enumerate(records):
+        section_id = f"{version_id}_block_{i}"
+        try:
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO dic_sections
+                    (section_id, version_id, doc_id, heading, content, citations_json,
+                     status, origin, block_type, block_json, created_at, created_by,
+                     rev, tenant_id, classification)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    section_id, version_id, doc_id, rec["heading"], rec["content"],
+                    "[]", "approved", "layout_extracted", rec["block_type"],
+                    rec["block_json"], now, created_by, 1, tid, cls,
+                ),
+            )
+            written += 1
+        except Exception:
+            continue
+    return written
+
+
 @dataclass
 class IngestOutcome:
     doc_id: str
@@ -320,6 +623,7 @@ class IngestOutcome:
     classification: str
     summary: str = ""
     ocr_cleaned: bool = False
+    structured_sections: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 
@@ -338,6 +642,7 @@ class IngestOutcome:
             "classification": self.classification,
             "summary": self.summary,
             "ocr_cleaned": self.ocr_cleaned,
+            "structured_sections": self.structured_sections,
             "metadata": self.metadata,
             "errors": self.errors,
         }
@@ -2358,6 +2663,7 @@ def ingest_file(
     detect_date_anomalies: bool = True,
     detect_duplicate_blocks: bool = True,
     detect_workload_anomaly: bool = True,
+    blocks: list[dict] | None = None,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -2444,6 +2750,15 @@ def ingest_file(
             severity. Surfaced as a HITL proposal under
             ``IngestOutcome.metadata["workload_anomaly"]`` only when the profile
             is anomalous. Degrades silently.
+        blocks: optional list of structured layout-block dicts (tables with
+            cell/row structure, figures with caption + bbox, typed text regions)
+            as produced by a layout-detection backend (dic-adapt-02-d3). When
+            supplied — or when the extractor populated ``Extraction.blocks`` —
+            each block is mapped into a structured ``dic_sections`` row that
+            RETAINS its structure (table grid as JSON; figure caption + bbox kept
+            separately in ``block_json``) instead of being flattened into the
+            text blob. The explicit argument takes precedence over extractor
+            blocks. The flat ``text`` path (chunk/embed/KG) is unaffected.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -2715,6 +3030,22 @@ def ingest_file(
                     chunk_index, page, section, now, tid, cls,
                 ),
             )
+
+        # 4b) Structured layout blocks -> dic_sections (dic-adapt-02-d3).
+        # Map incoming layout-block dicts (tables w/ cells/rows, figures w/
+        # caption+bbox, typed text regions) into structured section rows that
+        # retain table structure, instead of flattening them into the text blob.
+        # Explicit argument wins; otherwise use blocks the extractor surfaced.
+        effective_blocks = _coerce_blocks(blocks) or _coerce_blocks(extraction.blocks)
+        structured_sections = 0
+        if effective_blocks:
+            _emit("layout_blocks", "Preserving structured layout blocks…", 76)
+            structured_sections = _persist_layout_blocks(
+                cur, effective_blocks,
+                doc_id=doc_id, version_id=version_id, now=now,
+                tid=tid, cls=cls, created_by=created_by,
+            )
+
         conn.commit()
 
         # 5) KG bridge (best-effort). ingest_chunk reads rag_chunks by id, so this
@@ -2755,6 +3086,7 @@ def ingest_file(
             classification=cls,
             summary=ai_summary,
             ocr_cleaned=ocr_cleaned,
+            structured_sections=structured_sections,
             metadata=ai_metadata,
             errors=errors,
         )
