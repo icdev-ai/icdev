@@ -114,6 +114,7 @@ def test_to_dict_shape(monkeypatch):
         "result_count",
         "refusal_reason",
         "origin",
+        "citation_quality",
     }
     assert isinstance(d["citations"], list)
     assert d["citations"][0]["doc_id"] == "doc-1"

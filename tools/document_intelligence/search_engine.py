@@ -10,6 +10,7 @@ are suppressed (never returned uncited).
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -80,6 +81,9 @@ class DICAnswer:
     result_count: int = 0
     refusal_reason: str = ""
     origin: str = "ai_generated"
+    # Aggregate citation-sufficiency in [0,1] over the evidence fed to synthesis:
+    # how strongly the cited chunks support the question (attribution lens).
+    citation_quality: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -89,6 +93,7 @@ class DICAnswer:
             "result_count": self.result_count,
             "refusal_reason": self.refusal_reason,
             "origin": self.origin,
+            "citation_quality": round(self.citation_quality, 4),
         }
 
 
@@ -173,6 +178,10 @@ class DICSearchResult:
     citation: Citation = field(default_factory=Citation)
     sha256: str = ""
     attribution_pct: int = 0
+    # Query-relative attribution strength in [0,1]: how well this chunk's text
+    # actually supports the query (attribution lens), reusing the verifier's
+    # claim-vs-evidence overlap measure. Drives attribution-lens reranking.
+    attribution_score: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -189,7 +198,35 @@ class DICSearchResult:
             "citation": self.citation.to_dict(),
             "sha256": self.sha256,
             "attribution_pct": self.attribution_pct,
+            "attribution_score": round(self.attribution_score, 4),
             "archive_url": f"/document-intelligence/doc/{self.doc_id}" if self.doc_id else "#",
+        }
+
+
+@dataclass
+class DICGroundedSearch:
+    """A grounded search response carrying an aggregate citation-quality score.
+
+    Wraps the cited result list from :meth:`DICSearchEngine.grounded_search` with
+    a per-answer ``citation_quality`` (sufficiency) score in [0,1] — the mean
+    attribution strength of the returned chunks. Results are ordered through the
+    attribution lens (strongly-supporting evidence first), and every result still
+    carries its mandatory citation pack.
+    """
+
+    query: str = ""
+    results: list["DICSearchResult"] = field(default_factory=list)
+    result_count: int = 0
+    citation_quality: float = 0.0
+    origin: str = "ai_retrieved"
+
+    def to_dict(self) -> dict:
+        return {
+            "query": self.query,
+            "results": [r.to_dict() for r in self.results],
+            "result_count": self.result_count,
+            "citation_quality": round(self.citation_quality, 4),
+            "origin": self.origin,
         }
 
 
@@ -300,6 +337,80 @@ def _chunk_meta(conn, chunk_id: str) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+# Attribution-lens reranking + citation-quality scoring (dic-adapt-04).
+#
+# DIC mandates citations but the raw retrieval score only measures topical match,
+# not whether a cited chunk actually *supports* the query. Adapting the arXiv
+# "Re-Ranking Through an Attribution Lens for Citation Quality in Legal QA" and
+# EviRank work, we compute a per-chunk attribution strength (how strongly the
+# chunk supports the query) and rerank the candidate set so better-supporting
+# evidence ranks higher, then expose a per-answer citation-sufficiency score.
+#
+# The attribution measure REUSES the verifier's per-claim evidence-overlap
+# (icdev/tools/document_intelligence/verifier.py::_lexical_overlap) — the same
+# token-recall used by the anti-hallucination gate — so search ranking and
+# verification agree on what "supported" means. No LLM is required (air-gap safe).
+# --------------------------------------------------------------------------- #
+
+# Blend weight for the attribution lens vs. the raw retrieval score when
+# reranking. Attribution dominates (so a strongly-supporting chunk outranks a
+# weakly-related one) while retrieval still breaks near-ties. Override via env.
+_ATTR_RERANK_WEIGHT = max(0.0, min(1.0, float(os.environ.get("DIC_ATTR_RERANK_WEIGHT", "0.7"))))
+
+
+def _attribution_strength(query: str, content: str) -> float:
+    """Per-chunk attribution/sufficiency for ``query`` in [0,1].
+
+    Reuses the verifier's claim-vs-evidence token-overlap (``_lexical_overlap``)
+    so search-time attribution and verify-time support use one definition. Treats
+    the query as the "claim" and the chunk as the "evidence". Returns 0.0 if the
+    verifier helper cannot be imported (degrades to retrieval-only ranking).
+    """
+    try:
+        from tools.document_intelligence.verifier import _lexical_overlap
+    except Exception:
+        return 0.0
+    try:
+        return float(_lexical_overlap(query or "", content or ""))
+    except Exception:
+        return 0.0
+
+
+def _rerank_by_attribution(
+    query: str, results: list["DICSearchResult"], rerank: bool = True
+) -> list["DICSearchResult"]:
+    """Score every result by attribution strength and (optionally) reorder.
+
+    Always populates ``attribution_score`` on each result. When ``rerank`` is
+    True (default) the list is re-sorted by a blend of attribution strength and
+    the normalized retrieval score, attribution-weighted so stronger-supporting
+    chunks rise. The sort is stable, so equal-attribution results keep their
+    original retrieval order. Citations are untouched — this only reorders.
+    """
+    if not results:
+        return results
+    max_ret = max((r.score for r in results), default=0.0) or 1.0
+    scored: list[tuple[float, int, "DICSearchResult"]] = []
+    for idx, r in enumerate(results):
+        r.attribution_score = _attribution_strength(query, r.content)
+        ret_norm = (r.score / max_ret) if max_ret else 0.0
+        combined = _ATTR_RERANK_WEIGHT * r.attribution_score + (1.0 - _ATTR_RERANK_WEIGHT) * ret_norm
+        scored.append((combined, idx, r))
+    if not rerank:
+        return [r for _, _, r in scored]
+    # idx as secondary key preserves original order among equal combined scores.
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    return [r for _, _, r in scored]
+
+
+def _citation_quality(results: list["DICSearchResult"]) -> float:
+    """Aggregate per-answer citation sufficiency: mean attribution strength."""
+    if not results:
+        return 0.0
+    return sum(r.attribution_score for r in results) / len(results)
+
+
+# --------------------------------------------------------------------------- #
 # LLM grounded answer synthesis (aiify-opp-6046: fulltext_search_engine ->
 # llm_generation). DIC search returns cited chunks with NO LLM by default
 # (air-gap safe). This OPTIONAL layer takes the top cited results and asks the
@@ -405,6 +516,7 @@ class DICSearchEngine:
         top_k: int = 10,
         mode: str = "grounded",
         clearance: str | None = None,
+        rerank_attribution: bool = True,
     ) -> list[DICSearchResult]:
         """Return cited search results. Empty list when no evidence found.
 
@@ -418,6 +530,11 @@ class DICSearchEngine:
                 dropped *before* the ``top_k`` cap, so the cap fills with
                 accessible results. When None (default), no access filtering is
                 applied — behavior is unchanged for existing callers.
+            rerank_attribution: When True (default), the accessible candidate set
+                is reordered through the attribution lens — chunks that more
+                strongly support the query rank higher — before the ``top_k`` cap.
+                Every result gets its ``attribution_score`` populated regardless.
+                Set False to keep the raw retrieval order.
         """
         from tools.db.storage import get_connection
 
@@ -473,12 +590,53 @@ class DICSearchEngine:
                     sha256=meta.get("sha256", ""),
                     attribution_pct=meta.get("attribution_pct", 0),
                 ))
-                if len(out) >= top_k:
-                    break
         finally:
             conn.close()
 
-        return out
+        # Attribution-lens rerank over the full accessible candidate pool, then
+        # cap to top_k so a strongly-supporting chunk is never starved by a
+        # weakly-related one that merely retrieved earlier. Always scores
+        # attribution_score (even when rerank is disabled).
+        out = _rerank_by_attribution(query, out, rerank=rerank_attribution)
+        return out[:top_k]
+
+    def grounded_search(
+        self,
+        query: str,
+        collection_id: str | None = None,
+        top_k: int = 10,
+        mode: str = "grounded",
+        clearance: str | None = None,
+    ) -> DICGroundedSearch:
+        """Cited search with an attribution-lens ordering and a sufficiency score.
+
+        Thin wrapper over :meth:`search` (which already reranks through the
+        attribution lens) that also computes a per-answer ``citation_quality`` —
+        the mean attribution strength of the returned chunks — so callers can show
+        how well the cited evidence actually supports the query. Citations remain
+        mandatory; results with no traceable source are never returned.
+
+        Args:
+            query: Natural language query (user-provided — injection-scanned).
+            collection_id: Restrict to a specific collection (None = all).
+            top_k: Maximum results to return.
+            mode: "grounded" (BM25+KG, default) or "hybrid".
+            clearance: Caller's maximum classification; results above it are
+                dropped before the cap (see :meth:`search`).
+
+        Returns:
+            A :class:`DICGroundedSearch`. ``citation_quality`` is 0.0 when nothing
+            matched and ``results`` is empty.
+        """
+        results = self.search(
+            query, collection_id=collection_id, top_k=top_k, mode=mode, clearance=clearance,
+        )
+        return DICGroundedSearch(
+            query=query,
+            results=results,
+            result_count=len(results),
+            citation_quality=_citation_quality(results),
+        )
 
     def _rag_search(self, query: str, top_k: int, mode: str):
         try:
@@ -628,6 +786,10 @@ class DICSearchEngine:
             return DICAnswer(grounded=False, refusal_reason="no_evidence", result_count=0)
 
         used = results[:_ANSWER_MAX_RESULTS]
+        # Per-answer citation sufficiency over the evidence actually fed to
+        # synthesis (attribution lens). search() already ordered results by
+        # attribution strength, so the strongest-supporting chunks are used.
+        cq = _citation_quality(used)
         context = "\n\n".join(
             f"[{i}] (source: {r.doc_title or r.doc_id or 'unknown'})\n"
             f"{(r.content or '').strip()[:_ANSWER_CHARS_PER_RESULT]}"
@@ -663,6 +825,7 @@ class DICSearchEngine:
                 refusal_reason="llm_unavailable",
                 citations=[r.citation for r in used],
                 result_count=len(results),
+                citation_quality=cq,
             )
 
         if not resp or not resp.content or not resp.content.strip():
@@ -671,6 +834,7 @@ class DICSearchEngine:
                 refusal_reason="llm_unavailable",
                 citations=[r.citation for r in used],
                 result_count=len(results),
+                citation_quality=cq,
             )
 
         text = resp.content.strip()
@@ -680,6 +844,7 @@ class DICSearchEngine:
                 refusal_reason="insufficient_evidence",
                 citations=[r.citation for r in used],
                 result_count=len(results),
+                citation_quality=cq,
             )
 
         return DICAnswer(
@@ -687,6 +852,7 @@ class DICSearchEngine:
             grounded=True,
             citations=[r.citation for r in used],
             result_count=len(results),
+            citation_quality=cq,
         )
 
     def expand_query(self, query: str, max_terms: int = _EXPANSION_MAX_TERMS) -> DICQueryExpansion:
