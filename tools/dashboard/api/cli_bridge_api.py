@@ -37,6 +37,13 @@ _FALSEY = ("false", "0", "no", "off")
 # Key under which the reset token is stashed on flask.g for teardown.
 _G_TOKEN_KEY = "_cli_bridge_override_token"
 
+# Default LLM routing function for the interactive prompt panel. Unknown
+# functions fall back to the router's ``default`` chain, so the path-derived
+# hint the front-end sends is always safe.
+_DEFAULT_PROMPT_FUNCTION = "codebase_query"
+# Cap to keep a runaway paste from blowing past the model context window.
+_MAX_PROMPT_CHARS = 8000
+
 
 def parse_toggle(value: Optional[str]) -> Optional[bool]:
     """Map a raw cookie/header string to an override tri-state.
@@ -89,6 +96,92 @@ def register_cli_bridge(app) -> None:
     @app.route("/api/cli-bridge/status", methods=["GET"])
     def _cli_bridge_status():  # noqa: ANN202
         return jsonify(cli_bridge_status())
+
+    @app.route("/api/cli-bridge/prompt", methods=["POST"])
+    def _cli_bridge_prompt():  # noqa: ANN202
+        return jsonify(run_cli_bridge_prompt(request.get_json(silent=True) or {}))
+
+
+def run_cli_bridge_prompt(payload: dict) -> dict:
+    """Run a free-text prompt through the LLM router for the interactive panel.
+
+    Honors a per-request ``force_bridge`` override (the per-page CLI toggle the
+    front-end reads from the ``icdev_cli_bridge`` cookie) for the duration of the
+    invoke, then resets it so no state leaks. The override only *prepends* /
+    *strips* the ``claude-cli`` provider — the cloud/local fallbacks stay in the
+    chain, so a missing CLI binary degrades gracefully to the next provider.
+
+    Args:
+        payload: ``{prompt, function?, force_bridge?}``. ``force_bridge`` may be
+            a bool or a toggle string (``on``/``off``/…); anything unrecognized
+            means "no override" (defer to env + auto-detect).
+
+    Returns:
+        On success ``{content, provider, model, duration_ms, function}``; on a
+        failure (empty prompt or no provider) ``{error, content: "", …}``.
+    """
+    prompt = str(payload.get("prompt") or "").strip()
+    if not prompt:
+        return {"error": "Empty prompt.", "content": ""}
+    prompt = prompt[:_MAX_PROMPT_CHARS]
+
+    function = str(payload.get("function") or "").strip() or _DEFAULT_PROMPT_FUNCTION
+
+    raw_force = payload.get("force_bridge")
+    if isinstance(raw_force, bool):
+        force = raw_force
+    elif isinstance(raw_force, str):
+        force = parse_toggle(raw_force)
+    else:
+        force = None
+
+    token = None
+    try:
+        from tools.llm.cli_bridge.activate import (
+            cli_bridge_override,
+            reset_cli_bridge_override,
+        )
+    except Exception:  # pragma: no cover - defensive
+        cli_bridge_override = reset_cli_bridge_override = None
+
+    if force is not None and cli_bridge_override is not None:
+        token = cli_bridge_override(force)
+
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2048,
+        )
+        resp = router.invoke(function, req)
+        return {
+            "content": (resp.content or "").strip() if resp else "",
+            "provider": getattr(resp, "provider", "") or "",
+            "model": getattr(resp, "model_id", "") or "",
+            "duration_ms": int(getattr(resp, "duration_ms", 0) or 0),
+            "function": function,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("CLI bridge prompt failed: %s", exc)
+        return {
+            "error": (
+                "No LLM provider could serve this prompt. If the local CLI "
+                "bridge is enabled, the claude CLI binary may be unavailable."
+            ),
+            "content": "",
+            "provider": "",
+            "model": "",
+            "duration_ms": 0,
+        }
+    finally:
+        if token is not None and reset_cli_bridge_override is not None:
+            try:
+                reset_cli_bridge_override(token)
+            except Exception:  # pragma: no cover - defensive
+                pass
 
 
 def _last_provider_served():

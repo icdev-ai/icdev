@@ -26,6 +26,7 @@ from tools.dashboard.api.cli_bridge_api import (  # noqa: E402
     HEADER_NAME,
     parse_toggle,
     register_cli_bridge,
+    run_cli_bridge_prompt,
 )
 from tools.llm.cli_bridge.activate import (  # noqa: E402
     CLI_MODEL_NAME,
@@ -209,4 +210,103 @@ def test_override_does_not_leak_to_next_request(monkeypatch):
     assert second["chain"][0] == CLI_MODEL_NAME
 
     # And the module-level ContextVar is clean outside any request.
+    assert get_cli_bridge_override() is None
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# run_cli_bridge_prompt — interactive prompt panel endpoint (ucb-widget-02)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def test_prompt_empty_returns_error():
+    out = run_cli_bridge_prompt({"prompt": "   "})
+    assert out["error"]
+    assert out["content"] == ""
+
+
+class _FakeResp:
+    content = "  Hello from the bridge.  "
+    provider = "anthropic"
+    model_id = "claude-cli"
+    duration_ms = 1234
+
+
+def _set_router(monkeypatch, cls):
+    """Patch LLMRouter on every alias of the router module.
+
+    ``tools.llm.router`` and ``icdev.tools.llm.router`` are distinct module
+    objects under the back-compat shim, and a from-import inside the endpoint
+    resolves to the icdev one — so we patch both to be safe.
+    """
+    import importlib
+
+    for name in ("tools.llm.router", "icdev.tools.llm.router"):
+        try:
+            mod = importlib.import_module(name)
+        except Exception:
+            continue
+        monkeypatch.setattr(mod, "LLMRouter", cls, raising=False)
+
+
+def _patch_router(monkeypatch, captured):
+    """Patch LLMRouter so invoke() records args and returns a fake response."""
+
+    class _FakeRouter:
+        def __init__(self, *a, **k):
+            pass
+
+        def invoke(self, function, request):
+            captured["function"] = function
+            captured["override"] = get_cli_bridge_override()
+            return _FakeResp()
+
+    _set_router(monkeypatch, _FakeRouter)
+
+
+def test_prompt_success_returns_provider_footer_fields(monkeypatch):
+    captured: dict = {}
+    _patch_router(monkeypatch, captured)
+    out = run_cli_bridge_prompt({"prompt": "what does this page do?"})
+    assert out["content"] == "Hello from the bridge."  # stripped
+    assert out["provider"] == "anthropic"
+    assert out["model"] == "claude-cli"
+    assert out["duration_ms"] == 1234
+    # Empty function defaults to the codebase_query routing chain.
+    assert captured["function"] == "codebase_query"
+    # No force_bridge → no override seeded during invoke.
+    assert captured["override"] is None
+
+
+def test_prompt_force_bridge_seeds_override_during_invoke(monkeypatch):
+    captured: dict = {}
+    _patch_router(monkeypatch, captured)
+    run_cli_bridge_prompt({"prompt": "hi", "function": "pulse", "force_bridge": "off"})
+    # The override is visible to invoke()…
+    assert captured["override"] is False
+    assert captured["function"] == "pulse"
+    # …and is reset once the call returns (no leak).
+    assert get_cli_bridge_override() is None
+
+
+def test_prompt_force_bridge_accepts_bool(monkeypatch):
+    captured: dict = {}
+    _patch_router(monkeypatch, captured)
+    run_cli_bridge_prompt({"prompt": "hi", "force_bridge": True})
+    assert captured["override"] is True
+    assert get_cli_bridge_override() is None
+
+
+def test_prompt_router_failure_degrades_gracefully(monkeypatch):
+    class _BoomRouter:
+        def __init__(self, *a, **k):
+            pass
+
+        def invoke(self, function, request):
+            raise RuntimeError("no provider available")
+
+    _set_router(monkeypatch, _BoomRouter)
+    out = run_cli_bridge_prompt({"prompt": "hi", "force_bridge": True})
+    assert out["error"]
+    assert out["content"] == ""
+    # Override must still be cleaned up even when invoke raises.
     assert get_cli_bridge_override() is None
