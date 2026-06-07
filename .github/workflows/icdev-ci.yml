@@ -255,8 +255,35 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -f docker/Dockerfile.agent-base -t icdev/agent-base:test .
-      - run: docker build -f docker/Dockerfile.dashboard -t icdev/dashboard:test .
+      # Pre-pull the shared base image with retries. Docker Hub `Head` requests to
+      # registry-1.docker.io intermittently i/o-timeout on GitHub runners; pulling
+      # once up-front (with backoff) warms the local cache so both builds below hit
+      # it instead of the registry, and a transient blip retries cheaply.
+      - name: Pre-pull base image (retry on registry timeout)
+        run: |
+          for attempt in 1 2 3 4 5; do
+            docker pull python:3.12-slim && exit 0
+            echo "::warning::docker pull python:3.12-slim failed (attempt $attempt/5); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          echo "::error::docker pull python:3.12-slim failed after 5 attempts"
+          exit 1
+      - name: Build agent-base image (retry on registry timeout)
+        run: |
+          for attempt in 1 2 3; do
+            docker build -f docker/Dockerfile.agent-base -t icdev/agent-base:test . && exit 0
+            echo "::warning::agent-base build failed (attempt $attempt/3); retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+          done
+          exit 1
+      - name: Build dashboard image (retry on registry timeout)
+        run: |
+          for attempt in 1 2 3; do
+            docker build -f docker/Dockerfile.dashboard -t icdev/dashboard:test . && exit 0
+            echo "::warning::dashboard build failed (attempt $attempt/3); retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+          done
+          exit 1
 
   # ── Tier 3: Helm Chart Validation ────────────────────────────────────────
   helm-lint:
