@@ -1,0 +1,7 @@
+// IQE-CWK-001: Co-workers by role — domain distribution of the workforce
+// Useful for capacity planning and identifying which role types are most active.
+foreach cw in cwk.coworkers
+where cw.state == "active"
+group cw.role_id
+select cw.role_id, COUNT(cw.id) as count
+order count desc

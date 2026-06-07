@@ -1,0 +1,6 @@
+// IQE-CWK-002: Active ACE sessions — teams currently doing work
+// Surface running instances so operators can monitor or intervene.
+foreach s in cwk.sessions
+where s.state == "active"
+select s.id, s.name, s.role_id, s.trust_tier, s.created_at
+order s.created_at desc

@@ -1,0 +1,6 @@
+// IQE-CWK-003: Co-workers pending HITL — suspended awaiting human approval
+// Flag coworkers stuck in hitl_pending so a human can resume or abort.
+foreach cw in cwk.coworkers
+where cw.state == "hitl_pending"
+select cw.id, cw.display_name, cw.role_id, cw.instance_id, cw.assigned_step, cw.last_active_at
+order cw.last_active_at desc
