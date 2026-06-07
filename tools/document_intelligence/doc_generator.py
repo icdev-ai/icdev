@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -25,7 +26,7 @@ _OUTLINE_PROMPT = """You are a technical writer building a document outline.
 
 Query: {query}
 
-Source evidence (grounded):
+Source evidence (grounded — each item is tagged [SOURCE-N]):
 {evidence}
 
 Produce a JSON outline: {{"title": "...", "sections": [{{"heading": "...", "summary": "..."}}]}}
@@ -37,12 +38,15 @@ Document title: {title}
 Section heading: {heading}
 Section summary: {summary}
 
-Source evidence (cite exactly — do not invent facts):
+Source evidence (each item is tagged [SOURCE-N] — cite exactly, do not invent facts):
 {evidence}
 
-Write the section in clear, professional prose. For every factual claim write a
-bracketed citation: [source: chunk {chunk_id}]. If the evidence does not support
-a claim, omit it rather than inventing it."""
+Write the section in clear, professional prose. For every factual claim, append a
+citation tag naming the numbered source it came from, e.g. [SOURCE-1]. Use ONLY
+the SOURCE numbers shown in the evidence above. If the evidence does not support a
+claim, omit it rather than inventing it. If the evidence contains an unresolved
+template placeholder (e.g. [ORGANIZATION], [DATE]), keep it verbatim — never
+substitute a fabricated value."""
 
 
 @dataclass
@@ -65,6 +69,8 @@ class GenerateResult:
     origin: str = "ai_generated"
     status: str = "pending_review"
     error: str = ""
+    context_canvases: list[str] = field(default_factory=list)   # cross-canvas sources used
+    cross_canvas_sources: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -86,6 +92,8 @@ class GenerateResult:
             "origin": self.origin,
             "status": self.status,
             "error": self.error,
+            "context_canvases": self.context_canvases,
+            "cross_canvas_sources": self.cross_canvas_sources,
         }
 
 
@@ -97,48 +105,161 @@ def _hid(*parts: str) -> str:
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:24]
 
 
-def _evidence_block(results: list) -> str:
-    lines = []
-    for r in results[:8]:
-        chunk_id = getattr(r, "chunk_id", "?")
-        content = getattr(r, "content", "")[:300]
-        lines.append(f"[chunk {chunk_id}] {content}")
-    return "\n\n".join(lines) or "(no evidence available)"
+def _numbered_evidence(
+    items: list[tuple[str, str, dict]], max_sources: int = 10
+) -> tuple[str, list[str], list[dict]]:
+    """Build a SOURCE-numbered evidence block + aligned text and citation lists.
+
+    ``items`` is a list of ``(locator, text, citation)`` triples (locator = doc
+    title / page / "cross-canvas"). The block numbers each non-empty source as
+    ``[SOURCE-1] (locator) text…``; the returned ``texts`` and ``citations`` lists
+    are in the SAME order, so a ``[SOURCE-N]`` tag in the generated prose maps to
+    BOTH ``texts[N-1]`` (for the verifier — verify aligns ``[SOURCE-1]`` with
+    ``evidence[0]``) AND ``citations[N-1]`` (for the clickable UI chip). Keeping a
+    single source of truth is what makes the inline [SOURCE-N] links correct.
+    """
+    kept = [(loc, t, c) for (loc, t, c) in items if (t or "").strip()][:max_sources]
+    block = "\n\n".join(
+        f"[SOURCE-{i}] ({loc}) {(t or '')[:500]}" for i, (loc, t, _c) in enumerate(kept, start=1)
+    ) or "(no evidence available)"
+    texts = [t for _, t, _ in kept]
+    # Carry a human-readable snippet of the actual evidence on each citation so the
+    # UI chip can show WHAT the source says, not just an opaque doc_id / chunk hash.
+    cites = []
+    for _loc, t, c in kept:
+        cc = dict(c or {})
+        cc["snippet"] = " ".join((t or "").split())[:180]
+        cites.append(cc)
+    return block, texts, cites
 
 
-def _targeted_evidence_block(results: list) -> str:
-    """Same as _evidence_block but includes doc title and page for richer citations."""
-    lines = []
-    for r in results[:8]:
-        chunk_id = getattr(r, "chunk_id", "?")
-        doc_title = getattr(r, "doc_title", None) or getattr(r, "doc_id", "")
-        page = getattr(r, "page", None)
-        content = getattr(r, "content", "")[:400]
-        loc = f"p.{page}" if page else doc_title
-        lines.append(f"[chunk {chunk_id} · {loc}] {content}")
-    return "\n\n".join(lines) or "(no evidence available)"
+def _result_locator(r) -> str:
+    """Short, human-readable source label for a search result."""
+    page = getattr(r, "page", None)
+    if page:
+        title = getattr(r, "doc_title", None) or getattr(r, "doc_id", "") or "source"
+        return f"{title} p.{page}"
+    return getattr(r, "doc_title", None) or getattr(r, "doc_id", "") or "source"
 
 
-def _llm_generate(prompt: str) -> str | None:
+# --------------------------------------------------------------------------- #
+# Model selection lives in .env (never hardcode model IDs). The aliases below are
+# only DEFAULTS used when the env vars are unset; the real selection is in .env:
+#   DIC_GEN_DEBATERS    — comma-separated aliases that debate (diverse drafts)
+#   DIC_GEN_SYNTHESIZER — alias that merges the debate into the final section
+#   DIC_GEN_MODEL       — alias for the non-CoD single-invoke path
+# Each alias must be defined in args/llm_config.yaml (models:). Defaults are the
+# Ollama-cloud models confirmed to return content on ollama.com (probed 2026-06-07).
+# --------------------------------------------------------------------------- #
+# Defaults only — real selection is in .env. mistral-large-cloud + minimax-m3
+# reliably emit [SOURCE-N]; gemini3-cloud adds debate diversity but is a poor
+# citer, so it is NOT the synthesizer (it would strip citations during merge).
+_DEFAULT_DIC_DEBATERS = "minimax-m3,mistral-large-cloud,gemini3-cloud"
+_DEFAULT_DIC_SYNTHESIZER = "mistral-large-cloud"
+_DEFAULT_DIC_MODEL = "mistral-large-cloud"
+
+_COD_SYNTH_SYSTEM = (
+    "You are merging several independent drafts of ONE technical document section "
+    "into the single best version. Keep ONLY claims supported by the drafts; "
+    "preserve EVERY [SOURCE-N] citation tag exactly as written; keep any unresolved "
+    "template placeholder (e.g. [ORGANIZATION], [DATE]) verbatim; never invent facts. "
+    "Output ONLY the merged section prose — no preamble, no commentary about the drafts."
+)
+
+
+def _env_models(var: str, default: str) -> list[str]:
+    """Read a comma-separated list of model aliases from .env (selection, not IDs)."""
+    raw = os.environ.get(var, "") or default
+    return [m.strip() for m in raw.split(",") if m.strip()]
+
+
+def _invoke_model(router, alias: str, prompt: str, system_prompt: str = "") -> str | None:
+    """Invoke ONE specific model alias (defined in llm_config.yaml ``models:``).
+
+    Returns the model's text, or ``None`` when the alias is unknown, the provider
+    is unreachable, or the model returns empty (some rotated Ollama-cloud IDs do) —
+    so callers skip that debater / ABSTAIN rather than fabricate. WHICH alias is
+    used is .env-driven; the alias->model_id mapping stays in config.
+    """
     try:
-        for ns in ("icdev.tools.llm.router", "tools.llm.router"):
-            try:
-                import importlib
-                mod = importlib.import_module(ns)
-                router = mod.LLMRouter()
-                for meth in ("generate", "complete", "chat", "route", "call"):
-                    fn = getattr(router, meth, None)
-                    if callable(fn):
-                        result = fn(prompt)
-                        if isinstance(result, str):
-                            return result
-                        if isinstance(result, dict):
-                            return result.get("text") or result.get("content") or str(result)
-            except ImportError:
-                continue
+        from tools.llm.provider import LLMRequest
+
+        if hasattr(router, "is_no_llm_mode") and router.is_no_llm_mode():
+            return None
+        cfg = router._get_model_config(alias)
+        if not cfg:
+            return None
+        provider = router._get_provider(cfg.get("provider", ""))
+        if not provider:
+            return None
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt=system_prompt or "",
+            max_tokens=900,
+            temperature=0.2,
+            classification="CUI",
+        )
+        resp = provider.invoke(req, cfg.get("model_id"), cfg)
+        txt = (getattr(resp, "content", "") or "").strip()
+        return txt or None
     except Exception as exc:
-        logger.warning("doc_generator: LLM call failed: %s", exc)
-    return None
+        logger.warning("doc_generator: model %s failed: %s", alias, exc)
+        return None
+
+
+def _cod_generate(prompt: str, *, system_prompt: str = "") -> str | None:
+    """Chain-of-Debate for document CONTENT: N diverse drafts -> 1 synthesized section.
+
+    Unlike the router's generic CoD (whose judge emits a *verdict*, not prose), this
+    asks each .env-selected debater for an independent grounded draft, then a
+    synthesizer MERGES them into the single best section — preserving [SOURCE-N]
+    citations and placeholders. Degrades to a single draft, then None (abstain).
+    """
+    try:
+        from tools.llm.router import LLMRouter
+    except Exception:
+        return None
+    router = LLMRouter()
+
+    drafts: list[str] = []
+    for alias in _env_models("DIC_GEN_DEBATERS", _DEFAULT_DIC_DEBATERS):
+        txt = _invoke_model(router, alias, prompt, system_prompt)
+        if txt:
+            drafts.append(txt)
+    if not drafts:
+        return None
+    if len(drafts) == 1:
+        return drafts[0]
+
+    synth = _env_models("DIC_GEN_SYNTHESIZER", _DEFAULT_DIC_SYNTHESIZER)
+    merge_prompt = (
+        "Independent drafts of the SAME section follow. Merge them into the single "
+        "best grounded version, following the rules in the system prompt.\n\n"
+        + "\n\n".join(f"=== DRAFT {i} ===\n{d}" for i, d in enumerate(drafts, start=1))
+    )
+    merged = _invoke_model(router, synth[0], merge_prompt, _COD_SYNTH_SYSTEM) if synth else None
+    return merged or drafts[0]
+
+
+def _llm_generate(prompt: str, *, system_prompt: str = "", use_cod: bool = False) -> str | None:
+    """Generate text via Ollama-cloud (selection .env-driven). CoD for content.
+
+    ``use_cod=True`` (ALL AI-Assist content, per user requirement) routes through
+    :func:`_cod_generate` (debate -> synthesize). Everything else uses the single
+    ``DIC_GEN_MODEL``. Returns ``None`` when nothing is produced so callers ABSTAIN
+    rather than fabricate.
+    """
+    if use_cod:
+        out = _cod_generate(prompt, system_prompt=system_prompt)
+        if out:
+            return out
+        # CoD produced nothing (e.g. all cloud debaters empty) — try single model.
+    try:
+        from tools.llm.router import LLMRouter
+    except Exception:
+        return None
+    model = _env_models("DIC_GEN_MODEL", _DEFAULT_DIC_MODEL)
+    return _invoke_model(LLMRouter(), model[0], prompt, system_prompt) if model else None
 
 
 def _parse_outline(raw: str | None) -> dict:
@@ -162,6 +283,7 @@ def generate_document(
     tenant_id: str = "default",
     classification: str = "CUI",
     created_by: str = "ai_assist",
+    context_canvases: list[str] | None = None,
 ) -> GenerateResult:
     """Generate a document draft grounded in DIC search results.
 
@@ -177,10 +299,37 @@ def generate_document(
 
     result = GenerateResult(query=query, collection_id=collection_id, origin="ai_generated", status="pending_review")
 
-    # 1. Retrieve evidence.
+    # 1. Retrieve evidence (own collection) + cross-canvas RAG+KG context.
     engine = DICSearchEngine(tenant_id=tenant_id)
     search_results = engine.search(query, collection_id=collection_id, top_k=10)
-    evidence = _evidence_block(search_results)
+
+    # Pull context from related canvases (NDC/migration for network docs,
+    # SDC/compliance for security docs, etc.). Auto-resolved from the collection +
+    # query when not explicitly requested. Additive and best-effort.
+    xctx = None
+    try:
+        from tools.document_intelligence.cross_canvas_context import gather, resolve_context_canvases
+        canvases = context_canvases if context_canvases is not None else \
+            resolve_context_canvases(collection_id, query)
+        xctx = gather(query, canvases, tenant_id=tenant_id)
+        result.context_canvases = xctx.canvases
+        result.cross_canvas_sources = xctx.sources
+    except Exception as exc:
+        logger.warning("doc_generator: cross-canvas context unavailable: %s", exc)
+    _xtexts = list(xctx.texts) if xctx else []
+    _xcites = list(xctx.citations) if xctx else []
+
+    # Build a single SOURCE-numbered evidence block shared by the outline + section
+    # prompts, the verifier, AND the persisted citations, so a [SOURCE-N] tag in the
+    # generated prose aligns with evidence_texts[N-1] (verifier) and
+    # evidence_citations[N-1] (the clickable UI chip). _xtexts and _xcites are 1:1
+    # aligned (cross_canvas_context.gather appends them together).
+    _ev_items = [
+        (_result_locator(r), getattr(r, "content", "") or "", r.citation.to_dict())
+        for r in search_results
+    ]
+    _ev_items += [("cross-canvas", t, c) for t, c in zip(_xtexts, _xcites)]
+    evidence, evidence_texts, evidence_citations = _numbered_evidence(_ev_items)
 
     # 2. Build outline.
     outline_raw = _llm_generate(_OUTLINE_PROMPT.format(query=query, evidence=evidence))
@@ -201,28 +350,31 @@ def generate_document(
         heading = sec.get("heading", "")
         summary = sec.get("summary", "")
 
+        # Section CONTENT uses Chain-of-Debate (user requirement: ALL AI-Assist content).
         raw_text = _llm_generate(
             _SECTION_PROMPT.format(
                 title=title, heading=heading, summary=summary, evidence=evidence,
-                chunk_id=search_results[0].chunk_id if search_results else "N/A",
-            )
+            ),
+            use_cod=True,
         )
         if not raw_text:
             generated_sections.append(GeneratedSection(heading=heading, abstained=True))
             continue
 
-        # Verify against evidence.
+        # Verify against evidence (own collection + cross-canvas context).
+        # verify() returns a DICT — access by key, not attribute.
         verified = False
         abstained = False
-        citations = [r.citation.to_dict() for r in search_results[:3]]
+        # Citations aligned 1:1 with the [SOURCE-N] numbering (clickable in the UI).
+        citations = list(evidence_citations)
         if _has_verifier:
             try:
-                vr = verify(raw_text, [r.content for r in search_results])
-                if vr.abstained:
+                vr = verify(raw_text, evidence_texts)
+                if vr.get("abstained"):
                     abstained = True
-                    raw_text = "(Abstained — insufficient evidence to support this section.)"
+                    raw_text = "(Abstained — insufficient grounded evidence; nothing fabricated.)"
                 else:
-                    raw_text = vr.verified_text or raw_text
+                    raw_text = vr.get("verified_text") or raw_text
                     verified = True
             except Exception as exc:
                 logger.warning("doc_generator: verifier error: %s", exc)
@@ -302,6 +454,7 @@ def regenerate_section(
     tenant_id: str = "default",
     classification: str = "CUI",
     created_by: str = "ai_assist",
+    context_canvases: list[str] | None = None,
 ) -> dict:
     """Regenerate a single section with targeted evidence retrieval.
 
@@ -332,7 +485,7 @@ def regenerate_section(
         doc_title = (row[1] if row else "") or heading
         # Load all sections for this version ordered by rowid to find neighbors.
         cur.execute(
-            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY created_at, section_id",
             (version_id,),
         )
         all_sections = cur.fetchall()
@@ -352,20 +505,49 @@ def regenerate_section(
     finally:
         conn.close()
 
-    # 2. Targeted retrieval.
+    # 2. Targeted retrieval (own collection) + cross-canvas RAG+KG context.
+    # Key the query on the DOCUMENT TITLE + heading, not the heading alone — a
+    # generic heading like "Overview" retrieves off-topic chunks on its own, so
+    # the title anchors retrieval to the document's actual subject (contextual
+    # relevance). Cross-canvas context below is already keyed on title + heading.
     engine = DICSearchEngine(tenant_id=tenant_id)
-    search_results = engine.search(heading, collection_id=collection_id, top_k=8)
-    evidence = _targeted_evidence_block(search_results)
+    _query = f"{doc_title} {heading}".strip() if doc_title else heading
+    search_results = engine.search(_query, collection_id=collection_id, top_k=8)
 
-    if not search_results:
+    # Cross-canvas context, keyed on the section heading + doc title.
+    _xtexts: list[str] = []
+    _xcites: list[dict] = []
+    _xcanvases: list[str] = []
+    try:
+        from tools.document_intelligence.cross_canvas_context import gather, resolve_context_canvases
+        canvases = context_canvases if context_canvases is not None else \
+            resolve_context_canvases(collection_id, f"{doc_title} {heading}")
+        xctx = gather(f"{heading} {doc_title}", canvases, tenant_id=tenant_id)
+        _xtexts, _xcites, _xcanvases = xctx.texts, xctx.citations, xctx.canvases
+    except Exception as exc:
+        logger.warning("doc_generator: cross-canvas context unavailable: %s", exc)
+
+    if not search_results and not _xtexts:
         return {
             "version_id": version_id,
             "heading": heading,
             "content": "(Abstained — no targeted evidence found for this section.)",
+            "citations": [],
             "citation_count": 0,
             "status": "pending_review",
             "abstained": True,
+            "reason": "no_evidence",
         }
+
+    # SOURCE-numbered evidence shared by the draft prompt, the verifier, AND the
+    # persisted citations, so a [SOURCE-N] tag in the prose aligns with both
+    # evidence_texts[N-1] (verifier) and evidence_citations[N-1] (clickable chip).
+    _ev_items = [
+        (_result_locator(r), getattr(r, "content", "") or "", r.citation.to_dict())
+        for r in search_results
+    ]
+    _ev_items += [("cross-canvas", t, c) for t, c in zip(_xtexts, _xcites)]
+    evidence, evidence_texts, evidence_citations = _numbered_evidence(_ev_items)
 
     # 3. Draft with targeted evidence + adjacent context for coherence.
     prompt = (
@@ -377,37 +559,44 @@ def regenerate_section(
         prompt += "Adjacent sections for context (do not repeat their content; ensure smooth transitions):\n"
         prompt += "\n---\n".join(adjacent_context) + "\n\n"
     prompt += (
-        "Source evidence (cite exactly — do not invent facts):\n"
+        "Source evidence (each item is tagged [SOURCE-N] — cite exactly, do not invent facts):\n"
         f"{evidence}\n\n"
-        "Write the section in clear, professional prose. "
-        "For every factual claim write a bracketed citation: [source: chunk <id>]. "
-        "If the evidence does not support a claim, omit it rather than inventing it."
+        "Write the section in clear, professional prose. For every factual claim, "
+        "append a citation tag naming the numbered source it came from, e.g. [SOURCE-1]. "
+        "Use ONLY the SOURCE numbers shown above. If the evidence does not support a "
+        "claim, omit it rather than inventing it. If the evidence contains an unresolved "
+        "template placeholder (e.g. [ORGANIZATION], [DATE]), keep it verbatim — never "
+        "substitute a fabricated value."
     )
-    raw_text = _llm_generate(prompt)
+    # Section CONTENT uses Chain-of-Debate (user requirement: ALL AI-Assist content).
+    raw_text = _llm_generate(prompt, use_cod=True)
     if not raw_text:
         return {
             "version_id": version_id,
             "heading": heading,
             "content": "(Abstained — LLM unavailable.)",
+            "citations": [],
             "citation_count": 0,
             "status": "pending_review",
             "abstained": True,
+            "reason": "llm_unavailable",
         }
 
-    # 4. CoD verify.
+    # 4. CoD verify. verify() returns a DICT — access by key, not attribute.
     verified_text = raw_text
     abstained = False
     try:
-        vr = _verify(raw_text, [r.content for r in search_results])
-        if vr.abstained:
+        vr = _verify(raw_text, evidence_texts)
+        if vr.get("abstained"):
             abstained = True
-            verified_text = "(Abstained — insufficient evidence to support this section.)"
+            verified_text = "(Abstained — insufficient grounded evidence; nothing fabricated.)"
         else:
-            verified_text = vr.verified_text or raw_text
+            verified_text = vr.get("verified_text") or raw_text
     except Exception as exc:
         logger.warning("doc_generator: per-section verify error: %s", exc)
 
-    citations = [r.citation.to_dict() for r in search_results[:5]]
+    # Citations aligned 1:1 with the [SOURCE-N] numbering (clickable in the UI).
+    citations = list(evidence_citations)
 
     # 5. Persist update.
     conn = get_connection()
@@ -432,7 +621,7 @@ def regenerate_section(
             )
         # Reassemble full version blob from all sections.
         cur.execute(
-            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY created_at, section_id",
             (version_id,),
         )
         rows = cur.fetchall()
@@ -459,7 +648,11 @@ def regenerate_section(
         "version_id": version_id,
         "heading": heading,
         "content": verified_text,
+        "citations": citations,
         "citation_count": len(citations),
         "status": "pending_review",
         "abstained": abstained,
+        "reason": "insufficient_support" if abstained else "ok",
+        "context_canvases": _xcanvases,
+        "cross_canvas_count": len(_xtexts),
     }

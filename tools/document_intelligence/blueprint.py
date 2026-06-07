@@ -30,6 +30,7 @@ import hashlib
 import json
 import os
 import queue as _queue
+import re
 import tempfile
 import threading
 import uuid
@@ -141,6 +142,46 @@ def _safe_rows(conn, sql: str, params: tuple = ()) -> list[dict]:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# A doc_id / title that is just a UUID or internal hash is not human-readable.
+_RAW_ID_RE = re.compile(r"^(?:[0-9a-f]{8}-[0-9a-f]{4,}|dic_doc_[0-9a-f]+|chunk-[0-9a-f]+)$", re.I)
+
+
+def _citation_label(c: dict) -> str:
+    """A human-readable source label for a citation chip.
+
+    Prefer a real document/canvas title; fall back to a filename from source_uri;
+    never surface a bare UUID / chunk hash (those go in the tooltip only).
+    """
+    title = (c.get("doc_title") or "").strip()
+    if title and not _RAW_ID_RE.match(title) and title != (c.get("doc_id") or "").strip():
+        return title
+    uri = (c.get("source_uri") or "").strip()
+    if uri and "://" in uri:
+        tail = uri.rsplit("/", 1)[-1]
+        if tail and not _RAW_ID_RE.match(tail):
+            return tail
+    return "Source"
+
+
+def _enrich_citations(conn, citations: list) -> list:
+    """Make citation chips human-readable: add a clean ``label`` and a ``snippet``
+    of the actual evidence text (looked up from rag_chunks when not already stored),
+    so the UI shows WHAT each source says instead of an opaque doc_id / chunk hash.
+    """
+    for c in citations or []:
+        if not isinstance(c, dict):
+            continue
+        c["label"] = _citation_label(c)
+        if not (c.get("snippet") or "").strip():
+            cid = (c.get("chunk_id") or "").strip()
+            if cid:
+                rows = _safe_rows(conn, "SELECT content FROM rag_chunks WHERE id = ? LIMIT 1", (cid,))
+                if rows:
+                    c["snippet"] = " ".join((rows[0].get("content") or "").split())[:180]
+        c["snippet"] = (c.get("snippet") or "").strip()
+    return citations
 
 
 def _hid(*parts: str) -> str:
@@ -365,15 +406,32 @@ def doc_detail(doc_id: str):
         versions = _safe_rows(
             conn,
             "SELECT version_id, version_no, origin, status, assigned_to, created_at, created_by "
-            "FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC",
+            "FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC, created_at DESC",
             (doc_id,),
         )
-        # Load sections for the latest pending or latest version
+        # Pick the active version to display. Prefer the NEWEST open (pending /
+        # needs_revision / draft) version that actually has section content, so a
+        # successful AI-Assist regen is what the user sees on reload — not a stale
+        # empty sibling version (docs can accumulate several version rows). Falls
+        # back to any newest open version, else the newest version overall.
+        def _has_content(vid: str) -> bool:
+            rows = _safe_rows(
+                conn,
+                "SELECT 1 FROM dic_sections WHERE version_id = ? "
+                "AND COALESCE(content, '') <> '' LIMIT 1",
+                (vid,),
+            )
+            return bool(rows)
+
         active_version_id = ""
-        for v in versions:
-            if v["status"] in ("pending_review", "needs_revision", "draft"):
+        open_versions = [v for v in versions
+                         if v["status"] in ("pending_review", "needs_revision", "draft")]
+        for v in open_versions:
+            if _has_content(v["version_id"]):
                 active_version_id = v["version_id"]
                 break
+        if not active_version_id and open_versions:
+            active_version_id = open_versions[0]["version_id"]
         if not active_version_id and versions:
             active_version_id = versions[0]["version_id"]
         sections = []
@@ -382,7 +440,7 @@ def doc_detail(doc_id: str):
                 conn,
                 "SELECT section_id, heading, content, citations_json, status, origin, assigned_to, "
                 "COALESCE(rev,1) AS rev "
-                "FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+                "FROM dic_sections WHERE version_id = ? ORDER BY created_at, section_id",
                 (active_version_id,),
             )
             for s in sections:
@@ -390,6 +448,7 @@ def doc_detail(doc_id: str):
                     s["citations"] = json.loads(s.get("citations_json") or "[]")
                 except Exception:
                     s["citations"] = []
+                _enrich_citations(conn, s["citations"])
         # Team members for assignment dropdown
         collection_id = doc.get("collection_id") or "default"
         team = _safe_rows(
@@ -1721,6 +1780,8 @@ def api_generate():
     if not _require_role(collection_id, "editor"):
         return _forbid("editor")
     template_id = data.get("template_id")
+    # Optional explicit cross-canvas context (else auto-resolved from collection+query).
+    context_canvases = data.get("context_canvases")
     tenant_id, classification = _security_context()
 
     try:
@@ -1731,6 +1792,7 @@ def api_generate():
             template_id=template_id,
             tenant_id=tenant_id,
             classification=classification,
+            context_canvases=context_canvases,
         )
         return jsonify(result.to_dict())
     except Exception as exc:
@@ -1749,12 +1811,14 @@ def api_generate_section():
         return _forbid("editor")
     if not version_id or not heading:
         return jsonify({"error": "version_id and heading are required"}), 400
+    context_canvases = data.get("context_canvases")
     tenant_id, classification = _security_context()
     try:
         from tools.document_intelligence.doc_generator import regenerate_section
         result = regenerate_section(
             version_id, heading, collection_id,
             tenant_id=tenant_id, classification=classification,
+            context_canvases=context_canvases,
         )
         return jsonify(result)
     except Exception as exc:
@@ -1769,8 +1833,9 @@ def api_version_sections(version_id):
     try:
         rows = _safe_rows(
             conn,
-            "SELECT section_id, heading, content, citations_json, status, origin "
-            "FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            "SELECT section_id, heading, content, citations_json, status, origin, "
+            "COALESCE(rev,1) AS rev "
+            "FROM dic_sections WHERE version_id = ? ORDER BY created_at, section_id",
             (version_id,),
         )
         for r in rows:
@@ -1943,17 +2008,21 @@ def api_scenarios():
 @dic_bp.route("/api/iqe-query", methods=["POST"])
 def iqe_query():
     try:
+        from tools.iqe import execute_query, parse
         from tools.iqe.adapters import dic as _  # noqa: F401  registers collections
-        from tools.iqe.executor import Executor
 
         data = request.get_json(silent=True) or {}
-        question = (data.get("question") or "").strip()
+        question = (data.get("question") or data.get("query") or "").strip()
         if not question:
             return jsonify({"error": "question is required"}), 400
 
-        executor = Executor()
-        result = executor.execute(question)
-        return jsonify(result)
+        ast = parse(question)
+        conn = _conn()
+        try:
+            rows = execute_query(ast, conn)
+        finally:
+            conn.close()
+        return jsonify({"rows": rows, "count": len(rows)})
     except Exception as exc:
         logger.warning("dic: iqe-query error: %s", exc)
         return jsonify({"error": str(exc)}), 500

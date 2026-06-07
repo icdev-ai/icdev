@@ -214,35 +214,21 @@ def _llm_supports(claim: str, chunk_text: str) -> tuple[bool, float] | None:
         "Answer on the LAST line exactly one token: SUPPORTED or UNSUPPORTED."
     )
     try:
-        from icdev.tools.llm.router import LLMRouter  # type: ignore
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
     except Exception:
-        try:
-            from tools.llm.router import LLMRouter  # type: ignore
-        except Exception:
-            return None
+        return None
     try:
-        router = LLMRouter()
-        text = None
-        # Try the common router entry points without assuming one shape.
-        for meth in ("generate", "complete", "chat", "route", "call"):
-            fn = getattr(router, meth, None)
-            if not callable(fn):
-                continue
-            try:
-                resp = fn(prompt)
-            except TypeError:
-                try:
-                    resp = fn(prompt=prompt)
-                except Exception:
-                    continue
-            except Exception:
-                continue
-            text = resp if isinstance(resp, str) else getattr(resp, "text", None)
-            if text is None and isinstance(resp, dict):
-                text = resp.get("text") or resp.get("content") or resp.get("response")
-            if text:
-                break
-        if not text:
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+            temperature=0.0,
+            classification="CUI",
+        )
+        # invoke(function, request) is the ONLY router entry point.
+        resp = LLMRouter().invoke("reasoning", req)
+        text = getattr(resp, "content", None) if resp else None
+        if not text or not text.strip():
             return None
         last = text.strip().splitlines()[-1].upper()
         supported = "UNSUPPORTED" not in last and "SUPPORTED" in last
