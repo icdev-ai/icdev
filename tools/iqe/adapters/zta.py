@@ -17,8 +17,12 @@ from tools.iqe.executor import register_collection
 def lac_audit_trail_adapter(conn: Any) -> list[dict]:
     """Return one row per LAC access simulation decision from zta_lac_audit."""
     if conn is None:
-        from tools.db.storage import get_connection  # noqa: PLC0415
-        conn = get_connection()
+        # zta_lac_audit is a canvas table with no classification/tenant_id columns,
+        # so it must use the RLS-free canvas connection.  On PostgreSQL a plain
+        # get_connection() attaches the Flask request's RLS predicate, which raises
+        # UndefinedColumn on this table (silently swallowed -> empty IQE results).
+        from tools.db.storage import get_canvas_connection  # noqa: PLC0415
+        conn = get_canvas_connection()
     try:
         cur = conn.execute(
             "SELECT id, scenario_name, decision, deny_reasons, "
