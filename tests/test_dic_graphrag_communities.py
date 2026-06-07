@@ -384,6 +384,122 @@ def seed_corpus(conn) -> SeededCorpus:
 
 
 # --------------------------------------------------------------------------- #
+# Precompute — the GraphRAG community computation pipeline (-d2)
+# --------------------------------------------------------------------------- #
+
+#: Stable model tag recorded on every precomputed summary. NO-LLM/grounded:
+#: the summary is a deterministic, extractive join of the member chunk text,
+#: so the "model" is the pipeline version itself — no Claude/Ollama tokens.
+PRECOMPUTE_MODEL_VERSION = "dic-graphrag-grounded-v1"
+
+
+def _summary_id(community_id: str) -> str:
+    return f"{community_id}_summary"
+
+
+def _read_community_members(conn) -> dict[str, list[dict]]:
+    """Recover community → member-chunk grouping *from the seeded store*.
+
+    Walks ``dic_chunk_links`` → ``rag_chunks`` for the test collection and
+    groups by the ``community_id`` carried in each chunk's metadata. This reads
+    the persisted graph (not the :class:`SeededCorpus` contract) so the
+    precompute genuinely recovers the clustering the seed encoded.
+
+    Returns a mapping ``community_id`` → list of member dicts
+    (``doc_id``, ``chunk_id``, ``content``), each list ordered deterministically
+    by ``doc_id`` so summaries and citations are reproducible.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT cl.doc_id        AS doc_id,
+               cl.rag_chunk_id  AS chunk_id,
+               rc.content       AS content,
+               rc.metadata      AS metadata
+        FROM dic_chunk_links cl
+        JOIN rag_chunks rc ON rc.id = cl.rag_chunk_id
+        WHERE cl.collection_id = ?
+        ORDER BY cl.doc_id, cl.chunk_index
+        """,
+        (CORPUS_COLLECTION_ID,),
+    )
+    members: dict[str, list[dict]] = {}
+    for row in cur.fetchall():
+        doc_id, chunk_id, content, metadata = (
+            row[0], row[1], row[2], row[3],
+        )
+        try:
+            meta = json.loads(metadata) if metadata else {}
+        except (TypeError, ValueError):
+            meta = {}
+        community_id = meta.get("community_id")
+        if not community_id:
+            continue
+        members.setdefault(community_id, []).append(
+            {"doc_id": doc_id, "chunk_id": chunk_id, "content": content}
+        )
+    for community_id in members:
+        members[community_id].sort(key=lambda m: m["doc_id"])
+    return members
+
+
+def precompute_communities(conn, *, model_version: str = PRECOMPUTE_MODEL_VERSION) -> dict[str, dict]:
+    """Run the community-summary precompute over the seeded corpus.
+
+    The GraphRAG "graph computation" step: cluster the corpus by community,
+    then write exactly one grounded summary per community into
+    ``dic_community_summaries``. The summary text is a deterministic,
+    extractive concatenation of the member chunk contents (NO-LLM), and the
+    citation list names every contributing document + chunk so every claim is
+    traceable. Idempotent — re-running replaces the summaries for the same
+    communities rather than appending duplicates.
+
+    Returns a mapping ``community_id`` → ``{"summary_text", "citations",
+    "doc_ids"}`` describing what was written, so callers can assert against it
+    without re-reading the table.
+    """
+    members = _read_community_members(conn)
+    cur = conn.cursor()
+    written: dict[str, dict] = {}
+
+    for community_id in sorted(members):
+        community_members = members[community_id]
+        # Grounded summary: join member chunk text verbatim, in doc_id order.
+        summary_text = " ".join(m["content"].strip() for m in community_members).strip()
+        # Citations: one entry per contributing chunk, traceable to its document.
+        citations = [
+            {"doc_id": m["doc_id"], "chunk_id": m["chunk_id"]}
+            for m in community_members
+        ]
+        # Idempotent upsert: clear any prior summary for this community first.
+        cur.execute(
+            "DELETE FROM dic_community_summaries WHERE community_id = ?",
+            (community_id,),
+        )
+        cur.execute(
+            """
+            INSERT INTO dic_community_summaries
+                (summary_id, community_id, summary_text, citations_list,
+                 model_version, created_at, updated_at, tenant_id, classification)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                _summary_id(community_id), community_id, summary_text,
+                json.dumps(citations), model_version, _SEED_TS, _SEED_TS,
+                CORPUS_TENANT_ID, CORPUS_CLASSIFICATION,
+            ),
+        )
+        written[community_id] = {
+            "summary_text": summary_text,
+            "citations": citations,
+            "doc_ids": [m["doc_id"] for m in community_members],
+        }
+
+    conn.commit()
+    return written
+
+
+# --------------------------------------------------------------------------- #
 # Fixture
 # --------------------------------------------------------------------------- #
 
@@ -465,5 +581,100 @@ def test_setup_corpus_is_idempotent(setup_corpus):
             (CORPUS_COLLECTION_ID,),
         )
         assert cur.fetchone()[0] == 4
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------- #
+# Precompute step (-d2): run the graph computation pipeline post-seed
+# --------------------------------------------------------------------------- #
+
+def test_seed_and_precompute(setup_corpus):
+    """Trigger the community precompute right after seeding and verify the
+    community structures are ready for corpus-level querying (-d3).
+
+    Asserts the pipeline:
+      * recovers exactly the corpus's communities from the persisted store,
+      * writes exactly one summary row per community (no dupes / no extras),
+      * grounds each summary in its member documents' actual text, and
+      * cites every contributing document so answers stay traceable.
+    """
+    corpus = setup_corpus
+
+    conn = get_connection()
+    try:
+        # Precondition: the seed leaves the community index empty.
+        cur = conn.cursor()
+        marks = ",".join("?" for _ in corpus.community_ids)
+        cur.execute(
+            f"SELECT COUNT(*) FROM dic_community_summaries WHERE community_id IN ({marks})",
+            corpus.community_ids,
+        )
+        assert cur.fetchone()[0] == 0, "precompute must start from an empty index"
+
+        # Trigger the graph computation pipeline.
+        written = precompute_communities(conn)
+
+        # The pipeline recovered exactly the seeded communities.
+        assert sorted(written) == corpus.community_ids
+
+        # Exactly one summary row landed per community — structures are ready.
+        cur.execute(
+            f"""
+            SELECT community_id, summary_text, citations_list, model_version
+            FROM dic_community_summaries
+            WHERE community_id IN ({marks})
+            ORDER BY community_id
+            """,
+            corpus.community_ids,
+        )
+        rows = cur.fetchall()
+        assert len(rows) == len(corpus.community_ids)
+
+        # Map seed doc_id → its source content for grounding checks.
+        content_by_doc = {d["doc_id"]: d["content"] for d in corpus.documents}
+
+        for community_id, summary_text, citations_json, model_version in (
+            (r[0], r[1], r[2], r[3]) for r in rows
+        ):
+            expected_docs = sorted(corpus.communities[community_id])
+            # Grounded, non-empty summary tagged with the pipeline version.
+            assert summary_text.strip(), f"{community_id} summary is empty"
+            assert model_version == PRECOMPUTE_MODEL_VERSION
+
+            # Citations cover every member document exactly once, no strays.
+            citations = json.loads(citations_json)
+            cited_docs = sorted(c["doc_id"] for c in citations)
+            assert cited_docs == expected_docs
+            assert all(c.get("chunk_id") for c in citations), "citations need chunk ids"
+
+            # Every member document's text is actually present in its summary —
+            # this is what makes the summary grounded rather than hallucinated.
+            for doc_id in expected_docs:
+                snippet = content_by_doc[doc_id].strip()
+                assert snippet in summary_text, (
+                    f"{community_id} summary is not grounded in {doc_id}"
+                )
+    finally:
+        conn.close()
+
+
+def test_precompute_is_idempotent(setup_corpus):
+    """Re-running the precompute replaces, never duplicates, community summaries."""
+    corpus = setup_corpus
+    conn = get_connection()
+    try:
+        first = precompute_communities(conn)
+        second = precompute_communities(conn)
+        assert first == second  # deterministic, NO-LLM output
+
+        cur = conn.cursor()
+        marks = ",".join("?" for _ in corpus.community_ids)
+        cur.execute(
+            f"SELECT COUNT(*) FROM dic_community_summaries WHERE community_id IN ({marks})",
+            corpus.community_ids,
+        )
+        # Still exactly one row per community after two runs.
+        assert cur.fetchone()[0] == len(corpus.community_ids)
     finally:
         conn.close()
