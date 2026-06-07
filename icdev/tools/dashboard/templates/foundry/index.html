@@ -1,4 +1,4 @@
-<!-- CUI // SP-CTI — ACF Autonomous Capability Foundry — Concept List -->
+<!-- CUI // SP-CTI — ACF Autonomous Capability Foundry — Pipeline Board -->
 {% extends "base.html" %}
 {% block title %}Autonomous Capability Foundry — ICDEV{% endblock %}
 {% block content %}
@@ -8,7 +8,9 @@
                    concepts_approved, tasks_emitted, status (most recent first)
     latest_run   : runs[0] or None
     concepts     : list[dict] — id, run_id, name, slug, problem_statement,
-                   proposed_capability, *_score, composite_score, status, reject_reason
+                   proposed_capability, novelty_score, market_score, fit_score,
+                   effort_estimate, compliance_risk, composite_score, status,
+                   reject_reason, created_at
     summary      : {by_status: {proposed/scored/approved/rejected: n}, total}
     signal_count : int — harvested signals available to the next cycle
     statuses     : CONCEPT_STATUSES (proposed, scored, approved, rejected)
@@ -38,24 +40,45 @@
   .acf-btn:disabled { opacity:.5; cursor:default; }
   .acf-status { color:#9b97c4; font-size:12px; margin-left:6px; }
 
-  .acf-section-title { font-size:13px; font-weight:700; color:#cfc6f5; text-transform:uppercase; letter-spacing:.06em; padding:18px 30px 6px; }
+  .acf-section-title { font-size:13px; font-weight:700; color:#cfc6f5; text-transform:uppercase; letter-spacing:.06em; padding:18px 30px 6px; display:flex; align-items:center; gap:10px; }
+  .acf-section-title .hint { font-weight:400; text-transform:none; letter-spacing:0; color:#6a6a9c; font-size:11px; }
+
+  /* Kanban-style pipeline board */
+  .acf-board { display:grid; grid-template-columns: repeat(4, 1fr); gap:14px; padding:4px 30px 6px; align-items:start; }
+  @media (max-width: 1100px) { .acf-board { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px)  { .acf-board { grid-template-columns: 1fr; } }
+  .acf-col { background:#150f30; border:1px solid #2a2050; border-radius:8px; min-height:90px; }
+  .acf-col-head { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #241c52; border-top-left-radius:8px; border-top-right-radius:8px; }
+  .acf-col-head .name { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+  .acf-col-head .cnt { font-size:11px; font-weight:700; color:#cfc6f5; background:#241c52; border-radius:10px; padding:1px 8px; min-width:20px; text-align:center; }
+  .acf-col.proposed .acf-col-head { border-top:3px solid #4fc3f7; } .acf-col.proposed .name { color:#7aa8d8; }
+  .acf-col.scored   .acf-col-head { border-top:3px solid #ffb300; } .acf-col.scored   .name { color:#ffb300; }
+  .acf-col.approved .acf-col-head { border-top:3px solid #66bb6a; } .acf-col.approved .name { color:#81c784; }
+  .acf-col.rejected .acf-col-head { border-top:3px solid #bcaaa4; } .acf-col.rejected .name { color:#bcaaa4; }
+  .acf-col-body { padding:10px; display:flex; flex-direction:column; gap:9px; }
+  .acf-card { display:block; text-decoration:none; background:#1a163e; border:1px solid #2e1e6e; border-radius:7px; padding:11px 12px; transition:border-color .12s, transform .12s; }
+  .acf-card:hover { border-color:#5e35b1; transform:translateY(-1px); }
+  .acf-card .nm { font-size:13px; font-weight:600; color:#ede7ff; line-height:1.25; }
+  .acf-card .cap { font-size:11.5px; color:#9b97c4; margin-top:4px; line-height:1.35; }
+  .acf-card .reason { font-size:11px; color:#bcaaa4; margin-top:5px; }
+  .acf-badges { display:flex; gap:6px; margin-top:9px; flex-wrap:wrap; }
+  .scorebadge { display:inline-flex; align-items:baseline; gap:4px; font-size:10px; font-weight:700; letter-spacing:.03em; padding:2px 7px; border-radius:4px; text-transform:uppercase; }
+  .scorebadge .v { font-size:12px; font-variant-numeric:tabular-nums; }
+  .scorebadge.comp    { background:#1b0d4e; color:#b388ff; border:1px solid #3b2a73; }
+  .scorebadge.novelty { background:#0a1f24; color:#4dd0e1; border:1px solid #1d4750; }
+  .acf-col-empty { color:#5d5a85; font-size:12px; padding:14px 12px; text-align:center; }
+
+  /* Recent runs table */
   .acf-tbl-wrap { margin:0 30px; }
   .acf-tbl { width:100%; border-collapse:collapse; }
   .acf-tbl th { text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:#6a6a9c; border-bottom:1px solid #2a2050; padding:8px 10px; }
-  .acf-tbl td { padding:10px; border-bottom:1px solid #1c1740; font-size:13px; color:#d6d2ee; vertical-align:top; }
-  .acf-tbl tr.clickable:hover { background:#1a1440; cursor:pointer; }
-  .acf-name { font-weight:600; color:#ede7ff; }
-  .acf-prob { color:#9b97c4; font-size:12px; display:block; margin-top:2px; max-width:520px; }
-  .sbadge { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.05em; padding:3px 9px; border-radius:4px; text-transform:uppercase; }
-  .sbadge.proposed { background:#0a1830; color:#7aa8d8; }
-  .sbadge.scored   { background:#2a1f05; color:#ffb300; }
-  .sbadge.approved { background:#0c2417; color:#81c784; }
-  .sbadge.rejected { background:#241a0c; color:#bcaaa4; }
-  .sbadge.unknown  { background:#1a2438; color:#6a86b0; }
-  .acf-score { display:flex; align-items:center; gap:8px; min-width:120px; }
-  .acf-score .track { flex:1; height:6px; background:#1c1740; border-radius:3px; overflow:hidden; min-width:60px; }
-  .acf-score .fill { height:100%; border-radius:3px; background:#b388ff; }
-  .acf-score .num { font-size:11px; color:#cfc6f5; font-variant-numeric:tabular-nums; min-width:34px; text-align:right; }
+  .acf-tbl td { padding:10px; border-bottom:1px solid #1c1740; font-size:13px; color:#d6d2ee; vertical-align:top; font-variant-numeric:tabular-nums; }
+  .acf-tbl td.name { font-variant-numeric:normal; }
+  .rbadge { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.04em; padding:2px 8px; border-radius:4px; text-transform:uppercase; }
+  .rbadge.completed { background:#0c2417; color:#81c784; }
+  .rbadge.running   { background:#2a1f05; color:#ffb300; }
+  .rbadge.failed    { background:#2a0f0f; color:#ef9a9a; }
+  .rbadge.unknown   { background:#1a2438; color:#6a86b0; }
   .acf-empty { color:#8c8ab0; padding:24px 30px; font-size:13px; }
 </style>
 
@@ -95,48 +118,76 @@
   </span>
 </div>
 
-<div class="acf-section-title">Concepts</div>
+<!-- Pipeline board: concepts grouped by lifecycle status -->
+<div class="acf-section-title">Pipeline <span class="hint">concepts by stage — click a card for scores, spec &amp; emitted tasks</span></div>
+{% if concepts %}
+  {# Bucket concepts by status once (template-side; statuses come from CONCEPT_STATUSES). #}
+  {% set board = {'proposed': [], 'scored': [], 'approved': [], 'rejected': []} %}
+  {% for c in concepts %}
+    {% set st = (c.status or 'proposed')|lower %}
+    {% if st in board %}{% set _ = board[st].append(c) %}{% endif %}
+  {% endfor %}
+  <div class="acf-board">
+    {% for col in ['proposed', 'scored', 'approved', 'rejected'] %}
+    <div class="acf-col {{ col }}">
+      <div class="acf-col-head"><span class="name">{{ col }}</span><span class="cnt">{{ board[col]|length }}</span></div>
+      <div class="acf-col-body">
+        {% for c in board[col] %}
+          {% set comp = c.composite_score if c.composite_score is not none else 0 %}
+          {% set comppct = (comp * 100) if comp <= 1 else comp %}
+          {% set nov = c.novelty_score if c.novelty_score is not none else 0 %}
+          {% set novpct = (nov * 100) if nov <= 1 else nov %}
+          <a class="acf-card" href="/foundry/{{ c.id }}">
+            <div class="nm">{{ c.name or c.slug or c.id }}</div>
+            {% if c.proposed_capability %}<div class="cap">{{ c.proposed_capability[:120] }}{% if c.proposed_capability|length > 120 %}…{% endif %}</div>{% endif %}
+            {% if col == 'rejected' and c.reject_reason %}<div class="reason">&#10005; {{ c.reject_reason[:90] }}</div>{% endif %}
+            <div class="acf-badges">
+              <span class="scorebadge comp">C<span class="v">{{ comppct|round(0)|int }}</span></span>
+              <span class="scorebadge novelty">N<span class="v">{{ novpct|round(0)|int }}</span></span>
+            </div>
+          </a>
+        {% else %}
+          <div class="acf-col-empty">—</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="acf-empty">No concepts yet. {{ signal_count }} signal(s) are staged — click <b>Run Cycle</b> to synthesize the first net-new capability concepts.</div>
+{% endif %}
+
+<!-- Recent runs -->
+<div class="acf-section-title">Recent Cycles</div>
 <div class="acf-tbl-wrap">
-  {% if concepts %}
+  {% if runs %}
   <table class="acf-tbl">
     <thead>
-      <tr><th>Concept</th><th>Capability</th><th>Composite</th><th>Status</th><th>Created</th></tr>
+      <tr><th>Cycle</th><th>Harvested</th><th>Proposed</th><th>Approved</th><th>Tasks</th><th>Status</th></tr>
     </thead>
     <tbody>
-      {% for c in concepts %}
-      {% set st = (c.status or 'unknown')|lower %}
-      {% set cs = c.composite_score if c.composite_score is not none else 0 %}
-      {% set cpct = (cs * 100) if cs <= 1 else cs %}
-      <tr class="clickable" onclick="location.href='/foundry/{{ c.id }}'">
-        <td>
-          <span class="acf-name">{{ c.name or c.slug or c.id }}</span>
-          {% if c.problem_statement %}<span class="acf-prob">{{ c.problem_statement[:160] }}{% if c.problem_statement|length > 160 %}…{% endif %}</span>{% endif %}
-        </td>
-        <td style="color:#9b97c4;font-size:12px;max-width:280px;">{{ (c.proposed_capability or '—')[:160] }}</td>
-        <td>
-          <div class="acf-score">
-            <div class="track"><div class="fill" style="width:{{ cpct|round(0)|int }}%;"></div></div>
-            <span class="num">{{ cpct|round(0)|int }}</span>
-          </div>
-        </td>
-        <td>
-          <span class="sbadge {{ st if st in ['proposed','scored','approved','rejected'] else 'unknown' }}">{{ c.status or '—' }}</span>
-          {% if st == 'rejected' and c.reject_reason %}<div style="color:#8c8ab0;font-size:11px;margin-top:3px;">{{ c.reject_reason[:80] }}</div>{% endif %}
-        </td>
-        <td style="color:#8c8ab0;white-space:nowrap;">{{ (c.created_at[:16] if c.created_at is string else c.created_at.strftime('%Y-%m-%d %H:%M')) if c.created_at else '—' }}</td>
+      {% for r in runs %}
+      {% set rst = (r.status or 'unknown')|lower %}
+      <tr>
+        <td class="name" style="white-space:nowrap;">{{ (r.cycle_at[:16] if r.cycle_at is string else r.cycle_at.strftime('%Y-%m-%d %H:%M')) if r.cycle_at else '—' }}</td>
+        <td>{{ r.harvested or 0 }}</td>
+        <td>{{ r.concepts_proposed or 0 }}</td>
+        <td>{{ r.concepts_approved or 0 }}</td>
+        <td>{{ r.tasks_emitted or 0 }}</td>
+        <td><span class="rbadge {{ rst if rst in ['completed','running','failed'] else 'unknown' }}">{{ r.status or '—' }}</span></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <div class="acf-empty">No concepts yet. {{ signal_count }} signal(s) are staged — click <b>Run Cycle</b> to synthesize the first net-new capability concepts.</div>
+  <div class="acf-empty">No cycles recorded yet.</div>
   {% endif %}
 </div>
 
 <!-- IQE Query Widget -->
 {% set iqe_canvas = "foundry" %}
 {% set iqe_api_route = "/foundry/api/iqe-query" %}
-{% set iqe_title = "IQE Query — Foundry Concepts & Cycles" %}
+{% set iqe_title = "IQE Query — Foundry Concepts &amp; Cycles" %}
 {% set iqe_examples = [
   {"label": "Approved concepts", "query": "foreach c in foundry.concepts where c.status == \"approved\" select c.name, c.composite_score, c.proposed_capability"},
   {"label": "Rejected (low novelty)", "query": "foreach c in foundry.concepts where c.status == \"rejected\" select c.name, c.novelty_score, c.reject_reason"},
