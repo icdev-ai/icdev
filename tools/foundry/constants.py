@@ -29,11 +29,17 @@ SOURCE_ENGINES: tuple[str, ...] = (
 
 # ── foundry_runs.status ──────────────────────────────────────────────────────
 # Lifecycle of one harvest -> synth -> novelty -> score -> CoD -> SIPA cycle.
+# ``rate_limited`` is recorded by the engine (acf-engine-02) when a cycle is
+# short-circuited before emit because the per-cycle / active-project caps in
+# ``args/foundry_config.yaml -> rate_limits`` are hit. ``circuit_open`` is
+# reserved for the engine circuit breaker (acf-engine-03).
 RUN_STATUSES: tuple[str, ...] = (
     "running",
     "completed",
     "failed",
     "deferred",
+    "rate_limited",
+    "circuit_open",
 )
 
 # ── foundry_concepts.status ──────────────────────────────────────────────────
