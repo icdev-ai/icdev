@@ -133,6 +133,27 @@ def migrate(only: list[str] | None = None, verbose: bool = True) -> dict:
     tables = only or [t for t in _sqlite_tables(sq) if t not in _SKIP]
     report: dict[str, str] = {}
 
+    # Ensure EVERY network table exists in PG up-front — including empty ones.
+    # Routes query tables regardless of whether they hold demo data; a missing
+    # table raises UndefinedTable and 500s the page. (Data copy below only
+    # touches non-empty tables, so empty tables would otherwise never be created.)
+    ensured = 0
+    for table in tables:
+        if table in _SKIP:
+            continue
+        pg = _pg_conn(db_path="network_canvas")
+        try:
+            if _ensure_table_pg(pg, sq, table):
+                ensured += 1
+        except Exception:
+            pass
+        finally:
+            try:
+                pg.close()
+            except Exception:
+                pass
+    print(f"[schema] ensured {ensured} table(s) exist in PG")
+
     for table in tables:
         if table in _SKIP:
             report[table] = "skipped (protected)"

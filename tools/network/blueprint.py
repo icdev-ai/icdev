@@ -866,13 +866,21 @@ def create_network_blueprint():
                     pass
             p["total_nodes"] = _tn
             p["total_edges"] = _te
-            # Last simulation date
-            sim_row = conn.execute(
-                "SELECT MAX(ran_at) FROM simulation_results WHERE topology_id IN "
-                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)",
-                (pid,),
-            ).fetchone()
-            p["last_sim"] = sim_row[0] if sim_row and sim_row[0] else None
+            # Last simulation date — simulation_results may collide with another
+            # subsystem's table on a shared PG DB; degrade gracefully.
+            try:
+                sim_row = conn.execute(
+                    "SELECT MAX(ran_at) FROM simulation_results WHERE topology_id IN "
+                    "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)",
+                    (pid,),
+                ).fetchone()
+                p["last_sim"] = sim_row[0] if sim_row and sim_row[0] else None
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                p["last_sim"] = None
 
         # Portfolio-level aggregates
         portfolio_stats = {
