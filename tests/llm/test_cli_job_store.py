@@ -31,6 +31,7 @@ import sqlite3
 import sys
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -383,6 +384,105 @@ def test_list_jobs_respects_limit(job_db):
         job_store.create_job(function="f", prompt=str(i))
     rows = job_store.list_jobs(limit=2)
     assert len(rows) == 2
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# reap_stale_jobs — orphaned 'running' rows from a dead worker host
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _backdate_claimed_at(db_path, job_id, seconds_ago):
+    """Push a row's claimed_at into the past so it looks orphaned."""
+    old = (datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)).isoformat()
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "UPDATE cli_llm_jobs SET claimed_at = ?, created_at = ? WHERE id = ?",
+        (old, old, job_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_reap_stale_jobs_transitions_orphaned_running_to_error(job_db):
+    # A claimed (running) job whose worker host died long ago.
+    job_id = job_store.create_job(function="f", prompt="p", backend="subprocess")
+    job_store.claim_job("subprocess")  # → running, claimed_at = now
+    _backdate_claimed_at(job_db, job_id, seconds_ago=3600)
+
+    reaped = job_store.reap_stale_jobs(max_age_seconds=60)
+    assert reaped == 1
+
+    row = job_store.get_job(job_id)
+    assert row["status"] == "error"
+    assert "orphaned" in (row["error"] or "")
+    assert row["completed_at"] is not None
+
+
+def test_reap_stale_jobs_leaves_fresh_running_untouched(job_db):
+    # Claimed just now — well within any sane cutoff; must NOT be reaped.
+    job_id = job_store.create_job(function="f", prompt="p", backend="subprocess")
+    job_store.claim_job("subprocess")
+
+    reaped = job_store.reap_stale_jobs(max_age_seconds=60)
+    assert reaped == 0
+    assert job_store.get_job(job_id)["status"] == "running"
+
+
+def test_reap_stale_jobs_ignores_pending(job_db):
+    # Pending jobs were never claimed — they stay enqueued for a worker.
+    job_id = job_store.create_job(function="f", prompt="p", backend="subprocess")
+    _backdate_claimed_at(job_db, job_id, seconds_ago=3600)  # backdates created_at too
+
+    reaped = job_store.reap_stale_jobs(max_age_seconds=60)
+    assert reaped == 0
+    assert job_store.get_job(job_id)["status"] == "pending"
+
+
+def test_reap_stale_jobs_ignores_terminal_rows(job_db):
+    done_id = job_store.create_job(function="f", prompt="p")
+    job_store.complete_job(done_id, "answer")
+    err_id = job_store.create_job(function="f", prompt="p")
+    job_store.fail_job(err_id, "boom")
+    _backdate_claimed_at(job_db, done_id, seconds_ago=3600)
+    _backdate_claimed_at(job_db, err_id, seconds_ago=3600)
+
+    assert job_store.reap_stale_jobs(max_age_seconds=60) == 0
+    assert job_store.get_job(done_id)["status"] == "done"
+    assert job_store.get_job(err_id)["status"] == "error"
+
+
+def test_reap_stale_jobs_counts_multiple(job_db):
+    ids = []
+    for i in range(3):
+        jid = job_store.create_job(function="f", prompt=str(i), backend="subprocess")
+        job_store.claim_job("subprocess")
+        _backdate_claimed_at(job_db, jid, seconds_ago=3600)
+        ids.append(jid)
+
+    assert job_store.reap_stale_jobs(max_age_seconds=60) == 3
+    assert all(job_store.get_job(j)["status"] == "error" for j in ids)
+
+
+def test_reap_stale_jobs_default_cutoff_from_env(job_db, monkeypatch):
+    # Default cutoff = ICDEV_CLI_BRIDGE_MAX_SECONDS + STALE_GRACE_SECONDS.
+    monkeypatch.setenv("ICDEV_CLI_BRIDGE_MAX_SECONDS", "100")
+    monkeypatch.setenv("ICDEV_CLI_BRIDGE_STALE_GRACE_SECONDS", "50")
+    assert job_store._stale_running_cutoff_seconds() == 150
+
+    job_id = job_store.create_job(function="f", prompt="p", backend="subprocess")
+    job_store.claim_job("subprocess")
+    # Aged 200s > 150s cutoff → reaped with the default (no explicit max_age).
+    _backdate_claimed_at(job_db, job_id, seconds_ago=200)
+    assert job_store.reap_stale_jobs() == 1
+    assert job_store.get_job(job_id)["status"] == "error"
+
+
+def test_reap_stale_jobs_zero_cutoff_is_noop(job_db):
+    job_id = job_store.create_job(function="f", prompt="p", backend="subprocess")
+    job_store.claim_job("subprocess")
+    _backdate_claimed_at(job_db, job_id, seconds_ago=3600)
+    assert job_store.reap_stale_jobs(max_age_seconds=0) == 0
+    assert job_store.get_job(job_id)["status"] == "running"
 
 
 # ────────────────────────────────────────────────────────────────────────────

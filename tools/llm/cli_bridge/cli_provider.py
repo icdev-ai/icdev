@@ -257,6 +257,15 @@ class CLILLMProvider(LLMProvider):
         """
         from tools.llm.cli_bridge import job_store
 
+        # Opportunistically clear jobs orphaned in 'running' by a previously dead
+        # worker host. Without this, wait_for_job() below could block behind a row
+        # that can never reach a terminal status, deferring this caller forever
+        # ("premature stale status"). Best-effort: never let reaping block invoke.
+        try:
+            job_store.reap_stale_jobs()
+        except Exception as exc:  # pragma: no cover - defensive; reaping is advisory
+            logger.debug("stale-job reap before invoke failed: %s", exc)
+
         start = time.time()
         prompt = _flatten_messages(request.messages, request.system_prompt)
         # Resolve 'auto' to a concrete backend now, at dispatch time, so the

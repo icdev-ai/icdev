@@ -29,8 +29,9 @@ so that when two workers target the same oldest row only one wins; the loser
 gets ``None`` rather than an exception. Benign races never raise.
 """
 
+import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from tools.db.storage import get_connection
@@ -42,6 +43,11 @@ logger = get_logger("icdev.llm.cli_bridge.job_store")
 TERMINAL_STATUSES = ("done", "error")
 
 DEFAULT_CLASSIFICATION = "CUI // SP-CTI"
+
+# Grace (seconds) added on top of the subprocess backend's hard ceiling before a
+# still-``running`` job is treated as orphaned. Must exceed the ceiling so a job
+# legitimately executing under its own timeout is never reaped early.
+DEFAULT_STALE_GRACE_SECONDS = 300
 
 
 def _now() -> str:
@@ -189,6 +195,94 @@ def fail_job(job_id: str, error: str) -> bool:
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("fail_job failed for %s: %s", job_id, exc)
         return False
+
+
+def _stale_running_cutoff_seconds() -> int:
+    """Age (seconds) past which a still-``running`` job is deemed orphaned.
+
+    The subprocess backend runs the CLI in a daemon thread of the host process,
+    bounded by its own hard ceiling (``ICDEV_CLI_BRIDGE_MAX_SECONDS``, default
+    900s) — a worker that respects that ceiling fails its row at 900s. So the
+    only way a row stays ``running`` past ceiling + grace is that the host
+    process that owned the thread *died* (kill, OOM, reboot), taking the worker
+    with it before it could call :func:`complete_job` / :func:`fail_job`.
+
+    Grace is ``ICDEV_CLI_BRIDGE_STALE_GRACE_SECONDS`` (default 300s).
+    """
+
+    def _int_env(name: str, default: int) -> int:
+        raw = os.environ.get(name)
+        try:
+            val = int(raw) if raw else default
+        except (TypeError, ValueError):
+            return default
+        return val if val > 0 else default
+
+    ceiling = _int_env("ICDEV_CLI_BRIDGE_MAX_SECONDS", 900)
+    grace = _int_env("ICDEV_CLI_BRIDGE_STALE_GRACE_SECONDS", DEFAULT_STALE_GRACE_SECONDS)
+    return ceiling + grace
+
+
+def reap_stale_jobs(max_age_seconds: Optional[int] = None) -> int:
+    """Transition orphaned ``running`` jobs to terminal ``error``; return the count.
+
+    A job is claimed by a backend worker (``pending`` → ``running``) that runs in
+    a daemon thread of the host process. If that host dies mid-flight the thread
+    dies with it and the row is never moved to a terminal status — nothing else
+    ever will, because the in-process subprocess ceiling only fires while the
+    host lives. A caller polling such a row via :func:`wait_for_job` then sees
+    ``running`` forever and defers indefinitely, stranding the requesting agent
+    (the "premature stale status" failure mode). This reaper flips definitively
+    orphaned rows to ``error`` so those callers fall through to their fallback.
+
+    Only rows whose ``running`` age (measured from ``claimed_at``, falling back to
+    ``created_at``) exceeds the cutoff are touched; a job still executing under
+    its own ceiling is left alone. ``pending`` rows are never reaped — they were
+    never claimed and remain enqueued for a worker. Best-effort: any DB error is
+    swallowed and reported as ``0`` reaped so the reaper never blocks a caller.
+
+    Args:
+        max_age_seconds: Override the cutoff age. Defaults to the subprocess
+            ceiling plus grace via :func:`_stale_running_cutoff_seconds`.
+
+    Returns:
+        Number of rows transitioned to ``error``.
+    """
+    cutoff_age = int(max_age_seconds) if max_age_seconds is not None else _stale_running_cutoff_seconds()
+    if cutoff_age <= 0:
+        return 0
+
+    now = _now()
+    cutoff_ts = (datetime.now(timezone.utc) - timedelta(seconds=cutoff_age)).isoformat()
+    reason = (
+        f"reaped: worker host died — job stayed 'running' with no completion for "
+        f"over {cutoff_age}s (orphaned CLI subprocess)"
+    )
+    try:
+        with get_connection() as conn:
+            cur = conn.execute(
+                """
+                UPDATE cli_llm_jobs
+                SET status = 'error', error = ?, completed_at = ?, updated_at = ?
+                WHERE status = 'running'
+                  AND COALESCE(claimed_at, created_at) IS NOT NULL
+                  AND COALESCE(claimed_at, created_at) < ?
+                """,
+                (reason, now, now, cutoff_ts),
+            )
+            reaped = getattr(cur, "rowcount", 0) or 0
+    except Exception as exc:  # pragma: no cover - defensive; reaping is best-effort
+        logger.debug("reap_stale_jobs failed: %s", exc)
+        return 0
+
+    if reaped:
+        logger.info(
+            "reap_stale_jobs: transitioned %d orphaned 'running' job(s) to error "
+            "(cutoff=%ss)",
+            reaped,
+            cutoff_age,
+        )
+    return reaped
 
 
 def get_job(job_id: str) -> Optional[Dict[str, Any]]:
