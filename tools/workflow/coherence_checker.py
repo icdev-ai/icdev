@@ -2237,6 +2237,75 @@ def check_karpathy_sync() -> CoherenceCheck:
     )
 
 
+def check_db_portability_sync() -> CoherenceCheck:
+    """Verify the PostgreSQL-native DB guardrail is present in all 10 AI platform configs.
+
+    Rule: PostgreSQL is the native runtime backend (project PGP). The DB-portability
+    block (instruction_generator.DB_PORTABILITY_BLOCK) must be propagated to every
+    platform instruction file by `companion sync` so no AI tool generates SQLite-only
+    runtime SQL. Blocks (--gate) on drift.
+    """
+    MARKER = "PostgreSQL is the native runtime backend"
+    PLATFORM_FILES: List[Tuple[str, str]] = [
+        ("codex", "AGENTS.md"),
+        ("cline", ".clinerules"),
+        ("cursor", ".cursor/rules/icdev.mdc"),
+        ("windsurf", ".windsurf/rules/icdev.md"),
+        ("copilot", ".github/copilot-instructions.md"),
+        ("amazonq", ".amazonq/rules/icdev.md"),
+        ("junie", ".junie/guidelines.md"),
+        ("gemini", "GEMINI.md"),
+        ("goose", ".goosehints"),
+        ("devin", "CONVENTIONS.md"),
+    ]
+
+    drift: List[str] = []
+    in_sync: List[str] = []
+    for platform, rel_path in PLATFORM_FILES:
+        full_path = PROJECT_ROOT / rel_path
+        if not full_path.exists():
+            drift.append(
+                f"{rel_path} ({platform}): file missing — "
+                "run `python tools/dx/companion.py --sync --write --json`"
+            )
+            continue
+        if MARKER.lower() not in _read_text(full_path).lower():
+            drift.append(
+                f"{rel_path} ({platform}): missing PostgreSQL-native DB guardrail"
+            )
+        else:
+            in_sync.append(platform)
+
+    if drift:
+        return CoherenceCheck(
+            check_id="db_portability_sync",
+            check_name="DB Portability Guardrail Sync (10 AI platforms)",
+            status="fail",
+            expected=[f'"{MARKER}" in every platform config'],
+            actual=[f"{len(in_sync)}/{len(PLATFORM_FILES)} platforms in sync"],
+            missing=drift,
+            extra=[],
+            message=(
+                f"{len(drift)} platform(s) missing the PostgreSQL-native DB guardrail — "
+                "re-run `python tools/dx/companion.py --sync --write --json`"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="db_portability_sync",
+        check_name="DB Portability Guardrail Sync (10 AI platforms)",
+        status="pass",
+        expected=[f'"{MARKER}" in every platform config'],
+        actual=[f"all {len(PLATFORM_FILES)} platforms in sync"],
+        missing=[],
+        extra=[],
+        message=(
+            f"All {len(PLATFORM_FILES)} AI platform configs carry the "
+            "PostgreSQL-native DB guardrail"
+        ),
+    )
+
+
 def check_sandbox_coverage() -> CoherenceCheck:
     """OPT-58 — verify docs/security/sandbox-coverage.md exists and
     documents all 4 tracked ingress-point gap files.
@@ -3483,6 +3552,7 @@ CHECK_REGISTRY = {
     "sandbox_coverage": check_sandbox_coverage,
     "direct_anthropic_import": check_direct_anthropic_import,
     "karpathy_sync": check_karpathy_sync,
+    "db_portability_sync": check_db_portability_sync,
     "openapi_parity": check_openapi_parity,
     "hitl_workflow": check_hitl_workflow,
     "mcp_security": check_mcp_security,

@@ -166,6 +166,25 @@ Before writing code, apply these 5 heuristics from `hardprompts/karpathy_princip
 
 Applies to: build, bug fix, refactor, TDD, and code review workflows.
 """
+
+DB_PORTABILITY_BLOCK = """
+## Database — PostgreSQL is the native runtime backend
+
+Author all SQL and data access for PostgreSQL and honor `ICDEV_STORAGE_BACKEND`.
+Get connections via `from tools.db.storage import get_connection` (or
+`get_canvas_connection()` for canvas/app-local tables that lack
+`tenant_id`/`classification`).
+
+In runtime code NEVER use SQLite-only constructs:
+- `sqlite3.connect()` for runtime data access
+- `conn.executescript(...)`
+- `SELECT ... FROM sqlite_master` (use a backend-aware table-list helper)
+- the JSON1 builtins `json_extract` / `json_each` / `json_array_length`
+  (use PostgreSQL `jsonb` operators, or compute in Python)
+
+SQLite is a fallback ONLY at initialization when PostgreSQL is unreachable; the
+running process must never silently switch backends.
+"""
 # ────────────────────────────────────────────────────────────────────────
 
 TEMPLATE_AGENTS_MD = r"""# AGENTS.md
@@ -793,6 +812,12 @@ def generate_instructions(directory=None, platforms=None, style="full", write=Fa
         # Checked by tools/workflow/coherence_checker.py::check_karpathy_sync.
         if "State assumptions" not in content:
             content = content.rstrip() + "\n" + KARPATHY_PRINCIPLES_BLOCK
+
+        # Append DB-portability block so every AI platform config carries the
+        # PostgreSQL-native rule (parity with CLAUDE.md). Checked by
+        # coherence_checker.py::check_db_portability_sync.
+        if "PostgreSQL is the native runtime backend" not in content:
+            content = content.rstrip() + "\n" + DB_PORTABILITY_BLOCK
 
         full_path = directory / output_path
         written = False
