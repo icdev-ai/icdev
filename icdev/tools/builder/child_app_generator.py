@@ -1516,7 +1516,6 @@ def step_05_db_init_script(child_root: Path, blueprint: dict) -> dict:
         "# CUI // SP-CTI\n"
         f'"""{app_name} database initialization."""\n'
         "\n"
-        "import sqlite3\n"
         "import sys\n"
         "from pathlib import Path\n"
         "\n"
@@ -1524,10 +1523,27 @@ def step_05_db_init_script(child_root: Path, blueprint: dict) -> dict:
         f' / "{app_name}.db"\n'
         "\n"
         "\n"
+        "def _get_db_connection(db_path):\n"
+        '    """Backend-agnostic connection (PG-primary, SQLite init-fallback).\n'
+        "\n"
+        "    Prefers the vendored ICDEV storage layer (PostgreSQL-primary). Passing\n"
+        "    this child's own .db path keeps get_connection() on SQLite for that\n"
+        "    file with RLS skipped, since child tables carry no tenant_id/\n"
+        "    classification columns. Degrades to a direct sqlite3 connection when\n"
+        "    the storage layer is not vendored (standalone child).\n"
+        '    """\n'
+        "    try:\n"
+        "        from tools.db.storage import get_connection\n"
+        "        return get_connection(str(db_path))\n"
+        "    except Exception:\n"
+        "        import sqlite3\n"
+        "        return sqlite3.connect(str(db_path))  # pg-ok: guarded standalone fallback\n"
+        "\n"
+        "\n"
         "def init_db(db_path=None):\n"
         "    db_path = db_path or str(DB_PATH)\n"
         "    Path(db_path).parent.mkdir(parents=True, exist_ok=True)\n"
-        "    conn = get_connection()\n"
+        "    conn = _get_db_connection(db_path)\n"
         "    conn.execute(\n"
         '        "CREATE TABLE IF NOT EXISTS projects "\n'
         '        "(id TEXT PRIMARY KEY, name TEXT, status TEXT '
@@ -1546,8 +1562,8 @@ def step_05_db_init_script(child_root: Path, blueprint: dict) -> dict:
         "        ).fetchall()\n"
         "    ]\n"
         f'    print(f"{app_name} database initialized at {{db_path}}")\n'
-        '    print(f"Tables created ({len(tables)}): '
-        '{\\", \\".join(sorted(tables))}")\n'
+        '    _names = ", ".join(sorted(tables))\n'
+        '    print(f"Tables created ({len(tables)}): {_names}")\n'
         "    conn.close()\n"
         "\n"
         "\n"

@@ -96,3 +96,82 @@ def test_db_init_generator_main_exists():
         assert callable(main), "main is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
+
+# --- PG-portability regression (pgp-ca-04) ---
+# Guards against a blind sqlite3.connect()->get_connection() migration (commit
+# 4b529c79) re-breaking the generated child init script: the swap dropped both
+# the get_connection import and the path arg, leaving the generated script with
+# an undefined symbol and SQLite-only verification. These tests assert the
+# emitted child init script is valid Python AND free of high-severity
+# PG-portability findings on regeneration.
+
+
+def test_generated_init_script_is_valid_python():
+    """The emitted child init script must parse (no NameError-shaped breakage)."""
+    import ast
+
+    try:
+        from tools.builder.db_init_generator import generate_init_script
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    src = generate_init_script(
+        {
+            "app_name": "regress-portal",
+            "classification": "CUI",
+            "capabilities": {"compliance": True, "mbse": True, "observability": True},
+        }
+    )
+    ast.parse(src)  # raises SyntaxError on malformed output
+
+
+def test_generated_init_script_uses_portable_connection():
+    """Generated script routes through the storage layer (PG-primary) with a
+    guarded SQLite fallback — never a bare, undefined get_connection()."""
+    try:
+        from tools.builder.db_init_generator import generate_init_script
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    src = generate_init_script({"app_name": "regress-portal", "capabilities": {}})
+    assert "def _get_db_connection(" in src
+    assert "from tools.db.storage import get_connection" in src
+    assert "conn = _get_db_connection(path)" in src
+    # The old, broken pattern must be gone.
+    assert "conn = get_connection()" not in src
+
+
+def test_generated_init_script_has_no_high_pg_findings():
+    """pg_portability_linter must report zero HIGH findings on the regenerated
+    child init script (the guarded sqlite3 fallback carries a # pg-ok marker)."""
+    import tempfile
+    from pathlib import Path as _Path
+
+    try:
+        from tools.builder.db_init_generator import generate_init_script
+        from tools.lint import pg_portability_linter as linter
+    except ImportError:
+        pytest.skip("Dependency not importable")
+
+    src = generate_init_script(
+        {
+            "app_name": "regress-portal",
+            "classification": "SECRET",
+            "capabilities": {
+                "compliance": True,
+                "mbse": True,
+                "ai_security": True,
+                "code_intelligence": True,
+                "ricoas": True,
+                "devsecops_zta": True,
+                "ai_governance": True,
+                "observability": True,
+            },
+        }
+    )
+    tmp = _Path(tempfile.mkdtemp()) / "init_regress_portal_db.py"
+    tmp.write_text(src, encoding="utf-8")
+    findings = linter.scan_file(tmp)
+    highs = [f for f in findings if f["severity"] == "high"]
+    assert highs == [], f"unexpected HIGH findings: {highs}"
