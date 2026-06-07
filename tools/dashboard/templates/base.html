@@ -609,6 +609,7 @@
                 {{ g.tenant_name }}
             </span>
             {% endif %}
+            {% include "includes/cli_bridge_indicator.html" %}
             {% if current_user %}
             <a href="/profile" class="user-badge" title="{{ current_user.email }}">
                 <span class="user-badge-name">{{ current_user.display_name }}</span>

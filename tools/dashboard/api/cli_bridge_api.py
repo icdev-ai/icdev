@@ -60,7 +60,7 @@ def register_cli_bridge(app) -> None:
     Seeds the router override in ``before_request`` (header takes precedence
     over cookie) and clears it in ``teardown_request``.
     """
-    from flask import g, request
+    from flask import g, jsonify, request
 
     from tools.llm.cli_bridge.activate import (
         cli_bridge_override,
@@ -85,3 +85,86 @@ def register_cli_bridge(app) -> None:
         token = g.__dict__.pop(_G_TOKEN_KEY, None)
         if token is not None:
             reset_cli_bridge_override(token)
+
+    @app.route("/api/cli-bridge/status", methods=["GET"])
+    def _cli_bridge_status():  # noqa: ANN202
+        return jsonify(cli_bridge_status())
+
+
+def _last_provider_served():
+    """Return (provider, model_id, logged_at) of the most recent AI interaction.
+
+    Reads one row from the append-only ``ai_telemetry`` table. Best-effort and
+    never raises — any failure (missing table, no DB, empty) returns all-None so
+    the status pill simply shows no last-provider label.
+    """
+    try:
+        from tools.db.storage import get_connection
+
+        conn = get_connection()
+        try:
+            cur = conn.execute(
+                "SELECT provider, model_id, logged_at FROM ai_telemetry "
+                "ORDER BY logged_at DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return None, None, None
+        # Row may be a tuple or a mapping depending on backend/cursor factory.
+        try:
+            return row[0], row[1], row[2]
+        except (KeyError, TypeError):
+            return row["provider"], row["model_id"], row["logged_at"]
+    except Exception:  # pragma: no cover - telemetry is observability-only
+        return None, None, None
+
+
+def cli_bridge_status() -> dict:
+    """Build the status payload for the navbar CLI-bridge indicator.
+
+    ``enabled`` honors the per-request context override (the cookie/header seeded
+    by :func:`register_cli_bridge`'s ``before_request`` hook), so polling this
+    endpoint after the per-page toggle flips reflects the new effective state.
+
+    Dot ``state``:
+        ``active``  → bridge enabled AND the CLI is headless-capable (green)
+        ``missing`` → bridge enabled but the CLI binary is not resolvable (amber)
+        ``off``     → bridge disabled for this page (grey)
+    """
+    try:
+        from tools.llm.cli_bridge.activate import cli_bridge_enabled
+
+        enabled = bool(cli_bridge_enabled())
+    except Exception:  # pragma: no cover - defensive
+        enabled = False
+
+    try:
+        from tools.llm.cli_bridge.capability import is_cli_headless_capable
+
+        available = bool(is_cli_headless_capable())
+    except Exception:  # pragma: no cover - defensive
+        available = False
+
+    if not enabled:
+        state = "off"
+    elif available:
+        state = "active"
+    else:
+        state = "missing"
+
+    provider, model_id, logged_at = _last_provider_served()
+
+    import os
+
+    return {
+        "enabled": enabled,
+        "available": available,
+        "state": state,
+        "env": os.environ.get("ICDEV_CLI_BRIDGE", ""),
+        "cookie_name": COOKIE_NAME,
+        "last_provider": provider,
+        "last_model": model_id,
+        "last_served_at": logged_at,
+    }
