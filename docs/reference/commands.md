@@ -2686,3 +2686,56 @@ python tools/kanban/seed_ace_kanban.py [--dry-run]
 # Environment variable to enable /coworker/ canvas
 ICDEV_ACE_ENABLED=true
 ```
+
+## Autonomous Capability Foundry (ACF) Commands
+```bash
+# ── Engine — run one harvest→synth→novelty→score→CoD→spec→task-graph→seed cycle ──
+python tools/foundry/engine.py --run --json              # full cycle (seeds kanban)
+python tools/foundry/engine.py --run --dry-run --json    # full pipeline, seeds NOTHING
+python tools/foundry/engine.py --run --max-concepts 3 --json   # override per-cycle cap
+python tools/foundry/engine.py --status --json           # recent runs + pipeline + rate_limits
+
+# ── Pipeline stages (standalone, for debugging one stage) ──
+python tools/foundry/harvester.py --run-id <id> --json                  # Stage 1 — collect signals
+python tools/foundry/novelty_gate.py --concept-json '{...}' --json      # Stage 3 — dedup verdict
+python tools/foundry/novelty_gate.py --catalog --json                   #   rebuild dedup catalog
+python tools/foundry/spec_generator.py --concept-id <id> --json         # Stage 6 — spec + contract
+python tools/foundry/spec_generator.py --concept-json '{...}' --no-persist --json
+python tools/foundry/task_graph.py --contract-json '{...}' --json        # Stage 7 — epic skeleton
+
+# ── Schema ──
+python -c "from tools.foundry.db.init_db import init_db; init_db()"     # 6 append-only foundry_* tables
+
+# ── Genesis reflex (12h continuous-autonomy loop) ──
+python tools/genesis/reflexes/foundry_cycle.py            # run one cycle (no-op if flag off)
+python tools/genesis/reflexes/foundry_cycle.py --dry-run  # compute cycle, no persistence
+python -c "from tools.genesis.reflexes.foundry_cycle import run; print(run({'dry_run': True}, None))"
+
+# ── Dashboard (web UI) ──
+#   GET  /foundry                — cycle roll-up + concept pipeline board
+#   GET  /foundry/<concept_id>   — concept detail: scores, spec, emitted tasks, outcomes
+
+# ── REST API ──
+#   GET  /api/foundry/runs           — recent foundry_runs (JSON)
+#   GET  /api/foundry/concepts       — concept list (filter: status, run_id)
+#   GET  /api/foundry/concept/<id>   — single concept + spec + tasks + outcomes
+#   POST /api/foundry/run            — trigger one cycle ({"dry_run": true} to skip seeding)
+#   POST /foundry/api/iqe-query      — plain-English → IQE → rows
+
+# ── IQE collections (read-only, via /foundry widget or /ask-icdev) ──
+#   foundry.concepts | foundry.signals | foundry.runs | foundry.outcomes
+#   Seed queries: context/iqe/queries/foundry/01-05
+
+# ── MCP gateway (unified) ──
+#   foundry_run    {dry_run, max_concepts}  — trigger one cycle
+#   foundry_status {limit}                  — read-only pipeline snapshot
+
+# ── Config + feature flag ──
+#   args/foundry_config.yaml     — sources, synthesis, novelty, scoring, rate_limits,
+#                                  circuit breaker, self_vet, deliberation (CoD), foundry_cycle
+ICDEV_FOUNDRY_ENABLED=true       # .env — master toggle for canvas + reflex
+
+# ── Tests ──
+pytest tests/foundry/ -v                                          # engine, novelty, spec, task-graph, blueprint
+pytest tests/test_foundry_cycle_reflex.py tests/test_foundry_mcp.py tests/test_foundry_harvester.py -v
+```
