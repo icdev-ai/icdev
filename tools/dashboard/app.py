@@ -1623,6 +1623,55 @@ def _get_chat_models() -> tuple[list[dict], str]:
     return result, default_model
 
 
+def _aggregate_chat_sources(raw_rows, context_id: str = "") -> list[dict]:
+    """Group chat-upload RAG chunks by source_id, computing JSON metadata in
+    Python (PG-primary portable form — no json_extract()/MAX-over-JSON).
+
+    Replicates the prior SQL: ``MAX(json_extract(metadata,'$.filename'))`` and
+    ``MAX(json_extract(metadata,'$.context_id'))`` (lexical max), ``COUNT(*)``
+    per source_id, ``MAX(created_at)`` as indexed_at, optional context_id
+    filter, ordered by indexed_at DESC, limited to 50. See PGP / pgp-tx-02.
+
+    Args:
+        raw_rows: iterable of mapping-like rows with source_id, metadata,
+            created_at keys.
+        context_id: when non-empty, only chunks whose metadata.context_id
+            matches are counted.
+    """
+    groups: dict = {}
+    for r in raw_rows:
+        md = json.loads(r["metadata"]) if r["metadata"] else {}
+        if context_id and md.get("context_id") != context_id:
+            continue
+        sid = r["source_id"]
+        g = groups.get(sid)
+        if g is None:
+            g = {
+                "source_id": sid,
+                "filename": None,
+                "context_id": None,
+                "chunk_count": 0,
+                "indexed_at": None,
+            }
+            groups[sid] = g
+        g["chunk_count"] += 1
+        # Replicate SQL MAX() (lexical) over per-row JSON values.
+        fn = md.get("filename")
+        if fn is not None and (g["filename"] is None or str(fn) > g["filename"]):
+            g["filename"] = str(fn)
+        cx = md.get("context_id")
+        if cx is not None and (g["context_id"] is None or str(cx) > g["context_id"]):
+            g["context_id"] = str(cx)
+        ca = r["created_at"]
+        if ca is not None and (g["indexed_at"] is None or str(ca) > str(g["indexed_at"])):
+            g["indexed_at"] = ca
+    return sorted(
+        groups.values(),
+        key=lambda s: (s["indexed_at"] is not None, str(s["indexed_at"] or "")),
+        reverse=True,
+    )[:50]
+
+
 def create_app() -> Flask:
     app = Flask(
         __name__,
@@ -9664,26 +9713,23 @@ def create_app() -> Flask:
         context_id = flask_request.args.get("context_id", "")
         try:
             with get_connection() as conn:
-                rows = conn.execute(
+                # Portable: read the raw metadata column and extract/group in
+                # Python rather than json_extract()/MAX-over-JSON — runtime SQL
+                # is authored for PG; the translator is only a SQLite
+                # init-fallback. See PGP / pgp-tx-02.
+                raw = conn.execute(
                     """
-                    SELECT DISTINCT source_id,
-                           MAX(json_extract(metadata, '$.filename')) AS filename,
-                           MAX(json_extract(metadata, '$.context_id')) AS context_id,
-                           COUNT(*) AS chunk_count,
-                           MAX(created_at) AS indexed_at
+                    SELECT source_id, metadata, created_at
                     FROM rag_chunks
                     WHERE source_type = 'chat_upload'
                       AND (? = '' OR tenant_id = ?)
-                      AND (? = '' OR json_extract(metadata, '$.context_id') = ?)
-                    GROUP BY source_id
-                    ORDER BY indexed_at DESC
-                    LIMIT 50
                     """,
-                    (tenant_id, tenant_id, context_id, context_id),
+                    (tenant_id, tenant_id),
                 ).fetchall()
+                sources = _aggregate_chat_sources(raw, context_id)
                 return jsonify({
-                    "sources": [dict(r) for r in rows],
-                    "total": len(rows),
+                    "sources": sources,
+                    "total": len(sources),
                 })
         except Exception as exc:
             app.logger.warning("api_chat_sources error: %s", exc)
