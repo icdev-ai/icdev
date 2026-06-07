@@ -128,6 +128,7 @@
       {% if current_user %}
       <a href="/network/logout" class="nav-link" style="font-size:0.8rem;color:var(--red);">Logout</a>
       {% endif %}
+      {% include "includes/cli_bridge_indicator.html" ignore missing %}
     </div>
   </nav>
 
@@ -199,5 +200,6 @@
   loadNotifCount();
   </script>
   {% block scripts %}{% endblock %}
+  {% include "includes/cli_bridge_panel.html" ignore missing %}
 </body>
 </html>
