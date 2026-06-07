@@ -665,10 +665,23 @@ class LLMRouter:
         return route.get("effort", "medium")
 
     def _get_chain_for_function(self, function: str) -> list:
-        """Get the model chain for a function."""
+        """Get the model chain for a function.
+
+        Applies the request-scoped CLI bridge override (if set) so a per-page
+        toggle takes effect at invoke time even though the base config was
+        rewritten once at construction. A ``False`` override strips the
+        ``claude-cli`` model from the chain so invocation bypasses the bridge.
+        """
         routing = self._config.get("routing", {})
         route = routing.get(function, routing.get("default", {}))
-        return route.get("chain", [])
+        chain = route.get("chain", [])
+        try:
+            from tools.llm.cli_bridge.activate import apply_cli_bridge_override
+
+            return apply_cli_bridge_override(chain)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("CLI bridge override skipped: %s", exc)
+            return list(chain)
 
     def _log_telemetry(
         self,
