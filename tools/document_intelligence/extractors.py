@@ -14,6 +14,15 @@ Supported formats:
   PNG   → pytesseract / easyocr (best-effort)
   HTML  → built-in strip-html
   TXT   → built-in read-text
+
+Layout mode:
+  Layout-aware extraction (column/table/figure region segmentation) needs the
+  optional ``paddleocr`` / ``doclayout-yolo`` libraries, which pull heavy
+  backends and download model weights over the network. We probe them at import
+  time; if they (or their weights) are unavailable the module degrades to the
+  ``flat-ocr`` baseline — sequential text extraction with no region
+  segmentation — so air-gap ingestion always has a working path. Inspect the
+  active mode via :func:`layout_mode` or the ``LAYOUT_MODE`` module constant.
 """
 from __future__ import annotations
 
@@ -27,6 +36,66 @@ from typing import Any
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
+
+
+# --------------------------------------------------------------------------- #
+# Layout-detection capability probe (PaddleOCR / doclayout-yolo)
+# --------------------------------------------------------------------------- #
+# Layout-aware extraction requires optional libraries that pull heavy backends
+# (PaddlePaddle / torch) and download model weights over the network on first
+# use — neither is air-gap safe by default. We probe their importability once at
+# module-load time inside a guarded try/except: any failure (missing package,
+# broken backend, blocked network fetch during import) is logged and the module
+# falls back to the always-present 'flat-ocr' path so ingestion never breaks.
+
+LAYOUT_MODE_AWARE = "layout-aware"   # region/table/column segmentation available
+LAYOUT_MODE_FLAT = "flat-ocr"        # sequential text only — air-gap baseline
+
+_LAYOUT_LIBS = ("paddleocr", "doclayout_yolo")
+
+
+def _probe_layout_libs():
+    """Detect whether every layout-detection library imports cleanly.
+
+    Returns ``(mode, missing)``: ``mode`` is :data:`LAYOUT_MODE_AWARE` only when
+    all libraries import without error, otherwise :data:`LAYOUT_MODE_FLAT`.
+    Never raises — callers rely on this to choose a fallback, not to fail.
+    """
+    import importlib
+
+    missing: list[str] = []
+    for lib in _LAYOUT_LIBS:
+        try:
+            importlib.import_module(lib)
+        except Exception as exc:
+            missing.append(lib)
+            logger.debug("dic.extractors: layout lib %r unavailable: %s", lib, exc)
+    if missing:
+        return LAYOUT_MODE_FLAT, missing
+    return LAYOUT_MODE_AWARE, []
+
+
+try:
+    LAYOUT_MODE, _LAYOUT_MISSING = _probe_layout_libs()
+except Exception as exc:  # defensive: the probe itself must never break import
+    logger.error(
+        "dic.extractors: layout-detection probe failed (%s) — forcing 'flat-ocr' fallback",
+        exc,
+    )
+    LAYOUT_MODE, _LAYOUT_MISSING = LAYOUT_MODE_FLAT, list(_LAYOUT_LIBS)
+
+if LAYOUT_MODE == LAYOUT_MODE_FLAT:
+    logger.warning(
+        "dic.extractors: layout-detection libraries unavailable (%s) — using "
+        "'flat-ocr' fallback (no region/table/column segmentation). For "
+        "layout-aware extraction install: pip install paddleocr doclayout-yolo",
+        ", ".join(_LAYOUT_MISSING) or "none",
+    )
+
+
+def layout_mode() -> str:
+    """Return the active layout-extraction mode ('layout-aware' or 'flat-ocr')."""
+    return LAYOUT_MODE
 
 
 @dataclass
@@ -640,7 +709,9 @@ def extract_file(path: str | Path) -> Extraction:
     ext = p.suffix.lower()
     extractor = get_extractor(ext)
     if extractor is not None:
-        return extractor(p)
+        result = extractor(p)
+        result.metadata.setdefault("layout_mode", LAYOUT_MODE)
+        return result
 
     # Unknown extension — best-effort utf-8 decode
     try:
