@@ -7,7 +7,7 @@ from tools.logging.icdev_logger import get_logger
 
 log = get_logger(__name__)
 
-_BACKEND = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+_BACKEND = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
 
 _SCHEMA_PG = """
 CREATE TABLE IF NOT EXISTS zta_lac_audit (

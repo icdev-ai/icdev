@@ -21,7 +21,7 @@ DB_PATH = _ICDEV_ROOT / "data" / "security_canvas.db"
 
 # Backend detection — SC_STORAGE_BACKEND only (NOT inherited from ICDEV_STORAGE_BACKEND)
 # SDC has its own DB (security_canvas.db). Set SC_STORAGE_BACKEND=postgresql to use PG.
-_SC_BACKEND = os.environ.get("SC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite")).lower()
+_SC_BACKEND = os.environ.get("SC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
 
 
 def get_connection():
