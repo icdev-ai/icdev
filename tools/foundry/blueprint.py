@@ -195,7 +195,31 @@ def _get_tasks_emitted(conn, concept_id: str) -> list[dict]:
         "SELECT id, kanban_task_id, epic, seq, created_at FROM foundry_tasks_emitted "
         "WHERE concept_id = ? ORDER BY seq ASC, id ASC"
     )
-    return _rows(conn.execute(_q(conn, sql), (concept_id,)))
+    tasks = _rows(conn.execute(_q(conn, sql), (concept_id,)))
+    return _attach_kanban_status(conn, tasks)
+
+
+def _attach_kanban_status(conn, tasks: list[dict]) -> list[dict]:
+    """Best-effort live status for each emitted kanban task.
+
+    Adds a ``kanban_status`` key by reading ``kanban_tasks.status`` for the
+    emitted ``kanban_task_id``. Wrapped so a missing kanban table, an RLS-shielded
+    row, or a backend quirk leaves ``kanban_status=None`` rather than failing the
+    whole detail view."""
+    for t in tasks:
+        t["kanban_status"] = None
+    ids = [t.get("kanban_task_id") for t in tasks if t.get("kanban_task_id")]
+    if not ids:
+        return tasks
+    try:
+        placeholders = ", ".join("?" for _ in ids)
+        sql = f"SELECT id, status FROM kanban_tasks WHERE id IN ({placeholders})"
+        live = {r["id"]: r.get("status") for r in _rows(conn.execute(_q(conn, sql), tuple(ids)))}
+        for t in tasks:
+            t["kanban_status"] = live.get(t.get("kanban_task_id"))
+    except Exception as exc:  # noqa: BLE001 — kanban table absent / RLS / backend quirk
+        logger.debug("kanban live-status enrichment skipped: %s", exc)
+    return tasks
 
 
 def _get_outcomes(conn, concept_id: str) -> list[dict]:
@@ -264,7 +288,7 @@ def create_foundry_blueprint() -> Optional[Blueprint]:
         if _state["db_ready"]:
             return
         try:
-            from tools.foundry.db.init_db import init_foundry_db
+            from tools.foundry.db.init_db import init_db as init_foundry_db
 
             init_foundry_db()
         except Exception as exc:  # noqa: BLE001 — never let init failure 500 a read
