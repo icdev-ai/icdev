@@ -10,7 +10,6 @@ Supports both SQLite and PostgreSQL backends.
 """
 
 import os
-import sqlite3
 
 MIGRATION_ID = "001"
 MIGRATION_NAME = "community_summaries"
