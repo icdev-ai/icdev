@@ -1,0 +1,136 @@
+{# CLI-bridge status indicator — navbar-right pill + per-page toggle popover (ucb-widget-01).
+   Dot colors: green = bridge active & CLI available, amber = enabled but CLI binary missing,
+   grey = off for this page. Click the pill for a popover with the per-page 'Use local CLI'
+   toggle, which sets the icdev_cli_bridge cookie consumed by the whole-page bridge middleware
+   (tools/dashboard/api/cli_bridge_api.py). Polls GET /api/cli-bridge/status on load + every 30s. #}
+<div id="cli-bridge-indicator" style="position:relative;">
+  <button type="button" id="cli-bridge-pill"
+          aria-haspopup="true" aria-expanded="false"
+          title="Local CLI bridge status — click for per-page toggle"
+          style="display:flex;align-items:center;gap:6px;background:transparent;
+                 border:1px solid var(--border-color);color:var(--text-secondary);
+                 border-radius:999px;padding:3px 10px;font-size:0.72rem;cursor:pointer;
+                 white-space:nowrap;line-height:1.4;">
+    <span id="cli-bridge-dot"
+          style="width:8px;height:8px;border-radius:50%;background:#9ca3af;
+                 box-shadow:0 0 0 2px rgba(0,0,0,0.04);flex:0 0 auto;"></span>
+    <span id="cli-bridge-label">CLI</span>
+  </button>
+  <div id="cli-bridge-popover" role="dialog" aria-label="CLI bridge controls" hidden
+       style="position:absolute;right:0;top:calc(100% + 6px);z-index:1200;min-width:240px;
+              background:var(--bg-secondary,#1e293b);border:1px solid var(--border-color,#334155);
+              border-radius:8px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,0.28);
+              font-size:0.78rem;color:var(--text-primary,#e2e8f0);">
+    <div style="font-weight:600;margin-bottom:6px;">Local CLI Bridge</div>
+    <div id="cli-bridge-status-text" style="color:var(--text-secondary,#94a3b8);margin-bottom:10px;">
+      Checking&hellip;
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" id="cli-bridge-toggle" style="cursor:pointer;">
+      <span>Use local CLI for this page</span>
+    </label>
+    <div id="cli-bridge-provider" style="margin-top:10px;color:var(--text-secondary,#94a3b8);
+         font-size:0.72rem;"></div>
+  </div>
+</div>
+<script>
+if (!window.icdevCliBridgeRefresh) {
+  (function () {
+    var COLORS = { active: '#16a34a', missing: '#f59e0b', off: '#9ca3af' };
+    var LABELS = { active: 'CLI on', missing: 'CLI missing', off: 'CLI off' };
+
+    function $(id) { return document.getElementById(id); }
+
+    function getCookie(name) {
+      var m = document.cookie.match('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)');
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+    function setCookie(name, value) {
+      // Session cookie, root path so every page (canvas pages included) sees it.
+      document.cookie = name + '=' + encodeURIComponent(value) + '; path=/; SameSite=Lax';
+    }
+
+    function applyState(data) {
+      data = data || {};
+      var state = data.state || 'off';
+      var dot = $('cli-bridge-dot');
+      var label = $('cli-bridge-label');
+      var statusText = $('cli-bridge-status-text');
+      var providerEl = $('cli-bridge-provider');
+      if (dot) dot.style.background = COLORS[state] || COLORS.off;
+      if (label) label.textContent = LABELS[state] || LABELS.off;
+      if (statusText) {
+        if (state === 'active') statusText.textContent = 'Active — local Claude CLI is fronting LLM requests.';
+        else if (state === 'missing') statusText.textContent = 'Enabled, but the claude CLI binary was not found on this host.';
+        else statusText.textContent = 'Off — cloud/local model providers are serving requests.';
+      }
+      if (providerEl) {
+        if (data.last_provider) {
+          var who = data.last_provider + (data.last_model ? ' (' + data.last_model + ')' : '');
+          providerEl.textContent = 'Last served by: ' + who;
+        } else {
+          providerEl.textContent = 'No provider served yet.';
+        }
+      }
+    }
+
+    function refresh() {
+      return fetch('/api/cli-bridge/status', { headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) { if (data) applyState(data); return data; })
+        .catch(function () { /* leave last-known state on transient failure */ });
+    }
+    window.icdevCliBridgeRefresh = refresh;
+
+    function syncToggleFromCookie() {
+      var toggle = $('cli-bridge-toggle');
+      if (!toggle) return;
+      var cookie = getCookie('icdev_cli_bridge');
+      // Tri-state cookie: 'on'/'off'/absent. Checkbox reflects an explicit 'on'.
+      toggle.checked = (cookie === 'on' || cookie === 'true' || cookie === '1');
+      toggle.indeterminate = (cookie === null);
+    }
+
+    function init() {
+      var pill = $('cli-bridge-pill');
+      var popover = $('cli-bridge-popover');
+      var toggle = $('cli-bridge-toggle');
+      if (!pill || !popover) return;
+
+      pill.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var open = popover.hidden;
+        popover.hidden = !open;
+        pill.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) { syncToggleFromCookie(); refresh(); }
+      });
+      // Close when clicking outside the indicator.
+      document.addEventListener('click', function (e) {
+        if (!popover.hidden && !$('cli-bridge-indicator').contains(e.target)) {
+          popover.hidden = true;
+          pill.setAttribute('aria-expanded', 'false');
+        }
+      });
+
+      if (toggle) {
+        toggle.addEventListener('change', function () {
+          toggle.indeterminate = false;
+          setCookie('icdev_cli_bridge', toggle.checked ? 'on' : 'off');
+          // Re-poll so the dot color reflects the new effective state immediately.
+          refresh();
+        });
+      }
+
+      syncToggleFromCookie();
+      refresh();
+      setInterval(refresh, 30000);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  })();
+}
+</script>
