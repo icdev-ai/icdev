@@ -411,10 +411,49 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         flags=re.IGNORECASE,
     )
 
-    # 16. json_array_length(col) → jsonb_array_length(col::jsonb)
+    # 16. json_array_length(X) → jsonb_array_length((X)::jsonb)
+    #     X is parenthesized before the ::jsonb cast because :: binds tighter
+    #     than ->/->>. When X is a translated json_extract (rule 15 →
+    #     graph_json::jsonb->>'nodes'), an un-parenthesized cast would parse as
+    #     graph_json::jsonb ->> ('nodes'::jsonb), and 'nodes'::jsonb is invalid
+    #     JSON ("invalid input syntax for type json") — the network home/project
+    #     500s. (X)::jsonb casts the whole extracted text value instead.
     sql = re.sub(
         r"\bjson_array_length\(\s*([^)]+)\s*\)",
-        r"jsonb_array_length(\1::jsonb)",
+        r"jsonb_array_length((\1)::jsonb)",
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    # 16b. json_each(col, '$.path') → jsonb_array_elements((col::jsonb)->'path')
+    #      SQLite json_each() is a table-valued function that expands a JSON
+    #      array into rows; PG's equivalent over a nested array is
+    #      jsonb_array_elements() applied to the extracted sub-document. There
+    #      was previously NO rule, so json_each() passed through verbatim and
+    #      broke on PG. Nested paths ($.a.b) chain -> operators; the no-path
+    #      form (json_each(col)) expands the column itself.
+    def _replace_json_each(m):
+        col = m.group(1).strip()
+        raw_path = m.group(2) if m.lastindex and m.lastindex >= 2 else ""
+        path = (raw_path or "").strip().strip("'\"")
+        path = re.sub(r"^\$\.?", "", path)
+        chain = f"({col}::jsonb)"
+        if path:
+            for part in path.split("."):
+                chain += f"->'{part}'"
+        return f"jsonb_array_elements({chain})"
+
+    # Two-arg form: json_each(col, '$.path')
+    sql = re.sub(
+        r"\bjson_each\(\s*([^,]+?)\s*,\s*(['\"][^'\"]+['\"])\s*\)",
+        _replace_json_each,
+        sql,
+        flags=re.IGNORECASE,
+    )
+    # One-arg form: json_each(col)
+    sql = re.sub(
+        r"\bjson_each\(\s*([^,()]+?)\s*\)",
+        _replace_json_each,
         sql,
         flags=re.IGNORECASE,
     )
