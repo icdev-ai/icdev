@@ -39,6 +39,68 @@
     color: var(--text-primary, #e0e0e0); padding: 10px 12px; font-size: 13px; resize: vertical;
   }
   .empty-state { text-align: center; padding: 40px 0; color: var(--text-secondary, #555); font-size: 13px; }
+
+  /* Delete button — matches boundary_canvas/sops.html */
+  .btn-delete {
+    background: transparent; color: #e74c3c; border: 1px solid #e74c3c;
+    border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer;
+    line-height: 1.4; margin-left: auto;
+  }
+  .btn-delete:hover { background: rgba(231, 76, 60, 0.12); }
+
+  .recent-header { display: flex; justify-content: space-between; align-items: center; }
+
+  /* Preset UI */
+  .preset-select {
+    width: 100%; padding: 8px 10px; font-size: 12px;
+    background: var(--bg-secondary, #1a1a2e); color: var(--text-primary, #e0e0e0);
+    border: 1px solid var(--border-color, #2a2a4a); border-radius: 6px; margin-bottom: 10px;
+  }
+  .preset-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .preset-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 12px; font-size: 11px; cursor: pointer;
+    border: 1px solid var(--border-color, #2a2a4a);
+    background: var(--bg-secondary, #1a1a2e); color: var(--text-secondary, #7a8cb0);
+    transition: all .15s;
+  }
+  .preset-chip:hover { border-color: var(--accent-color, #4a90d9); color: var(--text-primary, #e0e0e0); }
+  .preset-chip.active {
+    background: rgba(74,144,217,.18); border-color: #4a90d9; color: #4a90d9;
+  }
+  /* Canvas colors */
+  .preset-canvas-qa         { border-color: rgba(39,174,96,.4); color: #27ae60; }
+  .preset-canvas-qa:hover   { border-color: #27ae60; }
+  .preset-canvas-qa.active  { background: rgba(39,174,96,.18); border-color: #27ae60; color: #27ae60; }
+  .preset-canvas-build      { border-color: rgba(74,144,217,.4); color: #4a90d9; }
+  .preset-canvas-build:hover { border-color: #4a90d9; }
+  .preset-canvas-build.active { background: rgba(74,144,217,.18); border-color: #4a90d9; color: #4a90d9; }
+  .preset-canvas-compliance { border-color: rgba(243,156,18,.4); color: #f39c12; }
+  .preset-canvas-compliance:hover { border-color: #f39c12; }
+  .preset-canvas-compliance.active { background: rgba(243,156,18,.18); border-color: #f39c12; color: #f39c12; }
+  .preset-canvas-security   { border-color: rgba(231,76,60,.4); color: #e74c3c; }
+  .preset-canvas-security:hover { border-color: #e74c3c; }
+  .preset-canvas-security.active { background: rgba(231,76,60,.18); border-color: #e74c3c; color: #e74c3c; }
+  .preset-canvas-data       { border-color: rgba(155,89,182,.4); color: #9b59b6; }
+  .preset-canvas-data:hover { border-color: #9b59b6; }
+  .preset-canvas-data.active { background: rgba(155,89,182,.18); border-color: #9b59b6; color: #9b59b6; }
+  .preset-canvas-devops     { border-color: rgba(52,152,219,.4); color: #3498db; }
+  .preset-canvas-devops:hover { border-color: #3498db; }
+  .preset-canvas-devops.active { background: rgba(52,152,219,.18); border-color: #3498db; color: #3498db; }
+  .preset-canvas-requirements { border-color: rgba(26,188,156,.4); color: #1abc9c; }
+  .preset-canvas-requirements:hover { border-color: #1abc9c; }
+  .preset-canvas-requirements.active { background: rgba(26,188,156,.18); border-color: #1abc9c; color: #1abc9c; }
+  .preset-canvas-business   { border-color: rgba(230,126,34,.4); color: #e67e22; }
+  .preset-canvas-business:hover { border-color: #e67e22; }
+  .preset-canvas-business.active { background: rgba(230,126,34,.18); border-color: #e67e22; color: #e67e22; }
+
+  .preset-meta {
+    font-size: 11px; color: var(--text-secondary, #7a8cb0); margin-bottom: 8px; min-height: 16px;
+  }
+  .preset-meta .role-tag {
+    display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px;
+    background: rgba(160,160,184,.15); margin-left: 4px;
+  }
 </style>
 
 <div class="ace-home">
@@ -72,6 +134,18 @@
   <!-- ── Launch ─────────────────────────────────────────────────── -->
   <div class="launch-box">
     <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Launch a Co-Worker Team</div>
+
+    <!-- Preset dropdown -->
+    <select id="ace-preset-select" class="preset-select">
+      <option value="">— Quick Launch Preset —</option>
+    </select>
+
+    <!-- Tag chips -->
+    <div class="preset-chips" id="ace-preset-chips"></div>
+
+    <!-- Suggested roles preview -->
+    <div class="preset-meta" id="ace-preset-meta"></div>
+
     <textarea id="ace-problem" placeholder="Describe the problem to solve, e.g. 'Build a data ingestion pipeline with validation tests.'"></textarea>
     <div style="display:flex; justify-content:flex-end; margin-top:10px;">
       <button class="btn" id="ace-launch-btn" style="font-size:12px; background:var(--accent-color,#2563eb); color:#fff;">Launch Team</button>
@@ -120,25 +194,35 @@
   <!-- ── Recent instances ───────────────────────────────────────── -->
   {% set recent = instances | rejectattr('state', 'in', ['assembling','pending','active','paused']) | list %}
   {% if recent %}
-  <h2 style="font-size:14px; font-weight:600; margin:28px 0 12px; color:var(--text-secondary,#7a8cb0); text-transform:uppercase; letter-spacing:.04em;">
-    Recent <span style="font-weight:400; text-transform:none;">({{ recent | length }})</span>
-  </h2>
-  <div class="team-grid">
+  <div class="recent-header" style="margin:28px 0 12px;">
+    <h2 style="font-size:14px; font-weight:600; margin:0; color:var(--text-secondary,#7a8cb0); text-transform:uppercase; letter-spacing:.04em;">
+      Recent <span style="font-weight:400; text-transform:none;">({{ recent | length }})</span>
+    </h2>
+    <button class="btn-delete" id="ace-delete-all-btn" style="margin-left:10px; padding:4px 12px; font-size:12px;">
+      🗑️ Delete All
+    </button>
+  </div>
+  <div class="team-grid" id="recent-grid">
     {% for inst in recent %}
-    <a class="team-card" href="/coworker/{{ inst.id }}">
-      <div>
-        <div class="tc-title">{{ inst.name or inst.id }}</div>
-        <div class="tc-id">{{ inst.id }}</div>
+    <div class="team-card" data-id="{{ inst.id }}" id="card-{{ inst.id }}">
+      <a href="/coworker/{{ inst.id }}" style="text-decoration:none; color:inherit; display:contents;">
+        <div>
+          <div class="tc-title">{{ inst.name or inst.id }}</div>
+          <div class="tc-id">{{ inst.id }}</div>
+        </div>
+        <div>
+          <span class="badge badge-state-{{ inst.state }}" style="font-size:10px;">{{ inst.state | replace('_',' ') | title }}</span>
+          <span class="trust-{{ inst.trust_tier }}" style="font-size:10px;">{{ inst.trust_tier | upper }} trust</span>
+        </div>
+        <div class="tc-meta">
+          <span>{{ inst.coworker_count }} co-workers</span>
+          <span>{{ inst.created_at | replace('T',' ') | truncate(16, True, '') }}</span>
+        </div>
+      </a>
+      <div style="display:flex; justify-content:flex-end; margin-top:6px;">
+        <button class="btn-delete" onclick="deleteInstance('{{ inst.id }}')">🗑️ Delete</button>
       </div>
-      <div>
-        <span class="badge badge-state-{{ inst.state }}" style="font-size:10px;">{{ inst.state | replace('_',' ') | title }}</span>
-        <span class="trust-{{ inst.trust_tier }}" style="font-size:10px;">{{ inst.trust_tier | upper }} trust</span>
-      </div>
-      <div class="tc-meta">
-        <span>{{ inst.coworker_count }} co-workers</span>
-        <span>{{ inst.created_at | replace('T',' ') | truncate(16, True, '') }}</span>
-      </div>
-    </a>
+    </div>
     {% endfor %}
   </div>
   {% endif %}
@@ -146,33 +230,177 @@
 </div>
 
 <script>
+    // ── Presets + roles ───────────────────────────────────────────
+    let PRESETS = [];
+    let ROLES   = [];
+
+    async function loadPresetsAndRoles() {
+      try {
+        const [pRes, rRes] = await Promise.all([
+          fetch('/api/ace/presets'),
+          fetch('/api/ace/roles')
+        ]);
+        if (pRes.ok) { const d = await pRes.json(); PRESETS = d.presets || []; renderPresets(); }
+        if (rRes.ok) { const d = await rRes.json();   ROLES   = d.roles   || []; }
+      } catch (e) { console.warn('preset/role load failed', e); }
+    }
+
+    function renderPresets() {
+      const sel = document.getElementById('ace-preset-select');
+      const chips = document.getElementById('ace-preset-chips');
+      sel.innerHTML = '<option value="">— Quick Launch Preset —</option>';
+      chips.innerHTML = '';
+
+      const byCanvas = {};
+      PRESETS.forEach(p => { (byCanvas[p.canvas] = byCanvas[p.canvas] || []).push(p); });
+
+      // Build dropdown optgroups
+      for (const canvas of Object.keys(byCanvas).sort()) {
+        const og = document.createElement('optgroup');
+        og.label = canvas.toUpperCase();
+        byCanvas[canvas].forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.label;
+          opt.textContent = p.icon + ' ' + p.label;
+          og.appendChild(opt);
+        });
+        sel.appendChild(og);
+
+        // Build chips
+        byCanvas[canvas].forEach(p => {
+          const chip = document.createElement('div');
+          chip.className = 'preset-chip preset-canvas-' + canvas;
+          chip.textContent = p.icon + ' ' + p.label;
+          chip.title = p.prompt;
+          chip.onclick = () => activatePreset(p);
+          chips.appendChild(chip);
+        });
+      }
+
+      sel.onchange = () => {
+        const label = sel.value;
+        if (!label) { clearPreset(); return; }
+        const p = PRESETS.find(x => x.label === label);
+        if (p) activatePreset(p);
+      };
+    }
+
+    function activatePreset(p) {
+      document.getElementById('ace-problem').value = p.prompt;
+      // highlight chip
+      document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+      const chip = Array.from(document.querySelectorAll('.preset-chip')).find(c => c.textContent.includes(p.label));
+      if (chip) chip.classList.add('active');
+      // select dropdown
+      document.getElementById('ace-preset-select').value = p.label;
+
+      // suggested roles
+      const meta = document.getElementById('ace-preset-meta');
+      if (p.suggested_roles && p.suggested_roles.length) {
+        const names = p.suggested_roles.map(rid => {
+          const r = ROLES.find(x => x.role_id === rid);
+          return r ? '<span class="role-tag">' + (r.display_name || r.name) + '</span>' : '';
+        }).filter(Boolean).join(' ');
+        meta.innerHTML = 'Suggested roles: ' + names;
+      } else { meta.textContent = ''; }
+    }
+
+    function clearPreset() {
+      document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+      document.getElementById('ace-preset-select').value = '';
+      document.getElementById('ace-preset-meta').textContent = '';
+    }
 (function () {
   "use strict";
+
+  /* ── Launch ── */
   var btn = document.getElementById("ace-launch-btn");
   var ta  = document.getElementById("ace-problem");
   var st  = document.getElementById("ace-launch-status");
-  if (!btn) return;
-  btn.addEventListener("click", function () {
-    var problem = (ta.value || "").trim();
-    if (!problem) { st.textContent = "Enter a problem description first."; return; }
-    btn.disabled = true; st.textContent = "Launching…";
-    fetch("/api/ace/launch", {
+  if (btn) {
+    btn.addEventListener("click", function () {
+      var problem = (ta.value || "").trim();
+      if (!problem) { st.textContent = "Enter a problem description first."; return; }
+      btn.disabled = true; st.textContent = "Launching…";
+      var selLabel = document.getElementById("ace-preset-select").value;
+      var payload = { problem_text: problem, trigger_source: "dashboard" };
+      if (selLabel) payload.preset_label = selLabel;
+      fetch("/api/ace/launch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.instance_id) {
+            st.textContent = "Launched " + data.instance_id + " — redirecting…";
+            window.location.href = "/coworker/" + data.instance_id;
+          } else {
+            st.textContent = "Error: " + (data.error || "unknown");
+            btn.disabled = false;
+          }
+        })
+        .catch(function (err) { st.textContent = "Request failed: " + err; btn.disabled = false; });
+    });
+  }
+
+  /* ── Delete instance ── */
+  window.deleteInstance = function (id) {
+    if (!confirm("Delete instance " + id + "? This cannot be undone.")) return;
+    fetch("/api/ace/" + id + "/delete", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ problem_text: problem, trigger_source: "dashboard" }),
+      headers: { "Content-Type": "application/json" }
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (data.instance_id) {
-          st.textContent = "Launched " + data.instance_id + " — redirecting…";
-          window.location.href = "/coworker/" + data.instance_id;
+        if (data.deleted) {
+          var card = document.getElementById("card-" + id);
+          if (card) card.remove();
+          updateRecentCount();
         } else {
-          st.textContent = "Error: " + (data.error || "unknown");
-          btn.disabled = false;
+          alert("Delete failed: " + (data.error || "unknown"));
         }
       })
-      .catch(function (err) { st.textContent = "Request failed: " + err; btn.disabled = false; });
-  });
+      .catch(function (err) { alert("Request failed: " + err); });
+  };
+
+  /* ── Delete all ── */
+  var delAllBtn = document.getElementById("ace-delete-all-btn");
+  if (delAllBtn) {
+    delAllBtn.addEventListener("click", function () {
+      var count = document.querySelectorAll("#recent-grid .team-card").length;
+      if (!count) return;
+      if (!confirm("Delete all " + count + " inactive instance(s)? This cannot be undone.")) return;
+      fetch("/api/ace/delete-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (typeof data.deleted === "number") {
+            document.querySelectorAll("#recent-grid .team-card").forEach(function (c) { c.remove(); });
+            updateRecentCount();
+          } else {
+            alert("Delete all failed: " + (data.error || "unknown"));
+          }
+        })
+        .catch(function (err) { alert("Request failed: " + err); });
+    });
+  }
+
+  function updateRecentCount() {
+    var n = document.querySelectorAll("#recent-grid .team-card").length;
+    var hdr = document.querySelector(".recent-header h2 span");
+    if (hdr) hdr.textContent = "(" + n + ")";
+    if (!n) {
+      var grid = document.getElementById("recent-grid");
+      if (grid) grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">No recent instances.</div>';
+    }
+  }
+
+  /* ── Load presets + roles on startup ── */
+  if (typeof loadPresetsAndRoles === 'function') loadPresetsAndRoles();
 })();
 </script>
 {% endblock %}

@@ -47,6 +47,45 @@ python tools/anvil/agentic_runner.py --task-id X --task-desc "..." --reasoned au
 
 ---
 
+## CLI LLM Bridge Commands (UCLB)
+```bash
+# Capability probes — detect whether the local host can run Claude CLI headlessly
+python -c "from tools.llm.cli_bridge.capability import is_cli_headless_capable; print(is_cli_headless_capable())"
+python -c "from tools.llm.cli_bridge.capability import mailbox_worker_alive; print(mailbox_worker_alive())"
+
+# Auto-enable + routing chain rewrite (prepends claude-cli to every function chain)
+python -c "from tools.llm.cli_bridge.activate import maybe_activate; maybe_activate()"
+
+# Direct provider invocation (creates job, dispatches, soft-waits, returns or defers)
+python -c "
+from tools.llm.cli_bridge.cli_provider import CLILLMProvider
+from tools.llm.provider import LLMRequest
+p = CLILLMProvider()
+r = p.invoke(LLMRequest(function='code_generation', prompt='Hello'))
+print(r)
+"
+
+# Job store — query or manipulate cli_llm_jobs rows directly
+python -c "from tools.llm.cli_bridge.job_store import list_jobs; print(list_jobs(limit=5))"
+python -c "from tools.llm.cli_bridge.job_store import claim_job; print(claim_job())"
+python -c "from tools.llm.cli_bridge.job_store import complete_job; complete_job(1, 'result text')"
+
+# Subprocess backend — dispatch a pending job to a local claude-cli subprocess
+python -c "from tools.llm.cli_bridge.subprocess_backend import dispatch; dispatch(1)"
+```
+
+**Environment variables**
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ICDEV_CLI_BRIDGE` | auto | `true`/`false` override; auto = enable when air-gapped or no API key |
+| `ICDEV_CLI_BRIDGE_BACKEND` | auto | `subprocess`, `mailbox`, or `auto` (probes PATH for claude-cli) |
+| `ICDEV_CLI_BRIDGE_MODEL` | claude-cli | Model ID passed to the CLI |
+| `CLAUDE_CLI_PATH` | (PATH search) | Absolute path to the `claude` binary |
+| `ICDEV_CLI_BRIDGE_MAX_SECONDS` | 900 | Hard ceiling for a single CLI subprocess |
+| `ICDEV_CLI_BRIDGE_MAX_CONCURRENT` | 3 | BoundedSemaphore cap for subprocess backend |
+
+---
+
 ## CloudForge Runbooks & Metastore Commands
 ```bash
 # Runbook Engine

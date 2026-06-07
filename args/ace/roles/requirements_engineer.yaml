@@ -1,0 +1,28 @@
+role_id: requirements_engineer
+display_name: Requirements Engineer
+description: Requirements engineer that parses PRDs, builds traceability matrices, identifies ambiguity, and proposes clarifications for INVEST-compliant backlog items.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+  - parse_prd
+  - build_traceability
+  - identify_ambiguity
+  - propose_clarifications
+  - acceptance_criteria_review
+  - story_point_estimate
+communication:
+  protocol: a2a
+  listen_topics:
+    - prd.submitted
+    - backlog.groomed
+  emit_topics:
+    - requirement.clarified
+    - traceability.updated
+    - acceptance.criteria
+llm_function: requirement_analysis
+tool_permissions:
+  - Read
+  - Grep
+genesis_reflex: requirements

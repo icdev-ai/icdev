@@ -61650,6 +61650,211 @@ ALTER TABLE ONLY public.wne_artifacts
 
 
 --
+-- Name: foundry_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_runs (
+    id                 BIGSERIAL PRIMARY KEY,
+    cycle_at           TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    harvested          INTEGER NOT NULL DEFAULT 0,
+    concepts_proposed  INTEGER NOT NULL DEFAULT 0,
+    concepts_approved  INTEGER NOT NULL DEFAULT 0,
+    tasks_emitted      INTEGER NOT NULL DEFAULT 0,
+    status             TEXT    NOT NULL DEFAULT 'running' CHECK(status IN ('running', 'completed', 'failed', 'deferred', 'rate_limited', 'circuit_open')),
+    detail             TEXT    DEFAULT '{}',
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+--
+-- Name: foundry_signals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_signals (
+    id                 BIGSERIAL PRIMARY KEY,
+    run_id             TEXT    NOT NULL,
+    source_engine      TEXT    NOT NULL CHECK(source_engine IN ('innovation', 'creative', 'research', 'genesis', 'telemetry')),
+    source_ref         TEXT    NOT NULL,
+    theme              TEXT,
+    raw_score          REAL    DEFAULT 0.0,
+    keywords           TEXT    DEFAULT '[]',
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+--
+-- Name: foundry_concepts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_concepts (
+    id                 BIGSERIAL PRIMARY KEY,
+    run_id             TEXT    NOT NULL,
+    name               TEXT    NOT NULL,
+    slug               TEXT    NOT NULL UNIQUE,
+    problem_statement  TEXT,
+    proposed_capability TEXT,
+    target_users       TEXT,
+    cluster_signal_ids TEXT    DEFAULT '[]',
+    novelty_score      REAL    DEFAULT 0.0,
+    market_score       REAL    DEFAULT 0.0,
+    fit_score          REAL    DEFAULT 0.0,
+    effort_estimate    REAL    DEFAULT 0.0,
+    compliance_risk    REAL    DEFAULT 0.0,
+    composite_score    REAL    DEFAULT 0.0,
+    status             TEXT    NOT NULL DEFAULT 'proposed' CHECK(status IN ('proposed', 'scored', 'approved', 'rejected')),
+    reject_reason      TEXT    CHECK(reject_reason IS NULL OR reject_reason IN ('duplicate', 'low_novelty', 'low_score', 'cod_reject', 'vv_fail')),
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_by         TEXT    NOT NULL DEFAULT 'system',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+--
+-- Name: foundry_specs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_specs (
+    id                 BIGSERIAL PRIMARY KEY,
+    concept_id         INTEGER NOT NULL REFERENCES public.foundry_concepts(id),
+    spec_md            TEXT    NOT NULL,
+    canvas_contract    TEXT    DEFAULT '{}',
+    task_count         INTEGER NOT NULL DEFAULT 0,
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+--
+-- Name: foundry_tasks_emitted; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_tasks_emitted (
+    id                 BIGSERIAL PRIMARY KEY,
+    concept_id         INTEGER NOT NULL REFERENCES public.foundry_concepts(id),
+    kanban_task_id     TEXT    NOT NULL,
+    epic               TEXT,
+    seq                INTEGER NOT NULL DEFAULT 0,
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+--
+-- Name: foundry_outcomes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_outcomes (
+    id                 BIGSERIAL PRIMARY KEY,
+    concept_id         INTEGER NOT NULL REFERENCES public.foundry_concepts(id),
+    outcome            TEXT    NOT NULL CHECK(outcome IN ('shipped', 'vv_pass', 'vv_fail', 'abandoned')),
+    metric             REAL,
+    detail             TEXT    DEFAULT '{}',
+    tenant_id          TEXT    NOT NULL DEFAULT 'default',
+    classification     TEXT    NOT NULL DEFAULT 'CUI',
+    created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+--
+-- Name: idx_foundry_runs_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_runs_tenant ON public.foundry_runs(tenant_id);
+
+--
+-- Name: idx_foundry_runs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_runs_status ON public.foundry_runs(status);
+
+--
+-- Name: idx_foundry_signals_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_signals_run ON public.foundry_signals(run_id);
+
+--
+-- Name: idx_foundry_signals_engine; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_signals_engine ON public.foundry_signals(source_engine);
+
+--
+-- Name: idx_foundry_signals_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_signals_score ON public.foundry_signals(raw_score);
+
+--
+-- Name: idx_foundry_signals_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_signals_tenant ON public.foundry_signals(tenant_id);
+
+--
+-- Name: idx_foundry_concepts_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_concepts_run ON public.foundry_concepts(run_id);
+
+--
+-- Name: idx_foundry_concepts_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_concepts_status ON public.foundry_concepts(status);
+
+--
+-- Name: idx_foundry_concepts_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_concepts_score ON public.foundry_concepts(composite_score);
+
+--
+-- Name: idx_foundry_concepts_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_concepts_tenant ON public.foundry_concepts(tenant_id);
+
+--
+-- Name: idx_foundry_specs_concept; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_specs_concept ON public.foundry_specs(concept_id);
+
+--
+-- Name: idx_foundry_specs_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_specs_tenant ON public.foundry_specs(tenant_id);
+
+--
+-- Name: idx_foundry_tasks_concept; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_tasks_concept ON public.foundry_tasks_emitted(concept_id);
+
+--
+-- Name: idx_foundry_tasks_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_tasks_tenant ON public.foundry_tasks_emitted(tenant_id);
+
+--
+-- Name: idx_foundry_outcomes_concept; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_outcomes_concept ON public.foundry_outcomes(concept_id);
+
+--
+-- Name: idx_foundry_outcomes_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_outcomes_tenant ON public.foundry_outcomes(tenant_id);
+
+
+--
 -- PostgreSQL database dump complete
 --
 

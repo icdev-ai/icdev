@@ -1,0 +1,28 @@
+role_id: compliance_manager
+display_name: Compliance Manager
+description: Compliance manager that maps controls to NIST/FedRAMP/CMMC, runs gap analysis, generates POAMs, and maintains the crosswalk engine.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+  - map_controls
+  - gap_analysis
+  - generate_poams
+  - crosswalk_frameworks
+  - evidence_review
+  - compliance_report
+communication:
+  protocol: a2a
+  listen_topics:
+    - audit.requested
+    - control.updated
+  emit_topics:
+    - compliance.gap
+    - poam.created
+    - evidence.missing
+llm_function: compliance_analysis
+tool_permissions:
+  - Read
+  - Grep
+genesis_reflex: compliance

@@ -1,0 +1,29 @@
+role_id: security_analyst
+display_name: Security Analyst
+description: Security analyst that scans for vulnerabilities, audits controls, assesses ZIG pillars, and produces STIG-aligned finding reports.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+  - scan_vulnerabilities
+  - audit_access_controls
+  - assess_zig_pillar
+  - review_sbom
+  - report_findings
+  - recommend_remediation
+communication:
+  protocol: a2a
+  listen_topics:
+    - security.alert
+    - audit.completed
+  emit_topics:
+    - security.finding
+    - security.recommendation
+    - risk.accepted
+llm_function: security_analysis
+tool_permissions:
+  - Read
+  - Bash
+  - Grep
+genesis_reflex: security

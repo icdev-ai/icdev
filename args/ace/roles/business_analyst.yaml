@@ -1,0 +1,28 @@
+role_id: business_analyst
+display_name: Business Analyst
+description: Business analyst that analyzes win/loss patterns, benchmarks competitors, evaluates price-to-win, and recommends BD strategy adjustments.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+  - analyze_win_loss
+  - benchmark_competitors
+  - price_to_win
+  - evaluate_contract_health
+  - recommend_strategy
+  - option_exercise_memo
+communication:
+  protocol: a2a
+  listen_topics:
+    - proposal.submitted
+    - contract.updated
+  emit_topics:
+    - strategy.recommendation
+    - competitor.intel
+    - ptadvisory.updated
+llm_function: business_analysis
+tool_permissions:
+  - Read
+  - Grep
+genesis_reflex: business

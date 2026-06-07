@@ -1,0 +1,29 @@
+role_id: data_analyst
+display_name: Data Analyst
+description: Data analyst that ingests datasets, profiles schemas, detects anomalies, and produces quality scorecards for the AI Data Mapping and DIC canvases.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 3
+steps:
+  - ingest_data
+  - profile_schema
+  - detect_anomalies
+  - validate_mappings
+  - benchmark_performance
+  - generate_quality_scorecard
+communication:
+  protocol: a2a
+  listen_topics:
+    - data.ingested
+    - mapping.requested
+  emit_topics:
+    - data.quality_report
+    - anomaly.alert
+    - mapping.validated
+llm_function: data_analysis
+tool_permissions:
+  - Read
+  - Bash
+  - Grep
+genesis_reflex: data

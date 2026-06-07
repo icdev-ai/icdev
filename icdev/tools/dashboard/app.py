@@ -3262,6 +3262,7 @@ def create_app() -> Flask:
             "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),
             "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
             "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
+            "cwk":            ("tools.iqe.adapters.cwk",              ["cwk.coworkers", "cwk.sessions"]),
         }
 
         data = flask_request.get_json(silent=True) or {}

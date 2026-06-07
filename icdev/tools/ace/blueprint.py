@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Optional
 
 from flask import Blueprint, jsonify, render_template, request
@@ -360,6 +361,7 @@ def api_launch():
             trigger_ref=(data.get("trigger_ref") or ""),
             user_id=(data.get("user_id") or "dashboard"),
             project_id=(data.get("project_id") or ""),
+            preset_label=(data.get("preset_label") or ""),
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace launch failed: %s", exc)
@@ -518,6 +520,163 @@ def api_abort(instance_id: str):
         logger.warning("ace abort failed for %s: %s", instance_id, exc)
         return jsonify({"error": str(exc)}), 500
     return jsonify({"instance_id": instance_id, "state": "cancelled", "aborted": True})
+
+
+@ace_api_bp.route("/<instance_id>/delete", methods=["POST"])
+def api_delete(instance_id: str):
+    """Delete a single inactive ACE instance and all cascaded data.
+
+    Active instances (assembling, pending, active, paused) are rejected.
+    Cascades to ace_coworkers, ace_messages, ace_artifacts, ace_agent_workflows.
+    ace_audit_log is intentionally preserved (append-only).
+    """
+    conn = None
+    try:
+        conn = _db()
+        # Verify the instance exists and is not active
+        row = _one(
+            conn.execute(
+                _q(conn, "SELECT id, state FROM ace_instances WHERE id = ?"),
+                (instance_id,),
+            )
+        )
+        if row is None:
+            return jsonify({"error": f"instance not found: {instance_id}"}), 404
+        if row.get("state") in _ACTIVE_STATES:
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            f"Cannot delete active instance {instance_id} "
+                            f"(state={row['state']}). Abort it first."
+                        )
+                    }
+                ),
+                409,
+            )
+        # Hard delete — FK ON DELETE CASCADE handles children
+        conn.execute(_q(conn, "DELETE FROM ace_instances WHERE id = ?"), (instance_id,))
+        conn.commit()
+        return jsonify({"deleted": True, "instance_id": instance_id})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace delete failed for %s: %s", instance_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@ace_api_bp.route("/delete-all", methods=["POST"])
+def api_delete_all():
+    """Bulk-delete all inactive ACE instances.
+
+    Body: ``{"except": ["id1", "id2"]}`` — optional list of instance IDs to preserve.
+    Returns the count and list of deleted IDs.
+    """
+    data = request.get_json(silent=True) or {}
+    except_ids = data.get("except") or []
+    if not isinstance(except_ids, list):
+        except_ids = []
+    except_ids = [str(x) for x in except_ids if x]
+
+    deleted_ids: list[str] = []
+    conn = None
+    try:
+        conn = _db()
+        # Build the WHERE clause
+        active_placeholders = ",".join(["?"] * len(_ACTIVE_STATES))
+        if except_ids:
+            except_placeholders = ",".join(["?"] * len(except_ids))
+            sql = (
+                f"SELECT id FROM ace_instances "
+                f"WHERE state NOT IN ({active_placeholders}) "
+                f"AND id NOT IN ({except_placeholders})"
+            )
+            params = list(_ACTIVE_STATES) + except_ids
+        else:
+            sql = (
+                f"SELECT id FROM ace_instances "
+                f"WHERE state NOT IN ({active_placeholders})"
+            )
+            params = list(_ACTIVE_STATES)
+
+        # Materialize IDs first so we can report them
+        rows = _rows(conn.execute(_q(conn, sql), tuple(params)))
+        to_delete = [r["id"] for r in rows]
+
+        if to_delete:
+            placeholders = ",".join(["?"] * len(to_delete))
+            conn.execute(
+                _q(conn, f"DELETE FROM ace_instances WHERE id IN ({placeholders})"),
+                tuple(to_delete),
+            )
+            conn.commit()
+            deleted_ids = to_delete
+
+        return jsonify({"deleted": len(deleted_ids), "instance_ids": deleted_ids})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace delete-all failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@ace_api_bp.route("/presets", methods=["GET"])
+def api_presets():
+    """Return curated launch presets grouped by canvas.
+
+    Reads ``args/ace/launch_presets.yaml`` and returns JSON shaped as::
+
+        {"presets": [{"label", "icon", "canvas", "prompt", "suggested_roles"}]}
+    """
+    import yaml
+
+    presets_path = (
+        Path(__file__).resolve().parents[3] / "args" / "ace" / "launch_presets.yaml"
+    )
+    presets: list[dict[str, Any]] = []
+    if presets_path.exists():
+        try:
+            with presets_path.open("r", encoding="utf-8") as fh:
+                raw = yaml.safe_load(fh) or {}
+                presets = list(raw.get("presets", []))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ace presets load failed: %s", exc)
+    # Group by canvas for convenient frontend rendering
+    by_canvas: dict[str, list[dict[str, Any]]] = {}
+    for p in presets:
+        canvas = p.get("canvas") or "general"
+        by_canvas.setdefault(canvas, []).append(p)
+    return jsonify({"presets": presets, "by_canvas": by_canvas})
+
+
+@ace_api_bp.route("/roles", methods=["GET"])
+def api_roles():
+    """Return all loaded ACE roles as lightweight JSON."""
+    try:
+        from icdev.tools.ace.role_loader import RoleLoader
+
+        roles = RoleLoader().list_roles()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace roles load failed: %s", exc)
+        roles = []
+    return jsonify(
+        {
+            "roles": [
+                {
+                    "role_id": r.role_id,
+                    "display_name": r.display_name,
+                    "description": r.description,
+                    "trust_tier": r.trust_tier,
+                    "version": r.version,
+                    "llm_function": r.llm_function,
+                }
+                for r in roles
+            ],
+            "count": len(roles),
+        }
+    )
 
 
 @ace_api_bp.route("/iqe-query", methods=["POST"])

@@ -1,0 +1,29 @@
+role_id: devops_engineer
+display_name: DevOps Engineer
+description: DevOps engineer that probes service health, validates configurations, manages CI/CD pipelines, and recovers from process wedges.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+  - probe_health
+  - check_ports
+  - validate_configs
+  - restart_services
+  - review_logs
+  - pipeline_optimization
+communication:
+  protocol: a2a
+  listen_topics:
+    - health.alert
+    - deployment.requested
+  emit_topics:
+    - health.report
+    - deployment.status
+    - incident.created
+llm_function: infrastructure_planning
+tool_permissions:
+  - Read
+  - Bash
+  - Grep
+genesis_reflex: devops

@@ -1,0 +1,203 @@
+# CUI // SP-CTI
+# ACE Launch Presets — quick-select problem descriptions for the Co-Worker Engine.
+# Consumed by GET /api/ace/presets and rendered as dropdown + chips on /coworker/
+presets:
+  # ── QA ────────────────────────────────────────────────────────────────────
+  - label: "QA — Lint + Security Scan"
+    icon: "🔍"
+    canvas: "qa"
+    prompt: >
+      Run ruff, bandit, and pytest across the ACE canvas modules
+      (icdev/tools/ace/*.py). Report F401 unused imports, security findings,
+      coverage gaps, and type errors as a markdown QA report with severity tags.
+    suggested_roles:
+      - ai_developer
+      - qa_manager
+
+  - label: "QA — API Contract Validation"
+    icon: "🔌"
+    canvas: "qa"
+    prompt: >
+      QA the ACE API endpoints at /api/ace/*: verify HTTP status codes
+      (200, 404, 409, 500), JSON response schemas, and parameterization safety.
+      Document any deviations from the manifest spec.
+    suggested_roles:
+      - ai_developer
+      - qa_manager
+
+  - label: "QA — E2E Playwright Sweep"
+    icon: "🎭"
+    canvas: "qa"
+    prompt: >
+      Perform a Playwright E2E sweep of the dashboard pages under /coworker/,
+      /security/zig/, /data/mapping/, and /compliance. Capture accessibility
+      snapshots and flag broken routes, console errors, or missing nav links.
+    suggested_roles:
+      - qa_manager
+      - ai_developer
+
+  # ── Build ─────────────────────────────────────────────────────────────────
+  - label: "Build — Scaffold New Canvas"
+    icon: "🏗️"
+    canvas: "build"
+    prompt: >
+      Scaffold a new ICDEV canvas called 'ops_canvas' with: blueprint.py,
+      db/init_db.py, templates/ops_canvas/index.html, constants.py, and IQE
+      adapter. Follow the 8-point dashboard completeness gate (template, route,
+      module, constants, migration, nav, IQE, mini-bar).
+    suggested_roles:
+      - ai_developer
+      - devops_engineer
+
+  - label: "Build — ANVIL Feature Cycle"
+    icon: "⚒️"
+    canvas: "build"
+    prompt: >
+      Run a full ANVIL 5-phase cycle for the next kanban task:
+      Architect → Navigate → Verify (write failing tests) → Integrate
+      (implementation) → Launch (refactor + security scan + compliance map).
+    suggested_roles:
+      - ai_developer
+      - requirements_engineer
+      - qa_manager
+
+  # ── Compliance ────────────────────────────────────────────────────────────
+  - label: "Compliance — NIST 800-53 Gap Analysis"
+    icon: "🛡️"
+    canvas: "compliance"
+    prompt: >
+      Audit the current codebase against NIST 800-53 AC-3, AU-6, and CM-3
+      controls. Map existing implementations to controls, identify gaps, and
+      generate a POAM-style remediation plan with prioritized tasks.
+    suggested_roles:
+      - compliance_manager
+      - security_analyst
+
+  - label: "Compliance — Crosswalk Update"
+    icon: "🌉"
+    canvas: "compliance"
+    prompt: >
+      Update the compliance crosswalk engine to include the latest NIST 800-53
+      Rev 5 controls. Verify FedRAMP and CMMC mappings are complete and flag
+      any orphaned controls without evidence links.
+    suggested_roles:
+      - compliance_manager
+      - business_analyst
+
+  # ── Security ────────────────────────────────────────────────────────────
+  - label: "Security — ZIG Pillar Assessment"
+    icon: "🔐"
+    canvas: "security"
+    prompt: >
+      Assess the ZIG (Zero Trust Implementation Guide) canvas at /security/zig/.
+      Verify all 7 pillars have populated capability counts, active assessment
+      routes, and up-to-date roadmaps. Flag any missing data or broken links.
+    suggested_roles:
+      - security_analyst
+      - compliance_manager
+
+  - label: "Security — SBOM + Container Scan"
+    icon: "🐳"
+    canvas: "security"
+    prompt: >
+      Regenerate the SBOM for the ICDEV container image, run a vulnerability
+      scan (Trivy or Grype), and produce a CAT1/CAT2/CAT3 finding report with
+      remediation commands. Ensure non-root, read-only rootfs, and no secrets
+      in layers.
+    suggested_roles:
+      - security_analyst
+      - devops_engineer
+
+  # ── Data ──────────────────────────────────────────────────────────────────
+  - label: "Data — Mapping Pipeline QA"
+    icon: "📊"
+    canvas: "data"
+    prompt: >
+      Validate the AI Data Mapping canvas at /data/mapping/. Test the
+      field-mapper engine with synthetic datasets, check for data-type
+      mismatches, null-handling, and performance on 1k-row inputs. Produce a
+      quality scorecard.
+    suggested_roles:
+      - data_analyst
+      - ai_developer
+
+  - label: "Data — RAG Chunk Quality Audit"
+    icon: "📚"
+    canvas: "data"
+    prompt: >
+      Audit the DIC RAG chunking pipeline: verify chunk boundaries, overlap
+      ratios, metadata embedding completeness, and citation accuracy. Report
+      drift from the baseline corpus and suggest re-ingestion triggers.
+    suggested_roles:
+      - data_analyst
+      - qa_manager
+
+  # ── DevOps ───────────────────────────────────────────────────────────────
+  - label: "DevOps — Deployment Health Check"
+    icon: "🚀"
+    canvas: "devops"
+    prompt: >
+      Run a full DevOps health check: verify dashboard (:5050), API gateway
+      (:8443), PostgreSQL connectivity, Kanban scheduler, and Genesis daemon
+      are all healthy. Report any wedged processes or port conflicts.
+    suggested_roles:
+      - devops_engineer
+      - system_monitor
+
+  - label: "DevOps — CI/CD Pipeline Validation"
+    icon: "⚙️"
+    canvas: "devops"
+    prompt: >
+      Validate the CI/CD pipeline stages: lint (ruff), security scan (bandit),
+      coherence gate, E2E tests (pytest + behave), and FathomDesk smoke test.
+      Identify which stage fails most often and recommend parallelization or
+      caching improvements.
+    suggested_roles:
+      - devops_engineer
+      - qa_manager
+
+  # ── Requirements ─────────────────────────────────────────────────────────
+  - label: "Requirements — PRD Intake Review"
+    icon: "📋"
+    canvas: "requirements"
+    prompt: >
+      Review the latest PRD intake session for completeness: acceptance criteria,
+      traceability matrix, risk register, and testability. Identify ambiguous
+      requirements and propose clarifying questions.
+    suggested_roles:
+      - requirements_engineer
+      - business_analyst
+
+  - label: "Requirements — Backlog Grooming"
+    icon: "✂️"
+    canvas: "requirements"
+    prompt: >
+      Groom the kanban backlog: decompose epics into atomic tasks with
+      INVEST criteria, estimate story points, identify hidden dependencies,
+      and flag tasks missing acceptance criteria or test plans.
+    suggested_roles:
+      - requirements_engineer
+      - business_analyst
+
+  # ── Business ──────────────────────────────────────────────────────────────
+  - label: "Business — Proposal Win/Loss Review"
+    icon: "💼"
+    canvas: "business"
+    prompt: >
+      Analyze recent proposal outcomes (win/loss records) in the CPMP canvas.
+      Identify patterns in evaluator scores, competitor pricing, and
+      compliance gaps. Recommend BD strategy adjustments.
+    suggested_roles:
+      - business_analyst
+      - compliance_manager
+
+  - label: "Business — Option Exercise Decision Support"
+    icon: "📈"
+    canvas: "business"
+    prompt: >
+      Evaluate the current contract health (CPI, SPI, CPARS, risk register)
+      for the active option exercise. Produce a GO/NO-GO recommendation memo
+      with supporting evidence and contingency plans.
+    suggested_roles:
+      - business_analyst
+      - compliance_manager

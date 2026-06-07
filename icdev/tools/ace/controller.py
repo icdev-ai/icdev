@@ -70,10 +70,11 @@ class ACEController:
         trigger_ref: str,
         user_id: str = "system",
         project_id: str = "",
+        preset_label: str = "",
     ) -> str:
         """Launch an ACE run non-blocking.  Returns instance_id immediately."""
         instance_id = f"ace-{uuid.uuid4().hex[:12]}"
-        self._executor.submit(self._run, instance_id, problem_text, trigger_source, trigger_ref, user_id, project_id)
+        self._run(instance_id, problem_text, trigger_source, trigger_ref, user_id, project_id, preset_label)
         return instance_id
 
     def status(self, instance_id: str) -> dict[str, Any]:
@@ -145,6 +146,7 @@ class ACEController:
         trigger_ref: str,
         user_id: str,
         project_id: str,
+        preset_label: str = "",
     ) -> None:
         """Full orchestration pipeline executed in ThreadPoolExecutor."""
         self._emit_sse(instance_id, "assembling", "Classifying problem")
@@ -164,6 +166,7 @@ class ACEController:
                 "trigger_ref": trigger_ref,
                 "user_id": user_id,
                 "project_id": project_id,
+                "preset_label": preset_label,
                 "name": f"ace:{trigger_source}:{trigger_ref}"[:120],
             }
             assembler = TeamAssembler()

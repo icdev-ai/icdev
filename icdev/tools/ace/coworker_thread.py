@@ -141,7 +141,7 @@ class CoWorkerThread(threading.Thread):
         self.instance_id = instance_id
         self.message_bus = message_bus
         self.trust_kernel = trust_kernel
-        self._context: dict[str, Any] = {"instance_id": instance_id}
+        self._role_ctx: dict[str, Any] = {"instance_id": instance_id}
         self._stop_event = threading.Event()
 
     # ------------------------------------------------------------------
@@ -198,7 +198,7 @@ class CoWorkerThread(threading.Thread):
             self._set_assigned_step(step.get("id", str(raw_step)))
 
             try:
-                result = executor.run(step, self._context, self.spec, self.trust_kernel)
+                result = executor.run(step, self._role_ctx, self.spec, self.trust_kernel)
                 self._audit(
                     "step_complete",
                     f"step={step.get('id')} result_type={type(result).__name__}",
@@ -262,7 +262,7 @@ class CoWorkerThread(threading.Thread):
         for raw_vstep in verify_steps:
             vstep = self._normalise_step(raw_vstep)
             try:
-                executor.run(vstep, self._context, self.spec, self.trust_kernel)
+                executor.run(vstep, self._role_ctx, self.spec, self.trust_kernel)
             except Exception as exc:
                 self._audit("verify_step_failed", f"step={vstep.get('id')} reason={exc}")
 

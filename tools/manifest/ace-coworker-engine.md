@@ -26,7 +26,8 @@ was flagged done but existed on no branch).
 
 ## Args / Config
 - `args/ace/ace_config.yaml` — `max_team_size`, `max_negotiation_rounds`, `hitl_threshold`, `trust_tier_default`, `stale_instance_hours`, `hot_reload_roles`.
-- `args/ace/roles/*.yaml` — role templates (`ai_developer`, `qa_manager`).
+- `args/ace/roles/*.yaml` — role templates (`ai_developer`, `qa_manager`, `security_analyst`, `compliance_manager`, `data_analyst`, `devops_engineer`, `requirements_engineer`, `business_analyst`).
+- `args/ace/launch_presets.yaml` — 16 curated quick-launch presets across 8 canvases (QA, Build, Compliance, Security, Data, DevOps, Requirements, Business).
 - `args/ace/prompt_chains/ace_developer_analysis.yaml` — 4-step analysis chain.
 - `args/ace/hitl_templates/ace_developer_review.yaml` — developer review gate.
 
@@ -39,6 +40,21 @@ Schema of record: `icdev/tools/ace/db/init_db.py` (id / state / trust_tier —
 ## IQE
 - Adapter: `tools/iqe/adapters/ace.py` — collections `ace.instances`, `ace.coworkers`, `ace.messages`.
 - Seed queries: `context/iqe/queries/ace/`.
+
+## API (Flask Blueprint `ace_api_bp` — prefix `/api/ace`)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/launch` | Launch a new instance (non-blocking) |
+| GET  | `/instances` | Paginated list (`?limit=&offset=&state=`) |
+| GET  | `/<id>/status` | Instance state + per-coworker states |
+| GET  | `/<id>/messages` | Message thread (`?after=`) |
+| GET  | `/<id>/artifacts` | Artifact list |
+| POST | `/<id>/abort` | Signal stop → `cancelled` |
+| POST | `/<id>/delete` | **Delete inactive instance** (cascades to coworkers, messages, artifacts, workflows). Active instances rejected (409). |
+| POST | `/delete-all` | **Bulk-delete all inactive instances**. Body: `{"except": ["id1"]}`. Returns count + deleted IDs. |
+| POST | `/iqe-query` | Plain-English → IQE → rows |
+| GET  | `/presets` | Curated launch presets grouped by canvas (reads `args/ace/launch_presets.yaml`) |
+| GET  | `/roles` | Lightweight JSON list of all loaded roles |
 
 ## CLI
 ```bash

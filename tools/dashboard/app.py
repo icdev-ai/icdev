@@ -3459,6 +3459,7 @@ def create_app() -> Flask:
             "slides":         ("tools.iqe.adapters.slides",            ["slides.decks", "slides.slides"]),
             "cpmp":           ("tools.iqe.adapters.cpmp",              ["cpmp.contracts", "cpmp.deliverables", "cpmp.clins", "cpmp.cpars", "cpmp.evm"]),
             "ace":            ("icdev.tools.iqe.adapters.ace",          ["ace.coworkers", "ace.sessions", "ace.suggestions"]),
+            "cwk":            ("tools.iqe.adapters.cwk",                ["cwk.coworkers", "cwk.sessions"]),
         }
 
         data = flask_request.get_json(silent=True) or {}

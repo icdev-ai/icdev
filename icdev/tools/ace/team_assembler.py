@@ -186,7 +186,7 @@ class TeamAssembler:
             conn.execute(
                 "INSERT INTO ace_instances "
                 "(id, name, role_id, state, trust_tier, config_json, created_at, updated_at) "
-                "VALUES (?, ?, ?, 'assembling', ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
                 (
                     instance_id,
                     context.get("name", instance_id),
