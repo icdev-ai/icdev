@@ -1,0 +1,32 @@
+role_id: security_analyst
+display_name: Security Analyst
+description: Defensive security analyst that assesses threat surfaces, reviews vulnerabilities, maps controls to frameworks, and gates releases on risk thresholds.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+  - analyze_threat_surface
+  - review_vulnerabilities
+  - assess_risk
+  - map_controls
+  - generate_report
+  - monitor_compliance
+communication:
+  protocol: a2a
+  listen_topics:
+    - task.assigned
+    - threat.alert
+    - audit.request
+  emit_topics:
+    - security.report
+    - vulnerability.found
+    - risk.assessed
+    - incident.escalated
+llm_function: agent_security
+tool_permissions:
+  - Read
+  - Bash
+  - Grep
+  - Glob
+genesis_reflex: audit

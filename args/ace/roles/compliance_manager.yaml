@@ -1,0 +1,30 @@
+role_id: compliance_manager
+display_name: Compliance Manager
+description: Compliance manager that reviews regulatory frameworks, maps controls, assesses gaps, collects evidence, and reports audit readiness.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+  - review_frameworks
+  - map_controls
+  - assess_gaps
+  - collect_evidence
+  - audit_readiness
+  - report_status
+communication:
+  protocol: a2a
+  listen_topics:
+    - task.assigned
+    - audit.request
+    - policy.changed
+  emit_topics:
+    - compliance.status
+    - gap.found
+    - evidence.collected
+    - control.validated
+llm_function: agent_compliance
+tool_permissions:
+  - Read
+  - Grep
+genesis_reflex: comply
