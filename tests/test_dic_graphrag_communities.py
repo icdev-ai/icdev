@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import pytest
@@ -384,6 +385,62 @@ def seed_corpus(conn) -> SeededCorpus:
 
 
 # --------------------------------------------------------------------------- #
+# Transactional cleanup guard
+# --------------------------------------------------------------------------- #
+
+def _safe_purge(conn) -> None:
+    """Best-effort purge that never raises.
+
+    Used by the cleanup guard so a failure *during teardown* can never mask the
+    original error (or, on the success path, surface a spurious one).
+    """
+    try:
+        purge_corpus(conn)
+    except Exception:
+        pass
+
+
+@contextmanager
+def corpus_transaction(conn):
+    """Strict ``seed -> use -> cleanup`` block with rollback-on-failure.
+
+    Seeds the deterministic corpus, yields its :class:`SeededCorpus`, and
+    *guarantees* every seeded artifact is removed when the block exits. If
+    seeding — or any step the caller runs inside the block (precompute, query) —
+    raises, the connection is rolled back and the (possibly partial) corpus is
+    purged before the error propagates, so a failed run can never leave a stale
+    or half-seeded corpus behind to corrupt the next one.
+
+    Both the pytest fixture and any non-pytest caller can use it to wrap the
+    full pipeline as one guarded unit::
+
+        conn = get_connection()
+        try:
+            with corpus_transaction(conn) as corpus:
+                precompute_communities(conn)        # -d2
+                query_corpus(conn, "global question")  # -d3
+        finally:
+            conn.close()
+    """
+    corpus = None
+    try:
+        corpus = seed_corpus(conn)
+        yield corpus
+    except Exception:
+        # A subprocess failed anywhere in seed/compute/query: undo uncommitted
+        # work, then remove anything that did land. Re-raise the real error.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        _safe_purge(conn)
+        raise
+    else:
+        # Clean exit — tear the corpus down so the DB returns to baseline.
+        _safe_purge(conn)
+
+
+# --------------------------------------------------------------------------- #
 # Precompute — the GraphRAG community computation pipeline (-d2)
 # --------------------------------------------------------------------------- #
 
@@ -585,20 +642,18 @@ def setup_corpus():
     Yields a :class:`SeededCorpus`. The downstream precompute (``-d2``) and
     corpus-level query (``-d3``) tests request this fixture so they all operate
     over an identical, reproducible graph.
+
+    The whole lifecycle runs inside :func:`corpus_transaction` over a single
+    connection, so seeding, the test body, and teardown share one strict
+    guarded block: any failure rolls back and removes every artifact, and the
+    corpus is always purged on exit — no stale rows can leak into the next test.
     """
     conn = get_connection()
     try:
-        corpus = seed_corpus(conn)
+        with corpus_transaction(conn) as corpus:
+            yield corpus
     finally:
         conn.close()
-
-    yield corpus
-
-    cleanup = get_connection()
-    try:
-        purge_corpus(cleanup)
-    finally:
-        cleanup.close()
 
 
 # --------------------------------------------------------------------------- #
@@ -813,5 +868,77 @@ def test_corpus_level_query(setup_corpus):
         # The convenience source-doc list matches the citation provenance,
         # de-duplicated and covering the whole corpus.
         assert sorted(result["source_doc_ids"]) == sorted(corpus.doc_ids)
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------- #
+# Cleanup guard: the strict seed -> compute -> query transaction block
+# --------------------------------------------------------------------------- #
+
+def _corpus_row_counts(conn) -> tuple[int, int]:
+    """(document count, community-summary count) for the test corpus."""
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM dic_documents WHERE collection_id = ?",
+        (CORPUS_COLLECTION_ID,),
+    )
+    docs = cur.fetchone()[0]
+    community_ids = _all_community_ids()
+    marks = ",".join("?" for _ in community_ids)
+    cur.execute(
+        f"SELECT COUNT(*) FROM dic_community_summaries WHERE community_id IN ({marks})",
+        community_ids,
+    )
+    summaries = cur.fetchone()[0]
+    return docs, summaries
+
+
+def test_corpus_transaction_cleans_up_on_success():
+    """A clean run through the guard leaves the DB back at baseline (no leftovers)."""
+    conn = get_connection()
+    try:
+        _ensure_schema(conn)
+        purge_corpus(conn)  # baseline
+        assert _corpus_row_counts(conn) == (0, 0)
+
+        with corpus_transaction(conn) as corpus:
+            # Inside the block the full pipeline runs and rows are present.
+            assert corpus.doc_count == 4
+            precompute_communities(conn)
+            result = query_corpus(conn, "Summarize budget and security.")
+            assert result["communities"] == corpus.community_ids
+            assert _corpus_row_counts(conn) == (4, 2)
+
+        # On clean exit the guard has removed every artifact.
+        assert _corpus_row_counts(conn) == (0, 0)
+    finally:
+        conn.close()
+
+
+def test_corpus_transaction_rolls_back_on_failure():
+    """A failure mid-pipeline rolls back and purges — no stale corpus survives.
+
+    Simulates a subprocess (compute/query) blowing up *after* the corpus was
+    seeded and summaries were written. The guard must surface the real error and
+    leave the database exactly as it found it.
+    """
+    conn = get_connection()
+    try:
+        _ensure_schema(conn)
+        purge_corpus(conn)  # baseline
+        assert _corpus_row_counts(conn) == (0, 0)
+
+        boom = RuntimeError("graphrag subprocess failed")
+        with pytest.raises(RuntimeError) as excinfo:
+            with corpus_transaction(conn):
+                precompute_communities(conn)        # work that committed rows
+                assert _corpus_row_counts(conn) == (4, 2)
+                raise boom                          # a downstream step fails
+
+        # The original error propagated, not a teardown error.
+        assert excinfo.value is boom
+        # Despite the failure, the guard removed every seeded artifact.
+        assert _corpus_row_counts(conn) == (0, 0)
     finally:
         conn.close()
