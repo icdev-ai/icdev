@@ -224,3 +224,51 @@ def test_api_run_503_when_engine_absent(client, monkeypatch):
     monkeypatch.setattr(builtins, "__import__", blocking_import)
     resp = client.post("/api/foundry/run", json={})
     assert resp.status_code == 503
+
+
+# --------------------------------------------------------------------------- #
+# JSON API — IQE natural-language query (acf-dash-04)
+# --------------------------------------------------------------------------- #
+def test_api_iqe_query_returns_real_rows(client, monkeypatch):
+    """POST /foundry/api/iqe-query translates NL → IQE → REAL foundry_concepts rows.
+
+    The NL→IQE translation is stubbed (offline-safe, no LLM) to a deterministic
+    IQE string; the adapter then executes it against the fixture's seeded temp DB
+    via the repointed get_connection, so the approved concept must come back."""
+    nl_mod = importlib.import_module("tools.iqe.nl_to_iqe")
+    monkeypatch.setattr(
+        nl_mod,
+        "nl_to_iqe",
+        lambda question, collections: {
+            "iqe": 'foreach c in foundry.concepts where c.status == "approved" '
+            "select c.id, c.name, c.slug, c.composite_score",
+            "explanation": "approved concepts",
+        },
+    )
+
+    resp = client.post(
+        "/foundry/api/iqe-query", json={"question": "approved concepts"}
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["canvas"] == "foundry"
+    slugs = {r["slug"] for r in data["rows"]}
+    assert slugs == {"alpha"}  # only the approved concept, not the rejected beta
+
+
+def test_api_iqe_query_error_is_structured(client, monkeypatch):
+    """A translation/parse failure degrades to a 500 with a structured JSON body
+    (canvas + error), never an unhandled stack trace."""
+    nl_mod = importlib.import_module("tools.iqe.nl_to_iqe")
+    monkeypatch.setattr(
+        nl_mod,
+        "nl_to_iqe",
+        lambda question, collections: {"iqe": "this is not valid iqe ((("},
+    )
+
+    resp = client.post("/foundry/api/iqe-query", json={"question": "boom"})
+    assert resp.status_code == 500
+    data = resp.get_json()
+    assert data["canvas"] == "foundry"
+    assert "error" in data

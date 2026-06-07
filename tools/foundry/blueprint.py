@@ -461,7 +461,7 @@ def create_foundry_blueprint() -> Optional[Blueprint]:
             translated = nl_to_iqe(question, collections)
             iqe_str = translated.get("iqe", "")
             ast = iqe_parse(iqe_str)
-            rows = execute_query(ast)
+            rows = execute_query(ast, conn=None)
             return jsonify({"ok": True, "canvas": "foundry", "iqe": iqe_str, "rows": rows})
         except Exception as exc:  # noqa: BLE001
             logger.warning("foundry iqe-query error: %s", exc)
