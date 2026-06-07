@@ -18,7 +18,7 @@ DB_PATH = _ICDEV_ROOT / "data" / "ohc_canvas.db"
 
 _OHC_BACKEND = os.environ.get(
     "OHC_STORAGE_BACKEND",
-    os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite"),
+    os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql")),
 ).lower()
 
 

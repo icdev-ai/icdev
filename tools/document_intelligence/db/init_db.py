@@ -260,7 +260,7 @@ def init_db() -> None:
         from tools.db.storage import get_connection
 
         conn = get_connection()
-        is_pg = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower() in (
+        is_pg = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower() in (
             "postgresql", "postgres", "pg"
         )
         schema = _SCHEMA_PG if is_pg else _SCHEMA_SQLITE

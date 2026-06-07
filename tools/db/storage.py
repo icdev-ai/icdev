@@ -20,7 +20,7 @@ PostgreSQL SQL so existing code works without changes:
     - last_insert_rowid() → lastval()
 
 Configuration:
-    ICDEV_STORAGE_BACKEND=postgresql|sqlite  (default: sqlite)
+    ICDEV_STORAGE_BACKEND=postgresql|sqlite  (default: postgresql)
     ICDEV_PG_HOST=localhost
     ICDEV_PG_PORT=5432
     ICDEV_PG_USER=icdev
@@ -103,8 +103,9 @@ def _default_db_path() -> str:
 
 DB_PATH = os.environ.get("ICDEV_DB_PATH", _default_db_path())
 
-# Backend detection
-_BACKEND = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+# Backend detection — PostgreSQL is the primary backend (PG-primary policy).
+# SQLite is an init-only fallback used when PG is unreachable or explicitly pinned.
+_BACKEND = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
 
 # ---------------------------------------------------------------------------
 # Audit logging flags — disabled by default (overhead on every query).
@@ -1294,14 +1295,18 @@ def get_connection(db_path: str = None) -> StorageConnection:
     Flask request context the connection is automatically scoped to the
     authenticated user's tenant and classification via set_security_context.
     """
-    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
 
-    # When a specific db_path is given for a canvas/auxiliary DB, use SQLite
-    # directly regardless of the main backend setting.  Do NOT force SQLite for
-    # the primary icdev.db when PostgreSQL is configured.
+    # A db_path ending in '.db' selects a dedicated SQLite file ONLY when the
+    # process backend is pinned to sqlite.  On a PostgreSQL-primary stack the
+    # '.db' path is ignored and the connection goes to the shared icdev database
+    # (canvas tables are namespaced by table-name prefix to avoid collisions).
+    # This removes the old ambiguity where any '.db' path silently forced SQLite
+    # even on PG, while a non-'.db' name fell through to shared PG.
     _main_db = os.environ.get("ICDEV_DB_PATH", str(Path.cwd() / "data" / "icdev.db"))
     if (
-        db_path
+        backend == "sqlite"
+        and db_path
         and str(db_path).endswith(".db")
         and Path(db_path).resolve() != Path(_main_db).resolve()
     ):
@@ -1342,30 +1347,68 @@ def get_connection(db_path: str = None) -> StorageConnection:
         return conn
 
 
+def resolve_canvas_backend(canvas_backend_env_var: str = None) -> str:
+    """Resolve the storage backend a canvas should use — PG-primary, no sqlite default.
+
+    Canvases inherit the platform backend rather than hard-coding SQLite.  The
+    resolution order is:
+
+        1. The canvas-specific override (e.g. ``NC_STORAGE_BACKEND``), if given
+           and set.
+        2. ``ICDEV_CANVAS_STORAGE_BACKEND`` — platform-wide canvas override.
+        3. ``ICDEV_STORAGE_BACKEND`` — the platform backend.
+        4. ``"postgresql"`` — PG is primary; SQLite is an init-only fallback.
+
+    There is intentionally NO hard ``"sqlite"`` default at any step: with every
+    backend env var unset this returns ``"postgresql"``.
+    """
+    candidates = []
+    if canvas_backend_env_var:
+        candidates.append(canvas_backend_env_var)
+    candidates += ["ICDEV_CANVAS_STORAGE_BACKEND", "ICDEV_STORAGE_BACKEND"]
+    for var in candidates:
+        val = os.environ.get(var)
+        if val:
+            return val.lower()
+    return "postgresql"
+
+
 def get_canvas_connection(canvas_env_var: str = None) -> "StorageConnection":
-    """Return a StorageConnection for a canvas-specific database, RLS disabled.
+    """Return a StorageConnection for canvas tables, RLS disabled.
 
     Canvas tables (aac_*, dsoc_*, ccc_*, etc.) do not have classification/tenant_id
     columns, so the global RLS predicate injected by _attach_flask_security_context
     would raise UndefinedColumn on every query.  Call this instead of get_connection()
-    in any canvas db/init_db.py that connects to a dedicated canvas schema.
+    in any canvas db/init_db.py that connects to canvas-specific tables.
+
+    Policy (PG-primary): on PostgreSQL the canvas tables live in the SHARED icdev
+    database, namespaced by table-name prefix — there is no separate per-canvas PG
+    database.  The dedicated ``.db`` SQLite file is used ONLY when the resolved
+    backend is sqlite.
 
     Args:
-        canvas_env_var: Optional env-var name for a custom PG database name
-                        (e.g. ``"AAC_PG_DATABASE"``).  Falls through to the
-                        main backend if not set.
+        canvas_env_var: Optional env-var name carrying a SQLite ``.db`` path used
+                        only in sqlite-pinned mode (e.g. ``"AAC_DB_PATH"``).  On
+                        PostgreSQL it is ignored.
 
     Returns:
         A StorageConnection with security_context=None (no RLS filtering).
     """
-    conn = get_connection(db_path=canvas_env_var and os.environ.get(canvas_env_var))
+    backend = resolve_canvas_backend()
+    if backend == "sqlite":
+        # SQLite-pinned: use the dedicated canvas .db file if one is configured.
+        db_path = canvas_env_var and os.environ.get(canvas_env_var)
+        conn = get_connection(db_path=db_path)
+    else:
+        # PG-primary: shared icdev database (canvas tables namespaced by prefix).
+        conn = get_connection()
     conn.set_security_context(None)
     return conn
 
 
 def get_backend() -> str:
-    """Return the current storage backend name."""
-    return os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+    """Return the current storage backend name (PG-primary default)."""
+    return os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
 
 
 def is_pg(conn=None) -> bool:

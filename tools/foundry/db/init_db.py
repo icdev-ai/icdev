@@ -165,7 +165,7 @@ _SCHEMA_PG = _to_pg(_SCHEMA_SQLITE)
 
 
 def _is_pg() -> bool:
-    return os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower() in (
+    return os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower() in (
         "postgresql",
         "postgres",
         "pg",
