@@ -136,6 +136,13 @@ QUARANTINE_REVIVE_COOLDOWN_MIN = _int_env("KANBAN_REVIVE_COOLDOWN_MIN", 30)
 MAX_EXECUTION_SECONDS = _int_env("KANBAN_MAX_EXECUTION_SECONDS", 900)
 MAX_EXECUTION_SECONDS_SCAN = _int_env("KANBAN_MAX_EXECUTION_SECONDS_SCAN", 1200)
 MAX_EXECUTION_SECONDS_PYTEST = _int_env("KANBAN_MAX_EXECUTION_SECONDS_PYTEST", 2400)
+# Playwright/browser E2E tasks get a BOUNDED budget (fail-fast) — NOT the
+# 40-min pytest budget. A hung browser session (the #1 cause of E2E timeouts)
+# must be reaped quickly so it can't burn the full pytest window every retry.
+# A healthy native spec run (npx playwright test) finishes in <90s; 15 min is a
+# generous ceiling that still kills a wedged MCP browser session ~2.5x faster.
+# Override via KANBAN_MAX_EXECUTION_SECONDS_PLAYWRIGHT env var.
+MAX_EXECUTION_SECONDS_PLAYWRIGHT = _int_env("KANBAN_MAX_EXECUTION_SECONDS_PLAYWRIGHT", 900)
 # Minimum remaining budget required to start post-process operations (guard-budget).
 # Override via KANBAN_VERIFICATION_MIN_BUDGET_SECONDS / _REMEDIATION / _SELF_DEBUG env vars.
 VERIFICATION_MIN_BUDGET_SECONDS = _int_env("KANBAN_VERIFICATION_MIN_BUDGET_SECONDS", 30)
@@ -367,6 +374,27 @@ def _nlp_extract_gap_subject(title: str, description: str, gap_type: str) -> Opt
     return None
 
 
+def _is_playwright_e2e(desc: str, task_type: str) -> bool:
+    """True when a task is a Playwright / browser-driven E2E verification.
+
+    Used to (a) apply the bounded fail-fast timeout instead of the 40-min pytest
+    budget and (b) inject the Playwright E2E playbook preamble. Kept deliberately
+    broad on intent ("playwright", or a browser_* MCP call, or an e2e task that
+    asks for screenshots) but anchored to test/verification work so a passing
+    mention in an unrelated chore doesn't trip it.
+
+    ``desc`` and ``task_type`` should already be lower-cased by the caller.
+    """
+    d = desc or ""
+    if "playwright" in d or "browser_navigate" in d or "browser_click" in d:
+        return True
+    # An E2E test task that drives the UI for screenshots is browser-driven even
+    # if the word "playwright" never appears.
+    if (task_type or "") == "test" and "e2e" in d and "screenshot" in d:
+        return True
+    return False
+
+
 def _get_task_timeout(task_id: str) -> int:
     """Return per-task timeout budget in seconds.
 
@@ -408,6 +436,13 @@ def _get_task_timeout(task_id: str) -> int:
         nlp_secs = _nlp_extract_timeout_hint(desc)
         if nlp_secs is not None:
             return nlp_secs
+        # PLAYWRIGHT/BROWSER E2E: bounded fail-fast budget, checked FIRST so a
+        # "Playwright E2E" task can't fall into the pytest branch and inherit the
+        # 40-min ceiling (which let hung browser sessions burn the full window on
+        # every retry — the acf-vv-04 churn). No adaptive inflation here: the cap
+        # is deliberately tight so wedged sessions die quickly.
+        if _is_playwright_e2e(desc, task_type):
+            return MAX_EXECUTION_SECONDS_PLAYWRIGHT
         # PYTEST-level: try adaptive ceiling first, then fall back to static
         _pytest_kw = ("pytest", "regression", "full test", "test suite",
                       "e2e suite", "e2e test", "test_orchestrator")
@@ -415,7 +450,7 @@ def _get_task_timeout(task_id: str) -> int:
             anomalies = _detect_execution_anomalies(task_type="test", window=100)
             adaptive = anomalies.get("recommended_max_execution_seconds")
             return adaptive if adaptive and adaptive > MAX_EXECUTION_SECONDS_PYTEST else MAX_EXECUTION_SECONDS_PYTEST
-        if task_type == "test" and any(kw in desc for kw in ("e2e", "playwright", "selenium")):
+        if task_type == "test" and any(kw in desc for kw in ("e2e", "selenium")):
             anomalies = _detect_execution_anomalies(task_type="test", window=100)
             adaptive = anomalies.get("recommended_max_execution_seconds")
             return adaptive if adaptive and adaptive > MAX_EXECUTION_SECONDS_PYTEST else MAX_EXECUTION_SECONDS_PYTEST
@@ -3109,15 +3144,70 @@ def _get_retry_coaching(task_id: str) -> str:
     return preamble
 
 
+_PLAYWRIGHT_E2E_PLAYBOOK = """\
+==================== PLAYWRIGHT E2E PLAYBOOK (READ FIRST) ====================
+This is a Playwright/browser E2E verification task. A wedged browser session is
+the #1 cause of timeouts here. Follow this playbook EXACTLY and FAIL FAST — a
+clean partial report ALWAYS beats a hang that burns the whole wall-clock budget.
+
+1. PREFER THE DETERMINISTIC NATIVE SPEC over ad-hoc MCP browser_* driving.
+   - If a native spec exists for this surface, run it and trust its result:
+       npx playwright test tests/e2e/<slug>.spec.ts --reporter line
+     or, mode-agnostic:
+       python tools/testing/e2e_runner.py --mode native --json
+     The shared playwright.config.ts already enforces per-action (10s) and
+     navigation (30s) timeouts and reuses the running :5050 server, so a healthy
+     run finishes in well under 90s and CANNOT hang indefinitely.
+   - If NO spec exists for this surface, CREATE one under tests/e2e/<slug>.spec.ts
+     FIRST (model it on an existing spec such as tests/e2e/genesis.spec.ts), then
+     run it. The committed spec is part of the deliverable — it makes every future
+     run deterministic. Do NOT make interactive browser_* calls your primary
+     verification path.
+
+2. PREFLIGHT before any browser work (5s budget — never wait on a dead server):
+       curl -s -m 5 -o NUL -w "%{http_code}" http://localhost:5050/<route>
+   If the result is not 200, report the failure and STOP. Do not poll.
+
+3. PREFER API assertions over flaky UI waits. Drive state through the JSON API
+   (e.g. POST /api/.../run) and assert on the response; take ONE screenshot per
+   UI state purely as evidence. Faster, and it cannot deadlock on a missing
+   selector.
+
+4. IF you must use Playwright MCP browser_* tools directly:
+   - Put an explicit short timeout on EVERY browser_wait_for / locator.
+   - Retry any single selector AT MOST twice, then capture a screenshot +
+     console output and report what was missing — do NOT loop on it.
+   - ALWAYS call browser_close at the end. A leaked browser session keeps the
+     task alive until the hard wall-clock kill.
+
+5. Save screenshots to playwright/screenshots/<name>.png — NEVER anywhere else.
+
+6. You are on a HARD, bounded wall-clock budget (shorter than a pytest task). If
+   you are not converging, write what passed/failed so far, save the partial
+   screenshots, move the task forward, and STOP.
+=============================================================================
+
+"""
+
+
 def _build_instruction(task_id: str, title: str, prompt_text: str, prompt_path: str) -> str:
     """Compose the full instruction text used by both executors.
 
     Injects retry coaching if the task has prior failures (guard-22), so the
-    agent knows what went wrong last time and how to avoid repeating it.
+    agent knows what went wrong last time and how to avoid repeating it. For
+    Playwright/browser E2E tasks, also prepends the fail-fast E2E playbook so the
+    agent steers toward the deterministic native spec instead of hang-prone
+    ad-hoc browser driving.
     """
     coaching = _get_retry_coaching(task_id)
+    detect_blob = f"{title}\n{prompt_text}".lower()
+    playbook = (
+        _PLAYWRIGHT_E2E_PLAYBOOK
+        if _is_playwright_e2e(detect_blob, "test")
+        else ""
+    )
     return (
-        f"{coaching}{prompt_text}\n\n"
+        f"{playbook}{coaching}{prompt_text}\n\n"
         f"When complete:\n"
         f"1. Move to done: POST http://localhost:5050/api/kanban/"
         f'tasks/{task_id}/move with {{"status": "done"}}\n'
