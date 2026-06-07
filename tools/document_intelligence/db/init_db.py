@@ -113,6 +113,20 @@ CREATE TABLE IF NOT EXISTS dic_handoff_items (
     classification  TEXT        DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_dic_handoff_items_session ON dic_handoff_items(session_id);
+
+CREATE TABLE IF NOT EXISTS dic_community_summaries (
+    summary_id      TEXT        PRIMARY KEY,
+    community_id    TEXT        NOT NULL,
+    summary_text    TEXT        NOT NULL,
+    citations_list  TEXT        DEFAULT '[]',
+    model_version   TEXT        DEFAULT '',
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW(),
+    tenant_id       TEXT        DEFAULT 'default',
+    classification  TEXT        DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_community_summaries_community ON dic_community_summaries(community_id);
+CREATE INDEX IF NOT EXISTS idx_dic_community_summaries_tenant ON dic_community_summaries(tenant_id);
 """
 
 _SCHEMA_SQLITE = """
@@ -218,6 +232,20 @@ CREATE TABLE IF NOT EXISTS dic_handoff_items (
     classification  TEXT    DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_dic_handoff_items_session ON dic_handoff_items(session_id);
+
+CREATE TABLE IF NOT EXISTS dic_community_summaries (
+    summary_id      TEXT    PRIMARY KEY,
+    community_id    TEXT    NOT NULL,
+    summary_text    TEXT    NOT NULL,
+    citations_list  TEXT    DEFAULT '[]',
+    model_version   TEXT    DEFAULT '',
+    created_at      TEXT    DEFAULT (datetime('now')),
+    updated_at      TEXT    DEFAULT (datetime('now')),
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_community_summaries_community ON dic_community_summaries(community_id);
+CREATE INDEX IF NOT EXISTS idx_dic_community_summaries_tenant ON dic_community_summaries(tenant_id);
 """
 
 _INIT_DONE = False
