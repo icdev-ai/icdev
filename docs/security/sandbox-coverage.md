@@ -401,3 +401,33 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   the staged target (e.g. dynamic-analysis sandboxing) → re-decide as **sandboxed**
   (route through `tools/security/sandbox_executor.py`); or if a non-`https`/non-
   allowlisted transport is added to the fetch path.
+
+### Gap 17 — ACF Foundry Harvester (`tools/foundry/harvester.py`)
+- **File:** `tools/foundry/harvester.py`
+- **Risk:** Reads raw signal rows from EXISTING first-party engine stores (no web
+  re-scan, no network egress) across 5 sources — innovation
+  (`innovation_signals`/`innovation_trends`), creative
+  (`creative_pain_points`/`creative_feature_gaps`), research
+  (`research_challenges`/`research_dossiers`), genesis (`oracle_predictions`),
+  and read-only telemetry (`introspective_analyzer` analyses) — then normalizes
+  each row into the `foundry_signals` shape and appends it under a `run_id`.
+- **Decision:** **bypass-documented**
+- **Rationale:** The harvester is a **data-only** ingress: every source is a
+  first-party ICDEV DB table populated by ICDEV's own engines, read through the
+  RLS-aware `get_connection()`. It performs no `exec`/`eval`/`compile`/
+  `__import__`/`subprocess`/`os.system`, opens no files, and makes no network
+  call — it only `SELECT`s rows and writes normalized `INSERT`s. Signal text is
+  stored verbatim as data and never interpreted as code or a path. There is no
+  attacker-controlled execution surface to isolate.
+- **Guardrails:**
+  - Read path is `SELECT`-only over first-party tables via `get_connection()`;
+    tenant_id/classification are stamped on every `foundry_signals` row (RLS).
+  - Per-source enable / `max_signals` caps from `args/foundry_config.yaml` bound
+    ingestion volume; cross-source SHA-256 dedup collapses duplicates.
+  - Best-effort isolation: an empty / disabled / unmigrated source yields 0
+    signals and never raises — a malformed upstream store cannot crash the cycle.
+  - Downstream concepts are novelty-gated and the ACF-generated **code** (not the
+    signals) is self-vetted by SIPA + the security/coherence gate before merge.
+- **Revisit if:** the harvester ever adds a non-first-party source (web fetch,
+  user upload, external API) or begins executing / importing harvested content →
+  re-decide as **sandboxed** (route through `tools/security/sandbox_executor.py`).
