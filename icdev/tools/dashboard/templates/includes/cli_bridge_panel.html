@@ -1,0 +1,182 @@
+<!-- CUI // SP-CTI — Interactive CLI-bridge prompt panel (slide-out, ucb-widget-02).
+   Cloned from includes/iqe_query_widget.html (collapsible header, textarea, Run
+   button, status line, results area). Fixed bottom-left slide-out so it never
+   collides with the bottom-right Codebase Assistant FAB or the navbar CLI pill.
+
+   On Run, icdevCliRun() POSTs {prompt, function, force_bridge} to
+   /api/cli-bridge/prompt and renders data.content plus a footer
+   'served by {provider}/{model} in {duration_ms}ms'.
+
+   - function   — derived from the current path via window.ROUTE_MODULE_MAP
+                  (falls back to "codebase_query"; unknown fns route to default).
+   - force_bridge — the per-page toggle state read from the icdev_cli_bridge
+                  cookie set by the CLI-bridge indicator (ucb-widget-01):
+                  on→true, off→false, absent→null (no override).
+   Degrades gracefully: when the CLI is absent the router falls through to
+   cloud/local providers, and a hard failure shows the server error message. -->
+{% set _cwid = "clibp" %}
+<div class="clib-panel" id="{{ _cwid }}">
+  <div class="clib-panel__header" onclick="icdevCliToggle('{{ _cwid }}')"
+       role="button" tabindex="0" aria-expanded="false"
+       onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();icdevCliToggle('{{ _cwid }}');}">
+    <span class="clib-panel__icon">&#x2328;</span>
+    <span class="clib-panel__title">CLI Prompt</span>
+    <span class="clib-badge">BRIDGE</span>
+    <span class="clib-panel__toggle" id="{{ _cwid }}_tog">&#x25B2;</span>
+  </div>
+  <div class="clib-panel__body" id="{{ _cwid }}_body" style="display:none;">
+    <div class="clib-input-row">
+      <textarea id="{{ _cwid }}_ta" class="clib-ta" rows="3"
+                placeholder="Ask the local CLI bridge anything, e.g. &quot;summarize what this page does&quot;…"
+                onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();icdevCliRun('{{ _cwid }}');}"></textarea>
+    </div>
+    <div class="clib-actions">
+      <span class="clib-hint" id="{{ _cwid }}_fn"></span>
+      <button class="clib-run-btn" id="{{ _cwid }}_btn" onclick="icdevCliRun('{{ _cwid }}')">&#x25B6; Run</button>
+    </div>
+    <div id="{{ _cwid }}_status" class="clib-status" style="display:none;"></div>
+    <div id="{{ _cwid }}_results" class="clib-results" style="display:none;"></div>
+    <div id="{{ _cwid }}_footer" class="clib-footer" style="display:none;"></div>
+  </div>
+</div>
+
+<script>
+if (!window.icdevCliRun) {
+  (function () {
+    function $(id) { return document.getElementById(id); }
+
+    window.icdevCliToggle = function (id) {
+      var body = $(id + '_body');
+      var tog = $(id + '_tog');
+      var hdr = body ? body.previousElementSibling : null;
+      if (!body) return;
+      var open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : '';
+      if (tog) tog.innerHTML = open ? '&#x25B2;' : '&#x25BC;';
+      if (hdr) hdr.setAttribute('aria-expanded', open ? 'false' : 'true');
+      if (!open) { var ta = $(id + '_ta'); if (ta) { ta.focus(); icdevCliShowFn(id); } }
+    };
+
+    // Read the per-page CLI toggle cookie (icdev_cli_bridge) set by the
+    // CLI-bridge indicator. Returns true/false/null (tri-state, no override).
+    function readToggle() {
+      var m = document.cookie.match(/(?:^|; )icdev_cli_bridge=([^;]*)/);
+      if (!m) return null;
+      var v = decodeURIComponent(m[1]).trim().toLowerCase();
+      if (['on', 'true', '1', 'yes'].indexOf(v) >= 0) return true;
+      if (['off', 'false', '0', 'no'].indexOf(v) >= 0) return false;
+      return null;
+    }
+
+    // Derive a routing-function hint from the current path via ROUTE_MODULE_MAP.
+    // Picks the longest matching route prefix; unknown fns route to default
+    // server-side, so any leaf name is safe. Falls back to "codebase_query".
+    function deriveFunction() {
+      var map = window.ROUTE_MODULE_MAP || {};
+      var path = window.location.pathname || '/';
+      var bestRoute = '', bestMod = '';
+      for (var route in map) {
+        if (!Object.prototype.hasOwnProperty.call(map, route)) continue;
+        if ((path === route || path.indexOf(route) === 0) && route.length > bestRoute.length) {
+          bestRoute = route;
+          bestMod = map[route];
+        }
+      }
+      if (bestMod) {
+        var leaf = String(bestMod).replace(/\/+$/, '').split('/').pop();
+        if (leaf) return leaf;
+      }
+      return 'codebase_query';
+    }
+
+    function icdevCliShowFn(id) {
+      var fnEl = $(id + '_fn');
+      if (fnEl) fnEl.textContent = 'fn: ' + deriveFunction();
+    }
+    window.icdevCliShowFn = icdevCliShowFn;
+
+    function esc(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    window.icdevCliRun = async function (id) {
+      var ta = $(id + '_ta');
+      var statusEl = $(id + '_status');
+      var resultsEl = $(id + '_results');
+      var footerEl = $(id + '_footer');
+      var btn = $(id + '_btn');
+      if (!ta) return;
+      var prompt = ta.value.trim();
+      if (!prompt) { ta.focus(); return; }
+
+      var fn = deriveFunction();
+      var force = readToggle();
+
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+      if (statusEl) { statusEl.style.display = ''; statusEl.className = 'clib-status'; statusEl.textContent = 'Running prompt through the LLM router…'; }
+      if (resultsEl) { resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; }
+      if (footerEl) { footerEl.style.display = 'none'; footerEl.textContent = ''; }
+
+      try {
+        var resp = await fetch('/api/cli-bridge/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: prompt, function: fn, force_bridge: force })
+        });
+        var data = await resp.json();
+        if (data.error) {
+          if (statusEl) { statusEl.textContent = '⚠ ' + data.error; statusEl.className = 'clib-status clib-error'; }
+        } else {
+          if (statusEl) { statusEl.style.display = 'none'; }
+          if (resultsEl) {
+            resultsEl.innerHTML = '<div class="clib-answer">' + esc(data.content || '(empty response)') + '</div>';
+            resultsEl.style.display = '';
+          }
+          if (footerEl) {
+            var who = (data.provider || 'unknown') + (data.model ? '/' + data.model : '');
+            footerEl.textContent = 'served by ' + who + ' in ' + (data.duration_ms || 0) + 'ms';
+            footerEl.style.display = '';
+          }
+        }
+      } catch (e) {
+        if (statusEl) { statusEl.textContent = '⚠ Network error: ' + e.message; statusEl.className = 'clib-status clib-error'; }
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '&#x25B6; Run'; }
+      }
+    };
+  })();
+}
+</script>
+
+<style>
+.clib-panel{position:fixed;left:24px;bottom:24px;z-index:8900;width:340px;max-width:calc(100vw - 48px);
+  background:#0b1726;border:1px solid #1a3560;border-radius:8px;overflow:hidden;
+  font-family:inherit;box-shadow:0 6px 22px rgba(0,0,0,0.32);}
+.clib-panel__header{display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;
+  user-select:none;background:#08112a;transition:background .15s;}
+.clib-panel__header:hover{background:#0f1e3d;}
+.clib-panel__icon{font-size:14px;color:#7fb0e8;}
+.clib-panel__title{flex:1;font-size:13px;font-weight:600;color:#9bb8d8;}
+.clib-badge{font-size:9px;font-weight:700;background:#0f3460;color:#5a9fd4;border:1px solid #1a5080;
+  border-radius:3px;padding:1px 5px;letter-spacing:.06em;}
+.clib-panel__toggle{font-size:10px;color:#3a6090;}
+.clib-panel__body{padding:12px 14px;}
+.clib-input-row{display:flex;}
+.clib-ta{flex:1;background:#050d1f;border:1px solid #1a3560;border-radius:5px;color:#b8d0e8;
+  font-size:12px;padding:7px 10px;resize:vertical;min-height:54px;font-family:inherit;}
+.clib-ta:focus{outline:none;border-color:#2a6aad;}
+.clib-actions{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.clib-hint{flex:1;font-size:10px;color:#3a6080;font-family:monospace;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.clib-run-btn{padding:8px 14px;background:#133a6a;color:#80c0f0;border:1px solid #1a5090;
+  border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap;transition:background .15s;}
+.clib-run-btn:hover{background:#1a4e8a;}
+.clib-run-btn:disabled{opacity:.45;cursor:not-allowed;}
+.clib-status{margin-top:8px;font-size:11px;color:#6a9aba;padding:4px 8px;background:#060f22;border-radius:4px;}
+.clib-error{color:#e05050;background:#1a0808;}
+.clib-results{margin-top:10px;max-height:300px;overflow-y:auto;}
+.clib-answer{background:#050d1f;border:1px solid #1a3560;border-radius:5px;padding:8px 11px;
+  font-size:12px;color:#b8d0e8;white-space:pre-wrap;word-break:break-word;line-height:1.5;}
+.clib-footer{margin-top:8px;font-size:10px;color:#3a6080;font-style:italic;text-align:right;}
+</style>
