@@ -22,6 +22,8 @@ existing cloud/local models — they remain as fallbacks).
 
 import copy
 import os
+from contextvars import ContextVar
+from typing import Optional
 
 from tools.logging.icdev_logger import get_logger
 
@@ -29,6 +31,73 @@ logger = get_logger("icdev.llm.cli_bridge.activate")
 
 # Model name registered for the CLI provider in args/llm_config.yaml.
 CLI_MODEL_NAME = "claude-cli"
+
+# Request-/context-scoped override of the CLI bridge enable state.
+#
+# ``None``  → no override; fall back to the env var + ``should_enable()`` logic.
+# ``True``  → force-enable the bridge for this context only.
+# ``False`` → force-disable (bypass) the bridge for this context only.
+#
+# A ContextVar (not thread-local) so the override is isolated per asyncio task
+# AND per thread, and so that resetting via the returned token restores the
+# exact previous value even under nesting. The dashboard seeds this in a Flask
+# ``before_request`` hook so every ``LLMRouter.invoke()`` during a single page
+# request honors a per-page toggle, then resets it in ``teardown_request`` so
+# the state never leaks into the next request served by the same worker thread.
+_cli_bridge_override: ContextVar[Optional[bool]] = ContextVar(
+    "icdev_cli_bridge_override", default=None
+)
+
+
+def cli_bridge_override(value: Optional[bool]):
+    """Set the context-scoped CLI bridge override and return a reset token.
+
+    Args:
+        value: ``True`` force-enable, ``False`` force-disable (bypass),
+            ``None`` clear the override (defer to env + auto-detect).
+
+    Returns:
+        A ``contextvars.Token`` to pass to :func:`reset_cli_bridge_override`.
+    """
+    return _cli_bridge_override.set(value)
+
+
+def reset_cli_bridge_override(token) -> None:
+    """Restore the override to its prior value using a token from :func:`cli_bridge_override`."""
+    try:
+        _cli_bridge_override.reset(token)
+    except (ValueError, LookupError) as exc:  # pragma: no cover - defensive
+        # Token created in a different context (e.g. crossed a thread boundary).
+        # Fall back to clearing so we never leave a stale override behind.
+        logger.debug("override token reset failed, clearing instead: %s", exc)
+        _cli_bridge_override.set(None)
+
+
+def get_cli_bridge_override() -> Optional[bool]:
+    """Return the current context-scoped override (``None`` if unset)."""
+    return _cli_bridge_override.get()
+
+
+def apply_cli_bridge_override(chain, model_name: str = CLI_MODEL_NAME):
+    """Apply the context-scoped override to a single routing chain.
+
+    Called at invoke time (per request) so a per-page toggle takes effect even
+    though the base routing config was rewritten once at router construction.
+
+    - override ``None``  → chain returned unchanged.
+    - override ``True``  → ensure ``model_name`` is first (force-enable).
+    - override ``False`` → strip ``model_name`` from the chain (force-disable).
+
+    Returns a new list; the input ``chain`` is never mutated.
+    """
+    override = _cli_bridge_override.get()
+    if override is None:
+        return list(chain)
+    if override:
+        if chain and chain[0] == model_name:
+            return list(chain)
+        return [model_name] + [m for m in chain if m != model_name]
+    return [m for m in chain if m != model_name]
 
 # Cloud LLM credentials checked in the environment.
 CLOUD_KEY_ENV_VARS = (
@@ -90,7 +159,15 @@ def should_enable() -> bool:
 
 
 def cli_bridge_enabled() -> bool:
-    """Resolve the effective enable state, honoring ``ICDEV_CLI_BRIDGE``."""
+    """Resolve the effective enable state.
+
+    Precedence: context override (set via :func:`cli_bridge_override`) >
+    ``ICDEV_CLI_BRIDGE`` env var > ``should_enable()`` auto-detection.
+    """
+    override = _cli_bridge_override.get()
+    if override is not None:
+        return override
+
     flag = os.environ.get("ICDEV_CLI_BRIDGE", "").strip().lower()
     if flag in _FALSEY:
         return False

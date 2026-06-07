@@ -1670,6 +1670,16 @@ def create_app() -> Flask:
     except ImportError:
         pass
 
+    # Whole-page CLI bridge toggle — seed the router override from the
+    # icdev_cli_bridge cookie / X-ICDEV-CLI-Bridge header for each request
+    # (ucb-be-04). Reset in teardown so state never leaks across requests.
+    try:
+        from tools.dashboard.api.cli_bridge_api import register_cli_bridge
+
+        register_cli_bridge(app)
+    except ImportError:
+        pass
+
     # Budget monitor + throttling controller — background daemon wired into the
     # generative intelligence and predictive analysis pipeline (services package).
     try:
