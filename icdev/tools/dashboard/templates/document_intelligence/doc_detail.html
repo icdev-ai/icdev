@@ -57,7 +57,7 @@
     </div>
 
     <!-- Content -->
-    <div style="background:#050d1f;border-left:3px solid #1e3a6e;padding:10px 14px;border-radius:0 4px 4px 0;color:#a8c8e0;font-size:12px;line-height:1.7;margin-bottom:10px;max-height:200px;overflow-y:auto;" id="content-{{ s.section_id }}">
+    <div style="background:#050d1f;border-left:3px solid #1e3a6e;padding:10px 14px;border-radius:0 4px 4px 0;color:#a8c8e0;font-size:12px;line-height:1.7;margin-bottom:10px;max-height:200px;overflow-y:auto;" id="content-{{ s.section_id }}" data-rev="{{ s.rev or 1 }}">
       {% if s.content %}
         {{ s.content[:1000] | replace('\n', '<br>') }}{% if s.content|length > 1000 %}…{% endif %}
       {% else %}
@@ -151,11 +151,25 @@ function editSection(sectionId) {
   saveBtn.textContent = 'Save';
   saveBtn.style = 'margin-top:8px;background:#0f3460;color:#7ab3f0;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;';
   saveBtn.onclick = function() {
+    var baseRev = parseInt(contentDiv.dataset.rev || '1', 10);
     fetch('/document-intelligence/api/sections/' + sectionId + '/content', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({content: textarea.value})
-    }).then(function() { window.location.reload(); });
+      body: JSON.stringify({content: textarea.value, base_rev: baseRev})
+    }).then(function(r) {
+      if (r.status === 409) {
+        return r.json().then(function(d) {
+          alert('⚠ Edit conflict: another team member saved this section first ' +
+                '(it is now revision ' + d.current_rev + '). Your change was NOT saved. ' +
+                'Reloading to show the latest version — please re-apply your edit.');
+          window.location.reload();
+        });
+      }
+      if (!r.ok) {
+        return r.json().then(function(d) { alert('Save failed: ' + (d.error || r.status)); });
+      }
+      window.location.reload();
+    }).catch(function(e) { alert('Save failed: ' + e.message); });
   };
   contentDiv.innerHTML = '';
   contentDiv.appendChild(textarea);

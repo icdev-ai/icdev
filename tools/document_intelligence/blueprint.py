@@ -198,6 +198,66 @@ def _require_role(collection_id: str, min_role: str) -> bool:
     return _ROLE_LEVEL.get(role, 0) >= _ROLE_LEVEL.get(min_role, 99)
 
 
+def _update_section_content(conn, section_id: str, content: str,
+                           base_rev, editor: str) -> dict:
+    """Apply a manual section-content edit with optimistic concurrency control.
+
+    Each ``dic_sections`` row carries an integer ``rev`` that is bumped on every
+    write. When a client supplies the ``base_rev`` it last read, the write is
+    refused (without clobbering) if the stored revision has moved on — i.e. a
+    teammate saved in the meantime. ``base_rev=None`` keeps legacy clients working
+    with an unconditional write (still bumps ``rev``).
+
+    Returns one of:
+      {"ok": True, "rev": int}
+      {"ok": False, "conflict": True, "current_rev": int, "current_content": str, "current_status": str}
+      {"ok": False, "missing": True}
+    """
+    now = _now()
+    if base_rev is not None:
+        row = conn.execute(
+            "SELECT COALESCE(rev,1), content, status FROM dic_sections WHERE section_id=?",
+            (section_id,),
+        ).fetchone()
+        if not row:
+            return {"ok": False, "missing": True}
+        if int(row[0]) != int(base_rev):
+            return {"ok": False, "conflict": True, "current_rev": int(row[0]),
+                    "current_content": row[1] or "", "current_status": row[2] or "draft"}
+        cur = conn.execute(
+            "UPDATE dic_sections SET content=?, status='draft', origin='human_authored', "
+            "created_at=?, created_by=?, rev=COALESCE(rev,1)+1 "
+            "WHERE section_id=? AND COALESCE(rev,1)=?",
+            (content, now, editor, section_id, int(base_rev)),
+        )
+        if getattr(cur, "rowcount", 1) == 0:
+            # Lost a race between the read and the write — report conflict, no clobber.
+            row = conn.execute(
+                "SELECT COALESCE(rev,1), content, status FROM dic_sections WHERE section_id=?",
+                (section_id,),
+            ).fetchone()
+            if not row:
+                conn.commit()
+                return {"ok": False, "missing": True}
+            return {"ok": False, "conflict": True, "current_rev": int(row[0]),
+                    "current_content": row[1] or "", "current_status": row[2] or "draft"}
+    else:
+        if not conn.execute(
+            "SELECT 1 FROM dic_sections WHERE section_id=?", (section_id,)
+        ).fetchone():
+            return {"ok": False, "missing": True}
+        conn.execute(
+            "UPDATE dic_sections SET content=?, status='draft', origin='human_authored', "
+            "created_at=?, created_by=?, rev=COALESCE(rev,1)+1 WHERE section_id=?",
+            (content, now, editor, section_id),
+        )
+    conn.commit()
+    new = conn.execute(
+        "SELECT COALESCE(rev,1) FROM dic_sections WHERE section_id=?", (section_id,)
+    ).fetchone()
+    return {"ok": True, "rev": int(new[0]) if new else None}
+
+
 def _role_badge(role: str) -> str:
     return {
         "viewer": "🔎 Viewer",
@@ -320,7 +380,8 @@ def doc_detail(doc_id: str):
         if active_version_id:
             sections = _safe_rows(
                 conn,
-                "SELECT section_id, heading, content, citations_json, status, origin, assigned_to "
+                "SELECT section_id, heading, content, citations_json, status, origin, assigned_to, "
+                "COALESCE(rev,1) AS rev "
                 "FROM dic_sections WHERE version_id = ? ORDER BY rowid",
                 (active_version_id,),
             )
@@ -1535,17 +1596,26 @@ def api_section_revise(section_id):
 def api_section_update_content(section_id):
     data = request.get_json(silent=True) or {}
     content = data.get("content", "")
+    base_rev = data.get("base_rev")  # optimistic-concurrency token; None = legacy client
     cid = _collection_id_from_section(section_id) or "default"
     if not _require_role(cid, "editor"):
         return _forbid("editor")
     conn = _conn()
     try:
-        conn.execute(
-            "UPDATE dic_sections SET content = ?, status = ?, origin = ?, created_at = ? WHERE section_id = ?",
-            (content, "draft", "human_authored", _now(), section_id),
-        )
-        conn.commit()
-        return jsonify({"status": "updated", "section_id": section_id})
+        result = _update_section_content(conn, section_id, content, base_rev, _current_user())
+        if result.get("ok"):
+            return jsonify({"status": "updated", "section_id": section_id, "rev": result["rev"]})
+        if result.get("missing"):
+            return jsonify({"error": "section not found", "section_id": section_id}), 404
+        # Stale edit — another team member saved first. Refuse without clobbering.
+        return jsonify({
+            "status": "conflict",
+            "error": "This section was changed by someone else since you opened it.",
+            "section_id": section_id,
+            "current_rev": result.get("current_rev"),
+            "current_content": result.get("current_content"),
+            "current_status": result.get("current_status"),
+        }), 409
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:

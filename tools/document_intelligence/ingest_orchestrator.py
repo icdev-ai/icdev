@@ -230,6 +230,10 @@ _SCHEMA = [
         origin          TEXT DEFAULT 'ai_generated',
         created_at      TEXT NOT NULL,
         created_by      TEXT,
+        assigned_to     TEXT,
+        reviewed_by     TEXT,
+        reviewed_at     TEXT,
+        rev             INTEGER DEFAULT 1,
         tenant_id       TEXT,
         classification  TEXT
     )
@@ -244,6 +248,13 @@ _ALTER_MIGRATIONS = [
     ("dic_versions", "assigned_to", "TEXT"),
     ("dic_versions", "review_notes", "TEXT"),
     ("dic_ssp_fragments", "assigned_to", "TEXT"),
+    # Collaboration + optimistic-concurrency columns on dic_sections. These are
+    # referenced by the section assignment / HITL-review / edit endpoints, so they
+    # must exist on tables created before this schema revision.
+    ("dic_sections", "assigned_to", "TEXT"),
+    ("dic_sections", "reviewed_by", "TEXT"),
+    ("dic_sections", "reviewed_at", "TEXT"),
+    ("dic_sections", "rev", "INTEGER DEFAULT 1"),
 ]
 
 
