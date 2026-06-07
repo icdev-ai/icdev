@@ -19,30 +19,35 @@ logger = get_logger(__name__)
 
 # ── Device type classification ─────────────────────────────────────────────────
 
-_ROUTER_TYPES = {"router", "cisco-router", "juniper-router", "arista-router", "core-router", "pe-router", "ce-router"}
+_ROUTER_TYPES = {"router", "cisco-router", "juniper-router", "arista-router", "core-router", "pe-router", "ce-router", "edge-router"}
 _SWITCH_L3_TYPES = {"switch-l3", "cisco-switch-l3", "arista-switch-l3", "distribution-switch", "core-switch"}
-_SWITCH_L2_TYPES = {"switch-l2", "cisco-switch-l2", "access-switch", "aggregation-switch"}
-_FIREWALL_TYPES = {"firewall", "cisco-firewall", "juniper-srx", "palo-alto", "checkpoint", "fortinet", "asa"}
-_LB_TYPES = {"load-balancer", "f5-ltm", "nginx", "haproxy", "citrix-adc"}
-_WAN_TYPES = {"wan-link", "circuit", "mpls", "internet", "vpn", "leased-line", "sd-wan"}
-_CLOUD_TYPES = {"aws-vpc", "aws-tgw", "az-vnet", "gcp-vpc", "cloud-region"}
+_SWITCH_L2_TYPES = {"switch-l2", "cisco-switch-l2", "access-switch", "aggregation-switch", "switch"}
+_FIREWALL_TYPES = {"firewall", "cisco-firewall", "juniper-srx", "palo-alto", "palo", "checkpoint", "fortinet", "asa", "aws-nfw", "aws-gwlb"}
+_LB_TYPES = {"load-balancer", "f5-ltm", "nginx", "haproxy", "citrix-adc", "aws-alb", "aws-nlb"}
+_WAN_TYPES = {"wan-link", "circuit", "mpls", "internet", "vpn", "leased-line", "sd-wan", "aws-dx", "aws-vpn", "aws-dx-gw"}
+# AWS/cloud constructs that should count as "cloud" not "other".
+_CLOUD_TYPES = {
+    "aws-vpc", "aws-tgw", "az-vnet", "gcp-vpc", "cloud-region", "aws-ga",
+    "aws-cloudwan", "aws-gw-ep", "aws-r53", "aws-ad", "aws-kms", "aws-ct",
+    "aws-privatelink", "aws-netmgr", "aws-guardduty", "aws-securityhub", "aws-shield",
+}
 
 
 def _classify(node_type: str) -> str:
     t = (node_type or "").lower()
-    if t in _ROUTER_TYPES:
+    if t in _ROUTER_TYPES or "router" in t:
         return "router"
     if t in _SWITCH_L3_TYPES:
         return "switch-l3"
-    if t in _SWITCH_L2_TYPES:
+    if t in _SWITCH_L2_TYPES or ("switch" in t and "l3" not in t):
         return "switch-l2"
-    if t in _FIREWALL_TYPES:
+    if t in _FIREWALL_TYPES or "firewall" in t or "-nfw" in t or "-gwlb" in t:
         return "firewall"
-    if t in _LB_TYPES:
+    if t in _LB_TYPES or "load-balancer" in t or t.endswith("-alb") or t.endswith("-nlb"):
         return "load-balancer"
     if t in _WAN_TYPES:
         return "wan"
-    if t in _CLOUD_TYPES:
+    if t in _CLOUD_TYPES or t.startswith("aws-") or t.startswith("az-") or t.startswith("gcp-"):
         return "cloud"
     return "other"
 
@@ -157,6 +162,10 @@ def _box_device_inventory(nodes: list[dict]) -> dict:
         {"label": "Firewalls", "value": str(counts.get("firewall", 0)), "status": ""},
         {"label": "Load Balancers", "value": str(counts.get("load-balancer", 0)), "status": ""},
     ]
+    if counts.get("cloud"):
+        rows.append({"label": "Cloud Resources", "value": str(counts.get("cloud", 0)), "status": "info"})
+    if counts.get("wan"):
+        rows.append({"label": "WAN / Transit", "value": str(counts.get("wan", 0)), "status": ""})
     vendor_str = ", ".join(f"{v} ({c})" for v, c in sorted(vendors.items(), key=lambda x: -x[1]) if v != "Unknown")
     rows.append({"label": "Vendors", "value": vendor_str or "—", "status": ""})
     rows.append({

@@ -189,8 +189,7 @@ def create_network_blueprint():
                 _row_to_dict(r)
                 for r in conn.execute(
                     "SELECT t.id, t.name, t.description, t.classification, t.created_at, t.updated_at, "
-                    "json_array_length(json_extract(t.graph_json,'$.nodes')) AS node_count, "
-                    "json_array_length(json_extract(t.graph_json,'$.edges')) AS edge_count "
+                    "t.graph_json "
                     "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
                     "WHERE pt.project_id=? ORDER BY t.updated_at DESC LIMIT 20",
                     (filter_project,),
@@ -201,26 +200,44 @@ def create_network_blueprint():
                 _row_to_dict(r)
                 for r in conn.execute(
                     "SELECT id, name, description, classification, created_at, updated_at, "
-                    "json_array_length(json_extract(graph_json,'$.nodes')) AS node_count, "
-                    "json_array_length(json_extract(graph_json,'$.edges')) AS edge_count "
+                    "graph_json "
                     "FROM topologies ORDER BY updated_at DESC LIMIT 20"
                 ).fetchall()
             ]
+        # Compute node/edge counts in Python — portable across SQLite & PG
+        # (avoids backend-specific JSON SQL functions that mistranslate).
+        for _t in topologies:
+            try:
+                _g = json.loads(_t.get("graph_json") or "{}")
+                _t["node_count"] = len(_g.get("nodes", []))
+                _t["edge_count"] = len(_g.get("edges", []))
+            except Exception:
+                _t["node_count"] = 0
+                _t["edge_count"] = 0
+            _t.pop("graph_json", None)
         templates = [
             _row_to_dict(r)
             for r in conn.execute(
                 "SELECT id, name, category, description, tags FROM nc_templates ORDER BY category, name"
             ).fetchall()
         ]
-        sims = [
-            _row_to_dict(r)
-            for r in conn.execute(
-                "SELECT sr.id, sr.sim_type, sr.ran_at, t.name AS topology_name, sr.result_json "
-                "FROM simulation_results sr JOIN topologies t ON t.id=sr.topology_id "
-                "ORDER BY sr.ran_at DESC LIMIT 10"
-            ).fetchall()
-        ]
-        total_sims = conn.execute("SELECT COUNT(*) FROM simulation_results").fetchone()[0]
+        try:
+            sims = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT sr.id, sr.sim_type, sr.ran_at, t.name AS topology_name, sr.result_json "
+                    "FROM simulation_results sr JOIN topologies t ON t.id=sr.topology_id "
+                    "ORDER BY sr.ran_at DESC LIMIT 10"
+                ).fetchall()
+            ]
+            total_sims = conn.execute("SELECT COUNT(*) FROM simulation_results").fetchone()[0]
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            sims = []
+            total_sims = 0
         # Load projects list for filter dropdown
         all_projects = [
             _row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_projects ORDER BY name").fetchall()
@@ -832,16 +849,21 @@ def create_network_blueprint():
                 (pid,),
             ).fetchone()
             p["monthly_cost"] = cost_row[0] if cost_row else 0
-            # Node/edge totals
-            ne = conn.execute(
-                "SELECT COALESCE(SUM(json_array_length(json_extract(t.graph_json,'$.nodes'))),0), "
-                "COALESCE(SUM(json_array_length(json_extract(t.graph_json,'$.edges'))),0) "
-                "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-                "WHERE pt.project_id=?",
+            # Node/edge totals — counted in Python (portable across SQLite & PG).
+            _tn = _te = 0
+            for _gr in conn.execute(
+                "SELECT t.graph_json FROM topologies t "
+                "JOIN nc_project_topologies pt ON pt.topology_id=t.id WHERE pt.project_id=?",
                 (pid,),
-            ).fetchone()
-            p["total_nodes"] = ne[0] if ne else 0
-            p["total_edges"] = ne[1] if ne else 0
+            ).fetchall():
+                try:
+                    _g = json.loads((_gr[0] if not hasattr(_gr, "keys") else _gr["graph_json"]) or "{}")
+                    _tn += len(_g.get("nodes", []))
+                    _te += len(_g.get("edges", []))
+                except Exception:
+                    pass
+            p["total_nodes"] = _tn
+            p["total_edges"] = _te
             # Last simulation date
             sim_row = conn.execute(
                 "SELECT MAX(ran_at) FROM simulation_results WHERE topology_id IN "
@@ -895,14 +917,19 @@ def create_network_blueprint():
             _row_to_dict(r)
             for r in conn.execute(
                 "SELECT t.id, t.name, t.description, t.classification, "
-                "t.updated_at, t.graph_json, "
-                "json_array_length(json_extract(t.graph_json,'$.nodes')) AS node_count, "
-                "json_array_length(json_extract(t.graph_json,'$.edges')) AS edge_count "
+                "t.updated_at, t.graph_json "
                 "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
                 "WHERE pt.project_id=? ORDER BY t.updated_at DESC",
                 (proj_id,),
             ).fetchall()
         ]
+        for _t in topos:
+            try:
+                _g = json.loads(_t.get("graph_json") or "{}")
+                _t["node_count"] = len(_g.get("nodes", []))
+                _t["edge_count"] = len(_g.get("edges", []))
+            except Exception:
+                _t["node_count"] = _t["edge_count"] = 0
         circuits = [
             _row_to_dict(r)
             for r in conn.execute(
@@ -1328,17 +1355,19 @@ def create_network_blueprint():
                         total_devices += 1
 
             # Node/edge totals
-            ne = conn.execute(
-                "SELECT "
-                "COALESCE(SUM(json_array_length("
-                "  json_extract(t.graph_json,'$.nodes'))),0), "
-                "COALESCE(SUM(json_array_length("
-                "  json_extract(t.graph_json,'$.edges'))),0) "
-                "FROM topologies t "
-                "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-                "WHERE pt.project_id=?",
+            _tn = _te = 0
+            for _gr in conn.execute(
+                "SELECT t.graph_json FROM topologies t "
+                "JOIN nc_project_topologies pt ON pt.topology_id=t.id WHERE pt.project_id=?",
                 (pid,),
-            ).fetchone()
+            ).fetchall():
+                try:
+                    _g = json.loads((_gr[0] if not hasattr(_gr, "keys") else _gr["graph_json"]) or "{}")
+                    _tn += len(_g.get("nodes", []))
+                    _te += len(_g.get("edges", []))
+                except Exception:
+                    pass
+            ne = (_tn, _te)
 
             # Last MC resilience score
             mc_row = conn.execute(
@@ -7497,15 +7526,18 @@ def create_network_blueprint():
         topos = [
             _row_to_dict(r)
             for r in conn.execute(
-                "SELECT t.id, t.name, t.classification, "
-                "json_array_length(json_extract(t.graph_json,'$.nodes')) "
-                "  AS node_count "
+                "SELECT t.id, t.name, t.classification, t.graph_json "
                 "FROM topologies t "
                 "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
                 "WHERE pt.project_id=?",
                 (pid,),
             ).fetchall()
         ]
+        for _t in topos:
+            try:
+                _t["node_count"] = len(json.loads(_t.get("graph_json") or "{}").get("nodes", []))
+            except Exception:
+                _t["node_count"] = 0
         circuits = [
             _row_to_dict(r)
             for r in conn.execute(
@@ -12611,6 +12643,14 @@ Planning rules:
         graph_json, topo_name = topo_row[0], topo_row[1]
         current_graph = _json.loads(graph_json) if graph_json else {"nodes": [], "edges": []}
 
+        # Enrich nodes from ni_devices + parsed running-configs so the info
+        # boxes populate for ANY topology (not just ones with inline meta).
+        try:
+            from tools.network.migration_analysis import enrich_graph
+            enrich_graph(current_graph, conn, topo_id)
+        except Exception:
+            pass
+
         phases = conn.execute(
             """
             SELECT mp.id, mp.phase_num, mp.title, mp.description,
@@ -12694,6 +12734,49 @@ Planning rules:
                 "consolidation": consolidation,
             },
         })
+
+    @bp.route("/api/migration-phases/<topo_id>/analysis", methods=["GET"])
+    @nc_login_required
+    def nc_api_migration_phases_analysis(topo_id):
+        """Six-dimension migration analysis (LLM-driven, deterministic fallback)."""
+        import json as _json
+        from tools.network.migration_analysis import analyze_migration
+
+        use_llm = request.args.get("llm", "1") not in ("0", "false", "no")
+        conn = get_connection()
+        topo_row = conn.execute(
+            "SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo_row:
+            conn.close()
+            return jsonify({"error": "topology not found"}), 404
+        graph_json, topo_name = topo_row[0], topo_row[1]
+        current_graph = _json.loads(graph_json) if graph_json else {"nodes": [], "edges": []}
+
+        phases = conn.execute(
+            """
+            SELECT mp.id, mp.phase_num, mp.title, mp.description,
+                   mp.duration_days, mp.rollback_criteria, mp.status, mp.properties_json
+            FROM nc_migration_phases mp
+            JOIN nc_project_topologies pt ON pt.project_id = mp.project_id
+            WHERE pt.topology_id = ?
+            ORDER BY mp.phase_num
+            """,
+            (topo_id,),
+        ).fetchall()
+        phases_list = [dict(p) if hasattr(p, "keys") else {
+            "id": p[0], "phase_num": p[1], "title": p[2], "description": p[3],
+            "duration_days": p[4], "rollback_criteria": p[5], "status": p[6],
+            "properties_json": p[7],
+        } for p in phases]
+
+        try:
+            result = analyze_migration(topo_id, topo_name, current_graph, phases_list, conn, use_llm=use_llm)
+        except Exception as exc:
+            conn.close()
+            return jsonify({"error": f"analysis failed: {exc}"}), 500
+        conn.close()
+        return jsonify(result)
 
     @bp.route("/api/migration-phases/<topo_id>/export/<phase_key>/<fmt>", methods=["POST"])
     @nc_login_required
@@ -13327,13 +13410,18 @@ Planning rules:
         topos = [
             _row_to_dict(r)
             for r in conn.execute(
-                "SELECT t.id, t.name, t.classification, "
-                " json_array_length(json_extract(t.graph_json,'$.nodes')) AS node_count, "
-                " json_array_length(json_extract(t.graph_json,'$.edges')) AS edge_count "
+                "SELECT t.id, t.name, t.classification, t.graph_json "
                 "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
                 "WHERE pt.project_id=?", (pid,)
             ).fetchall()
         ]
+        for _t in topos:
+            try:
+                _g = json.loads(_t.get("graph_json") or "{}")
+                _t["node_count"] = len(_g.get("nodes", []))
+                _t["edge_count"] = len(_g.get("edges", []))
+            except Exception:
+                _t["node_count"] = _t["edge_count"] = 0
         circuits = [
             _row_to_dict(r)
             for r in conn.execute(

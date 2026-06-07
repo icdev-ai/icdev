@@ -31,8 +31,17 @@
 .chip-upload { background: #2d2d2d; color: #888; }
 .chip-active { background: #1a4e3e; color: #27ae60; }
 .btn { padding: 6px 14px; border-radius: 5px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; }
-.btn-primary { background: #27ae60; color: #fff; }
-.btn-primary:hover { background: #219a52; }
+.btn-primary { background: #1d6fe0; color: #fff; }
+.btn-primary:hover { background: #2f80f0; }
+/* Per-row action — calm by default, lights up on hover (no wall of green). */
+.btn-migrate { background: #142844; color: #9cc2f0; border: 1px solid #2d5fa0; padding: 5px 14px;
+  border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; letter-spacing: .2px;
+  display: inline-flex; align-items: center; gap: 5px; transition: all .15s; white-space: nowrap; }
+.btn-migrate:hover { background: #1d6fe0; border-color: #1d6fe0; color: #fff;
+  box-shadow: 0 2px 10px rgba(29,111,224,.35); }
+.btn-migrate:disabled { opacity: .55; cursor: default; box-shadow: none; }
+/* EOL-urgent rows get a subtle accent so the eye lands on what needs migrating. */
+.inv-table tr.row-urgent td:first-child { box-shadow: inset 3px 0 0 #e74c3c; }
 .btn-link { background: none; border: none; color: #5899e2; cursor: pointer; font-size: 12px;
   text-decoration: underline; padding: 0; }
 .empty-state { text-align: center; color: #4a6080; padding: 40px; font-size: 13px; }
@@ -314,7 +323,8 @@ function applyFilters() {
     const activeLink = d.active_session_id
       ? `<a class="btn-link" href="/migration-canvas/network-migration/${d.active_session_id}" target="_blank">Active ↗</a>`
       : '';
-    return `<tr>
+    const urgent = eolStatus(d.eol_date) === 'urgent';
+    return `<tr class="${urgent ? 'row-urgent' : ''}">
       <td style="font-weight:600;color:#eaeaea">${d.label||d.model||d.id}</td>
       <td>${d.vendor||''} ${d.model||''}</td>
       <td><span style="color:#7a8cb0">${d.device_type||''}</span></td>
@@ -322,7 +332,7 @@ function applyFilters() {
       <td>${eolChip(d.eol_date)}</td>
       <td>${configChip(d)}</td>
       <td style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-primary" onclick="startMigration('${d.id}','${d.model||''}','${(d.label||d.model||'').replace(/'/g,'')}')">&rarr; Migrate</button>
+        <button class="btn-migrate" onclick="startMigration('${d.id}','${d.model||''}','${(d.label||d.model||'').replace(/'/g,'')}')">&rarr; Migrate</button>
         ${activeLink}
       </td>
     </tr>`;

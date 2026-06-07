@@ -40,8 +40,17 @@ def get_connection():
         try:
             from tools.db.storage import get_connection as _icdev_conn
 
-            # Use ICDEV's storage layer which handles PG translation
+            # Use ICDEV's storage layer which handles PG translation.
             conn = _icdev_conn(db_path=os.environ.get("NC_PG_DATABASE", "network_canvas"))
+            # Network Design Canvas is a self-contained canvas (its own DB). Its
+            # tables (topologies, nc_*, ni_*, ndc_*) do not carry the global
+            # tenant_id/classification RLS columns, so the RLS predicate would
+            # raise UndefinedColumn on PG and silently filter rows. Disable RLS
+            # for this canvas connection — same contract as get_canvas_connection().
+            try:
+                conn.set_security_context(None)
+            except Exception:
+                pass
             return conn
         except ImportError:
             pass  # Fall through to SQLite

@@ -111,6 +111,74 @@
 /* ── Resize handle ────────────────────────────────────────────────────────── */
 .resize-handle { width: 5px; cursor: col-resize; background: #1e3a6e; flex-shrink: 0; transition: background 0.15s; }
 .resize-handle:hover { background: #27ae60; }
+
+.mp-nav-item.analysis { border-left-color: #3aa7ff; }
+.mp-nav-item.analysis.active { color: #3aa7ff; border-left-color: #3aa7ff; }
+#nav-analysis-badge { background: linear-gradient(90deg,#1565c0,#3aa7ff); color: #fff; }
+
+/* ── Migration Analysis Panel ─────────────────────────────────────────────── */
+.an-wrap { flex: 1; overflow-y: auto; padding: 20px 26px 40px; background:
+   radial-gradient(1200px 400px at 20% -5%, #0f2742 0%, transparent 60%), #0a1628; }
+.an-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.an-header h2 { margin: 0; font-size: 19px; color: #eaf2ff; font-weight: 700; letter-spacing: .2px; }
+.an-source { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: .6px; }
+.an-source.llm { background: linear-gradient(90deg,#6a1b9a,#3aa7ff); color: #fff; }
+.an-source.rules { background: #243b5a; color: #9fc0e8; }
+.an-sub { color: #7c97b8; font-size: 12px; margin: 2px 0 18px; }
+
+/* Readiness scorecard */
+.an-scorecard { display: grid; grid-template-columns: 220px 1fr; gap: 22px; align-items: center;
+   background: linear-gradient(135deg,#0e2138,#0b1a2e); border: 1px solid #1e3a6e;
+   border-radius: 14px; padding: 20px 24px; margin-bottom: 22px; box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+.an-gauge { position: relative; width: 200px; height: 110px; }
+.an-gauge .gnum { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; }
+.an-gauge .gnum .gv { font-size: 40px; font-weight: 800; line-height: 1; }
+.an-gauge .gnum .gl { font-size: 10px; color: #8aa6c8; text-transform: uppercase; letter-spacing: 1px; }
+.an-narr { color: #cfe0f5; font-size: 13.5px; line-height: 1.6; }
+.an-posture { display: inline-block; font-weight: 700; padding: 2px 10px; border-radius: 6px; margin-bottom: 8px; font-size: 12px; }
+
+/* Severity chips */
+.an-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.an-chip { display: flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 8px;
+   font-size: 12px; font-weight: 600; background: #0c1b30; border: 1px solid #1e3a6e; color: #b9cee8; }
+.an-chip .dot { width: 9px; height: 9px; border-radius: 50%; }
+.an-chip b { font-size: 14px; }
+
+/* Dimension sections */
+.an-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 18px; }
+.an-section { background: #0c1c31; border: 1px solid #1c3358; border-radius: 12px; overflow: hidden; }
+.an-section-hd { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+   border-bottom: 1px solid #14263f; }
+.an-section-hd .ic { font-size: 17px; }
+.an-section-hd h3 { margin: 0; font-size: 14px; color: #eaf2ff; font-weight: 700; flex: 1; }
+.an-section-hd .cnt { font-size: 11px; font-weight: 700; color: #fff; background: #1e3a6e;
+   border-radius: 20px; padding: 2px 9px; min-width: 22px; text-align: center; }
+.an-section-body { padding: 8px 10px; max-height: 380px; overflow-y: auto; }
+.an-empty { padding: 18px; text-align: center; color: #4e6a8c; font-size: 12px; }
+
+/* Finding cards */
+.an-find { display: flex; gap: 10px; padding: 11px 12px; border-radius: 9px; margin: 6px 4px;
+   background: #0a1628; border: 1px solid #15294a; border-left-width: 4px; transition: background .15s; }
+.an-find:hover { background: #0d1f38; }
+.an-find .sev-bar { width: 4px; flex-shrink: 0; }
+.an-find-main { flex: 1; min-width: 0; }
+.an-find-title { font-size: 12.5px; font-weight: 700; color: #e8f1ff; margin-bottom: 3px; }
+.an-find-detail { font-size: 11.5px; color: #9fb6d4; line-height: 1.5; }
+.an-find-rec { font-size: 11.5px; color: #87d8a6; margin-top: 5px; }
+.an-find-rec::before { content: "➜ "; color: #2ec27e; }
+.an-find-meta { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.an-tag { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+   padding: 2px 7px; border-radius: 5px; }
+.an-tag.ref { background: #14263f; color: #7fa8d8; }
+.an-tag.dev { background: #15294a; color: #b9cee8; }
+.an-tag.ai { background: linear-gradient(90deg,#6a1b9a,#3aa7ff); color: #fff; }
+.sev-critical { color: #ff6b6b; } .bd-critical { border-left-color: #e23b3b; } .bg-critical { background:#e23b3b; }
+.sev-high { color: #ff9f43; } .bd-high { border-left-color: #f0883e; } .bg-high { background:#f0883e; }
+.sev-medium { color: #ffd166; } .bd-medium { border-left-color: #e0b341; } .bg-medium { background:#e0b341; }
+.sev-low { color: #4dd4ac; } .bd-low { border-left-color: #2ea88a; } .bg-low { background:#2ea88a; }
+.sev-info { color: #5aa9ff; } .bd-info { border-left-color: #3a7fd0; } .bg-info { background:#3a7fd0; }
+.an-sev-badge { font-size: 9.5px; font-weight: 800; text-transform: uppercase; padding: 2px 7px;
+   border-radius: 5px; color: #fff; letter-spacing: .5px; }
 </style>
 {% endblock %}
 {% block content %}
@@ -155,6 +223,13 @@
         <span>🏁</span>
         <span>Final / To-Be</span>
         <span class="mp-nav-badge">TO-BE</span>
+      </div>
+
+      <div class="mp-nav-sep"></div>
+      <div class="mp-nav-item analysis" data-panel="panel-analysis" onclick="activatePanel('panel-analysis', this); loadAnalysis();">
+        <span>🔎</span>
+        <span>Migration Analysis</span>
+        <span class="mp-nav-badge" id="nav-analysis-badge">AI</span>
       </div>
 
       <!-- Consolidation Quick Stats -->
@@ -277,6 +352,16 @@
             <button class="infoboxes-toggle-all" onclick="toggleAll('boxes-final')">Collapse All</button>
           </div>
           <div class="mp-loading" style="height:200px"><div class="mp-spinner"></div></div>
+        </div>
+      </div>
+
+      <!-- ── Migration Analysis Panel ──────────────────────────────────── -->
+      <div class="mp-panel" id="panel-analysis" style="flex-direction:column">
+        <div class="an-wrap" id="an-wrap">
+          <div class="mp-loading" style="height:60vh">
+            <div class="mp-spinner"></div>
+            <span>Analyzing topology, device configs &amp; phases…</span>
+          </div>
         </div>
       </div>
 
@@ -701,6 +786,109 @@ function startResize(e, panelId) {
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
   e.preventDefault();
+}
+
+// ── Migration Analysis ──────────────────────────────────────────────────────
+let _analysisLoaded = false;
+const AN_DIMS = [
+  { key: 'recommendations',   title: 'Recommendations',      icon: '✅' },
+  { key: 'risks',             title: 'Risk Register',        icon: '⚠️' },
+  { key: 'misconfigurations', title: 'Misconfigurations',    icon: '🛠️' },
+  { key: 'deviations',        title: 'Standards Deviations', icon: '📐' },
+  { key: 'anomalies',         title: 'Anomalies & Issues',   icon: '🔬' },
+  { key: 'topology_changes',  title: 'Topology / Arch Changes', icon: '🧭' },
+];
+
+async function loadAnalysis(force) {
+  if (_analysisLoaded && !force) return;
+  _analysisLoaded = true;
+  const wrap = document.getElementById('an-wrap');
+  wrap.innerHTML = `<div class="mp-loading" style="height:60vh"><div class="mp-spinner"></div><span>Analyzing topology, device configs &amp; phases…</span></div>`;
+  try {
+    const resp = await fetch(`/network/api/migration-phases/${TOPO_ID}/analysis`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const a = await resp.json();
+    if (a.error) throw new Error(a.error);
+    renderAnalysis(a);
+  } catch (err) {
+    _analysisLoaded = false;
+    wrap.innerHTML = `<div class="mp-loading" style="height:40vh"><span style="color:#e74c3c">Analysis failed: ${_esc(err.message)}</span></div>`;
+  }
+}
+
+function _sevColor(s) { return { critical:'#e23b3b', high:'#f0883e', medium:'#e0b341', low:'#2ea88a', info:'#3a7fd0' }[s] || '#3a7fd0'; }
+
+function renderAnalysis(a) {
+  const wrap = document.getElementById('an-wrap');
+  const s = a.summary || {}; const bs = s.by_severity || {};
+  const readiness = s.readiness_score != null ? s.readiness_score : 0;
+  const postureColor = readiness < 40 ? '#e23b3b' : readiness < 70 ? '#f0883e' : readiness < 90 ? '#e0b341' : '#2ea88a';
+  const isLLM = (a.generated_by || '').includes('llm');
+
+  const chips = ['critical','high','medium','low','info'].map(k =>
+    `<div class="an-chip"><span class="dot" style="background:${_sevColor(k)}"></span><b class="sev-${k}">${bs[k]||0}</b> ${k}</div>`).join('');
+
+  // SVG arc gauge
+  const pct = Math.max(0, Math.min(100, readiness));
+  const ang = Math.PI * (1 - pct/100);
+  const cx=100, cy=100, r=84;
+  const ex = cx + r*Math.cos(ang), ey = cy - r*Math.sin(ang);
+  const gauge = `<svg viewBox="0 0 200 110" width="200" height="110">
+     <path d="M16,100 A84,84 0 0 1 184,100" fill="none" stroke="#15294a" stroke-width="14" stroke-linecap="round"/>
+     <path d="M16,100 A84,84 0 0 1 ${ex.toFixed(1)},${ey.toFixed(1)}" fill="none" stroke="${postureColor}" stroke-width="14" stroke-linecap="round"/>
+   </svg>
+   <div class="gnum"><div class="gv" style="color:${postureColor}">${readiness}</div><div class="gl">Readiness / 100</div></div>`;
+
+  let html = `
+    <div class="an-header">
+      <h2>🔎 Migration Analysis</h2>
+      <span class="an-source ${isLLM?'llm':'rules'}">${isLLM?'AI + Rules':'Rule Engine'}</span>
+    </div>
+    <div class="an-sub">${_esc(a.topo_name||'')} — ${s.total_findings||0} findings across 6 dimensions</div>
+
+    <div class="an-scorecard">
+      <div class="an-gauge">${gauge}</div>
+      <div>
+        <span class="an-posture" style="background:${postureColor}22;color:${postureColor};border:1px solid ${postureColor}66">${_esc(s.risk_posture||'—')}</span>
+        <div class="an-narr">${_esc(a.narrative||'')}</div>
+        <div class="an-chips">${chips}</div>
+      </div>
+    </div>
+
+    <div class="an-grid">`;
+
+  AN_DIMS.forEach(dim => {
+    const items = a[dim.key] || [];
+    html += `
+      <div class="an-section">
+        <div class="an-section-hd"><span class="ic">${dim.icon}</span><h3>${dim.title}</h3><span class="cnt">${items.length}</span></div>
+        <div class="an-section-body">${items.length ? items.map(renderFinding).join('') : '<div class="an-empty">No findings — clean ✓</div>'}</div>
+      </div>`;
+  });
+  html += `</div>`;
+  wrap.innerHTML = html;
+
+  const badge = document.getElementById('nav-analysis-badge');
+  if (badge) { badge.textContent = isLLM ? 'AI' : (s.total_findings||0); }
+}
+
+function renderFinding(f) {
+  const sev = f.severity || 'info';
+  const dev = f.device ? `<span class="an-tag dev">${_esc(f.device)}</span>` : '';
+  const ref = f.standard_ref ? `<span class="an-tag ref">${_esc(f.standard_ref)}</span>` : '';
+  const ai = f.source === 'llm' ? `<span class="an-tag ai">AI</span>` : '';
+  const rec = f.recommendation ? `<div class="an-find-rec">${_esc(f.recommendation)}</div>` : '';
+  const detail = f.detail ? `<div class="an-find-detail">${_esc(f.detail)}</div>` : '';
+  return `
+    <div class="an-find bd-${sev}">
+      <div class="an-find-main">
+        <div class="an-find-title">${_esc(f.title||'')}</div>
+        ${detail}${rec}
+        <div class="an-find-meta">
+          <span class="an-sev-badge bg-${sev}">${sev}</span>${dev}${ref}${ai}
+        </div>
+      </div>
+    </div>`;
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────

@@ -1,0 +1,86 @@
+# [CUI // SP-CTI]
+# Network Migration Standards — drives the deterministic analysis engine
+# (tools/network/migration_analysis.py). Edit here to change what counts as a
+# naming deviation, an SOP gap, or a misconfiguration — no code changes needed.
+
+# ── Device naming convention ────────────────────────────────────────────────
+# Approved hostname pattern: SITE-ROLE-## (e.g. AGG-C9K-01, CORE-JUN-02).
+naming:
+  # Regex a compliant hostname must match (case-insensitive).
+  pattern: '^[A-Z0-9]{2,6}-[A-Z0-9]{2,8}-[0-9]{2}$'
+  description: "SITE-ROLE-NN (e.g. CORE-JUN-01, AGG-C9K-02)"
+  max_length: 32
+  # Allowed role tokens (second segment). Empty list = any token accepted.
+  allowed_roles: [CORE, AGG, DIST, ACC, EDGE, FW, LB, WAN, BR, DC, TGW, VPN, DX]
+
+# ── Standard Operating Procedure baseline ───────────────────────────────────
+# Every managed device config SHOULD contain each of these. A missing item is
+# reported as an SOP deviation with the listed reference + severity.
+sop_requirements:
+  - key: ntp
+    label: "NTP time synchronization"
+    ref: "SOP-NET-014 / STIG NET0813"
+    severity: medium
+  - key: syslog
+    label: "Centralized syslog / logging"
+    ref: "SOP-NET-021 / STIG NET0405"
+    severity: medium
+  - key: aaa
+    label: "AAA / TACACS+ authentication"
+    ref: "SOP-NET-008 / STIG NET1638"
+    severity: high
+  - key: login_banner
+    label: "DoD login warning banner"
+    ref: "SOP-NET-002 / STIG NET0340"
+    severity: medium
+  - key: name_servers
+    label: "DNS name-servers configured"
+    ref: "SOP-NET-016"
+    severity: low
+
+# ── Misconfiguration / security rules ───────────────────────────────────────
+# Each rule names a field produced by the config parser and the condition that
+# constitutes a finding.
+security_rules:
+  - key: telnet_enabled
+    when: true
+    title: "Telnet enabled (cleartext management)"
+    ref: "STIG NET0405 (CAT I)"
+    severity: critical
+    recommendation: "Disable telnet; use SSHv2 only for device management."
+  - key: snmp_default_community
+    when: true
+    title: "Default/guessable SNMP community string"
+    ref: "STIG NET1665 (CAT I)"
+    severity: critical
+    recommendation: "Remove 'public'/'private' communities; migrate to SNMPv3 with auth+priv."
+  - key: snmp_v2_only
+    when: true
+    title: "SNMP v1/v2c in use (no SNMPv3)"
+    ref: "STIG NET1660 (CAT II)"
+    severity: high
+    recommendation: "Adopt SNMPv3 with SHA auth and AES privacy."
+  - key: no_ssh
+    when: true
+    title: "SSH not configured for management"
+    ref: "STIG NET1647"
+    severity: high
+    recommendation: "Enable SSHv2 and disable all cleartext access protocols."
+
+# ── Hardware lifecycle / risk thresholds ────────────────────────────────────
+lifecycle:
+  # Devices reaching End-of-Life within this many days are flagged.
+  eol_warning_days: 365
+  # Firmware spread: if a vendor/model family runs > this many distinct
+  # firmware versions, flag a consistency anomaly.
+  max_firmware_versions_per_model: 1
+  # Criticality score (0-100) at/above which a device is "mission critical".
+  critical_threshold: 70
+
+# ── Risk scoring weights ─────────────────────────────────────────────────────
+risk_weights:
+  critical: 40
+  high: 20
+  medium: 8
+  low: 3
+  info: 0
