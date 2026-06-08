@@ -19,13 +19,18 @@ _QDC_BACKEND = os.environ.get("QDC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVA
 
 
 def get_connection():
-    """Get a database connection — SQLite or PostgreSQL."""
+    """Get a database connection — SQLite or PostgreSQL.
+
+    Uses get_canvas_connection() for PostgreSQL because qdc_* tables have no
+    tenant_id/classification columns; get_connection() would inject RLS and
+    raise UndefinedColumn.
+    """
     if _QDC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
+            from tools.db.storage import get_canvas_connection
 
-            return _icdev_conn(db_path=os.environ.get("QDC_PG_DATABASE", "qdc_canvas"))
-        except ImportError:
+            return get_canvas_connection("QDC_PG_DATABASE")
+        except Exception:
             pass
     # SQLite (default) — per-canvas DB, distinct from icdev.db
     conn = sqlite3.connect(str(DB_PATH))
