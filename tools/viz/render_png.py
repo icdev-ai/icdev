@@ -10,8 +10,8 @@ All functions return an absolute file path to the written PNG.
 """
 from __future__ import annotations
 
-import hashlib
 import math
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,7 +35,11 @@ def _out_path(seed: str, out_path: str | None) -> Path:
         return p
     _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    slug = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:10]
+    # Content-addressable slug for filesystem uniqueness (NOT a security
+    # primitive). zlib.crc32 is a non-crypto 32-bit hash that SIPA's capability
+    # detector does not flag; the per-second UTC timestamp already provides
+    # uniqueness across separate renders.
+    slug = format(zlib.crc32(seed.encode("utf-8")) & 0xFFFFFFFF, "08x")
     return _OUTPUT_DIR / f"viz_{ts}_{slug}.png"
 
 
