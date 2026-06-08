@@ -49,4 +49,6 @@ def build_chat_link(coworker: CoWorker) -> str:
         params["manifest_shards"] = ",".join(coworker.manifest_shards)
     if coworker.trust_tier:
         params["trust_tier"] = coworker.trust_tier
+    if coworker.mode != "generic":
+        params["mode"] = coworker.mode
     return "/chat?" + urlencode(params)

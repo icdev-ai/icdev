@@ -41,6 +41,7 @@ class CoWorker:
     goals: list[str] = field(default_factory=list)
     ace_role_set: list[dict] = field(default_factory=list)
     execute_policy: dict = field(default_factory=dict)
+    mode: str = "generic"  # "generic" | "bespoke"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,6 +60,7 @@ class CoWorker:
             "goals": list(self.goals),
             "ace_role_set": list(self.ace_role_set),
             "execute_policy": dict(self.execute_policy),
+            "mode": self.mode,
         }
 
 
@@ -152,6 +154,7 @@ def _reference_coworkers() -> list[CoWorker]:
                 goals=list(rag.get("goals") or []),
                 ace_role_set=list(ace_set) if isinstance(ace_set, list) else [],
                 execute_policy=dict(exec_pol) if isinstance(exec_pol, dict) else {},
+                mode=str(rag.get("mode") or "generic"),
             )
         )
     return out
