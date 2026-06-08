@@ -44,11 +44,20 @@ RUN_STATUSES: tuple[str, ...] = (
 
 # ── foundry_concepts.status ──────────────────────────────────────────────────
 # Concept lifecycle emitted by the synthesizer -> scorer -> deliberator pipeline.
+# ``shipped`` and ``failed`` are post-build terminal states written by
+# ``tools/foundry/learner.py`` (acf-learn-01) when ``record_outcomes`` reconciles
+# each concept's emitted kanban tasks against their final statuses. They are
+# distinct from ``rejected`` (concept was never built) and from ``approved``
+# (build is in flight). The CHECK on ``foundry_concepts.status`` is derived
+# from this tuple via ``sql_in()`` in ``tools/foundry/db/init_db.py`` so the
+# schema re-derives automatically.
 CONCEPT_STATUSES: tuple[str, ...] = (
     "proposed",
     "scored",
     "approved",
     "rejected",
+    "shipped",
+    "failed",
 )
 
 # ── foundry_concepts.reject_reason (nullable) ────────────────────────────────
