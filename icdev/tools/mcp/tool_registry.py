@@ -6889,4 +6889,56 @@ RESOURCE_REGISTRY = {
             "required": ["prefix", "origin_asn"],
         },
     },
+    # ============================================================
+    # FOUNDRY — ACF Autonomous Capability Foundry (2 tools)
+    # ============================================================
+    "foundry_run": {
+        "category": "foundry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_foundry_run",
+        "description": (
+            "Run one ACF cycle end-to-end (harvest -> synth -> novelty gate -> score -> "
+            "Chain-of-Debate go/no-go -> spec_generator -> task_graph -> seeder.emit). Respects "
+            "rate_limits.max_concepts_per_cycle and rate_limits.max_active_projects from "
+            "args/foundry_config.yaml. dry_run=true runs the full pipeline without seeding "
+            "kanban_tasks — recommended for smoke tests. Returns a JSON roll-up (run_id, "
+            "harvested, concepts_proposed, concepts_approved, tasks_emitted, active_projects, "
+            "status, dry_run, detail)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "Run the full pipeline but do not seed kanban tasks",
+                    "default": False,
+                },
+                "max_concepts": {
+                    "type": "integer",
+                    "description": "Per-cycle approved-concept cap override (defaults to rate_limits.max_concepts_per_cycle)",
+                },
+            },
+        },
+    },
+    "foundry_status": {
+        "category": "foundry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_foundry_status",
+        "description": (
+            "Return ACF engine status: recent runs (id, cycle_at, harvested, concepts_proposed, "
+            "concepts_approved, tasks_emitted, status), active ACF-owned project count, pipeline "
+            "counts by concept status, and effective rate_limits. Read-only; mirrors "
+            "python tools/foundry/engine.py --status."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max recent runs to return",
+                    "default": 10,
+                },
+            },
+        },
+    },
 }

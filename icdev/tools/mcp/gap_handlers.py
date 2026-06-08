@@ -1913,3 +1913,53 @@ def handle_cod_invoke(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_cod_invoke: %s", exc)
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# ACF — Autonomous Capability Foundry (acf-mcp-01)
+# ---------------------------------------------------------------------------
+
+
+def handle_foundry_run(args: dict) -> dict:
+    """Run one ACF cycle (harvest -> synth -> novelty -> score -> CoD -> emit).
+
+    Pattern A (direct import) wrapper around ``tools.foundry.engine.run_cycle``.
+    Reuses the engine's own rate-limit / stage-degradation handling — MCP just
+    forwards the JSON-serialisable roll-up. ``dry_run=True`` exercises the full
+    pipeline without seeding kanban; this is the path the reflex mirrors and the
+    recommended entry point for ad-hoc smoke tests.
+    """
+    try:
+        from tools.foundry import engine
+
+        dry_run = bool(args.get("dry_run", False))
+        max_concepts = args.get("max_concepts")
+        if max_concepts is not None:
+            try:
+                max_concepts = int(max_concepts)
+            except (TypeError, ValueError):
+                max_concepts = None
+        return engine.run_cycle(dry_run=dry_run, max_concepts=max_concepts)
+    except Exception as exc:
+        logger.warning("handle_foundry_run: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_foundry_status(args: dict) -> dict:
+    """Return ACF engine status: recent runs, active projects, pipeline counts.
+
+    Pattern A (direct import) wrapper around ``tools.foundry.engine.status``.
+    Read-only; no DB writes. Mirrors the ``python tools/foundry/engine.py
+    --status`` CLI surface so MCP clients get the same JSON shape.
+    """
+    try:
+        from tools.foundry import engine
+
+        try:
+            limit = int(args.get("limit", 10))
+        except (TypeError, ValueError):
+            limit = 10
+        return engine.status(limit=limit)
+    except Exception as exc:
+        logger.warning("handle_foundry_status: %s", exc)
+        return {"error": str(exc)}
