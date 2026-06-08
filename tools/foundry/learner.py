@@ -219,6 +219,30 @@ def _record_outcome(
     conn.commit()
 
 
+def _forward_harness_outcome(slug: Optional[str], outcome: str) -> bool:
+    """Forward a recorded foundry outcome to the Genesis Harness (acf-ada-01).
+
+    Wraps :func:`tools.foundry.harness_bridge.record_acf_outcome` with the
+    graceful-degradation pattern used throughout the learner: a missing
+    harness or DB error is logged and swallowed, so the outcome-capture
+    loop never aborts mid-cycle because the eval harness is unavailable.
+    """
+    if not slug:
+        return False
+    try:
+        from tools.foundry import harness_bridge
+    except Exception as exc:  # noqa: BLE001 - air-gap / pre-shipped
+        logger.debug("[learner] harness_bridge not importable (%s); skipping", exc)
+        return False
+    try:
+        return bool(
+            harness_bridge.record_acf_outcome(slug=slug, actual_outcome=outcome)
+        )
+    except Exception as exc:  # noqa: BLE001 - never crash the learner
+        logger.debug("[learner] record_acf_outcome failed for %s: %s", slug, exc)
+        return False
+
+
 def _decide_outcome(tasks: list[dict]) -> Optional[str]:
     """Decide an outcome from a list of kanban task dicts (id/status/last_failure_reason).
 
@@ -352,6 +376,12 @@ def record_outcomes(*, conn: Any = None) -> dict[str, Any]:
                     tenant_id=tenant_id,
                     classification=classification,
                 )
+                # Close the ACF <-> Genesis Harness feedback loop (acf-ada-01):
+                # forward this terminal outcome to harness_eval so
+                # compute_metrics(reflex='acf') can compute precision/recall on
+                # the foundry's own approval decisions. Best-effort: a missing
+                # harness or DB error never aborts record_outcomes.
+                _forward_harness_outcome(slug, outcome)
                 counts[outcome] += 1
                 recorded += 1
         finally:

@@ -299,6 +299,54 @@ def _stage_emit(approved: list[dict], cfg: dict, conn: Any, *, dry_run: bool) ->
 
 
 # =========================================================================
+# HARNESS BRIDGE (acf-ada-01)
+# =========================================================================
+def _record_harness_decisions(run_id: str, approved: list[dict], all_concepts: list[dict]) -> None:
+    """Forward every concept decision to the Genesis Harness (acf-ada-01).
+
+    Writes one ``harness_eval`` row per concept:
+      * ``status='approved'``  -> decision ``'acf_approve'`` (positive class)
+      * ``status='rejected'``  -> decision ``'acf_reject'``  (negative class)
+      * status unchanged       -> decision ``'acf_skip'``    (proposed-only)
+
+    Confidence is the composite score (or 0.0 if missing). The bridge is
+    best-effort and degrades silently when ``tools.genesis.harness.eval_harness``
+    is unavailable — the cycle never crashes on a missing harness. Same
+    graceful-degradation pattern as the rest of the engine.
+    """
+    try:
+        from tools.foundry import harness_bridge
+    except Exception as exc:  # noqa: BLE001 - air-gap / pre-shipped
+        logger.debug("harness_bridge not importable (%s); skipping ACF decision recording", exc)
+        return
+
+    approved_slugs = {c.get("slug") for c in approved if c.get("slug")}
+    for c in all_concepts:
+        slug = c.get("slug")
+        if not slug:
+            continue
+        if c.get("status") == "approved" or slug in approved_slugs:
+            decision_type = harness_bridge.DECISION_APPROVE
+        elif c.get("status") == "rejected":
+            decision_type = harness_bridge.DECISION_REJECT
+        else:
+            decision_type = harness_bridge.DECISION_SKIP
+        try:
+            harness_bridge.record_acf_decision(
+                slug=slug,
+                decision_type=decision_type,
+                confidence=c.get("composite_score"),
+                metadata={
+                    "run_id": run_id,
+                    "novelty_score": c.get("novelty_score"),
+                    "reject_reason": c.get("reject_reason"),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - per-concept failure never aborts the cycle
+            logger.debug("harness_bridge record_acf_decision failed for %s: %s", slug, exc)
+
+
+# =========================================================================
 # RATE LIMITS
 # =========================================================================
 def _active_project_count(conn: Any) -> int:
@@ -472,6 +520,14 @@ def run_cycle(
 
         # 3-5. Novelty gate -> score -> CoD go/no-go.
         approved = _stage_evaluate(concepts, cfg, conn)
+
+        # 2b. Record every evaluation decision (approved + rejected) with the
+        # Genesis Harness so compute_metrics(reflex='acf') can compute
+        # precision/recall on the foundry's own approval choices (acf-ada-01).
+        # Rejected concepts are the ones _stage_evaluate mutated in place to
+        # status='rejected'; proposed-but-undecided (e.g. rate-limited upstream)
+        # would carry the default 'proposed' status.
+        _record_harness_decisions(run_id, approved, concepts)
 
         # Rate limit A — cap approved concepts per cycle.
         if len(approved) > cap_concepts:
