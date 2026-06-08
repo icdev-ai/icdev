@@ -305,6 +305,15 @@ These gates apply to every commit regardless of project type.
     and checks rendered pages for error patterns (500s, tracebacks, JS errors, TemplateNotFound).
     Unlike E2E/vision which are conditional on UI changes, this step is **always required**.
 
+20e. **Implementation Coherence Gate** — Run the new-page-completeness and structural coherence checks:
+    ```bash
+    python tools/workflow/coherence_checker.py --check new_page_completeness --gate --json
+    ```
+    **GATE: 0 incomplete canvas pages, 0 icdev/ mirror gaps** (per `new_page_completeness.blocking`).
+    Blocks merges when a new dashboard page is missing any of the 8 required components
+    (template, mirror, blueprint, backing module, nav link, IQE adapter, seed queries, widget).
+    Also catches icdev/ package mirror gaps for all canvas templates.
+
 ---
 
 #### Tier 2: ATO & Compliance Impact (always run when project has a project_id)

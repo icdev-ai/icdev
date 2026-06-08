@@ -200,6 +200,10 @@ jobs:
         if: always()
         run: kill $(cat /tmp/dashboard.pid 2>/dev/null) 2>/dev/null || true
 
+      - name: Coherence gate (new-page completeness — blocking)
+        run: |
+          python tools/workflow/coherence_checker.py --check new_page_completeness --gate --json
+
       # ── SIPA integrity gate (blocking, pre-PR) ────────────────────────────
       # Assess the *.py files this task changed for unauthorized / malicious code
       # BEFORE any PR is opened. ANVIL leaves its changes uncommitted in the work
