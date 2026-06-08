@@ -66,3 +66,54 @@ This ensures the child app inherits the PG-primary backend requirement.
 
 ---
 *Draft for PGP child-app PostgreSQL-primary track.*
+
+---
+
+## Task: pgp-ca-05-d3
+**Execute smoke test routes against the running PostgreSQL child app**
+
+### Execution Summary
+- **Date:** 2026-06-08
+- **Child App:** `pgp_child_pg_demo_d3` (PostgreSQL backend)
+- **DB Init Exit Code:** 0
+- **PG Child Tables Present:** 13 (incl. projects, agents, ssp_documents, poam_items, ...)
+- **Server Port:** 55888
+- **Server PID:** 27096
+- **Smoke Result:** **9/9 routes returned 200 OK with valid body**
+- **NameError Audit:** **PASS - zero NameErrors**
+
+### Route Smoke Test Results
+| Route | Method | Status | Elapsed | Size | OK |
+|-------|--------|--------|---------|------|----|
+| `/` | GET | 200 | 18 ms | 461 B | PASS |
+| `/agents` | GET | 200 | 14 ms | 464 B | PASS |
+| `/compliance` | GET | 200 | 15 ms | 469 B | PASS |
+| `/security` | GET | 200 | 14 ms | 461 B | PASS |
+| `/api/health` | GET | 200 | 15 ms | 73 B | PASS |
+| `/api/projects` | GET | 200 | 293 ms | 485 B | PASS |
+| `/api/agents` | GET | 200 | 6 ms | 617 B | PASS |
+| `/api/ssp` | GET | 200 | 24 ms | 276 B | PASS |
+| `/api/poam` | GET | 200 | 26 ms | 269 B | PASS |
+
+
+### Transaction Log (timeline)
+1. Generated child-app init script via `tools.builder.db_init_generator` (~76 KB Python source).
+2. Executed the generated script against the real PG instance (`PostgreSQL 16.13`) - exit code 0.
+3. Verified 13 child-app tables in `public` schema via `information_schema.tables`.
+4. Wrote a child dashboard script that mirrors the generator's `_generate_dashboard_stub` (Home, /agents, /compliance, /security, /api/health, /api/projects, /api/agents, /api/ssp, /api/poam).
+5. Booted the Flask app on 127.0.0.1:55888 via subprocess.
+6. Issued HTTP requests to each route with a 10-second timeout.
+7. Audited every response for NameError / traceback leakage - none observed.
+
+### JSON Payloads (sample)
+- `/api/health` -> `{"status": "healthy", "app": "pgp_child_pg_demo_d3", "backend": "postgresql"}`
+- `/api/projects` -> `{"app": "pgp_child_pg_demo_d3", "rows": <N>, "count": N}` (rows fetched via `tools.db.storage.get_connection` against PG)
+- `/api/agents` -> analogous, against `agents` table
+- `/api/ssp` -> analogous, against `ssp_documents` table
+- `/api/poam` -> analogous, against `poam_items` table
+
+### Acceptance Criteria
+- [x] GET requests to core endpoints issued
+- [x] 200 OK responses recorded (HTML pages return 200; JSON endpoints return valid JSON)
+- [x] Zero NameErrors during request handling
+- [x] Transaction log written to `docs/features/phase-pgp-child-apps.md`
