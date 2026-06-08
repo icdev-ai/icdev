@@ -26,8 +26,11 @@ def get_connection():
     """DB connection — SQLite or PostgreSQL, row-factory enabled."""
     if _AIMC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _pg_conn
-            return _pg_conn(db_path=os.environ.get("AIMC_PG_DATABASE", "aiml_canvas"))
+            from tools.db.storage import get_canvas_connection
+            # Canvas tables (aiml_*) carry `classification` but NO `tenant_id`, so the
+            # global RLS predicate injected by get_connection() would raise UndefinedColumn
+            # on every query. get_canvas_connection() disables RLS (security_context=None).
+            return get_canvas_connection("AIMC_PG_DATABASE")
         except ImportError:
             pass
     import sqlite3 as _sqlite3
