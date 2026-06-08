@@ -42,8 +42,8 @@ def scan_ops(project_id: str) -> dict:
     """Load operational health metrics from DB; fall back to defaults if absent."""
     metrics = dict(_DEFAULT_OPS_METRICS)
     try:
-        from tools.db.storage import get_connection
-        with get_connection() as conn:
+        from tools.db.storage import get_canvas_connection
+        with get_canvas_connection() as conn:
             cur = conn.cursor()
             cur.execute(
                 "SELECT metric_key, metric_value FROM ohc_ops_metrics WHERE project_id = ? ORDER BY created_at DESC LIMIT 30",

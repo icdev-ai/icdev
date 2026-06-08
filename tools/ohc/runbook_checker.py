@@ -39,8 +39,8 @@ def run_runbook_checks(project_id: str) -> dict:
     """Load runbook check state from DB; fall back to defaults if absent."""
     checks = dict(_DEFAULT_CHECKS)
     try:
-        from tools.db.storage import get_connection
-        with get_connection() as conn:
+        from tools.db.storage import get_canvas_connection
+        with get_canvas_connection() as conn:
             cur = conn.cursor()
             cur.execute(
                 "SELECT check_key, check_value FROM ohc_runbooks WHERE project_id = ? ORDER BY created_at DESC LIMIT 30",

@@ -23,11 +23,16 @@ _OHC_BACKEND = os.environ.get(
 
 
 def get_connection():
-    """Return a DB connection — SQLite or PostgreSQL with row-factory."""
+    """Return a DB connection — SQLite or PostgreSQL with row-factory.
+
+    Uses get_canvas_connection() for PostgreSQL because ohc_* tables have no
+    tenant_id/classification columns; get_connection() would inject RLS and
+    raise UndefinedColumn.
+    """
     if _OHC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _pg_conn
-            return _pg_conn(db_path=os.environ.get("OHC_PG_DATABASE", "ohc_canvas"))
+            from tools.db.storage import get_canvas_connection
+            return get_canvas_connection("OHC_PG_DATABASE")
         except ImportError:
             pass
     import sqlite3 as _sqlite3
