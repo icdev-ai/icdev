@@ -100,6 +100,26 @@ spec:
     [continuous, monitor, schedule, periodic, autonomous, detect, watch, poll,
      recurring, drift, anomaly]
 
+# ── Strategos intel-channel fan-out ──────────────────────────────────────────
+# tools/foundry/strategos_bridge.py routes an APPROVED concept that touches a
+# national-security / competitive-intelligence surface into the four Strategos
+# channels (sg_ghost_signals / sg_hitl_items / sg_pir_requirements /
+# sg_intelligence_briefs). A concept qualifies when compliance_risk OR
+# market_score clears its threshold; the dark-web/ghost channel is additionally
+# gated on the threat keywords below (the monitor is for those surfaces, not for
+# every competitive-intel concept). A non-qualifying concept touches no channel.
+strategos_bridge:
+  compliance_threshold: 0.6     # compliance_risk >= this qualifies (national-security surface)
+  market_threshold: 0.7         # market_score >= this qualifies (competitive-intel surface)
+  payload_max_chars: 800        # per-field cap on the hitl payload snapshot
+  # Presence of any of these in the concept prose triggers the dark-web monitoring
+  # ghost signal (otherwise the ghost channel is skipped; other channels still route).
+  ghost_keywords:
+    [dark web, darkweb, dark-web, leak, breach, exfil, threat actor, adversary,
+     malware, ransomware, exploit, espionage, surveillance, classified,
+     national security, weapon, missile, munition, military, defense, warfare,
+     sanction, smuggl, interdiction, maritime, vessel, naval]
+
 # ── Rate limits ────────────────────────────────────────────────────────────
 # Hard caps so a noisy harvest can't flood the board with autonomous work.
 rate_limits:
