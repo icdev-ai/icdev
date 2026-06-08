@@ -17,10 +17,7 @@ Acceptance coverage (acf-learn-01):
 from __future__ import annotations
 
 import importlib
-import json
 import sqlite3
-import subprocess
-import sys
 
 import pytest
 import yaml
@@ -339,7 +336,7 @@ def test_cli_record_and_tune(db, tmp_path, monkeypatch):
     monkeypatch.setattr(L, "CONFIG_PATH", cfg_path)
 
     # Run the CLI as a subprocess so the monkeypatched storage module is fresh.
-    env_patch = {
+    {
         "ICDEV_STORAGE_BACKEND": "sqlite",
         "PYTHONPATH": str(tmp_path),
     }
