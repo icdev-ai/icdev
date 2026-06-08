@@ -31,10 +31,16 @@ run_id: $4
 1. Run `git diff origin/main...HEAD --stat` to see changed files
 2. Run `git log origin/main..HEAD --oneline` to see commits
 3. Run `git push -u origin <branch_name>` to push the branch
-4. Detect platform:
+4. **Pre-Merge Coherence Gate** — Run the new-page-completeness gate to block incomplete canvases before opening the PR:
+   ```bash
+   python tools/workflow/coherence_checker.py --check new_page_completeness --gate --json
+   ```
+   **GATE: 0 incomplete canvas pages, 0 icdev/ mirror gaps** (per `new_page_completeness.blocking`).
+   If this gate fails, **abort the PR** and fix the gaps first.
+5. Detect platform:
    - If `gh` is available and remote is GitHub: use `gh pr create --title "<title>" --body "<body>" --base main`
    - If `glab` is available and remote is GitLab: use `glab mr create --title "<title>" --description "<body>" --target-branch main --yes`
-5. Capture the PR/MR URL from the output
+6. Capture the PR/MR URL from the output
 
 ## Report
 

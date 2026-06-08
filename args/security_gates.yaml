@@ -18,6 +18,7 @@ merge_gates:
     # Use ClassificationResolver.enforce_cui_marking_gate to check at runtime.
     - missing_cui_markings_if_required
     - secrets_detected
+    - incomplete_canvas_page          # new_page_completeness gate failure
   warn_on:
     - cat2_stig_finding
     - medium_vulnerability
@@ -99,6 +100,23 @@ api_contract_drift:
     tools/dashboard/api/openapi_generator.py or the ENDPOINT_DOCS override dict.
     phantom_in_spec: spec paths with no live url_map rule — remove or reroute them.
     Gracefully skips when Flask/dashboard deps are unavailable (air-gap environments).
+
+# New Page Completeness Gate (TCH — True Completion Hardening)
+# Blocks merges when a new dashboard page ships without all 8 required components
+# (template, icdev/ mirror, blueprint route, backing module, nav link, IQE adapter,
+# seed queries, IQE widget include). The sub-check also enforces icdev/ mirror
+# parity for every .html file in canvas template directories.
+# Run: python tools/workflow/coherence_checker.py --check new_page_completeness --json --gate
+new_page_completeness:
+  blocking:
+    - incomplete_canvas_page          # page.html exists but required component(s) missing
+    - icdev_mirror_gap                # icdev/ package mirror missing for canvas template
+  warning:
+    - template_missing_iqe_widget      # page.html lacks iqe_query_widget include
+  note: >
+    Violations are detected by tools/workflow/coherence_checker.py::check_new_page_completeness.
+    Whitelisted canvases are skipped via args/page_completeness_whitelist.yaml.
+    Canvas directories without page.html are checked by the mirror-parity sub-check.
 
 # Acceptance Criteria Validation Gate (V&V — "did we build what was asked?")
 acceptance_validation:
