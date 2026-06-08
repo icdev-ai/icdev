@@ -163,15 +163,15 @@ def test_record_acf_decision_writes_rejected_row(bridge, db):
 def test_record_acf_decision_clamps_confidence(bridge, db):
     """Confidence >1.0 clamped to 1.0; <0.0 clamped to 0.0; bad input -> NULL."""
     # High
-    rid_hi = bridge.record_acf_decision(
+    bridge.record_acf_decision(
         slug="hi", decision_type=bridge.DECISION_APPROVE, confidence=1.7,
     )
     # Low
-    rid_lo = bridge.record_acf_decision(
+    bridge.record_acf_decision(
         slug="lo", decision_type=bridge.DECISION_APPROVE, confidence=-0.3,
     )
     # Bad
-    rid_bd = bridge.record_acf_decision(
+    bridge.record_acf_decision(
         slug="bd", decision_type=bridge.DECISION_APPROVE, confidence="not-a-number",
     )
 
