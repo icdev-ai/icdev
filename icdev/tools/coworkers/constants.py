@@ -22,8 +22,20 @@ PERSONAS_YAML = _REPO_ROOT / "args" / "chat_personas.yaml"
 # Secondary roster: ACE autonomous role catalog (best-effort, optional).
 ACE_ROLES_DIR = _REPO_ROOT / "args" / "ace" / "roles"
 
+# Domain-specific reference co-workers (the few-shot exemplars for autonomous
+# fill).  Each YAML defines a persona + RAG scope + ACE team manifest.
+COWORKERS_DIR = _REPO_ROOT / "args" / "coworkers"
+
 # Personas that are plumbing, not collaborators — hidden from the roster.
 HIDDEN_PERSONA_KEYS = {"default"}
 
 # Default accent + initial when a source omits them.
 DEFAULT_ACCENT = "#4a90d9"
+
+# Accent colours per ACE trust tier (matches ace/controller.py _TIER_ORDER).
+TRUST_TIER_ACCENTS = {
+    "red": "#e94560",
+    "orange": "#f59e0b",
+    "yellow": "#fbbf24",
+    "green": "#10b981",
+}

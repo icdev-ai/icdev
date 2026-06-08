@@ -32,9 +32,15 @@ class CoWorker:
     description: str
     avatar_initial: str
     accent: str
-    kind: str  # "persona" | "ace"
+    kind: str  # "persona" | "ace" | "ref"
     rag_namespace: str
     tags: list[str] = field(default_factory=list)
+    trust_tier: str = ""
+    rag_tables: list[str] = field(default_factory=list)
+    manifest_shards: list[str] = field(default_factory=list)
+    goals: list[str] = field(default_factory=list)
+    ace_role_set: list[dict] = field(default_factory=list)
+    execute_policy: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +53,12 @@ class CoWorker:
             "kind": self.kind,
             "rag_namespace": self.rag_namespace,
             "tags": list(self.tags),
+            "trust_tier": self.trust_tier,
+            "rag_tables": list(self.rag_tables),
+            "manifest_shards": list(self.manifest_shards),
+            "goals": list(self.goals),
+            "ace_role_set": list(self.ace_role_set),
+            "execute_policy": dict(self.execute_policy),
         }
 
 
@@ -108,9 +120,46 @@ def _ace_roles() -> list[CoWorker]:
     return out
 
 
+def _reference_coworkers() -> list[CoWorker]:
+    """Domain-specific reference co-workers from ``args/coworkers/*.yaml``."""
+    cw_dir = _const.COWORKERS_DIR
+    if not cw_dir.exists():
+        return []
+    out: list[CoWorker] = []
+    for path in sorted(cw_dir.glob("*.yaml")):
+        spec = _read_yaml(path)
+        cw_id = spec.get("coworker_id")
+        if not cw_id:
+            continue
+        name = str(spec.get("display_name") or cw_id.title())
+        rag = spec.get("rag") or {}
+        ace_set = spec.get("ace_role_set") or []
+        exec_pol = spec.get("execute_policy") or {}
+        out.append(
+            CoWorker(
+                id=f"ref:{cw_id}",
+                name=name,
+                role=f"{str(spec.get('trust_tier') or 'unknown').title()} Tier — {spec.get('domain', 'domain')}",
+                description=str(spec.get("persona_prompt") or "")[:200],
+                avatar_initial=name[:1].upper(),
+                accent=_const.TRUST_TIER_ACCENTS.get(str(spec.get("trust_tier") or ""), _const.DEFAULT_ACCENT),
+                kind="ref",
+                rag_namespace=f"coworker:{cw_id}",
+                tags=[str(spec.get("domain") or "")],
+                trust_tier=str(spec.get("trust_tier") or ""),
+                rag_tables=list(rag.get("tables") or []),
+                manifest_shards=list(rag.get("manifest_shards") or []),
+                goals=list(rag.get("goals") or []),
+                ace_role_set=list(ace_set) if isinstance(ace_set, list) else [],
+                execute_policy=dict(exec_pol) if isinstance(exec_pol, dict) else {},
+            )
+        )
+    return out
+
+
 def list_coworkers() -> list[CoWorker]:
     """Return the full co-worker roster, personas first then ACE roles."""
-    return _personas() + _ace_roles()
+    return _personas() + _ace_roles() + _reference_coworkers()
 
 
 def get_coworker(coworker_id: str) -> Optional[CoWorker]:

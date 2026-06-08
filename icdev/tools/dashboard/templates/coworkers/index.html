@@ -54,6 +54,7 @@
       <span><b>{{ counts.total }}</b> co-workers</span>
       <span><b>{{ counts.persona }}</b> personas</span>
       <span><b>{{ counts.ace }}</b> autonomous</span>
+      {% if counts.ref %}<span><b>{{ counts.ref }}</b> experts</span>{% endif %}
     </div>
   </div>
 
@@ -70,7 +71,7 @@
       </div>
       <div class="cwk-desc">{{ cw.description or "AI co-worker." }}</div>
       <div class="cwk-foot">
-        <span class="cwk-kind">{{ cw.kind }}</span>
+        <span class="cwk-kind">{% if cw.kind == 'ref' %}expert{% else %}{{ cw.kind }}{% endif %}</span>
         <span class="cwk-chat">Open chat →</span>
       </div>
     </a>

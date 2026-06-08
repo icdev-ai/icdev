@@ -54,6 +54,7 @@ def create_coworkers_blueprint() -> Blueprint:
             "total": len(coworkers),
             "persona": sum(1 for c in coworkers if c["kind"] == "persona"),
             "ace": sum(1 for c in coworkers if c["kind"] == "ace"),
+            "ref": sum(1 for c in coworkers if c["kind"] == "ref"),
         }
         try:
             return render_template(

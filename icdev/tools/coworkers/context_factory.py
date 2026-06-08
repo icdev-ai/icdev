@@ -40,4 +40,13 @@ def build_chat_link(coworker: CoWorker) -> str:
         "goal": f"Collaborate with {coworker.name}",
         "coworker": coworker.id,
     }
+    # Forward RAG grounding scopes when available (ref co-workers carry them).
+    if coworker.rag_tables:
+        params["rag_tables"] = ",".join(coworker.rag_tables)
+    if coworker.goals:
+        params["goals"] = ",".join(coworker.goals)
+    if coworker.manifest_shards:
+        params["manifest_shards"] = ",".join(coworker.manifest_shards)
+    if coworker.trust_tier:
+        params["trust_tier"] = coworker.trust_tier
     return "/chat?" + urlencode(params)
