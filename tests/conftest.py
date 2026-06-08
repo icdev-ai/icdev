@@ -1212,6 +1212,27 @@ CREATE TABLE IF NOT EXISTS ace_audit_log (
     classification  TEXT NOT NULL DEFAULT 'CUI',
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS cwk_coworkers (
+    id              TEXT PRIMARY KEY,
+    slug            TEXT NOT NULL UNIQUE,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    role_type       TEXT DEFAULT 'general',
+    capabilities_json TEXT DEFAULT '[]',
+    config_json     TEXT DEFAULT '{}',
+    status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'deprecated')),
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS cwk_sessions (
+    id              TEXT PRIMARY KEY,
+    coworker_id     TEXT NOT NULL,
+    chat_context_id TEXT,
+    ace_instance_id TEXT,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 

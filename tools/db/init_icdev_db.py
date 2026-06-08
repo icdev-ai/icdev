@@ -11144,6 +11144,13 @@ def init_db(db_path=None):
     conn.close()
     print(f"ICDEV™ database initialized at {path}")
 
+    # Initialize Co-Workers canvas tables (PG-aware, idempotent)
+    try:
+        from icdev.tools.coworkers.db.init_db import init as _init_cwk
+        _init_cwk()
+    except Exception as _exc:
+        print(f"Warning: Co-Workers canvas init skipped — {_exc}")
+
     # Seed system workflow templates (idempotent — INSERT OR IGNORE)
     try:
         from tools.db.seeds.seed_workflow_templates import run as _seed_wf

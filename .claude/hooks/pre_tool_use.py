@@ -488,6 +488,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "foundry_specs",
         "foundry_tasks_emitted",
         "foundry_outcomes",
+        # Co-Workers canvas — session links are immutable evidence (NIST AU)
+        "cwk_sessions",
         # EQO Centralized Logging (eqo-log-01, migration 181) — log rows are immutable evidence (NIST AU)
         "centralized_logs",
     ]
