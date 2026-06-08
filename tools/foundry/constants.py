@@ -71,6 +71,33 @@ OUTCOME_VALUES: tuple[str, ...] = (
 )
 
 
+# ── Severity / weight defaults (harvester) ───────────────────────────────────
+# Maps a source severity label to a numeric weight used when collapsing
+# cross-source duplicates (the higher-weight engine becomes the primary).
+SEVERITY_WEIGHTS: dict[str, float] = {
+    "critical": 1.0,
+    "high": 0.8,
+    "medium": 0.5,
+    "low": 0.3,
+    "info": 0.2,
+}
+DEFAULT_SEVERITY = "medium"
+
+# When two engines surface the same normalized signal, the primary source_engine
+# is chosen by this precedence (higher value wins ties on equal weight). Internal
+# telemetry and Genesis predictions are higher-signal than raw external scrapes.
+SOURCE_PRECEDENCE: dict[str, int] = {
+    "innovation": 1,
+    "creative": 1,
+    "research": 1,
+    "genesis": 2,
+    "telemetry": 3,
+}
+
+# Default classification stamped on every harvested signal.
+DEFAULT_CLASSIFICATION = "CUI"
+
+
 def sql_in(column: str, values: tuple[str, ...]) -> str:
     """Build a ``<column> IN ('a', 'b', ...)`` predicate from a values tuple."""
     joined = "', '".join(values)

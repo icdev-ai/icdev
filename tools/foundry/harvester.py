@@ -48,6 +48,7 @@ from tools.foundry.constants import (  # noqa: E402
     SEVERITY_WEIGHTS,
     SOURCE_PRECEDENCE,
 )
+from tools.foundry.db.init_db import init_db  # noqa: E402,F401  (re-exported; engine/tests reference harvester.init_db)
 
 # Source engines harvested by harvest_all(). "creative"/"research" are optional
 # stores that acf-harvest-01 may not have populated yet — harvested gracefully.
@@ -444,6 +445,51 @@ def harvest_all(db_path=None, sources=None):
         "inserted": inserted,
         "deduped": len(raw) - len(collapsed),
     }
+
+
+def harvest(run_id=None, config=None, conn=None, db_path=None, sources=None, **kwargs):
+    """Engine entrypoint (acf-engine-01 stage 1).
+
+    Harvest every (or selected) source, cross-source dedup, persist into
+    ``foundry_signals``, and return the *collapsed signal dicts* (the engine
+    consumes the list length as ``harvested`` and never relies on the summary
+    shape of :func:`harvest_all`). Tolerates an externally-managed ``conn`` (the
+    engine passes its RLS-aware connection) and degrades to an empty list when no
+    source store exists yet — every per-source reader guards on table existence.
+
+    ``config`` may carry ``sources`` (list); an explicit ``sources`` arg wins.
+    """
+    init_db()  # idempotent — guarantee foundry_* exist before persisting
+    if sources is None and isinstance(config, dict):
+        sources = config.get("sources")
+    if isinstance(sources, dict):  # config.sources may be a {name: {...}} map
+        sources = [k for k, v in sources.items() if v is None or v]
+    selected = tuple(sources) if sources else ALL_SOURCES
+
+    own = conn is None
+    if own:
+        conn = _get_conn(db_path)
+    raw = []
+    try:
+        if "innovation" in selected:
+            raw += harvest_innovation(conn)
+        if "creative" in selected:
+            raw += harvest_creative(conn)
+        if "research" in selected:
+            raw += harvest_research(conn)
+        if "genesis" in selected:
+            raw += harvest_genesis(conn)
+        if "telemetry" in selected:
+            raw += harvest_telemetry(db_path=db_path)
+        collapsed = _collapse(raw)
+        try:
+            persist_signals(conn, collapsed)
+        except Exception:  # noqa: BLE001 - persistence is best-effort; never abort the cycle
+            pass
+    finally:
+        if own:
+            conn.close()
+    return collapsed
 
 
 # --------------------------------------------------------------------------- #
