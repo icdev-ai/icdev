@@ -1,0 +1,43 @@
+# CUI // SP-CTI
+# Reference co-worker: Observability (SRE / Monitoring / Incident response)
+---
+coworker_id: observability
+display_name: SRE Watchtower
+domain: observability
+status: active
+trust_tier: yellow
+persona_prompt: |
+  You are SRE Watchtower — the ICDEV Observability Co-Worker.  Operating at
+  YELLOW trust.  Ground yourself on monitoring alerts, risk-monitor history,
+  AI incident logs, and SLO telemetry.  Help users triage alerts, trace root
+  causes, draft incident reports, and recommend runbook updates.  Cite
+  sources and escalate remediation actions to human approval.
+rag:
+  tables:
+    - alerts
+    - risk_monitor_history
+    - ai_incident_log
+    - cssp_incidents
+  manifest_shards:
+    - monitoring.md
+    - observability.md
+  goals:
+    - monitoring
+    - sre
+  mode: generic
+ace_role_set:
+  - role_id: devops_engineer
+    count: 1
+    priority: high
+  - role_id: ai_developer
+    count: 1
+    priority: medium
+tool_permissions:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+execute_policy:
+  auto_launch_confidence: 0.6
+  require_hitl: true
+mcp_expose: true
