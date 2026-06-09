@@ -71,6 +71,17 @@ EVENT_GATE_DECISION = "gate_decision"
 EVENT_PATCH_GENERATED = "patch_generated"
 EVENT_VERIFY_RESULT = "verify_result"
 EVENT_APPLY_OUTCOME = "apply_outcome"
+# ReAct-loop (WS2.3 / arc-dbg-02): one event per iteration, plus a terminal
+# react_finished carrying the loop outcome (fixed / max_iterations /
+# no_progress / budget_exhausted). The panel (arc-obs-03) groups these.
+EVENT_REACT_ITERATION = "react_iteration"
+EVENT_REACT_FINISHED = "react_finished"
+# Self-consistency diagnosis (WS4.1 / arc-dec-01): N samples taken with
+# temperature spread, then agreement on (root_cause_class, primary_suspect)
+# computed and used as the real confidence. Both per-sample and aggregated
+# events are emitted so the arc-obs panel can show raw-vs-SC deltas.
+EVENT_SC_SAMPLE = "sc_sample"
+EVENT_SC_AGGREGATED = "sc_aggregated"
 
 
 def _emit_event(
@@ -309,13 +320,25 @@ def _deny_hit(diag: Dict[str, Any], task: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool, str]:
+def should_auto_apply(
+    task: Dict[str, Any],
+    diag: Dict[str, Any],
+    sc_aggregate: Optional[Dict[str, Any]] = None,
+) -> Tuple[bool, str]:
     """Return (allow, reason). ``reason`` is human-readable even on allow.
 
     Chain-blocker rule: if this task has blocked dependents, the confidence
     threshold is relaxed from APPLY_CONFIDENCE (0.85) to 0.70 because the
     cost of inaction is amplified — every dependent stays stalled until the
     root cause is resolved.
+
+    Self-consistency override (WS4.1 / arc-dec-01): when ``sc_aggregate`` is
+    provided, the confidence used for the threshold check is the
+    agreement-derived score, NOT the single LLM call's self-reported
+    ``confidence``. The raw value is still recorded on the entry for
+    calibration (arc-cal-*) but the GATE consumes the SC score. If the
+    samples disagreed, ``meets_threshold`` is False and we short-circuit to
+    the suggested-card path regardless of the raw confidence.
     """
     if not autofix_enabled():
         return (False, f"{AUTOFIX_ENV} is not set to true")
@@ -324,12 +347,34 @@ def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool,
     if rec != "patch":
         return (False, f"recommendation is {rec!r} (not 'patch')")
 
-    conf = float(diag.get("confidence") or 0.0)
+    # Self-consistency check: when an aggregate is provided, agreement is
+    # the gate, not the raw self-reported confidence. Disagreement is a
+    # HARD short-circuit — even a 0.95 raw confidence cannot save a 1/3
+    # vote, because that's the failure mode the SC path exists to catch.
+    if sc_aggregate is not None:
+        if not sc_aggregate.get("meets_threshold", False):
+            samples_valid = int(sc_aggregate.get("samples_valid", 0))
+            agreement = float(sc_aggregate.get("agreement_score", 0.0))
+            raw_mean = float(sc_aggregate.get("raw_confidence_mean", 0.0))
+            return (
+                False,
+                f"self-consistency disagreement "
+                f"(samples={samples_valid}, agreement={agreement:.2f}, "
+                f"raw_conf_mean={raw_mean:.2f}) — falls through to suggested card",
+            )
+        # SC path: consume the agreement-derived score
+        conf = float(sc_aggregate.get("self_consistency_confidence") or 0.0)
+        conf_source = "sc"
+    else:
+        # Legacy path: a single LLM call's self-reported confidence.
+        conf = float(diag.get("confidence") or 0.0)
+        conf_source = "raw"
+
     blocked_deps = int(task.get("blocked_dependents_count") or 0)
     effective_threshold = 0.70 if blocked_deps > 0 else APPLY_CONFIDENCE
     if conf < effective_threshold:
         chain_note = f" (chain-blocker: {blocked_deps} dep(s) stalled, threshold lowered to 0.70)" if blocked_deps else ""
-        return (False, f"confidence {conf:.2f} < threshold {effective_threshold}{chain_note}")
+        return (False, f"{conf_source}_confidence {conf:.2f} < threshold {effective_threshold}{chain_note}")
 
     ttype = (task.get("task_type") or "").lower()
     if ttype not in AUTO_APPLY_TASK_TYPES:
@@ -344,7 +389,7 @@ def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool,
         return (False, f"rate limit hit ({count}/{MAX_APPLIES_PER_HOUR} in last hour)")
 
     chain_note = f"; chain-blocker ({blocked_deps} dep(s) stalled, threshold=0.70)" if blocked_deps else ""
-    return (True, f"all gates green; rate {count}/{MAX_APPLIES_PER_HOUR}{chain_note}")
+    return (True, f"all gates green; rate {count}/{MAX_APPLIES_PER_HOUR}{chain_note} ({conf_source}_conf={conf:.2f})")
 
 
 # ---------------------------------------------------------------------------
@@ -512,6 +557,37 @@ AUTOMERGE_ENV = "ICDEV_AUTOFIX_AUTOMERGE"
 
 AUTOFIX_WORKTREE_BASE = BASE_DIR / ".tmp" / "autofix"
 AUDIT_DIR = BASE_DIR / ".tmp" / "kanban" / "autofix-audit"
+# WS2.4 / arc-dbg-03: opt-in deep post-mortem (faulthandler/trace + frame
+# locals at the failing frame). Strictly opt-in via env flag, default
+# OFF — the autofix pipeline is allowlisted, but capturing locals on
+# LLM-influenced repro code in the worktree is heavy and produces
+# potentially-sensitive state, so we never run it without an explicit
+# operator decision. The capture is worktree-only: it never runs against
+# the main checkout and never modifies anything outside AUDIT_DIR.
+DEEP_DEBUG_ENV = "ICDEV_AUTOFIX_DEEP_DEBUG"
+
+# ReAct-loop tuning (WS2.3 / arc-dbg-02). All three are overridable via
+# ``args/genesis_config.yaml`` under the ``failure_triage`` reflex block
+# (react_max_iterations, react_token_budget, react_no_progress_window).
+# Defaults are intentionally tight: the loop is a refinement aid, not
+# a free-form exploration tool.
+MAX_REACT_ITERATIONS = 3           # hypothesize→instrument→observe rounds
+REACT_TOKEN_BUDGET = 8000          # per-failure token ceiling (chars/4 approx)
+# No-progress window. The ReAct loop MUST terminate BEFORE asking the
+# LLM to refine when it can already conclude nothing will change. The
+# window is the number of CONSECUTIVE IDENTICAL fingerprints the loop
+# must observe in history before firing — with W=2 the loop tolerates
+# one "refine + retry" round before giving up, with W=1 the second
+# matching observation fires immediately, and with W=0 the loop would
+# never fire (the gate needs at least 2 prior observations to claim
+# "no progress" — a single failing iteration could be a transient
+# first-pass outcome). Operators can raise MAX_REACT_ITERATIONS to
+# give the loop more headroom and lower this window to make it bail
+# sooner.
+REACT_NO_PROGRESS_WINDOW = 2       # last N observations identical → terminate
+# Origin of the autofix worktree dir when patched files are present in the
+# snapshot — the loop needs to be able to RESET edits between iterations
+# without re-running the whole worktree create.
 
 # Only these prefixes are allowed in patch.verification_command. LLM output
 # is untrusted — anything else is rejected and we fall through to the
@@ -528,6 +604,20 @@ _VERIFICATION_CMD_ALLOWLIST = (
 
 def automerge_enabled() -> bool:
     return os.environ.get(AUTOMERGE_ENV, "false").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _deep_debug_enabled() -> bool:
+    """Return True iff the operator opted into post-mortem locals capture.
+
+    WS2.4 / arc-dbg-03. Strictly opt-in via ``ICDEV_AUTOFIX_DEEP_DEBUG=true``.
+    Default OFF — the autofix verification command is already allowlisted
+    to ``python -m pytest``/``py_compile``/``ruff``/``bandit``/``tools.*``,
+    but the post-mortem re-runs the failing test in the autofix worktree
+    with a plugin that captures frame locals at the failing frame, so it
+    produces potentially-sensitive data and MUST NOT run unless an operator
+    explicitly turned it on.
+    """
+    return os.environ.get(DEEP_DEBUG_ENV, "false").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _validate_verification_command(cmd: str) -> Tuple[bool, str]:
@@ -602,12 +692,18 @@ def _validate_patch_files(patch: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[
     return (True, "ok")
 
 
-def _run(cmd: List[str], cwd: Path, timeout: int = 60) -> Tuple[int, str]:
+def _run(cmd: List[str], cwd: Path, timeout: int = 60, env: Optional[Dict[str, str]] = None) -> Tuple[int, str]:
     import subprocess as _sp
+    full_env: Optional[Dict[str, str]] = None
+    if env:
+        import os as _os
+        full_env = _os.environ.copy()
+        full_env.update(env)
     try:
         r = _sp.run(
             cmd, cwd=str(cwd), capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=timeout,
+            env=full_env,
         )
         return (r.returncode, (r.stdout or "") + (r.stderr or ""))
     except Exception as exc:
@@ -651,6 +747,830 @@ def _cleanup_autofix_worktree(wt: Path, branch: str, *, keep_branch: bool) -> No
         _run(["git", "branch", "-D", branch], cwd=BASE_DIR, timeout=10)
 
 
+# ---------------------------------------------------------------------------
+# ReAct-loop helpers (WS2.3 / arc-dbg-02)
+#
+# The loop lives INSIDE apply_patch_in_worktree, after the LLM's first
+# patch has passed validation. Between iterations we reset the worktree
+# files to their pre-iteration snapshot so a failed refinement doesn't
+# leak half-applied edits into the next round.
+# ---------------------------------------------------------------------------
+
+
+def _react_estimate_tokens(text: str) -> int:
+    """Conservative token estimate (chars/4). Good enough for budgeting —
+    we want a safe ceiling, not a precise count, and pulling tiktoken
+    would be a heavyweight dep for one number.
+    """
+    return max(1, (len(text or "")) // 4)
+
+
+def _react_load_config() -> Dict[str, int]:
+    """Read the ReAct loop tuning knobs from ``args/genesis_config.yaml``.
+
+    Returns a dict of overrides; missing or unreadable config falls
+    back to the in-code defaults. This is read on every iterate() call
+    so an operator can dial the loop without restarting the daemon —
+    the next failure picks up the new value.
+    """
+    out: Dict[str, int] = {}
+    try:
+        import yaml  # local; stdlib yaml is the project dep
+        cfg_path = BASE_DIR / "args" / "genesis_config.yaml"
+        if not cfg_path.exists():
+            return out
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        ft = (data.get("reflexes") or {}).get("failure_triage") or {}
+        for src_key, dst_key in (
+            ("react_max_iterations", "max_iterations"),
+            ("react_token_budget", "token_budget"),
+            ("react_no_progress_window", "no_progress_window"),
+        ):
+            v = ft.get(src_key)
+            if isinstance(v, (int, float)) and v >= 0:
+                out[dst_key] = int(v)
+    except Exception as exc:  # pragma: no cover - config is best-effort
+        logger.debug("failure_triage: react config load failed: %s", exc)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Self-consistency diagnosis (WS4.1 / arc-dec-01)
+#
+# A SINGLE LLM call's `confidence` is mostly a self-reported number — easy to
+# over-rate. The fix: sample N diagnoses with a temperature spread, then
+# derive the REAL confidence from the cross-sample AGREEMENT on the two
+# decisions the auto-apply gate actually relies on (root_cause class +
+# primary suspect file). High agreement → many independent reads converged
+# on the same structural answer → high confidence. Low agreement →
+# stochastic / ambiguous → confidence is bounded low regardless of what any
+# individual sample claimed.
+#
+# Disagreement does NOT throw — it falls through to the suggested-card path
+# inside ``should_auto_apply`` so the gate chain stays simple. Both the raw
+# per-sample confidences and the agreement-derived (SC) confidence are
+# recorded so the arc-cal-* calibration can later compare them.
+# ---------------------------------------------------------------------------
+
+# In-code defaults — overridable per-failure via ``_sc_load_config`` from
+# ``args/genesis_config.yaml`` (block ``reflexes.failure_triage.
+# self_consistency``). The defaults are deliberately small: N=3 is the
+# smallest sample size that meaningfully distinguishes 3/3 from 2/3 or 1/3
+# agreement, and 2000 chars/sample caps the LLM spend on a single failure.
+SC_DEFAULT_N_SAMPLES = 3
+SC_DEFAULT_TEMPERATURE_SPREAD = 0.6   # spread [0.1, 0.7] for N=3
+SC_DEFAULT_AGREEMENT_THRESHOLD = 0.5  # majority of N must agree on (rc,sf)
+SC_DEFAULT_TOKEN_BUDGET_PER_SAMPLE = 2000
+SC_DEFAULT_ENABLED = True             # master switch — set false to bypass
+
+# Lightweight heuristics to fold a free-text root_cause into a stable
+# class. The set is small on purpose: too many buckets and agreement never
+# fires, too few and you collapse distinct causes. Order matters — first
+# match wins, so the most specific patterns go first.
+_ROOT_CAUSE_PATTERNS: List[Tuple[str, str]] = [
+    (r"null\s*reference|nullptr|none[-\s]?type|nonetype|attributeerror.*has no attribute", "null_deref"),
+    (r"key\s*error|index\s*error|out of range|getitem", "indexing"),
+    (r"type\s*error|isinstance|cast|coercion", "type_mismatch"),
+    (r"import\s*error|modulenotfounderror|importerror", "import"),
+    (r"permission|access\s*denied|unauthor|forbidden", "auth"),
+    (r"timeout|deadline|timed\s*out", "timeout"),
+    (r"connection|network|socket|dns", "network"),
+    (r"sql|query|database|postgres|sqlite|table\s+does\s+not", "db_query"),
+    (r"schema|migration|column|constraint|foreign\s*key", "schema"),
+    (r"config|setting|env\s*var|missing\s*argument|missing\s*param", "config"),
+    (r"race|deadlock|lock|concurrent|atomic", "concurrency"),
+    (r"path|file\s*not\s*found|filenotfound|no such file", "filesystem"),
+    (r"syntax\s*error|indentation|parse\s*error|invalid\s+syntax", "syntax"),
+    (r"logic|off[-\s]?by[-\s]?one|wrong\s*condition|missing\s*return|incorrect\s*calculation", "logic"),
+]
+
+
+def _sc_load_config() -> Dict[str, Any]:
+    """Read the self-consistency knobs from ``args/genesis_config.yaml``.
+
+    Returns a dict of overrides keyed by the SC config field names. Missing
+    or unreadable config falls back to the in-code defaults silently. Read
+    on every ``_sc_diagnose_task`` call so the operator can dial N or the
+    threshold without restarting the daemon.
+    """
+    out: Dict[str, Any] = {}
+    try:
+        import yaml
+        cfg_path = BASE_DIR / "args" / "genesis_config.yaml"
+        if not cfg_path.exists():
+            return out
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        ft = (data.get("reflexes") or {}).get("failure_triage") or {}
+        sc = ft.get("self_consistency") or {}
+        if not isinstance(sc, dict):
+            return out
+        for k in (
+            "n_samples",
+            "temperature_spread",
+            "agreement_threshold",
+            "token_budget_per_sample",
+            "enabled",
+        ):
+            v = sc.get(k)
+            if v is None:
+                continue
+            out[k] = v
+    except Exception as exc:  # pragma: no cover - config is best-effort
+        logger.debug("failure_triage: sc config load failed: %s", exc)
+    return out
+
+
+def _sc_classify_root_cause(text: str) -> str:
+    """Map a free-text root_cause into a coarse structural bucket.
+
+    Returns "other" when nothing matches — important so the SC aggregator
+    doesn't claim "agreement" on a single shared "other" bucket. The LLM
+    is supposed to name the cause in its own words; we just need a stable
+    key to compare across samples.
+    """
+    t = (text or "").lower().strip()
+    if not t:
+        return "other"
+    for pat, label in _ROOT_CAUSE_PATTERNS:
+        if re.search(pat, t):
+            return label
+    return "other"
+
+
+def _sc_primary_suspect(suspect_files: Any) -> str:
+    """Pick a single canonical "primary suspect" path from a suspect_files
+    list. We deliberately ignore the optional ``:LINE`` suffix and any
+    second-onward entries — agreement on the FIRST file is the strongest
+    signal the LLM can give. Returns "" when no usable suspect.
+    """
+    if not isinstance(suspect_files, list) or not suspect_files:
+        return ""
+    first = suspect_files[0]
+    if not isinstance(first, str):
+        return ""
+    return first.split(":", 1)[0].replace("\\", "/").strip().lower()
+
+
+def _sc_sample_one(
+    task: Dict[str, Any],
+    *,
+    temperature: float,
+    max_tokens: int,
+) -> Optional[Dict[str, Any]]:
+    """One raw LLM diagnosis call, identical to ``diagnose_task`` but with
+    caller-controlled temperature. Returns the parsed dict or None on any
+    LLM error. We deliberately don't apply the ``self_debug`` fallback
+    here — if every sample falls through to the heuristic we'll have N
+    identical heuristic results and agreement is meaningless. The caller
+    handles that case by reporting ``samples_valid=0``.
+    """
+    from tools.workflow import self_debug
+    from tools.llm.provider import LLMRequest
+    from tools.llm.router import LLMRouter
+
+    reason = task.get("last_failure_reason") or ""
+    snap = self_debug.snapshot(task["id"], str(BASE_DIR), reason)
+    prompt = (
+        "A kanban task has failed verification. Diagnose the STRUCTURAL root "
+        "cause from this evidence. Do not repeat the symptom — explain why "
+        "the task failed and point at the code that needs fixing.\n\n"
+        f"TASK: {task.get('id')} / {task.get('title','')} "
+        f"(task_type={task.get('task_type','')})\n"
+        f"DESCRIPTION: {(task.get('description') or '')[:400]}\n\n"
+        f"EVIDENCE (JSON):\n{json.dumps(snap, indent=2, default=str)[:4000]}\n\n"
+        + self_debug._DIAGNOSIS_SCHEMA_HINT
+    )
+    try:
+        resp = LLMRouter().invoke(
+            "failure_triage_diagnose",
+            LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens, temperature=temperature, effort="high",
+                skip_injection_scan=True,
+            ),
+        )
+        text = (resp.content or "").strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            text = text.split("\n", 1)[-1] if "\n" in text else text
+            if text.endswith("```"):
+                text = text[:-3]
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if not m:
+            return None
+        diag = json.loads(m.group(0))
+        if not isinstance(diag, dict):
+            return None
+        return diag
+    except Exception as exc:
+        logger.debug("sc sample: LLM call failed: %s", exc)
+        return None
+
+
+def _sc_temperatures(n: int, spread: float) -> List[float]:
+    """Build the temperature schedule for N samples.
+
+    Even N → symmetric spread around 0.4. Odd N → one sample at 0.4 plus
+    symmetric pairs. The schedule is clamped to [0.05, 0.95] so we never
+    hand the router a degenerate temperature that some providers reject.
+    """
+    if n <= 1:
+        return [0.4]
+    # Half-spread around the midpoint (0.4 is a reasonable "thinking"
+    # temperature — high enough for diversity, low enough to stay coherent).
+    half = max(0.05, float(spread)) / 2.0
+    mid = 0.4
+    if n % 2 == 1:
+        # odd: 0.4, then ±step pairs outward
+        step = half / max(1, n // 2)
+        return [max(0.05, min(0.95, mid - half + i * step)) for i in range(n)]
+    # even: symmetric around mid, no sample at mid
+    step = half / max(1, n // 2 - 1) if n >= 4 else half
+    out = []
+    for i in range(n // 2):
+        t_low = max(0.05, min(0.95, mid - step * (i + 1)))
+        t_high = max(0.05, min(0.95, mid + step * (i + 1)))
+        out.append(t_low)
+        out.append(t_high)
+    return out
+
+
+def _sc_aggregate(
+    samples: List[Dict[str, Any]],
+    *,
+    agreement_threshold: float,
+) -> Dict[str, Any]:
+    """Turn N sample diagnoses into a single aggregate with an
+    agreement-derived confidence.
+
+    Returns a dict with these keys:
+      * samples_valid — number of LLM samples that returned a parseable
+        diagnosis (heuristic fallbacks are not counted; we WANT agreement
+        on the LLM, not on the rule engine).
+      * agreement_score — fraction in [0.0, 1.0] of samples that agreed
+        on the modal (root_cause_class, primary_suspect) pair.
+      * consensus_root_cause / consensus_suspect_file — the modal values.
+      * self_consistency_confidence — agreement_score mapped to the same
+        [0,1] scale the single-shot `confidence` uses. This is what
+        ``should_auto_apply`` consumes.
+      * raw_confidence_mean — mean of the per-sample `confidence` fields
+        (still recorded for calibration; arc-cal-* will compare this to
+        the SC score).
+      * meets_threshold — True iff agreement_score >= agreement_threshold
+        AND samples_valid >= 2.
+      * per_sample — the list of (rc_class, suspect) tuples, one per valid
+        sample, for diagnostic rendering.
+    """
+    if not samples:
+        return {
+            "samples_valid": 0,
+            "agreement_score": 0.0,
+            "consensus_root_cause": None,
+            "consensus_suspect_file": None,
+            "self_consistency_confidence": 0.0,
+            "raw_confidence_mean": 0.0,
+            "meets_threshold": False,
+            "per_sample": [],
+        }
+
+    keys: List[Tuple[str, str]] = []
+    raw_confs: List[float] = []
+    for s in samples:
+        rc_class = _sc_classify_root_cause(s.get("root_cause") or "")
+        suspect = _sc_primary_suspect(s.get("suspect_files") or [])
+        keys.append((rc_class, suspect))
+        try:
+            raw_confs.append(float(s.get("confidence") or 0.0))
+        except Exception:
+            raw_confs.append(0.0)
+
+    # Modal key (root_cause_class, primary_suspect). Most-common wins; ties
+    # resolved by key ordering (deterministic, no random tiebreak).
+    counts: Dict[Tuple[str, str], int] = {}
+    for k in keys:
+        counts[k] = counts.get(k, 0) + 1
+    modal_key, modal_count = max(counts.items(), key=lambda kv: (kv[1], sorted(repr(kv[0]))))
+    agreement_score = modal_count / max(1, len(keys))
+
+    consensus_rc, consensus_sf = modal_key
+    # Map agreement to a confidence. agreement=1.0 → 1.0, agreement=0.5
+    # → 0.5, agreement=0.33 (3-way split on 3) → 0.33. This is a
+    # deliberate identity mapping: the gate already knows the threshold,
+    # so a different curve would just hide the signal.
+    sc_conf = float(agreement_score)
+    raw_mean = float(sum(raw_confs) / len(raw_confs)) if raw_confs else 0.0
+    meets = (
+        agreement_score >= float(agreement_threshold)
+        and len(keys) >= 2
+    )
+
+    return {
+        "samples_valid": len(keys),
+        "agreement_score": float(agreement_score),
+        "consensus_root_cause": consensus_rc,
+        "consensus_suspect_file": consensus_sf,
+        "self_consistency_confidence": sc_conf,
+        "raw_confidence_mean": raw_mean,
+        "meets_threshold": meets,
+        "per_sample": [
+            {"root_cause_class": k[0], "suspect_file": k[1]}
+            for k in keys
+        ],
+    }
+
+
+def _sc_diagnose_task(
+    task: Dict[str, Any],
+    *,
+    n_samples: int = SC_DEFAULT_N_SAMPLES,
+    temperature_spread: float = SC_DEFAULT_TEMPERATURE_SPREAD,
+    agreement_threshold: float = SC_DEFAULT_AGREEMENT_THRESHOLD,
+    token_budget_per_sample: int = SC_DEFAULT_TOKEN_BUDGET_PER_SAMPLE,
+    enabled: bool = SC_DEFAULT_ENABLED,
+) -> Dict[str, Any]:
+    """Self-consistency diagnosis — sample N times with a temperature
+    spread, then aggregate agreement into a real confidence.
+
+    Output schema (always present, even on a degenerate single-sample run):
+      {
+        "samples": [ <raw sample 0>, ... ],   # parseable LLM diags only
+        "aggregate": {<see _sc_aggregate>},
+        "enabled": bool,                       # whether SC path was used
+        "config": {<echoed knobs>},            # for audit trail
+      }
+
+    When ``enabled`` is False (operator override), we return a single-sample
+    diagnosis with ``samples_valid=1`` and ``agreement_score=1.0`` (no
+    variance to measure). The caller treats that as a transparent passthrough
+    — the raw per-sample confidence still feeds the gate, and the audit
+    trail records that SC was bypassed.
+
+    If every LLM call fails (e.g. air-gapped), ``samples`` is empty and the
+    aggregate is the all-zeros default. The caller (``should_auto_apply``)
+    treats that as a hard "no SC signal" and falls through to the
+    suggested-card path. The LLM-fallback heuristic is deliberately NOT
+    used here because the whole point of SC is to measure LLM agreement —
+    N identical heuristic outputs would falsely look like unanimous
+    consensus.
+    """
+    cfg = {
+        "n_samples": int(n_samples),
+        "temperature_spread": float(temperature_spread),
+        "agreement_threshold": float(agreement_threshold),
+        "token_budget_per_sample": int(token_budget_per_sample),
+        "enabled": bool(enabled),
+    }
+    if not enabled or n_samples <= 0:
+        # Passthrough: take one deterministic sample, mark as 1/1.
+        single = _sc_sample_one(
+            task, temperature=0.2, max_tokens=token_budget_per_sample,
+        )
+        samples = [single] if single else []
+        agg = _sc_aggregate(samples, agreement_threshold=1.0)
+        agg["self_consistency_confidence"] = float(
+            single.get("confidence") if single else 0.0
+        )
+        agg["raw_confidence_mean"] = agg["self_consistency_confidence"]
+        agg["meets_threshold"] = bool(single)
+        # Stash the single diag as the "consensus" so the gate can use
+        # its root_cause/suspect_files directly.
+        if single:
+            agg["consensus_root_cause"] = _sc_classify_root_cause(
+                single.get("root_cause") or ""
+            )
+            agg["consensus_suspect_file"] = _sc_primary_suspect(
+                single.get("suspect_files") or []
+            )
+        return {
+            "samples": samples,
+            "aggregate": agg,
+            "enabled": False,
+            "config": cfg,
+        }
+
+    temps = _sc_temperatures(n_samples, temperature_spread)
+    samples: List[Dict[str, Any]] = []
+    for i, t in enumerate(temps):
+        # max_tokens is a HARD cap on this sample's contribution to the
+        # SC budget; we don't sum across samples because each call is
+        # an independent LLM roundtrip with its own usage.
+        sample = _sc_sample_one(
+            task,
+            temperature=float(t),
+            max_tokens=int(token_budget_per_sample),
+        )
+        if sample is not None:
+            sample["_sc_temperature"] = float(t)
+            samples.append(sample)
+        _emit_event(
+            EVENT_SC_SAMPLE,
+            task_id=task.get("id"),
+            signature=None,
+            sample_index=i,
+            sample_total=n_samples,
+            temperature=float(t),
+            sample_returned=bool(sample),
+        )
+
+    agg = _sc_aggregate(samples, agreement_threshold=agreement_threshold)
+    return {
+        "samples": samples,
+        "aggregate": agg,
+        "enabled": True,
+        "config": cfg,
+    }
+
+
+def _react_snapshot_files(wt: Path, paths: List[str]) -> Dict[str, str]:
+    """Read every file in ``paths`` from the worktree and return
+    ``{path: content}``. Used to restore the worktree between iterations.
+    """
+    snap: Dict[str, str] = {}
+    for p in paths:
+        full = wt / p
+        if full.exists() and full.is_file():
+            try:
+                snap[p] = full.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                snap[p] = ""
+    return snap
+
+
+def _react_restore_files(wt: Path, snap: Dict[str, str]) -> None:
+    """Restore the worktree files to their pre-iteration contents."""
+    for p, content in snap.items():
+        full = wt / p
+        try:
+            full.parent.mkdir(parents=True, exist_ok=True)
+            full.write_text(content, encoding="utf-8")
+        except Exception as exc:
+            logger.warning("react: failed to restore %s: %s", p, exc)
+
+
+def _react_apply_files(wt: Path, files: List[Dict[str, Any]]) -> List[str]:
+    """Apply a patch's ``files`` entries (Edit-style unique replace).
+
+    Same semantics as the inline block in apply_patch_in_worktree, but
+    factored out so the ReAct loop can call it on every iteration with
+    a fresh patch. Returns the list of paths actually written.
+    """
+    applied: List[str] = []
+    for f in files:
+        path = f["path"].replace("\\", "/")
+        full = wt / path
+        text = full.read_text(encoding="utf-8", errors="replace")
+        new_text = text.replace(f["old_string"], f["new_string"], 1)
+        full.write_text(new_text, encoding="utf-8")
+        applied.append(path)
+    return applied
+
+
+def _react_fingerprint(observation: Dict[str, Any]) -> str:
+    """Stable fingerprint for ``no_progress`` detection.
+
+    We deliberately ignore transient noise (timestamps, paths of tempfile
+    output) and compare on the structurally meaningful bits: the verify
+    exit code, the first error line, and the failing test path (if any).
+    """
+    rc = observation.get("verification_rc", -1)
+    err = (observation.get("error_excerpt") or "").strip()[:200]
+    failing = (observation.get("failing_test") or "").strip()[:120]
+    return f"rc={rc}|err={err}|fail={failing}"
+
+
+def _react_extract_failure_hint(out: str) -> Tuple[Optional[str], Optional[str]]:
+    """Pull the first error line and a failing-test path out of pytest
+    output. Returns ``(error_excerpt, failing_test)`` — either may be
+    ``None`` when nothing recognizable is present.
+    """
+    text = (out or "").splitlines()
+    err = None
+    fail = None
+    for line in text:
+        ls = line.strip()
+        if not ls:
+            continue
+        if err is None and (ls.startswith("E ") or "Error" in ls or "FAILED" in ls):
+            err = ls[:300]
+        if fail is None and ("FAILED " in ls or "::test_" in ls):
+            # pytest compact format: "FAILED tests/test_x.py::test_y - msg"
+            if "::test_" in ls:
+                # extract the tests/...::test path token
+                token = ls
+                for piece in token.split():
+                    if "::test_" in piece:
+                        fail = piece[:200]
+                        break
+        if err and fail:
+            break
+    return err, fail
+
+
+def _react_history_compact(history: List[Dict[str, Any]]) -> str:
+    """Render the iteration history as a compact text block for LLM input.
+
+    Each iteration becomes a single line: ``[i=N] rc=R | err=… | fail=…``,
+    plus the diff (one-line summary of files touched) on the next line.
+    Keeps the LLM's input under REACT_TOKEN_BUDGET in the worst case.
+    """
+    out: List[str] = []
+    for h in history:
+        i = h.get("iteration", "?")
+        rc = h.get("verification_rc", -1)
+        err = (h.get("error_excerpt") or "")[:120]
+        fail = (h.get("failing_test") or "")[:80]
+        files = ", ".join(h.get("applied_files") or [])[:120]
+        out.append(
+            f"[i={i}] rc={rc} err={err!r} fail={fail!r} files=[{files}]"
+        )
+    return "\n".join(out)
+
+
+def _react_refine_patch(
+    task: Dict[str, Any],
+    diag: Dict[str, Any],
+    history: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Ask the building-tier LLM for a NEW patch given the prior
+    observations. Returns ``{files, verification_command}`` on success,
+    ``None`` on any LLM failure (loop falls back to terminating with
+    ``no_progress`` or ``budget_exhausted``).
+    """
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+    except Exception:
+        return None
+
+    suspect_files = diag.get("suspect_files") or []
+    file_contents: List[str] = []
+    for sf in suspect_files[:3]:
+        path_only = str(sf).split(":")[0].replace("\\", "/")
+        fp = BASE_DIR / path_only
+        if fp.exists() and fp.is_file():
+            try:
+                txt = fp.read_text(encoding="utf-8", errors="replace")[:4000]
+                file_contents.append(f"=== {path_only} ===\n{txt}")
+            except Exception:
+                continue
+
+    history_block = _react_history_compact(history)
+    prompt = (
+        "An earlier patch FAILED verification. Refine it using the prior "
+        "observations. Output JSON only — no prose.\n\n"
+        f"TASK: {task.get('id')} / {task.get('title','')}\n"
+        f"FAILURE REASON: {(task.get('last_failure_reason') or '')[:400]}\n\n"
+        f"DIAGNOSIS:\n{json.dumps(diag, indent=2, default=str)[:1200]}\n\n"
+        f"PRIOR ITERATIONS (most recent last):\n{history_block}\n\n"
+        f"SUSPECT FILE CONTENTS:\n" + "\n\n".join(file_contents) + "\n\n"
+        + PATCH_SCHEMA_HINT
+    )
+    try:
+        resp = LLMRouter().invoke(
+            "failure_triage_patch",
+            LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1200, temperature=0.1, effort="medium",
+                skip_injection_scan=True,
+            ),
+        )
+        text = resp.content.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            text = text.split("\n", 1)[-1] if "\n" in text else text
+            if text.endswith("```"):
+                text = text[:-3]
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if not m:
+            return None
+        patch = json.loads(m.group(0))
+        if not isinstance(patch, dict) or not patch.get("files"):
+            return None
+        return patch
+    except Exception as exc:
+        logger.info("react: refinement LLM failed: %s", exc)
+        return None
+
+
+def _react_no_progress(history: List[Dict[str, Any]]) -> bool:
+    """True when the last ``REACT_NO_PROGRESS_WINDOW`` observations have
+    the same fingerprint — i.e. the loop is making no real headway.
+
+    Needs at least ``max(2, W)`` entries: a single failing iteration
+    can never trigger this gate (we have nothing to compare against),
+    so the operator gets at least one refine-and-retry round before
+    the no-progress exit fires. With W=1 the gate reduces to "is there
+    a prior observation that matches the most recent one?" — only
+    meaningful when history is at least 2 long. With W=2 it requires
+    the last two observations to share a fingerprint.
+    """
+    min_needed = max(2, REACT_NO_PROGRESS_WINDOW)
+    if len(history) < min_needed:
+        return False
+    window = history[-REACT_NO_PROGRESS_WINDOW:]
+    fp = _react_fingerprint(window[0])
+    return all(_react_fingerprint(h) == fp for h in window[1:])
+
+
+def _react_iterate(
+    task: Dict[str, Any],
+    diag: Dict[str, Any],
+    initial_patch: Dict[str, Any],
+    wt: Path,
+    branch: str,
+    sig: str,
+    *,
+    max_iterations: int = MAX_REACT_ITERATIONS,
+    token_budget: int = REACT_TOKEN_BUDGET,
+) -> Dict[str, Any]:
+    """Bounded ReAct loop: hypothesize→apply→verify→observe, up to
+    ``max_iterations`` rounds. Lives inside the already-validated
+    autofix worktree — only the *edits* are reapplied between rounds
+    (the worktree dir, branch, and the rate-cap slot are all retained
+    from the parent ``apply_patch_in_worktree`` call).
+
+    Termination: verify passes (fixed), max iterations hit, no-progress
+    fingerprint, or token budget exhausted. Returns a JSON-serializable
+    dict that the caller folds into the audit record. Emits one
+    ``react_iteration`` event per round and a single ``react_finished``
+    event with the terminal outcome.
+    """
+    history: List[Dict[str, Any]] = []
+    tokens_used = 0
+    iterations = 0
+    current_patch = initial_patch
+    # Resolve effective knobs. Priority: caller's explicit arg > operator
+    # config in args/genesis_config.yaml > in-code default. The config
+    # only overrides the in-code default; an explicit caller value wins
+    # so tests and one-off callers can dial the loop without rewriting
+    # the yaml. Reading config on every call means the operator can
+    # adjust the loop without restarting the daemon.
+    overrides = _react_load_config()
+    eff_max_iterations = int(
+        overrides["max_iterations"]
+        if max_iterations == MAX_REACT_ITERATIONS and "max_iterations" in overrides
+        else max_iterations
+    )
+    eff_token_budget = int(
+        overrides["token_budget"]
+        if token_budget == REACT_TOKEN_BUDGET and "token_budget" in overrides
+        else token_budget
+    )
+    # Pre-allocate the iteration-1 path set so the worktree can be reset
+    # to its pre-iteration state on every round.
+    candidate_paths: List[str] = list({
+        f["path"].replace("\\", "/")
+        for f in (initial_patch.get("files") or [])
+    })
+    base_snap = _react_snapshot_files(wt, candidate_paths)
+    last_outcome = "fixed"
+
+    while iterations < eff_max_iterations:
+        iterations += 1
+        # Track prompt-token spend so a runaway loop can't burn the
+        # full daily LLM budget on one stubborn failure. Checked at
+        # the very top of each round — the budget reflects the prompt
+        # we'd SEND this iteration (the history of prior observations),
+        # not the work we'd DO. An empty prompt (first iteration) on a
+        # budget=1 still EXCEEDS that budget (1 >= 1), so the operator
+        # can dial the budget all the way down to "no work allowed".
+        # The count returned is "iterations the loop started" — a budget
+        # bail still counts as a started iteration (we incremented, then
+        # discovered we couldn't afford to do anything in it).
+        prompt_for_refine = _react_history_compact(history)
+        tokens_used = _react_estimate_tokens(prompt_for_refine)
+        if tokens_used >= eff_token_budget:
+            _emit_event(
+                EVENT_REACT_ITERATION,
+                task_id=task.get("id"),
+                signature=sig,
+                level="WARNING",
+                iteration=iterations,
+                outcome="budget_exhausted",
+                tokens_used=tokens_used,
+            )
+            last_outcome = "budget_exhausted"
+            break
+
+        # Validate the patch's allowlisted verification command on every
+        # iteration — a refined patch may introduce a different (and
+        # possibly unallowlisted) verify command.
+        ok_cmd, why_cmd = _validate_verification_command(
+            current_patch.get("verification_command") or ""
+        )
+        if not ok_cmd:
+            _emit_event(
+                EVENT_REACT_ITERATION,
+                task_id=task.get("id"),
+                signature=sig,
+                level="WARNING",
+                iteration=iterations,
+                outcome="rejected_verification_command",
+                reason=why_cmd,
+            )
+            last_outcome = "rejected_verification_command"
+            break
+
+        # 1) reset worktree files to pre-iteration state
+        _react_restore_files(wt, base_snap)
+        # 2) apply the (possibly refined) patch
+        try:
+            applied_files = _react_apply_files(wt, current_patch.get("files") or [])
+        except Exception as exc:
+            _emit_event(
+                EVENT_REACT_ITERATION,
+                task_id=task.get("id"),
+                signature=sig,
+                level="ERROR",
+                iteration=iterations,
+                outcome="edit_failed",
+                reason=str(exc),
+            )
+            last_outcome = "edit_failed"
+            continue
+
+        # 3) verify
+        cmd_parts = (current_patch["verification_command"] or "").split()
+        rc, out = _run(cmd_parts, cwd=wt, timeout=600)
+        err_excerpt, failing_test = _react_extract_failure_hint(out)
+        observation = {
+            "iteration": iterations,
+            "verification_rc": rc,
+            "verification_tail": out[-1500:],
+            "error_excerpt": err_excerpt,
+            "failing_test": failing_test,
+            "applied_files": applied_files,
+            "verification_command": current_patch.get("verification_command"),
+        }
+        # WS2.4 / arc-dbg-03: opt-in deep post-mortem. Strictly gated by
+        # ICDEV_AUTOFIX_DEEP_DEBUG. When the flag is off (default),
+        # _maybe_attach_deep_debug is a single env-read + 2 early-returns
+        # — zero subprocess cost. When on AND verify failed AND we have
+        # a parseable failing test, re-run pytest with a tiny plugin to
+        # dump frame locals to AUDIT_DIR/<task>__<sig>__deep_debug.json
+        # and stamp the path on the observation. The ReAct loop can then
+        # feed ``deep_debug_evidence`` to the LLM on the next iteration.
+        _maybe_attach_deep_debug(wt, task.get("id") or "", sig, observation)
+        history.append(observation)
+        # Always emit per-iteration so the panel sees incremental state.
+        _emit_event(
+            EVENT_REACT_ITERATION,
+            task_id=task.get("id"),
+            signature=sig,
+            level="INFO" if rc == 0 else "ERROR",
+            iteration=iterations,
+            verification_rc=rc,
+            error_excerpt=err_excerpt,
+            failing_test=failing_test,
+            applied_files=applied_files,
+            tokens_used=tokens_used,
+        )
+
+        if rc == 0:
+            last_outcome = "fixed"
+            break
+
+        # 4) terminate on no-progress BEFORE requesting another refinement
+        if _react_no_progress(history):
+            last_outcome = "no_progress"
+            break
+
+        # 5) ask LLM to refine — but only if iterations remain
+        if iterations >= eff_max_iterations:
+            last_outcome = "max_iterations"
+            break
+        refined = _react_refine_patch(task, diag, history)
+        if not refined:
+            last_outcome = "refine_unavailable"
+            break
+        current_patch = refined
+
+    # Loop exit summary event. The caller still owns the commit+merge
+    # decision (it only happens on ``last_outcome == 'fixed'``).
+    _emit_event(
+        EVENT_REACT_FINISHED,
+        task_id=task.get("id"),
+        signature=sig,
+        level="INFO" if last_outcome == "fixed" else "WARNING",
+        iterations=iterations,
+        outcome=last_outcome,
+        tokens_used=tokens_used,
+        history_size=len(history),
+    )
+
+    return {
+        "outcome": last_outcome,
+        "iterations": iterations,
+        "tokens_used": tokens_used,
+        "history": history,
+        # Return the last observation's applied_files for the commit step.
+        "applied_files": (history[-1].get("applied_files") if history else []),
+        "verification_rc": (history[-1].get("verification_rc") if history else None),
+    }
+
+
 def _write_audit(task_id: str, sig: str, record: Dict[str, Any]) -> None:
     try:
         AUDIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -659,6 +1579,245 @@ def _write_audit(task_id: str, sig: str, record: Dict[str, Any]) -> None:
         )
     except Exception as exc:
         logger.warning("failure_triage: audit write failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Deep post-mortem capture (WS2.4 / arc-dbg-03)
+#
+# Re-runs the failing pytest test in the autofix worktree with a tiny
+# ``pytest_exception_interact`` plugin that dumps frame locals at the
+# failing frame. Strictly opt-in (``ICDEV_AUTOFIX_DEEP_DEBUG=true``).
+#
+# Why a plugin instead of mutating cmd_parts? The verification command
+# is allowlisted (``_VERIFICATION_CMD_ALLOWLIST``) and any post-mortem
+# wrapper that ships in cmd_parts would either need its own prefix on
+# the allowlist (security surface) or shell-out (rejected by the
+# metacharacter check). A separate ``-p <plugin_path>`` re-run uses
+# the existing allowlisted ``python -m pytest`` and adds no new prefix.
+#
+# Why a re-run at all? pytest's ``--showlocals`` only shows locals in
+# the traceback section, and the ReAct loop needs a STRUCTURED record
+# (per-frame locals, repr-safe) it can feed to the LLM on the next
+# iteration. The re-run is bounded: we only re-run the EXACT failing
+# test path extracted from the prior observation, never the whole
+# suite, and we hard-cap the captured locals (max frames, max bytes
+# per repr) so a pathological frame can't OOM the worker.
+# ---------------------------------------------------------------------------
+
+# Hard caps to bound the post-mortem cost. Operators can override
+# DEEP_DEBUG_LOCALS_MAX_FRAMES / DEEP_DEBUG_LOCALS_MAX_REPR via env
+# but the defaults are deliberately tight.
+_DEEP_DEBUG_MAX_FRAMES = 8           # capture at most N frames from top
+_DEEP_DEBUG_MAX_REPR = 4000          # per-locals repr cap (bytes)
+_DEEP_DEBUG_TIMEOUT = 180            # re-run pytest timeout (seconds)
+_DEEP_DEBUG_PLUGIN_NAME = "icdev_deep_debug.py"
+
+
+def _deep_debug_plugin_path(task_id: str, sig: str) -> Path:
+    """Path where the post-mortem pytest plugin is written.
+
+    Lives in AUDIT_DIR (not the worktree) so the worktree stays clean
+    for git diffs and cleanup. The plugin is a one-shot file the
+    worker re-uses across iterations of the same task+sig.
+    """
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{task_id}__{sig}")
+    return AUDIT_DIR / f"{safe}__{_DEEP_DEBUG_PLUGIN_NAME}"
+
+
+def _deep_debug_evidence_path(task_id: str, sig: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{task_id}__{sig}")
+    return AUDIT_DIR / f"{safe}__deep_debug.json"
+
+
+# Plugin source. We write a static, fixed-source plugin (NOT derived
+# from the LLM) so a malicious or buggy LLM can't inject Python into
+# the post-mortem path. The plugin only DUMPS — it never execs anything
+# user-controlled, never imports anything outside the stdlib + pytest,
+# and never opens a network socket.
+_DEEP_DEBUG_PLUGIN_SOURCE = '''# Auto-generated by tools.workflow.failure_triage (arc-dbg-03).
+# Opt-in post-mortem: dumps frame locals at the failing frame to a JSON
+# file. Stdlib-only on the I/O side. NEVER trust ``report`` or
+# ``excinfo`` content — values may be hostile — every value is repr()-ed
+# with a hard cap and stored as a string.
+import json
+import os
+import sys
+import traceback
+
+OUT_PATH = os.environ.get("ICDEV_DEEP_DEBUG_OUT", "")
+MAX_FRAMES = int(os.environ.get("ICDEV_DEEP_DEBUG_MAX_FRAMES", "8"))
+MAX_REPR = int(os.environ.get("ICDEV_DEEP_DEBUG_MAX_REPR", "4000"))
+
+def _safe_repr(value, cap):
+    try:
+        r = repr(value)
+    except Exception as exc:
+        return f"<unreprable: {type(exc).__name__}: {exc}>"
+    if len(r) > cap:
+        return r[:cap] + f"...<truncated {len(r) - cap} bytes>"
+    return r
+
+def _capture_frames(tb):
+    frames = []
+    summary = traceback.extract_tb(tb)
+    for idx, fr in enumerate(summary[:MAX_FRAMES]):
+        # Try to fetch the live frame locals. The traceback object from
+        # pytest gives us the exception's chain only — for the locals
+        # of OTHER frames we walk ``sys._current_frames`` to find the
+        # matching live frame. When the test has already returned (the
+        # common case for a ``pytest.raises`` failure), the live frame
+        # is gone and we fall back to the file/line metadata only.
+        live = None
+        try:
+            ident = id(fr)
+            for f_ident, f_obj in list(sys._current_frames().items()):
+                if f_obj.f_code.co_filename == fr.filename and f_obj.f_lineno == fr.lineno:
+                    live = f_obj
+                    break
+        except Exception:
+            live = None
+        locals_dump = {}
+        if live is not None:
+            for k, v in live.f_locals.items():
+                if k.startswith("__") and k.endswith("__"):
+                    continue
+                locals_dump[k] = _safe_repr(v, MAX_REPR)
+        frames.append({
+            "frame_index": idx,
+            "filename": fr.filename,
+            "lineno": fr.lineno,
+            "name": fr.name,
+            "line": fr.line,
+            "locals": locals_dump,
+        })
+    return frames
+
+def pytest_exception_interact(node, call, report):
+    try:
+        excinfo = call.excinfo
+        if excinfo is None or excinfo._excinfo is None:
+            return
+        exc_type, exc_value, exc_tb = excinfo._excinfo
+        frames = _capture_frames(exc_tb)
+        payload = {
+            "nodeid": getattr(node, "nodeid", "?"),
+            "exception": _safe_repr(exc_value, MAX_REPR),
+            "exception_type": getattr(exc_type, "__name__", str(exc_type)),
+            "frames": frames,
+            "failing_test": getattr(node, "name", "?"),
+            "failing_file": getattr(node, "fspath", "?"),
+        }
+        if OUT_PATH:
+            # Atomic write: never leave a half-written JSON in AUDIT_DIR.
+            tmp = OUT_PATH + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, indent=2, default=str, ensure_ascii=False)
+            os.replace(tmp, OUT_PATH)
+    except Exception as exc:
+        # The post-mortem MUST never break the actual test run.
+        # Surface the failure to stderr so the worker can see it.
+        sys.stderr.write(f"[icdev_deep_debug] capture failed: {exc!r}\\n")
+'''
+
+
+def _deep_debug_write_plugin(task_id: str, sig: str) -> Path:
+    """Write the static post-mortem plugin to AUDIT_DIR. Idempotent."""
+    path = _deep_debug_plugin_path(task_id, sig)
+    try:
+        AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(_DEEP_DEBUG_PLUGIN_SOURCE, encoding="utf-8")
+    except Exception as exc:
+        logger.warning("deep_debug: failed to write plugin: %s", exc)
+        return path  # caller will see the write failure on -p load
+    return path
+
+
+def _deep_debug_capture(
+    wt: Path,
+    task_id: str,
+    sig: str,
+    failing_test: str,
+) -> Optional[Path]:
+    """Re-run the failing pytest test in the autofix worktree with the
+    post-mortem plugin loaded, then return the path to the captured
+    evidence JSON. Returns None on any failure (never raises — the
+    ReAct loop must continue even if deep-debug blows up).
+
+    The re-run uses the same allowlisted ``python -m pytest`` prefix
+    and never mutates files in the worktree (it only writes a plugin
+    file to AUDIT_DIR). It does NOT modify the ReAct loop's view of
+    the verification — this is a side-channel, parallel observation.
+    """
+    if not (failing_test or "").strip():
+        return None
+    # Sanitize: failing_test is the raw pytest path token (could
+    # contain shell metacharacters in theory). Restrict to a known-
+    # safe set before handing it to the allowlisted command.
+    if not re.match(r"^[A-Za-z0-9_./:\-]+(::[A-Za-z0-9_\[\], ]+)?$", failing_test):
+        logger.warning("deep_debug: refusing suspicious failing_test token: %r", failing_test)
+        return None
+    plugin = _deep_debug_write_plugin(task_id, sig)
+    evidence = _deep_debug_evidence_path(task_id, sig)
+    # Pass output path and bounds through the environment — the plugin
+    # reads them. Using env (not argv) keeps the allowlisted command
+    # line clean and avoids any chance of arg injection.
+    env_overrides = {
+        "ICDEV_DEEP_DEBUG_OUT": str(evidence),
+        "ICDEV_DEEP_DEBUG_MAX_FRAMES": str(_DEEP_DEBUG_MAX_FRAMES),
+        "ICDEV_DEEP_DEBUG_MAX_REPR": str(_DEEP_DEBUG_MAX_REPR),
+    }
+    # Re-run pytest against the EXACT failing test. We use ``-p`` to
+    # load our plugin (no conftest, no project pollution) and ``--no-header``
+    # ``-q`` to keep the output bounded — the ReAct loop doesn't read
+    # the re-run output, only the JSON the plugin writes.
+    cmd_parts = [
+        "python", "-m", "pytest",
+        "-p", str(plugin),
+        "--no-header", "-q", "--tb=line", "-x",
+        failing_test,
+    ]
+    rc, _out = _run(cmd_parts, cwd=wt, timeout=_DEEP_DEBUG_TIMEOUT, env=env_overrides)
+    # The re-run is best-effort: rc may be 0 (test passed on retry) or
+    # non-zero (test failed again — what we want to capture). If the
+    # evidence file is missing, the re-run was unable to install the
+    # plugin or pytest refused to start. Either way, don't raise.
+    if not evidence.exists():
+        logger.info(
+            "deep_debug: no evidence written for %s/%s (rc=%d) — skipping",
+            task_id, sig, rc,
+        )
+        return None
+    return evidence
+
+
+def _maybe_attach_deep_debug(
+    wt: Path,
+    task_id: str,
+    sig: str,
+    observation: Dict[str, Any],
+) -> None:
+    """In-place augment ``observation`` with ``deep_debug_evidence`` when
+    the env flag is on AND the prior verify failed AND we have a parseable
+    failing-test path. No-op otherwise — every early-return keeps the
+    ReAct loop's hot path zero-cost when the operator hasn't opted in.
+    """
+    if not _deep_debug_enabled():
+        return
+    if observation.get("verification_rc", -1) == 0:
+        return  # only on failure
+    failing_test = (observation.get("failing_test") or "").strip()
+    if not failing_test:
+        return
+    evidence = _deep_debug_capture(wt, task_id, sig, failing_test)
+    if evidence is not None:
+        observation["deep_debug_evidence"] = str(evidence)
+        observation["deep_debug_captured"] = True
+        logger.info(
+            "deep_debug: captured locals for %s/%s → %s",
+            task_id, sig, evidence,
+        )
+    else:
+        observation["deep_debug_captured"] = False
 
 
 def apply_patch_in_worktree(
@@ -673,13 +1832,18 @@ def apply_patch_in_worktree(
       * Creates a fresh branch ``autofix/<task_id>-<sig>`` — never touches
         main directly.
       * Runs the LLM-supplied ``verification_command`` (allowlisted prefix
-        only). Any non-zero exit → roll back the whole worktree + branch.
+        only) via a bounded ReAct loop (WS2.3 / arc-dbg-02). Each
+        iteration may refine the patch based on the prior observation.
+        The loop terminates on: verify pass, max iterations, no-progress
+        fingerprint, or token-budget exhaustion.
       * On success: commits to the autofix branch. If
         ``ICDEV_AUTOFIX_AUTOMERGE=true`` also fast-forward merges the
         branch into main via ``tools/genesis/reflexes/kanban._merge_worktree_to_main``.
       * Returns a dict that is safe to JSON-serialize and store on the
         triage entry. Increments the global rate counter only when an
         apply is actually attempted (after all pre-apply gates pass).
+        Internal ReAct iterations SHARE the same rate-cap slot — we do
+        not double-count.
     """
     sig = _sig(task.get("last_failure_reason") or "")
     sig_short = sig[:8]
@@ -692,6 +1856,8 @@ def apply_patch_in_worktree(
     }
 
     # Pre-apply validation — gates the LLM output, not just the diagnosis.
+    # The ReAct loop re-validates on every iteration, but we reject up
+    # front so an obviously-bad patch doesn't burn a rate-cap slot.
     ok, why = _validate_verification_command(patch.get("verification_command") or "")
     if not ok:
         record["outcome"] = "rejected_bad_verification_command"
@@ -707,7 +1873,9 @@ def apply_patch_in_worktree(
         return {"applied": False, "outcome": record["outcome"], "reason": why}
 
     # Count this attempt against the rolling hour cap even if verification
-    # ultimately fails — it's the *attempt* that consumes budget.
+    # ultimately fails — it's the *attempt* that consumes budget. The
+    # internal ReAct iterations share the same rate slot; we do NOT
+    # count them separately.
     record_apply()
 
     created = _create_autofix_worktree(task["id"], sig_short)
@@ -719,48 +1887,47 @@ def apply_patch_in_worktree(
     record["worktree"] = str(wt)
     record["branch"] = branch
 
-    # 1) apply file edits (Edit-style unique replace, already validated unique)
-    applied_files: List[str] = []
-    try:
-        for f in patch.get("files", []):
-            path = f["path"].replace("\\", "/")
-            full = wt / path
-            text = full.read_text(encoding="utf-8", errors="replace")
-            new_text = text.replace(f["old_string"], f["new_string"], 1)
-            full.write_text(new_text, encoding="utf-8")
-            applied_files.append(path)
-    except Exception as exc:
-        record["outcome"] = "edit_failed"
-        record["reason"] = str(exc)
-        _cleanup_autofix_worktree(wt, branch, keep_branch=False)
-        _write_audit(task["id"], sig, record)
-        return {"applied": False, "outcome": record["outcome"], "reason": str(exc)}
-
-    record["applied_files"] = applied_files
-
-    # 2) verification_command — run in the worktree cwd
-    cmd_parts = (patch["verification_command"] or "").split()
-    rc, out = _run(cmd_parts, cwd=wt, timeout=600)
-    record["verification_rc"] = rc
-    record["verification_tail"] = out[-1500:]
+    # ------------------------------------------------------------------
+    # Bounded ReAct loop (WS2.3). Replaces the one-shot apply→verify.
+    # ------------------------------------------------------------------
+    loop = _react_iterate(task, diag, patch, wt, branch, sig)
+    record["iterations"] = loop["iterations"]
+    record["react_history"] = loop["history"]
+    record["react_tokens_used"] = loop["tokens_used"]
+    record["applied_files"] = loop["applied_files"]
+    last_rc = loop["verification_rc"]
+    # Emit the legacy verify_result event so any downstream panel that
+    # only watches the prior event type still gets a single "outcome" row.
+    last_cmd = (
+        loop["history"][-1].get("verification_command")
+        if loop["history"] else patch.get("verification_command")
+    )
     _emit_event(
         EVENT_VERIFY_RESULT,
         task_id=task.get("id"),
         signature=sig,
-        level="INFO" if rc == 0 else "ERROR",
+        level="INFO" if last_rc == 0 else "ERROR",
         confidence=diag.get("confidence"),
         recommendation=diag.get("recommendation"),
-        verification_command=patch.get("verification_command"),
-        verification_rc=rc,
-        passed=(rc == 0),
-        outcome="verify_passed" if rc == 0 else "verify_failed",
+        verification_command=last_cmd,
+        verification_rc=last_rc,
+        passed=(last_rc == 0),
+        outcome="verify_passed" if last_rc == 0 else "verify_failed",
+        iterations=loop["iterations"],
     )
 
-    if rc != 0:
-        record["outcome"] = "verification_failed"
+    if last_rc != 0 or loop["outcome"] != "fixed":
+        record["outcome"] = f"react_{loop['outcome']}"
         _cleanup_autofix_worktree(wt, branch, keep_branch=False)
         _write_audit(task["id"], sig, record)
-        return {"applied": False, "outcome": record["outcome"], "verification_rc": rc}
+        return {
+            "applied": False,
+            "outcome": record["outcome"],
+            "iterations": loop["iterations"],
+            "verification_rc": last_rc,
+        }
+
+    applied_files = loop["applied_files"]
 
     # 3) commit on the autofix branch (never amend, new commit per apply)
     commit_msg = (
@@ -771,6 +1938,7 @@ def apply_patch_in_worktree(
         f"Diagnosis: {(diag.get('root_cause') or '')[:200]}\n"
         f"Confidence: {diag.get('confidence')}\n"
         f"Verification: {patch['verification_command']}\n"
+        f"ReAct-iterations: {loop['iterations']}\n"
     )
     _run(["git", "add", "--"] + applied_files, cwd=wt, timeout=30)
     rc_c, out_c = _run(["git", "commit", "-m", commit_msg], cwd=wt, timeout=60)
@@ -812,6 +1980,7 @@ def apply_patch_in_worktree(
         "commit": record.get("autofix_commit"),
         "merged_to_main": merged,
         "applied_files": applied_files,
+        "iterations": loop["iterations"],
     }
 
 
@@ -871,11 +2040,46 @@ def triage_once(
             continue
 
         diag = diagnose_task(task)
+        # WS4.1 / arc-dec-01: take N samples and use cross-sample agreement
+        # as the real confidence. ``diag`` is the legacy single-shot
+        # diagnosis — kept for backwards-compat with callers that read
+        # ``diag.get('root_cause')`` etc. The auto-apply gate is what
+        # actually consumes the SC aggregate.
+        sc_cfg = _sc_load_config()
+        sc_result = _sc_diagnose_task(
+            task,
+            n_samples=int(sc_cfg.get("n_samples", SC_DEFAULT_N_SAMPLES)),
+            temperature_spread=float(sc_cfg.get(
+                "temperature_spread", SC_DEFAULT_TEMPERATURE_SPREAD,
+            )),
+            agreement_threshold=float(sc_cfg.get(
+                "agreement_threshold", SC_DEFAULT_AGREEMENT_THRESHOLD,
+            )),
+            token_budget_per_sample=int(sc_cfg.get(
+                "token_budget_per_sample", SC_DEFAULT_TOKEN_BUDGET_PER_SAMPLE,
+            )),
+            enabled=bool(sc_cfg.get("enabled", SC_DEFAULT_ENABLED)),
+        )
+        sc_agg = sc_result.get("aggregate") or {}
         entry["diagnosis"] = {
             "root_cause": diag.get("root_cause"),
             "recommendation": diag.get("recommendation"),
             "confidence": diag.get("confidence"),
             "source": diag.get("_source"),
+            "self_consistency": {
+                "enabled": sc_result.get("enabled", False),
+                "samples_valid": int(sc_agg.get("samples_valid", 0)),
+                "agreement_score": float(sc_agg.get("agreement_score", 0.0)),
+                "self_consistency_confidence": float(
+                    sc_agg.get("self_consistency_confidence", 0.0)
+                ),
+                "raw_confidence_mean": float(
+                    sc_agg.get("raw_confidence_mean", 0.0)
+                ),
+                "meets_threshold": bool(sc_agg.get("meets_threshold", False)),
+                "consensus_root_cause": sc_agg.get("consensus_root_cause"),
+                "consensus_suspect_file": sc_agg.get("consensus_suspect_file"),
+            },
         }
         _emit_event(
             EVENT_DIAGNOSIS_MADE,
@@ -886,14 +2090,26 @@ def triage_once(
             root_cause=(diag.get("root_cause") or "")[:300],
             source=diag.get("_source"),
         )
+        _emit_event(
+            EVENT_SC_AGGREGATED,
+            task_id=task.get("id"),
+            signature=sig,
+            samples_valid=int(sc_agg.get("samples_valid", 0)),
+            agreement_score=float(sc_agg.get("agreement_score", 0.0)),
+            sc_confidence=float(sc_agg.get("self_consistency_confidence", 0.0)),
+            raw_confidence_mean=float(sc_agg.get("raw_confidence_mean", 0.0)),
+            meets_threshold=bool(sc_agg.get("meets_threshold", False)),
+            enabled=bool(sc_result.get("enabled", False)),
+        )
 
-        allow, allow_reason = should_auto_apply(task, diag)
+        allow, allow_reason = should_auto_apply(task, diag, sc_aggregate=sc_agg)
         entry["autofix_gate"] = {"allow": allow, "reason": allow_reason}
         _emit_event(
             EVENT_GATE_DECISION,
             task_id=task.get("id"),
             signature=sig,
             confidence=diag.get("confidence"),
+            sc_confidence=float(sc_agg.get("self_consistency_confidence", 0.0)),
             recommendation=diag.get("recommendation"),
             allow=allow,
             reason=allow_reason,

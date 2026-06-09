@@ -983,3 +983,333 @@ class TestReactHelpers:
         assert "react_history" in record
         assert "react_tokens_used" in record
         assert record["outcome"] == "react_no_progress"
+
+
+# ---------------------------------------------------------------------------
+# Self-consistency diagnosis (WS4.1 / arc-dec-01)
+#
+# The auto-apply gate no longer trusts a single LLM call's self-reported
+# confidence.  Instead, it samples N diagnoses with a temperature spread
+# and uses the cross-sample AGREEMENT on (root_cause_class, primary_suspect)
+# as the real confidence.  These tests pin the helpers that make that work.
+# ---------------------------------------------------------------------------
+
+class TestSCConfig:
+    def test_load_returns_empty_dict_when_missing(self, ft, tmp_path, monkeypatch):
+        # Point the loader at a non-existent config file
+        monkeypatch.setattr(ft, "BASE_DIR", tmp_path)
+        out = ft._sc_load_config()
+        assert out == {}
+
+    def test_load_returns_overrides_when_present(self, ft, tmp_path, monkeypatch):
+        cfg_dir = tmp_path / "args"
+        cfg_dir.mkdir()
+        cfg = cfg_dir / "genesis_config.yaml"
+        cfg.write_text(
+            "reflexes:\n"
+            "  failure_triage:\n"
+            "    self_consistency:\n"
+            "      n_samples: 5\n"
+            "      temperature_spread: 0.4\n"
+            "      agreement_threshold: 0.6\n"
+            "      token_budget_per_sample: 1500\n"
+            "      enabled: false\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(ft, "BASE_DIR", tmp_path)
+        out = ft._sc_load_config()
+        assert out["n_samples"] == 5
+        assert out["temperature_spread"] == 0.4
+        assert out["agreement_threshold"] == 0.6
+        assert out["token_budget_per_sample"] == 1500
+        assert out["enabled"] is False
+
+
+class TestSCRootCauseClassify:
+    def test_null_reference_buckets_to_null_deref(self, ft):
+        assert ft._sc_classify_root_cause("AttributeError: NoneType has no attribute x") == "null_deref"
+
+    def test_import_error_buckets_to_import(self, ft):
+        assert ft._sc_classify_root_cause("ModuleNotFoundError: No module named foo") == "import"
+
+    def test_sql_buckets_to_db_query(self, ft):
+        # Pattern matches the "table does not" regex (PG's "relation does
+        # not exist" is intentionally NOT caught — the schema pattern
+        # covers "relation" via the column/constraint/etc. set, but bare
+        # "relation does not exist" lands in ``other`` which is a known
+        # trade-off the classifier docs).
+        assert ft._sc_classify_root_cause("table does not exist") == "db_query"
+        assert ft._sc_classify_root_cause("sqlite database is locked") == "db_query"
+
+    def test_schema_buckets_to_schema(self, ft):
+        # The schema pattern includes migration/column/constraint/foreign
+        # key; we test the simplest unambiguous match.
+        assert ft._sc_classify_root_cause("column foo does not exist") == "schema"
+        assert ft._sc_classify_root_cause("foreign key violation on x") == "schema"
+
+    def test_unknown_buckets_to_other(self, ft):
+        assert ft._sc_classify_root_cause("??? something unusual") == "other"
+
+    def test_empty_string_is_other(self, ft):
+        assert ft._sc_classify_root_cause("") == "other"
+
+
+class TestSCPrimarySuspect:
+    def test_first_path_returned_lowercased(self, ft):
+        out = ft._sc_primary_suspect(["Tools/Foo.PY:42", "tools/bar.py:1"])
+        assert out == "tools/foo.py"
+
+    def test_strip_line_suffix(self, ft):
+        out = ft._sc_primary_suspect(["tools/foo.py:123:4"])
+        assert out == "tools/foo.py"
+
+    def test_empty_list_returns_empty(self, ft):
+        assert ft._sc_primary_suspect([]) == ""
+
+    def test_non_list_returns_empty(self, ft):
+        assert ft._sc_primary_suspect("tools/foo.py") == ""
+
+    def test_non_string_first_returns_empty(self, ft):
+        assert ft._sc_primary_suspect([None, "tools/foo.py"]) == ""
+
+
+class TestSCTemperatures:
+    def test_single_sample_is_midpoint(self, ft):
+        temps = ft._sc_temperatures(1, 0.6)
+        assert temps == [0.4]
+
+    def test_three_samples_evenly_spread(self, ft):
+        temps = ft._sc_temperatures(3, 0.6)
+        assert len(temps) == 3
+        # All in [0.05, 0.95]
+        assert all(0.05 <= t <= 0.95 for t in temps)
+        # Symmetric around midpoint — extremes equidistant
+        assert abs((temps[0] + temps[-1]) / 2 - 0.4) < 0.01
+
+    def test_four_samples_paired_symmetric(self, ft):
+        temps = ft._sc_temperatures(4, 0.6)
+        assert len(temps) == 4
+        # Paired: low/high sorted pairs
+        assert temps[0] < temps[1]
+        assert temps[2] < temps[3]
+
+    def test_zero_spread_clamps_to_floor(self, ft):
+        temps = ft._sc_temperatures(3, 0.0)
+        # Even with no spread, the floor of 0.05 prevents degeneracy
+        assert all(t >= 0.05 for t in temps)
+
+
+class TestSCAggregate:
+    def test_empty_samples_returns_zeros_and_no_threshold(self, ft):
+        agg = ft._sc_aggregate([], agreement_threshold=0.5)
+        assert agg["samples_valid"] == 0
+        assert agg["agreement_score"] == 0.0
+        assert agg["meets_threshold"] is False
+        assert agg["self_consistency_confidence"] == 0.0
+
+    def test_unanimous_agreement_is_one(self, ft):
+        samples = [
+            {"root_cause": "ModuleNotFoundError: No module named x",
+             "suspect_files": ["tools/foo.py:1"], "confidence": 0.9},
+        ] * 3
+        agg = ft._sc_aggregate(samples, agreement_threshold=0.5)
+        assert agg["samples_valid"] == 3
+        assert agg["agreement_score"] == 1.0
+        assert agg["meets_threshold"] is True
+        assert agg["self_consistency_confidence"] == 1.0
+        assert agg["consensus_root_cause"] == "import"
+        assert agg["consensus_suspect_file"] == "tools/foo.py"
+
+    def test_disagreement_lowers_agreement(self, ft):
+        # Three different root causes → 1/3 agreement
+        samples = [
+            {"root_cause": "ModuleNotFoundError: foo", "suspect_files": ["a.py"], "confidence": 0.9},
+            {"root_cause": "KeyError on item access", "suspect_files": ["b.py"], "confidence": 0.8},
+            {"root_cause": "TypeError coercion failed", "suspect_files": ["c.py"], "confidence": 0.7},
+        ]
+        agg = ft._sc_aggregate(samples, agreement_threshold=0.5)
+        assert agg["samples_valid"] == 3
+        assert agg["agreement_score"] == pytest.approx(1 / 3)
+        assert agg["meets_threshold"] is False
+        # Raw mean preserved for calibration
+        assert agg["raw_confidence_mean"] == pytest.approx(0.8)
+
+    def test_two_of_three_meets_default_threshold(self, ft):
+        samples = [
+            {"root_cause": "ModuleNotFoundError: foo", "suspect_files": ["a.py"], "confidence": 0.9},
+            {"root_cause": "ModuleNotFoundError: foo", "suspect_files": ["a.py"], "confidence": 0.9},
+            {"root_cause": "totally different bug", "suspect_files": ["b.py"], "confidence": 0.9},
+        ]
+        agg = ft._sc_aggregate(samples, agreement_threshold=0.5)
+        assert agg["samples_valid"] == 3
+        assert agg["agreement_score"] == pytest.approx(2 / 3)
+        assert agg["meets_threshold"] is True
+        assert agg["self_consistency_confidence"] == pytest.approx(2 / 3)
+
+    def test_threshold_above_majority_blocks(self, ft):
+        # 2/3 agreement but threshold 0.75 → fails
+        samples = [
+            {"root_cause": "ModuleNotFoundError: foo", "suspect_files": ["a.py"], "confidence": 0.9},
+            {"root_cause": "ModuleNotFoundError: foo", "suspect_files": ["a.py"], "confidence": 0.9},
+            {"root_cause": "different", "suspect_files": ["b.py"], "confidence": 0.9},
+        ]
+        agg = ft._sc_aggregate(samples, agreement_threshold=0.75)
+        assert agg["meets_threshold"] is False
+
+    def test_single_sample_does_not_meet_min_two(self, ft):
+        # The spec requires >= 2 valid samples for meets_threshold.
+        samples = [
+            {"root_cause": "ModuleNotFoundError: foo", "suspect_files": ["a.py"], "confidence": 0.9},
+        ]
+        agg = ft._sc_aggregate(samples, agreement_threshold=0.5)
+        assert agg["samples_valid"] == 1
+        # agreement_score=1.0 but meets_threshold still False (need >= 2)
+        assert agg["meets_threshold"] is False
+
+
+class TestSCDiagnoseTask:
+    """_sc_diagnose_task end-to-end with the LLM mocked out.
+
+    The function's only contract is the output dict shape: samples,
+    aggregate, enabled, config.  We don't try to validate the temperature
+    schedule or the LLM prompt — those are tested in TestSCTemperatures /
+    TestSCConfig respectively.  The aggregate is covered by TestSCAggregate.
+    """
+
+    def _patched_sample(self, ft, monkeypatch, sample_returns):
+        """Stub _sc_sample_one so it returns the given list in sequence."""
+        it = iter(sample_returns)
+        monkeypatch.setattr(ft, "_sc_sample_one", lambda task, **kw: next(it, None))
+
+    def test_disabled_returns_passthrough_aggregate(self, ft, monkeypatch):
+        self._patched_sample(
+            ft, monkeypatch,
+            [{"root_cause": "ModuleNotFoundError: x",
+              "suspect_files": ["tools/foo.py"], "confidence": 0.7}],
+        )
+        out = ft._sc_diagnose_task(
+            {"id": "t1", "title": "x", "last_failure_reason": "boom"},
+            enabled=False, n_samples=3,
+        )
+        assert out["enabled"] is False
+        assert len(out["samples"]) == 1
+        # Passthrough: meets_threshold True because single deterministic sample
+        assert out["aggregate"]["meets_threshold"] is True
+        # self_consistency_confidence collapses to raw confidence
+        assert out["aggregate"]["self_consistency_confidence"] == 0.7
+
+    def test_no_llm_samples_returns_zero_aggregate(self, ft, monkeypatch):
+        self._patched_sample(ft, monkeypatch, [None, None, None])
+        out = ft._sc_diagnose_task(
+            {"id": "t1", "title": "x", "last_failure_reason": "boom"},
+            n_samples=3, temperature_spread=0.6, agreement_threshold=0.5,
+        )
+        assert out["enabled"] is True
+        assert out["aggregate"]["samples_valid"] == 0
+        assert out["aggregate"]["meets_threshold"] is False
+        assert out["aggregate"]["self_consistency_confidence"] == 0.0
+
+    def test_full_unanimous_run(self, ft, monkeypatch):
+        sample = {"root_cause": "ModuleNotFoundError: x",
+                  "suspect_files": ["tools/foo.py"], "confidence": 0.85}
+        self._patched_sample(ft, monkeypatch, [sample, sample, sample])
+        out = ft._sc_diagnose_task(
+            {"id": "t1", "title": "x", "last_failure_reason": "boom"},
+            n_samples=3, temperature_spread=0.6, agreement_threshold=0.5,
+        )
+        assert out["enabled"] is True
+        assert out["aggregate"]["samples_valid"] == 3
+        assert out["aggregate"]["agreement_score"] == 1.0
+        assert out["aggregate"]["meets_threshold"] is True
+        assert out["aggregate"]["consensus_root_cause"] == "import"
+        assert out["aggregate"]["consensus_suspect_file"] == "tools/foo.py"
+
+
+class TestShouldAutoApplySCOverride:
+    """The SC aggregate must override the raw self-reported confidence
+    when ``sc_aggregate`` is supplied.  Disagreement must short-circuit
+    to the suggested-card path."""
+
+    def _task(self, **overrides):
+        base = {
+            "id": "t-sc", "title": "x",
+            "description": "regular build",
+            "task_type": "fix",
+            "last_failure_reason": "boom",
+        }
+        base.update(overrides)
+        return base
+
+    def _diag(self, **overrides):
+        base = {
+            "root_cause": "missing attribute",
+            "recommendation": "patch",
+            "patch_hint": "rename x",
+            "suspect_files": ["tools/foo.py:1"],
+            "confidence": 0.95,
+        }
+        base.update(overrides)
+        return base
+
+    def _sc(self, **overrides):
+        base = {
+            "samples_valid": 3,
+            "agreement_score": 1.0,
+            "self_consistency_confidence": 0.95,
+            "raw_confidence_mean": 0.95,
+            "meets_threshold": True,
+            "consensus_root_cause": "logic",
+            "consensus_suspect_file": "tools/foo.py",
+        }
+        base.update(overrides)
+        return base
+
+    def test_sc_disagreement_blocks_even_with_high_raw_conf(self, ft, monkeypatch):
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        # Raw confidence is 0.99 but the samples disagreed (1/3 agreement)
+        diag = self._diag(confidence=0.99)
+        sc = self._sc(
+            samples_valid=3,
+            agreement_score=1 / 3,
+            self_consistency_confidence=1 / 3,
+            meets_threshold=False,
+        )
+        allow, reason = ft.should_auto_apply(self._task(), diag, sc_aggregate=sc)
+        assert allow is False
+        assert "self-consistency disagreement" in reason
+
+    def test_sc_unanimous_uses_sc_confidence_for_threshold(self, ft, monkeypatch):
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        # 3/3 agreement → sc_confidence = 1.0, well above 0.85
+        # Use a deny-safe task to avoid the deny-prefix check
+        task = self._task(
+            task_type="fix",
+            last_failure_reason="AttributeError: typo",
+            description="regular build",
+        )
+        diag = self._diag()
+        sc = self._sc(meets_threshold=True, self_consistency_confidence=1.0)
+        allow, reason = ft.should_auto_apply(task, diag, sc_aggregate=sc)
+        # The reason text should reference 'sc' as the source, not 'raw'
+        assert "sc_conf=" in reason
+
+    def test_sc_below_threshold_uses_sc_value_in_reason(self, ft, monkeypatch):
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        # 2/3 agreement → sc_confidence = 0.67 → below 0.85
+        task = self._task()
+        diag = self._diag()
+        sc = self._sc(
+            samples_valid=3,
+            agreement_score=2 / 3,
+            self_consistency_confidence=2 / 3,
+            raw_confidence_mean=0.95,
+            meets_threshold=True,  # passed threshold check but value still low
+        )
+        # To exercise the threshold-fail path we need sc.meets_threshold=True
+        # but the actual SC confidence to fall below 0.85.  This happens
+        # when an operator dials the agreement_threshold low (e.g. 0.5)
+        # but the samples only produced 2/3 agreement.
+        allow, reason = ft.should_auto_apply(task, diag, sc_aggregate=sc)
+        # 0.67 < 0.85 → blocked at the confidence-threshold gate
+        assert allow is False
+        assert "sc_confidence" in reason

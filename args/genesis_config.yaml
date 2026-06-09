@@ -426,6 +426,17 @@ reflexes:
     react_max_iterations: 3          # hypothesize→instrument→observe rounds
     react_token_budget: 8000         # per-failure prompt char/4 ceiling
     react_no_progress_window: 2      # last N identical fingerprints → no_progress
+    # Self-consistency diagnosis (WS4.1 / arc-dec-01): sample N diagnoses
+    # with a temperature spread, then use cross-sample agreement on
+    # (root_cause_class, primary_suspect_file) as the real confidence
+    # that feeds should_auto_apply. Disagreement → suggested-card path.
+    # Both raw and SC confidence are recorded for arc-cal-* calibration.
+    self_consistency:
+      enabled: true                  # master switch; set false to bypass SC
+      n_samples: 3                   # 3 = smallest size distinguishing 3/3 from 2/3 from 1/3
+      temperature_spread: 0.6        # spread [0.1, 0.7] for N=3
+      agreement_threshold: 0.5       # majority (>=0.5) of N must agree on (rc, suspect)
+      token_budget_per_sample: 2000  # max_tokens cap on each LLM call in the SC batch
 
   e2e_runner:
     enabled: true
