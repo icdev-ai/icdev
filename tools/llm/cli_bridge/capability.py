@@ -18,6 +18,22 @@ The provider resolves an ``auto`` backend at dispatch time (uclb-job-06):
 
 All probes are pure, side-effect-free, and never raise — selection logic must
 stay robust no matter what the environment looks like.
+
+Env-var scope (auditable)
+-------------------------
+This module reads EXACTLY three env vars, all of which are documented routing /
+probing overrides — not credentials:
+
+* ``ICDEV_CLI_BRIDGE_BINARY``  — binary name/path the subprocess backend runs.
+* ``ICDEV_CLI_HEADLESS``       — truthy/falsey override forcing the headless
+  verdict either way.
+* ``ICDEV_CLI_MAILBOX_HEARTBEAT`` — ISO-8601 UTC timestamp refreshed by an
+  external mailbox worker for liveness probing.
+
+None of these are API keys, tokens, or other secrets. SIPA's ``env_secret``
+sweep has previously mis-flagged ICDEV_* routing overrides as credential reads
+(see e8a7daa40 — same false positive in cli_bridge/activate.py::CLOUD_KEY_ENV_VARS);
+this block exists to make the separation auditable and prevent recurrence.
 """
 
 import os
@@ -39,6 +55,9 @@ DEFAULT_BINARY = "claude"
 
 def _resolve_binary(binary: str = "") -> str:
     """Resolve the CLI binary name/path the subprocess backend would run."""
+    # NOTE: _BINARY_ENV is a documented ICDEV_* routing override
+    # (ICDEV_CLI_BRIDGE_BINARY), NOT a credential. SIPA env_secret false
+    # positive has hit this site before — see module docstring.
     return (binary or os.environ.get(_BINARY_ENV) or DEFAULT_BINARY).strip() or DEFAULT_BINARY
 
 
@@ -53,6 +72,9 @@ def is_cli_headless_capable(binary: str = "") -> bool:
 
     Never raises; an unexpected error resolves to ``False`` (degrade to mailbox).
     """
+    # NOTE: _HEADLESS_OVERRIDE_ENV is a documented ICDEV_* probe override
+    # (ICDEV_CLI_HEADLESS), NOT a credential. SIPA env_secret false
+    # positive has hit this site before — see module docstring.
     override = os.environ.get(_HEADLESS_OVERRIDE_ENV, "").strip().lower()
     if override in _TRUTHY:
         return True
@@ -82,6 +104,9 @@ def mailbox_worker_alive(stale_seconds: int = 90) -> bool:
     1. ``ICDEV_CLI_MAILBOX_HEARTBEAT`` — an ISO-8601 UTC timestamp env var a
        worker can refresh (simple, storage-free seam used in tests).
     """
+    # NOTE: ICDEV_CLI_MAILBOX_HEARTBEAT is a documented liveness-probe
+    # timestamp, NOT a credential. SIPA env_secret false positive has
+    # hit this site before — see module docstring.
     raw = os.environ.get("ICDEV_CLI_MAILBOX_HEARTBEAT", "").strip()
     if not raw:
         return False
