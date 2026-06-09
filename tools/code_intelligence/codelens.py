@@ -66,6 +66,11 @@ def main() -> int:
         help="Directory to scan (overrides --all)",
     )
     parser.add_argument("--file", default=None, help="Analyze a single file")
+    parser.add_argument(
+        "--dead-code",
+        action="store_true",
+        help="Include the dead-code & dependency-graph lens summary (CL-1+CL-2)",
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
@@ -110,11 +115,27 @@ def main() -> int:
         "analysis": report,
     }
 
+    # CL-1 + CL-2: dead-code & dependency-graph lens (advisory sub-section).
+    # Inspired by Fallow's static layer; deterministic, never fails the gate.
+    if args.dead_code:
+        try:
+            if str(BASE_DIR) not in sys.path:
+                sys.path.insert(0, str(BASE_DIR))
+            from tools.code_intelligence.dead_code import run_scan
+            dc = run_scan(project_dir=str(target))
+            output["dead_code"] = dc["summary"]
+        except Exception as exc:  # advisory only — never break the gate
+            output["dead_code"] = {"status": "error", "error": str(exc)[:200]}
+
     if args.json:
         print(json.dumps(output, indent=2))
     else:
         print(f"CodeLens gate: {'PASS' if gate_pass else 'FAIL'}")
         print(f"Reason: {gate_reason}")
+        if "dead_code" in output:
+            dc = output["dead_code"]
+            print(f"Dead-code lens: {dc.get('findings', 0)} findings "
+                  f"{dc.get('by_kind', {})}  graph={dc.get('graph', {})}")
 
     return 0 if gate_pass else 1
 

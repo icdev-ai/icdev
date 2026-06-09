@@ -1395,6 +1395,19 @@ def check_route_uniqueness(changed_files: Optional[List[Path]] = None) -> Cohere
 # Add to this list when a new external repo is cited; the check fails for
 # unregistered citations.
 _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
+    "fallow": {
+        "url": "https://github.com/fallow-rs/fallow",
+        "license": "MIT",
+        "audit_status": "clean-room — concept-only 2026-06-08",
+        "notes": (
+            "tools/code_intelligence/dead_code.py (CL-1+CL-2) was written "
+            "from Fallow's published static-analysis concept (dead code, "
+            "duplication, circular deps, complexity hotspots, architecture "
+            "boundaries). Fallow is Rust; the ICDEV implementation is "
+            "original Python (ast/stdlib only) sharing no source. Inspiration "
+            "for capability set only, not code derivation."
+        ),
+    },
     "agent zero": {
         "url": "https://github.com/agent0ai/agent-zero",
         "license": "MIT",
