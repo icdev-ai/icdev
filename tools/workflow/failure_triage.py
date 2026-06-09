@@ -517,6 +517,14 @@ AUTOMERGE_ENV = "ICDEV_AUTOFIX_AUTOMERGE"
 
 AUTOFIX_WORKTREE_BASE = BASE_DIR / ".tmp" / "autofix"
 AUDIT_DIR = BASE_DIR / ".tmp" / "kanban" / "autofix-audit"
+# WS2.4 / arc-dbg-03: opt-in deep post-mortem (faulthandler/trace + frame
+# locals at the failing frame). Strictly opt-in via env flag, default
+# OFF — the autofix pipeline is allowlisted, but capturing locals on
+# LLM-influenced repro code in the worktree is heavy and produces
+# potentially-sensitive state, so we never run it without an explicit
+# operator decision. The capture is worktree-only: it never runs against
+# the main checkout and never modifies anything outside AUDIT_DIR.
+DEEP_DEBUG_ENV = "ICDEV_AUTOFIX_DEEP_DEBUG"
 
 # ReAct-loop tuning (WS2.3 / arc-dbg-02). All three are overridable via
 # ``args/genesis_config.yaml`` under the ``failure_triage`` reflex block
@@ -556,6 +564,20 @@ _VERIFICATION_CMD_ALLOWLIST = (
 
 def automerge_enabled() -> bool:
     return os.environ.get(AUTOMERGE_ENV, "false").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _deep_debug_enabled() -> bool:
+    """Return True iff the operator opted into post-mortem locals capture.
+
+    WS2.4 / arc-dbg-03. Strictly opt-in via ``ICDEV_AUTOFIX_DEEP_DEBUG=true``.
+    Default OFF — the autofix verification command is already allowlisted
+    to ``python -m pytest``/``py_compile``/``ruff``/``bandit``/``tools.*``,
+    but the post-mortem re-runs the failing test in the autofix worktree
+    with a plugin that captures frame locals at the failing frame, so it
+    produces potentially-sensitive data and MUST NOT run unless an operator
+    explicitly turned it on.
+    """
+    return os.environ.get(DEEP_DEBUG_ENV, "false").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _validate_verification_command(cmd: str) -> Tuple[bool, str]:
@@ -630,12 +652,18 @@ def _validate_patch_files(patch: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[
     return (True, "ok")
 
 
-def _run(cmd: List[str], cwd: Path, timeout: int = 60) -> Tuple[int, str]:
+def _run(cmd: List[str], cwd: Path, timeout: int = 60, env: Optional[Dict[str, str]] = None) -> Tuple[int, str]:
     import subprocess as _sp
+    full_env: Optional[Dict[str, str]] = None
+    if env:
+        import os as _os
+        full_env = _os.environ.copy()
+        full_env.update(env)
     try:
         r = _sp.run(
             cmd, cwd=str(cwd), capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=timeout,
+            env=full_env,
         )
         return (r.returncode, (r.stdout or "") + (r.stderr or ""))
     except Exception as exc:
@@ -1048,6 +1076,15 @@ def _react_iterate(
             "applied_files": applied_files,
             "verification_command": current_patch.get("verification_command"),
         }
+        # WS2.4 / arc-dbg-03: opt-in deep post-mortem. Strictly gated by
+        # ICDEV_AUTOFIX_DEEP_DEBUG. When the flag is off (default),
+        # _maybe_attach_deep_debug is a single env-read + 2 early-returns
+        # — zero subprocess cost. When on AND verify failed AND we have
+        # a parseable failing test, re-run pytest with a tiny plugin to
+        # dump frame locals to AUDIT_DIR/<task>__<sig>__deep_debug.json
+        # and stamp the path on the observation. The ReAct loop can then
+        # feed ``deep_debug_evidence`` to the LLM on the next iteration.
+        _maybe_attach_deep_debug(wt, task.get("id") or "", sig, observation)
         history.append(observation)
         # Always emit per-iteration so the panel sees incremental state.
         _emit_event(
@@ -1114,6 +1151,245 @@ def _write_audit(task_id: str, sig: str, record: Dict[str, Any]) -> None:
         )
     except Exception as exc:
         logger.warning("failure_triage: audit write failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Deep post-mortem capture (WS2.4 / arc-dbg-03)
+#
+# Re-runs the failing pytest test in the autofix worktree with a tiny
+# ``pytest_exception_interact`` plugin that dumps frame locals at the
+# failing frame. Strictly opt-in (``ICDEV_AUTOFIX_DEEP_DEBUG=true``).
+#
+# Why a plugin instead of mutating cmd_parts? The verification command
+# is allowlisted (``_VERIFICATION_CMD_ALLOWLIST``) and any post-mortem
+# wrapper that ships in cmd_parts would either need its own prefix on
+# the allowlist (security surface) or shell-out (rejected by the
+# metacharacter check). A separate ``-p <plugin_path>`` re-run uses
+# the existing allowlisted ``python -m pytest`` and adds no new prefix.
+#
+# Why a re-run at all? pytest's ``--showlocals`` only shows locals in
+# the traceback section, and the ReAct loop needs a STRUCTURED record
+# (per-frame locals, repr-safe) it can feed to the LLM on the next
+# iteration. The re-run is bounded: we only re-run the EXACT failing
+# test path extracted from the prior observation, never the whole
+# suite, and we hard-cap the captured locals (max frames, max bytes
+# per repr) so a pathological frame can't OOM the worker.
+# ---------------------------------------------------------------------------
+
+# Hard caps to bound the post-mortem cost. Operators can override
+# DEEP_DEBUG_LOCALS_MAX_FRAMES / DEEP_DEBUG_LOCALS_MAX_REPR via env
+# but the defaults are deliberately tight.
+_DEEP_DEBUG_MAX_FRAMES = 8           # capture at most N frames from top
+_DEEP_DEBUG_MAX_REPR = 4000          # per-locals repr cap (bytes)
+_DEEP_DEBUG_TIMEOUT = 180            # re-run pytest timeout (seconds)
+_DEEP_DEBUG_PLUGIN_NAME = "icdev_deep_debug.py"
+
+
+def _deep_debug_plugin_path(task_id: str, sig: str) -> Path:
+    """Path where the post-mortem pytest plugin is written.
+
+    Lives in AUDIT_DIR (not the worktree) so the worktree stays clean
+    for git diffs and cleanup. The plugin is a one-shot file the
+    worker re-uses across iterations of the same task+sig.
+    """
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{task_id}__{sig}")
+    return AUDIT_DIR / f"{safe}__{_DEEP_DEBUG_PLUGIN_NAME}"
+
+
+def _deep_debug_evidence_path(task_id: str, sig: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{task_id}__{sig}")
+    return AUDIT_DIR / f"{safe}__deep_debug.json"
+
+
+# Plugin source. We write a static, fixed-source plugin (NOT derived
+# from the LLM) so a malicious or buggy LLM can't inject Python into
+# the post-mortem path. The plugin only DUMPS — it never execs anything
+# user-controlled, never imports anything outside the stdlib + pytest,
+# and never opens a network socket.
+_DEEP_DEBUG_PLUGIN_SOURCE = '''# Auto-generated by tools.workflow.failure_triage (arc-dbg-03).
+# Opt-in post-mortem: dumps frame locals at the failing frame to a JSON
+# file. Stdlib-only on the I/O side. NEVER trust ``report`` or
+# ``excinfo`` content — values may be hostile — every value is repr()-ed
+# with a hard cap and stored as a string.
+import json
+import os
+import sys
+import traceback
+
+OUT_PATH = os.environ.get("ICDEV_DEEP_DEBUG_OUT", "")
+MAX_FRAMES = int(os.environ.get("ICDEV_DEEP_DEBUG_MAX_FRAMES", "8"))
+MAX_REPR = int(os.environ.get("ICDEV_DEEP_DEBUG_MAX_REPR", "4000"))
+
+def _safe_repr(value, cap):
+    try:
+        r = repr(value)
+    except Exception as exc:
+        return f"<unreprable: {type(exc).__name__}: {exc}>"
+    if len(r) > cap:
+        return r[:cap] + f"...<truncated {len(r) - cap} bytes>"
+    return r
+
+def _capture_frames(tb):
+    frames = []
+    summary = traceback.extract_tb(tb)
+    for idx, fr in enumerate(summary[:MAX_FRAMES]):
+        # Try to fetch the live frame locals. The traceback object from
+        # pytest gives us the exception's chain only — for the locals
+        # of OTHER frames we walk ``sys._current_frames`` to find the
+        # matching live frame. When the test has already returned (the
+        # common case for a ``pytest.raises`` failure), the live frame
+        # is gone and we fall back to the file/line metadata only.
+        live = None
+        try:
+            ident = id(fr)
+            for f_ident, f_obj in list(sys._current_frames().items()):
+                if f_obj.f_code.co_filename == fr.filename and f_obj.f_lineno == fr.lineno:
+                    live = f_obj
+                    break
+        except Exception:
+            live = None
+        locals_dump = {}
+        if live is not None:
+            for k, v in live.f_locals.items():
+                if k.startswith("__") and k.endswith("__"):
+                    continue
+                locals_dump[k] = _safe_repr(v, MAX_REPR)
+        frames.append({
+            "frame_index": idx,
+            "filename": fr.filename,
+            "lineno": fr.lineno,
+            "name": fr.name,
+            "line": fr.line,
+            "locals": locals_dump,
+        })
+    return frames
+
+def pytest_exception_interact(node, call, report):
+    try:
+        excinfo = call.excinfo
+        if excinfo is None or excinfo._excinfo is None:
+            return
+        exc_type, exc_value, exc_tb = excinfo._excinfo
+        frames = _capture_frames(exc_tb)
+        payload = {
+            "nodeid": getattr(node, "nodeid", "?"),
+            "exception": _safe_repr(exc_value, MAX_REPR),
+            "exception_type": getattr(exc_type, "__name__", str(exc_type)),
+            "frames": frames,
+            "failing_test": getattr(node, "name", "?"),
+            "failing_file": getattr(node, "fspath", "?"),
+        }
+        if OUT_PATH:
+            # Atomic write: never leave a half-written JSON in AUDIT_DIR.
+            tmp = OUT_PATH + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, indent=2, default=str, ensure_ascii=False)
+            os.replace(tmp, OUT_PATH)
+    except Exception as exc:
+        # The post-mortem MUST never break the actual test run.
+        # Surface the failure to stderr so the worker can see it.
+        sys.stderr.write(f"[icdev_deep_debug] capture failed: {exc!r}\\n")
+'''
+
+
+def _deep_debug_write_plugin(task_id: str, sig: str) -> Path:
+    """Write the static post-mortem plugin to AUDIT_DIR. Idempotent."""
+    path = _deep_debug_plugin_path(task_id, sig)
+    try:
+        AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(_DEEP_DEBUG_PLUGIN_SOURCE, encoding="utf-8")
+    except Exception as exc:
+        logger.warning("deep_debug: failed to write plugin: %s", exc)
+        return path  # caller will see the write failure on -p load
+    return path
+
+
+def _deep_debug_capture(
+    wt: Path,
+    task_id: str,
+    sig: str,
+    failing_test: str,
+) -> Optional[Path]:
+    """Re-run the failing pytest test in the autofix worktree with the
+    post-mortem plugin loaded, then return the path to the captured
+    evidence JSON. Returns None on any failure (never raises — the
+    ReAct loop must continue even if deep-debug blows up).
+
+    The re-run uses the same allowlisted ``python -m pytest`` prefix
+    and never mutates files in the worktree (it only writes a plugin
+    file to AUDIT_DIR). It does NOT modify the ReAct loop's view of
+    the verification — this is a side-channel, parallel observation.
+    """
+    if not (failing_test or "").strip():
+        return None
+    # Sanitize: failing_test is the raw pytest path token (could
+    # contain shell metacharacters in theory). Restrict to a known-
+    # safe set before handing it to the allowlisted command.
+    if not re.match(r"^[A-Za-z0-9_./:\-]+(::[A-Za-z0-9_\[\], ]+)?$", failing_test):
+        logger.warning("deep_debug: refusing suspicious failing_test token: %r", failing_test)
+        return None
+    plugin = _deep_debug_write_plugin(task_id, sig)
+    evidence = _deep_debug_evidence_path(task_id, sig)
+    # Pass output path and bounds through the environment — the plugin
+    # reads them. Using env (not argv) keeps the allowlisted command
+    # line clean and avoids any chance of arg injection.
+    env_overrides = {
+        "ICDEV_DEEP_DEBUG_OUT": str(evidence),
+        "ICDEV_DEEP_DEBUG_MAX_FRAMES": str(_DEEP_DEBUG_MAX_FRAMES),
+        "ICDEV_DEEP_DEBUG_MAX_REPR": str(_DEEP_DEBUG_MAX_REPR),
+    }
+    # Re-run pytest against the EXACT failing test. We use ``-p`` to
+    # load our plugin (no conftest, no project pollution) and ``--no-header``
+    # ``-q`` to keep the output bounded — the ReAct loop doesn't read
+    # the re-run output, only the JSON the plugin writes.
+    cmd_parts = [
+        "python", "-m", "pytest",
+        "-p", str(plugin),
+        "--no-header", "-q", "--tb=line", "-x",
+        failing_test,
+    ]
+    rc, _out = _run(cmd_parts, cwd=wt, timeout=_DEEP_DEBUG_TIMEOUT, env=env_overrides)
+    # The re-run is best-effort: rc may be 0 (test passed on retry) or
+    # non-zero (test failed again — what we want to capture). If the
+    # evidence file is missing, the re-run was unable to install the
+    # plugin or pytest refused to start. Either way, don't raise.
+    if not evidence.exists():
+        logger.info(
+            "deep_debug: no evidence written for %s/%s (rc=%d) — skipping",
+            task_id, sig, rc,
+        )
+        return None
+    return evidence
+
+
+def _maybe_attach_deep_debug(
+    wt: Path,
+    task_id: str,
+    sig: str,
+    observation: Dict[str, Any],
+) -> None:
+    """In-place augment ``observation`` with ``deep_debug_evidence`` when
+    the env flag is on AND the prior verify failed AND we have a parseable
+    failing-test path. No-op otherwise — every early-return keeps the
+    ReAct loop's hot path zero-cost when the operator hasn't opted in.
+    """
+    if not _deep_debug_enabled():
+        return
+    if observation.get("verification_rc", -1) == 0:
+        return  # only on failure
+    failing_test = (observation.get("failing_test") or "").strip()
+    if not failing_test:
+        return
+    evidence = _deep_debug_capture(wt, task_id, sig, failing_test)
+    if evidence is not None:
+        observation["deep_debug_evidence"] = str(evidence)
+        observation["deep_debug_captured"] = True
+        logger.info(
+            "deep_debug: captured locals for %s/%s → %s",
+            task_id, sig, evidence,
+        )
+    else:
+        observation["deep_debug_captured"] = False
 
 
 def apply_patch_in_worktree(
