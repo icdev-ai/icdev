@@ -11,6 +11,7 @@
 | `ContentAgent` | `tools/slides/content_agent.py` | Parallel per-slide content generation (bullets, notes, visual context) |
 | `GraphicsGenerator` | `tools/slides/graphics_generator.py` | Two-stage image pipeline: LLM prompt → Ollama/DALL-E/Gemini/Pillow |
 | `PptxBuilder` | `tools/slides/pptx_builder.py` | python-pptx assembly with 3 themes |
+| `PdfExport` | `tools/slides/pdf_export.py` | reportlab landscape 16:9 PDF render (text/shapes/kpis/tables/images native; charts/diagrams via viz kernel) |
 | `InputParser` | `tools/slides/input_parser.py` | text/PDF/DOCX ingestion |
 | `Templates` | `tools/slides/templates.py` | Ready-made deck templates + slide-layout presets (blank/pitch/status/comparison/briefing/...) |
 | Source: capabilities | `tools/slides/sources/icdev_capabilities.py` | ICDEV feature catalog |
