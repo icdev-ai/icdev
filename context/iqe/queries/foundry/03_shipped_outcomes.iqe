@@ -1,0 +1,5 @@
+// IQE-FOUNDRY-003: Shipped outcomes — concepts that completed the autonomous build loop
+// The learner records these; shipped vs failed feeds scorer weight tuning + the circuit breaker.
+foreach o in foundry.outcomes
+where o.outcome == "shipped"
+select o.id, o.concept_id, o.concept_name, o.metric, o.created_at

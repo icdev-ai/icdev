@@ -1,0 +1,5 @@
+// IQE-FOUNDRY-004: Failed outcomes — concepts whose autonomous build did not ship
+// Pair with 03 (shipped) for a shipped-vs-failed view; recurring failures trip the circuit breaker.
+foreach o in foundry.outcomes
+where o.outcome == "failed"
+select o.id, o.concept_id, o.concept_name, o.metric, o.created_at

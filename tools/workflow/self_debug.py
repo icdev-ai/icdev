@@ -195,6 +195,18 @@ def snapshot(task_id: str, cwd: str, reason: str) -> Dict[str, Any]:
             snap["log_tail"] = []
     snap["suspect_code"] = _suspect_code_refs(reason)
     snap["reason"] = reason[:2000]
+    # Static-analysis-on-diff (WS2.2, arc-dbg-01): bounded CodeLens run over
+    # the functions changed in main..kanban/<task>. Adds a ``static_findings``
+    # key carrying per-function smells (complexity spike, None-deref risk,
+    # missing return, etc.) to localize the failure. Lazy import keeps the
+    # snapshot cheap when static_diff_lens is not installed.
+    try:
+        from tools.analysis.static_diff_lens import snapshot_evidence
+        snap.update(snapshot_evidence(task_id=task_id, base="main", head=f"kanban/{task_id}"))
+    except Exception as exc:  # never raise — degrade gracefully
+        logger.debug("self_debug: static_diff_lens snapshot skipped: %s", exc)
+        snap["static_findings"] = {"error": f"static_diff_lens unavailable: {exc}"}
+        snap["static_findings_count"] = 0
     return snap
 
 
@@ -227,12 +239,24 @@ def diagnose(snap: Dict[str, Any], chain_mode: str = "") -> Dict[str, Any]:
         logger.warning("self_debug: LLM router import failed: %s", exc)
         return _heuristic_diagnosis(snap)
 
+    # Surface static-analysis findings explicitly so the LLM localizes the
+    # bug to a SPECIFIC FUNCTION in the diff (not just a file). The full
+    # snap is still emitted below for cross-correlation with log_tail /
+    # suspect_code / failing-gate reason.
+    static_block = ""
+    sf = snap.get("static_findings") or {}
+    if isinstance(sf, dict) and (sf.get("findings") or sf.get("summary")):
+        static_block = (
+            "\nSTATIC-ANALYSIS-ON-DIFF (per changed function in main..kanban/"
+            f"{snap.get('task_id', '?')}):\n{json.dumps(sf, indent=2, default=str)[:3000]}\n"
+        )
     prompt = (
         "A kanban task has failed verification repeatedly with the same "
         "signature. Diagnose the STRUCTURAL root cause from this evidence. "
         "Do not repeat the symptom — explain why the loop keeps happening "
         "and point at the code that needs fixing.\n\n"
-        f"EVIDENCE (JSON):\n{json.dumps(snap, indent=2, default=str)}\n\n"
+        f"EVIDENCE (JSON):\n{json.dumps(snap, indent=2, default=str)[:6000]}\n"
+        f"{static_block}\n"
         f"{_DIAGNOSIS_SCHEMA_HINT}"
     )
     try:

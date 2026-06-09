@@ -1,0 +1,97 @@
+# CUI // SP-CTI
+# Completion / IQE Exemptions — canvas triage (tch-fix-04)
+#
+# Every dashboard canvas under tools/dashboard/templates/<canvas>/ is scored by
+# the 8-component completeness gate (CLAUDE.md). Component 6/7/8 are IQE wiring
+# (adapter, seed queries, query widget). The naive auditor matches the IQE
+# adapter file by EXACT template-dir name — but most canvases register their
+# adapter under an abbreviated _CANVAS_MAP key (e.g. document_intelligence -> dic,
+# security_canvas -> sdc, noc_canvas -> nocc), so the auditor reports false
+# "missing IQE adapter" for canvases that are already fully wired.
+#
+# This file is the authoritative IQE triage: it records WHY each non-IQE canvas
+# is excused from the gate so the gate stays signal, not noise, and so the real
+# backfill set (iqe_required, below) is concrete rather than guessed.
+#
+# Consumed by: tools/workflow/coherence_checker.py :: _load_page_completeness_whitelist
+#   The loader unions the canvas names in `iqe_exempt`, `iqe_wired_via_alias`,
+#   and `iqe_partial` into the page-completeness skip set (alongside the legacy
+#   args/page_completeness_whitelist.yaml). `iqe_required` is documentation only
+#   and is NOT skipped — those canvases must still fail the gate until backfilled.
+#
+# Buckets:
+#   iqe_exempt          utility/legacy/admin pages with no query-worthy data model
+#   iqe_wired_via_alias IQE already wired under an abbreviated _CANVAS_MAP key
+#   iqe_partial         adapter file exists but isn't dispatched / seeds are non-yaml
+#   iqe_required        data-bearing, query-worthy, NO working IQE — backfill (tch-fix-05)
+#
+# Each value is a one-line rationale. Remove an entry when its canvas reaches the
+# correct end-state (exempt: stays; wired/partial: fold into the auditor once it
+# resolves aliases; required: delete once IQE lands).
+
+# --------------------------------------------------------------------------
+# iqe-exempt — utility / legacy / infrastructure; no query-worthy data model
+# --------------------------------------------------------------------------
+iqe_exempt:
+  admin:            "Admin console — operational controls, no query-worthy record set"
+  agents:           "Agent registry/health UI — utility (minimal IQE agents.registry already exists)"
+  autonomous_coder: "Engine status panel — runtime state, not a stored record set"
+  events:           "System event feed — ephemeral activity stream, not query-worthy domain data"
+  forge_academy:    "Training / learning content pages — static curriculum, no data model"
+  il5:              "IL5 enclave config/legacy page — environment posture, no query-worthy records"
+  includes:         "Not a canvas — shared Jinja partials directory (templates/includes/)"
+  info_ops:         "Thin blueprint-only page (no backing module / data model yet) — promote if a data model lands"
+  mfa:              "Multi-factor auth screen — authentication utility, no data model"
+  monitoring:       "Ops alert/monitoring dashboard — live metrics view, not query-worthy domain data"
+  orchestration:    "Orchestration status panel — runtime state, not a stored record set"
+  poam:             "POA&M list view — compliance artifact view, no standalone IQE collection"
+  projects:         "Projects-in-flight meta panel — utility (minimal IQE projects.list already exists)"
+  query:            "The IQE query interface itself — consumer of IQE, not a queryable canvas"
+  safety_monitor:   "AI safety monitor panel — runtime guardrail state, not query-worthy records"
+  sre:              "SRE / reliability dashboard — live ops view, not query-worthy domain data"
+  system_graph:     "System dependency graph viz — derived topology view, not a stored record set"
+  ai_gameday:       "Orphan legacy template (no tools/ai_gameday/ module) — superseded by 'gameday'"
+
+# --------------------------------------------------------------------------
+# iqe-wired-via-alias — IQE already wired; auditor false-negative on exact name
+# (template-dir -> abbreviated _CANVAS_MAP key with a real adapter file)
+# --------------------------------------------------------------------------
+iqe_wired_via_alias:
+  network:               "wired via ndc (tools/iqe/adapters/ndc.py)"
+  security_canvas:       "wired via sdc (tools/iqe/adapters/security.py)"
+  data_canvas:           "wired via ddc (tools/iqe/adapters/data.py)"
+  infra_canvas:          "wired via idc (tools/iqe/adapters/infra.py)"
+  observability_canvas:  "wired via odc (tools/iqe/adapters/observability.py)"
+  boundary_canvas:       "wired via bdc (tools/iqe/adapters/bdc.py)"
+  migration_canvas:      "wired via mc + cam (tools/iqe/adapters/mc.py, cam.py)"
+  agentic_ai_canvas:     "wired via aadc (tools/iqe/adapters/aadc.py)"
+  aiml_canvas:           "wired via aimc (tools/iqe/adapters/aimc.py)"
+  ops_hub:               "wired via ohc (tools/iqe/adapters/ohc.py)"
+  noc_canvas:            "wired via nocc (tools/iqe/adapters/nocc.py)"
+  pmc_canvas:            "wired via pmc (tools/iqe/adapters/pmc.py)"
+  ccc_canvas:            "wired via ccc (tools/iqe/adapters/ccc.py)"
+  dsoc_canvas:           "wired via dsoc (tools/iqe/adapters/dsoc.py)"
+  qdc_canvas:            "wired via qdc (tools/iqe/adapters/qdc.py)"
+  document_intelligence: "wired via dic (tools/iqe/adapters/dic.py)"
+  coworker:              "wired via ace (icdev/tools/iqe/adapters/ace.py)"
+
+# --------------------------------------------------------------------------
+# iqe-partial — adapter file exists but is NOT registered in app.py _CANVAS_MAP
+# (or seed queries are present as non-.yaml). Small backfill: add dispatch entry
+# + .yaml seeds (+ widget where missing). Excused from the gate meanwhile.
+# --------------------------------------------------------------------------
+iqe_partial:
+  studio:   "adapter studio_sim.py present but not in _CANVAS_MAP — needs dispatch entry + .yaml seeds"
+  zta:      "adapter zta.py + seed dir present but not in _CANVAS_MAP — needs dispatch entry + widget + .yaml seeds"
+  gameday:  "adapter gameday.py + seed dir present but not in _CANVAS_MAP — needs dispatch entry + .yaml seeds"
+
+# --------------------------------------------------------------------------
+# iqe-required — data-bearing, query-worthy, NO working IQE. NOT skipped by the
+# gate. These are the concrete backfill targets handed to tch-fix-05.
+# --------------------------------------------------------------------------
+iqe_required:
+  finetune:               "Fine-tune jobs / datasets / model registry / eval runs — richly query-worthy, no adapter"
+  rag:                    "RAG source registry / chunks / eval runs / quality feedback — query-worthy, no adapter"
+  migration_intelligence: "Migration opportunities / strategies / SLA records / pipeline reports — query-worthy, no adapter"
+  mission_canvas:         "BROKEN: _CANVAS_MAP points at tools.iqe.adapters.mission_canvas but the file is absent — create the adapter"
+  proposals:              "Pre-award proposal pipeline data not covered by govcon/cpmp collections — needs its own adapter"

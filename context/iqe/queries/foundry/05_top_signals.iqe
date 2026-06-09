@@ -1,0 +1,5 @@
+// IQE-FOUNDRY-005: Harvested signals — the inputs the synthesizer clusters into concepts
+// Pulled from the Innovation / Creative / Research engines + Genesis predictions by the harvester.
+foreach s in foundry.signals
+where s.raw_score > 0
+select s.id, s.run_id, s.source_engine, s.theme, s.raw_score, s.created_at
