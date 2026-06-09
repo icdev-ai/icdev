@@ -99,6 +99,7 @@ REFLEX_NAMES = [
     "integrity_monitor",
     "pr_watcher",
     "done_artifact_audit",
+    "review_loop",
 ]
 
 # Backward-compat aliases for module-level access used by other code

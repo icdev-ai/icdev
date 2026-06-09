@@ -14,6 +14,7 @@ clean-room rewrite).
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Any, List, Optional, Sequence, Tuple
@@ -156,6 +157,62 @@ def _build_pr_title(run_id: str, issue_number: Optional[Any]) -> str:
     return f"ICDEV™-{run_id}"
 
 
+def run_review_loop_preflight(state: Any, log: Any) -> None:
+    """Self-green the branch with review_loop BEFORE pushing / opening a PR.
+
+    Runs the diff-scoped review loop (ruff + changed-files coherence + SIPA)
+    over the task's branch diff, applies deterministic autofixes, and commits
+    them so the PR opens already-green — reducing pr_watcher (OPT-70) resume
+    cycles downstream. Non-blocking and best-effort: any failure (or a
+    not-green verdict) logs and returns; the push proceeds regardless. The
+    fix_brief of non-deterministic findings is logged for the agent / reviewer.
+
+    Disabled by setting ``ICDEV_REVIEW_LOOP_PREFLIGHT=0``.
+    """
+    if os.environ.get("ICDEV_REVIEW_LOOP_PREFLIGHT", "1").strip().lower() in ("0", "false", "no", "off"):
+        return
+    try:
+        from tools.quality.review_loop import preflight, render_summary
+    except Exception as exc:
+        log.warning("review_loop preflight: import failed (%s) — skipping", exc)
+        return
+
+    base = "origin/main"
+    if hasattr(state, "get"):
+        base = state.get("base_branch") or state.get("base_ref") or base
+    try:
+        report = preflight(base=base, autofix=True, coherence_scope="changed", audit=True)
+    except Exception as exc:
+        log.warning("review_loop preflight: run failed (%s) — skipping", exc)
+        return
+
+    # Commit any deterministic autofixes the loop applied, so the PR is green.
+    if _has_uncommitted_changes():
+        _run_git(["add", "-A"])
+        _, commit_err, rc = _run_git([
+            "commit", "-m",
+            "chore(review-loop): apply pre-PR autofixes (ruff/coherence)",
+            "--no-verify",
+        ])
+        if rc == 0:
+            log.info("review_loop preflight: committed autofixes")
+        else:
+            log.warning("review_loop preflight: autofix commit failed: %s", commit_err)
+
+    if report.green:
+        log.info("review_loop preflight: GREEN — all blocking gates pass")
+    else:
+        log.warning(
+            "review_loop preflight: NOT green (%s) — %d open finding(s) left for review:\n%s",
+            report.reason, len(report.fix_brief), render_summary(report),
+        )
+
+
+def _has_uncommitted_changes() -> bool:
+    out, _, _ = _run_git(["status", "--porcelain"])
+    return bool(out.strip())
+
+
 def finalize_git_operations(state: Any, logger: Any, vcs: Any = None) -> None:
     """Push the current branch and ensure a PR/MR exists for it.
 
@@ -183,6 +240,12 @@ def finalize_git_operations(state: Any, logger: Any, vcs: Any = None) -> None:
         except Exception as exc:
             log.error("finalize_git_operations: cannot init VCS: %s", exc)
             return
+
+    # Pre-PR self-green: apply review_loop autofixes + commit before pushing.
+    try:
+        run_review_loop_preflight(state, log)
+    except Exception as exc:  # never let preflight block the push
+        log.warning("finalize_git_operations: review_loop preflight raised: %s", exc)
 
     log.info("finalize_git_operations: pushing %s", branch_name)
     pushed, push_err = push_branch(branch_name)

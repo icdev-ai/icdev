@@ -6,6 +6,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Rigor Gates | tools/quality/rigor_gates.py | IL-tier quality rigor gates: coverage and static-analysis thresholds; auto-discovers coverage.xml; graceful degrade if no coverage data available | --tier (il2/il4/il5/il6), --project-dir, --coverage, --json, --gate | Gate pass/fail with violations list |
+| Review Loop | tools/quality/review_loop.py | Local "review-until-green" loop (greploop-adapted): runs ICDEV's own gates (ruff lint, coherence_checker, SIPA integrity) over the local diff as a score function, applies deterministic autofixes, and iterates until every blocking gate passes or max_iterations. Pre-PR analog of tools/ci/pr_watcher.py; emits a fix_brief of remaining findings for the driving agent. Config: args/review_loop_config.yaml | --base \<ref\>, --max N, --no-autofix, --no-audit, --json, --gate | Per-iteration score table + fix_brief; --gate exits 0=green/1=not |
 
 ### IL-Tier Thresholds
 

@@ -1,0 +1,41 @@
+# Configuration for tools/quality/review_loop.py — the local pre-PR
+# "review-until-green" loop. Adapted from greptileai/skills/greploop:
+# run ICDEV's existing gates as the score function over the local diff,
+# iterating deterministic autofixes until every blocking gate is green or
+# max_iterations is reached. This runs BEFORE a PR exists; tools/ci/pr_watcher.py
+# is the post-PR analog.
+
+# Hard cap on review→fix→re-review iterations (greploop uses 5).
+max_iterations: 3
+
+# Apply deterministic autofixes (ruff --fix, coherence --fix) between iterations.
+# Non-deterministic findings are never auto-edited — they are surfaced in the
+# fix_brief for the driving agent to address, then re-run.
+autofix: true
+
+# Write one audit_trail row per iteration (reuses the pr_watcher audit pattern).
+audit: true
+
+# Gate registry. Each enabled gate contributes pass/fail + findings to the score.
+# `blocking: true` gates must all pass for the loop to report "green".
+# `blocking: false` gates report findings but never hold the loop open.
+gates:
+  ruff:
+    enabled: true
+    blocking: true
+    # Mirror the CI lint gate (.github/workflows/icdev-ci.yml) so local-green
+    # implies CI-green. Scoped to the changed files, not the whole tree.
+    select: ["E", "F", "W"]
+    ignore: ["E402", "E501", "E701", "E702", "E721", "E722", "E731", "E741", "F404"]
+  coherence:
+    enabled: true
+    blocking: true
+    # scope=all → whole-repo coherence (thorough; standalone CLI default).
+    # scope=changed → coherence_checker --changed-files <diff> (fast, diff-scoped;
+    # used by the pre-PR preflight, pre-commit hook, and Genesis reflex).
+    scope: all
+  sipa:
+    enabled: true
+    blocking: true
+    # SIPA verdict that holds the loop open. allow < review < quarantine.
+    block_on: ["quarantine"]

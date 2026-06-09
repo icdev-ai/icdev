@@ -48,6 +48,15 @@ Run the CLI command or use MCP tool `lint` MCP tool from icdev-builder:
 - Run bandit (security) + pylint/eslint (quality)
 - Fix any issues found
 
+Self-green the change before commit (review-until-green loop):
+- `python tools/quality/review_loop.py --json` — runs ICDEV's gates (ruff +
+  changed-files coherence + SIPA) over the diff, applies deterministic
+  autofixes, and iterates until every blocking gate passes or the cap is hit.
+- Address any `fix_brief` findings it reports, then re-run until green.
+- This is the same loop the autonomous pipeline runs pre-PR (git_ops preflight)
+  and the pre-commit hook runs on staged files — running it here means the
+  build lands green by hand or autonomously.
+
 Re-run tests to confirm nothing broke.
 
 ### 5. Compliance Mapping

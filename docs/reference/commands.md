@@ -768,6 +768,11 @@ python tools/workflow/coherence_checker.py --all --fix --json                   
 python tools/workflow/coherence_checker.py --all --gate                                             # Gate evaluation (exit 0=pass, 1=fail)
 python tools/workflow/coherence_checker.py --check schema_code --json                               # Single check
 python tools/workflow/coherence_checker.py --changed-files "tools/foo.py,tests/test_foo.py" --json  # Scope to changed files
+
+# Local "review-until-green" loop (greploop-adapted) — gates as a score function over the diff
+python tools/quality/review_loop.py --json                            # Working-tree mode: ruff + coherence + SIPA, autofix, iterate
+python tools/quality/review_loop.py --base origin/main --max 3 --gate # Branch diff vs base; exit 0=green / 1=not green
+python tools/quality/review_loop.py --no-autofix --json               # Report only (no edits); emit fix_brief for the agent
 ```
 
 ---
