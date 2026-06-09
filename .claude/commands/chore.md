@@ -771,6 +771,38 @@ IMPORTANT: Execute every step in order, top to bottom.
 ## Chore
 $ARGUMENTS
 
+## Git-First Command Payloads — Kanban API Task Completion
+
+Use these payload snippets to mark a Kanban task as `done` on the ICDEV™ board via the
+local dashboard API. The endpoint accepts a JSON body with the new status.
+
+### cURL payload — move a task to `done`
+
+```bash
+curl -X POST http://localhost:5050/api/kanban/tasks/task-3939e37034/move \
+  -H "Content-Type: application/json" \
+  -d "{\"status\": \"done\"}"
+```
+
+**Notes**
+- The task ID is the path segment between `/tasks/` and `/move` (here: `task-3939e37034`).
+- The body MUST be valid JSON; `-H "Content-Type: application/json"` is required or the
+  request will be rejected with 415 Unsupported Media Type.
+- The dashboard binds to `http://localhost:5050` by default. Override with the
+  `ICDEV_DASHBOARD_URL` env var if a different host/port is in use.
+- Expected success response: `200 OK` with `{"status": "done", "task_id": "task-3939e37034"}`.
+- Expected failure responses: `404 Not Found` (unknown task id), `400 Bad Request`
+  (missing/invalid `status` value), `415 Unsupported Media Type` (missing header).
+
+### Inline one-liner (PowerShell, Windows)
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://localhost:5050/api/kanban/tasks/task-3939e37034/move" -ContentType "application/json" -Body '{"status": "done"}'
+```
+
+This file is the single source of truth for the Kanban completion payload — no other
+file in the repo carries this contract.
+
 ## Report
 - Summarize what was done: issue created, branch created, plan written, chore completed, all ICDEV™ DevSecOps gates passed.
 - Include the GitHub issue number and URL.
