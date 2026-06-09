@@ -8,12 +8,12 @@ Enable logic
 ------------
 ``should_enable()`` is True when the environment is air-gapped OR there is no
 usable cloud API key (env var or BYOK). The router consults
-``cli_bridge_enabled()`` which layers the ``ICDEV_CLI_BRIDGE`` env override on
-top of ``should_enable()``:
+``cli_bridge_enabled()`` which layers the context-scoped override
+(see :func:`cli_bridge_override`) on top of ``should_enable()``:
 
-- ``ICDEV_CLI_BRIDGE=false`` (or 0/no/off) — hard-disable, never activate.
-- ``ICDEV_CLI_BRIDGE=true``  (or 1/yes/on) — force-enable, always activate.
-- unset / anything else — default to ``should_enable()``.
+- Override ``True``  → force-enable for this context only.
+- Override ``False`` → force-disable (bypass) for this context only.
+- Override ``None``  → fall back to ``should_enable()`` auto-detection.
 
 This mirrors :func:`tools.airgap.config_patcher._rewrite_routing_chains` but
 only ensures ``claude-cli`` is first in each chain (it does not strip the
@@ -34,7 +34,7 @@ CLI_MODEL_NAME = "claude-cli"
 
 # Request-/context-scoped override of the CLI bridge enable state.
 #
-# ``None``  → no override; fall back to the env var + ``should_enable()`` logic.
+# ``None``  → no override; fall back to ``should_enable()`` auto-detection.
 # ``True``  → force-enable the bridge for this context only.
 # ``False`` → force-disable (bypass) the bridge for this context only.
 #
@@ -54,7 +54,7 @@ def cli_bridge_override(value: Optional[bool]):
 
     Args:
         value: ``True`` force-enable, ``False`` force-disable (bypass),
-            ``None`` clear the override (defer to env + auto-detect).
+            ``None`` clear the override (defer to auto-detect).
 
     Returns:
         A ``contextvars.Token`` to pass to :func:`reset_cli_bridge_override`.
@@ -111,9 +111,6 @@ CLOUD_KEY_ENV_VARS = (
 # Providers probed via BYOK key resolution.
 _BYOK_PROVIDERS = ("anthropic", "openai", "google", "azure", "ibm", "bedrock")
 
-_FALSEY = ("false", "0", "no", "off")
-_TRUTHY = ("true", "1", "yes", "on")
-
 
 def _has_cloud_key() -> bool:
     """Return True if any usable cloud LLM key is available (env or BYOK).
@@ -162,17 +159,12 @@ def cli_bridge_enabled() -> bool:
     """Resolve the effective enable state.
 
     Precedence: context override (set via :func:`cli_bridge_override`) >
-    ``ICDEV_CLI_BRIDGE`` env var > ``should_enable()`` auto-detection.
+    ``should_enable()`` auto-detection.
     """
     override = _cli_bridge_override.get()
     if override is not None:
         return override
 
-    flag = os.environ.get("ICDEV_CLI_BRIDGE", "").strip().lower()
-    if flag in _FALSEY:
-        return False
-    if flag in _TRUTHY:
-        return True
     return should_enable()
 
 
@@ -232,7 +224,6 @@ if __name__ == "__main__":
         "airgap_or_no_cloud_key": should_enable(),
         "has_cloud_key": _has_cloud_key(),
         "cli_bridge_enabled": cli_bridge_enabled(),
-        "icdev_cli_bridge_env": os.environ.get("ICDEV_CLI_BRIDGE", ""),
     }
     print(json.dumps(result, indent=2))
     sys.exit(0)

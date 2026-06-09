@@ -10,6 +10,10 @@ tools.* vs icdev.tools.* object and let the real probe run).
 Covers (uclb-prov-06):
   - should_enable() is True when there is no cloud key AND not air-gapped
   - should_enable() is False when a cloud key is present (and not air-gapped)
+  - cli_bridge_enabled() honors the context override (cli_bridge_override)
+    and falls back to should_enable() otherwise
+  - cli_bridge_enabled() ignores the ICDEV_CLI_BRIDGE env var (regression
+    guard for the env-var path removal)
   - prepend_cli_to_chains() puts 'claude-cli' first in every chain and is
     idempotent (no duplicates, original config untouched)
 """
@@ -86,27 +90,44 @@ def test_has_cloud_key_detects_env_var(monkeypatch):
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# cli_bridge_enabled() — ICDEV_CLI_BRIDGE override layered on should_enable()
+# cli_bridge_enabled() — context override (cli_bridge_override) layered on
+# should_enable(). The ICDEV_CLI_BRIDGE env var is no longer consulted; the
+# context-scoped override is the sole per-request override path.
 # ────────────────────────────────────────────────────────────────────────────
 
 
-def test_cli_bridge_enabled_force_disable(monkeypatch, patch_probes):
+def test_cli_bridge_enabled_context_override_force_disable(patch_probes):
     patch_probes(has_key=False, airgap=True)  # would otherwise enable
-    monkeypatch.setenv("ICDEV_CLI_BRIDGE", "false")
-    assert activate.cli_bridge_enabled() is False
+    token = activate.cli_bridge_override(False)
+    try:
+        assert activate.cli_bridge_enabled() is False
+    finally:
+        activate.reset_cli_bridge_override(token)
 
 
-def test_cli_bridge_enabled_force_enable(monkeypatch, patch_probes):
+def test_cli_bridge_enabled_context_override_force_enable(patch_probes):
     patch_probes(has_key=True, airgap=False)  # would otherwise disable
-    monkeypatch.setenv("ICDEV_CLI_BRIDGE", "true")
-    assert activate.cli_bridge_enabled() is True
+    token = activate.cli_bridge_override(True)
+    try:
+        assert activate.cli_bridge_enabled() is True
+    finally:
+        activate.reset_cli_bridge_override(token)
 
 
-def test_cli_bridge_enabled_defaults_to_should_enable(monkeypatch, patch_probes):
-    monkeypatch.delenv("ICDEV_CLI_BRIDGE", raising=False)
+def test_cli_bridge_enabled_defaults_to_should_enable(patch_probes):
+    # No context override set → fall through to should_enable().
     patch_probes(has_key=False, airgap=False)
     assert activate.cli_bridge_enabled() is True
     patch_probes(has_key=True, airgap=False)
+    assert activate.cli_bridge_enabled() is False
+
+
+def test_cli_bridge_enabled_ignores_env_var(monkeypatch, patch_probes):
+    # Regression: the ICDEV_CLI_BRIDGE env var is no longer consulted. Even
+    # if it is set to "true", the result must follow should_enable() when
+    # no context override is active.
+    patch_probes(has_key=True, airgap=False)  # would otherwise disable
+    monkeypatch.setenv("ICDEV_CLI_BRIDGE", "true")
     assert activate.cli_bridge_enabled() is False
 
 
