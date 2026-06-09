@@ -93,3 +93,59 @@ def test_mailbox_stale_heartbeat_is_dead(monkeypatch):
 def test_mailbox_malformed_heartbeat_is_dead(monkeypatch):
     monkeypatch.setenv("ICDEV_CLI_MAILBOX_HEARTBEAT", "not-a-timestamp")
     assert capability.mailbox_worker_alive() is False
+
+
+# ── env-var scope (SIPA env_secret false-positive guard) ───────────────────
+#
+# SIPA's env_secret sweep has previously mis-flagged the ICDEV_* routing
+# overrides in this module as credential reads (e8a7daa40 — same false
+# positive in cli_bridge/activate.py). Lock in the exact allowlist so the
+# scope stays auditable and any future addition breaks this test until
+# a scoping note + companion docstring update is added.
+ALLOWED_ENV_VARS = frozenset(
+    {
+        "ICDEV_CLI_BRIDGE_BINARY",
+        "ICDEV_CLI_HEADLESS",
+        "ICDEV_CLI_MAILBOX_HEARTBEAT",
+        # pytest fixtures / monkeypatch internals — not real ICDEV config.
+        "PYTEST_CURRENT_TEST",
+        "PYTEST_VERSION",
+    }
+)
+
+
+def test_no_unauthorized_env_secret_reads():
+    """The capability module reads only documented ICDEV_* routing overrides.
+
+    Any ``os.environ.get`` of a var not in ALLOWED_ENV_VARS is treated as an
+    unauthorized credential read. Update ALLOWED_ENV_VARS + the module
+    docstring together when adding a new var.
+    """
+    import ast
+
+    src = pathlib.Path(capability.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(src)
+
+    reads: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        # Match os.environ.get("FOO") and os.environ.get("FOO", default)
+        if (
+            isinstance(func, ast.Attribute)
+            and func.attr == "get"
+            and isinstance(func.value, ast.Attribute)
+            and func.value.attr == "environ"
+            and isinstance(func.value.value, ast.Name)
+            and func.value.value.id == "os"
+        ):
+            if node.args and isinstance(node.args[0], ast.Constant):
+                reads.add(node.args[0].value)
+
+    assert reads == (reads & ALLOWED_ENV_VARS), (
+        f"Unauthorized env-var reads detected in capability.py: "
+        f"{sorted(reads - ALLOWED_ENV_VARS)}. "
+        f"Add the var to ALLOWED_ENV_VARS in test_cli_capability.py AND "
+        f"update the env-var scope block in the module docstring."
+    )
