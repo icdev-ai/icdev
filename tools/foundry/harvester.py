@@ -54,6 +54,80 @@ from tools.foundry.db.init_db import init_db  # noqa: E402,F401  (re-exported; e
 # stores that acf-harvest-01 may not have populated yet — harvested gracefully.
 ALL_SOURCES = ("innovation", "creative", "research", "genesis", "telemetry")
 
+
+# --------------------------------------------------------------------------- #
+# Vertical source-scanner registry (acf-ada-08)
+# --------------------------------------------------------------------------- #
+# Every per-source reader follows the contract:
+#     scan_<name>(conn_or_None, limit=200) -> list[dict]
+# where each dict is a normalized signal (the output of _make_signal). External
+# vertical scanners (e.g. arxiv_acf in tools/foundry/scanners/arxiv.py) live in
+# the scanners/ subpackage and follow a slightly broader signature
+#     scanner(config, *, conn=None, db_path=None, **kwargs) -> list[dict]
+# (see tools/foundry/scanners/__init__.py).
+#
+# The registry is intentionally a thin *module-level* dict so callers can
+# register a new source without editing harvest_all() (one-line registration).
+# Tests assert on the registry's contents and the per-source behavior.
+SOURCE_SCANNERS: dict = {
+    "innovation": lambda conn, limit=200: harvest_innovation(conn, limit=limit),
+    "creative":   lambda conn, limit=200: harvest_creative(conn, limit=limit),
+    "research":   lambda conn, limit=200: harvest_research(conn, limit=limit),
+    "genesis":    lambda conn, limit=200: harvest_genesis(conn, limit=limit),
+    # telemetry opens its own connections via db_path — different signature,
+    # so wrap explicitly rather than via the (conn, limit) lambda shape.
+    "telemetry":  lambda conn=None, limit=200: harvest_telemetry(db_path=None),  # noqa: ARG005
+}
+
+
+def register_source(name: str, scanner) -> None:
+    """Register (or replace) a source scanner under ``name``.
+
+    ``scanner`` must be a callable taking ``(conn, limit=200) -> list[dict]``
+    for local DB stores. The arXiv vertical scanner lives in
+    ``tools.foundry/scanners/arxiv.py`` and is wired through
+    ``tools.foundry.scanners.scan()`` — it is NOT registered here, by design,
+    because its signature (config, *, conn, db_path) is broader and its
+    per-cycle behavior is driven by ``args/foundry_config.yaml``.
+
+    Re-registration is allowed (the latest registration wins) so adapters can
+    be swapped at runtime in tests. Unregistering a built-in source is not
+    supported (use a no-op scanner instead).
+    """
+    if not isinstance(name, str) or not name:
+        raise ValueError("source name must be a non-empty string")
+    if not callable(scanner):
+        raise TypeError(f"scanner for {name!r} must be callable")
+    SOURCE_SCANNERS[name] = scanner
+
+
+def scan_source(name: str, conn=None, limit: int = 200) -> list:
+    """Run a single registered source scanner; return ``[]`` for unknown names.
+
+    Honors the per-source ``enabled`` flag from ``args/foundry_config.yaml``
+    only for vertical scanners (e.g. arxiv_acf). Built-in DB scanners are
+    always run when invoked directly via scan_source; the ``enabled`` flag is
+    enforced by ``harvest_all`` via the ``sources`` argument list.
+    """
+    fn = SOURCE_SCANNERS.get(name)
+    if fn is None:
+        return []
+    try:
+        return list(fn(conn, limit=limit) or [])
+    except Exception:  # noqa: BLE001 - one bad source must not abort the cycle
+        return []
+
+
+def list_registered_sources() -> list[dict]:
+    """Return a list of dicts describing each registered source scanner."""
+    out = []
+    for name, fn in SOURCE_SCANNERS.items():
+        out.append({
+            "name": name,
+            "scanner_function": getattr(fn, "__name__", repr(fn)),
+        })
+    return out
+
 # introspective_analyzer telemetry analyses this harvester consumes.
 TELEMETRY_ANALYSES = ("gate_failures", "unused_tools", "slow_pipelines", "knowledge_gaps")
 
@@ -404,6 +478,13 @@ def persist_signals(conn, signals):
 def harvest_all(db_path=None, sources=None):
     """Harvest every (or selected) source, dedup cross-source, persist.
 
+    Iterates the SOURCE_SCANNERS registry — adding a new source is a one-line
+    ``register_source(name, fn)`` call; harvest_all picks it up automatically.
+    Vertical scanners (e.g. arxiv_acf from tools/foundry/scanners/) are NOT
+    invoked here; they're discovered and run by the vertical reflex / engine
+    stage using ``tools.foundry.scanners.scan()`` so per-source config from
+    ``args/foundry_config.yaml -> sources.<name>`` is honored.
+
     Returns a summary dict: raw counts per source, collapsed total, inserted.
     """
     sources = tuple(sources) if sources else ALL_SOURCES
@@ -411,26 +492,21 @@ def harvest_all(db_path=None, sources=None):
     raw = []
     per_source = {}
     try:
-        if "innovation" in sources:
-            s = harvest_innovation(conn)
-            per_source["innovation"] = len(s)
-            raw += s
-        if "creative" in sources:
-            s = harvest_creative(conn)
-            per_source["creative"] = len(s)
-            raw += s
-        if "research" in sources:
-            s = harvest_research(conn)
-            per_source["research"] = len(s)
-            raw += s
-        if "genesis" in sources:
-            s = harvest_genesis(conn)
-            per_source["genesis"] = len(s)
-            raw += s
-        if "telemetry" in sources:
-            # telemetry analyses open their own connections via db_path
-            s = harvest_telemetry(db_path=db_path)
-            per_source["telemetry"] = len(s)
+        # Iterate the registry — unknown sources are silently skipped so a
+        # typo in the --source CLI flag doesn't crash the cycle.
+        for src in sources:
+            if src not in SOURCE_SCANNERS:
+                # Vertical scanner (e.g. arxiv_acf) or typo — skip here; the
+                # vertical pipeline is the right place for the former.
+                continue
+            try:
+                # Per-source call: the local DB scanners all take (conn, limit)
+                # (the registered lambda shape). telemetry takes db_path and
+                # is wrapped to match.
+                s = SOURCE_SCANNERS[src](conn)
+            except Exception:  # noqa: BLE001 - one bad source must not abort
+                continue
+            per_source[src] = len(s)
             raw += s
 
         collapsed = _collapse(raw)
@@ -458,6 +534,8 @@ def harvest(run_id=None, config=None, conn=None, db_path=None, sources=None, **k
     source store exists yet — every per-source reader guards on table existence.
 
     ``config`` may carry ``sources`` (list); an explicit ``sources`` arg wins.
+    Iterates the SOURCE_SCANNERS registry (acf-ada-08) — adding a new local DB
+    source is a one-line ``register_source(name, fn)`` call, no edit here.
     """
     init_db()  # idempotent — guarantee foundry_* exist before persisting
     if sources is None and isinstance(config, dict):
@@ -471,16 +549,14 @@ def harvest(run_id=None, config=None, conn=None, db_path=None, sources=None, **k
         conn = _get_conn(db_path)
     raw = []
     try:
-        if "innovation" in selected:
-            raw += harvest_innovation(conn)
-        if "creative" in selected:
-            raw += harvest_creative(conn)
-        if "research" in selected:
-            raw += harvest_research(conn)
-        if "genesis" in selected:
-            raw += harvest_genesis(conn)
-        if "telemetry" in selected:
-            raw += harvest_telemetry(db_path=db_path)
+        for src in selected:
+            if src not in SOURCE_SCANNERS:
+                # Vertical scanner (e.g. arxiv_acf) or typo — skip here.
+                continue
+            try:
+                raw += SOURCE_SCANNERS[src](conn)
+            except Exception:  # noqa: BLE001 - one bad source must not abort
+                continue
         collapsed = _collapse(raw)
         try:
             persist_signals(conn, collapsed)

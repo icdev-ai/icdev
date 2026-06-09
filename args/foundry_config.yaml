@@ -23,6 +23,24 @@ foundry:
     telemetry:
       enabled: true
       max_signals: 100
+    # arxiv_acf — vertical scanner (acf-ada-08) auto-registered from
+    # tools/foundry/scanners/arxiv.py. Queries the arXiv Atom API for
+    # papers matching the ACF concept keywords. Disabled by default
+    # so air-gap installs do not silently hit the network.
+    arxiv_acf:
+      enabled: false
+      max_results: 25
+      categories:
+        - cs.AI
+        - cs.SE
+        - cs.LG
+      keywords:
+        - agent
+        - autonomous
+        - foundry
+        - code synthesis
+      rate_limit:
+        delay_between_requests_seconds: 3
 
   # Synthesis — clustering and LLM assist for concept generation
   synthesis:
