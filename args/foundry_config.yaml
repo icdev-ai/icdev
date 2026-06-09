@@ -168,3 +168,13 @@ foundry_cycle:
   # When true the reflex asks the engine to compute a cycle WITHOUT persisting
   # concepts or seeding kanban tasks (useful for smoke tests / dry runs).
   dry_run: false
+  # Quiet-hours window (local wall-clock). When the host clock falls inside
+  # the window the reflex logs 'skipped_quiet_hours' and exits without
+  # importing the engine or spending tokens. Defaults to 22:00-06:00 local
+  # so the autonomous foundry doesn't wake users or burn API quota at night.
+  # Set to {} (or omit) to disable the gate — the reflex then runs any time
+  # the canvas flag is on. Schema mirrors tools/creative/creative_engine.py
+  # (D359). When start > end the window wraps midnight.
+  quiet_hours:
+    start: "22:00"
+    end: "06:00"
