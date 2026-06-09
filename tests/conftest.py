@@ -18,6 +18,14 @@ os.environ["PMC_STORAGE_BACKEND"] = "sqlite"
 os.environ["CCC_STORAGE_BACKEND"] = "sqlite"
 os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
 
+# Observability regression tests (tests/observability/) require the
+# PostgreSQL primary backend. The local conftest at
+# tests/observability/conftest.py overrides ICDEV_STORAGE_BACKEND to
+# 'postgresql' after this file runs — pytest loads parent conftests
+# first, then child conftests, so the override is applied before any
+# test module under tests/observability/ is collected.
+_OC_ALREADY_OVERRIDDEN = os.environ.get("ICDEV_STORAGE_BACKEND") == "postgresql"
+
 
 MINIMAL_ICDEV_SCHEMA = """
 CREATE TABLE IF NOT EXISTS studio_workflows (
