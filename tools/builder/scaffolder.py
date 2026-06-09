@@ -150,8 +150,43 @@ tmp/
 """
 
 
+_STORAGE_POLICY_SECTION = """\
+## Storage Policy
+
+This child app uses the ICDEV™ storage policy:
+
+- **PostgreSQL is the primary database** for all runtime operations. All
+  application reads and writes MUST go through `tools.db.storage.get_connection()`
+  (or `get_canvas_connection()` for canvas-scoped tables), which targets
+  PostgreSQL by default.
+- **SQLite is a thin init/seed/migrate fallback ONLY.** It is used
+  exclusively at database initialization, seeding, and migration time when
+  PostgreSQL is unreachable at startup. The `translate_sql` helper exists
+  solely to make init/seed/migrate paths work in that fallback. It is
+  **never** load-bearing at runtime — application code MUST NOT depend on
+  SQLite-dialect JSON SQL (`json_extract`, `json_array_length`,
+  `json_each`, etc.) being rewritten for it.
+- **Tables are organization-bled via Row-Level Security (RLS).** Every
+  shared table carries `tenant_id` and `classification` columns, and
+  `get_connection()` injects an RLS predicate on every query that scopes
+  results to the caller's security context. The runtime resolver
+  `classifications_dominated_by()` permits read-down (a higher clearance
+  can read lower-classified rows) but never read-up. Canvas-scoped tables
+  (e.g. `aac_*`, `dsoc_*`, `ccc_*`) do NOT carry those columns and MUST
+  use `get_canvas_connection()`, which bypasses the global RLS predicate.
+- **The audit trail is append-only/immutable** (NIST 800-53 AU family).
+  Application code MUST NEVER `UPDATE` or `DELETE` rows in
+  `audit_trail` or other append-only tables. New append-only tables MUST
+  be registered in `APPEND_ONLY_TABLES` in
+  `.claude/hooks/pre_tool_use.py`.
+
+In short: **PG is primary, SQLite fallback is init-only, RLS organization-
+bleeds the tables, and the audit trail is immutable.**
+"""
+
+
 def _readme_content(name: str, project_type: str, description: str = "") -> str:
-    """Generate a README with CUI banners."""
+    """Generate a README with CUI banners and storage policy."""
     desc = description or f"A {project_type} project scaffolded by ICDEV™ Builder."
     return f"""{CUI_BANNER}
 
@@ -162,6 +197,8 @@ def _readme_content(name: str, project_type: str, description: str = "") -> str:
 ## Overview
 
 {desc}
+
+{_STORAGE_POLICY_SECTION}
 
 ## Getting Started
 
