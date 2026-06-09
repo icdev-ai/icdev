@@ -12,6 +12,7 @@
 | `GraphicsGenerator` | `tools/slides/graphics_generator.py` | Two-stage image pipeline: LLM prompt → Ollama/DALL-E/Gemini/Pillow |
 | `PptxBuilder` | `tools/slides/pptx_builder.py` | python-pptx assembly with 3 themes |
 | `InputParser` | `tools/slides/input_parser.py` | text/PDF/DOCX ingestion |
+| `Templates` | `tools/slides/templates.py` | Ready-made deck templates + slide-layout presets (blank/pitch/status/comparison/briefing/...) |
 | Source: capabilities | `tools/slides/sources/icdev_capabilities.py` | ICDEV feature catalog |
 | Source: canvases | `tools/slides/sources/canvases.py` | Active canvas list from feature flags |
 | Source: child_apps | `tools/slides/sources/child_apps.py` | Showcase/child application catalog |
