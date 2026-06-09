@@ -581,3 +581,213 @@ class TestStructuredEvents:
         assert verify_evts[0]["verification_rc"] == 1
         assert verify_evts[0]["passed"] is False
         assert verify_evts[0]["outcome"] == "verify_failed"
+
+
+# ---------------------------------------------------------------------------
+# WS4.2 — verification beyond the LLM's own command
+# (originally failing test + ruff + coherence, diffed vs base)
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+
+def _coh_json(failing_ids, warned_ids=()):
+    """Build a coherence_checker --json report with noisy import prefix."""
+    checks = [{"check_id": cid, "check_name": cid, "status": "fail",
+               "message": f"{cid} broke"} for cid in failing_ids]
+    checks += [{"check_id": cid, "check_name": cid, "status": "warn",
+                "message": f"{cid} warned"} for cid in warned_ids]
+    checks += [{"check_id": "schema_code", "check_name": "schema_code",
+                "status": "pass", "message": "ok"}]
+    report = {
+        "overall_pass": not failing_ids,
+        "checks": checks,
+        "total_checks": len(checks),
+        "failed_checks": len(failing_ids),
+        "warned_checks": len(warned_ids),
+    }
+    # Prepend import-side-effect noise like the real subprocess emits.
+    return "[init_db] Schema created (PostgreSQL)\n[BP-REG] x\n" + _json.dumps(report, indent=2)
+
+
+class TestExtractLastJson:
+    def test_pulls_report_past_noise(self, ft):
+        text = _coh_json(["a", "b"])
+        obj = ft._extract_last_json(text)
+        assert obj is not None
+        assert obj["failed_checks"] == 2
+
+    def test_returns_none_on_garbage(self, ft):
+        assert ft._extract_last_json("boom no json here") is None
+
+    def test_picks_last_object_when_multiple(self, ft):
+        text = '{"check_id": "noise"}\nmid\n' + _coh_json(["z"])
+        obj = ft._extract_last_json(text)
+        assert "checks" in obj and obj["failed_checks"] == 1
+
+
+class TestOriginalTestTargets:
+    def test_extracts_node_id_for_existing_file(self, ft, tmp_path):
+        t = tmp_path / "tests" / "test_foo.py"
+        t.parent.mkdir(parents=True)
+        t.write_text("def test_x(): pass", encoding="utf-8")
+        reason = "FAILED tests/test_foo.py::test_x - AssertionError"
+        assert ft._original_test_targets(reason, tmp_path) == ["tests/test_foo.py::test_x"]
+
+    def test_skips_nonexistent_file(self, ft, tmp_path):
+        reason = "FAILED tests/test_missing.py::test_y"
+        assert ft._original_test_targets(reason, tmp_path) == []
+
+    def test_no_target_for_gate_failure(self, ft, tmp_path):
+        reason = "route_not_listed: /foo missing from start.md Pages line"
+        assert ft._original_test_targets(reason, tmp_path) == []
+
+    def test_caps_at_five(self, ft, tmp_path):
+        (tmp_path / "tests").mkdir()
+        parts = []
+        for i in range(8):
+            f = tmp_path / "tests" / f"test_{i}.py"
+            f.write_text("def test_z(): pass", encoding="utf-8")
+            parts.append(f"tests/test_{i}.py::test_z")
+        reason = " ".join(parts)
+        assert len(ft._original_test_targets(reason, tmp_path)) == 5
+
+
+class TestRunIndependentGates:
+    """_run_independent_gates dispatches three subprocesses; we stub ft._run
+    by inspecting the command vector."""
+
+    def _make_run(self, *, pytest_rc=0, ruff_rc=0, coh_fails=(), coh_text=None):
+        def fake_run(cmd, cwd, timeout=60):
+            joined = " ".join(cmd)
+            if "pytest" in joined:
+                return (pytest_rc, "pytest output")
+            if "ruff" in joined:
+                return (ruff_rc, "All checks passed!" if ruff_rc == 0 else "Found 1 error")
+            if "coherence_checker" in joined:
+                return (1 if coh_fails else 0,
+                        coh_text if coh_text is not None else _coh_json(list(coh_fails)))
+            return (0, "")
+        return fake_run
+
+    def test_all_green_passes(self, ft, monkeypatch, tmp_path):
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_a.py").write_text("def test_a(): pass", encoding="utf-8")
+        monkeypatch.setattr(ft, "_run", self._make_run())
+        task = {"id": "t1", "last_failure_reason": "FAILED tests/test_a.py::test_a"}
+        res = ft._run_independent_gates(task, tmp_path, baseline_coh_fails=set())
+        assert res["passed"] is True
+        assert res["first_failure"] is None
+        assert res["gates"]["original_test"]["ran"] is True
+
+    def test_original_test_still_failing_blocks(self, ft, monkeypatch, tmp_path):
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_a.py").write_text("def test_a(): pass", encoding="utf-8")
+        monkeypatch.setattr(ft, "_run", self._make_run(pytest_rc=1))
+        task = {"id": "t1", "last_failure_reason": "FAILED tests/test_a.py::test_a"}
+        res = ft._run_independent_gates(task, tmp_path, baseline_coh_fails=set())
+        assert res["passed"] is False
+        assert res["first_failure"] == "original_test"
+
+    def test_ruff_failure_blocks(self, ft, monkeypatch, tmp_path):
+        monkeypatch.setattr(ft, "_run", self._make_run(ruff_rc=1))
+        # no test target -> original_test skipped, ruff is the blocker
+        task = {"id": "t1", "last_failure_reason": "coherence: route_not_listed"}
+        res = ft._run_independent_gates(task, tmp_path, baseline_coh_fails=set())
+        assert res["passed"] is False
+        assert res["first_failure"] == "ruff"
+        assert res["gates"]["original_test"]["ran"] is False
+
+    def test_new_coherence_failure_blocks(self, ft, monkeypatch, tmp_path):
+        # baseline had {x}; after patch it has {x, y} -> y is NEW -> block
+        monkeypatch.setattr(ft, "_run", self._make_run(coh_fails=("x", "y")))
+        task = {"id": "t1", "last_failure_reason": "coherence: foo"}
+        res = ft._run_independent_gates(task, tmp_path, baseline_coh_fails={"x"})
+        assert res["passed"] is False
+        assert res["first_failure"] == "coherence"
+        assert res["gates"]["coherence"]["new_fails"] == ["y"]
+
+    def test_inherited_coherence_debt_does_not_block(self, ft, monkeypatch, tmp_path):
+        # base already failing {x, z}; after patch same set -> no NEW fail
+        monkeypatch.setattr(ft, "_run", self._make_run(coh_fails=("x", "z")))
+        task = {"id": "t1", "last_failure_reason": "coherence: foo"}
+        res = ft._run_independent_gates(task, tmp_path, baseline_coh_fails={"x", "z"})
+        assert res["passed"] is True
+
+    def test_unparseable_post_patch_coherence_fails_closed(self, ft, monkeypatch, tmp_path):
+        monkeypatch.setattr(ft, "_run", self._make_run(coh_text="boom no json"))
+        task = {"id": "t1", "last_failure_reason": "coherence: foo"}
+        res = ft._run_independent_gates(task, tmp_path, baseline_coh_fails=set())
+        assert res["passed"] is False
+        assert res["first_failure"] == "coherence_unparsed"
+
+    def test_missing_baseline_skips_coherence_diff(self, ft, monkeypatch, tmp_path):
+        # baseline None (could not capture) -> don't block on inherited debt
+        monkeypatch.setattr(ft, "_run", self._make_run(coh_fails=("x",)))
+        task = {"id": "t1", "last_failure_reason": "coherence: foo"}
+        res = ft._run_independent_gates(task, tmp_path, baseline_coh_fails=None)
+        assert res["passed"] is True
+        assert "skipping coherence diff" in res["gates"]["coherence"]["note"]
+
+
+class TestApplyPatchIndependentGate:
+    """apply_patch_in_worktree must roll back when an independent gate fails,
+    even though the LLM's verification_command passed."""
+
+    def _setup(self, ft, monkeypatch, tmp_path):
+        monkeypatch.setattr(ft, "AUDIT_DIR", tmp_path / "audit")
+        monkeypatch.setattr(ft, "record_apply", lambda ts=None: None)
+        wt = tmp_path / "wt"
+        wt.mkdir(parents=True)
+        monkeypatch.setattr(ft, "_create_autofix_worktree", lambda tid, sig: (wt, "autofix/x"))
+        cleaned = []
+        monkeypatch.setattr(ft, "_cleanup_autofix_worktree",
+                            lambda w, b, keep_branch: cleaned.append(keep_branch))
+        monkeypatch.setattr(ft, "_validate_verification_command", lambda c: (True, "ok"))
+        monkeypatch.setattr(ft, "_validate_patch_files", lambda p, d: (True, "ok"))
+        target = wt / "tools" / "foo.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("old", encoding="utf-8")
+        return wt, cleaned
+
+    def test_independent_gate_failure_rolls_back(self, ft, monkeypatch, tmp_path):
+        wt, cleaned = self._setup(ft, monkeypatch, tmp_path)
+        # verification_command passes (rc 0); independent gate reports failure.
+        monkeypatch.setattr(ft, "_run", lambda *a, **k: (0, "ok"))
+        monkeypatch.setattr(ft, "_coherence_failing_checks", lambda w: (set(), 0, "base"))
+        monkeypatch.setattr(ft, "_run_independent_gates",
+                            lambda t, w, b: {"passed": False, "first_failure": "ruff", "gates": {}})
+        res = ft.apply_patch_in_worktree(
+            {"id": "t-ig", "last_failure_reason": "x", "title": "t"},
+            {"suspect_files": ["tools/foo.py"], "confidence": 0.9, "recommendation": "patch"},
+            {"files": [{"path": "tools/foo.py", "old_string": "old", "new_string": "new"}],
+             "verification_command": "python -m pytest tests/test_foo.py"},
+        )
+        assert res["applied"] is False
+        assert res["outcome"] == "independent_gate_failed"
+        assert res["failed_gate"] == "ruff"
+        # worktree removed WITHOUT keeping the branch (rollback)
+        assert cleaned == [False]
+
+    def test_independent_gate_pass_commits(self, ft, monkeypatch, tmp_path):
+        wt, cleaned = self._setup(ft, monkeypatch, tmp_path)
+        monkeypatch.setattr(ft, "_coherence_failing_checks", lambda w: (set(), 0, "base"))
+        monkeypatch.setattr(ft, "_run_independent_gates",
+                            lambda t, w, b: {"passed": True, "first_failure": None, "gates": {}})
+        # All git subprocess calls succeed; rev-parse returns a sha.
+        def fake_run(cmd, cwd, timeout=60):
+            if "rev-parse" in cmd:
+                return (0, "deadbeef\n")
+            return (0, "ok")
+        monkeypatch.setattr(ft, "_run", fake_run)
+        monkeypatch.delenv(ft.AUTOMERGE_ENV, raising=False)
+        res = ft.apply_patch_in_worktree(
+            {"id": "t-ig2", "last_failure_reason": "x", "title": "t"},
+            {"suspect_files": ["tools/foo.py"], "confidence": 0.9, "recommendation": "patch"},
+            {"files": [{"path": "tools/foo.py", "old_string": "old", "new_string": "new"}],
+             "verification_command": "python -m pytest tests/test_foo.py"},
+        )
+        assert res["applied"] is True
+        assert res["outcome"].startswith("applied_verified_committed")
+        # worktree cleaned but branch KEPT
+        assert cleaned == [True]
