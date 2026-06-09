@@ -990,3 +990,9 @@
 | Seed Appendix Initiatives | tools\kanban\seed_appendix_initiatives.py | Auto-registered: kanban/seed_appendix_initiatives.py | --json | JSON |
 | Seed Sipa Integrity | tools\kanban\seed_sipa_integrity.py | Auto-registered: kanban/seed_sipa_integrity.py | --json | JSON |
 | Integrity Monitor | tools\genesis\reflexes\integrity_monitor.py | Auto-registered: reflexes/integrity_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Harness Bridge | tools\foundry\harness_bridge.py | Auto-registered: foundry/harness_bridge.py | --json | JSON |
