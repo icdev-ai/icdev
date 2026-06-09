@@ -735,6 +735,48 @@ GAP_HANDLER_TOOLS = {
             "required": ["query"],
         },
     },
+    # ---- Quality (review-until-green loop) ----
+    "review_loop": {
+        "category": "quality",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_review_loop",
+        "description": (
+            "Local review-until-green loop: run ICDEV's gates (ruff lint, "
+            "coherence, SIPA integrity) over the local diff, apply deterministic "
+            "autofixes, and iterate until every blocking gate passes or "
+            "max_iterations. Returns per-iteration scores + a fix_brief of "
+            "remaining findings for the agent to address."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "base": {
+                    "type": "string",
+                    "description": "git ref to diff HEAD against (e.g. origin/main); omit for working-tree mode",
+                },
+                "max_iterations": {
+                    "type": "integer",
+                    "description": "Override max review->fix->re-review cycles (default 3)",
+                    "minimum": 1,
+                },
+                "no_autofix": {
+                    "type": "boolean",
+                    "description": "Report only; do not apply ruff/coherence --fix",
+                    "default": False,
+                },
+                "no_audit": {
+                    "type": "boolean",
+                    "description": "Do not write audit_trail rows",
+                    "default": False,
+                },
+                "gate": {
+                    "type": "boolean",
+                    "description": "Return an error result unless all blocking gates are green",
+                    "default": False,
+                },
+            },
+        },
+    },
 }
 
 

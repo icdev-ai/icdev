@@ -2066,3 +2066,80 @@ def handle_integrity_list_assessments(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_integrity_list_assessments: %s", exc)
         return {"error": str(exc), "assessments": []}
+
+
+# ---------------------------------------------------------------------------
+# ACF — Autonomous Capability Foundry (acf-mcp-01)
+# ---------------------------------------------------------------------------
+
+
+def handle_foundry_run(args: dict) -> dict:
+    """Run one ACF cycle (harvest -> synth -> novelty -> score -> CoD -> emit).
+
+    Pattern A (direct import) wrapper around ``tools.foundry.engine.run_cycle``.
+    Reuses the engine's own rate-limit / stage-degradation handling — MCP just
+    forwards the JSON-serialisable roll-up. ``dry_run=True`` exercises the full
+    pipeline without seeding kanban; this is the path the reflex mirrors and the
+    recommended entry point for ad-hoc smoke tests.
+    """
+    try:
+        from tools.foundry import engine
+
+        dry_run = bool(args.get("dry_run", False))
+        max_concepts = args.get("max_concepts")
+        if max_concepts is not None:
+            try:
+                max_concepts = int(max_concepts)
+            except (TypeError, ValueError):
+                max_concepts = None
+        return engine.run_cycle(dry_run=dry_run, max_concepts=max_concepts)
+    except Exception as exc:
+        logger.warning("handle_foundry_run: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_foundry_status(args: dict) -> dict:
+    """Return ACF engine status: recent runs, active projects, pipeline counts.
+
+    Pattern A (direct import) wrapper around ``tools.foundry.engine.status``.
+    Read-only; no DB writes. Mirrors the ``python tools/foundry/engine.py
+    --status`` CLI surface so MCP clients get the same JSON shape.
+    """
+    try:
+        from tools.foundry import engine
+
+        try:
+            limit = int(args.get("limit", 10))
+        except (TypeError, ValueError):
+            limit = 10
+        return engine.status(limit=limit)
+    except Exception as exc:
+        logger.warning("handle_foundry_status: %s", exc)
+        return {"error": str(exc)}
+
+
+# ===========================================================================
+# Category: quality (review-until-green loop)
+# ===========================================================================
+
+
+def handle_review_loop(args: dict) -> dict:
+    """Run the local review-until-green loop over the diff.
+
+    Wraps ``tools/quality/review_loop.py --json``: runs ICDEV's gates (ruff +
+    coherence + SIPA) over the changed files, applies deterministic autofixes,
+    and iterates until every blocking gate passes or max_iterations. Returns
+    the per-iteration scores + fix_brief JSON.
+    """
+    cli_args = []
+    if args.get("base"):
+        cli_args.extend(["--base", str(args["base"])])
+    if args.get("max_iterations"):
+        cli_args.extend(["--max", str(args["max_iterations"])])
+    if args.get("no_autofix"):
+        cli_args.append("--no-autofix")
+    if args.get("no_audit"):
+        cli_args.append("--no-audit")
+    if args.get("gate"):
+        cli_args.append("--gate")
+    return _run_cli("tools/quality/review_loop.py", cli_args, timeout=600)
