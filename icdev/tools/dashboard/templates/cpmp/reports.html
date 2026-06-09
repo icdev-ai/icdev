@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}PMO Weekly Brief Archive - ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+<div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><a href="/cpmp">CPMP Portfolio</a><span class="separator">/</span><span>PMO Briefs</span></div>
+
+<div class="page-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+    <div>
+        <h1>PMO Weekly Brief Archive</h1>
+        <p class="subtitle">AI-generated portfolio briefs from the pmo_weekly_report reflex (Mon 07:00)</p>
+    </div>
+    <a href="/cpmp" class="btn btn-secondary" style="font-size:13px;">&larr; Portfolio</a>
+</div>
+
+{% include "includes/ai_brief_banner.html" ignore missing %}
+
+<div style="display:flex; gap:16px; align-items:flex-start; min-height:600px;">
+    <!-- Left pane: report list -->
+    <div id="report-list" style="width:280px; flex-shrink:0; background:var(--bg-secondary,#12122a); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; overflow:hidden;">
+        <div style="padding:12px 16px; border-bottom:1px solid var(--border-color,#2a2a4a); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-secondary);">
+            Reports
+        </div>
+        <div id="report-items" style="padding:8px 0;">
+            <div style="padding:16px; color:var(--text-secondary); font-size:13px;">Loading…</div>
+        </div>
+    </div>
+
+    <!-- Right pane: iframe viewer -->
+    <div style="flex:1; min-width:0; background:var(--bg-secondary,#12122a); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; overflow:hidden; display:flex; flex-direction:column;">
+        <div id="report-title" style="padding:12px 16px; border-bottom:1px solid var(--border-color,#2a2a4a); font-size:13px; font-weight:600; color:var(--text-primary);">
+            Select a report
+        </div>
+        <div id="report-placeholder" style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--text-secondary); font-size:14px; padding:40px;">
+            No report selected
+        </div>
+        <iframe id="report-frame" src="about:blank"
+            style="display:none; width:100%; height:700px; border:none; background:#fff;"
+            title="PMO Weekly Brief"></iframe>
+    </div>
+</div>
+
+<script>
+(function () {
+    var activeItem = null;
+
+    function loadReport(filename, label) {
+        var frame = document.getElementById('report-frame');
+        var placeholder = document.getElementById('report-placeholder');
+        var titleEl = document.getElementById('report-title');
+        titleEl.textContent = label;
+        frame.src = '/api/cpmp/reports/content/' + encodeURIComponent(filename);
+        placeholder.style.display = 'none';
+        frame.style.display = 'block';
+        if (activeItem) activeItem.classList.remove('report-item-active');
+        activeItem = document.querySelector('[data-filename="' + filename + '"]');
+        if (activeItem) activeItem.classList.add('report-item-active');
+    }
+
+    function renderList(reports) {
+        var container = document.getElementById('report-items');
+        if (!reports || !reports.length) {
+            container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-size:13px;">No reports found.<br>Run the pmo_weekly_report reflex to generate one.</div>';
+            return;
+        }
+        container.innerHTML = '';
+        reports.forEach(function (r) {
+            var item = document.createElement('div');
+            item.className = 'report-item';
+            item.setAttribute('data-filename', r.filename);
+            item.style.cssText = 'padding:10px 16px; cursor:pointer; font-size:13px; border-left:3px solid transparent; transition:background .15s,border-color .15s;';
+            item.innerHTML = '<div style="font-weight:600;">' + r.label + '</div><div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">' + r.filename + '</div>';
+            item.addEventListener('mouseenter', function () {
+                if (!item.classList.contains('report-item-active')) item.style.background = 'var(--bg-tertiary,#1e1e3a)';
+            });
+            item.addEventListener('mouseleave', function () {
+                if (!item.classList.contains('report-item-active')) item.style.background = '';
+            });
+            item.addEventListener('click', function () { loadReport(r.filename, r.label); });
+            container.appendChild(item);
+        });
+        // Auto-load the newest (first)
+        loadReport(reports[0].filename, reports[0].label);
+    }
+
+    fetch('/api/cpmp/reports/list')
+        .then(function (r) { return r.json(); })
+        .then(function (d) { renderList(d.reports || []); })
+        .catch(function () {
+            document.getElementById('report-items').innerHTML = '<div style="padding:16px;color:#dc3545;font-size:13px;">Failed to load report list.</div>';
+        });
+
+    // Active item style via JS (avoids needing a new stylesheet)
+    var style = document.createElement('style');
+    style.textContent = '.report-item-active { background: var(--bg-tertiary,#1e1e3a) !important; border-left-color: var(--primary,#4a90d9) !important; }';
+    document.head.appendChild(style);
+}());
+</script>
+{% endblock %}
