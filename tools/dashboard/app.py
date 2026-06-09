@@ -10683,7 +10683,6 @@ def create_app() -> Flask:
         # Caps at ~600 chars to keep the panel tight.
         def _diff_preview(outcome: dict) -> dict:
             preview_files = []
-            full_text_parts: list = []
             pv = outcome.get("patch_preview") or {}
             ar = outcome.get("apply_result") or {}
             files = pv.get("files") or ar.get("applied_files") or []
@@ -10713,7 +10712,6 @@ def create_app() -> Flask:
         triaged_dir = base_dir / ".tmp" / "kanban" / "triaged"
         # Pre-compute iteration count per task_id (cheap on small N)
         iteration_counts: dict = {}
-        audit_dir = base_dir / ".tmp" / "kanban" / "autofix-audit"
         if triaged_dir.exists():
             try:
                 for mf in triaged_dir.glob("*.marker"):

@@ -71,6 +71,11 @@ EVENT_GATE_DECISION = "gate_decision"
 EVENT_PATCH_GENERATED = "patch_generated"
 EVENT_VERIFY_RESULT = "verify_result"
 EVENT_APPLY_OUTCOME = "apply_outcome"
+# ReAct-loop (WS2.3 / arc-dbg-02): one event per iteration, plus a terminal
+# react_finished carrying the loop outcome (fixed / max_iterations /
+# no_progress / budget_exhausted). The panel (arc-obs-03) groups these.
+EVENT_REACT_ITERATION = "react_iteration"
+EVENT_REACT_FINISHED = "react_finished"
 
 
 def _emit_event(
@@ -513,6 +518,29 @@ AUTOMERGE_ENV = "ICDEV_AUTOFIX_AUTOMERGE"
 AUTOFIX_WORKTREE_BASE = BASE_DIR / ".tmp" / "autofix"
 AUDIT_DIR = BASE_DIR / ".tmp" / "kanban" / "autofix-audit"
 
+# ReAct-loop tuning (WS2.3 / arc-dbg-02). All three are overridable via
+# ``args/genesis_config.yaml`` under the ``failure_triage`` reflex block
+# (react_max_iterations, react_token_budget, react_no_progress_window).
+# Defaults are intentionally tight: the loop is a refinement aid, not
+# a free-form exploration tool.
+MAX_REACT_ITERATIONS = 3           # hypothesize→instrument→observe rounds
+REACT_TOKEN_BUDGET = 8000          # per-failure token ceiling (chars/4 approx)
+# No-progress window. The ReAct loop MUST terminate BEFORE asking the
+# LLM to refine when it can already conclude nothing will change. The
+# window is the number of CONSECUTIVE IDENTICAL fingerprints the loop
+# must observe in history before firing — with W=2 the loop tolerates
+# one "refine + retry" round before giving up, with W=1 the second
+# matching observation fires immediately, and with W=0 the loop would
+# never fire (the gate needs at least 2 prior observations to claim
+# "no progress" — a single failing iteration could be a transient
+# first-pass outcome). Operators can raise MAX_REACT_ITERATIONS to
+# give the loop more headroom and lower this window to make it bail
+# sooner.
+REACT_NO_PROGRESS_WINDOW = 2       # last N observations identical → terminate
+# Origin of the autofix worktree dir when patched files are present in the
+# snapshot — the loop needs to be able to RESET edits between iterations
+# without re-running the whole worktree create.
+
 # Only these prefixes are allowed in patch.verification_command. LLM output
 # is untrusted — anything else is rejected and we fall through to the
 # suggested-card path.
@@ -651,6 +679,433 @@ def _cleanup_autofix_worktree(wt: Path, branch: str, *, keep_branch: bool) -> No
         _run(["git", "branch", "-D", branch], cwd=BASE_DIR, timeout=10)
 
 
+# ---------------------------------------------------------------------------
+# ReAct-loop helpers (WS2.3 / arc-dbg-02)
+#
+# The loop lives INSIDE apply_patch_in_worktree, after the LLM's first
+# patch has passed validation. Between iterations we reset the worktree
+# files to their pre-iteration snapshot so a failed refinement doesn't
+# leak half-applied edits into the next round.
+# ---------------------------------------------------------------------------
+
+
+def _react_estimate_tokens(text: str) -> int:
+    """Conservative token estimate (chars/4). Good enough for budgeting —
+    we want a safe ceiling, not a precise count, and pulling tiktoken
+    would be a heavyweight dep for one number.
+    """
+    return max(1, (len(text or "")) // 4)
+
+
+def _react_load_config() -> Dict[str, int]:
+    """Read the ReAct loop tuning knobs from ``args/genesis_config.yaml``.
+
+    Returns a dict of overrides; missing or unreadable config falls
+    back to the in-code defaults. This is read on every iterate() call
+    so an operator can dial the loop without restarting the daemon —
+    the next failure picks up the new value.
+    """
+    out: Dict[str, int] = {}
+    try:
+        import yaml  # local; stdlib yaml is the project dep
+        cfg_path = BASE_DIR / "args" / "genesis_config.yaml"
+        if not cfg_path.exists():
+            return out
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        ft = (data.get("reflexes") or {}).get("failure_triage") or {}
+        for src_key, dst_key in (
+            ("react_max_iterations", "max_iterations"),
+            ("react_token_budget", "token_budget"),
+            ("react_no_progress_window", "no_progress_window"),
+        ):
+            v = ft.get(src_key)
+            if isinstance(v, (int, float)) and v >= 0:
+                out[dst_key] = int(v)
+    except Exception as exc:  # pragma: no cover - config is best-effort
+        logger.debug("failure_triage: react config load failed: %s", exc)
+    return out
+
+
+def _react_snapshot_files(wt: Path, paths: List[str]) -> Dict[str, str]:
+    """Read every file in ``paths`` from the worktree and return
+    ``{path: content}``. Used to restore the worktree between iterations.
+    """
+    snap: Dict[str, str] = {}
+    for p in paths:
+        full = wt / p
+        if full.exists() and full.is_file():
+            try:
+                snap[p] = full.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                snap[p] = ""
+    return snap
+
+
+def _react_restore_files(wt: Path, snap: Dict[str, str]) -> None:
+    """Restore the worktree files to their pre-iteration contents."""
+    for p, content in snap.items():
+        full = wt / p
+        try:
+            full.parent.mkdir(parents=True, exist_ok=True)
+            full.write_text(content, encoding="utf-8")
+        except Exception as exc:
+            logger.warning("react: failed to restore %s: %s", p, exc)
+
+
+def _react_apply_files(wt: Path, files: List[Dict[str, Any]]) -> List[str]:
+    """Apply a patch's ``files`` entries (Edit-style unique replace).
+
+    Same semantics as the inline block in apply_patch_in_worktree, but
+    factored out so the ReAct loop can call it on every iteration with
+    a fresh patch. Returns the list of paths actually written.
+    """
+    applied: List[str] = []
+    for f in files:
+        path = f["path"].replace("\\", "/")
+        full = wt / path
+        text = full.read_text(encoding="utf-8", errors="replace")
+        new_text = text.replace(f["old_string"], f["new_string"], 1)
+        full.write_text(new_text, encoding="utf-8")
+        applied.append(path)
+    return applied
+
+
+def _react_fingerprint(observation: Dict[str, Any]) -> str:
+    """Stable fingerprint for ``no_progress`` detection.
+
+    We deliberately ignore transient noise (timestamps, paths of tempfile
+    output) and compare on the structurally meaningful bits: the verify
+    exit code, the first error line, and the failing test path (if any).
+    """
+    rc = observation.get("verification_rc", -1)
+    err = (observation.get("error_excerpt") or "").strip()[:200]
+    failing = (observation.get("failing_test") or "").strip()[:120]
+    return f"rc={rc}|err={err}|fail={failing}"
+
+
+def _react_extract_failure_hint(out: str) -> Tuple[Optional[str], Optional[str]]:
+    """Pull the first error line and a failing-test path out of pytest
+    output. Returns ``(error_excerpt, failing_test)`` — either may be
+    ``None`` when nothing recognizable is present.
+    """
+    text = (out or "").splitlines()
+    err = None
+    fail = None
+    for line in text:
+        ls = line.strip()
+        if not ls:
+            continue
+        if err is None and (ls.startswith("E ") or "Error" in ls or "FAILED" in ls):
+            err = ls[:300]
+        if fail is None and ("FAILED " in ls or "::test_" in ls):
+            # pytest compact format: "FAILED tests/test_x.py::test_y - msg"
+            if "::test_" in ls:
+                # extract the tests/...::test path token
+                token = ls
+                for piece in token.split():
+                    if "::test_" in piece:
+                        fail = piece[:200]
+                        break
+        if err and fail:
+            break
+    return err, fail
+
+
+def _react_history_compact(history: List[Dict[str, Any]]) -> str:
+    """Render the iteration history as a compact text block for LLM input.
+
+    Each iteration becomes a single line: ``[i=N] rc=R | err=… | fail=…``,
+    plus the diff (one-line summary of files touched) on the next line.
+    Keeps the LLM's input under REACT_TOKEN_BUDGET in the worst case.
+    """
+    out: List[str] = []
+    for h in history:
+        i = h.get("iteration", "?")
+        rc = h.get("verification_rc", -1)
+        err = (h.get("error_excerpt") or "")[:120]
+        fail = (h.get("failing_test") or "")[:80]
+        files = ", ".join(h.get("applied_files") or [])[:120]
+        out.append(
+            f"[i={i}] rc={rc} err={err!r} fail={fail!r} files=[{files}]"
+        )
+    return "\n".join(out)
+
+
+def _react_refine_patch(
+    task: Dict[str, Any],
+    diag: Dict[str, Any],
+    history: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Ask the building-tier LLM for a NEW patch given the prior
+    observations. Returns ``{files, verification_command}`` on success,
+    ``None`` on any LLM failure (loop falls back to terminating with
+    ``no_progress`` or ``budget_exhausted``).
+    """
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+    except Exception:
+        return None
+
+    suspect_files = diag.get("suspect_files") or []
+    file_contents: List[str] = []
+    for sf in suspect_files[:3]:
+        path_only = str(sf).split(":")[0].replace("\\", "/")
+        fp = BASE_DIR / path_only
+        if fp.exists() and fp.is_file():
+            try:
+                txt = fp.read_text(encoding="utf-8", errors="replace")[:4000]
+                file_contents.append(f"=== {path_only} ===\n{txt}")
+            except Exception:
+                continue
+
+    history_block = _react_history_compact(history)
+    prompt = (
+        "An earlier patch FAILED verification. Refine it using the prior "
+        "observations. Output JSON only — no prose.\n\n"
+        f"TASK: {task.get('id')} / {task.get('title','')}\n"
+        f"FAILURE REASON: {(task.get('last_failure_reason') or '')[:400]}\n\n"
+        f"DIAGNOSIS:\n{json.dumps(diag, indent=2, default=str)[:1200]}\n\n"
+        f"PRIOR ITERATIONS (most recent last):\n{history_block}\n\n"
+        f"SUSPECT FILE CONTENTS:\n" + "\n\n".join(file_contents) + "\n\n"
+        + PATCH_SCHEMA_HINT
+    )
+    try:
+        resp = LLMRouter().invoke(
+            "failure_triage_patch",
+            LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1200, temperature=0.1, effort="medium",
+                skip_injection_scan=True,
+            ),
+        )
+        text = resp.content.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            text = text.split("\n", 1)[-1] if "\n" in text else text
+            if text.endswith("```"):
+                text = text[:-3]
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if not m:
+            return None
+        patch = json.loads(m.group(0))
+        if not isinstance(patch, dict) or not patch.get("files"):
+            return None
+        return patch
+    except Exception as exc:
+        logger.info("react: refinement LLM failed: %s", exc)
+        return None
+
+
+def _react_no_progress(history: List[Dict[str, Any]]) -> bool:
+    """True when the last ``REACT_NO_PROGRESS_WINDOW`` observations have
+    the same fingerprint — i.e. the loop is making no real headway.
+
+    Needs at least ``max(2, W)`` entries: a single failing iteration
+    can never trigger this gate (we have nothing to compare against),
+    so the operator gets at least one refine-and-retry round before
+    the no-progress exit fires. With W=1 the gate reduces to "is there
+    a prior observation that matches the most recent one?" — only
+    meaningful when history is at least 2 long. With W=2 it requires
+    the last two observations to share a fingerprint.
+    """
+    min_needed = max(2, REACT_NO_PROGRESS_WINDOW)
+    if len(history) < min_needed:
+        return False
+    window = history[-REACT_NO_PROGRESS_WINDOW:]
+    fp = _react_fingerprint(window[0])
+    return all(_react_fingerprint(h) == fp for h in window[1:])
+
+
+def _react_iterate(
+    task: Dict[str, Any],
+    diag: Dict[str, Any],
+    initial_patch: Dict[str, Any],
+    wt: Path,
+    branch: str,
+    sig: str,
+    *,
+    max_iterations: int = MAX_REACT_ITERATIONS,
+    token_budget: int = REACT_TOKEN_BUDGET,
+) -> Dict[str, Any]:
+    """Bounded ReAct loop: hypothesize→apply→verify→observe, up to
+    ``max_iterations`` rounds. Lives inside the already-validated
+    autofix worktree — only the *edits* are reapplied between rounds
+    (the worktree dir, branch, and the rate-cap slot are all retained
+    from the parent ``apply_patch_in_worktree`` call).
+
+    Termination: verify passes (fixed), max iterations hit, no-progress
+    fingerprint, or token budget exhausted. Returns a JSON-serializable
+    dict that the caller folds into the audit record. Emits one
+    ``react_iteration`` event per round and a single ``react_finished``
+    event with the terminal outcome.
+    """
+    history: List[Dict[str, Any]] = []
+    tokens_used = 0
+    iterations = 0
+    current_patch = initial_patch
+    # Resolve effective knobs. Priority: caller's explicit arg > operator
+    # config in args/genesis_config.yaml > in-code default. The config
+    # only overrides the in-code default; an explicit caller value wins
+    # so tests and one-off callers can dial the loop without rewriting
+    # the yaml. Reading config on every call means the operator can
+    # adjust the loop without restarting the daemon.
+    overrides = _react_load_config()
+    eff_max_iterations = int(
+        overrides["max_iterations"]
+        if max_iterations == MAX_REACT_ITERATIONS and "max_iterations" in overrides
+        else max_iterations
+    )
+    eff_token_budget = int(
+        overrides["token_budget"]
+        if token_budget == REACT_TOKEN_BUDGET and "token_budget" in overrides
+        else token_budget
+    )
+    # Pre-allocate the iteration-1 path set so the worktree can be reset
+    # to its pre-iteration state on every round.
+    candidate_paths: List[str] = list({
+        f["path"].replace("\\", "/")
+        for f in (initial_patch.get("files") or [])
+    })
+    base_snap = _react_snapshot_files(wt, candidate_paths)
+    last_outcome = "fixed"
+
+    while iterations < eff_max_iterations:
+        iterations += 1
+        # Track prompt-token spend so a runaway loop can't burn the
+        # full daily LLM budget on one stubborn failure. Checked at
+        # the very top of each round — the budget reflects the prompt
+        # we'd SEND this iteration (the history of prior observations),
+        # not the work we'd DO. An empty prompt (first iteration) on a
+        # budget=1 still EXCEEDS that budget (1 >= 1), so the operator
+        # can dial the budget all the way down to "no work allowed".
+        # The count returned is "iterations the loop started" — a budget
+        # bail still counts as a started iteration (we incremented, then
+        # discovered we couldn't afford to do anything in it).
+        prompt_for_refine = _react_history_compact(history)
+        tokens_used = _react_estimate_tokens(prompt_for_refine)
+        if tokens_used >= eff_token_budget:
+            _emit_event(
+                EVENT_REACT_ITERATION,
+                task_id=task.get("id"),
+                signature=sig,
+                level="WARNING",
+                iteration=iterations,
+                outcome="budget_exhausted",
+                tokens_used=tokens_used,
+            )
+            last_outcome = "budget_exhausted"
+            break
+
+        # Validate the patch's allowlisted verification command on every
+        # iteration — a refined patch may introduce a different (and
+        # possibly unallowlisted) verify command.
+        ok_cmd, why_cmd = _validate_verification_command(
+            current_patch.get("verification_command") or ""
+        )
+        if not ok_cmd:
+            _emit_event(
+                EVENT_REACT_ITERATION,
+                task_id=task.get("id"),
+                signature=sig,
+                level="WARNING",
+                iteration=iterations,
+                outcome="rejected_verification_command",
+                reason=why_cmd,
+            )
+            last_outcome = "rejected_verification_command"
+            break
+
+        # 1) reset worktree files to pre-iteration state
+        _react_restore_files(wt, base_snap)
+        # 2) apply the (possibly refined) patch
+        try:
+            applied_files = _react_apply_files(wt, current_patch.get("files") or [])
+        except Exception as exc:
+            _emit_event(
+                EVENT_REACT_ITERATION,
+                task_id=task.get("id"),
+                signature=sig,
+                level="ERROR",
+                iteration=iterations,
+                outcome="edit_failed",
+                reason=str(exc),
+            )
+            last_outcome = "edit_failed"
+            continue
+
+        # 3) verify
+        cmd_parts = (current_patch["verification_command"] or "").split()
+        rc, out = _run(cmd_parts, cwd=wt, timeout=600)
+        err_excerpt, failing_test = _react_extract_failure_hint(out)
+        observation = {
+            "iteration": iterations,
+            "verification_rc": rc,
+            "verification_tail": out[-1500:],
+            "error_excerpt": err_excerpt,
+            "failing_test": failing_test,
+            "applied_files": applied_files,
+            "verification_command": current_patch.get("verification_command"),
+        }
+        history.append(observation)
+        # Always emit per-iteration so the panel sees incremental state.
+        _emit_event(
+            EVENT_REACT_ITERATION,
+            task_id=task.get("id"),
+            signature=sig,
+            level="INFO" if rc == 0 else "ERROR",
+            iteration=iterations,
+            verification_rc=rc,
+            error_excerpt=err_excerpt,
+            failing_test=failing_test,
+            applied_files=applied_files,
+            tokens_used=tokens_used,
+        )
+
+        if rc == 0:
+            last_outcome = "fixed"
+            break
+
+        # 4) terminate on no-progress BEFORE requesting another refinement
+        if _react_no_progress(history):
+            last_outcome = "no_progress"
+            break
+
+        # 5) ask LLM to refine — but only if iterations remain
+        if iterations >= eff_max_iterations:
+            last_outcome = "max_iterations"
+            break
+        refined = _react_refine_patch(task, diag, history)
+        if not refined:
+            last_outcome = "refine_unavailable"
+            break
+        current_patch = refined
+
+    # Loop exit summary event. The caller still owns the commit+merge
+    # decision (it only happens on ``last_outcome == 'fixed'``).
+    _emit_event(
+        EVENT_REACT_FINISHED,
+        task_id=task.get("id"),
+        signature=sig,
+        level="INFO" if last_outcome == "fixed" else "WARNING",
+        iterations=iterations,
+        outcome=last_outcome,
+        tokens_used=tokens_used,
+        history_size=len(history),
+    )
+
+    return {
+        "outcome": last_outcome,
+        "iterations": iterations,
+        "tokens_used": tokens_used,
+        "history": history,
+        # Return the last observation's applied_files for the commit step.
+        "applied_files": (history[-1].get("applied_files") if history else []),
+        "verification_rc": (history[-1].get("verification_rc") if history else None),
+    }
+
+
 def _write_audit(task_id: str, sig: str, record: Dict[str, Any]) -> None:
     try:
         AUDIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -673,13 +1128,18 @@ def apply_patch_in_worktree(
       * Creates a fresh branch ``autofix/<task_id>-<sig>`` — never touches
         main directly.
       * Runs the LLM-supplied ``verification_command`` (allowlisted prefix
-        only). Any non-zero exit → roll back the whole worktree + branch.
+        only) via a bounded ReAct loop (WS2.3 / arc-dbg-02). Each
+        iteration may refine the patch based on the prior observation.
+        The loop terminates on: verify pass, max iterations, no-progress
+        fingerprint, or token-budget exhaustion.
       * On success: commits to the autofix branch. If
         ``ICDEV_AUTOFIX_AUTOMERGE=true`` also fast-forward merges the
         branch into main via ``tools/genesis/reflexes/kanban._merge_worktree_to_main``.
       * Returns a dict that is safe to JSON-serialize and store on the
         triage entry. Increments the global rate counter only when an
         apply is actually attempted (after all pre-apply gates pass).
+        Internal ReAct iterations SHARE the same rate-cap slot — we do
+        not double-count.
     """
     sig = _sig(task.get("last_failure_reason") or "")
     sig_short = sig[:8]
@@ -692,6 +1152,8 @@ def apply_patch_in_worktree(
     }
 
     # Pre-apply validation — gates the LLM output, not just the diagnosis.
+    # The ReAct loop re-validates on every iteration, but we reject up
+    # front so an obviously-bad patch doesn't burn a rate-cap slot.
     ok, why = _validate_verification_command(patch.get("verification_command") or "")
     if not ok:
         record["outcome"] = "rejected_bad_verification_command"
@@ -707,7 +1169,9 @@ def apply_patch_in_worktree(
         return {"applied": False, "outcome": record["outcome"], "reason": why}
 
     # Count this attempt against the rolling hour cap even if verification
-    # ultimately fails — it's the *attempt* that consumes budget.
+    # ultimately fails — it's the *attempt* that consumes budget. The
+    # internal ReAct iterations share the same rate slot; we do NOT
+    # count them separately.
     record_apply()
 
     created = _create_autofix_worktree(task["id"], sig_short)
@@ -719,48 +1183,47 @@ def apply_patch_in_worktree(
     record["worktree"] = str(wt)
     record["branch"] = branch
 
-    # 1) apply file edits (Edit-style unique replace, already validated unique)
-    applied_files: List[str] = []
-    try:
-        for f in patch.get("files", []):
-            path = f["path"].replace("\\", "/")
-            full = wt / path
-            text = full.read_text(encoding="utf-8", errors="replace")
-            new_text = text.replace(f["old_string"], f["new_string"], 1)
-            full.write_text(new_text, encoding="utf-8")
-            applied_files.append(path)
-    except Exception as exc:
-        record["outcome"] = "edit_failed"
-        record["reason"] = str(exc)
-        _cleanup_autofix_worktree(wt, branch, keep_branch=False)
-        _write_audit(task["id"], sig, record)
-        return {"applied": False, "outcome": record["outcome"], "reason": str(exc)}
-
-    record["applied_files"] = applied_files
-
-    # 2) verification_command — run in the worktree cwd
-    cmd_parts = (patch["verification_command"] or "").split()
-    rc, out = _run(cmd_parts, cwd=wt, timeout=600)
-    record["verification_rc"] = rc
-    record["verification_tail"] = out[-1500:]
+    # ------------------------------------------------------------------
+    # Bounded ReAct loop (WS2.3). Replaces the one-shot apply→verify.
+    # ------------------------------------------------------------------
+    loop = _react_iterate(task, diag, patch, wt, branch, sig)
+    record["iterations"] = loop["iterations"]
+    record["react_history"] = loop["history"]
+    record["react_tokens_used"] = loop["tokens_used"]
+    record["applied_files"] = loop["applied_files"]
+    last_rc = loop["verification_rc"]
+    # Emit the legacy verify_result event so any downstream panel that
+    # only watches the prior event type still gets a single "outcome" row.
+    last_cmd = (
+        loop["history"][-1].get("verification_command")
+        if loop["history"] else patch.get("verification_command")
+    )
     _emit_event(
         EVENT_VERIFY_RESULT,
         task_id=task.get("id"),
         signature=sig,
-        level="INFO" if rc == 0 else "ERROR",
+        level="INFO" if last_rc == 0 else "ERROR",
         confidence=diag.get("confidence"),
         recommendation=diag.get("recommendation"),
-        verification_command=patch.get("verification_command"),
-        verification_rc=rc,
-        passed=(rc == 0),
-        outcome="verify_passed" if rc == 0 else "verify_failed",
+        verification_command=last_cmd,
+        verification_rc=last_rc,
+        passed=(last_rc == 0),
+        outcome="verify_passed" if last_rc == 0 else "verify_failed",
+        iterations=loop["iterations"],
     )
 
-    if rc != 0:
-        record["outcome"] = "verification_failed"
+    if last_rc != 0 or loop["outcome"] != "fixed":
+        record["outcome"] = f"react_{loop['outcome']}"
         _cleanup_autofix_worktree(wt, branch, keep_branch=False)
         _write_audit(task["id"], sig, record)
-        return {"applied": False, "outcome": record["outcome"], "verification_rc": rc}
+        return {
+            "applied": False,
+            "outcome": record["outcome"],
+            "iterations": loop["iterations"],
+            "verification_rc": last_rc,
+        }
+
+    applied_files = loop["applied_files"]
 
     # 3) commit on the autofix branch (never amend, new commit per apply)
     commit_msg = (
@@ -771,6 +1234,7 @@ def apply_patch_in_worktree(
         f"Diagnosis: {(diag.get('root_cause') or '')[:200]}\n"
         f"Confidence: {diag.get('confidence')}\n"
         f"Verification: {patch['verification_command']}\n"
+        f"ReAct-iterations: {loop['iterations']}\n"
     )
     _run(["git", "add", "--"] + applied_files, cwd=wt, timeout=30)
     rc_c, out_c = _run(["git", "commit", "-m", commit_msg], cwd=wt, timeout=60)
@@ -812,6 +1276,7 @@ def apply_patch_in_worktree(
         "commit": record.get("autofix_commit"),
         "merged_to_main": merged,
         "applied_files": applied_files,
+        "iterations": loop["iterations"],
     }
 
 
