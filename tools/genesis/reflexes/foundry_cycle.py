@@ -10,6 +10,13 @@ Behaviour:
   * **Flag off** — when ``ICDEV_FOUNDRY_ENABLED`` is not truthy the reflex is a
     clean no-op: ``status='skipped'``, ``success=True`` (so it never trips the
     circuit breaker while the canvas is dark). Zero DB / engine / token cost.
+  * **Quiet hours** — when the local wall-clock falls inside the configured
+    ``foundry_cycle.quiet_hours`` window the reflex is a clean no-op:
+    ``status='skipped'``, ``success=True``, ``details.reason='skipped_quiet_hours'``.
+    No engine import, no token spend — keeps the autonomous foundry from waking
+    users or burning API quota at night. Mirrors the pattern in
+    ``tools/creative/creative_engine.py`` (D359). When the config is missing or
+    empty the gate is disabled (backwards compatible).
   * **Flag on** — delegates one cycle to :func:`tools.foundry.engine.run_cycle`,
     which owns the heavy lifting: harvest → synthesize → novelty-gate → score →
     CoD go/no-go → SIPA self-vet → seed kanban. The engine enforces intra-cycle
@@ -41,6 +48,7 @@ IMPLEMENTATION_STATUS = "full"
 
 import inspect
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -57,10 +65,13 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 _CONFIG_PATH = BASE_DIR / "args" / "foundry_config.yaml"
 
 # Fallback config — used when args/foundry_config.yaml is missing or malformed.
+# ``quiet_hours`` defaults to an empty dict (= feature disabled), preserving
+# backwards compatibility for deployments that pre-date the gate.
 _FALLBACK_CFG: Dict[str, Any] = {
     "cadence_hours": 12,
     "max_concepts_per_cycle": 5,
     "dry_run": False,
+    "quiet_hours": {},
 }
 
 
@@ -84,6 +95,43 @@ _cfg = _load_config()
 CADENCE_HOURS: int = int(_cfg.get("cadence_hours", 12))
 _MAX_CONCEPTS: int = int(_cfg.get("max_concepts_per_cycle", 5))
 _CFG_DRY_RUN: bool = bool(_cfg.get("dry_run", False))
+_QUIET_HOURS: Dict[str, Any] = dict(_cfg.get("quiet_hours") or {})
+
+
+def _in_quiet_hours(quiet: Optional[Dict[str, Any]] = None, *, now: Optional[datetime] = None) -> bool:
+    """Return True when the current local wall-clock is inside the quiet window.
+
+    Adapted from ``tools.creative.creative_engine._in_quiet_hours`` (D359). The
+    reflex runs on whatever host the Genesis daemon is on, so "local" means the
+    server's local timezone (``datetime.now()`` with no tzinfo). ``now`` is
+    injected for deterministic tests.
+
+    ``quiet`` schema (matches the YAML keys):
+
+        {
+          "start": "22:00",   # HH:MM, inclusive
+          "end":   "06:00",   # HH:MM, exclusive
+        }
+
+    An empty / missing ``quiet`` dict disables the gate (returns False). When
+    ``start < end`` the window is a single daytime band. When ``start > end``
+    the window wraps midnight (e.g. 22:00 → 06:00 covers 22:00–23:59 AND
+    00:00–05:59).
+    """
+    q = quiet if quiet is not None else _QUIET_HOURS
+    if not q:
+        return False
+    start_str = str(q.get("start") or "").strip()
+    end_str = str(q.get("end") or "").strip()
+    if not start_str or not end_str:
+        return False
+
+    current = (now or datetime.now()).strftime("%H:%M")
+
+    if start_str <= end_str:
+        return start_str <= current < end_str
+    # Wraparound (e.g. 22:00 → 06:00).
+    return current >= start_str or current < end_str
 
 
 def _is_enabled() -> bool:
@@ -170,7 +218,18 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
 
     details["enabled"] = True
 
-    # 2. Delegate one cycle to the engine (which owns rate limits + CoD/SIPA gates).
+    # 2. Quiet hours — no engine import, no token spend; mirrors creative engine.
+    if _in_quiet_hours():
+        result["status"] = "skipped"
+        details["reason"] = "skipped_quiet_hours"
+        details["quiet_hours"] = _QUIET_HOURS
+        logger.info(
+            "foundry_cycle: skipped_quiet_hours (window=%s-%s)",
+            _QUIET_HOURS.get("start"), _QUIET_HOURS.get("end"),
+        )
+        return result
+
+    # 3. Delegate one cycle to the engine (which owns rate limits + CoD/SIPA gates).
     try:
         from tools.foundry.engine import run_cycle  # type: ignore
     except Exception as exc:  # noqa: BLE001 — engine not shipped yet -> skip, don't fail
