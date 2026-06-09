@@ -121,6 +121,12 @@ def _has_cloud_key() -> bool:
     Checks the well-known cloud key env vars first, then falls back to
     ``tools.dashboard.byok.resolve_api_key`` for any provider. BYOK is
     imported lazily; an ImportError (or any failure) is treated as "no key".
+
+    Scoping note (SIPA/OPT-44): this function ONLY inspects LLM credential
+    variables listed in ``CLOUD_KEY_ENV_VARS``. The ``ICDEV_CLI_BRIDGE``
+    routing override is a separate, public toggle consumed by
+    :func:`cli_bridge_enabled` and must not be conflated with a cloud
+    credential here.
     """
     for var in CLOUD_KEY_ENV_VARS:
         if os.environ.get(var, "").strip():
