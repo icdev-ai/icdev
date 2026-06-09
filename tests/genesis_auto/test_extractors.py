@@ -7,9 +7,9 @@ Tests validate importability, function signatures, return types,
 and basic invocation patterns.
 """
 
+import importlib.util
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -20,8 +20,11 @@ import pytest
 
 def test_extractors_imports():
     """Verify module can be imported without errors."""
+    spec = importlib.util.find_spec("tools.document_intelligence.extractors")
+    if spec is None:
+        pytest.skip("Import dependency missing: no spec for tools.document_intelligence.extractors")
     try:
-        import tools.document_intelligence.extractors
+        importlib.import_module("tools.document_intelligence.extractors")
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 

@@ -357,12 +357,16 @@ def validate_batch(
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
-def _load_from_file(path: str) -> tuple:
-    with open(path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
-    if isinstance(data, dict):
-        return data.get("project_key", ""), data.get("tasks", [])
-    return "", data  # bare list
+# QUARANTINED 2026-06-09 (kanban task task-72a48bbad9-d3):
+# Filesystem-based task seed loading has no RTM authorization.
+# The CLI now requires --project (DB-backed) only. Re-enable only with
+# explicit RTM + threat-model review.
+# def _load_from_file(path: str) -> tuple:
+#     with open(path, "r", encoding="utf-8") as fh:
+#         data = json.load(fh)
+#     if isinstance(data, dict):
+#         return data.get("project_key", ""), data.get("tasks", [])
+#     return "", data  # bare list
 
 
 def _load_from_db(project_key: str) -> List[Dict[str, Any]]:
@@ -379,7 +383,8 @@ def _load_from_db(project_key: str) -> List[Dict[str, Any]]:
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Validate a Kanban task seed batch.")
     src = ap.add_mutually_exclusive_group(required=True)
-    src.add_argument("--file", help="JSON spec: {project_key, tasks:[...]} or a bare list")
+    # QUARANTINED 2026-06-09: --file path disabled pending RTM authorization.
+    # src.add_argument("--file", help="JSON spec: {project_key, tasks:[...]} or a bare list")
     src.add_argument("--project", help="Validate live DB rows for this project_id")
     ap.add_argument("--gate", action="store_true", help="Exit non-zero on any failure")
     ap.add_argument("--no-llm", action="store_true", help="Skip the LLM rubric")
@@ -387,10 +392,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = ap.parse_args(argv)
 
     conn = None
-    if args.file:
-        project_key, tasks = _load_from_file(args.file)
-    else:
-        project_key, tasks = args.project, _load_from_db(args.project)
+    # QUARANTINED 2026-06-09: filesystem loader disabled pending RTM authorization.
+    # if args.file:
+    #     project_key, tasks = _load_from_file(args.file)
+    # else:
+    #     project_key, tasks = args.project, _load_from_db(args.project)
+    if not args.project:
+        ap.error("the following arguments are required: --project (--file path is currently quarantined)")
+    project_key, tasks = args.project, _load_from_db(args.project)
 
     report = validate_batch(project_key, tasks, llm_grade=not args.no_llm, conn=conn)
     if args.json:

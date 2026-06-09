@@ -142,8 +142,8 @@ def _llm_severity_triage(
     on failure / when the LLM is unavailable.
     """
     try:
-        import anthropic  # noqa: PLC0415
-        client = anthropic.Anthropic()
+        from tools.llm.anthropic_provider import AnthropicLLMProvider  # noqa: PLC0415
+        from tools.llm.provider import LLMRequest  # noqa: PLC0415
     except Exception:
         return None
 
@@ -160,13 +160,15 @@ def _llm_severity_triage(
         f"Controls:\n{lines}"
     )
     try:
-        response = client.messages.create(
-            model=model,
-            max_tokens=512,
+        import os as _os
+        provider = AnthropicLLMProvider(api_key=_os.environ.get("ANTHROPIC_API_KEY", ""))
+        request = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
+            max_tokens=512,
         )
+        response = provider.invoke(request, model, {"max_output_tokens": 512})
         import json as _json
-        text = response.content[0].text.strip()
+        text = response.content.strip()
         # Strip markdown fences if present
         if text.startswith("```"):
             text = "\n".join(

@@ -490,8 +490,8 @@ def _seed_history(conn, sections: list[dict]) -> int:
             conn.execute(
                 """INSERT INTO proposal_status_history (
                     id, entity_type, entity_id, old_status, new_status,
-                    changed_by, reason, classification, created_at
-                ) VALUES (%s,'section',%s,%s,%s,%s,%s,'CUI',%s)""",
+                    changed_by, reason, created_at
+                ) VALUES (%s,'section',%s,%s,%s,%s,%s,%s)""",
                 (_hist_id(), sec_id, old_s, new_s, "demo_seed", reason, _ts(days_offset)),
             )
             count += 1

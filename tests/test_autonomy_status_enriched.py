@@ -17,7 +17,6 @@ already sets PYTHONPATH and SQLite backend.
 from __future__ import annotations
 
 import json
-import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -97,7 +96,6 @@ def test_triage_recent_includes_root_cause_and_suspect_files(tmp_path, monkeypat
     )
 
     # Patch base_dir so the route reads our tmp_path as the project root
-    import tools.dashboard.app as app_mod
     # Locate the closure-wrapped function via the running app — easiest
     # is to import + run via the Flask test client.
     from flask import Flask

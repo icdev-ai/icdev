@@ -1,6 +1,5 @@
 """Co-Workers canvas DB tests (cwk-db-01)."""
 import sqlite3
-from pathlib import Path
 
 import pytest
 

@@ -1,0 +1,322 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner "Classification marking" [ref=e3]: CUI // SP-CTI
+  - navigation "Main navigation" [ref=e4]:
+    - link "ICDEV™" [ref=e5] [cursor=pointer]:
+      - /url: /
+    - 'status "Real-time connection: connected" [ref=e6]'
+    - list [ref=e7]:
+      - listitem [ref=e8]:
+        - link "Home" [ref=e9] [cursor=pointer]:
+          - /url: /
+      - listitem [ref=e10]:
+        - link "Ops ▾" [ref=e11] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e12]:
+        - link "Build ▾" [ref=e13] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e14]:
+        - link "Canvases ▾" [ref=e15] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e16]:
+        - link "Intelligence ▾" [ref=e17] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e18]:
+        - link "Compliance ▾" [ref=e19] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e20]:
+        - link "Strategos ▾" [ref=e21] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e22]:
+        - link "Platforms ▾" [ref=e23] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e24]:
+        - link "Studio ▾" [ref=e25] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - listitem [ref=e26]:
+        - link "More ▾" [ref=e27] [cursor=pointer]:
+          - /url: javascript:void(0)
+    - generic [ref=e28]:
+      - link "Admin admin" [ref=e29] [cursor=pointer]:
+        - /url: /profile
+        - generic [ref=e30]: Admin
+        - generic [ref=e31]: admin
+      - link "Logout" [ref=e32] [cursor=pointer]:
+        - /url: /logout
+      - button "☀" [ref=e33] [cursor=pointer]
+      - button "Tour" [ref=e34] [cursor=pointer]
+      - generic [ref=e35]: "View as:"
+      - combobox "Select dashboard view role" [ref=e36]:
+        - option "All (Full View)" [selected]
+        - option "Program Manager"
+        - option "Developer / Architect"
+        - option "ISSO / Security Officer"
+        - option "Contracting Officer"
+        - option "Analyst"
+        - option "Solutions Architect"
+        - option "Sales Engineer"
+        - option "Innovator"
+        - option "Business Development"
+        - option "Contracting Officer Representative"
+  - main [ref=e37]:
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - link "Home" [ref=e40] [cursor=pointer]:
+          - /url: /
+        - generic [ref=e41]: /
+        - generic [ref=e42]: Co-Workers
+      - generic [ref=e43]:
+        - heading "Co-Workers" [level=1] [ref=e44]
+        - paragraph [ref=e45]: Your roster of AI co-workers. Pick one to open the shared chat framed by that persona — RAG context is grounded automatically.
+        - generic [ref=e46]:
+          - generic [ref=e47]: 21 co-workers
+          - generic [ref=e48]: 7 personas
+          - generic [ref=e49]: 8 autonomous
+          - generic [ref=e50]: 6 experts
+      - generic [ref=e51]:
+        - link "A ATLAS Orchestrator Workflow orchestration and task decomposition persona Open chat →" [ref=e52] [cursor=pointer]:
+          - /url: /chat?role=Orchestrator&goal=Collaborate+with+ATLAS&coworker=persona%3Aatlas
+          - generic [ref=e53]:
+            - generic [ref=e54]: A
+            - generic [ref=e55]:
+              - generic [ref=e56]: ATLAS
+              - generic [ref=e57]: Orchestrator
+          - generic [ref=e58]: Workflow orchestration and task decomposition
+          - generic [ref=e59]:
+            - generic [ref=e60]: persona
+            - generic [ref=e61]: Open chat →
+        - link "G Guardian Compliance Advisor Security gates, NIST controls, FedRAMP persona Open chat →" [ref=e62] [cursor=pointer]:
+          - /url: /chat?role=Compliance+Advisor&goal=Collaborate+with+Guardian&coworker=persona%3Aguardian
+          - generic [ref=e63]:
+            - generic [ref=e64]: G
+            - generic [ref=e65]:
+              - generic [ref=e66]: Guardian
+              - generic [ref=e67]: Compliance Advisor
+          - generic [ref=e68]: Security gates, NIST controls, FedRAMP
+          - generic [ref=e69]:
+            - generic [ref=e70]: persona
+            - generic [ref=e71]: Open chat →
+        - link "S Scout Research Analyst Innovation signals, research dossiers, trends persona Open chat →" [ref=e72] [cursor=pointer]:
+          - /url: /chat?role=Research+Analyst&goal=Collaborate+with+Scout&coworker=persona%3Ascout
+          - generic [ref=e73]:
+            - generic [ref=e74]: S
+            - generic [ref=e75]:
+              - generic [ref=e76]: Scout
+              - generic [ref=e77]: Research Analyst
+          - generic [ref=e78]: Innovation signals, research dossiers, trends
+          - generic [ref=e79]:
+            - generic [ref=e80]: persona
+            - generic [ref=e81]: Open chat →
+        - link "R Architect Code Quality Code smells, complexity, maintainability persona Open chat →" [ref=e82] [cursor=pointer]:
+          - /url: /chat?role=Code+Quality&goal=Collaborate+with+Architect&coworker=persona%3Aarchitect
+          - generic [ref=e83]:
+            - generic [ref=e84]: R
+            - generic [ref=e85]:
+              - generic [ref=e86]: Architect
+              - generic [ref=e87]: Code Quality
+          - generic [ref=e88]: Code smells, complexity, maintainability
+          - generic [ref=e89]:
+            - generic [ref=e90]: persona
+            - generic [ref=e91]: Open chat →
+        - link "N Analyst Requirements Engineer RICOAS intake, readiness scoring, BDD persona Open chat →" [ref=e92] [cursor=pointer]:
+          - /url: /chat?role=Requirements+Engineer&goal=Collaborate+with+Analyst&coworker=persona%3Aanalyst
+          - generic [ref=e93]:
+            - generic [ref=e94]: "N"
+            - generic [ref=e95]:
+              - generic [ref=e96]: Analyst
+              - generic [ref=e97]: Requirements Engineer
+          - generic [ref=e98]: RICOAS intake, readiness scoring, BDD
+          - generic [ref=e99]:
+            - generic [ref=e100]: persona
+            - generic [ref=e101]: Open chat →
+        - link "H Sentinel Health Monitor Context health, pressure detection, stuck alerts persona Open chat →" [ref=e102] [cursor=pointer]:
+          - /url: /chat?role=Health+Monitor&goal=Collaborate+with+Sentinel&coworker=persona%3Asentinel
+          - generic [ref=e103]:
+            - generic [ref=e104]: H
+            - generic [ref=e105]:
+              - generic [ref=e106]: Sentinel
+              - generic [ref=e107]: Health Monitor
+          - generic [ref=e108]: Context health, pressure detection, stuck alerts
+          - generic [ref=e109]:
+            - generic [ref=e110]: persona
+            - generic [ref=e111]: Open chat →
+        - link "? Assistant Codebase Guide Codebase questions, architecture explanations persona Open chat →" [ref=e112] [cursor=pointer]:
+          - /url: /chat?role=Codebase+Guide&goal=Collaborate+with+Assistant&coworker=persona%3Aassistant
+          - generic [ref=e113]:
+            - generic [ref=e114]: "?"
+            - generic [ref=e115]:
+              - generic [ref=e116]: Assistant
+              - generic [ref=e117]: Codebase Guide
+          - generic [ref=e118]: Codebase questions, architecture explanations
+          - generic [ref=e119]:
+            - generic [ref=e120]: persona
+            - generic [ref=e121]: Open chat →
+        - link "A AI Developer Yellow Tier Autonomous software developer that writes, tests, and refactors code following TDD and ANVIL workflows. ace Open chat →" [ref=e122] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier&goal=Collaborate+with+AI+Developer&coworker=ace%3Aai_developer
+          - generic [ref=e123]:
+            - generic [ref=e124]: A
+            - generic [ref=e125]:
+              - generic [ref=e126]: AI Developer
+              - generic [ref=e127]: Yellow Tier
+          - generic [ref=e128]: Autonomous software developer that writes, tests, and refactors code following TDD and ANVIL workflows.
+          - generic [ref=e129]:
+            - generic [ref=e130]: ace
+            - generic [ref=e131]: Open chat →
+        - link "B Business Analyst Yellow Tier Business analyst that analyzes win/loss patterns, benchmarks competitors, evaluates price-to-win, and recommends BD strategy adjustments. ace Open chat →" [ref=e132] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier&goal=Collaborate+with+Business+Analyst&coworker=ace%3Abusiness_analyst
+          - generic [ref=e133]:
+            - generic [ref=e134]: B
+            - generic [ref=e135]:
+              - generic [ref=e136]: Business Analyst
+              - generic [ref=e137]: Yellow Tier
+          - generic [ref=e138]: Business analyst that analyzes win/loss patterns, benchmarks competitors, evaluates price-to-win, and recommends BD strategy adjustments.
+          - generic [ref=e139]:
+            - generic [ref=e140]: ace
+            - generic [ref=e141]: Open chat →
+        - link "C Compliance Manager Yellow Tier Compliance manager that maps controls to NIST/FedRAMP/CMMC, runs gap analysis, generates POAMs, and maintains the crosswalk engine. ace Open chat →" [ref=e142] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier&goal=Collaborate+with+Compliance+Manager&coworker=ace%3Acompliance_manager
+          - generic [ref=e143]:
+            - generic [ref=e144]: C
+            - generic [ref=e145]:
+              - generic [ref=e146]: Compliance Manager
+              - generic [ref=e147]: Yellow Tier
+          - generic [ref=e148]: Compliance manager that maps controls to NIST/FedRAMP/CMMC, runs gap analysis, generates POAMs, and maintains the crosswalk engine.
+          - generic [ref=e149]:
+            - generic [ref=e150]: ace
+            - generic [ref=e151]: Open chat →
+        - link "D Data Analyst Yellow Tier Data analyst that ingests datasets, profiles schemas, detects anomalies, and produces quality scorecards for the AI Data Mapping and DIC canvases. ace Open chat →" [ref=e152] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier&goal=Collaborate+with+Data+Analyst&coworker=ace%3Adata_analyst
+          - generic [ref=e153]:
+            - generic [ref=e154]: D
+            - generic [ref=e155]:
+              - generic [ref=e156]: Data Analyst
+              - generic [ref=e157]: Yellow Tier
+          - generic [ref=e158]: Data analyst that ingests datasets, profiles schemas, detects anomalies, and produces quality scorecards for the AI Data Mapping and DIC canvases.
+          - generic [ref=e159]:
+            - generic [ref=e160]: ace
+            - generic [ref=e161]: Open chat →
+        - link "D DevOps Engineer Yellow Tier DevOps engineer that probes service health, validates configurations, manages CI/CD pipelines, and recovers from process wedges. ace Open chat →" [ref=e162] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier&goal=Collaborate+with+DevOps+Engineer&coworker=ace%3Adevops_engineer
+          - generic [ref=e163]:
+            - generic [ref=e164]: D
+            - generic [ref=e165]:
+              - generic [ref=e166]: DevOps Engineer
+              - generic [ref=e167]: Yellow Tier
+          - generic [ref=e168]: DevOps engineer that probes service health, validates configurations, manages CI/CD pipelines, and recovers from process wedges.
+          - generic [ref=e169]:
+            - generic [ref=e170]: ace
+            - generic [ref=e171]: Open chat →
+        - link "Q QA Manager Yellow Tier Quality assurance manager that designs test plans, reviews coverage, and gates releases on passing thresholds. ace Open chat →" [ref=e172] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier&goal=Collaborate+with+QA+Manager&coworker=ace%3Aqa_manager
+          - generic [ref=e173]:
+            - generic [ref=e174]: Q
+            - generic [ref=e175]:
+              - generic [ref=e176]: QA Manager
+              - generic [ref=e177]: Yellow Tier
+          - generic [ref=e178]: Quality assurance manager that designs test plans, reviews coverage, and gates releases on passing thresholds.
+          - generic [ref=e179]:
+            - generic [ref=e180]: ace
+            - generic [ref=e181]: Open chat →
+        - link "R Requirements Engineer Yellow Tier Requirements engineer that parses PRDs, builds traceability matrices, identifies ambiguity, and proposes clarifications for INVEST-compliant backlog items. ace Open chat →" [ref=e182] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier&goal=Collaborate+with+Requirements+Engineer&coworker=ace%3Arequirements_engineer
+          - generic [ref=e183]:
+            - generic [ref=e184]: R
+            - generic [ref=e185]:
+              - generic [ref=e186]: Requirements Engineer
+              - generic [ref=e187]: Yellow Tier
+          - generic [ref=e188]: Requirements engineer that parses PRDs, builds traceability matrices, identifies ambiguity, and proposes clarifications for INVEST-compliant backlog items.
+          - generic [ref=e189]:
+            - generic [ref=e190]: ace
+            - generic [ref=e191]: Open chat →
+        - link "S Security Analyst Yellow Tier Security analyst that scans for vulnerabilities, audits controls, assesses ZIG pillars, and produces STIG-aligned finding reports. ace Open chat →" [ref=e192] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier&goal=Collaborate+with+Security+Analyst&coworker=ace%3Asecurity_analyst
+          - generic [ref=e193]:
+            - generic [ref=e194]: S
+            - generic [ref=e195]:
+              - generic [ref=e196]: Security Analyst
+              - generic [ref=e197]: Yellow Tier
+          - generic [ref=e198]: Security analyst that scans for vulnerabilities, audits controls, assesses ZIG pillars, and produces STIG-aligned finding reports.
+          - generic [ref=e199]:
+            - generic [ref=e200]: ace
+            - generic [ref=e201]: Open chat →
+        - link "C Compliance Guardian Yellow Tier — compliance You are Compliance Guardian — the ICDEV Compliance Co-Worker. Operating at YELLOW trust. Ground yourself on NIST 800-53 controls, the crosswalk engine, SSP narratives, and ATO artifacts. Map gaps t expert Open chat →" [ref=e202] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier+%E2%80%94+compliance&goal=Collaborate+with+Compliance+Guardian&coworker=ref%3Acompliance&rag_tables=compliance_controls%2Ccompliance_artifacts%2Ccontrol_crosswalk%2Cssp_controls%2Ccontrol_narratives&goals=comply%2Csecure&manifest_shards=compliance-engine.md%2Csecurity.md&trust_tier=yellow
+          - generic [ref=e203]:
+            - generic [ref=e204]: C
+            - generic [ref=e205]:
+              - generic [ref=e206]: Compliance Guardian
+              - generic [ref=e207]: Yellow Tier — compliance
+          - generic [ref=e208]: You are Compliance Guardian — the ICDEV Compliance Co-Worker. Operating at YELLOW trust. Ground yourself on NIST 800-53 controls, the crosswalk engine, SSP narratives, and ATO artifacts. Map gaps t
+          - generic [ref=e209]:
+            - generic [ref=e210]: expert
+            - generic [ref=e211]: Open chat →
+        - link "D Data Steward Yellow Tier — data You are Data Steward — the ICDEV Data Co-Worker. Operating at YELLOW trust. Ground yourself on the Data Canvas schema, data-mesh nodes and edges, and classification policies. Help users explore data expert Open chat →" [ref=e212] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier+%E2%80%94+data&goal=Collaborate+with+Data+Steward&coworker=ref%3Adata&rag_tables=data_nodes%2Cdata_edges%2Cdata_classifications%2Cdata_twin_snapshots&goals=data_govern%2Cmesh&manifest_shards=data-mesh.md%2Cddc.md&trust_tier=yellow
+          - generic [ref=e213]:
+            - generic [ref=e214]: D
+            - generic [ref=e215]:
+              - generic [ref=e216]: Data Steward
+              - generic [ref=e217]: Yellow Tier — data
+          - generic [ref=e218]: You are Data Steward — the ICDEV Data Co-Worker. Operating at YELLOW trust. Ground yourself on the Data Canvas schema, data-mesh nodes and edges, and classification policies. Help users explore data
+          - generic [ref=e219]:
+            - generic [ref=e220]: expert
+            - generic [ref=e221]: Open chat →
+        - link "S SRE Watchtower Yellow Tier — observability You are SRE Watchtower — the ICDEV Observability Co-Worker. Operating at YELLOW trust. Ground yourself on monitoring alerts, risk-monitor history, AI incident logs, and SLO telemetry. Help users tr expert Open chat →" [ref=e222] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier+%E2%80%94+observability&goal=Collaborate+with+SRE+Watchtower&coworker=ref%3Aobservability&rag_tables=alerts%2Crisk_monitor_history%2Cai_incident_log%2Ccssp_incidents&goals=monitoring%2Csre&manifest_shards=monitoring.md%2Cobservability.md&trust_tier=yellow
+          - generic [ref=e223]:
+            - generic [ref=e224]: S
+            - generic [ref=e225]:
+              - generic [ref=e226]: SRE Watchtower
+              - generic [ref=e227]: Yellow Tier — observability
+          - generic [ref=e228]: You are SRE Watchtower — the ICDEV Observability Co-Worker. Operating at YELLOW trust. Ground yourself on monitoring alerts, risk-monitor history, AI incident logs, and SLO telemetry. Help users tr
+          - generic [ref=e229]:
+            - generic [ref=e230]: expert
+            - generic [ref=e231]: Open chat →
+        - link "R Requirements Architect Yellow Tier — requirements You are Requirements Architect — the ICDEV Requirements Co-Worker. Operating at YELLOW trust. Ground yourself on RICOAS intake patterns, DOORS requirements, and RFP requirement libraries. Parse PRD expert Open chat →" [ref=e232] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier+%E2%80%94+requirements&goal=Collaborate+with+Requirements+Architect&coworker=ref%3Arequirements&rag_tables=intake_requirements%2Cdoors_requirements%2Crfp_requirement_patterns%2Csg_pir_requirements&goals=requirements_intake%2Cricoas&manifest_shards=requirements.md%2Cricoas.md&trust_tier=yellow
+          - generic [ref=e233]:
+            - generic [ref=e234]: R
+            - generic [ref=e235]:
+              - generic [ref=e236]: Requirements Architect
+              - generic [ref=e237]: Yellow Tier — requirements
+          - generic [ref=e238]: You are Requirements Architect — the ICDEV Requirements Co-Worker. Operating at YELLOW trust. Ground yourself on RICOAS intake patterns, DOORS requirements, and RFP requirement libraries. Parse PRD
+          - generic [ref=e239]:
+            - generic [ref=e240]: expert
+            - generic [ref=e241]: Open chat →
+        - link "S Sentinel Yellow Tier — security You are Sentinel — the ICDEV Security Co-Worker. Operating at YELLOW trust (human-in-the-loop for destructive actions). Ground yourself on the Security Canvas findings, NIST 800-53 controls, and the expert Open chat →" [ref=e242] [cursor=pointer]:
+          - /url: /chat?role=Yellow+Tier+%E2%80%94+security&goal=Collaborate+with+Sentinel&coworker=ref%3Asecurity&rag_tables=sdc_findings%2Csdc_controls%2Csdc_zig_pillars&goals=secure%2Ccomply&manifest_shards=security.md&trust_tier=yellow
+          - generic [ref=e243]:
+            - generic [ref=e244]: S
+            - generic [ref=e245]:
+              - generic [ref=e246]: Sentinel
+              - generic [ref=e247]: Yellow Tier — security
+          - generic [ref=e248]: You are Sentinel — the ICDEV Security Co-Worker. Operating at YELLOW trust (human-in-the-loop for destructive actions). Ground yourself on the Security Canvas findings, NIST 800-53 controls, and the
+          - generic [ref=e249]:
+            - generic [ref=e250]: expert
+            - generic [ref=e251]: Open chat →
+        - 'link "S Strategos Yellow Tier — intelligence You are STRATEGOS — an AI military intelligence analyst embedded in the ICDEV™ Strategos platform. You reason analytically across multi-domain intelligence data. RESPONSE FORMAT: Lead every substan expert Open chat →" [ref=e252] [cursor=pointer]':
+          - /url: /chat?role=Yellow+Tier+%E2%80%94+intelligence&goal=Collaborate+with+Strategos&coworker=ref%3Astrategos&rag_tables=sg_conflict_events%2Csg_orbat_units%2Csg_intel_briefs%2Csg_priority_signals%2Csg_vessel_tracks%2Csg_kg_entities&goals=intelligence_analysis%2Csituational_awareness%2Cdecision_support&manifest_shards=strategos.md%2Csg-intelligence.md%2Csg-conflict-intelligence.md&trust_tier=yellow
+          - generic [ref=e253]:
+            - generic [ref=e254]: S
+            - generic [ref=e255]:
+              - generic [ref=e256]: Strategos
+              - generic [ref=e257]: Yellow Tier — intelligence
+          - generic [ref=e258]: "You are STRATEGOS — an AI military intelligence analyst embedded in the ICDEV™ Strategos platform. You reason analytically across multi-domain intelligence data. RESPONSE FORMAT: Lead every substan"
+          - generic [ref=e259]:
+            - generic [ref=e260]: expert
+            - generic [ref=e261]: Open chat →
+  - contentinfo "Classification marking" [ref=e262]: CUI // SP-CTI
+  - complementary [ref=e263]:
+    - generic [ref=e264]:
+      - heading [level=3] [ref=e265]: ❓ Explain
+      - button [ref=e266] [cursor=pointer]: ×
+  - button "Open codebase assistant" [ref=e268] [cursor=pointer]:
+    - generic [ref=e269]: "?"
+  - complementary "IQE Global Query Bar" [ref=e270]:
+    - generic [ref=e272]:
+      - generic [ref=e273]: IQE
+      - generic [ref=e274]: global
+      - textbox "Ask anything… (Ctrl+Shift+Q to toggle)" [ref=e275]
+      - button "Run" [ref=e276] [cursor=pointer]
+      - button "✕" [ref=e277] [cursor=pointer]

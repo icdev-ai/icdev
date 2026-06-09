@@ -4,8 +4,10 @@
 Observability Design Canvas — DB initializer.
 Creates schema and seeds 5 canonical observability design templates.
 
-Dual-backend: SQLite (default) or PostgreSQL.
-Set OC_STORAGE_BACKEND=postgresql + OC_PG_* env vars to use PostgreSQL.
+Dual-backend: PostgreSQL (default, via get_canvas_connection) or SQLite fallback.
+Set OC_PG_DATABASE to override the target PG database name.
+The global ICDEV_STORAGE_BACKEND=postgresql setting is honored unless
+OC_STORAGE_BACKEND / ICDEV_CANVAS_STORAGE_BACKEND explicitly forces sqlite.
 """
 
 import json
@@ -18,11 +20,20 @@ from pathlib import Path
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = _ICDEV_ROOT / "data" / "observability_canvas.db"
 
-_OC_BACKEND = os.environ.get("OC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite")).lower()
+# Default follows the global ICDEV_STORAGE_BACKEND (which is "postgresql"
+# in production). Per memory feedback_pg_default_backend: new canvases
+# default to PG, SQLite is fallback only.
+_OC_BACKEND = os.environ.get(
+    "OC_STORAGE_BACKEND",
+    os.environ.get(
+        "ICDEV_CANVAS_STORAGE_BACKEND",
+        os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"),
+    ),
+).lower()
 
 
 def get_connection():
-    """Get a database connection — SQLite or PostgreSQL.
+    """Get a database connection — PostgreSQL (default) or SQLite.
 
     Returns a connection that supports:
         conn.execute(sql, params) — with ? placeholders (auto-translated for PG)
@@ -30,18 +41,20 @@ def get_connection():
         conn.close()
         row["column_name"] — dict-like row access
 
-    For PostgreSQL, uses ICDEV's StorageConnection wrapper which
-    auto-translates SQLite SQL to PostgreSQL (? -> %s, PRAGMA -> no-op, etc.)
+    For PostgreSQL, uses ICDEV's get_canvas_connection() which disables the
+    global RLS predicate (observability tables have no classification/
+    tenant_id columns; RLS would raise UndefinedColumn on every query —
+    see CLAUDE.md "Canvas db/init_db.py must use get_canvas_connection()").
+    SQLite is used only as a fallback when get_canvas_connection raises.
     """
     if _OC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
-
-            conn = _icdev_conn(db_path=os.environ.get("OC_PG_DATABASE", "observability_canvas"))
-            return conn
-        except ImportError:
+            from tools.db.storage import get_canvas_connection
+            # OC_PG_DATABASE env var selects the target canvas database
+            return get_canvas_connection("OC_PG_DATABASE")
+        except Exception:
             pass
-    # SQLite (default) — per-canvas DB, distinct from icdev.db
+    # SQLite fallback — per-canvas DB, distinct from icdev.db
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")

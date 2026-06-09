@@ -108,7 +108,6 @@ def test_cluster_orphan_chunks_by_terms():
     ]
     clusters = se._cluster_chunks(chunks)
     # c1 and c2 should cluster together via term overlap; c3 is singleton.
-    labels = [c["label"] for c in clusters]
     # The c1/c2 cluster label derives from the most common term in that cluster.
     multi = [c for c in clusters if c["entity_count"] > 1]
     assert len(multi) == 1

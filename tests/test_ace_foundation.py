@@ -1,6 +1,5 @@
 """Foundation tests for ACE (Agentic Collaboration Environment) DB tables."""
 import sqlite3
-import pytest
 from tests.conftest import MINIMAL_ICDEV_SCHEMA
 
 ACE_TABLES = [

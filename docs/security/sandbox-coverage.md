@@ -455,3 +455,63 @@ generation call, no `exec`/`eval`/`subprocess` anywhere in the harvest path.
 - **Revisit if:** the harvester adds (a) a network fetch, (b) a file
   upload from an HTTP endpoint, or (c) any LLM-generated content path →
   re-decide as `sandboxed-on-demand` (with `ICDEV_STRICT_SANDBOX=1`).
+
+### Gap 18 — Autofix deep post-mortem locals capture (arc-dbg-03)
+
+**Module:** `tools/workflow/failure_triage.py` — `_deep_debug_capture()`,
+`_maybe_attach_deep_debug()`, `_deep_debug_write_plugin()`. Runs from
+inside the autofix ReAct loop (arc-dbg-02) AFTER a failed verification
+in the worktree.
+
+**Ingress path:** When `ICDEV_AUTOFIX_DEEP_DEBUG=true` (default OFF)
+AND the prior verification command exited non-zero AND we have a
+parseable failing-test path, the helper:
+
+1. Writes a static, fixed-source pytest plugin to
+   `AUDIT_DIR/<task>__<sig>__icdev_deep_debug.py` (NOT to the worktree).
+2. Re-runs **only** the failing test in the worktree via
+   `python -m pytest -p <plugin> <failing_test>` — same allowlisted
+   prefix, no new shell-metacharacter surface, no new file outside
+   AUDIT_DIR.
+3. The plugin's `pytest_exception_interact` hook walks the traceback
+   and dumps frame locals (repr-capped, dunder-skipping) to
+   `AUDIT_DIR/<task>__<sig>__deep_debug.json`.
+4. The path is stamped on the ReAct observation as `deep_debug_evidence`.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The re-run executes the same first-party test the
+  LLM already produced via the allowlisted `python -m pytest` prefix
+  — no NEW code is exec'd (the patch files were already written to the
+  worktree on the prior iteration). The post-mortem plugin is a
+  fixed, ICDEV-authored Python file, NOT LLM-generated. The captured
+  locals are written to a controlled audit directory, not a network
+  endpoint, and the `pytest` invocation respects the existing
+  `_VERIFICATION_CMD_ALLOWLIST` + metacharacter ban (no shell-out).
+- **Guardrails:**
+  - **Opt-in only.** Default OFF (`ICDEV_AUTOFIX_DEEP_DEBUG` unset
+    ⇒ no plugin write, no re-run, zero subprocess cost). The hot path
+    is two env reads + early-return when the flag is off.
+  - **Worktree-only.** The re-run uses `cwd=wt`; the main checkout is
+    never touched. The plugin file is written to AUDIT_DIR, not to the
+    worktree, so it doesn't pollute `git diff` of the patched files.
+  - **Allowlisted command.** The re-run uses `python -m pytest` —
+    already on `_VERIFICATION_CMD_ALLOWLIST`. No new prefix.
+  - **No shell metacharacters.** `failing_test` is regex-restricted
+    to `[A-Za-z0-9_./:\-]+(::[A-Za-z0-9_\[\], ]+)?` before being
+    passed as an argv token; the regex rejects anything containing
+    `;`, `&&`, `|`, `>`, `<`, backticks, `$()`, `--no-verify`, or
+    spaces inside the path portion.
+  - **Bounded capture.** `_DEEP_DEBUG_MAX_FRAMES=8` frames,
+    `_DEEP_DEBUG_MAX_REPR=4000` bytes per locals entry,
+    `_DEEP_DEBUG_TIMEOUT=180` seconds — a pathological frame cannot
+    OOM the worker or stall the ReAct loop.
+  - **Plugin is static.** The plugin source is a single hard-coded
+    string in the failure_triage module, NOT derived from the LLM's
+    patch. The LLM cannot inject Python into the post-mortem path.
+  - **Failing-test whitelist.** The plugin is invoked with a single
+    test path, never the whole suite, so the blast radius is one
+    test method.
+- **Revisit if:** the post-mortem adds (a) network egress, (b) code
+  exec of LLM-supplied snippets, or (c) writes outside AUDIT_DIR →
+  re-decide as **sandboxed** (route through
+  `tools/security/sandbox_executor.py`).

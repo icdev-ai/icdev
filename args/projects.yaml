@@ -4,6 +4,17 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: pmo
+  name: Pmo Project
+  description: Auto-registered project for tasks with prefix 'pmo-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: pmo-
+  default_open: true
+  briefs: []
+  epics:
+  - key: opt
+    title: OPT
+    priority: medium
 - key: coh
   name: Coh Project
   description: Auto-registered project for tasks with prefix 'coh-'. Update name and

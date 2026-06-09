@@ -45,7 +45,7 @@ def get_connection():
             # Network canvas tables have no tenant_id/classification RLS columns;
             # disable RLS so the predicate doesn't UndefinedColumn / filter rows.
             try:
-                conn.set_security_context(None)
+                conn.set_security_context(None)  # rls-bypass: network canvas tables have no tenant_id/classification columns
             except Exception:
                 pass
             return conn

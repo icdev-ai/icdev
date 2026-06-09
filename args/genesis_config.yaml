@@ -419,6 +419,13 @@ reflexes:
     apply: true              # ask for patch generation; actual apply still needs env flag
     cooldown_minutes: 10     # min gap between consecutive cycles
     max_applies_per_hour: 5  # matches CLAUDE.md self-healing cap
+    # Bounded ReAct loop (WS2.3 / arc-dbg-02) — refine patch on each
+    # failing verify round up to max_iterations; bail on no-progress
+    # fingerprint or token-budget exhaustion. Overrides the in-code
+    # defaults in tools/workflow/failure_triage.py.
+    react_max_iterations: 3          # hypothesize→instrument→observe rounds
+    react_token_budget: 8000         # per-failure prompt char/4 ceiling
+    react_no_progress_window: 2      # last N identical fingerprints → no_progress
 
   e2e_runner:
     enabled: true

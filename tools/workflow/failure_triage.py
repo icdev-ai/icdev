@@ -76,6 +76,12 @@ EVENT_APPLY_OUTCOME = "apply_outcome"
 # no_progress / budget_exhausted). The panel (arc-obs-03) groups these.
 EVENT_REACT_ITERATION = "react_iteration"
 EVENT_REACT_FINISHED = "react_finished"
+# Self-consistency diagnosis (WS4.1 / arc-dec-01): N samples taken with
+# temperature spread, then agreement on (root_cause_class, primary_suspect)
+# computed and used as the real confidence. Both per-sample and aggregated
+# events are emitted so the arc-obs panel can show raw-vs-SC deltas.
+EVENT_SC_SAMPLE = "sc_sample"
+EVENT_SC_AGGREGATED = "sc_aggregated"
 
 
 def _emit_event(
@@ -314,13 +320,25 @@ def _deny_hit(diag: Dict[str, Any], task: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool, str]:
+def should_auto_apply(
+    task: Dict[str, Any],
+    diag: Dict[str, Any],
+    sc_aggregate: Optional[Dict[str, Any]] = None,
+) -> Tuple[bool, str]:
     """Return (allow, reason). ``reason`` is human-readable even on allow.
 
     Chain-blocker rule: if this task has blocked dependents, the confidence
     threshold is relaxed from APPLY_CONFIDENCE (0.85) to 0.70 because the
     cost of inaction is amplified — every dependent stays stalled until the
     root cause is resolved.
+
+    Self-consistency override (WS4.1 / arc-dec-01): when ``sc_aggregate`` is
+    provided, the confidence used for the threshold check is the
+    agreement-derived score, NOT the single LLM call's self-reported
+    ``confidence``. The raw value is still recorded on the entry for
+    calibration (arc-cal-*) but the GATE consumes the SC score. If the
+    samples disagreed, ``meets_threshold`` is False and we short-circuit to
+    the suggested-card path regardless of the raw confidence.
     """
     if not autofix_enabled():
         return (False, f"{AUTOFIX_ENV} is not set to true")
@@ -329,12 +347,34 @@ def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool,
     if rec != "patch":
         return (False, f"recommendation is {rec!r} (not 'patch')")
 
-    conf = float(diag.get("confidence") or 0.0)
+    # Self-consistency check: when an aggregate is provided, agreement is
+    # the gate, not the raw self-reported confidence. Disagreement is a
+    # HARD short-circuit — even a 0.95 raw confidence cannot save a 1/3
+    # vote, because that's the failure mode the SC path exists to catch.
+    if sc_aggregate is not None:
+        if not sc_aggregate.get("meets_threshold", False):
+            samples_valid = int(sc_aggregate.get("samples_valid", 0))
+            agreement = float(sc_aggregate.get("agreement_score", 0.0))
+            raw_mean = float(sc_aggregate.get("raw_confidence_mean", 0.0))
+            return (
+                False,
+                f"self-consistency disagreement "
+                f"(samples={samples_valid}, agreement={agreement:.2f}, "
+                f"raw_conf_mean={raw_mean:.2f}) — falls through to suggested card",
+            )
+        # SC path: consume the agreement-derived score
+        conf = float(sc_aggregate.get("self_consistency_confidence") or 0.0)
+        conf_source = "sc"
+    else:
+        # Legacy path: a single LLM call's self-reported confidence.
+        conf = float(diag.get("confidence") or 0.0)
+        conf_source = "raw"
+
     blocked_deps = int(task.get("blocked_dependents_count") or 0)
     effective_threshold = 0.70 if blocked_deps > 0 else APPLY_CONFIDENCE
     if conf < effective_threshold:
         chain_note = f" (chain-blocker: {blocked_deps} dep(s) stalled, threshold lowered to 0.70)" if blocked_deps else ""
-        return (False, f"confidence {conf:.2f} < threshold {effective_threshold}{chain_note}")
+        return (False, f"{conf_source}_confidence {conf:.2f} < threshold {effective_threshold}{chain_note}")
 
     ttype = (task.get("task_type") or "").lower()
     if ttype not in AUTO_APPLY_TASK_TYPES:
@@ -349,7 +389,7 @@ def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool,
         return (False, f"rate limit hit ({count}/{MAX_APPLIES_PER_HOUR} in last hour)")
 
     chain_note = f"; chain-blocker ({blocked_deps} dep(s) stalled, threshold=0.70)" if blocked_deps else ""
-    return (True, f"all gates green; rate {count}/{MAX_APPLIES_PER_HOUR}{chain_note}")
+    return (True, f"all gates green; rate {count}/{MAX_APPLIES_PER_HOUR}{chain_note} ({conf_source}_conf={conf:.2f})")
 
 
 # ---------------------------------------------------------------------------
@@ -753,6 +793,394 @@ def _react_load_config() -> Dict[str, int]:
     except Exception as exc:  # pragma: no cover - config is best-effort
         logger.debug("failure_triage: react config load failed: %s", exc)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Self-consistency diagnosis (WS4.1 / arc-dec-01)
+#
+# A SINGLE LLM call's `confidence` is mostly a self-reported number — easy to
+# over-rate. The fix: sample N diagnoses with a temperature spread, then
+# derive the REAL confidence from the cross-sample AGREEMENT on the two
+# decisions the auto-apply gate actually relies on (root_cause class +
+# primary suspect file). High agreement → many independent reads converged
+# on the same structural answer → high confidence. Low agreement →
+# stochastic / ambiguous → confidence is bounded low regardless of what any
+# individual sample claimed.
+#
+# Disagreement does NOT throw — it falls through to the suggested-card path
+# inside ``should_auto_apply`` so the gate chain stays simple. Both the raw
+# per-sample confidences and the agreement-derived (SC) confidence are
+# recorded so the arc-cal-* calibration can later compare them.
+# ---------------------------------------------------------------------------
+
+# In-code defaults — overridable per-failure via ``_sc_load_config`` from
+# ``args/genesis_config.yaml`` (block ``reflexes.failure_triage.
+# self_consistency``). The defaults are deliberately small: N=3 is the
+# smallest sample size that meaningfully distinguishes 3/3 from 2/3 or 1/3
+# agreement, and 2000 chars/sample caps the LLM spend on a single failure.
+SC_DEFAULT_N_SAMPLES = 3
+SC_DEFAULT_TEMPERATURE_SPREAD = 0.6   # spread [0.1, 0.7] for N=3
+SC_DEFAULT_AGREEMENT_THRESHOLD = 0.5  # majority of N must agree on (rc,sf)
+SC_DEFAULT_TOKEN_BUDGET_PER_SAMPLE = 2000
+SC_DEFAULT_ENABLED = True             # master switch — set false to bypass
+
+# Lightweight heuristics to fold a free-text root_cause into a stable
+# class. The set is small on purpose: too many buckets and agreement never
+# fires, too few and you collapse distinct causes. Order matters — first
+# match wins, so the most specific patterns go first.
+_ROOT_CAUSE_PATTERNS: List[Tuple[str, str]] = [
+    (r"null\s*reference|nullptr|none[-\s]?type|nonetype|attributeerror.*has no attribute", "null_deref"),
+    (r"key\s*error|index\s*error|out of range|getitem", "indexing"),
+    (r"type\s*error|isinstance|cast|coercion", "type_mismatch"),
+    (r"import\s*error|modulenotfounderror|importerror", "import"),
+    (r"permission|access\s*denied|unauthor|forbidden", "auth"),
+    (r"timeout|deadline|timed\s*out", "timeout"),
+    (r"connection|network|socket|dns", "network"),
+    (r"sql|query|database|postgres|sqlite|table\s+does\s+not", "db_query"),
+    (r"schema|migration|column|constraint|foreign\s*key", "schema"),
+    (r"config|setting|env\s*var|missing\s*argument|missing\s*param", "config"),
+    (r"race|deadlock|lock|concurrent|atomic", "concurrency"),
+    (r"path|file\s*not\s*found|filenotfound|no such file", "filesystem"),
+    (r"syntax\s*error|indentation|parse\s*error|invalid\s+syntax", "syntax"),
+    (r"logic|off[-\s]?by[-\s]?one|wrong\s*condition|missing\s*return|incorrect\s*calculation", "logic"),
+]
+
+
+def _sc_load_config() -> Dict[str, Any]:
+    """Read the self-consistency knobs from ``args/genesis_config.yaml``.
+
+    Returns a dict of overrides keyed by the SC config field names. Missing
+    or unreadable config falls back to the in-code defaults silently. Read
+    on every ``_sc_diagnose_task`` call so the operator can dial N or the
+    threshold without restarting the daemon.
+    """
+    out: Dict[str, Any] = {}
+    try:
+        import yaml
+        cfg_path = BASE_DIR / "args" / "genesis_config.yaml"
+        if not cfg_path.exists():
+            return out
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        ft = (data.get("reflexes") or {}).get("failure_triage") or {}
+        sc = ft.get("self_consistency") or {}
+        if not isinstance(sc, dict):
+            return out
+        for k in (
+            "n_samples",
+            "temperature_spread",
+            "agreement_threshold",
+            "token_budget_per_sample",
+            "enabled",
+        ):
+            v = sc.get(k)
+            if v is None:
+                continue
+            out[k] = v
+    except Exception as exc:  # pragma: no cover - config is best-effort
+        logger.debug("failure_triage: sc config load failed: %s", exc)
+    return out
+
+
+def _sc_classify_root_cause(text: str) -> str:
+    """Map a free-text root_cause into a coarse structural bucket.
+
+    Returns "other" when nothing matches — important so the SC aggregator
+    doesn't claim "agreement" on a single shared "other" bucket. The LLM
+    is supposed to name the cause in its own words; we just need a stable
+    key to compare across samples.
+    """
+    t = (text or "").lower().strip()
+    if not t:
+        return "other"
+    for pat, label in _ROOT_CAUSE_PATTERNS:
+        if re.search(pat, t):
+            return label
+    return "other"
+
+
+def _sc_primary_suspect(suspect_files: Any) -> str:
+    """Pick a single canonical "primary suspect" path from a suspect_files
+    list. We deliberately ignore the optional ``:LINE`` suffix and any
+    second-onward entries — agreement on the FIRST file is the strongest
+    signal the LLM can give. Returns "" when no usable suspect.
+    """
+    if not isinstance(suspect_files, list) or not suspect_files:
+        return ""
+    first = suspect_files[0]
+    if not isinstance(first, str):
+        return ""
+    return first.split(":", 1)[0].replace("\\", "/").strip().lower()
+
+
+def _sc_sample_one(
+    task: Dict[str, Any],
+    *,
+    temperature: float,
+    max_tokens: int,
+) -> Optional[Dict[str, Any]]:
+    """One raw LLM diagnosis call, identical to ``diagnose_task`` but with
+    caller-controlled temperature. Returns the parsed dict or None on any
+    LLM error. We deliberately don't apply the ``self_debug`` fallback
+    here — if every sample falls through to the heuristic we'll have N
+    identical heuristic results and agreement is meaningless. The caller
+    handles that case by reporting ``samples_valid=0``.
+    """
+    from tools.workflow import self_debug
+    from tools.llm.provider import LLMRequest
+    from tools.llm.router import LLMRouter
+
+    reason = task.get("last_failure_reason") or ""
+    snap = self_debug.snapshot(task["id"], str(BASE_DIR), reason)
+    prompt = (
+        "A kanban task has failed verification. Diagnose the STRUCTURAL root "
+        "cause from this evidence. Do not repeat the symptom — explain why "
+        "the task failed and point at the code that needs fixing.\n\n"
+        f"TASK: {task.get('id')} / {task.get('title','')} "
+        f"(task_type={task.get('task_type','')})\n"
+        f"DESCRIPTION: {(task.get('description') or '')[:400]}\n\n"
+        f"EVIDENCE (JSON):\n{json.dumps(snap, indent=2, default=str)[:4000]}\n\n"
+        + self_debug._DIAGNOSIS_SCHEMA_HINT
+    )
+    try:
+        resp = LLMRouter().invoke(
+            "failure_triage_diagnose",
+            LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens, temperature=temperature, effort="high",
+                skip_injection_scan=True,
+            ),
+        )
+        text = (resp.content or "").strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            text = text.split("\n", 1)[-1] if "\n" in text else text
+            if text.endswith("```"):
+                text = text[:-3]
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if not m:
+            return None
+        diag = json.loads(m.group(0))
+        if not isinstance(diag, dict):
+            return None
+        return diag
+    except Exception as exc:
+        logger.debug("sc sample: LLM call failed: %s", exc)
+        return None
+
+
+def _sc_temperatures(n: int, spread: float) -> List[float]:
+    """Build the temperature schedule for N samples.
+
+    Even N → symmetric spread around 0.4. Odd N → one sample at 0.4 plus
+    symmetric pairs. The schedule is clamped to [0.05, 0.95] so we never
+    hand the router a degenerate temperature that some providers reject.
+    """
+    if n <= 1:
+        return [0.4]
+    # Half-spread around the midpoint (0.4 is a reasonable "thinking"
+    # temperature — high enough for diversity, low enough to stay coherent).
+    half = max(0.05, float(spread)) / 2.0
+    mid = 0.4
+    if n % 2 == 1:
+        # odd: 0.4, then ±step pairs outward
+        step = half / max(1, n // 2)
+        return [max(0.05, min(0.95, mid - half + i * step)) for i in range(n)]
+    # even: symmetric around mid, no sample at mid
+    step = half / max(1, n // 2 - 1) if n >= 4 else half
+    out = []
+    for i in range(n // 2):
+        t_low = max(0.05, min(0.95, mid - step * (i + 1)))
+        t_high = max(0.05, min(0.95, mid + step * (i + 1)))
+        out.append(t_low)
+        out.append(t_high)
+    return out
+
+
+def _sc_aggregate(
+    samples: List[Dict[str, Any]],
+    *,
+    agreement_threshold: float,
+) -> Dict[str, Any]:
+    """Turn N sample diagnoses into a single aggregate with an
+    agreement-derived confidence.
+
+    Returns a dict with these keys:
+      * samples_valid — number of LLM samples that returned a parseable
+        diagnosis (heuristic fallbacks are not counted; we WANT agreement
+        on the LLM, not on the rule engine).
+      * agreement_score — fraction in [0.0, 1.0] of samples that agreed
+        on the modal (root_cause_class, primary_suspect) pair.
+      * consensus_root_cause / consensus_suspect_file — the modal values.
+      * self_consistency_confidence — agreement_score mapped to the same
+        [0,1] scale the single-shot `confidence` uses. This is what
+        ``should_auto_apply`` consumes.
+      * raw_confidence_mean — mean of the per-sample `confidence` fields
+        (still recorded for calibration; arc-cal-* will compare this to
+        the SC score).
+      * meets_threshold — True iff agreement_score >= agreement_threshold
+        AND samples_valid >= 2.
+      * per_sample — the list of (rc_class, suspect) tuples, one per valid
+        sample, for diagnostic rendering.
+    """
+    if not samples:
+        return {
+            "samples_valid": 0,
+            "agreement_score": 0.0,
+            "consensus_root_cause": None,
+            "consensus_suspect_file": None,
+            "self_consistency_confidence": 0.0,
+            "raw_confidence_mean": 0.0,
+            "meets_threshold": False,
+            "per_sample": [],
+        }
+
+    keys: List[Tuple[str, str]] = []
+    raw_confs: List[float] = []
+    for s in samples:
+        rc_class = _sc_classify_root_cause(s.get("root_cause") or "")
+        suspect = _sc_primary_suspect(s.get("suspect_files") or [])
+        keys.append((rc_class, suspect))
+        try:
+            raw_confs.append(float(s.get("confidence") or 0.0))
+        except Exception:
+            raw_confs.append(0.0)
+
+    # Modal key (root_cause_class, primary_suspect). Most-common wins; ties
+    # resolved by key ordering (deterministic, no random tiebreak).
+    counts: Dict[Tuple[str, str], int] = {}
+    for k in keys:
+        counts[k] = counts.get(k, 0) + 1
+    modal_key, modal_count = max(counts.items(), key=lambda kv: (kv[1], sorted(repr(kv[0]))))
+    agreement_score = modal_count / max(1, len(keys))
+
+    consensus_rc, consensus_sf = modal_key
+    # Map agreement to a confidence. agreement=1.0 → 1.0, agreement=0.5
+    # → 0.5, agreement=0.33 (3-way split on 3) → 0.33. This is a
+    # deliberate identity mapping: the gate already knows the threshold,
+    # so a different curve would just hide the signal.
+    sc_conf = float(agreement_score)
+    raw_mean = float(sum(raw_confs) / len(raw_confs)) if raw_confs else 0.0
+    meets = (
+        agreement_score >= float(agreement_threshold)
+        and len(keys) >= 2
+    )
+
+    return {
+        "samples_valid": len(keys),
+        "agreement_score": float(agreement_score),
+        "consensus_root_cause": consensus_rc,
+        "consensus_suspect_file": consensus_sf,
+        "self_consistency_confidence": sc_conf,
+        "raw_confidence_mean": raw_mean,
+        "meets_threshold": meets,
+        "per_sample": [
+            {"root_cause_class": k[0], "suspect_file": k[1]}
+            for k in keys
+        ],
+    }
+
+
+def _sc_diagnose_task(
+    task: Dict[str, Any],
+    *,
+    n_samples: int = SC_DEFAULT_N_SAMPLES,
+    temperature_spread: float = SC_DEFAULT_TEMPERATURE_SPREAD,
+    agreement_threshold: float = SC_DEFAULT_AGREEMENT_THRESHOLD,
+    token_budget_per_sample: int = SC_DEFAULT_TOKEN_BUDGET_PER_SAMPLE,
+    enabled: bool = SC_DEFAULT_ENABLED,
+) -> Dict[str, Any]:
+    """Self-consistency diagnosis — sample N times with a temperature
+    spread, then aggregate agreement into a real confidence.
+
+    Output schema (always present, even on a degenerate single-sample run):
+      {
+        "samples": [ <raw sample 0>, ... ],   # parseable LLM diags only
+        "aggregate": {<see _sc_aggregate>},
+        "enabled": bool,                       # whether SC path was used
+        "config": {<echoed knobs>},            # for audit trail
+      }
+
+    When ``enabled`` is False (operator override), we return a single-sample
+    diagnosis with ``samples_valid=1`` and ``agreement_score=1.0`` (no
+    variance to measure). The caller treats that as a transparent passthrough
+    — the raw per-sample confidence still feeds the gate, and the audit
+    trail records that SC was bypassed.
+
+    If every LLM call fails (e.g. air-gapped), ``samples`` is empty and the
+    aggregate is the all-zeros default. The caller (``should_auto_apply``)
+    treats that as a hard "no SC signal" and falls through to the
+    suggested-card path. The LLM-fallback heuristic is deliberately NOT
+    used here because the whole point of SC is to measure LLM agreement —
+    N identical heuristic outputs would falsely look like unanimous
+    consensus.
+    """
+    cfg = {
+        "n_samples": int(n_samples),
+        "temperature_spread": float(temperature_spread),
+        "agreement_threshold": float(agreement_threshold),
+        "token_budget_per_sample": int(token_budget_per_sample),
+        "enabled": bool(enabled),
+    }
+    if not enabled or n_samples <= 0:
+        # Passthrough: take one deterministic sample, mark as 1/1.
+        single = _sc_sample_one(
+            task, temperature=0.2, max_tokens=token_budget_per_sample,
+        )
+        samples = [single] if single else []
+        agg = _sc_aggregate(samples, agreement_threshold=1.0)
+        agg["self_consistency_confidence"] = float(
+            single.get("confidence") if single else 0.0
+        )
+        agg["raw_confidence_mean"] = agg["self_consistency_confidence"]
+        agg["meets_threshold"] = bool(single)
+        # Stash the single diag as the "consensus" so the gate can use
+        # its root_cause/suspect_files directly.
+        if single:
+            agg["consensus_root_cause"] = _sc_classify_root_cause(
+                single.get("root_cause") or ""
+            )
+            agg["consensus_suspect_file"] = _sc_primary_suspect(
+                single.get("suspect_files") or []
+            )
+        return {
+            "samples": samples,
+            "aggregate": agg,
+            "enabled": False,
+            "config": cfg,
+        }
+
+    temps = _sc_temperatures(n_samples, temperature_spread)
+    samples: List[Dict[str, Any]] = []
+    for i, t in enumerate(temps):
+        # max_tokens is a HARD cap on this sample's contribution to the
+        # SC budget; we don't sum across samples because each call is
+        # an independent LLM roundtrip with its own usage.
+        sample = _sc_sample_one(
+            task,
+            temperature=float(t),
+            max_tokens=int(token_budget_per_sample),
+        )
+        if sample is not None:
+            sample["_sc_temperature"] = float(t)
+            samples.append(sample)
+        _emit_event(
+            EVENT_SC_SAMPLE,
+            task_id=task.get("id"),
+            signature=None,
+            sample_index=i,
+            sample_total=n_samples,
+            temperature=float(t),
+            sample_returned=bool(sample),
+        )
+
+    agg = _sc_aggregate(samples, agreement_threshold=agreement_threshold)
+    return {
+        "samples": samples,
+        "aggregate": agg,
+        "enabled": True,
+        "config": cfg,
+    }
 
 
 def _react_snapshot_files(wt: Path, paths: List[str]) -> Dict[str, str]:
@@ -1612,11 +2040,46 @@ def triage_once(
             continue
 
         diag = diagnose_task(task)
+        # WS4.1 / arc-dec-01: take N samples and use cross-sample agreement
+        # as the real confidence. ``diag`` is the legacy single-shot
+        # diagnosis — kept for backwards-compat with callers that read
+        # ``diag.get('root_cause')`` etc. The auto-apply gate is what
+        # actually consumes the SC aggregate.
+        sc_cfg = _sc_load_config()
+        sc_result = _sc_diagnose_task(
+            task,
+            n_samples=int(sc_cfg.get("n_samples", SC_DEFAULT_N_SAMPLES)),
+            temperature_spread=float(sc_cfg.get(
+                "temperature_spread", SC_DEFAULT_TEMPERATURE_SPREAD,
+            )),
+            agreement_threshold=float(sc_cfg.get(
+                "agreement_threshold", SC_DEFAULT_AGREEMENT_THRESHOLD,
+            )),
+            token_budget_per_sample=int(sc_cfg.get(
+                "token_budget_per_sample", SC_DEFAULT_TOKEN_BUDGET_PER_SAMPLE,
+            )),
+            enabled=bool(sc_cfg.get("enabled", SC_DEFAULT_ENABLED)),
+        )
+        sc_agg = sc_result.get("aggregate") or {}
         entry["diagnosis"] = {
             "root_cause": diag.get("root_cause"),
             "recommendation": diag.get("recommendation"),
             "confidence": diag.get("confidence"),
             "source": diag.get("_source"),
+            "self_consistency": {
+                "enabled": sc_result.get("enabled", False),
+                "samples_valid": int(sc_agg.get("samples_valid", 0)),
+                "agreement_score": float(sc_agg.get("agreement_score", 0.0)),
+                "self_consistency_confidence": float(
+                    sc_agg.get("self_consistency_confidence", 0.0)
+                ),
+                "raw_confidence_mean": float(
+                    sc_agg.get("raw_confidence_mean", 0.0)
+                ),
+                "meets_threshold": bool(sc_agg.get("meets_threshold", False)),
+                "consensus_root_cause": sc_agg.get("consensus_root_cause"),
+                "consensus_suspect_file": sc_agg.get("consensus_suspect_file"),
+            },
         }
         _emit_event(
             EVENT_DIAGNOSIS_MADE,
@@ -1627,14 +2090,26 @@ def triage_once(
             root_cause=(diag.get("root_cause") or "")[:300],
             source=diag.get("_source"),
         )
+        _emit_event(
+            EVENT_SC_AGGREGATED,
+            task_id=task.get("id"),
+            signature=sig,
+            samples_valid=int(sc_agg.get("samples_valid", 0)),
+            agreement_score=float(sc_agg.get("agreement_score", 0.0)),
+            sc_confidence=float(sc_agg.get("self_consistency_confidence", 0.0)),
+            raw_confidence_mean=float(sc_agg.get("raw_confidence_mean", 0.0)),
+            meets_threshold=bool(sc_agg.get("meets_threshold", False)),
+            enabled=bool(sc_result.get("enabled", False)),
+        )
 
-        allow, allow_reason = should_auto_apply(task, diag)
+        allow, allow_reason = should_auto_apply(task, diag, sc_aggregate=sc_agg)
         entry["autofix_gate"] = {"allow": allow, "reason": allow_reason}
         _emit_event(
             EVENT_GATE_DECISION,
             task_id=task.get("id"),
             signature=sig,
             confidence=diag.get("confidence"),
+            sc_confidence=float(sc_agg.get("self_consistency_confidence", 0.0)),
             recommendation=diag.get("recommendation"),
             allow=allow,
             reason=allow_reason,

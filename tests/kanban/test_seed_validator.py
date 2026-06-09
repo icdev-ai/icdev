@@ -4,7 +4,6 @@ import sqlite3
 
 import pytest
 
-from tools.kanban import seed_validator
 from tools.kanban.seed_validator import validate_batch
 
 

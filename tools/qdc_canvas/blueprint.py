@@ -118,7 +118,7 @@ def _rows_to_list(rows) -> list[dict]:
 def _audit(conn, design_id: str, action: str, detail: str = "", user: str = "system") -> None:
     """Write an append-only audit entry."""
     conn.execute(
-        "INSERT INTO qdc_audit (id, design_id, user, action, detail, created_at) VALUES (?,?,?,?,?,?)",
+        'INSERT INTO qdc_audit (id, design_id, "user", action, detail, created_at) VALUES (?,?,?,?,?,?)',
         (_gen_id(), design_id, user, action, detail, _utcnow()),
     )
 

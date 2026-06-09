@@ -196,7 +196,7 @@ else:
     _post(f"/infra/api/collab/{design_id}/join", body={"user_id": "smoke"})
     _post(f"/infra/api/collab/{design_id}/leave", body={"user_id": "smoke"})
     _post(f"/infra/api/collab/{design_id}/push", body={"patch": []})
-    _post(f"/infra/api/import/cloud", body={
+    _post("/infra/api/import/cloud", body={
         "provider": "aws",
         "resources": [],
     })

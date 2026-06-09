@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import importlib
 
-import pytest
 
 aud = importlib.import_module("tools.kanban.done_artifact_auditor")
 

@@ -1033,3 +1033,19 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Infra Pg Smoke | tools\testing\infra_pg_smoke.py | Auto-registered: testing/infra_pg_smoke.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Static Diff Lens | tools\analysis\static_diff_lens.py | Auto-registered: analysis/static_diff_lens.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Prd Readiness Assessor | tools\aiify\prd_readiness_assessor.py | Auto-registered: aiify/prd_readiness_assessor.py | --json | JSON |
+| Completion Auditor | tools\quality\completion_auditor.py | Auto-registered: quality/completion_auditor.py | --json | JSON |
+| Traceback Analyzer | tools\workflow\traceback_analyzer.py | Auto-registered: workflow/traceback_analyzer.py | --json | JSON |
+| Foundry Cycle | tools\genesis\reflexes\foundry_cycle.py | Auto-registered: reflexes/foundry_cycle.py | --json | JSON |
+| Arxiv | tools\foundry\scanners\arxiv.py | Auto-registered: scanners/arxiv.py | --json | JSON |
