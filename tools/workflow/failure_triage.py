@@ -661,6 +661,164 @@ def _write_audit(task_id: str, sig: str, record: Dict[str, Any]) -> None:
         logger.warning("failure_triage: audit write failed: %s", exc)
 
 
+# ---------------------------------------------------------------------------
+# Independent verification gates (WS4.2) — close the self-grading gap.
+#
+# ``verification_command`` is chosen by the same LLM that wrote the patch, so a
+# narrow command ("pytest the one test I just made pass") can green-light a
+# change that still breaks CI. After that command passes we ALSO re-run the
+# checks the LLM did NOT choose:
+#   (a) the ORIGINALLY failing test (parsed from the failure reason / evidence)
+#       must now pass — proves the patch fixes the real defect,
+#   (b) the EXACT CI ruff command (Tier-0 lint gate) must pass,
+#   (c) the coherence gate must introduce NO new hard-failing checks vs the
+#       unpatched base tree.
+# Any failure rolls the whole worktree back, exactly like a failed
+# verification_command. The allowlist + metachar rejection on the LLM-supplied
+# command are untouched — these gates are additive.
+# ---------------------------------------------------------------------------
+
+# Exact Tier-0 lint command from .github/workflows/icdev-ci.yml. Kept in sync
+# with CI so "passes here" means "passes the CI lint gate". The base tree is
+# kept ruff-clean by that blocking gate, so an absolute exit-0 requirement is
+# safe — a failure means THIS patch introduced it.
+_RUFF_CI_CMD: Tuple[str, ...] = (
+    "python", "-m", "ruff", "check", "tools/", "tests/",
+    "--select", "E,F,W",
+    "--ignore", "E402,E501,E701,E702,E721,E722,E731,E741,F404",
+)
+
+# Coherence is run with --all and diffed against a baseline because the base
+# tree legitimately carries advisory/pre-existing hard findings (CI itself runs
+# `coherence_checker --all --gate || true`). We only block on NEW failures the
+# patch introduces, not on debt it inherited.
+_COHERENCE_CMD: Tuple[str, ...] = (
+    "python", "tools/workflow/coherence_checker.py", "--all", "--json",
+)
+
+# Matches pytest node ids / test file paths inside a failure reason, e.g.
+# "tests/test_foo.py::test_bar" or "tests/db/test_x.py".
+_TEST_TARGET_RE = re.compile(r"(?:tests|features)[\w./\\-]*\.py(?:::[\w\[\].:+-]+)?")
+
+
+def _extract_last_json(text: str) -> Optional[Dict[str, Any]]:
+    """Pull the last complete JSON object out of noisy stdout.
+
+    coherence_checker prints its JSON report last, but module import side
+    effects (init_db / blueprint registration) pollute stdout before it. Scan
+    every ``{`` with ``raw_decode`` and keep the last dict that parses cleanly.
+    """
+    dec = json.JSONDecoder()
+    best: Optional[Dict[str, Any]] = None
+    idx = text.find("{")
+    while idx != -1:
+        try:
+            obj, end = dec.raw_decode(text, idx)
+            if isinstance(obj, dict):
+                best = obj
+            idx = text.find("{", max(end, idx + 1))
+        except json.JSONDecodeError:
+            idx = text.find("{", idx + 1)
+    return best
+
+
+def _coherence_failing_checks(wt: Path) -> Tuple[Optional[set], int, str]:
+    """Run the coherence checker in *wt* and return the set of hard-failing
+    ``check_id``s. Returns ``(failing_set | None, rc, tail)``. ``None`` means
+    the report could not be parsed — the caller decides how to treat that."""
+    rc, out = _run(list(_COHERENCE_CMD), cwd=wt, timeout=300)
+    report = _extract_last_json(out)
+    if not report or "checks" not in report:
+        return (None, rc, out[-1500:])
+    failing = {
+        c.get("check_id")
+        for c in report.get("checks", [])
+        if c.get("status") == "fail"
+    }
+    return (failing, rc, out[-1500:])
+
+
+def _original_test_targets(reason: str, wt: Path) -> List[str]:
+    """Extract re-runnable pytest targets from the failure reason / evidence,
+    keeping only those whose file actually exists in the worktree."""
+    targets: List[str] = []
+    for m in _TEST_TARGET_RE.finditer(reason or ""):
+        node = m.group(0).replace("\\", "/")
+        file_part = node.split("::", 1)[0]
+        if (wt / file_part).is_file() and node not in targets:
+            targets.append(node)
+        if len(targets) >= 5:
+            break
+    return targets
+
+
+def _run_independent_gates(
+    task: Dict[str, Any],
+    wt: Path,
+    baseline_coh_fails: Optional[set],
+) -> Dict[str, Any]:
+    """Re-run the originally failing test, the CI ruff gate, and the coherence
+    gate in *wt*. The LLM's own verification_command has already passed.
+
+    Returns ``{"passed": bool, "first_failure": str|None, "gates": {...}}``.
+    """
+    gates: Dict[str, Any] = {}
+
+    # (a) ORIGINALLY failing test/gate — must now pass.
+    reason = task.get("last_failure_reason") or ""
+    targets = _original_test_targets(reason, wt)
+    if targets:
+        rc, out = _run(
+            ["python", "-m", "pytest", *targets, "-p", "no:cacheprovider", "-q"],
+            cwd=wt, timeout=600,
+        )
+        gates["original_test"] = {
+            "ran": True, "targets": targets, "rc": rc, "tail": out[-1500:],
+        }
+        if rc != 0:
+            return {"passed": False, "first_failure": "original_test", "gates": gates}
+    else:
+        # No re-runnable pytest target in the reason — the original failure was
+        # a gate (coherence / lint / route), re-validated by (b) and (c).
+        gates["original_test"] = {
+            "ran": False,
+            "reason": "no pytest target in failure reason; original failure was a "
+                      "gate, re-validated by ruff + coherence below",
+        }
+
+    # (b) EXACT CI ruff command — absolute exit-0 (base tree is ruff-clean).
+    rc, out = _run(list(_RUFF_CI_CMD), cwd=wt, timeout=300)
+    gates["ruff"] = {"rc": rc, "tail": out[-1500:]}
+    if rc != 0:
+        return {"passed": False, "first_failure": "ruff", "gates": gates}
+
+    # (c) Coherence gate — no NEW hard-failing checks vs the unpatched base.
+    after_fails, coh_rc, coh_tail = _coherence_failing_checks(wt)
+    gate_c: Dict[str, Any] = {
+        "rc": coh_rc,
+        "baseline_fails": sorted(baseline_coh_fails) if baseline_coh_fails is not None else None,
+        "after_fails": sorted(after_fails) if after_fails is not None else None,
+        "tail": coh_tail,
+    }
+    gates["coherence"] = gate_c
+    if after_fails is None:
+        # Post-patch report unparseable — the patch may have broken an import
+        # the coherence checker loads. Fail closed.
+        gate_c["note"] = "post-patch coherence report unparseable; failing closed"
+        return {"passed": False, "first_failure": "coherence_unparsed", "gates": gates}
+    if baseline_coh_fails is None:
+        # Baseline could not be captured — we cannot diff, so don't block on
+        # inherited debt. (a) and (b) still gate.
+        gate_c["note"] = "baseline coherence unavailable; skipping coherence diff"
+        return {"passed": True, "first_failure": None, "gates": gates}
+    new_fails = after_fails - baseline_coh_fails
+    if new_fails:
+        gate_c["new_fails"] = sorted(new_fails)
+        return {"passed": False, "first_failure": "coherence", "gates": gates}
+
+    return {"passed": True, "first_failure": None, "gates": gates}
+
+
 def apply_patch_in_worktree(
     task: Dict[str, Any],
     diag: Dict[str, Any],
@@ -674,6 +832,10 @@ def apply_patch_in_worktree(
         main directly.
       * Runs the LLM-supplied ``verification_command`` (allowlisted prefix
         only). Any non-zero exit → roll back the whole worktree + branch.
+      * WS4.2 — then re-runs the checks the LLM did NOT choose via
+        ``_run_independent_gates``: the originally failing test, the exact CI
+        ruff gate, and the coherence gate (diffed against the unpatched base).
+        Any of these failing also rolls the worktree back.
       * On success: commits to the autofix branch. If
         ``ICDEV_AUTOFIX_AUTOMERGE=true`` also fast-forward merges the
         branch into main via ``tools/genesis/reflexes/kanban._merge_worktree_to_main``.
@@ -719,6 +881,15 @@ def apply_patch_in_worktree(
     record["worktree"] = str(wt)
     record["branch"] = branch
 
+    # WS4.2: capture the unpatched coherence baseline BEFORE any edits so the
+    # post-patch coherence gate can require "no NEW failing checks" rather than
+    # an absolute pass (the base tree carries pre-existing advisory debt that CI
+    # itself tolerates with `|| true`).
+    baseline_coh_fails, _bl_rc, _bl_tail = _coherence_failing_checks(wt)
+    record["baseline_coherence_fails"] = (
+        sorted(baseline_coh_fails) if baseline_coh_fails is not None else None
+    )
+
     # 1) apply file edits (Edit-style unique replace, already validated unique)
     applied_files: List[str] = []
     try:
@@ -761,6 +932,33 @@ def apply_patch_in_worktree(
         _cleanup_autofix_worktree(wt, branch, keep_branch=False)
         _write_audit(task["id"], sig, record)
         return {"applied": False, "outcome": record["outcome"], "verification_rc": rc}
+
+    # 2b) WS4.2 — verification beyond the LLM's own command. Re-run the
+    # originally failing test, the CI ruff gate, and the coherence gate. The
+    # LLM picked the command above; these it did not. Any failure rolls back.
+    gate_result = _run_independent_gates(task, wt, baseline_coh_fails)
+    record["independent_gates"] = gate_result["gates"]
+    _emit_event(
+        EVENT_VERIFY_RESULT,
+        task_id=task.get("id"),
+        signature=sig,
+        level="INFO" if gate_result["passed"] else "ERROR",
+        confidence=diag.get("confidence"),
+        recommendation=diag.get("recommendation"),
+        passed=gate_result["passed"],
+        first_failure=gate_result.get("first_failure"),
+        outcome="independent_gates_passed" if gate_result["passed"] else "independent_gates_failed",
+    )
+    if not gate_result["passed"]:
+        record["outcome"] = "independent_gate_failed"
+        record["failed_gate"] = gate_result.get("first_failure")
+        _cleanup_autofix_worktree(wt, branch, keep_branch=False)
+        _write_audit(task["id"], sig, record)
+        return {
+            "applied": False,
+            "outcome": record["outcome"],
+            "failed_gate": gate_result.get("first_failure"),
+        }
 
     # 3) commit on the autofix branch (never amend, new commit per apply)
     commit_msg = (
