@@ -1,0 +1,494 @@
+{% extends "base.html" %}
+{% block title %}Budget Allocation by Initiative - ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+<style>
+.budget-card { background:var(--bg-secondary,#12122a); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; padding:18px 22px; margin-bottom:18px; }
+.tier-pill { display:inline-block; padding:4px 12px; border-radius:12px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+.tier-pill.tier_1 { background:rgba(40,167,69,0.2); color:#28a745; }
+.tier-pill.tier_2 { background:rgba(108,117,125,0.25); color:#a0a0b8; }
+.tier-pill.tier_1.promoted { background:rgba(255,193,7,0.2); color:#ffc107; }
+.gauge-row { display:flex; align-items:center; gap:10px; margin-top:8px; }
+.gauge-row .label { width:90px; font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; }
+.gauge-row .bar { flex:1; height:14px; background:var(--bg-primary,#0a0a1a); border-radius:7px; overflow:hidden; position:relative; }
+.gauge-row .fill { height:100%; transition:width 0.4s; border-radius:7px; }
+.gauge-row .fill.healthy { background:#28a745; }
+.gauge-row .fill.warning { background:#ffc107; }
+.gauge-row .fill.critical { background:#fd7e14; }
+.gauge-row .fill.overspend { background:#dc3545; }
+.gauge-row .value { width:160px; text-align:right; font-size:12px; color:var(--text-primary); font-variant-numeric:tabular-nums; }
+.tier-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:18px; }
+.alert-box { background:rgba(220,53,69,0.1); border:1px solid rgba(220,53,69,0.3); border-radius:6px; padding:12px 16px; margin-bottom:10px; font-size:12px; color:#ff8080; }
+.warn-box { background:rgba(255,193,7,0.08); border:1px solid rgba(255,193,7,0.3); border-radius:6px; padding:12px 16px; margin-bottom:10px; font-size:12px; color:#ffd966; }
+.kpi-row { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; margin-bottom:18px; }
+.kpi-card { background:var(--bg-secondary,#12122a); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; padding:14px 18px; }
+.kpi-card .kpi-label { font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; }
+.kpi-card .kpi-value { font-size:24px; font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums; }
+.kpi-card .kpi-sub { font-size:11px; color:var(--text-secondary); margin-top:2px; }
+.allocations-table { width:100%; border-collapse:collapse; font-size:13px; }
+.allocations-table th { text-align:left; padding:10px 12px; background:var(--bg-secondary,#12122a); color:var(--text-secondary); font-size:11px; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid var(--border-color,#2a2a4a); }
+.allocations-table td { padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.04); font-variant-numeric:tabular-nums; }
+.allocations-table tr:hover { background:rgba(74,144,217,0.06); }
+.action-btn { background:rgba(74,144,217,0.2); border:1px solid rgba(74,144,217,0.4); color:#8ab4ff; padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer; }
+.action-btn:hover { background:rgba(74,144,217,0.4); }
+.modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1500; align-items:center; justify-content:center; }
+.modal-backdrop.open { display:flex; }
+.modal { background:var(--bg-secondary,#12122a); border:1px solid var(--border-color,#2a2a4a); border-radius:10px; width:580px; max-height:80vh; overflow-y:auto; padding:24px; position:relative; }
+.modal h3 { margin:0 0 16px; font-size:16px; color:#8ab4ff; }
+.modal label { display:block; font-size:11px; color:var(--text-secondary); text-transform:uppercase; margin-top:10px; margin-bottom:4px; }
+.modal input, .modal select, .modal textarea { width:100%; padding:8px; background:var(--bg-primary,#12121e); border:1px solid var(--border-color,#2a2a3a); border-radius:4px; color:var(--text-primary,#e0e0e0); font-size:13px; box-sizing:border-box; }
+.modal .modal-actions { margin-top:20px; display:flex; gap:8px; justify-content:flex-end; }
+.modal-close { position:absolute; top:14px; right:14px; background:none; border:none; color:var(--text-secondary); font-size:20px; cursor:pointer; }
+.fy-selector { display:flex; gap:8px; align-items:center; }
+.fy-selector input { width:80px; }
+</style>
+
+<div class="breadcrumbs">
+    <a href="/">Home</a><span class="separator">/</span>
+    <a href="/cpmp">CPMP Portfolio</a><span class="separator">/</span>
+    <span>Budget Allocation by Initiative</span>
+</div>
+
+<div class="page-header" style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+    <div>
+        <h1>Budget Allocation by Initiative</h1>
+        <p class="subtitle">Tier 1 (execution-ready) &amp; Tier 2 (backup) prioritization &mdash; obligation vs. available budget</p>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <form method="get" class="fy-selector" id="fy-form">
+            <label style="font-size:11px; color:var(--text-secondary); text-transform:uppercase;">FY</label>
+            <input type="number" name="fiscal_year" id="fy-input" value="{{ fiscal_year or '' }}" min="2020" max="2040" placeholder="All" />
+        </form>
+        <button class="btn btn-primary" onclick="openCreateModal()" style="font-size:13px;">+ New Allocation</button>
+    </div>
+</div>
+
+<!-- Portfolio status banner -->
+<div id="status-banner"></div>
+
+<!-- KPI cards -->
+<div class="kpi-row">
+    <div class="kpi-card">
+        <div class="kpi-label">Total Allocated</div>
+        <div class="kpi-value" id="kpi-allocated">$0</div>
+        <div class="kpi-sub" id="kpi-allocated-sub">Across all initiatives</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Total Obligated</div>
+        <div class="kpi-value" id="kpi-obligated">$0</div>
+        <div class="kpi-sub" id="kpi-obligated-sub">0% of allocated</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Available</div>
+        <div class="kpi-value" id="kpi-available" style="color:#28a745;">$0</div>
+        <div class="kpi-sub">Un-obligated budget</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Initiatives</div>
+        <div class="kpi-value" id="kpi-count">0</div>
+        <div class="kpi-sub" id="kpi-count-sub">T1: 0 &middot; T2: 0</div>
+    </div>
+</div>
+
+<!-- Tier summary -->
+<div class="tier-grid">
+    <div class="budget-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h2 style="margin:0; font-size:16px;">Tier 1 &mdash; Execution-Ready</h2>
+            <span class="tier-pill tier_1" id="tier1-pill">TIER 1</span>
+        </div>
+        <p style="font-size:12px; color:var(--text-secondary); margin:0 0 12px;">Initiatives that are bid-ready or awarded; funds reserved for execution. Obligations on Tier-1 initiatives count against contract/task order totals.</p>
+        <div class="gauge-row">
+            <span class="label">Obligated</span>
+            <div class="bar"><div class="fill healthy" id="tier1-fill" style="width:0%"></div></div>
+            <span class="value" id="tier1-value">$0 / $0</span>
+        </div>
+        <div class="gauge-row">
+            <span class="label">Available</span>
+            <div class="bar"><div class="fill" id="tier1-avail-fill" style="width:100%; background:rgba(40,167,69,0.35);"></div></div>
+            <span class="value" id="tier1-avail-value">$0</span>
+        </div>
+        <div style="margin-top:12px; font-size:12px; color:var(--text-secondary);">
+            <span id="tier1-count">0 initiatives</span>
+        </div>
+    </div>
+
+    <div class="budget-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h2 style="margin:0; font-size:16px;">Tier 2 &mdash; Backup / Pipeline</h2>
+            <span class="tier-pill tier_2" id="tier2-pill">TIER 2</span>
+        </div>
+        <p style="font-size:12px; color:var(--text-secondary); margin:0 0 12px;">Capture pursuits with lower award probability; placeholder ceilings held against portfolio risk. Promotion to Tier 1 triggers audit-trail event.</p>
+        <div class="gauge-row">
+            <span class="label">Obligated</span>
+            <div class="bar"><div class="fill" id="tier2-fill" style="width:0%; background:#6c757d;"></div></div>
+            <span class="value" id="tier2-value">$0 / $0</span>
+        </div>
+        <div class="gauge-row">
+            <span class="label">Available</span>
+            <div class="bar"><div class="fill" id="tier2-avail-fill" style="width:100%; background:rgba(108,117,125,0.35);"></div></div>
+            <span class="value" id="tier2-avail-value">$0</span>
+        </div>
+        <div style="margin-top:12px; font-size:12px; color:var(--text-secondary);">
+            <span id="tier2-count">0 initiatives</span>
+        </div>
+    </div>
+</div>
+
+<!-- Allocations table -->
+<div class="budget-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h2 style="margin:0; font-size:16px;">Allocations</h2>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <label style="font-size:11px; color:var(--text-secondary); text-transform:uppercase;">Tier filter</label>
+            <select id="tier-filter" style="padding:5px 8px; background:var(--bg-primary,#12121e); border:1px solid var(--border-color,#2a2a3a); border-radius:4px; color:var(--text-primary); font-size:12px;">
+                <option value="all">All</option>
+                <option value="tier_1">Tier 1</option>
+                <option value="tier_2">Tier 2</option>
+            </select>
+        </div>
+    </div>
+
+    <div style="overflow-x:auto;">
+        <table class="allocations-table" id="allocations-table">
+            <thead>
+                <tr>
+                    <th>Initiative</th>
+                    <th>Tier</th>
+                    <th>FY</th>
+                    <th style="text-align:right;">Allocated</th>
+                    <th style="text-align:right;">Obligated</th>
+                    <th style="text-align:right;">Available</th>
+                    <th style="text-align:center;">Util.</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="allocations-tbody">
+                <tr><td colspan="9" style="text-align:center; padding:20px; color:var(--text-secondary);">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<!-- Create Allocation Modal -->
+<div class="modal-backdrop" id="create-modal" onclick="if(event.target===this)closeCreateModal()">
+    <div class="modal">
+        <button class="modal-close" onclick="closeCreateModal()">&times;</button>
+        <h3>New Initiative Allocation</h3>
+        <form id="create-form" onsubmit="return submitCreate(event)">
+            <label>Initiative Code *</label>
+            <input type="text" name="initiative_code" required pattern="[A-Za-z0-9_-]+" title="e.g. INIT-2026-CLD" />
+            <label>Title</label>
+            <input type="text" name="title" />
+            <label>Tier *</label>
+            <select name="tier" required>
+                <option value="tier_1">Tier 1 — Execution-Ready</option>
+                <option value="tier_2">Tier 2 — Backup / Pipeline</option>
+            </select>
+            <label>Fiscal Year *</label>
+            <input type="number" name="fiscal_year" required min="2020" max="2040" value="{{ fiscal_year if fiscal_year else 2026 }}" />
+            <label>Allocated USD *</label>
+            <input type="number" name="allocated_usd" required min="0" step="0.01" />
+            <label>Agency</label>
+            <input type="text" name="agency" />
+            <label>Contract ID (optional)</label>
+            <input type="text" name="contract_id" />
+            <label>Owner</label>
+            <input type="text" name="owner" />
+            <label>Justification</label>
+            <textarea name="justification" rows="3"></textarea>
+            <div class="modal-actions">
+                <button type="button" onclick="closeCreateModal()" class="action-btn">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Obligation Modal -->
+<div class="modal-backdrop" id="obligation-modal" onclick="if(event.target===this)closeObligationModal()">
+    <div class="modal">
+        <button class="modal-close" onclick="closeObligationModal()">&times;</button>
+        <h3>Record Obligation</h3>
+        <p style="font-size:12px; color:var(--text-secondary);" id="obligation-context"></p>
+        <form id="obligation-form" onsubmit="return submitObligation(event)">
+            <input type="hidden" name="allocation_id" id="obligation-allocation-id" />
+            <label>Amount USD *</label>
+            <input type="number" name="amount_usd" required min="0" step="0.01" />
+            <label>Description *</label>
+            <input type="text" name="description" required placeholder="e.g. MOD-001 task order award" />
+            <label>Reference ID (optional)</label>
+            <input type="text" name="reference_id" placeholder="contract MOD number, etc." />
+            <label>Recorded By</label>
+            <input type="text" name="recorded_by" />
+            <div class="modal-actions">
+                <button type="button" onclick="closeObligationModal()" class="action-btn">Cancel</button>
+                <button type="submit" class="btn btn-primary">Record Obligation</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Tier Transition Modal -->
+<div class="modal-backdrop" id="tier-modal" onclick="if(event.target===this)closeTierModal()">
+    <div class="modal">
+        <button class="modal-close" onclick="closeTierModal()">&times;</button>
+        <h3>Transition Tier</h3>
+        <p style="font-size:12px; color:var(--text-secondary);" id="tier-context"></p>
+        <form id="tier-form" onsubmit="return submitTier(event)">
+            <input type="hidden" name="allocation_id" id="tier-allocation-id" />
+            <label>New Tier *</label>
+            <select name="tier" id="tier-target" required>
+                <option value="tier_1">Tier 1 — Execution-Ready</option>
+                <option value="tier_2">Tier 2 — Backup / Pipeline</option>
+            </select>
+            <label>Reason</label>
+            <textarea name="reason" rows="3" placeholder="e.g. Award confirmed Q2 — promote to execution-ready"></textarea>
+            <div class="modal-actions">
+                <button type="button" onclick="closeTierModal()" class="action-btn">Cancel</button>
+                <button type="submit" class="btn btn-primary">Transition</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+const FY = {{ (fiscal_year | default('null')) | tojson | safe }};
+let ALL_DATA = { allocations: [], summary: null, status: null };
+
+function fmt$(n) {
+    if (n == null || isNaN(n)) return '$0';
+    return '$' + Math.round(n).toLocaleString();
+}
+
+function fmtPct(n) {
+    if (n == null || isNaN(n)) return '0%';
+    return n.toFixed(1) + '%';
+}
+
+function gaugeClass(util) {
+    if (util < 0) return 'overspend';
+    if (util >= 0.98) return 'critical';
+    if (util >= 0.90) return 'warning';
+    return 'healthy';
+}
+
+async function loadAll() {
+    let qp = '';
+    if (FY) qp = '?fiscal_year=' + FY;
+
+    const [allocsR, summaryR, statusR] = await Promise.all([
+        fetch('/api/cpmp/budget-allocations' + qp).then(r => r.json()),
+        fetch('/api/cpmp/budget-allocations/tier-summary' + qp).then(r => r.json()),
+        fetch('/api/cpmp/budget-allocations/portfolio-status' + qp).then(r => r.json()),
+    ]);
+
+    ALL_DATA = {
+        allocations: allocsR.allocations || [],
+        summary: summaryR.summary || null,
+        status: statusR.status || null,
+    };
+    renderKpis();
+    renderTierSummary();
+    renderStatusBanner();
+    renderTable();
+}
+
+function renderKpis() {
+    const s = ALL_DATA.status;
+    if (!s) return;
+    const t = s.totals;
+    document.getElementById('kpi-allocated').textContent = fmt$(t.allocated_usd);
+    document.getElementById('kpi-obligated').textContent = fmt$(t.obligated_usd);
+    const util = t.allocated_usd > 0 ? (t.obligated_usd / t.allocated_usd) : 0;
+    document.getElementById('kpi-obligated-sub').textContent = fmtPct(util * 100) + ' of allocated';
+    const availEl = document.getElementById('kpi-available');
+    availEl.textContent = fmt$(t.available_usd);
+    availEl.style.color = t.available_usd < 0 ? '#dc3545' : '#28a745';
+    document.getElementById('kpi-count').textContent = t.initiative_count;
+    const t1 = ALL_DATA.summary ? ALL_DATA.summary.tier_1.count : 0;
+    const t2 = ALL_DATA.summary ? ALL_DATA.summary.tier_2.count : 0;
+    document.getElementById('kpi-count-sub').textContent = 'T1: ' + t1 + ' · T2: ' + t2;
+}
+
+function renderTierSummary() {
+    const s = ALL_DATA.summary;
+    if (!s) return;
+    ['tier_1', 'tier_2'].forEach(tier => {
+        const d = s[tier];
+        const util = d.allocated_usd > 0 ? (d.obligated_usd / d.allocated_usd) : 0;
+        const fillPct = Math.min(util * 100, 100);
+        const fillEl = document.getElementById(tier + '-fill');
+        fillEl.style.width = fillPct + '%';
+        fillEl.className = 'fill ' + gaugeClass(util);
+        document.getElementById(tier + '-value').textContent = fmt$(d.obligated_usd) + ' / ' + fmt$(d.allocated_usd);
+        const availPct = d.allocated_usd > 0 ? (d.available_usd / d.allocated_usd * 100) : 0;
+        const availFill = document.getElementById(tier + '-avail-fill');
+        availFill.style.width = Math.max(availPct, 0) + '%';
+        document.getElementById(tier + '-avail-value').textContent = fmt$(d.available_usd);
+        document.getElementById(tier + '-count').textContent = d.count + ' initiative' + (d.count !== 1 ? 's' : '');
+    });
+}
+
+function renderStatusBanner() {
+    const s = ALL_DATA.status;
+    const banner = document.getElementById('status-banner');
+    banner.innerHTML = '';
+    if (!s) return;
+    if (s.overspends && s.overspends.length) {
+        s.overspends.forEach(msg => {
+            const div = document.createElement('div');
+            div.className = 'alert-box';
+            div.innerHTML = '🚨 <strong>Overspend:</strong> ' + msg;
+            banner.appendChild(div);
+        });
+    }
+    if (s.warnings && s.warnings.length) {
+        s.warnings.forEach(msg => {
+            const div = document.createElement('div');
+            div.className = 'warn-box';
+            div.innerHTML = '⚠️ <strong>Warning:</strong> ' + msg;
+            banner.appendChild(div);
+        });
+    }
+    if (s.status === 'healthy' && (!s.overspends || !s.overspends.length) && (!s.warnings || !s.warnings.length)) {
+        const div = document.createElement('div');
+        div.className = 'warn-box';
+        div.style.background = 'rgba(40,167,69,0.08)';
+        div.style.borderColor = 'rgba(40,167,69,0.3)';
+        div.style.color = '#7be087';
+        div.innerHTML = '✅ All initiatives within budget. No warnings or overspends detected.';
+        banner.appendChild(div);
+    }
+}
+
+function renderTable() {
+    const filter = document.getElementById('tier-filter').value;
+    let rows = ALL_DATA.allocations;
+    if (filter !== 'all') rows = rows.filter(a => a.tier === filter);
+    const tbody = document.getElementById('allocations-tbody');
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--text-secondary);">No allocations found. Click "+ New Allocation" to create one.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map(a => {
+        const util = a.allocated_usd > 0 ? (a.obligated_usd / a.allocated_usd * 100) : 0;
+        const utilClass = a.available_usd < 0 ? 'overspend' : util >= 98 ? 'critical' : util >= 90 ? 'warning' : 'healthy';
+        return `<tr>
+            <td>
+                <div style="font-weight:600;">${a.initiative_code}</div>
+                <div style="font-size:11px; color:var(--text-secondary);">${a.title || ''}</div>
+            </td>
+            <td><span class="tier-pill ${a.tier}">${a.tier === 'tier_1' ? 'T1' : 'T2'}</span></td>
+            <td>FY${a.fiscal_year}</td>
+            <td style="text-align:right;">${fmt$(a.allocated_usd)}</td>
+            <td style="text-align:right;">${fmt$(a.obligated_usd)}</td>
+            <td style="text-align:right; color:${a.available_usd < 0 ? '#dc3545' : '#28a745'};">${fmt$(a.available_usd)}</td>
+            <td style="text-align:center;"><span class="tier-pill ${utilClass}" style="background:rgba(0,0,0,0.2);">${util.toFixed(1)}%</span></td>
+            <td><span style="font-size:11px; color:${a.status === 'depleted' ? '#dc3545' : a.status === 'cancelled' ? '#6c757d' : '#8ab4ff'};">${a.status.toUpperCase()}</span></td>
+            <td>
+                <button class="action-btn" onclick="openObligationModal('${a.id}', '${a.initiative_code}', ${a.available_usd})">+ Obligation</button>
+                <button class="action-btn" onclick="openTierModal('${a.id}', '${a.initiative_code}', '${a.tier}')">⇄ Tier</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+document.getElementById('tier-filter').addEventListener('change', renderTable);
+
+function openCreateModal() {
+    document.getElementById('create-modal').classList.add('open');
+}
+function closeCreateModal() {
+    document.getElementById('create-modal').classList.remove('open');
+}
+function openObligationModal(id, code, avail) {
+    document.getElementById('obligation-allocation-id').value = id;
+    document.getElementById('obligation-context').textContent =
+        code + ' — Available: ' + fmt$(avail);
+    document.getElementById('obligation-modal').classList.add('open');
+}
+function closeObligationModal() {
+    document.getElementById('obligation-modal').classList.remove('open');
+}
+function openTierModal(id, code, currentTier) {
+    document.getElementById('tier-allocation-id').value = id;
+    document.getElementById('tier-context').textContent = code + ' — currently ' + currentTier;
+    document.getElementById('tier-target').value = currentTier === 'tier_1' ? 'tier_2' : 'tier_1';
+    document.getElementById('tier-modal').classList.add('open');
+}
+function closeTierModal() {
+    document.getElementById('tier-modal').classList.remove('open');
+}
+
+async function submitCreate(ev) {
+    ev.preventDefault();
+    const form = ev.target;
+    const data = Object.fromEntries(new FormData(form));
+    if (FY) data.fiscal_year = data.fiscal_year || FY;
+    const r = await fetch('/api/cpmp/budget-allocations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    const j = await r.json();
+    if (!r.ok) { alert(j.error || 'Create failed'); return false; }
+    closeCreateModal();
+    form.reset();
+    loadAll();
+    return false;
+}
+
+async function submitObligation(ev) {
+    ev.preventDefault();
+    const form = ev.target;
+    const data = Object.fromEntries(new FormData(form));
+    const id = data.allocation_id;
+    delete data.allocation_id;
+    const r = await fetch('/api/cpmp/budget-allocations/' + id + '/obligations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    const j = await r.json();
+    if (!r.ok) { alert(j.error || 'Obligation failed'); return false; }
+    closeObligationModal();
+    form.reset();
+    loadAll();
+    return false;
+}
+
+async function submitTier(ev) {
+    ev.preventDefault();
+    const form = ev.target;
+    const data = Object.fromEntries(new FormData(form));
+    const id = data.allocation_id;
+    delete data.allocation_id;
+    const r = await fetch('/api/cpmp/budget-allocations/' + id + '/transition-tier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    const j = await r.json();
+    if (!r.ok) { alert(j.error || 'Transition failed'); return false; }
+    closeTierModal();
+    form.reset();
+    loadAll();
+    return false;
+}
+
+document.getElementById('fy-input').addEventListener('change', function() {
+    const fy = this.value;
+    let url = window.location.pathname;
+    if (fy) url += '?fiscal_year=' + fy;
+    window.location.href = url;
+});
+
+loadAll();
+</script>
+{% endblock %}
