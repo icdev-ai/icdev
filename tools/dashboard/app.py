@@ -5142,69 +5142,68 @@ def create_app() -> Flask:
             except Exception:
                 pass
 
-        # --- PDC: pipeline_canvas.db ---
-        pdc_db = BASE_DIR / "data" / "pipeline_canvas.db"
-        if pdc_db.exists():
+        # --- PDC: pipeline canvas (PG-aware) ---
+        try:
+            from tools.pipeline.db.init_db import get_connection as _pdc_conn
+
+            pc = _pdc_conn()
             try:
-                with get_connection(str(pdc_db)) as pc:
-                    result["pdc"]["pipeline_count"] = pc.execute("SELECT COUNT(*) FROM pipelines").fetchone()[0]
-                    result["pdc"]["available"] = result["pdc"]["pipeline_count"] > 0
-                    slsa_row = pc.execute(
-                        "SELECT slsa_level FROM pc_snippets WHERE slsa_level IS NOT NULL"
-                        " GROUP BY slsa_level ORDER BY COUNT(*) DESC LIMIT 1"
-                    ).fetchone()
-                    if slsa_row:
-                        result["pdc"]["slsa_level"] = slsa_row["slsa_level"]
-                    chk = pc.execute(
-                        "SELECT findings_json FROM pc_compliance_checks ORDER BY ran_at DESC LIMIT 1"
-                    ).fetchone()
-                    if chk and chk["findings_json"]:
+                result["pdc"]["pipeline_count"] = pc.execute("SELECT COUNT(*) FROM pipelines").fetchone()[0]
+                result["pdc"]["available"] = result["pdc"]["pipeline_count"] > 0
+                slsa_row = pc.execute(
+                    "SELECT slsa_level FROM pc_snippets WHERE slsa_level IS NOT NULL"
+                    " GROUP BY slsa_level ORDER BY COUNT(*) DESC LIMIT 1"
+                ).fetchone()
+                if slsa_row:
+                    result["pdc"]["slsa_level"] = slsa_row["slsa_level"]
+                chk = pc.execute(
+                    "SELECT findings_json FROM pc_compliance_checks ORDER BY ran_at DESC LIMIT 1"
+                ).fetchone()
+                if chk and chk["findings_json"]:
+                    try:
+                        findings = json.loads(chk["findings_json"])
+                        result["pdc"]["total_findings"] = len(findings) if isinstance(findings, list) else 0
+                    except Exception:
+                        pass
+                # OWASP coverage — derive from node types in all pipelines
+                try:
+                    from tools.pipeline.constants import compute_owasp_coverage
+
+                    all_node_types: list = []
+                    for g_row in pc.execute("SELECT graph_json FROM pipelines").fetchall():
                         try:
-                            findings = json.loads(chk["findings_json"])
-                            result["pdc"]["total_findings"] = len(findings) if isinstance(findings, list) else 0
+                            g = json.loads(g_row["graph_json"] or "{}")
+                            for n in g.get("nodes", []):
+                                t = n.get("type") or n.get("data", {}).get("type", "")
+                                if t:
+                                    all_node_types.append(t)
                         except Exception:
                             pass
-                    # OWASP coverage — derive from node types in all pipelines
-                    try:
-                        from tools.pipeline.constants import compute_owasp_coverage
-
-                        all_node_types: list = []
-                        for g_row in pc.execute("SELECT graph_json FROM pipelines").fetchall():
-                            try:
-                                g = json.loads(g_row["graph_json"] or "{}")
-                                for n in g.get("nodes", []):
-                                    t = n.get("type") or n.get("data", {}).get("type", "")
-                                    if t:
-                                        all_node_types.append(t)
-                            except Exception:
-                                pass
-                        if all_node_types:
-                            owasp = compute_owasp_coverage(all_node_types)
-                            result["pdc"]["owasp_pct"] = int(owasp.get("coverage_pct", 0))
-                    except Exception:
-                        pass
-                    # SSDF coverage — remediation rate of SSDF framework findings
-                    try:
-                        tables_row = pc.execute(
-                            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='pc_compliance_findings'"
-                        ).fetchone()
-                        if tables_row and tables_row[0] > 0:
-                            ssdf_total = pc.execute(
-                                "SELECT COUNT(*) FROM pc_compliance_findings WHERE framework LIKE 'SSDF%'"
-                            ).fetchone()[0]
-                            ssdf_rem = pc.execute(
-                                "SELECT COUNT(*) FROM pc_compliance_findings"
-                                " WHERE framework LIKE 'SSDF%' AND status = 'remediated'"
-                            ).fetchone()[0]
-                            if ssdf_total > 0:
-                                result["pdc"]["ssdf_pct"] = round(ssdf_rem / ssdf_total * 100)
-                            else:
-                                # No findings means passing — treat as 100%
-                                result["pdc"]["ssdf_pct"] = 100
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                    if all_node_types:
+                        owasp = compute_owasp_coverage(all_node_types)
+                        result["pdc"]["owasp_pct"] = int(owasp.get("coverage_pct", 0))
+                except Exception:
+                    pass
+                # SSDF coverage — remediation rate of SSDF framework findings
+                try:
+                    ssdf_total = pc.execute(
+                        "SELECT COUNT(*) FROM pc_compliance_findings WHERE framework LIKE 'SSDF%'"
+                    ).fetchone()[0]
+                    ssdf_rem = pc.execute(
+                        "SELECT COUNT(*) FROM pc_compliance_findings"
+                        " WHERE framework LIKE 'SSDF%' AND status = 'remediated'"
+                    ).fetchone()[0]
+                    if ssdf_total > 0:
+                        result["pdc"]["ssdf_pct"] = round(ssdf_rem / ssdf_total * 100)
+                    else:
+                        # No findings means passing — treat as 100%
+                        result["pdc"]["ssdf_pct"] = 100
+                except Exception:
+                    pass
+            finally:
+                pc.close()
+        except Exception:
+            pass
 
         # --- AI-ify: aiify_canvas — AI-governance posture (live compute) ---
         try:
@@ -10665,9 +10664,13 @@ def create_app() -> Flask:
     @app.route("/api/autonomy/status")
     def api_autonomy_status():
         """GET /api/autonomy/status — autonomous-flow snapshot:
-          * recent triage markers (last 24h)
-          * active autofix branches
-          * unresolved failures (last 1h)
+          * recent triage markers (last 24h) — root_cause, suspect_files,
+            confidence, diff preview, verify-output tail, iteration count,
+            drill-through links to RCA card, autofix branch, and trace span
+          * active autofix branches — files_changed / +/- line counts +
+            autofix_commit + branch diff link
+          * unresolved failures (last 1h) — iteration count from triage
+            marker history
           * failure_triage audit summary (global)
         All three empty → partial's host page hides the section entirely.
         """
@@ -10676,9 +10679,74 @@ def create_app() -> Flask:
 
         base_dir = Path(__file__).resolve().parent.parent.parent
 
+        # Helper: bounded diff preview from a patch_preview or apply_result.
+        # Caps at ~600 chars to keep the panel tight.
+        def _diff_preview(outcome: dict) -> dict:
+            preview_files = []
+            full_text_parts: list = []
+            pv = outcome.get("patch_preview") or {}
+            ar = outcome.get("apply_result") or {}
+            files = pv.get("files") or ar.get("applied_files") or []
+            for fp in files:
+                p = str(fp).split(":", 1)[0].replace("\\", "/")
+                preview_files.append(p)
+            verification = pv.get("verification_command") or ""
+            tail = ""
+            if ar.get("verification_tail"):
+                tail = str(ar.get("verification_tail"))[-400:]
+            # Embed short per-file excerpt only if available; otherwise we
+            # just hand back the file list — the operator can drill in.
+            text_blob = ""
+            for p in preview_files[:3]:
+                text_blob += f"--- {p}\n"
+            if tail:
+                text_blob += f"\n[tail]\n{tail}"
+            return {
+                "files": preview_files,
+                "verification_command": verification,
+                "verify_output_tail": tail,
+                "excerpt": text_blob[:600],
+            }
+
         # 1. Recent triage markers (last 24h) — sorted newest-first
         triage_recent: list = []
         triaged_dir = base_dir / ".tmp" / "kanban" / "triaged"
+        # Pre-compute iteration count per task_id (cheap on small N)
+        iteration_counts: dict = {}
+        audit_dir = base_dir / ".tmp" / "kanban" / "autofix-audit"
+        if triaged_dir.exists():
+            try:
+                for mf in triaged_dir.glob("*.marker"):
+                    try:
+                        d = json.loads(mf.read_text(encoding="utf-8"))
+                    except Exception:
+                        continue
+                    tid = d.get("task_id") or (d.get("outcome") or {}).get("task_id")
+                    if not tid:
+                        continue
+                    iteration_counts[tid] = iteration_counts.get(tid, 0) + 1
+            except Exception:
+                pass
+
+        # 2b. Pre-compute task_id → autofix branch name map (so triage cards
+        # can drill into the autofix/* branch when one exists). Cheap —
+        # bounded by the same set of branches we render below.
+        branch_by_task: dict = {}
+        try:
+            _r = _sp.run(
+                ["git", "branch", "--list", "autofix/*"],
+                cwd=str(base_dir), capture_output=True, text=True, timeout=5,
+            )
+            for _line in _r.stdout.splitlines():
+                _name = _line.replace("*", "").strip()
+                if not _name.startswith("autofix/"):
+                    continue
+                _tid = _name[len("autofix/"):].rsplit("-", 1)[0]
+                # Latest branch wins (small list; insertion order is fine).
+                branch_by_task[_tid] = _name
+        except Exception:
+            pass
+
         if triaged_dir.exists():
             cutoff = time.time() - 86400
             for f in sorted(
@@ -10693,15 +10761,43 @@ def create_app() -> Flask:
                     outcome = data.get("outcome") or {}
                     diag = outcome.get("diagnosis") or {}
                     gate = outcome.get("autofix_gate") or {}
+                    apply = outcome.get("apply_result") or {}
+                    tid = data.get("task_id") or outcome.get("task_id")
+                    sig = data.get("sig")
+                    # diff preview (files + verify tail)
+                    dp = _diff_preview(outcome)
+                    # Build drill-through URLs
+                    rca_link = f"/kanban?focus={tid}" if tid else None
+                    trace_link = (
+                        f"/traces?task_id={tid}&sig={sig}" if (tid and sig) else None
+                    )
+                    # Branch: prefer the one in the apply_result, then the
+                    # precomputed map. Either way, link to /traces?branch= so
+                    # the operator gets the diff view.
+                    branch_name = apply.get("branch") or branch_by_task.get(tid)
+                    branch_link = (
+                        f"/traces?branch={branch_name}" if branch_name else None
+                    )
                     triage_recent.append({
-                        "task_id": data.get("task_id") or outcome.get("task_id"),
+                        "task_id": tid,
                         "title": outcome.get("title"),
-                        "signature": data.get("sig"),
+                        "signature": sig,
                         "recommendation": diag.get("recommendation"),
                         "confidence": diag.get("confidence"),
+                        "root_cause": diag.get("root_cause"),
+                        "suspect_files": (diag.get("suspect_files") or [])[:5],
+                        "patch_hint": diag.get("patch_hint"),
+                        "diagnosis_source": diag.get("source"),
                         "gate_reason": gate.get("reason"),
+                        "gate_allowed": bool(gate.get("allow")),
                         "outcome": outcome.get("outcome"),
                         "ts": data.get("ts"),
+                        "diff_preview": dp,
+                        "iteration_count": iteration_counts.get(tid, 1),
+                        "rca_card_link": rca_link,
+                        "trace_link": trace_link,
+                        "branch_link": branch_link,
+                        "branch_name": branch_name,
                     })
                 except Exception:
                     continue
@@ -10713,23 +10809,56 @@ def create_app() -> Flask:
                 ["git", "branch", "--list", "autofix/*"],
                 cwd=str(base_dir), capture_output=True, text=True, timeout=5,
             )
+            default_branch = "main"
             for line in r.stdout.splitlines():
                 name = line.replace("*", "").strip()
                 if not name:
                     continue
-                # Get the commit message for context
+                # Get the commit message + diff stat
                 try:
                     msg = _sp.run(
-                        ["git", "log", "-1", "--format=%s|%ci", name],
+                        ["git", "log", "-1", "--format=%s|%ci|%H", name],
                         cwd=str(base_dir), capture_output=True, text=True, timeout=5,
                     ).stdout.strip()
                 except Exception:
                     msg = ""
-                subject, _, when = msg.partition("|")
+                subject, _, when_sha = msg.partition("|")
+                when, _, sha = when_sha.rpartition("|")
+                # Diff stat against main (best-effort, bounded)
+                files_changed = 0
+                lines_added = 0
+                lines_removed = 0
+                try:
+                    stat = _sp.run(
+                        ["git", "diff", "--shortstat",
+                         f"{default_branch}...{name}"],
+                        cwd=str(base_dir), capture_output=True, text=True, timeout=5,
+                    ).stdout.strip()
+                    # Example: " 2 files changed, 12 insertions(+), 3 deletions(-)"
+                    import re as _re
+                    mfc = _re.search(r"(\d+)\s+files?\s+changed", stat)
+                    mai = _re.search(r"(\d+)\s+insertion", stat)
+                    mde = _re.search(r"(\d+)\s+deletion", stat)
+                    if mfc:
+                        files_changed = int(mfc.group(1))
+                    if mai:
+                        lines_added = int(mai.group(1))
+                    if mde:
+                        lines_removed = int(mde.group(1))
+                except Exception:
+                    pass
+                # Task ID is the first segment of the branch (autofix/<task_id>-<sig>)
+                task_id = name[len("autofix/"):].rsplit("-", 1)[0] if name.startswith("autofix/") else None
                 autofix_branches.append({
                     "branch": name,
                     "subject": subject[:80],
                     "ts": when,
+                    "autofix_commit": sha or None,
+                    "files_changed": files_changed,
+                    "lines_added": lines_added,
+                    "lines_removed": lines_removed,
+                    "task_id": task_id,
+                    "diff_link": f"/traces?branch={name}",
                 })
         except Exception:
             pass
@@ -10754,13 +10883,28 @@ def create_app() -> Flask:
                 ).fetchall()
                 for r in rows:
                     d = dict(r)
+                    tid = d.get("id")
+                    # Quick signature = first 8 chars of normalized reason
+                    reason = d.get("last_failure_reason") or ""
+                    sig = ""
+                    try:
+                        from tools.workflow.self_debug import failure_signature
+                        sig = failure_signature(reason)[:8]
+                    except Exception:
+                        sig = (reason or "")[:8]
                     unresolved_failures.append({
-                        "id": d.get("id"),
+                        "id": tid,
                         "title": d.get("title"),
                         "status": d.get("status"),
                         "failure_count": d.get("failure_count"),
-                        "reason": (d.get("last_failure_reason") or "")[:200],
+                        "reason": reason[:200],
+                        "signature": sig,
+                        "recovery_attempt_count": iteration_counts.get(tid, 0),
                         "updated_at": d.get("updated_at"),
+                        "trace_link": (
+                            f"/traces?task_id={tid}&sig={sig}"
+                            if (tid and sig) else None
+                        ),
                     })
         except Exception:
             pass

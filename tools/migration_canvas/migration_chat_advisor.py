@@ -58,15 +58,40 @@ _MIGRATION_QUESTION_RE = re.compile(
 
 
 def _get_cam_conn():
-    from tools.db.storage import get_connection
-    from tools.dashboard.config import DB_PATH
-    return get_connection(db_path=str(DB_PATH))
+    """Canvas-local connection.
+
+    The migration_canvas mc_* tables (mc_projects, etc.) live in the canvas DB,
+    NOT in the shared icdev DB. Route through tools.migration_canvas.db.init_db
+    so the canvas's get_connection() resolves the right backend (RLS-disabled
+    for canvas tables on PG) and a fallback per-canvas SQLite file otherwise.
+    """
+    from tools.migration_canvas.db.init_db import get_connection
+    return get_connection()
 
 
 def _table_exists(conn, name: str) -> bool:
+    """Portable table-existence check that works on BOTH SQLite and PostgreSQL.
+
+    SQLite exposes tables in ``sqlite_master``; PG uses ``information_schema.tables``.
+    Detect the backend from the connection and pick the right catalog.
+    """
     try:
-        r = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
-        return (r[0] if isinstance(r, (tuple, list)) else r["cnt"]) > 0
+        # The StorageConnection wrapper exposes _backend; SQLite connections do not.
+        backend = getattr(conn, "_backend", "sqlite")
+        if backend == "postgresql":
+            r = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM information_schema.tables "
+                "WHERE table_name = %s",
+                (name,),
+            ).fetchone()
+        else:
+            r = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                (name,),
+            ).fetchone()
+        if r is None:
+            return False
+        return (r["cnt"] if hasattr(r, "keys") else r[0]) > 0
     except Exception:
         return False
 

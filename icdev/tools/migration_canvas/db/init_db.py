@@ -29,10 +29,14 @@ def get_connection():
     """
     if _MC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
+            from tools.db.storage import get_canvas_connection
 
-            conn = _icdev_conn(db_path=os.environ.get("MC_PG_DATABASE", "migration_canvas"))
-            return conn
+            # Canvas tables (migration_designs, mc_*) carry classification but
+            # NOT tenant_id; the global RLS predicate on get_connection() would
+            # raise UndefinedColumn on every PG query. Use get_canvas_connection()
+            # (security_context=None → RLS disabled) per CLAUDE.md canvas rule and
+            # the boundary/qdc/aiml canvas canonical pattern.
+            return get_canvas_connection("MC_PG_DATABASE")
         except ImportError:
             pass
     # SQLite (default) — per-canvas DB, distinct from icdev.db

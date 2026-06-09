@@ -68,7 +68,7 @@
         </tr>
       </thead>
       <tbody>
-      {% for item in result.items if item.framework == fw %}
+      {% for item in result['items'] if item.framework == fw %}
       <tr style="border-top:1px solid #1e3a6e;">
         <td style="padding:8px 12px;color:#475569;font-size:10px;">{{ item.control }}</td>
         <td style="padding:8px 12px;">

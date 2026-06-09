@@ -29,21 +29,48 @@ from tools.foundry.harvester import (  # noqa: E402
     harvest_telemetry,
     harvest_genesis,
 )
-from tools.foundry.db.init_db import init_foundry_db  # noqa: E402
+from tools.foundry.db.init_db import _SCHEMA_SQLITE  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
+from tools.foundry import harvester as _harvester_mod  # noqa: E402
+from tools.foundry import engine as _engine_mod  # noqa: E402
 
 
 def _iso(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _new_conn(path):
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 @pytest.fixture
-def db_path(tmp_path):
-    """A temp SQLite DB with foundry_signals + minimal source tables."""
+def db_path(tmp_path, monkeypatch):
+    """A temp SQLite DB with foundry_signals + minimal source tables.
+
+    Stubs out ``init_db`` (so it never touches the platform DB) and points
+    ``get_connection`` at a temp file we boot with the SQLite DDL ourselves.
+    """
     p = tmp_path / "foundry_test.db"
-    # init_foundry_db uses get_connection(db_path=...) → SQLite, RLS skipped.
-    init_foundry_db(db_path=str(p))
-    return str(p)
+    path = str(p)
+    boot = _new_conn(path)
+    boot.executescript(_SCHEMA_SQLITE)
+    boot.commit()
+    boot.close()
+
+    # Never touch the platform DB.
+    monkeypatch.setattr(_harvester_mod, "init_db", lambda *a, **k: True)
+    monkeypatch.setattr(_engine_mod, "init_db", lambda *a, **k: True)
+    # Force the SQLite lastrowid path in _open_run.
+    monkeypatch.setattr(_engine_mod, "_is_pg", lambda: False)
+
+    # Point get_connection at the temp DB.
+    import importlib
+
+    storage = importlib.import_module("tools.db.storage")
+    monkeypatch.setattr(storage, "get_connection", lambda *a, **k: _new_conn(path))
+    return path
 
 
 def _seed(db_path, sql, rows=()):

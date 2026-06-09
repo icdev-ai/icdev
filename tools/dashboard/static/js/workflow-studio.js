@@ -20,6 +20,10 @@ const StudioWF = (() => {
   let _docTemplatesCache = null;
   let _navStack = [];  // [{nodes, edges, name, parentNodeId}]
   let _contextMenu = null;
+  // Undo / Redo stacks (snapshot-based, same pattern as security-canvas.js)
+  let undoStack = [];
+  let redoStack = [];
+  const UNDO_CAP = 50;
 
   // ── DOM refs ──
   const $ = id => document.getElementById(id);
@@ -40,6 +44,71 @@ const StudioWF = (() => {
     `;
     container.appendChild(el);
     setTimeout(() => el.remove(), 4000);
+  }
+
+  // ── Undo / Redo (snapshot-based, copied from security-canvas.js) ──
+  // Snapshot the entire {nodes, edges} model. Deep-clone is required because
+  // nodes[] / edges[] are mutated in place; a shallow snapshot would alias
+  // the live state and undo would be a no-op.
+  function _snapshot() {
+    return {
+      nodes: nodes.map(n => Object.assign({}, n, {
+        args: Object.assign({}, n.args || {}),
+        dependsOn: (n.dependsOn || []).slice(),
+        sub_steps: (n.sub_steps || []).map(s => Object.assign({}, s)),
+      })),
+      edges: edges.map(e => Object.assign({}, e)),
+    };
+  }
+
+  function pushUndo() {
+    undoStack.push(_snapshot());
+    redoStack = [];
+    if (undoStack.length > UNDO_CAP) undoStack.shift();
+  }
+
+  // Wipe the DOM, restore {nodes, edges} from a snapshot, re-render.
+  function _restoreFromSnapshot(snap) {
+    nodes = snap.nodes.map(n => Object.assign({}, n, {
+      args: Object.assign({}, n.args || {}),
+      dependsOn: (n.dependsOn || []).slice(),
+      sub_steps: (n.sub_steps || []).map(s => Object.assign({}, s)),
+    }));
+    edges = snap.edges.map(e => Object.assign({}, e));
+    nodesEl().innerHTML = '';
+    edgesSvg().innerHTML = '';
+    selectedNode = null;
+    nextNodeY = 60;
+    nodes.forEach(n => {
+      nextNodeY = Math.max(nextNodeY, (n.y || 0) + 80);
+      renderNode(n);
+    });
+    renderEdges();
+    updateCounts();
+    if (nodes.length === 0) showEmptyState();
+    else hideEmptyState();
+  }
+
+  function undo() {
+    if (!undoStack.length) {
+      toast('Nothing to undo', 'info');
+      return;
+    }
+    redoStack.push(_snapshot());
+    const prev = undoStack.pop();
+    _restoreFromSnapshot(prev);
+    toast('Undo', 'info');
+  }
+
+  function redo() {
+    if (!redoStack.length) {
+      toast('Nothing to redo', 'info');
+      return;
+    }
+    undoStack.push(_snapshot());
+    const next = redoStack.pop();
+    _restoreFromSnapshot(next);
+    toast('Redo', 'info');
   }
 
   // ── Snap to grid ──
@@ -164,6 +233,7 @@ const StudioWF = (() => {
 
   // ── Node Management ──
   function addNode(toolData, x, y) {
+    pushUndo();
     const id = 'node-' + Date.now().toString(36) + '-' + (++_nodeSeq).toString(36);
     const node = {
       id,
@@ -211,6 +281,9 @@ const StudioWF = (() => {
       badgeHtml = `<div class="wf-node__badge">Human | ${node.role}</div>`;
     } else if (node.node_type === 'approval' && node.approval_policy) {
       badgeHtml = `<div class="wf-node__badge">Approval | ${node.approval_policy}</div>`;
+    } else if (node.node_type === 'script' && node.script_command) {
+      const cmd = String(node.script_command).length > 28 ? String(node.script_command).slice(0, 25) + '...' : node.script_command;
+      badgeHtml = `<div class="wf-node__badge">Script | ${cmd}</div>`;
     }
 
     el.innerHTML = `
@@ -251,6 +324,7 @@ const StudioWF = (() => {
     });
 
     container.appendChild(el);
+    renderMinimap();
   }
 
   // ── Context Menu ──
@@ -503,6 +577,7 @@ const StudioWF = (() => {
         edge => edge.from === connectState.fromId && edge.to === nodeId
       );
       if (!exists) {
+        pushUndo();
         edges.push({ from: connectState.fromId, to: nodeId });
         // Update dependsOn
         const target = nodes.find(n => n.id === nodeId);
@@ -570,6 +645,7 @@ const StudioWF = (() => {
                      data-from="${edge.from}" data-to="${edge.to}"/>`;
     }
     svg.innerHTML = html;
+    renderMinimap();
   }
 
   // ── Role / doc-template lazy fetchers ──
@@ -608,10 +684,12 @@ const StudioWF = (() => {
   }
 
   function onNodeTypeChange(value) {
-    const toolSec = $('cfg-tool-section');
-    const humanSec = $('cfg-human-section');
+    const toolSec     = $('cfg-tool-section');
+    const scriptSec   = $('cfg-script-section');
+    const humanSec    = $('cfg-human-section');
     const approvalSec = $('cfg-approval-section');
     if (!toolSec || !humanSec || !approvalSec) return;
+    if (scriptSec) scriptSec.style.display = value === 'script'   ? '' : 'none';
     toolSec.style.display     = value === 'tool'     ? '' : 'none';
     humanSec.style.display    = value === 'human'    ? '' : 'none';
     approvalSec.style.display = value === 'approval' ? '' : 'none';
@@ -638,6 +716,7 @@ const StudioWF = (() => {
         <select class="studio-input studio-select" id="cfg-node-type"
                 onchange="StudioWF.onNodeTypeChange(this.value)">
           <option value="tool"${nodeType === 'tool' ? ' selected' : ''}>Tool</option>
+          <option value="script"${nodeType === 'script' ? ' selected' : ''}>Script</option>
           <option value="human"${nodeType === 'human' ? ' selected' : ''}>Human Gate</option>
           <option value="approval"${nodeType === 'approval' ? ' selected' : ''}>Approval Gate</option>
         </select>
@@ -674,6 +753,32 @@ const StudioWF = (() => {
           <textarea class="studio-input studio-textarea" id="cfg-args" rows="4"
                     style="font-family:var(--studio-font-mono);font-size:0.8rem;"
                     placeholder='{"categorize": true}'>${esc(JSON.stringify(node.args, null, 2))}</textarea>
+        </div>
+      </div>
+      <div id="cfg-script-section">
+        <div class="studio-form-group">
+          <label class="studio-label">Command (shell)</label>
+          <input type="text" class="studio-input" id="cfg-script-command"
+                 value="${esc(node.script_command || '')}"
+                 placeholder="e.g. python tools/x.py --arg \${input}"
+                 style="font-family:var(--studio-font-mono);font-size:0.85rem;">
+        </div>
+        <div class="studio-form-group">
+          <label class="studio-label">Working Directory (optional)</label>
+          <input type="text" class="studio-input" id="cfg-script-cwd"
+                 value="${esc(node.script_cwd || '')}"
+                 placeholder="${esc((typeof window!=='undefined' && window.location ? window.location.pathname.replace(/\/[^/]*$/,'') : '.'))}">
+        </div>
+        <div class="studio-form-group">
+          <label class="studio-label" style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="cfg-script-required"${node.required !== false ? ' checked' : ''}>
+            Required (fail workflow on non-zero exit)
+          </label>
+        </div>
+        <div class="studio-form-group">
+          <label class="studio-label" style="font-size:0.78rem;color:var(--studio-text-dim,#94a3b8);">
+            Scripts run on the host (air-gap). Engine is permissive — unknown node_types fall through to the default tool runner.
+          </label>
         </div>
       </div>
       <div id="cfg-human-section">
@@ -736,6 +841,7 @@ const StudioWF = (() => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
 
+    pushUndo();
     node.name        = $('cfg-name').value;
     node.description = $('cfg-desc').value;
     const nodeType   = $('cfg-node-type').value;
@@ -750,6 +856,15 @@ const StudioWF = (() => {
         toast('Invalid JSON in arguments', 'error');
         return;
       }
+      node.role            = null;
+      node.human_required  = false;
+      node.doc_template    = null;
+      node.approval_policy = null;
+    } else if (nodeType === 'script') {
+      node.script_command  = $('cfg-script-command').value || null;
+      node.script_cwd      = $('cfg-script-cwd').value || null;
+      node.required        = $('cfg-script-required').checked;
+      node.args            = node.script_command ? { command: node.script_command, cwd: node.script_cwd } : {};
       node.role            = null;
       node.human_required  = false;
       node.doc_template    = null;
@@ -778,6 +893,9 @@ const StudioWF = (() => {
         badge = `<div class="wf-node__badge">Human | ${esc(node.role)}</div>`;
       } else if (nodeType === 'approval' && node.approval_policy) {
         badge = `<div class="wf-node__badge">Approval | ${esc(node.approval_policy)}</div>`;
+      } else if (nodeType === 'script' && node.script_command) {
+        const cmd = esc(String(node.script_command).length > 28 ? String(node.script_command).slice(0, 25) + '...' : node.script_command);
+        badge = `<div class="wf-node__badge">Script | ${cmd}</div>`;
       }
       if (badge) {
         const statusEl = el.querySelector('.wf-node__status');
@@ -785,11 +903,14 @@ const StudioWF = (() => {
       }
     }
 
+    // Node type may have changed — minimap color depends on data-node-type.
+    renderMinimap();
     closeModal();
     toast('Step configured', 'success');
   }
 
   function deleteNode(nodeId) {
+    pushUndo();
     nodes = nodes.filter(n => n.id !== nodeId);
     edges = edges.filter(e => e.from !== nodeId && e.to !== nodeId);
     nodes.forEach(n => {
@@ -1251,6 +1372,153 @@ const StudioWF = (() => {
     if (w) w.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`;
     const lbl = $('wf-zoom-label');
     if (lbl) lbl.textContent = Math.round(zoom * 100) + '%';
+    renderMinimap();
+  }
+
+  // ── Minimap (pure SVG, no library) ──
+  // The minimap is a small scaled-down view of {nodes, edges} anchored
+  // bottom-right of the canvas. A translucent rectangle shows the current
+  // viewport; click-drag on the minimap pans the main canvas.
+  const MINIMAP_W = 180;
+  const MINIMAP_H = 130;
+  const NODE_MINI_W = 12;
+  const NODE_MINI_H = 6;
+  const EDGE_PADDING = 20;
+
+  function _minimapSvg() { return $('wf-minimap'); }
+
+  // Compute the world-space bounding box of all nodes (with a small pad).
+  function _minimapBounds() {
+    if (!nodes.length) return { minX: 0, minY: 0, maxX: 200, maxY: 100, w: 200, h: 100 };
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodes.forEach(n => {
+      const nx = n.x || 0, ny = n.y || 0;
+      minX = Math.min(minX, nx);
+      minY = Math.min(minY, ny);
+      maxX = Math.max(maxX, nx + NODE_MINI_W * 8);
+      maxY = Math.max(maxY, ny + NODE_MINI_H * 8);
+    });
+    minX -= EDGE_PADDING; minY -= EDGE_PADDING;
+    maxX += EDGE_PADDING; maxY += EDGE_PADDING;
+    return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+  }
+
+  function renderMinimap() {
+    const svg = _minimapSvg();
+    if (!svg) return;
+    const b = _minimapBounds();
+    // Fit-to-minimap scaling (preserve aspect ratio).
+    const scale = Math.min(MINIMAP_W / b.w, MINIMAP_H / b.h);
+    const offX = (MINIMAP_W - b.w * scale) / 2;
+    const offY = (MINIMAP_H - b.h * scale) / 2;
+    const wx = b.minX, wy = b.minY;
+
+    const worldToMini = (x, y) => ({
+      mx: offX + (x - wx) * scale,
+      my: offY + (y - wy) * scale,
+    });
+
+    // Nodes
+    let nodesSvg = '';
+    nodes.forEach(n => {
+      const a = worldToMini(n.x || 0, n.y || 0);
+      nodesSvg += `<rect x="${a.mx.toFixed(1)}" y="${a.my.toFixed(1)}" `
+        + `width="${(NODE_MINI_W * scale).toFixed(1)}" height="${(NODE_MINI_H * scale).toFixed(1)}" `
+        + `class="wf-minimap__node" data-node-type="${n.node_type || 'tool'}"/>`;
+    });
+
+    // Edges
+    let edgesSvgMini = '';
+    edges.forEach(e => {
+      const from = nodes.find(n => n.id === e.from);
+      const to   = nodes.find(n => n.id === e.to);
+      if (!from || !to) return;
+      const a = worldToMini((from.x || 0) + NODE_MINI_W * 4, (from.y || 0) + NODE_MINI_H * 4);
+      const c = worldToMini((to.x   || 0) + NODE_MINI_W * 4, (to.y   || 0) + NODE_MINI_H * 4);
+      edgesSvgMini += `<line x1="${a.mx.toFixed(1)}" y1="${a.my.toFixed(1)}" `
+        + `x2="${c.mx.toFixed(1)}" y2="${c.my.toFixed(1)}" class="wf-minimap__edge"/>`;
+    });
+
+    // Viewport rectangle (translucent outline showing the visible canvas area)
+    const c = canvas();
+    if (c) {
+      // The visible world-space rectangle is determined by the canvas
+      // size and current pan/zoom: world_at_top_left = -panX/zoom, etc.
+      const vwW = (c.clientWidth  || 800) / zoom;
+      const vwH = (c.clientHeight || 600) / zoom;
+      const vwX = -panX / zoom;
+      const vwY = -panY / zoom;
+      const a = worldToMini(vwX, vwY);
+      const w = vwW * scale;
+      const h = vwH * scale;
+      const rectX = Math.max(0, a.mx);
+      const rectY = Math.max(0, a.my);
+      const rectW = Math.min(w, MINIMAP_W - rectX);
+      const rectH = Math.min(h, MINIMAP_H - rectY);
+      if (rectW > 0 && rectH > 0) {
+        edgesSvgMini += `<rect x="${rectX.toFixed(1)}" y="${rectY.toFixed(1)}" `
+          + `width="${rectW.toFixed(1)}" height="${rectH.toFixed(1)}" `
+          + `class="wf-minimap__viewport"/>`;
+      }
+    }
+
+    svg.setAttribute('viewBox', `0 0 ${MINIMAP_W} ${MINIMAP_H}`);
+    svg.innerHTML = edgesSvgMini + nodesSvg;
+  }
+
+  // Click-drag on the minimap translates the main canvas viewport.
+  function _onMinimapPointer(e) {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    e.preventDefault();
+    const svg = _minimapSvg();
+    if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    const b = _minimapBounds();
+    const scale = Math.min(MINIMAP_W / b.w, MINIMAP_H / b.h);
+    const offX = (MINIMAP_W - b.w * scale) / 2;
+    const offY = (MINIMAP_H - b.h * scale) / 2;
+
+    function panTo(clientX, clientY) {
+      const px = ((clientX - r.left) / r.width)  * MINIMAP_W;
+      const py = ((clientY - r.top)  / r.height) * MINIMAP_H;
+      // Inverse of the minimap worldToMini.
+      const wx = (px - offX) / scale + b.minX;
+      const wy = (py - offY) / scale + b.minY;
+      const c = canvas();
+      if (!c) return;
+      // Center the main canvas on this world point.
+      panX = -(wx * zoom) + (c.clientWidth  || 800) / 2;
+      panY = -(wy * zoom) + (c.clientHeight || 600) / 2;
+      applyZoom();
+    }
+
+    panTo(e.clientX, e.clientY);
+    const onMove = (ev) => panTo(ev.clientX, ev.clientY);
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }
+
+  // Build the minimap DOM element and wire its pointer handler. Called once
+  // from init() — the element lives inside the canvas container.
+  function initMinimap() {
+    const c = canvas();
+    if (!c) return;
+    if (_minimapSvg()) return; // already wired
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'wf-minimap';
+    svg.classList.add('wf-minimap');
+    svg.setAttribute('width',  MINIMAP_W);
+    svg.setAttribute('height', MINIMAP_H);
+    svg.setAttribute('viewBox', `0 0 ${MINIMAP_W} ${MINIMAP_H}`);
+    svg.addEventListener('pointerdown', _onMinimapPointer);
+    // Prevent the canvas drag/drop handlers from interfering.
+    svg.addEventListener('dragover',  (e) => e.preventDefault());
+    svg.addEventListener('drop',      (e) => e.preventDefault());
+    c.appendChild(svg);
   }
 
   function zoomAtPoint(screenX, screenY, newZoom) {
@@ -1445,9 +1713,8 @@ const StudioWF = (() => {
     return positions;
   }
 
-  // Stubs for future features
-  function undo() { toast('Undo not yet implemented', 'info'); }
-  function redo() { toast('Redo not yet implemented', 'info'); }
+  // Undo / Redo (snapshot-based, see pushUndo/undo/redo above)
+  // (Stubs removed — these are now real functions.)
 
   async function loadWorkflow(id) {
     if (!id) return;
@@ -1612,8 +1879,12 @@ const StudioWF = (() => {
     loadCatalog();
     // Auto-collapse palette on load
     togglePalette();
+    // Build the minimap (after the canvas DOM is ready).
+    initMinimap();
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); redo(); return; }
       if (e.key === 'Delete' && selectedNode) deleteNode(selectedNode);
       if (e.key === 'Escape') { closeModal(); connectState = null; }
     });

@@ -1577,6 +1577,59 @@
   color: #f59e0b;
 }
 
+.wf-node[data-node-type='script'] {
+  border-color: #94a3b8;
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.wf-node[data-node-type='script'] .wf-node__icon::before { content: '\1F4BB'; }
+
+.wf-node[data-node-type='script'] .wf-node__badge {
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+}
+
+/* Minimap (E2): bottom-right, draggable, scaled-down view of the DAG. */
+.wf-minimap {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 180px;
+  height: 130px;
+  z-index: 5;
+  background: rgba(30, 32, 48, 0.92);
+  border: 1px solid var(--studio-border, #2d3047);
+  border-radius: 4px;
+  cursor: crosshair;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+}
+
+.wf-minimap__node {
+  fill: #8b5cf6;
+  stroke: #1e2030;
+  stroke-width: 0.5;
+  rx: 1;
+  ry: 1;
+}
+
+.wf-minimap__node[data-node-type='human']    { fill: #2dd4bf; }
+.wf-minimap__node[data-node-type='approval'] { fill: #f59e0b; }
+.wf-minimap__node[data-node-type='script']   { fill: #94a3b8; }
+
+.wf-minimap__edge {
+  stroke: #6366f1;
+  stroke-width: 0.5;
+  opacity: 0.7;
+}
+
+.wf-minimap__viewport {
+  fill: rgba(99, 102, 241, 0.10);
+  stroke: #6366f1;
+  stroke-width: 1;
+  pointer-events: none;
+}
+
 
 /* ============================================================
    MARKETPLACE STOREFRONT

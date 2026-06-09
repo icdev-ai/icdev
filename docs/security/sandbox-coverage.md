@@ -415,3 +415,43 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   the staged target (e.g. dynamic-analysis sandboxing) → re-decide as **sandboxed**
   (route through `tools/security/sandbox_executor.py`); or if a non-`https`/non-
   allowlisted transport is added to the fetch path.
+
+### Gap 17 — ACF Harvester signal ingestion (`tools/foundry/harvester.py`)
+
+**Module:** `tools/foundry/harvester.py` (with the per-source helpers it
+dispatches to: `innovation_signals`, `creative_engine`, `research_engine`,
+`oracle_predictions` + KG self-awareness gap nodes, and
+`introspective_analyzer` telemetry)
+
+**Ingress path:** `harvest_all()` (and `--source <engine>` sub-commands) read
+exclusively from **first-party engine-store tables** — `innovation_signals`,
+optional `creative_engine`/`research_engine` stores, `oracle_predictions`
+(plus the Genesis knowledge graph self-awareness gap nodes), and the
+`introspective_analyzer` telemetry tables. Each helper runs as a `SELECT …
+FROM <engine_store>` and writes the result to `foundry_signals` (UNIQUE
+`dedup_hash`, append-only). No network fetch, no file upload, no LLM
+generation call, no `exec`/`eval`/`subprocess` anywhere in the harvest path.
+
+- **Decision:** **trusted-first-party** (engine-store data only)
+- **Rationale:** Every input row is sourced from a first-party ICDEV table
+  that is itself under append-only + RLS protection. The harvester is a
+  pure projection (read store → normalize → dedup → write `foundry_signals`).
+  Adding a network fetch or untrusted file input to the harvester would
+  change the threat model; until then, no sandbox is required.
+- **Guardrails:**
+  - All helpers are read-only `SELECT`s against first-party tables; no
+    user-supplied SQL, no `requests.get`, no file reads outside `args/` /
+    `tools/foundry/`.
+  - The downstream scorer (`tools/foundry/engine.py`) and verifier
+    (`tools/foundry/oracle_verifiers.py`) consume `foundry_signals` rows
+    as data — they never `exec` or `subprocess`-run a value from a
+    signal.
+  - Cross-source dedup is enforced by UNIQUE(`dedup_hash`) on
+    `foundry_signals` (insert-OR-ignore), so a malicious rewrite of one
+    engine store can collapse but not duplicate rows.
+  - RLS predicate on `foundry_signals` (tenant_id + classification) is
+    applied via `tools.db.storage.get_connection()` — the harvester
+    inherits the caller's security context.
+- **Revisit if:** the harvester adds (a) a network fetch, (b) a file
+  upload from an HTTP endpoint, or (c) any LLM-generated content path →
+  re-decide as `sandboxed-on-demand` (with `ICDEV_STRICT_SANDBOX=1`).

@@ -17,20 +17,30 @@ from pathlib import Path
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = _ICDEV_ROOT / "data" / "pipeline_canvas.db"
 
-_PC_BACKEND = os.environ.get("PC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite")).lower()
+_PC_BACKEND = os.environ.get(
+    "PC_STORAGE_BACKEND",
+    os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND",
+        os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite")
+    )
+).lower()
 
 
 def get_connection():
-    """Get a database connection — SQLite or PostgreSQL."""
+    """Get a database connection — SQLite or PostgreSQL.
+
+    For PostgreSQL, uses get_canvas_connection() so RLS is disabled
+    (pipeline tables lack tenant_id/classification columns).
+    """
     if _PC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
+            from tools.db.storage import get_canvas_connection
 
-            conn = _icdev_conn(db_path=os.environ.get("PC_PG_DATABASE", "pipeline_canvas"))
+            conn = get_canvas_connection("PC_PG_DATABASE")
             return conn
-        except ImportError:
+        except Exception:
             pass
     # SQLite (default) — per-canvas DB, distinct from icdev.db
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")

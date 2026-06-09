@@ -1004,6 +1004,7 @@
 | E2E Lifecycle | tools\document_intelligence\e2e_lifecycle.py | Auto-registered: document_intelligence/e2e_lifecycle.py | --json | JSON |
 | Seed Demo Corpus | tools\document_intelligence\seed_demo_corpus.py | Auto-registered: document_intelligence/seed_demo_corpus.py | --json | JSON |
 | Heuristic Learner | tools\foundry\heuristic_learner.py | Auto-registered: foundry/heuristic_learner.py | --json | JSON |
+| Meta Scorer | tools\foundry\meta_scorer.py | Auto-registered: foundry/meta_scorer.py | --run [--dry-run] | JSON |
 | Novelty Gate | tools\foundry\novelty_gate.py | Auto-registered: foundry/novelty_gate.py | --json | JSON |
 | Oracle Verifiers | tools\foundry\oracle_verifiers.py | Auto-registered: foundry/oracle_verifiers.py | --json | JSON |
 | Task Graph | tools\foundry\task_graph.py | Auto-registered: foundry/task_graph.py | --json | JSON |
@@ -1026,3 +1027,9 @@
 | Seed Ucb Kanban | tools\kanban\seed_ucb_kanban.py | Auto-registered: kanban/seed_ucb_kanban.py | --json | JSON |
 | Seed Uclb | tools\kanban\seed_uclb.py | Auto-registered: kanban/seed_uclb.py | --json | JSON |
 | Migration Analysis | tools\network\migration_analysis.py | Auto-registered: network/migration_analysis.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Infra Pg Smoke | tools\testing\infra_pg_smoke.py | Auto-registered: testing/infra_pg_smoke.py | --json | JSON |

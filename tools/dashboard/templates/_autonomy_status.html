@@ -60,6 +60,41 @@
                        color: var(--text-primary); margin-bottom: 0.15rem; }
   .auto-failure-reason { color: #ff8a80; font-family: monospace;
                          font-size: 0.72rem; word-break: break-word; }
+  .auto-root-cause { font-size: 0.78rem; color: var(--text-primary);
+                     margin: 0.15rem 0 0.2rem; }
+  .auto-suspect { display: inline-block; font-family: monospace;
+                  font-size: 0.7rem; padding: 0.05rem 0.35rem;
+                  border-radius: 3px; margin: 0 0.2rem 0.2rem 0;
+                  background: rgba(33,150,243,0.18); color: #6db3f8;
+                  border: 1px solid rgba(33,150,243,0.3); }
+  .auto-diff { font-family: monospace; font-size: 0.72rem;
+               background: rgba(0,0,0,0.25); color: #b0bec5;
+               padding: 0.3rem 0.5rem; border-radius: 4px;
+               white-space: pre-wrap; word-break: break-word;
+               max-height: 6rem; overflow: auto; margin-top: 0.25rem; }
+  .auto-verify-tail { font-family: monospace; font-size: 0.7rem;
+                      color: #ffab91; background: rgba(0,0,0,0.35);
+                      padding: 0.25rem 0.5rem; border-radius: 4px;
+                      white-space: pre-wrap; word-break: break-word;
+                      max-height: 4.5rem; overflow: auto;
+                      border-left: 2px solid #ff7043; margin-top: 0.25rem; }
+  .auto-link-row { display: flex; flex-wrap: wrap; gap: 0.4rem;
+                   margin-top: 0.3rem; font-size: 0.72rem; }
+  .auto-link { color: var(--accent-blue-light, #6db3f8);
+               text-decoration: none; padding: 0.05rem 0.4rem;
+               border: 1px solid rgba(109,179,248,0.35);
+               border-radius: 3px; }
+  .auto-link:hover { background: rgba(109,179,248,0.15); }
+  .auto-iter-badge { display: inline-block; font-size: 0.65rem;
+                     padding: 0.05rem 0.35rem; border-radius: 3px;
+                     background: rgba(255,152,0,0.18); color: #ffb74d;
+                     border: 1px solid rgba(255,152,0,0.3);
+                     font-weight: 600; }
+  .auto-stat { display: inline-block; font-family: monospace;
+               font-size: 0.7rem; color: var(--text-secondary);
+               margin-right: 0.5rem; }
+  .auto-stat-add { color: #81c784; }
+  .auto-stat-rem { color: #ff8a80; }
 </style>
 
 <script>
@@ -91,35 +126,109 @@
   function triageCardHTML(t) {
     var b = outcomeBadge(t.outcome, t.recommendation);
     var conf = t.confidence != null ? (Math.round(t.confidence*100)/100).toFixed(2) : '—';
-    return ''
+    var html = ''
       + '<div class="auto-card">'
       + '  <div class="auto-card-head">'
       + '    <span class="auto-badge ' + b.cls + '">' + b.label + '</span>'
       + '    <span>' + escapeHTML(t.title || t.task_id) + '</span>'
       + '    <span class="auto-meta" style="margin-left:auto;">'
       +        escapeHTML(t.task_id) + ' · conf=' + conf
-      + '    </span>'
-      + '  </div>'
-      + '  <div class="auto-reason">' + escapeHTML(t.gate_reason || t.recommendation || '') + '</div>'
-      + '</div>';
+      + '    </span>';
+    if (t.iteration_count && t.iteration_count > 1) {
+      html += '  <span class="auto-iter-badge" title="Debugger iteration count — how many times this task has been triaged">iter ×' + t.iteration_count + '</span>';
+    }
+    html += '  </div>';
+    if (t.root_cause) {
+      html += '  <div class="auto-root-cause"><strong style="color:#ffb74d;">Root cause:</strong> '
+            + escapeHTML(t.root_cause) + '</div>';
+    }
+    if (t.suspect_files && t.suspect_files.length) {
+      html += '  <div>';
+      for (var i = 0; i < t.suspect_files.length; i++) {
+        var sf = t.suspect_files[i];
+        var p = String(sf).split(':')[0];
+        html += '<span class="auto-suspect" title="' + escapeHTML(sf) + '">' + escapeHTML(p) + '</span>';
+      }
+      html += '  </div>';
+    }
+    if (t.gate_reason) {
+      html += '  <div class="auto-reason">' + escapeHTML(t.gate_reason) + '</div>';
+    } else if (t.recommendation) {
+      html += '  <div class="auto-reason">' + escapeHTML(t.recommendation) + '</div>';
+    }
+    // Diff preview (files + bounded excerpt)
+    if (t.diff_preview && t.diff_preview.files && t.diff_preview.files.length) {
+      html += '  <div class="auto-diff">';
+      for (var j = 0; j < t.diff_preview.files.length; j++) {
+        html += escapeHTML(t.diff_preview.files[j]) + '\n';
+      }
+      if (t.diff_preview.excerpt) {
+        html += escapeHTML(t.diff_preview.excerpt);
+      }
+      html += '  </div>';
+    }
+    if (t.diff_preview && t.diff_preview.verify_output_tail) {
+      html += '  <div class="auto-verify-tail" title="Last verification output">'
+            + escapeHTML(t.diff_preview.verify_output_tail) + '</div>';
+    }
+    // Drill-through links
+    if (t.rca_card_link || t.trace_link || t.branch_link) {
+      html += '  <div class="auto-link-row">';
+      if (t.rca_card_link) {
+        html += '<a class="auto-link" href="' + escapeHTML(t.rca_card_link) + '">RCA card →</a>';
+      }
+      if (t.trace_link) {
+        html += '<a class="auto-link" href="' + escapeHTML(t.trace_link) + '">trace →</a>';
+      }
+      if (t.branch_link) {
+        html += '<a class="auto-link" href="' + escapeHTML(t.branch_link) + '">autofix branch →</a>';
+      }
+      html += '  </div>';
+    }
+    html += '</div>';
+    return html;
   }
 
   function branchRowHTML(b) {
-    return ''
+    var html = ''
       + '<div class="auto-branch-row">'
-      + '  <span class="auto-branch-name">' + escapeHTML(b.branch) + '</span>'
-      + '  <span class="auto-meta">' + escapeHTML(b.subject || '') + '</span>'
+      + '  <span class="auto-branch-name">'
+      +    '<a class="auto-link" href="' + escapeHTML(b.diff_link || '#') + '">'
+      +      escapeHTML(b.branch) + '</a>';
+    if (b.task_id) {
+      html += ' <span class="auto-meta">[' + escapeHTML(b.task_id) + ']</span>';
+    }
+    html += '  </span>'
+      + '  <span class="auto-meta">'
+      +    '<span class="auto-stat">' + (b.files_changed || 0) + ' file' + (b.files_changed===1?'':'s') + '</span>'
+      +    '<span class="auto-stat auto-stat-add">+' + (b.lines_added || 0) + '</span>'
+      +    '<span class="auto-stat auto-stat-rem">-' + (b.lines_removed || 0) + '</span>'
+      +    '<span style="margin-left:0.5rem;">' + escapeHTML(b.subject || '') + '</span>'
+      + '  </span>'
       + '</div>';
+    return html;
   }
 
   function failureRowHTML(f) {
-    return ''
+    var html = ''
       + '<div class="auto-failure-row">'
       + '  <div class="auto-failure-head">'
-      + '    <span>' + escapeHTML(f.title || f.id) + ' <span class="auto-meta">(' + escapeHTML(f.id) + ', status=' + escapeHTML(f.status) + ', fc=' + (f.failure_count || 0) + ')</span></span>'
-      + '  </div>'
-      + '  <div class="auto-failure-reason">' + escapeHTML(f.reason || '') + '</div>'
-      + '</div>';
+      + '    <span>' + escapeHTML(f.title || f.id) + ' <span class="auto-meta">(' + escapeHTML(f.id) + ', status=' + escapeHTML(f.status) + ', fc=' + (f.failure_count || 0) + ')</span></span>';
+    if (f.recovery_attempt_count && f.recovery_attempt_count > 0) {
+      html += '<span class="auto-iter-badge" title="Recovery attempts recorded in triage history">recovery ×' + f.recovery_attempt_count + '</span>';
+    }
+    html += '  </div>'
+      + '  <div class="auto-failure-reason">' + escapeHTML(f.reason || '') + '</div>';
+    if (f.signature) {
+      html += '  <div class="auto-meta" style="margin-top:0.1rem;">sig: ' + escapeHTML(f.signature) + '</div>';
+    }
+    if (f.trace_link) {
+      html += '  <div class="auto-link-row">'
+            + '    <a class="auto-link" href="' + escapeHTML(f.trace_link) + '">trace →</a>'
+            + '  </div>';
+    }
+    html += '</div>';
+    return html;
   }
 
   function renderAutonomyStatus(payload) {

@@ -4,6 +4,17 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: coh
+  name: Coh Project
+  description: Auto-registered project for tasks with prefix 'coh-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: coh-
+  default_open: true
+  briefs: []
+  epics:
+  - key: fix
+    title: FIX
+    priority: medium
 - key: ucb
   name: Ucb Project
   description: Auto-registered project for tasks with prefix 'ucb-'. Update name and

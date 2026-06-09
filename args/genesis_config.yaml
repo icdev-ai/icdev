@@ -815,6 +815,15 @@ reflexes:
     description: "SIPA self-assessment of ICDEV tools/ (Mode A) — open a Kanban card per NEW unauthorized/high-risk capability vs the last baseline; deduped so it never re-alerts"
     target: tools            # path to assess (repo-relative); blank => <repo>/tools
     mode: aware              # provenance-aware Mode A vs the platform RTM
+    # SIPA-platform RTM is the canonical project_id under which the platform
+    # self-assessment reconciles. intake_requirements rows tagged with this
+    # project (env_secret / filesystem / process_exec / dynamic_code / crypto)
+    # authorize the platform-wide capabilities — see
+    # docs/security/sipa-self-assessment.md. Without this, every capability
+    # in tools/ trips an `unauthorized_capability` finding by default
+    # (semantic-backdoor case), flooding the kanban with new cards.
+    project_id: sipa-platform-rtm-2026-06-08
+    session_id: sipa-platform-rtm-2026-06-08
     success_metric:
       name: integrity_cards_opened
       threshold: 0

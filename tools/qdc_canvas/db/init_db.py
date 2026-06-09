@@ -15,19 +15,25 @@ from pathlib import Path
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = _ICDEV_ROOT / "data" / "qdc_canvas.db"
 
-_QDC_BACKEND = os.environ.get("QDC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite")).lower()
+_QDC_BACKEND = os.environ.get(
+    "QDC_STORAGE_BACKEND",
+    os.environ.get(
+        "ICDEV_CANVAS_STORAGE_BACKEND",
+        os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"),
+    ),
+).lower()
 
 
 def get_connection():
-    """Get a database connection — SQLite or PostgreSQL."""
+    """Get a database connection — PostgreSQL (default) or SQLite fallback."""
     if _QDC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
+            from tools.db.storage import get_canvas_connection
 
-            return _icdev_conn(db_path=os.environ.get("QDC_PG_DATABASE", "qdc_canvas"))
-        except ImportError:
+            return get_canvas_connection("QDC_PG_DATABASE")
+        except Exception:
             pass
-    # SQLite (default) — per-canvas DB, distinct from icdev.db
+    # SQLite fallback — per-canvas DB, distinct from icdev.db
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -782,7 +788,14 @@ def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = get_connection()
     try:
-        conn.executescript(SCHEMA)
+        if hasattr(conn, "executescript"):
+            conn.executescript(SCHEMA)
+        else:
+            for stmt in SCHEMA.strip().split(";"):
+                stmt = stmt.strip()
+                if stmt:
+                    conn.execute(stmt)
+            conn.commit()
         _seed_templates(conn)
         _seed_snippets(conn)
         _seed_runbooks(conn)
@@ -795,10 +808,15 @@ if __name__ == "__main__":
     init_db()
     conn = get_connection()
     try:
-        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+        if hasattr(conn, "executescript"):
+            tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+        else:
+            tables = conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE 'qdc_%' ORDER BY table_name"
+            ).fetchall()
         print(f"QDC Canvas DB initialized: {len(tables)} tables")
         for t in tables:
-            count = conn.execute(f"SELECT COUNT(*) FROM [{t[0]}]").fetchone()[0]  # noqa: S608
+            count = conn.execute(f"SELECT COUNT(*) FROM \"{t[0]}\"").fetchone()[0]  # noqa: S608
             print(f"  {t[0]}: {count} rows")
     finally:
         conn.close()

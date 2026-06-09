@@ -321,10 +321,10 @@ def detect_quality_gaps(assessment: dict) -> list[dict]:
     for finding in assessment.get("findings", []):
         gaps.append(
             {
-                "rule_id": finding["rule_id"],
-                "title": finding["title"],
-                "severity": finding["severity"],
-                "recommendation": f"Add or connect the required element to satisfy {finding['title']}.",
+                "rule_id": finding.get("rule_id", "unknown"),
+                "title": finding.get("title", "Unnamed finding"),
+                "severity": finding.get("severity", "CAT3"),
+                "recommendation": f"Add or connect the required element to satisfy {finding.get('title', 'rule')}.",
             }
         )
     return gaps

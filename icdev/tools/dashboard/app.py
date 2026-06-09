@@ -10462,9 +10462,13 @@ def create_app() -> Flask:
     @app.route("/api/autonomy/status")
     def api_autonomy_status():
         """GET /api/autonomy/status — autonomous-flow snapshot:
-          * recent triage markers (last 24h)
-          * active autofix branches
-          * unresolved failures (last 1h)
+          * recent triage markers (last 24h) — root_cause, suspect_files,
+            confidence, diff preview, verify-output tail, iteration count,
+            drill-through links to RCA card, autofix branch, and trace span
+          * active autofix branches — files_changed / +/- line counts +
+            autofix_commit + branch diff link
+          * unresolved failures (last 1h) — iteration count from triage
+            marker history
           * failure_triage audit summary (global)
         All three empty → partial's host page hides the section entirely.
         """
@@ -10473,9 +10477,53 @@ def create_app() -> Flask:
 
         base_dir = Path(__file__).resolve().parent.parent.parent
 
+        # Helper: bounded diff preview from a patch_preview or apply_result.
+        # Caps at ~600 chars to keep the panel tight.
+        def _diff_preview(outcome):
+            preview_files = []
+            full_text_parts = []
+            pv = outcome.get("patch_preview") or {}
+            ar = outcome.get("apply_result") or {}
+            files = pv.get("files") or ar.get("applied_files") or []
+            for fp in files:
+                p = str(fp).split(":", 1)[0].replace("\\", "/")
+                preview_files.append(p)
+            verification = pv.get("verification_command") or ""
+            tail = ""
+            if ar.get("verification_tail"):
+                tail = str(ar.get("verification_tail"))[-400:]
+            text_blob = ""
+            for p in preview_files[:3]:
+                text_blob += f"--- {p}\n"
+            if tail:
+                text_blob += f"\n[tail]\n{tail}"
+            return {
+                "files": preview_files,
+                "verification_command": verification,
+                "verify_output_tail": tail,
+                "excerpt": text_blob[:600],
+            }
+
         # 1. Recent triage markers (last 24h) — sorted newest-first
         triage_recent: list = []
         triaged_dir = base_dir / ".tmp" / "kanban" / "triaged"
+        # Pre-compute iteration count per task_id (cheap on small N)
+        iteration_counts: dict = {}
+        audit_dir = base_dir / ".tmp" / "kanban" / "autofix-audit"
+        if triaged_dir.exists():
+            try:
+                for mf in triaged_dir.glob("*.marker"):
+                    try:
+                        d = json.loads(mf.read_text(encoding="utf-8"))
+                    except Exception:
+                        continue
+                    tid = d.get("task_id") or (d.get("outcome") or {}).get("task_id")
+                    if not tid:
+                        continue
+                    iteration_counts[tid] = iteration_counts.get(tid, 0) + 1
+            except Exception:
+                pass
+
         if triaged_dir.exists():
             cutoff = time.time() - 86400
             for f in sorted(
@@ -10490,15 +10538,31 @@ def create_app() -> Flask:
                     outcome = data.get("outcome") or {}
                     diag = outcome.get("diagnosis") or {}
                     gate = outcome.get("autofix_gate") or {}
+                    tid = data.get("task_id") or outcome.get("task_id")
+                    sig = data.get("sig")
+                    dp = _diff_preview(outcome)
+                    rca_link = f"/kanban?focus={tid}" if tid else None
+                    trace_link = (
+                        f"/traces?task_id={tid}&sig={sig}" if (tid and sig) else None
+                    )
                     triage_recent.append({
-                        "task_id": data.get("task_id") or outcome.get("task_id"),
+                        "task_id": tid,
                         "title": outcome.get("title"),
-                        "signature": data.get("sig"),
+                        "signature": sig,
                         "recommendation": diag.get("recommendation"),
                         "confidence": diag.get("confidence"),
+                        "root_cause": diag.get("root_cause"),
+                        "suspect_files": (diag.get("suspect_files") or [])[:5],
+                        "patch_hint": diag.get("patch_hint"),
+                        "diagnosis_source": diag.get("source"),
                         "gate_reason": gate.get("reason"),
+                        "gate_allowed": bool(gate.get("allow")),
                         "outcome": outcome.get("outcome"),
                         "ts": data.get("ts"),
+                        "diff_preview": dp,
+                        "iteration_count": iteration_counts.get(tid, 1),
+                        "rca_card_link": rca_link,
+                        "trace_link": trace_link,
                     })
                 except Exception:
                     continue
@@ -10510,23 +10574,53 @@ def create_app() -> Flask:
                 ["git", "branch", "--list", "autofix/*"],
                 cwd=str(base_dir), capture_output=True, text=True, timeout=5,
             )
+            default_branch = "main"
             for line in r.stdout.splitlines():
                 name = line.replace("*", "").strip()
                 if not name:
                     continue
-                # Get the commit message for context
+                # Get the commit message + diff stat
                 try:
                     msg = _sp.run(
-                        ["git", "log", "-1", "--format=%s|%ci", name],
+                        ["git", "log", "-1", "--format=%s|%ci|%H", name],
                         cwd=str(base_dir), capture_output=True, text=True, timeout=5,
                     ).stdout.strip()
                 except Exception:
                     msg = ""
-                subject, _, when = msg.partition("|")
+                subject, _, when_sha = msg.partition("|")
+                when, _, sha = when_sha.rpartition("|")
+                files_changed = 0
+                lines_added = 0
+                lines_removed = 0
+                try:
+                    stat = _sp.run(
+                        ["git", "diff", "--shortstat",
+                         f"{default_branch}...{name}"],
+                        cwd=str(base_dir), capture_output=True, text=True, timeout=5,
+                    ).stdout.strip()
+                    import re as _re
+                    mfc = _re.search(r"(\d+)\s+files?\s+changed", stat)
+                    mai = _re.search(r"(\d+)\s+insertion", stat)
+                    mde = _re.search(r"(\d+)\s+deletion", stat)
+                    if mfc:
+                        files_changed = int(mfc.group(1))
+                    if mai:
+                        lines_added = int(mai.group(1))
+                    if mde:
+                        lines_removed = int(mde.group(1))
+                except Exception:
+                    pass
+                task_id = name[len("autofix/"):].rsplit("-", 1)[0] if name.startswith("autofix/") else None
                 autofix_branches.append({
                     "branch": name,
                     "subject": subject[:80],
                     "ts": when,
+                    "autofix_commit": sha or None,
+                    "files_changed": files_changed,
+                    "lines_added": lines_added,
+                    "lines_removed": lines_removed,
+                    "task_id": task_id,
+                    "diff_link": f"/traces?branch={name}",
                 })
         except Exception:
             pass
@@ -10551,13 +10645,27 @@ def create_app() -> Flask:
                 ).fetchall()
                 for r in rows:
                     d = dict(r)
+                    tid = d.get("id")
+                    reason = d.get("last_failure_reason") or ""
+                    sig = ""
+                    try:
+                        from tools.workflow.self_debug import failure_signature
+                        sig = failure_signature(reason)[:8]
+                    except Exception:
+                        sig = (reason or "")[:8]
                     unresolved_failures.append({
-                        "id": d.get("id"),
+                        "id": tid,
                         "title": d.get("title"),
                         "status": d.get("status"),
                         "failure_count": d.get("failure_count"),
-                        "reason": (d.get("last_failure_reason") or "")[:200],
+                        "reason": reason[:200],
+                        "signature": sig,
+                        "recovery_attempt_count": iteration_counts.get(tid, 0),
                         "updated_at": d.get("updated_at"),
+                        "trace_link": (
+                            f"/traces?task_id={tid}&sig={sig}"
+                            if (tid and sig) else None
+                        ),
                     })
         except Exception:
             pass
