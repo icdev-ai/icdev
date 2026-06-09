@@ -249,13 +249,15 @@ def cli_bridge_status() -> dict:
 
     provider, model_id, logged_at = _last_provider_served()
 
-    import os
+    # NOTE: ``ICDEV_CLI_BRIDGE`` env var was removed in f3f5abba5; the
+    # per-request context override (cookie/header) is now the sole toggle.
+    # ``os.environ.get("ICDEV_CLI_BRIDGE", ...)`` is intentionally not called
+    # here so the status payload cannot leak the (now-irrelevant) secret.
 
     return {
         "enabled": enabled,
         "available": available,
         "state": state,
-        "env": os.environ.get("ICDEV_CLI_BRIDGE", ""),
         "cookie_name": COOKIE_NAME,
         "last_provider": provider,
         "last_model": model_id,
