@@ -28,9 +28,11 @@ def take_snapshot(project_id: str, framework_id: str = "FedRAMP Moderate") -> di
     except Exception:
         evidence_count = 0
     try:
+        # PG schema (migration 027) uses `status`, not `implementation_status`.
+        # The dashboard twin UI reads this column via `compliance_snapshots.status`.
         conn.execute(
             """INSERT INTO compliance_snapshots
-               (snapshot_id, project_id, framework_id, control_id, implementation_status, evidence_ref, taken_at)
+               (snapshot_id, project_id, framework_id, control_id, status, evidence_ref, taken_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (snap_id, project_id, framework_id, "_meta", "snapshot", "", taken_at),
         )
@@ -108,12 +110,15 @@ def crosswalk_drift(project_id: str, fw_src: str, fw_tgt: str) -> dict:
     conn = get_connection()
     drifts = []
     try:
+        # PG schema (migration 027) uses `status`; old SQLite-isms used
+        # `implementation_status`. The dashboard twin UI binds to `status`,
+        # so we read the column the schema actually has.
         src_rows = conn.execute(
-            "SELECT control_id, implementation_status FROM compliance_snapshots WHERE project_id=? AND framework_id=? ORDER BY taken_at DESC LIMIT 500",
+            "SELECT control_id, status AS implementation_status FROM compliance_snapshots WHERE project_id=? AND framework_id=? ORDER BY taken_at DESC LIMIT 500",
             (project_id, fw_src),
         ).fetchall()
         tgt_rows = conn.execute(
-            "SELECT control_id, implementation_status FROM compliance_snapshots WHERE project_id=? AND framework_id=? ORDER BY taken_at DESC LIMIT 500",
+            "SELECT control_id, status AS implementation_status FROM compliance_snapshots WHERE project_id=? AND framework_id=? ORDER BY taken_at DESC LIMIT 500",
             (project_id, fw_tgt),
         ).fetchall()
         src_map = {r[0]: r[1] for r in src_rows}
