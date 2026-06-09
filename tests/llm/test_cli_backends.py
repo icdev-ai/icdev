@@ -388,3 +388,59 @@ def test_mailbox_worker_alive_false_for_stale_heartbeat(monkeypatch):
     stale = (datetime.now(timezone.utc) - timedelta(seconds=600)).isoformat()
     monkeypatch.setenv("ICDEV_CLI_MAILBOX_HEARTBEAT", stale)
     assert capability.mailbox_worker_alive(stale_seconds=90) is False
+
+
+# ── env-var scope (SIPA env_secret false-positive guard) ───────────────────
+#
+# SIPA's env_secret sweep has previously mis-flagged the ICDEV_* routing
+# overrides in the subprocess backend as credential reads (e8a7daa40 — same
+# false positive in cli_bridge/activate.py, b1a6f6215 — same fix applied to
+# cli_bridge/capability.py). Lock in the exact allowlist so the scope stays
+# auditable and any future addition breaks this test until a scoping note +
+# companion docstring update is added.
+SUBPROCESS_BACKEND_ALLOWED_ENV_VARS = frozenset(
+    {
+        "ICDEV_CLI_BRIDGE_MAX_SECONDS",
+        "ICDEV_CLI_BRIDGE_MAX_CONCURRENT",
+        "ICDEV_CLI_BRIDGE_BINARY",
+    }
+)
+
+
+def test_no_unauthorized_env_secret_reads():
+    """The subprocess backend reads only documented ICDEV_* routing overrides.
+
+    Any ``os.environ.get`` of a var not in SUBPROCESS_BACKEND_ALLOWED_ENV_VARS
+    is treated as an unauthorized credential read. Update
+    SUBPROCESS_BACKEND_ALLOWED_ENV_VARS + the module docstring together when
+    adding a new var.
+    """
+    import ast
+
+    src = pathlib.Path(subprocess_backend.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(src)
+
+    reads: set = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        # Match os.environ.get("FOO") and os.environ.get("FOO", default)
+        if (
+            isinstance(func, ast.Attribute)
+            and func.attr == "get"
+            and isinstance(func.value, ast.Attribute)
+            and func.value.attr == "environ"
+            and isinstance(func.value.value, ast.Name)
+            and func.value.value.id == "os"
+        ):
+            if node.args and isinstance(node.args[0], ast.Constant):
+                reads.add(node.args[0].value)
+
+    unauthorized = reads - SUBPROCESS_BACKEND_ALLOWED_ENV_VARS
+    assert not unauthorized, (
+        f"Unauthorized env-var reads detected in subprocess_backend.py: "
+        f"{sorted(unauthorized)}. Add the var to "
+        f"SUBPROCESS_BACKEND_ALLOWED_ENV_VARS in test_cli_backends.py AND "
+        f"update the env-var scope block in the module docstring."
+    )

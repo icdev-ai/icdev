@@ -27,6 +27,26 @@ Design — mirrors the background-thread + rate-limit pattern in
 ``dispatch`` is the public entry point and is *non-blocking* and *never raises*:
 a missing binary, a crashed CLI, or a duplicate dispatch all resolve to either a
 failed job row or a silent skip, never an exception into the caller.
+
+Env-var scope (auditable)
+-------------------------
+This module reads EXACTLY three env vars, all of which are documented
+operational/routing overrides for the subprocess backend — not credentials:
+
+* ``ICDEV_CLI_BRIDGE_MAX_SECONDS``  — hard ceiling (seconds) for a single CLI
+  invocation; bounds a truly hung subprocess so it can't leak a thread.
+* ``ICDEV_CLI_BRIDGE_MAX_CONCURRENT`` — max CLI subprocesses running
+  concurrently across all dispatched jobs (sizes the BoundedSemaphore).
+* ``ICDEV_CLI_BRIDGE_BINARY`` — name or absolute path of the Claude CLI
+  binary the subprocess backend runs; defaults to ``"claude"``.
+
+None of these are API keys, tokens, or other secrets. SIPA's ``env_secret``
+sweep has previously mis-flagged ``ICDEV_*`` routing overrides as credential
+reads (see e8a7daa40 — same false positive in
+``cli_bridge/activate.py::CLOUD_KEY_ENV_VARS``, and b1a6f6215 — same fix
+applied to ``cli_bridge/capability.py``); this block exists to make the
+separation auditable and prevent recurrence. The allowlist is enforced by
+``test_no_unauthorized_env_secret_reads`` in ``tests/llm/test_cli_backends.py``.
 """
 
 import json
@@ -61,6 +81,10 @@ _TOTAL_PHASES = 3
 
 def _max_seconds() -> int:
     """Resolve the per-job subprocess ceiling from the environment."""
+    # NOTE: ICDEV_CLI_BRIDGE_MAX_SECONDS is a documented ICDEV_* routing
+    # override (hard ceiling for a single CLI invocation), NOT a credential.
+    # SIPA env_secret false positive has hit this site before — see module
+    # docstring "Env-var scope (auditable)".
     raw = os.environ.get("ICDEV_CLI_BRIDGE_MAX_SECONDS")
     try:
         val = int(raw) if raw else DEFAULT_MAX_SECONDS
@@ -71,6 +95,10 @@ def _max_seconds() -> int:
 
 def _max_concurrent() -> int:
     """Resolve the concurrency cap from the environment."""
+    # NOTE: ICDEV_CLI_BRIDGE_MAX_CONCURRENT is a documented ICDEV_* routing
+    # override (max concurrent CLI subprocesses), NOT a credential. SIPA
+    # env_secret false positive has hit this site before — see module
+    # docstring "Env-var scope (auditable)".
     raw = os.environ.get("ICDEV_CLI_BRIDGE_MAX_CONCURRENT")
     try:
         val = int(raw) if raw else DEFAULT_MAX_CONCURRENT
@@ -81,6 +109,10 @@ def _max_concurrent() -> int:
 
 def _cli_binary() -> str:
     """Resolve the Claude CLI binary name/path (``ICDEV_CLI_BRIDGE_BINARY``)."""
+    # NOTE: ICDEV_CLI_BRIDGE_BINARY is a documented ICDEV_* routing override
+    # (binary name/path the subprocess backend runs), NOT a credential. SIPA
+    # env_secret false positive has hit this site before — see module
+    # docstring "Env-var scope (auditable)".
     return os.environ.get("ICDEV_CLI_BRIDGE_BINARY") or "claude"
 
 
