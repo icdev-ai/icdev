@@ -43,6 +43,20 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 python tools/llm/reasoned_codegen_advisor.py --function code_generation --spec "..." --file-count 5 --json  # advise enable/mode
 python tools/anvil/agentic_runner.py --task-id X --task-desc "..." --reasoned auto   # auto|on|off
 # Dashboard panel: /ops/llm (config view + advisor runner + recent chain runs)
+
+# CLI Bridge (per-page Claude Code CLI toggle + interactive prompt panel)
+# Library: tools/llm/cli_bridge/activate.py (chain prepend), tools/llm/router.py (ContextVar override)
+# Middleware: tools/dashboard/api/cli_bridge_api.py — register_cli_bridge(app) (auto-wired in app.py)
+# Endpoints:
+#   GET  /api/cli-bridge/status   # enabled, available, state (active/missing/off), last provider/model
+#   POST /api/cli-bridge/prompt   # {"prompt", "function"?, "force_bridge"?} -> {"content", "provider", "model", "duration_ms"}
+# Cookie: icdev_cli_bridge = on|off|true|false|1|0|yes|no (header X-ICDEV-CLI-Bridge overrides cookie)
+# Front-end includes: tools/dashboard/templates/includes/cli_bridge_indicator.html (status pill),
+#                     tools/dashboard/templates/includes/cli_bridge_panel.html (slide-out prompt)
+# Env: ICDEV_CLI_BRIDGE=1 forces on; ICDEV_CLI_BRIDGE_BACKEND=auto|subprocess|mailbox; ICDEV_CLI_HEADLESS=1 bypass probe
+curl -s http://localhost:5050/api/cli-bridge/status | python -m json.tool
+curl -s -X POST http://localhost:5050/api/cli-bridge/prompt -H 'Content-Type: application/json' \
+     -d '{"prompt":"Summarize the dashboard nav links","force_bridge":true}' | python -m json.tool
 ```
 
 ---
