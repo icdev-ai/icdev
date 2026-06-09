@@ -201,6 +201,24 @@ class TestReadmeContent:
         content = _readme_content("myproj", "api")
         assert "compliance/" in content
 
+    def test_readme_includes_storage_policy_section(self):
+        """Every child-app README must document the storage policy
+        (PG primary, SQLite init-only, RLS organization-bled, append-only
+        audit trail). See pgp-ca-02-d3."""
+        content = _readme_content("myproj", "api")
+        assert "## Storage Policy" in content
+        assert "PostgreSQL is the primary database" in content
+        assert "SQLite is a thin init/seed/migrate fallback ONLY" in content
+        assert "Row-Level Security" in content
+        assert "organization-bled" in content
+        assert "append-only/immutable" in content
+
+    def test_storage_policy_appears_for_every_project_type(self):
+        """The storage policy must appear regardless of project type."""
+        for ptype in ("python-backend", "javascript-frontend", "api", "cli", "data-pipeline"):
+            content = _readme_content("x", ptype)
+            assert "## Storage Policy" in content, f"missing in {ptype}"
+
 
 # ---------------------------------------------------------------------------
 # TestCommonGitignore
