@@ -56,12 +56,6 @@ CONCRETE_BACKENDS = (BACKEND_SUBPROCESS, BACKEND_MAILBOX)
 # ``auto`` / ``subprocess`` / ``mailbox``; anything else is ignored.
 BACKEND_ENV = "ICDEV_CLI_BRIDGE_BACKEND"
 
-# Resolved-backend → dotted module exposing ``dispatch(job_id, backend)``.
-_BACKEND_MODULES = {
-    BACKEND_SUBPROCESS: "tools.llm.cli_bridge.subprocess_backend",
-    BACKEND_MAILBOX: "tools.llm.cli_bridge.mailbox_backend",
-}
-
 
 def resolve_backend(configured: str) -> str:
     """Resolve a configured backend to a concrete ``subprocess``/``mailbox`` label.
@@ -163,17 +157,26 @@ def _resolve_backend_dispatcher(backend: str) -> Optional[Callable[[str, str], N
     worker has not landed yet — this returns ``None`` and the job is left pending:
     the soft-wait elapses and the caller is deferred (chat) or falls back
     (non-chat), while the row stays enqueued for a worker to claim later.
-    """
-    module_path = _BACKEND_MODULES.get(backend)
-    if not module_path:
-        return None
-    try:
-        import importlib
 
-        module = importlib.import_module(module_path)
-    except Exception:
-        return None
-    return getattr(module, "dispatch", None)
+    Uses a static ``import`` per concrete backend (rather than
+    ``importlib.import_module``) so the SIPA capability extractor does not flag
+    this dispatch seam as ``dynamic_code``; each backend module is referenced
+    verbatim by name, and the soft failure on a missing module preserves the
+    original semantics.
+    """
+    if backend == BACKEND_SUBPROCESS:
+        try:
+            from tools.llm.cli_bridge import subprocess_backend as module  # noqa: F401
+        except Exception:
+            return None
+        return getattr(module, "dispatch", None)
+    if backend == BACKEND_MAILBOX:
+        try:
+            from tools.llm.cli_bridge import mailbox_backend as module  # noqa: F401
+        except Exception:
+            return None
+        return getattr(module, "dispatch", None)
+    return None
 
 
 class CLILLMProvider(LLMProvider):
