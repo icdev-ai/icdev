@@ -27,11 +27,17 @@ _BACKEND = os.environ.get(
 
 
 def get_connection():
+    """Get a database connection — SQLite or PostgreSQL.
+
+    Uses get_canvas_connection() for PostgreSQL because aadc_* tables have no
+    tenant_id/classification columns; get_connection() would inject RLS and
+    raise UndefinedColumn on every query.
+    """
     if _BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
-            return _icdev_conn(db_path=os.environ.get("AADC_PG_DATABASE", "agentic_ai_canvas"))
-        except ImportError:
+            from tools.db.storage import get_canvas_connection
+            return get_canvas_connection("AADC_PG_DATABASE")
+        except Exception:
             pass
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
