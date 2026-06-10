@@ -625,13 +625,44 @@ def _create_worktree(task_id: str) -> Optional[str]:
                 "git worktree add failed for %s (rc=%d): %s",
                 task_id, result.returncode, result.stderr.strip(),
             )
-            # Directory may have been created as an empty shell — prune it so
-            # the next dispatch starts clean rather than hitting the orphan path.
-            import shutil as _shutil
-            _shutil.rmtree(worktree_path, ignore_errors=True)
-            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
-                    capture_output=True, text=True, timeout=10)
-            return None
+            # Retry: branch delete may have failed silently — retry delete then recreate.
+            _sp.run(
+                ["git", "branch", "-D", branch_name],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            )
+            retry = _sp.run(
+                ["git", "worktree", "add", "-b", branch_name, str(worktree_path)],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+            )
+            if retry.returncode != 0:
+                # Both -b attempts failed — branch ref is locked on Windows.
+                # Force-reset the existing branch ref to current HEAD via
+                # `git branch -f` (moves the pointer without touching the lock),
+                # then use `git worktree add` without -b to check out that branch.
+                _sp.run(
+                    ["git", "branch", "-f", branch_name, "HEAD"],
+                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+                )
+                fallback = _sp.run(
+                    ["git", "worktree", "add", str(worktree_path), branch_name],
+                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+                )
+                if fallback.returncode != 0:
+                    logger.warning(
+                        "git worktree add all attempts failed for %s: %s",
+                        task_id, fallback.stderr.strip(),
+                    )
+                    # Directory may have been created as an empty shell — prune it so
+                    # the next dispatch starts clean rather than hitting the orphan path.
+                    import shutil as _shutil
+                    _shutil.rmtree(worktree_path, ignore_errors=True)
+                    _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+                            capture_output=True, text=True, timeout=10)
+                    return None
+                else:
+                    logger.info(
+                        "Recreated worktree for %s via branch-force fallback", task_id
+                    )
         # Verify the worktree was actually registered: git populates a .git
         # *file* (not a directory) in the worktree root on success.
         if not (worktree_path / ".git").exists():
