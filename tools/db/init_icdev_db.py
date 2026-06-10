@@ -5490,6 +5490,7 @@ CREATE TABLE IF NOT EXISTS proposal_section_dependencies (
     dependency_type TEXT DEFAULT 'content' CHECK(dependency_type IN (
         'content', 'data', 'approval', 'pricing')),
     required_status TEXT DEFAULT 'drafting',
+    classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_prop_dep_section ON proposal_section_dependencies(section_id);
@@ -5577,6 +5578,7 @@ CREATE TABLE IF NOT EXISTS proposal_status_history (
     new_status TEXT NOT NULL,
     changed_by TEXT,
     reason TEXT,
+    classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_prop_hist_entity ON proposal_status_history(entity_type, entity_id);

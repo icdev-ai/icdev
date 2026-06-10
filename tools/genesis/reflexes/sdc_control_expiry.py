@@ -142,8 +142,8 @@ def _llm_severity_triage(
     on failure / when the LLM is unavailable.
     """
     try:
-        import anthropic  # noqa: PLC0415
-        client = anthropic.Anthropic()
+        from tools.llm.anthropic_provider import anthropic_sdk  # noqa: PLC0415
+        client = anthropic_sdk.Anthropic()
     except Exception:
         return None
 
