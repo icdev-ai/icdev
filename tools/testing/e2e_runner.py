@@ -46,6 +46,10 @@ from tools.testing.utils import (  # noqa: E402
     make_run_id,
     setup_logger,
 )
+from tools.testing.cleanup_utils import (  # noqa: E402
+    install_graceful_shutdown,
+    run_with_cleanup,
+)
 
 
 _NATIVE_TIMEOUT_SECONDS: int = 1200  # 60s server start + ~1140s for 88 tests (20 min safety margin)
@@ -248,7 +252,7 @@ def run_playwright_native(
     logger.info("e2e_runner: command: %s", " ".join(cmd))
 
     try:
-        proc = subprocess.run(
+        proc = run_with_cleanup(
             cmd,
             capture_output=True,
             text=True,
@@ -486,7 +490,7 @@ def _execute_via_claude(
     ]
 
     try:
-        proc = subprocess.run(
+        proc = run_with_cleanup(
             cmd,
             capture_output=True,
             text=True,
@@ -740,7 +744,7 @@ def run_selenium(
     logger.info("e2e_runner: PYTHONPATH=%s", env["PYTHONPATH"])
 
     try:
-        proc = subprocess.run(
+        proc = run_with_cleanup(
             cmd,
             capture_output=True,
             text=True,
@@ -905,6 +909,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     run_id = args.run_id or make_run_id()
     logger = setup_logger(run_id, "e2e_runner")
+    install_graceful_shutdown(logger)
     logger.info("e2e_runner: mode=%s", mode)
 
     if args.run_all:

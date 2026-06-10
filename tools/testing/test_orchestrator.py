@@ -46,6 +46,10 @@ from tools.testing.utils import (  # noqa: E402
     setup_logger,
     timestamp_iso,
 )
+from tools.testing.cleanup_utils import (  # noqa: E402
+    install_graceful_shutdown,
+    run_with_cleanup,
+)
 
 
 # ── Constants ───────────────────────────────────────────────────────────
@@ -125,7 +129,7 @@ def run_py_compile(
     errors: List[str] = []
     for py_file in py_files[:_PY_COMPILE_FILE_LIMIT]:
         try:
-            proc = subprocess.run(
+            proc = run_with_cleanup(
                 [sys.executable, "-m", "py_compile", py_file],
                 capture_output=True,
                 text=True,
@@ -171,7 +175,7 @@ def run_ruff(
     )
     for cmd in cmd_variants:
         try:
-            proc = subprocess.run(
+            proc = run_with_cleanup(
                 cmd,
                 capture_output=True,
                 text=True,
@@ -348,7 +352,7 @@ def run_bandit(
         "-f", "json", "--severity-level", "medium",
     ]
     try:
-        proc = subprocess.run(
+        proc = run_with_cleanup(
             cmd,
             capture_output=True,
             text=True,
@@ -442,7 +446,7 @@ def run_pytest(
         "--no-header",
     ]
     try:
-        proc = subprocess.run(
+        proc = run_with_cleanup(
             cmd,
             capture_output=True,
             text=True,
@@ -508,7 +512,7 @@ def run_behave(
         "--no-capture",
     ]
     try:
-        subprocess.run(
+        run_with_cleanup(
             cmd,
             capture_output=True,
             text=True,
@@ -937,7 +941,7 @@ def _run_coherence_check(project_dir: str, log: logging.Logger) -> None:
         "--all", "--fix", "--gate", "--json",
     ]
     try:
-        proc = subprocess.run(
+        proc = run_with_cleanup(
             cmd,
             capture_output=True,
             text=True,
@@ -996,7 +1000,7 @@ def _run_agentic_tests(
             str(templates_dir), "-v", "--tb=short", "--no-header",
         ]
         try:
-            proc = subprocess.run(
+            proc = run_with_cleanup(
                 cmd,
                 capture_output=True,
                 text=True,
@@ -1125,6 +1129,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     run_id = make_run_id()
     logger = setup_logger(run_id, "test_orchestrator")
+    install_graceful_shutdown(logger)
     run_dir = ensure_run_dir(run_id)
 
     logger.info("ICDEV™ Test Orchestrator — run_id=%s", run_id)

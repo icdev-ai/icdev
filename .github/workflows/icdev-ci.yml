@@ -41,6 +41,16 @@ jobs:
           pip install -e . 2>/dev/null || true
       - name: Run core unit tests
         run: |
+          _abort() {
+            echo "CI: abort signal received — terminating pytest children"
+            # Kill direct children of this shell (pytest, coverage, etc.)
+            children=$(ps -o pid= --ppid $$ 2>/dev/null || true)
+            for child in $children; do
+              kill "$child" 2>/dev/null || true
+            done
+            kill -- -$$ 2>/dev/null || true
+          }
+          trap _abort SIGTERM SIGINT
           pytest tests/test_circuit_breaker.py \
             tests/test_retry.py \
             tests/test_correlation.py \
@@ -99,6 +109,13 @@ jobs:
 
       - name: Verify two-tier LLM routing
         run: |
+          _abort() {
+            echo "CI: abort signal received — terminating LLM test children"
+            children=$(ps -o pid= --ppid $$ 2>/dev/null || true)
+            for child in $children; do kill "$child" 2>/dev/null || true; done
+            kill -- -$$ 2>/dev/null || true
+          }
+          trap _abort SIGTERM SIGINT
           python -c "
           from tools.llm.router import LLMRouter, LLMRequest
           r = LLMRouter()
@@ -120,7 +137,9 @@ jobs:
         continue-on-error: true
 
       - name: QDC engine self-test
-        run: python tools/qdc_canvas/qdc_engine.py
+        run: |
+          trap 'children=$(ps -o pid= --ppid $$ 2>/dev/null || true); for child in $children; do kill "$child" 2>/dev/null || true; done; kill -- -$$ 2>/dev/null || true' SIGTERM SIGINT
+          python tools/qdc_canvas/qdc_engine.py
         continue-on-error: true
 
   # ── Tier 2: E2E Playwright Tests ─────────────────────────────────────────
@@ -190,10 +209,47 @@ jobs:
             curl -sf http://localhost:5050/ && break || sleep 1
           done
       - name: Run Playwright E2E tests
-        run: npx playwright test
+        run: |
+          _abort() {
+            echo "CI: abort signal received during E2E — terminating Playwright children"
+            children=$(ps -o pid= --ppid $$ 2>/dev/null || true)
+            for child in $children; do kill "$child" 2>/dev/null || true; done
+            kill -- -$$ 2>/dev/null || true
+          }
+          trap _abort SIGTERM SIGINT
+          npx playwright test
       - name: Stop dashboard server
         if: always()
-        run: kill $(cat /tmp/dashboard.pid) 2>/dev/null || true
+        run: |
+          if [ -f /tmp/dashboard.pid ]; then
+            PID=$(cat /tmp/dashboard.pid)
+            kill "$PID" 2>/dev/null || true
+            sleep 1
+            kill -0 "$PID" 2>/dev/null && kill -9 "$PID" 2>/dev/null || true
+          fi
+          # Best-effort PG backend cleanup for any idle-in-transaction leaks
+          # spawned by the dashboard or test runners
+          python -c "
+          import os, sys
+          sys.path.insert(0, '.')
+          try:
+              from tools.db.storage import get_connection
+              conn = get_connection()
+              cur = conn.cursor()
+              cur.execute(\"\"\"
+                  SELECT pg_terminate_backend(pid)
+                  FROM pg_stat_activity
+                  WHERE datname = current_database()
+                    AND state = 'idle in transaction'
+                    AND backend_start < NOW() - INTERVAL '2 minutes'
+              \"\"\")
+              conn.commit()
+              cur.close()
+              conn.close()
+              print('PG idle-in-transaction cleanup: done')
+          except Exception as e:
+              print(f'PG cleanup skipped: {e}')
+          " 2>/dev/null || true
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4

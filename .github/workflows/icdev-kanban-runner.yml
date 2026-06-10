@@ -161,6 +161,13 @@ jobs:
       # Falls back to static ANVIL wrappers if no LLM key is available.
       - name: Agentic — Execute Task
         run: |
+          _abort() {
+            echo "CI: abort signal received during agentic execution — terminating children"
+            children=$(ps -o pid= --ppid $$ 2>/dev/null || true)
+            for child in $children; do kill "$child" 2>/dev/null || true; done
+            kill -- -$$ 2>/dev/null || true
+          }
+          trap _abort SIGTERM SIGINT
           TASK_ID="${{ github.event.inputs.task_id }}"
           TASK_TYPE="${{ github.event.inputs.task_type }}"
           TASK_DESC="${{ github.event.inputs.task_desc }}"
@@ -195,7 +202,35 @@ jobs:
 
       - name: Stop dashboard server
         if: always()
-        run: kill $(cat /tmp/dashboard.pid 2>/dev/null) 2>/dev/null || true
+        run: |
+          if [ -f /tmp/dashboard.pid ]; then
+            PID=$(cat /tmp/dashboard.pid)
+            kill "$PID" 2>/dev/null || true
+            sleep 1
+            kill -0 "$PID" 2>/dev/null && kill -9 "$PID" 2>/dev/null || true
+          fi
+          # Best-effort idle-in-transaction backend sweep
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          try:
+              from tools.db.storage import get_connection
+              conn = get_connection()
+              cur = conn.cursor()
+              cur.execute(\"\"\"
+                  SELECT pg_terminate_backend(pid)
+                  FROM pg_stat_activity
+                  WHERE datname = current_database()
+                    AND state = 'idle in transaction'
+                    AND backend_start < NOW() - INTERVAL '2 minutes'
+              \"\"\")
+              conn.commit()
+              cur.close()
+              conn.close()
+              print('PG idle-in-transaction cleanup: done')
+          except Exception as e:
+              print(f'PG cleanup skipped: {e}')
+          " 2>/dev/null || true
 
       # ── Branch + PR for EVERY task (branch→V&V→MR discipline) ─────────────
       # Runs only when the agent step succeeded (a failed run falls through to
