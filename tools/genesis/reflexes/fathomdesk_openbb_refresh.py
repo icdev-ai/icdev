@@ -78,8 +78,8 @@ def _llm_recommend_threshold(n_tickers: int, mean: float, std: float, model: str
     Clamps output to [ANOMALY_ZSCORE_MIN, ANOMALY_ZSCORE_MAX].
     """
     try:
-        import anthropic
-        client = anthropic.Anthropic()
+        from tools.llm.anthropic_provider import anthropic_sdk
+        client = anthropic_sdk.Anthropic()
         msg = client.messages.create(
             model=model,
             max_tokens=16,
@@ -162,9 +162,9 @@ def _llm_analyze_anomalies(
     if not anomalous:
         return None
     try:
-        import anthropic  # optional dependency
+        from tools.llm.anthropic_provider import anthropic_sdk  # optional dependency
 
-        client = anthropic.Anthropic()
+        client = anthropic_sdk.Anthropic()
         ticker_list = ", ".join(
             f"{t}={v:+.1f}%" for t, v in sorted(anomalous.items())
         )

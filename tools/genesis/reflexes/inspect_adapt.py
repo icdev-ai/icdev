@@ -199,14 +199,13 @@ def _nlp_extract_patterns(lessons: List[Dict[str, Any]]) -> Dict[str, Any]:
     Returns a dict with keys: systemic_patterns, root_cause_themes, recommendation.
     Falls back to empty dict if anthropic is unavailable or the call fails.
     """
-    try:
-        import anthropic  # noqa: PLC0415
-    except ImportError:
+    from tools.llm.anthropic_provider import anthropic_sdk  # noqa: PLC0415
+    if anthropic_sdk is None:
         logger.debug("anthropic not available; skipping NLP pattern extraction")
         return {}
 
     model = os.environ.get("ICDEV_NLP_MODEL", "claude-haiku-4-5-20251001")
-    client = anthropic.Anthropic()
+    client = anthropic_sdk.Anthropic()
 
     lesson_texts: List[str] = []
     for i, lesson in enumerate(lessons[:_NLP_LESSON_CAP]):  # cap to control token spend

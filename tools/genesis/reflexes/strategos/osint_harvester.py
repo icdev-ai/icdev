@@ -903,9 +903,9 @@ def _detect_anomalies(config: Dict[str, Any], harvested: int, tier: str) -> Dict
     )
 
     try:
-        import anthropic  # noqa: PLC0415
+        from tools.llm.anthropic_provider import anthropic_sdk  # noqa: PLC0415
 
-        client = anthropic.Anthropic()
+        client = anthropic_sdk.Anthropic()
         msg = client.messages.create(
             model=model,
             max_tokens=150,

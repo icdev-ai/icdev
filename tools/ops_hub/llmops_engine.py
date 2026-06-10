@@ -242,7 +242,7 @@ def get_recent_chain_runs(limit: int = 25, function: str = "") -> list[dict]:
         from tools.db.storage import get_connection
 
         conn = get_connection()
-        conn.set_security_context(None)  # llm_chain_telemetry lacks tenant_id/classification
+        conn.set_security_context(None)  # rls-bypass: llm_chain_telemetry lacks tenant_id/classification
         try:
             where = "WHERE function = ?" if function else ""
             params: tuple = (function,) if function else ()
