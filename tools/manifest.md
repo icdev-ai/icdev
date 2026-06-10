@@ -174,6 +174,7 @@
 - [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
 - [AI-ify Canvas (AI-ify)](manifest/ai-ify-canvas.md)
 - [Document Intelligence Canvas (DIC)](manifest/document-intelligence-canvas.md)
+- [Slide Deck Generator (tools/slides/)](manifest/slides.md) — Agentic PPTX generation from ICDEV™ live data — canvases, kanban, genesis, capabilities.
 - [Visualization Kernel (tools/viz/)](manifest/visualization.md) — shared charts/tables/diagrams → PPTX/PNG/SVG/HTML + draw.io/Excalidraw; multimodal AI assist
 
 
