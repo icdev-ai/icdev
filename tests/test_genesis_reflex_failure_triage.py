@@ -25,6 +25,10 @@ def mock_triage(monkeypatch):
 
     import tools.workflow.failure_triage as _ft
     monkeypatch.setattr(_ft, "triage_once", _fake)
+    # arc-cal-02: also stub resolve_outcomes and rolling_precision so the
+    # reflex tests don't need a real DB.
+    monkeypatch.setattr(_ft, "resolve_outcomes", lambda **k: {"resolved": 0})
+    monkeypatch.setattr(_ft, "rolling_precision", lambda **k: {"cohorts": []})
     return _set
 
 
@@ -105,3 +109,50 @@ class TestReflexRun:
         assert r["scanned"] == 0
         assert r["applied"] == 0
         assert "error" in r
+
+    def test_resolve_and_precision_results_included(self, reflex, monkeypatch):
+        """arc-cal-02: reflex return dict includes resolved count and
+        precision cohort count."""
+        import tools.workflow.failure_triage as _ft
+
+        monkeypatch.setattr(_ft, "triage_once", lambda **k: {
+            "failures_scanned": 0, "results": [],
+            "autofix_enabled": False, "apply_mode": True,
+        })
+        monkeypatch.setattr(_ft, "resolve_outcomes", lambda **k: {
+            "resolved": 3, "error": None, "details": [{"id": "o1", "held": "held"}],
+        })
+        monkeypatch.setattr(_ft, "rolling_precision", lambda **k: {
+            "window_days": 7, "cohorts": [
+                {"task_type": "fix", "signature_class": "null_deref",
+                 "applied_count": 2, "held_count": 1, "precision": 0.5},
+            ],
+        })
+
+        r = reflex.run({}, None)
+        assert r["resolved"] == 3
+        assert r["resolution_error"] is None
+        assert r["precision_cohorts"] == 1
+        assert r["precision_error"] is None
+
+    def test_resolve_precision_error_surfaces_gracefully(self, reflex, monkeypatch):
+        """arc-cal-02: if resolve_outcomes or rolling_precision fail, the
+        reflex still returns successfully and surfaces the error field."""
+        import tools.workflow.failure_triage as _ft
+
+        monkeypatch.setattr(_ft, "triage_once", lambda **k: {
+            "failures_scanned": 0, "results": [],
+            "autofix_enabled": False, "apply_mode": True,
+        })
+        monkeypatch.setattr(_ft, "resolve_outcomes", lambda **k: {
+            "resolved": 0, "error": "db_locked", "details": [],
+        })
+        monkeypatch.setattr(_ft, "rolling_precision", lambda **k: {
+            "window_days": 30, "cohorts": [], "error": "db_locked",
+        })
+
+        r = reflex.run({}, None)
+        assert r["resolved"] == 0
+        assert r["resolution_error"] == "db_locked"
+        assert r["precision_cohorts"] == 0
+        assert r["precision_error"] == "db_locked"

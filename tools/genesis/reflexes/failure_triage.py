@@ -14,9 +14,10 @@ is also set. All edits are confined to a fresh ``.tmp/autofix/<task>__
 
 Returns: ``{"scanned": N, "applied": N, "suggested": N, "skipped": N}``
 """
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
+
+IMPLEMENTATION_STATUS = "full"
 
 import sys
 from pathlib import Path
@@ -40,7 +41,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         per cycle so a sudden burst of failures can't starve the daemon.
     """
     try:
-        from tools.workflow.failure_triage import triage_once
+        from tools.workflow.failure_triage import triage_once, resolve_outcomes, rolling_precision
     except Exception as exc:  # pragma: no cover — defensive import
         logger.warning("failure_triage import failed: %s", exc)
         return {"scanned": 0, "applied": 0, "suggested": 0,
@@ -67,6 +68,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         ):
             suggested += 1
 
+    # arc-cal-02: resolve held/reverted on past applied outcomes
+    resolve_window = int(config.get("resolve_window_days", 7))
+    resolution = resolve_outcomes(window_days=resolve_window)
+
+    # arc-cal-02: rolling precision per cohort (dashboard feed)
+    precision_window = int(config.get("precision_window_days", 30))
+    precision = rolling_precision(window_days=precision_window)
+
     return {
         "scanned": summary.get("failures_scanned", 0),
         "applied": applied,
@@ -74,6 +83,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         "skipped": skipped,
         "autofix_enabled": summary.get("autofix_enabled"),
         "apply_mode": summary.get("apply_mode"),
+        "resolved": resolution.get("resolved", 0),
+        "resolution_error": resolution.get("error"),
+        "precision_cohorts": len(precision.get("cohorts", [])),
+        "precision_error": precision.get("error"),
     }
 
 
