@@ -7,6 +7,7 @@ query and actual LLM invocations are mocked.
 """
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -1313,3 +1314,277 @@ class TestShouldAutoApplySCOverride:
         # 0.67 < 0.85 → blocked at the confidence-threshold gate
         assert allow is False
         assert "sc_confidence" in reason
+
+
+# ---------------------------------------------------------------------------
+# Outcome recording (arc-cal-02)
+# ---------------------------------------------------------------------------
+
+class TestRecordOutcome:
+    def test_records_row_on_diagnosis(self, ft, icdev_db, monkeypatch):
+        monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+        monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+        from tools.db.storage import get_connection
+
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO kanban_tasks (id, title, task_type, status, last_failure_reason) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ("t1", "test", "fix", "failed", "AttributeError: x"),
+            )
+            conn.execute(
+                "INSERT INTO triage_runs (id, started_at) VALUES (?, ?)",
+                ("run-123", "2026-06-09T00:00:00Z"),
+            )
+            conn.commit()
+
+        diag = {
+            "root_cause": "typo", "recommendation": "patch",
+            "confidence": 0.9, "suspect_files": ["tools/foo.py"],
+        }
+        sc_agg = {"consensus_root_cause": "null_deref", "self_consistency_confidence": 0.8}
+        entry = {
+            "apply_result": {"applied": True, "merged_to_main": False},
+            "outcome": "applied_verified_committed",
+        }
+
+        ft._record_triage_outcome(
+            "run-123",
+            {"id": "t1", "task_type": "fix", "last_failure_reason": "AttributeError: x"},
+            diag, sc_agg, entry,
+        )
+
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM triage_outcomes WHERE run_id = ?", ("run-123",),
+            ).fetchall()
+            assert len(rows) == 1
+            assert rows[0]["task_id"] == "t1"
+            assert rows[0]["signature_class"] == "null_deref"
+            assert rows[0]["applied"] == 1
+            assert rows[0]["merged"] == 0
+
+    def test_records_suggested_card_as_not_applied(self, ft, icdev_db, monkeypatch):
+        monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+        monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+        from tools.db.storage import get_connection
+
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO kanban_tasks (id, title, task_type, status, last_failure_reason) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ("t2", "test", "chore", "failed", "TimeoutError"),
+            )
+            conn.execute(
+                "INSERT INTO triage_runs (id, started_at) VALUES (?, ?)",
+                ("run-456", "2026-06-09T00:00:00Z"),
+            )
+            conn.commit()
+
+        diag = {
+            "root_cause": "slow", "recommendation": "quarantine",
+            "confidence": 0.6, "suspect_files": [],
+        }
+        entry = {"outcome": "suggested_card_created"}
+
+        ft._record_triage_outcome(
+            "run-456",
+            {"id": "t2", "task_type": "chore", "last_failure_reason": "TimeoutError"},
+            diag, None, entry,
+        )
+
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM triage_outcomes WHERE run_id = ?", ("run-456",),
+            ).fetchall()
+            assert len(rows) == 1
+            assert rows[0]["task_id"] == "t2"
+            assert rows[0]["applied"] == 0
+            assert rows[0]["recommendation"] == "quarantine"
+            assert rows[0]["confidence_raw"] == pytest.approx(0.6)
+
+
+class TestResolveOutcomes:
+    def test_marks_held_when_task_done(self, ft, icdev_db, monkeypatch):
+        monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+        monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+        from tools.db.storage import get_connection
+
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",
+                ("t1", "x", "done"),
+            )
+            conn.execute(
+                "INSERT INTO triage_runs (id, started_at) VALUES (?, ?)",
+                ("run-1", "2026-06-01T00:00:00Z"),
+            )
+            conn.execute(
+                "INSERT INTO triage_outcomes (id, run_id, task_id, signature, applied, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("o1", "run-1", "t1", "sig-a", 1, "2026-06-09T00:00:00Z"),
+            )
+            conn.commit()
+
+        result = ft.resolve_outcomes(window_days=7)
+        assert result["resolved"] == 1
+        assert result["details"][0]["held"] == "held"
+
+    def test_marks_reverted_when_newer_outcome_exists(self, ft, icdev_db, monkeypatch):
+        monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+        monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+        from tools.db.storage import get_connection
+
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",
+                ("t1", "x", "backlog"),
+            )
+            conn.execute(
+                "INSERT INTO triage_runs (id, started_at) VALUES (?, ?)",
+                ("run-1", "2026-06-01T00:00:00Z"),
+            )
+            conn.execute(
+                "INSERT INTO triage_outcomes (id, run_id, task_id, signature, applied, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("o1", "run-1", "t1", "sig-a", 1, "2026-06-05T00:00:00Z"),
+            )
+            conn.execute(
+                "INSERT INTO triage_outcomes (id, run_id, task_id, signature, applied, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("o2", "run-1", "t1", "sig-a", 1, "2026-06-09T00:00:00Z"),
+            )
+            conn.commit()
+
+        result = ft.resolve_outcomes(window_days=7)
+        assert result["resolved"] == 1
+        assert result["details"][0]["held"] == "reverted"
+
+    def test_leaves_null_when_still_pending(self, ft, icdev_db, monkeypatch):
+        monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+        monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+        from tools.db.storage import get_connection
+
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",
+                ("t1", "x", "backlog"),
+            )
+            conn.execute(
+                "INSERT INTO triage_runs (id, started_at) VALUES (?, ?)",
+                ("run-1", "2026-06-01T00:00:00Z"),
+            )
+            conn.execute(
+                "INSERT INTO triage_outcomes (id, run_id, task_id, signature, applied, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("o1", "run-1", "t1", "sig-a", 1, "2026-06-09T00:00:00Z"),
+            )
+            conn.commit()
+
+        result = ft.resolve_outcomes(window_days=7)
+        assert result["resolved"] == 0
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT held FROM triage_outcomes WHERE id = ?", ("o1",),
+            ).fetchone()
+            assert row["held"] is None
+
+
+class TestRollingPrecision:
+    def test_computes_precision_per_cohort(self, ft, icdev_db, monkeypatch):
+        monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+        monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+        from tools.db.storage import get_connection
+
+        with get_connection() as conn:
+            conn.execute("INSERT INTO triage_runs (id, started_at) VALUES (?, ?)", ("run-1", "2026-06-01T00:00:00Z"))
+            # Cohort A: fix/null_deref — 2 applied, 1 held → precision 0.5
+            conn.execute(
+                "INSERT INTO triage_outcomes (id, run_id, task_id, signature, signature_class, task_type, applied, held, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("o1", "run-1", "t1", "s1", "null_deref", "fix", 1, "held", "2026-06-09T00:00:00Z"),
+            )
+            conn.execute(
+                "INSERT INTO triage_outcomes (id, run_id, task_id, signature, signature_class, task_type, applied, held, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("o2", "run-1", "t2", "s2", "null_deref", "fix", 1, "reverted", "2026-06-09T00:00:00Z"),
+            )
+            # Cohort B: build/import — 1 applied, 0 held → precision 0.0
+            conn.execute(
+                "INSERT INTO triage_outcomes (id, run_id, task_id, signature, signature_class, task_type, applied, held, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("o3", "run-1", "t3", "s3", "import", "build", 1, None, "2026-06-09T00:00:00Z"),
+            )
+            conn.commit()
+
+        result = ft.rolling_precision(window_days=7)
+        assert result["window_days"] == 7
+        assert len(result["cohorts"]) == 2
+
+        fix_cohort = next(c for c in result["cohorts"] if c["task_type"] == "fix")
+        assert fix_cohort["applied_count"] == 2
+        assert fix_cohort["held_count"] == 1
+        assert fix_cohort["precision"] == 0.5
+
+        build_cohort = next(c for c in result["cohorts"] if c["task_type"] == "build")
+        assert build_cohort["applied_count"] == 1
+        assert build_cohort["held_count"] == 0
+        assert build_cohort["precision"] == 0.0
+
+    def test_empty_window_returns_empty_cohorts(self, ft, icdev_db, monkeypatch):
+        monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+        monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+        result = ft.rolling_precision(window_days=7)
+        assert result["cohorts"] == []
+        assert "error" not in result
+
+
+class TestCLIResolvePrecision:
+    def test_resolve_subcommand_json(self, ft, monkeypatch, icdev_db, capsys):
+        monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+        monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+        from tools.db.storage import get_connection
+
+        with get_connection() as conn:
+            conn.execute("INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)", ("t1", "x", "done"))
+            conn.execute("INSERT INTO triage_runs (id, started_at) VALUES (?, ?)", ("run-1", "2026-06-01T00:00:00Z"))
+            conn.execute(
+                "INSERT INTO triage_outcomes (id, run_id, task_id, signature, applied, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("o1", "run-1", "t1", "sig-a", 1, "2026-06-09T00:00:00Z"),
+            )
+            conn.commit()
+
+        rc = ft.main(["resolve", "--json", "--window-days", "7"])
+        captured = capsys.readouterr()
+        assert rc == 0
+        data = json.loads(captured.out)
+        assert data["resolved"] == 1
+
+    def test_precision_subcommand_json(self, ft, monkeypatch, icdev_db, capsys):
+        monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+        monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+        from tools.db.storage import get_connection
+
+        with get_connection() as conn:
+            conn.execute("INSERT INTO triage_runs (id, started_at) VALUES (?, ?)", ("run-1", "2026-06-01T00:00:00Z"))
+            conn.execute(
+                "INSERT INTO triage_outcomes (id, run_id, task_id, signature, signature_class, task_type, applied, held, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("o1", "run-1", "t1", "s1", "null_deref", "fix", 1, "held", "2026-06-09T00:00:00Z"),
+            )
+            conn.commit()
+
+        rc = ft.main(["precision", "--json", "--window-days", "7"])
+        captured = capsys.readouterr()
+        assert rc == 0
+        data = json.loads(captured.out)
+        assert data["window_days"] == 7
+        assert len(data["cohorts"]) == 1
+
+    def test_run_subcommand_is_default(self, ft, monkeypatch, capsys):
+        monkeypatch.setattr(ft, "find_recent_failures", lambda **k: [])
+        rc = ft.main([])
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert "Scanned 0 failures" in captured.out

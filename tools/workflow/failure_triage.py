@@ -48,6 +48,7 @@ import os
 import re
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -159,6 +160,224 @@ AUTOFIX_ENV = "ICDEV_AUTOFIX_ENABLED"
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+# ---------------------------------------------------------------------------
+# Triage audit — append-only rows in triage_runs + triage_outcomes
+# ---------------------------------------------------------------------------
+
+def _record_triage_run_start() -> str:
+    """Insert a triage_runs row and return the run id."""
+    try:
+        from tools.db.storage import get_connection
+    except Exception as exc:
+        logger.warning("failure_triage: storage import failed: %s", exc)
+        return ""
+    run_id = str(uuid.uuid4())
+    now = _utcnow().isoformat()
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO triage_runs (id, started_at, scanned, applied, suggested, autofix_enabled) "
+                "VALUES (?, ?, 0, 0, 0, ?)",
+                (run_id, now, 1 if autofix_enabled() else 0),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("failure_triage: triage_runs insert failed: %s", exc)
+    return run_id
+
+
+def _record_triage_run_finish(
+    run_id: str, scanned: int, applied: int, suggested: int
+) -> None:
+    """Update the triage_runs row with final counts and finished_at."""
+    if not run_id:
+        return
+    try:
+        from tools.db.storage import get_connection, sql_now
+    except Exception as exc:
+        logger.warning("failure_triage: storage import failed: %s", exc)
+        return
+    try:
+        with get_connection() as conn:
+            ph = sql_placeholder(conn)
+            conn.execute(
+                f"UPDATE triage_runs SET finished_at = {sql_now(conn)}, "
+                f"scanned = {ph}, applied = {ph}, suggested = {ph} "
+                f"WHERE id = {ph}",
+                (scanned, applied, suggested, run_id),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("failure_triage: triage_runs finish failed: %s", exc)
+
+
+def _record_triage_outcome(
+    run_id: str,
+    task: Dict[str, Any],
+    diag: Dict[str, Any],
+    sc_agg: Optional[Dict[str, Any]],
+    entry: Dict[str, Any],
+) -> None:
+    """Insert one triage_outcomes row for this task's diagnosis / apply."""
+    if not run_id:
+        return
+    try:
+        from tools.db.storage import get_connection, sql_placeholder
+        from tools.workflow.self_debug import failure_signature
+    except Exception as exc:
+        logger.warning("failure_triage: storage import failed: %s", exc)
+        return
+    sig = failure_signature(task.get("last_failure_reason") or "")
+    sig_class = ""
+    if sc_agg:
+        sig_class = sc_agg.get("consensus_root_cause") or ""
+    if not sig_class:
+        sig_class = _sc_classify_root_cause(diag.get("root_cause") or "")
+    rec = (diag.get("recommendation") or "").lower()
+    conf_raw = float(diag.get("confidence") or 0.0)
+    conf_sc = float((sc_agg or {}).get("self_consistency_confidence") or 0.0)
+    gate = entry.get("autofix_gate") or {}
+    gate_decision = (gate.get("reason") or "")[:500]
+    apply_result = entry.get("apply_result") or {}
+    applied_flag = 1 if apply_result.get("applied") else 0
+    verify_rc = apply_result.get("verification_rc")
+    branch = apply_result.get("branch")
+    commit = apply_result.get("commit")
+    merged_flag = 1 if apply_result.get("merged_to_main") else 0
+    now = _utcnow().isoformat()
+    try:
+        with get_connection() as conn:
+            ph = sql_placeholder(conn)
+            conn.execute(
+                f"INSERT INTO triage_outcomes "
+                f"(id, run_id, task_id, signature, signature_class, task_type, "
+                f" recommendation, confidence_raw, confidence_selfconsistency, "
+                f" gate_decision, applied, verify_rc, autofix_branch, autofix_commit, "
+                f" merged, held, created_at) "
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, "
+                f"        {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+                (
+                    str(uuid.uuid4()), run_id, task.get("id"), sig, sig_class,
+                    task.get("task_type"), rec, conf_raw, conf_sc,
+                    gate_decision, applied_flag, verify_rc, branch, commit,
+                    merged_flag, None, now,
+                ),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("failure_triage: triage_outcomes insert failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Outcome resolver — mark held / reverted on past applied patches
+# ---------------------------------------------------------------------------
+
+def resolve_outcomes(window_days: int = 7) -> Dict[str, Any]:
+    """Mark 'held' or 'reverted' on unresolved applied outcomes.
+
+    A patch is 'held' when the source task later reaches 'done' without
+    re-failing the same signature.  It is 'reverted' if a newer triage
+    outcome exists for the same (task_id, signature) — meaning the fix
+    didn't stick and the failure recurred.
+    """
+    try:
+        from tools.db.storage import get_connection, sql_placeholder, sql_date_sub
+    except Exception as exc:
+        logger.warning("failure_triage: storage import failed: %s", exc)
+        return {"resolved": 0, "error": str(exc), "details": []}
+
+    resolved: List[Dict[str, Any]] = []
+    try:
+        with get_connection() as conn:
+            ph = sql_placeholder(conn)
+            cutoff = sql_date_sub(conn, days=window_days)
+            rows = conn.execute(
+                f"SELECT id, task_id, signature, created_at "
+                f"FROM triage_outcomes "
+                f"WHERE applied = 1 AND held IS NULL "
+                f"  AND created_at > {cutoff} "
+                f"ORDER BY created_at ASC"
+            ).fetchall()
+            for r in rows:
+                row = dict(r)
+                # Check for a newer triage outcome on the same signature
+                newer = conn.execute(
+                    f"SELECT 1 FROM triage_outcomes "
+                    f"WHERE task_id = {ph} AND signature = {ph} "
+                    f"  AND created_at > {ph} "
+                    f"LIMIT 1",
+                    (row["task_id"], row["signature"], row["created_at"]),
+                ).fetchone()
+                if newer:
+                    held_val = "reverted"
+                else:
+                    task_status = conn.execute(
+                        f"SELECT status FROM kanban_tasks WHERE id = {ph}",
+                        (row["task_id"],),
+                    ).fetchone()
+                    if task_status and dict(task_status).get("status") == "done":
+                        held_val = "held"
+                    else:
+                        continue  # still pending — leave NULL
+                conn.execute(
+                    f"UPDATE triage_outcomes SET held = {ph} WHERE id = {ph}",
+                    (held_val, row["id"]),
+                )
+                resolved.append(
+                    {"id": row["id"], "task_id": row["task_id"], "held": held_val}
+                )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("failure_triage: resolve_outcomes failed: %s", exc)
+        return {"resolved": 0, "error": str(exc), "details": []}
+    return {"resolved": len(resolved), "details": resolved}
+
+
+# ---------------------------------------------------------------------------
+# Rolling precision — per (task_type, signature_class) over a window
+# ---------------------------------------------------------------------------
+
+def rolling_precision(window_days: int = 30) -> Dict[str, Any]:
+    """Compute rolling precision per (task_type, signature_class).
+
+    precision = held_count / applied_count over the window.
+    """
+    try:
+        from tools.db.storage import get_connection, sql_date_sub
+    except Exception as exc:
+        logger.warning("failure_triage: storage import failed: %s", exc)
+        return {"window_days": window_days, "cohorts": [], "error": str(exc)}
+
+    cohorts: List[Dict[str, Any]] = []
+    try:
+        with get_connection() as conn:
+            cutoff = sql_date_sub(conn, days=window_days)
+            rows = conn.execute(
+                "SELECT task_type, signature_class, "
+                "       SUM(applied) AS applied_count, "
+                "       SUM(CASE WHEN held = 'held' THEN 1 ELSE 0 END) AS held_count "
+                "FROM triage_outcomes "
+                f"WHERE created_at > {cutoff} "
+                "GROUP BY task_type, signature_class "
+                "ORDER BY applied_count DESC"
+            ).fetchall()
+            for r in rows:
+                applied_count = int(r["applied_count"] or 0)
+                held_count = int(r["held_count"] or 0)
+                precision = held_count / applied_count if applied_count else 0.0
+                cohorts.append({
+                    "task_type": r["task_type"] or "unknown",
+                    "signature_class": r["signature_class"] or "unknown",
+                    "applied_count": applied_count,
+                    "held_count": held_count,
+                    "precision": round(precision, 3),
+                })
+    except Exception as exc:
+        logger.warning("failure_triage: rolling_precision failed: %s", exc)
+        return {"window_days": window_days, "cohorts": [], "error": str(exc)}
+    return {"window_days": window_days, "cohorts": cohorts}
 
 
 def find_recent_failures(window_hours: int = DEFAULT_WINDOW_HOURS) -> List[Dict[str, Any]]:
@@ -2023,8 +2242,11 @@ def triage_once(
     individual failure must pass every ``should_auto_apply`` check.
     """
     started = _utcnow().isoformat()
+    run_id = _record_triage_run_start()
     failures = find_recent_failures(window_hours=window_hours)
     results: List[Dict[str, Any]] = []
+    applied_count = 0
+    suggested_count = 0
 
     for task in failures:
         sig = _sig(task.get("last_failure_reason") or "")
@@ -2171,8 +2393,17 @@ def triage_once(
             outcome=entry.get("outcome"),
         )
 
+        # arc-cal-02: record one triage_outcomes row per diagnosis/apply
+        _record_triage_outcome(run_id, task, diag, sc_agg, entry)
+        if entry.get("apply_result", {}).get("applied"):
+            applied_count += 1
+        else:
+            suggested_count += 1
+
         mark_triaged(task["id"], sig, entry)
         results.append(entry)
+
+    _record_triage_run_finish(run_id, len(failures), applied_count, suggested_count)
 
     return {
         "started_at": started,
@@ -2248,29 +2479,77 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Triage recent kanban failures via LLM diagnosis + optional patch generation."
     )
-    p.add_argument("--window-hours", type=int, default=DEFAULT_WINDOW_HOURS,
-                   help=f"Look-back window in hours (default {DEFAULT_WINDOW_HOURS})")
-    p.add_argument("--apply", action="store_true",
-                   help="Request patch generation for high-confidence diagnoses "
-                        "(still requires ICDEV_AUTOFIX_ENABLED=true). "
-                        "Default is diagnose-only.")
-    p.add_argument("--json", dest="as_json", action="store_true",
-                   help="Print result as JSON to stdout")
+    sub = p.add_subparsers(dest="command")
+
+    run_p = sub.add_parser("run", help="One pass over recent failures (default)")
+    run_p.add_argument("--window-hours", type=int, default=DEFAULT_WINDOW_HOURS,
+                       help=f"Look-back window in hours (default {DEFAULT_WINDOW_HOURS})")
+    run_p.add_argument("--apply", action="store_true",
+                       help="Request patch generation for high-confidence diagnoses "
+                            "(still requires ICDEV_AUTOFIX_ENABLED=true). "
+                            "Default is diagnose-only.")
+    run_p.add_argument("--json", dest="as_json", action="store_true",
+                       help="Print result as JSON to stdout")
+
+    resolve_p = sub.add_parser("resolve", help="Mark held/reverted on past applied outcomes")
+    resolve_p.add_argument("--window-days", type=int, default=7,
+                            help="Look-back window in days (default 7)")
+    resolve_p.add_argument("--json", dest="as_json", action="store_true",
+                           help="Print result as JSON to stdout")
+
+    precision_p = sub.add_parser("precision", help="Rolling precision per (task_type, signature_class)")
+    precision_p.add_argument("--window-days", type=int, default=30,
+                             help="Look-back window in days (default 30)")
+    precision_p.add_argument("--json", dest="as_json", action="store_true",
+                             help="Print result as JSON to stdout")
+
     return p
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = _build_parser().parse_args(argv)
+    if not args.command:
+        args.command = "run"
+    # When no subcommand is given, argparse does not populate subparser args.
+    # Fill in the defaults for the implicit "run" command.
+    if args.command == "run":
+        if not hasattr(args, "window_hours"):
+            args.window_hours = DEFAULT_WINDOW_HOURS
+        if not hasattr(args, "apply"):
+            args.apply = False
+        if not hasattr(args, "as_json"):
+            args.as_json = False
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    summary = triage_once(window_hours=args.window_hours, apply=args.apply)
+
+    if args.command == "run":
+        summary = triage_once(window_hours=args.window_hours, apply=args.apply)
+    elif args.command == "resolve":
+        summary = resolve_outcomes(window_days=args.window_days)
+    elif args.command == "precision":
+        summary = rolling_precision(window_days=args.window_days)
+    else:
+        # argparse subparsers prevent this, but keep for type safety
+        summary = {}
+
     if args.as_json:
         print(json.dumps(summary, indent=2, default=str))
     else:
-        print(f"Scanned {summary['failures_scanned']} failures "
-              f"(window {summary['window_hours']}h, apply={summary['apply_mode']}, "
-              f"autofix_env={summary['autofix_enabled']})")
-        for r in summary["results"]:
-            print(f"  - {r['task_id']}: {r['outcome']}")
+        if args.command == "run":
+            print(f"Scanned {summary['failures_scanned']} failures "
+                  f"(window {summary['window_hours']}h, apply={summary['apply_mode']}, "
+                  f"autofix_env={summary['autofix_enabled']})")
+            for r in summary["results"]:
+                print(f"  - {r['task_id']}: {r['outcome']}")
+        elif args.command == "resolve":
+            print(f"Resolved {summary['resolved']} outcomes (window={summary.get('window_days', 7)}d)")
+            for d in summary.get("details", []):
+                print(f"  - {d['id']}: {d['held']}")
+        elif args.command == "precision":
+            print(f"Precision over {summary.get('window_days', 30)} days — {len(summary.get('cohorts', []))} cohorts")
+            for c in summary.get("cohorts", []):
+                print(f"  - {c['task_type']}/{c['signature_class']}: "
+                      f"held={c['held_count']}/{c['applied_count']} "
+                      f"precision={c['precision']}")
     return 0
 
 
