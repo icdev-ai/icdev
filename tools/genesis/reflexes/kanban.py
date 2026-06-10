@@ -1975,6 +1975,41 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
 MAX_FAILURES_BEFORE_DECOMPOSITION = _MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT
 
 
+def _invoke_recovery_guard(
+    task_id: str, new_count: int, _is_test: bool | None = None,
+) -> None:
+    """Bounded auto-restart guard (RECG-1) — best-effort, never raises.
+
+    On the FIRST time a task's failure_count crosses >=5: kill all python
+    and restart dashboard + scheduler. On the SECOND crossing (>=10) after
+    that restart: kill all python and sit dark (no restart) until manual
+    intervention. Bounds the LLM-token cost of a stuck-task feedback loop
+    to ~10 dispatch attempts instead of unbounded 35+.
+
+    Skipped entirely under test so the suite never kills the developer's
+    python processes. ``_is_test`` may be passed by callers that already
+    computed it; otherwise it is derived here. The guard is independent of
+    MAX_FAILURES_BEFORE_DECOMPOSITION — it fires off its own fc thresholds.
+    """
+    if _is_test is None:
+        import os as _os
+        _is_test = bool(
+            task_id.startswith("test-")
+            or _os.environ.get("PYTEST_CURRENT_TEST")
+            or _os.environ.get("ICDEV_SUPPRESS_NOTIFICATIONS") == "1"
+        )
+    if _is_test:
+        return
+    try:
+        from tools.kanban.recovery_guard import check_and_maybe_restart
+        check_and_maybe_restart(task_id, new_count)
+    except Exception as exc:  # noqa: BLE001 — recovery must not block the
+        # primary status transition. Log and move on.
+        logger.warning(
+            "recovery_guard invocation failed for %s: %s", task_id, exc,
+        )
+
+
 def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
     """guard-18: Increment failure_count; flag for decomposition after N fails.
 
@@ -2061,7 +2096,9 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
                         )
                     except Exception:
                         pass
+                _invoke_recovery_guard(task_id, new_count, _is_test)
                 return "needs_decomposition"
+            _invoke_recovery_guard(task_id, new_count)
             return "backlog"
         finally:
             conn.close()

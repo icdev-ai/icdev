@@ -120,7 +120,7 @@ def _create_task(sig: Dict[str, Any]) -> bool:
 
         payload = json.dumps({
             "title": title,
-            "task_type": "bug",
+            "task_type": "fix",
             "priority": "high",
             "status": "backlog",
             "description": "\n".join(description_lines),

@@ -127,6 +127,7 @@ def main():
 
     from tools.genesis.reflexes.kanban import run as kanban_run
     from tools.monitoring.reflex_observer import observe
+    from tools.kanban.balance_scheduler import balance
 
     dummy_config = {"enabled": True, "risk_tier": "green"}
     dummy_trust = None
@@ -298,6 +299,22 @@ def main():
                         _pp.get("reason") or _pp.get("intents") or "")
             time.sleep(args.interval)
             continue
+
+        # ── Rebalance: promote eligible backlog → scheduled ─────────────────
+        try:
+            bal = balance(dry_run=False, max_total_promotions=10, max_per_project=3)
+            if bal.get("promoted"):
+                logger.info(
+                    "Cycle %d: rebalanced %d backlog task(s) to scheduled",
+                    cycle, len(bal["promoted"]),
+                )
+            if bal.get("demoted"):
+                logger.info(
+                    "Cycle %d: demoted %d scheduled task(s) to backlog (blocked deps)",
+                    cycle, len(bal["demoted"]),
+                )
+        except Exception as _bal_exc:
+            logger.warning("Cycle %d: balance_scheduler failed: %s", cycle, _bal_exc)
 
         try:
             # [DISPATCH POINT - main loop]

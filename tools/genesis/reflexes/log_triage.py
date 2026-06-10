@@ -5,7 +5,7 @@
 Two ingestion paths, one shared anomaly scorer + (component, message_hash[:8])
 dedup:
 
-  1. Build log — reads .logs/build.ndjson tail and creates task_type='bug' cards
+  1. Build log — reads .logs/build.ndjson tail and creates task_type='fix' cards
      for each unseen build-failure signature.
   2. centralized_logs autofix bridge (eqo-log-05) — reads ERROR/CRITICAL events
      from the append-only centralized_logs sink (migration 181, eqo-log-01)
@@ -294,7 +294,7 @@ def _create_task(sig: Dict[str, Any]) -> bool:
 
         payload = json.dumps({
             "title": title,
-            "task_type": "bug",
+            "task_type": "fix",
             "priority": priority,
             "status": "backlog",
             "description": "\n".join(description_lines),

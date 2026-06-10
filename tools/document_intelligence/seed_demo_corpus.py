@@ -81,7 +81,8 @@ def _download(url: str, dest: Path) -> int:
     req = urllib.request.Request(url, headers={"User-Agent": _UA})
     with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 (trusted IETF host)
         data = resp.read()
-    dest.write_bytes(data)
+    with open(dest, "wb") as _fh:
+        _fh.write(data)
     return len(data)
 
 

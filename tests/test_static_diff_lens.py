@@ -14,14 +14,12 @@ import sys
 import textwrap
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tools.analysis import static_diff_lens as sdl
 from tools.analysis.static_diff_lens import (
     ChangedRange,
-    FileDiff,
     Finding,
     FunctionSpan,
     _coalesce_ranges,

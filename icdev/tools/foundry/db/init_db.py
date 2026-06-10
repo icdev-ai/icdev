@@ -65,19 +65,29 @@ CREATE INDEX IF NOT EXISTS idx_foundry_runs_status ON foundry_runs(status);
 
 CREATE TABLE IF NOT EXISTS foundry_signals (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id             TEXT    NOT NULL,
+    run_id             TEXT    NOT NULL DEFAULT '',
     source_engine      TEXT    NOT NULL CHECK({_CHK_SOURCE_ENGINE}),
-    source_ref         TEXT    NOT NULL,
+    source_type        TEXT,
+    source_ref         TEXT    NOT NULL DEFAULT '',
     theme              TEXT,
-    raw_score          REAL    DEFAULT 0.0,
     keywords           TEXT    DEFAULT '[]',
+    summary            TEXT    DEFAULT '',
+    severity           TEXT,
+    weight             REAL    DEFAULT 0.5,
+    raw_score          REAL    DEFAULT 0.0,
+    dedup_hash         TEXT    UNIQUE,
+    contributing_engines TEXT    DEFAULT '[]',
+    metadata           TEXT    DEFAULT '{{}}',
+    status             TEXT    NOT NULL DEFAULT 'new',
     tenant_id          TEXT    NOT NULL DEFAULT 'default',
     classification     TEXT    NOT NULL DEFAULT 'CUI',
+    discovered_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_foundry_signals_run ON foundry_signals(run_id);
 CREATE INDEX IF NOT EXISTS idx_foundry_signals_engine ON foundry_signals(source_engine);
 CREATE INDEX IF NOT EXISTS idx_foundry_signals_score ON foundry_signals(raw_score);
+CREATE INDEX IF NOT EXISTS idx_foundry_signals_dedup ON foundry_signals(dedup_hash);
 CREATE INDEX IF NOT EXISTS idx_foundry_signals_tenant ON foundry_signals(tenant_id);
 
 CREATE TABLE IF NOT EXISTS foundry_concepts (
@@ -202,6 +212,9 @@ def init_db(force: bool = False) -> bool:
         logger.warning("foundry db init error: %s", exc)
         return False
 
+
+# Backward-compatible alias (legacy callers / manifest references).
+init_foundry_db = init_db
 
 if __name__ == "__main__":  # pragma: no cover - manual invocation
     ok = init_db(force=True)

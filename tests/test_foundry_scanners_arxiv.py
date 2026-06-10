@@ -15,7 +15,6 @@ Verifies:
 import sys
 from pathlib import Path
 
-import pytest
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -54,7 +53,6 @@ def test_disabled_returns_empty_list():
 def test_no_http_client_returns_empty(monkeypatch):
     """When tools.http.client.request is not importable, scanner must
     silently return [] (air-gap safety). Never raise."""
-    import importlib
 
     # Force the lazy import to fail by hiding tools.http.client.
     monkeypatch.setitem(sys.modules, "tools.http.client", None)

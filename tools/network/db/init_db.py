@@ -13919,16 +13919,11 @@ def init_db():
     conn = get_connection()
     try:
         if _NC_BACKEND == "postgresql":
-            # PostgreSQL: execute each statement individually
-            # ICDEV's StorageConnection translates SQL automatically
-            for stmt in SCHEMA.split(";"):
-                stmt = stmt.strip()
-                if stmt and not stmt.startswith("--"):
-                    try:
-                        conn.execute(stmt)
-                    except Exception:
-                        pass  # table/index already exists
-            conn.commit()
+            # PostgreSQL: use executescript so _pg_exec_statements isolates each
+            # statement in a SAVEPOINT. A single failing statement cannot abort
+            # the whole transaction (unlike the manual loop which caught but did
+            # not rollback, poisoning subsequent DDL).
+            conn.executescript(SCHEMA)
             # PG audit immutability triggers (PL/pgSQL syntax)
             try:
                 conn.execute("""

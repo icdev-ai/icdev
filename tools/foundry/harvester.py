@@ -33,7 +33,6 @@ import hashlib
 import json
 import re
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -137,10 +136,6 @@ TELEMETRY_ANALYSES = ("gate_failures", "unused_tools", "slow_pipelines", "knowle
 # --------------------------------------------------------------------------- #
 def _now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _sig_id():
-    return f"fsig-{uuid.uuid4().hex[:12]}"
 
 
 def _get_conn(db_path=None):
@@ -457,12 +452,12 @@ def persist_signals(conn, signals):
             continue
         conn.execute(
             """INSERT INTO foundry_signals
-               (id, source_engine, source_type, source_ref, theme, keywords,
+               (source_engine, source_type, source_ref, theme, keywords,
                 summary, severity, weight, dedup_hash, contributing_engines,
                 metadata, status, tenant_id, classification, discovered_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', 'default', ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', 'default', ?, ?)""",
             (
-                _sig_id(), sig["source_engine"], sig.get("source_type"),
+                sig["source_engine"], sig.get("source_type"),
                 sig.get("source_ref"), sig["theme"],
                 json.dumps(sig["keywords"]), sig.get("summary", ""),
                 sig.get("severity"), sig.get("weight", 0.5), sig["dedup_hash"],
