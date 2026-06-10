@@ -27,6 +27,10 @@ def get_connection():
             from tools.db.storage import get_connection as _icdev_conn
 
             conn = _icdev_conn(db_path=os.environ.get("PC_PG_DATABASE", "pipeline_canvas"))
+            # Canvas tables (pipelines, pc_templates, pc_snippets, etc.) have no
+            # tenant_id/classification columns — disable RLS so the global
+            # row-level predicate does not raise UndefinedColumn on every query.
+            conn.set_security_context(None)
             return conn
         except ImportError:
             pass
