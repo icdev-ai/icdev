@@ -42,6 +42,9 @@ def get_connection():
 
             # Use ICDEV's storage layer which handles PG translation
             conn = _icdev_conn(db_path=os.environ.get("NC_PG_DATABASE", "network_canvas"))
+            # Canvas tables have no tenant_id/classification columns — disable
+            # RLS so the global row-level predicate does not raise UndefinedColumn.
+            conn.set_security_context(None)
             return conn
         except ImportError:
             pass  # Fall through to SQLite
