@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # CUI // SP-CTI
 """Genesis Reflex — FathomDesk OpenBB Performance Refresh.
 
@@ -12,8 +14,6 @@ Gracefully skips when openbb is not installed (air-gap safe).
 GREEN tier (read + upsert).  Air-gap safe.  COOLDOWN_HOURS=4.
 """
 IMPLEMENTATION_STATUS = "full"
-
-from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
