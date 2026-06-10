@@ -1,0 +1,10 @@
+{
+  "routes": [
+    {
+      "endpoint": "/knowledge_search",
+      "name": "knowledge_search",
+      "description": "Knowledge search route definition",
+      "status": "active"
+    }
+  ]
+}
