@@ -2643,6 +2643,32 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
             else:
                 raise
 
+        # Migration: reconcile data_nodes / data_edges with the authoritative SCHEMA.
+        # Migration 031_ddc_twin_tables created these tables with a minimal shape
+        # (node_id/metadata/source_id/target_id) and ran first on the shared PG
+        # `icdev` DB, so CREATE TABLE IF NOT EXISTS above can never add the richer
+        # graph columns declared in SCHEMA (x/y/properties_json, source_node_id/
+        # target_node_id). Without these, any query reading node positions or edge
+        # endpoints raises UndefinedColumn on PostgreSQL. Add them idempotently.
+        for _table, _col, _coltype, _default in [
+            ("data_nodes", "x", "REAL", "0"),
+            ("data_nodes", "y", "REAL", "0"),
+            ("data_nodes", "properties_json", "TEXT", "'{}'"),
+            ("data_edges", "source_node_id", "TEXT", "''"),
+            ("data_edges", "target_node_id", "TEXT", "''"),
+        ]:
+            try:
+                conn.execute(
+                    f"ALTER TABLE {_table} ADD COLUMN {_col} {_coltype} DEFAULT {_default}"
+                )
+                conn.commit()
+                print(f"[init_db] Migration applied: {_table}.{_col} added.")
+            except Exception as _e:
+                if "duplicate column" in str(_e).lower() or "already exists" in str(_e).lower():
+                    pass  # column already present — idempotent
+                else:
+                    raise
+
         # Seed templates (upsert)
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM dd_templates")
