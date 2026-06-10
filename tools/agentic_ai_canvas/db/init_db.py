@@ -27,11 +27,17 @@ _BACKEND = os.environ.get(
 
 
 def get_connection():
+    """Get a database connection — SQLite or PostgreSQL.
+
+    Uses get_canvas_connection() for PostgreSQL because aadc_* tables have no
+    tenant_id/classification columns; get_connection() would inject RLS and
+    raise UndefinedColumn on every query.
+    """
     if _BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
-            return _icdev_conn(db_path=os.environ.get("AADC_PG_DATABASE", "agentic_ai_canvas"))
-        except ImportError:
+            from tools.db.storage import get_canvas_connection
+            return get_canvas_connection("AADC_PG_DATABASE")
+        except Exception:
             pass
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -317,6 +323,28 @@ CREATE TABLE IF NOT EXISTS aadc_review_comments (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_aadc_review_design ON aadc_review_comments(design_id);
+
+CREATE TABLE IF NOT EXISTS aadc_checkpoints (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL REFERENCES aadc_designs(id) ON DELETE CASCADE,
+    node_id         TEXT DEFAULT '',
+    label           TEXT DEFAULT '',
+    graph_json      TEXT NOT NULL,
+    created_by      TEXT DEFAULT 'user',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_aadc_checkpoints_design ON aadc_checkpoints(design_id);
+
+CREATE TABLE IF NOT EXISTS aadc_parallel_groups (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL REFERENCES aadc_designs(id) ON DELETE CASCADE,
+    label           TEXT DEFAULT 'Parallel Group',
+    color           TEXT DEFAULT '#7e22ce',
+    node_ids_json   TEXT NOT NULL DEFAULT '[]',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_aadc_parallel_groups_design ON aadc_parallel_groups(design_id);
 """
 
 
