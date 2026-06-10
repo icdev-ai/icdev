@@ -91,3 +91,4 @@
 | Auto-added seed_remaining_tasks.py | tools/kanban/seed_remaining_tasks.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added seed_zig_kanban.py | tools/kanban/seed_zig_kanban.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added fathomdesk_openbb_refresh.py | tools/genesis/reflexes/fathomdesk_openbb_refresh.py | (auto-added by remediation; update description) | --json | stdout |
+| CI RCA 27238148559 | docs/audits/ci-fix-27238148559-rca.md | RCA — /network/ 500 already fixed in HEAD by network/PG-primary RLS-bypass commits; no-op close | — | — |
