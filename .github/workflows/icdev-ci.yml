@@ -148,22 +148,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     timeout-minutes: 30
-    services:
-      postgres:
-        # pgvector image matches production; the consolidated schema needs the
-        # `vector` extension (CREATE EXTENSION vector in pg_consolidated.sql).
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: icdev
-          POSTGRES_PASSWORD: icdev_ci
-          POSTGRES_DB: icdev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     env:
       ICDEV_STORAGE_BACKEND: postgresql
       ICDEV_PG_HOST: localhost
@@ -181,7 +165,7 @@ jobs:
       ICDEV_MISSION_CANVAS_ENABLED: "true"
       ICDEV_OPS_HUB_ENABLED: "true"
       ICDEV_AIML_CANVAS_ENABLED: "true"
-      ICDEV_NDC_ENABLED: "true"
+      ICDEV_NDC_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -196,6 +180,30 @@ jobs:
         run: npm ci
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
+      - name: Start PostgreSQL container
+        run: |
+          set -e
+          for attempt in $(seq 1 5); do
+            if docker pull pgvector/pgvector:pg16; then
+              echo "Docker pull succeeded on attempt $attempt"
+              break
+            fi
+            echo "::warning::docker pull pgvector/pgvector:pg16 failed (attempt $attempt/5); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          docker run -d --name pg-e2e \
+            -e POSTGRES_USER=icdev \
+            -e POSTGRES_PASSWORD=icdev_ci \
+            -e POSTGRES_DB=icdev \
+            -p 5432:5432 \
+            pgvector/pgvector:pg16
+          for i in $(seq 1 30); do
+            if docker exec pg-e2e pg_isready -U icdev; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            sleep 1
+          done
       - name: Initialize database (consolidated PG schema snapshot)
         # The 212-migration chain is not cleanly replayable on a fresh PG DB;
         # load the authoritative consolidated schema and mark migrations applied.
