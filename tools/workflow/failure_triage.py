@@ -294,19 +294,25 @@ def resolve_outcomes(window_days: int = 7) -> Dict[str, Any]:
             ph = sql_placeholder(conn)
             cutoff = sql_date_sub(conn, days=window_days)
             rows = conn.execute(
-                f"SELECT id, task_id, signature, created_at "
-                f"FROM triage_outcomes "
+                f"SELECT id, run_id, task_id, signature, signature_class, task_type, "
+                f"       recommendation, confidence_raw, confidence_selfconsistency, "
+                f"       gate_decision, verify_rc, autofix_branch, autofix_commit, "
+                f"       merged, created_at "
+                f"FROM triage_outcomes o "
                 f"WHERE applied = 1 AND held IS NULL "
                 f"  AND created_at > {cutoff} "
+                f"  AND NOT EXISTS ("
+                f"       SELECT 1 FROM triage_outcomes r "
+                f"       WHERE r.resolution_of = o.id) "
                 f"ORDER BY created_at ASC"
             ).fetchall()
             for r in rows:
                 row = dict(r)
-                # Check for a newer triage outcome on the same signature
+                # Check for a newer *apply* outcome on the same signature
                 newer = conn.execute(
                     f"SELECT 1 FROM triage_outcomes "
                     f"WHERE task_id = {ph} AND signature = {ph} "
-                    f"  AND created_at > {ph} "
+                    f"  AND created_at > {ph} AND applied = 1 "
                     f"LIMIT 1",
                     (row["task_id"], row["signature"], row["created_at"]),
                 ).fetchone()
@@ -321,9 +327,25 @@ def resolve_outcomes(window_days: int = 7) -> Dict[str, Any]:
                         held_val = "held"
                     else:
                         continue  # still pending — leave NULL
+                now = _utcnow().isoformat()
                 conn.execute(
-                    f"UPDATE triage_outcomes SET held = {ph} WHERE id = {ph}",
-                    (held_val, row["id"]),
+                    f"INSERT INTO triage_outcomes "
+                    f"(id, run_id, task_id, signature, signature_class, task_type, "
+                    f" recommendation, confidence_raw, confidence_selfconsistency, "
+                    f" gate_decision, applied, verify_rc, autofix_branch, autofix_commit, "
+                    f" merged, held, resolution_of, created_at) "
+                    f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, "
+                    f"        {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, "
+                    f"        {ph}, {ph}, {ph}, {ph})",
+                    (
+                        str(uuid.uuid4()), row["run_id"], row["task_id"],
+                        row["signature"], row.get("signature_class"),
+                        row.get("task_type"), row.get("recommendation"),
+                        row.get("confidence_raw"), row.get("confidence_selfconsistency"),
+                        row.get("gate_decision"), 0, row.get("verify_rc"),
+                        row.get("autofix_branch"), row.get("autofix_commit"),
+                        row.get("merged", 0), held_val, row["id"], now,
+                    ),
                 )
                 resolved.append(
                     {"id": row["id"], "task_id": row["task_id"], "held": held_val}
