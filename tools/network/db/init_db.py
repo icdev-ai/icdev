@@ -44,7 +44,7 @@ def get_connection():
             conn = _icdev_conn(db_path=os.environ.get("NC_PG_DATABASE", "network_canvas"))
             # Canvas tables have no tenant_id/classification columns — disable
             # RLS so the global row-level predicate does not raise UndefinedColumn.
-            conn.set_security_context(None)
+            conn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification cols
             return conn
         except ImportError:
             pass  # Fall through to SQLite
