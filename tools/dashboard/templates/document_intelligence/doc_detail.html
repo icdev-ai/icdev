@@ -90,10 +90,11 @@
       </button>
       {% endif %}
       {% if role_levels.get(user_role, 0) >= 1 %}
-      <button onclick="editSection('{{ s.section_id }}')"
+      <button id="edit-btn-{{ s.section_id }}" onclick="editSection('{{ s.section_id }}')"
         style="background:#0f3460;color:#7ab3f0;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">
         ✏️ Edit
       </button>
+      <span id="lock-badge-{{ s.section_id }}" style="display:none;font-size:10px;padding:2px 8px;border-radius:8px;"></span>
       {% endif %}
       {% if role_levels.get(user_role, 0) >= 2 %}
       <button onclick="sectionAction('{{ s.section_id }}', 'approve')"
@@ -187,26 +188,76 @@ function aiAssistSection(sectionId, heading, collectionId) {
     });
 }
 
+var _lockRenewTimers = {};
+
 function editSection(sectionId) {
+  var btn = document.getElementById('edit-btn-' + sectionId);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+  fetch('/document-intelligence/api/sections/' + sectionId + '/lock', {method: 'POST'})
+    .then(function(r) {
+      if (r.status === 409) {
+        return r.json().then(function(d) {
+          if (btn) { btn.disabled = false; btn.textContent = '✏️ Edit'; }
+          alert('Section locked by ' + (d.locked_by || 'another user') +
+                '. Try again after ' + (d.expires_at || '').slice(11, 19) + ' UTC.');
+        });
+      }
+      return r.json().then(function() { _enterEditMode(sectionId); });
+    })
+    .catch(function() { if (btn) { btn.disabled = false; btn.textContent = '✏️ Edit'; } });
+}
+
+function _enterEditMode(sectionId) {
+  var btn = document.getElementById('edit-btn-' + sectionId);
+  var badge = document.getElementById('lock-badge-' + sectionId);
+  if (btn) { btn.disabled = false; btn.textContent = '✏️ Edit'; }
+  if (badge) {
+    badge.style.display = 'inline';
+    badge.style.background = '#052e16';
+    badge.style.color = '#4ade80';
+    badge.textContent = '🔒 Editing (locked by you)';
+  }
+
+  // Renew every 270s to stay within 300s TTL
+  _lockRenewTimers[sectionId] = setInterval(function() {
+    fetch('/document-intelligence/api/sections/' + sectionId + '/lock/renew', {method: 'PUT'});
+  }, 270000);
+
   var contentDiv = document.getElementById('content-' + sectionId);
   var currentText = contentDiv.innerText;
   var textarea = document.createElement('textarea');
   textarea.value = currentText;
   textarea.style = 'width:100%;min-height:120px;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:10px;border-radius:5px;font-size:12px;box-sizing:border-box;';
+
+  function _releaseLock() {
+    clearInterval(_lockRenewTimers[sectionId]);
+    delete _lockRenewTimers[sectionId];
+    if (badge) { badge.style.display = 'none'; }
+    fetch('/document-intelligence/api/sections/' + sectionId + '/lock', {method: 'DELETE'});
+  }
+
   var saveBtn = document.createElement('button');
   saveBtn.textContent = 'Save';
-  saveBtn.style = 'margin-top:8px;background:#0f3460;color:#7ab3f0;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;';
+  saveBtn.style = 'margin-top:8px;margin-right:6px;background:#0f3460;color:#7ab3f0;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;';
   saveBtn.onclick = function() {
     fetch('/document-intelligence/api/sections/' + sectionId + '/content', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({content: textarea.value})
-    }).then(function() { window.location.reload(); });
+    }).then(function() { _releaseLock(); window.location.reload(); });
   };
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style = 'margin-top:8px;background:#1e293b;color:#94a3b8;padding:6px 12px;border:1px solid #1a3560;border-radius:5px;cursor:pointer;font-size:12px;';
+  cancelBtn.onclick = function() { _releaseLock(); window.location.reload(); };
+
   contentDiv.innerHTML = '';
   contentDiv.appendChild(textarea);
   contentDiv.appendChild(document.createElement('br'));
   contentDiv.appendChild(saveBtn);
+  contentDiv.appendChild(cancelBtn);
 }
 
 function sectionAction(sectionId, action) {
@@ -405,15 +456,31 @@ function runStyleCheck(sid) {
     });
 }
 
-// Auto-load counts on page load
+// Auto-load counts and lock status on page load
 document.addEventListener('DOMContentLoaded', function() {
   {% for s in sections %}
   (function(sid) {
+    // Annotation counts
     fetch('/document-intelligence/api/sections/' + sid + '/annotations')
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var el = document.getElementById('ann-count-' + sid);
         if (el) el.textContent = (d.annotations || []).length;
+      });
+    // Lock status
+    fetch('/document-intelligence/api/sections/' + sid + '/lock')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d.locked) return;
+        var badge = document.getElementById('lock-badge-' + sid);
+        var btn   = document.getElementById('edit-btn-' + sid);
+        if (badge) {
+          badge.style.display = 'inline';
+          badge.style.background = '#2e0505';
+          badge.style.color = '#f87171';
+          badge.textContent = '🔒 Locked by ' + escH(d.locked_by || 'another user');
+        }
+        if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
       });
   })('{{ s.section_id }}');
   {% endfor %}

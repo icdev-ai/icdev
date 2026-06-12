@@ -1390,6 +1390,61 @@ def api_review_reject(item_id):
         conn.close()
 
 
+# ── Section Locking (pessimistic collaborative editing) ───────────────────────
+
+@dic_bp.route("/api/sections/<section_id>/lock", methods=["GET"])
+def api_section_lock_status(section_id: str):
+    from tools.document_intelligence.lock_manager import get_lock
+    lock = get_lock(section_id)
+    if lock:
+        return jsonify({"locked": True, **lock})
+    return jsonify({"locked": False, "section_id": section_id})
+
+
+@dic_bp.route("/api/sections/<section_id>/lock", methods=["POST"])
+def api_section_lock_acquire(section_id: str):
+    from tools.document_intelligence.lock_manager import acquire_lock, get_lock
+    user = _current_user()
+    _c = _conn()
+    try:
+        doc_row = _c.execute(
+            "SELECT doc_id FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
+        ).fetchone()
+        doc_id = doc_row["doc_id"] if doc_row else ""
+    finally:
+        _c.close()
+    lock = acquire_lock(section_id, user, doc_id=doc_id)
+    if lock is None:
+        current = get_lock(section_id) or {}
+        return jsonify({
+            "locked": True,
+            "locked_by": current.get("locked_by", "another user"),
+            "expires_at": current.get("expires_at", ""),
+            "section_id": section_id,
+        }), 409
+    return jsonify(lock), 200
+
+
+@dic_bp.route("/api/sections/<section_id>/lock", methods=["DELETE"])
+def api_section_lock_release(section_id: str):
+    from tools.document_intelligence.lock_manager import release_lock
+    user = _current_user()
+    released = release_lock(section_id, user)
+    if not released:
+        return jsonify({"error": "Lock not held by you or does not exist"}), 403
+    return jsonify({"released": True, "section_id": section_id})
+
+
+@dic_bp.route("/api/sections/<section_id>/lock/renew", methods=["PUT"])
+def api_section_lock_renew(section_id: str):
+    from tools.document_intelligence.lock_manager import renew_lock
+    user = _current_user()
+    renewed = renew_lock(section_id, user)
+    if not renewed:
+        return jsonify({"error": "Lock not held by you or does not exist"}), 403
+    return jsonify({"renewed": True, "section_id": section_id})
+
+
 # ── Section Annotations (threaded comments anchored to text / sections) ──────
 
 _ANN_CATEGORIES = {"question", "improvement", "compliance", "strength", "weakness", "risk", "editorial"}
